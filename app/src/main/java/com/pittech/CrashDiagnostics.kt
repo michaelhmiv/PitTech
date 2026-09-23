@@ -68,7 +68,8 @@ internal object CrashDiagnostics {
 
         val exceptionType = throwable.javaClass.name
         val message = throwable.localizedMessage?.replace('\n', ' ')?.take(300).orEmpty()
-        val summary = if (message.isBlank()) exceptionType else "$exceptionType: $message"
+        val displayExceptionType = throwable.javaClass.simpleName.ifBlank { "Application error" }
+        val summary = if (message.isBlank()) displayExceptionType else "$displayExceptionType: $message"
         val report = CrashDiagnosticReport(
             referenceCode = newReferenceCode(),
             occurredAtUtc = formatUtc(System.currentTimeMillis()),
