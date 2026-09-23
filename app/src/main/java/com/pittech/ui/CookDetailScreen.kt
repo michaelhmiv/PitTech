@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -103,6 +104,7 @@ fun CookDetailScreen(
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
     var photoCaptionUri by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
@@ -164,8 +166,13 @@ fun CookDetailScreen(
         TimelineEventDialog(
             event = editEvent,
             dishes = data.dishes,
-            onDismiss = { showNewEvent = false; editEvent = null },
+            onDismiss = {
+                focusManager.clearFocus(force = true)
+                showNewEvent = false
+                editEvent = null
+            },
             onSave = { type, title, details, occurred, dishId ->
+                focusManager.clearFocus(force = true)
                 if (editEvent == null) viewModel.addTimelineEvent(data.cook.id, dishId, type, title, details, occurred)
                 else viewModel.updateTimelineEvent(editEvent!!.copy(dishId = dishId, eventType = type, title = title, details = details, occurredAtUtcMillis = occurred))
                 showNewEvent = false
@@ -178,8 +185,13 @@ fun CookDetailScreen(
             reading = editReading,
             dishes = data.dishes,
             preferredUnit = preferredTemperatureUnit,
-            onDismiss = { showTemperature = false; editReading = null },
+            onDismiss = {
+                focusManager.clearFocus(force = true)
+                showTemperature = false
+                editReading = null
+            },
             onSave = { probe, type, value, unit, measuredAt, dishId ->
+                focusManager.clearFocus(force = true)
                 if (editReading == null) viewModel.addManualTemperature(data.cook.id, dishId, probe, type, value, unit, measuredAt)
                 else viewModel.updateSensorReading(editReading!!.copy(probeName = probe, measurementType = type, value = value, unit = unit, measuredAtUtcMillis = measuredAt, dishId = dishId))
                 showTemperature = false
@@ -204,6 +216,7 @@ fun CookDetailScreen(
             preferredUnit = preferredTemperatureUnit,
             onDismiss = { showResults = false },
             onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish ->
+                focusManager.clearFocus(force = true)
                 viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish)
                 showResults = false
             },
