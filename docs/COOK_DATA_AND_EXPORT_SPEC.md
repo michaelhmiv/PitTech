@@ -198,3 +198,4 @@ These are examples of the practical steps and details a smoker may want to remem
 - [Traeger: Brisket Spritz](https://www.traeger.com/learn/brisket-spritz)
 - [USDA FSIS: Thermometers when smoking meat](https://ask.fsis.usda.gov/article/Do-you-need-a-thermometer-when-smoking-meat)
 - [USDA FSIS: Safe internal temperatures for meat and poultry](https://ask.fsis.usda.gov/article/What-is-a-safe-internal-temperature-for-cooking-meat-and-poultry)
+- [Microsoft Support: Excel specifications and limits](https://support.microsoft.com/en-us/excel/excel-specifications-and-limits)
