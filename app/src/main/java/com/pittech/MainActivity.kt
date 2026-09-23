@@ -31,8 +31,7 @@ class MainActivity : ComponentActivity() {
                     CrashRecoveryScreen(
                         report = report,
                         onCopyReport = {
-                            val clipboard = getSystemService(ClipboardManager::class.java)
-                            clipboard.setPrimaryClip(
+                            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
                                 ClipData.newPlainText("PitTech diagnostic report", report.toPlainText()),
                             )
                         },
