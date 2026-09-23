@@ -72,6 +72,18 @@ This keeps the data for one cook together. Insights is the place for comparisons
 - Provide a date/time field for backdated cooks and preparation events.
 - Ask for units once in Settings; allow changing them without losing stored values.
 
+### Dish details and cook setup
+
+Keep the first **Add dish** form short: dish name, food type/cut, and optional weight, with a visible **Add details later** choice. Expand the form only when the user wants to add more.
+
+Offer labeled sections for starting condition and bone-in/boneless; trimming and shape; binder; seasoning blend or individual ingredients with amount/unit; brine, marinade, or injection; smoker placement; targets; and preparation notes. Each section can be skipped. A user can attach photos to the cook, a dish, or a timeline event, with an optional caption and time.
+
+During the cook, let a user pick the relevant dish when adding events such as spritz, wrap, flip, temperature check, remove, and rest. For wrapping, spritzing, and preparation, reveal optional detail fields only after that event is selected. Allow a custom event and free-form notes for methods PitTech does not already list.
+
+Targets should be explicitly typed as a food-safety target or a personal tenderness/serving goal. Do not prefill an unverified target or imply that a preferred barbecue finish is a safety recommendation. Let users save their own dish or preparation as a local reusable template.
+
+See the [cook data capture and export specification](COOK_DATA_AND_EXPORT_SPEC.md) for the complete optional field list and data model.
+
 ### B. Live cook
 
 **Purpose:** Answer “Is the grill connected, and what are the temperatures right now?”
@@ -256,7 +268,7 @@ Keep these items in one plain Settings list:
 - Storage use and local data controls.
 - Privacy and remote-data explanation.
 
-Export should produce readable CSV for temperature samples and a versioned PitTech archive for complete cooks, events, notes, and attachments. Import should preview what will be added before changing the local library.
+Offer an **Excel workbook (.xlsx)** for sorting, filtering, charting, and comparing; a **complete ZIP archive** containing CSV, structured JSON, original photos, and a data dictionary; and standalone CSV tables when useful. Keep readings in a long format (one sample per row), with stable IDs, explicit units, UTC and local timestamps, and source/probe labels. Never silently downsample or omit raw samples. Import should preview what will be added before changing the local library. See the [cook data capture and export specification](COOK_DATA_AND_EXPORT_SPEC.md) for workbook sheets and archive layout.
 
 ## 4. Visual and interaction system
 
@@ -303,7 +315,7 @@ Test these tasks with someone who has not seen the app before:
 7. Pair remote access with a PIN and revoke the paired device.
 8. Change the grill setpoint remotely and confirm the app reports the controller’s response.
 9. Lose internet, continue logging locally, reconnect, and verify the cook record.
-10. Export the cook and restore it on a clean install.
+10. Export a cook as an Excel workbook and complete archive; verify readings, ingredients, timestamps, and photos survive, then restore the archive on a clean install.
 
 Run Android Accessibility Scanner/TalkBack checks, test enlarged font sizes, and test high contrast. Verify every interactive target meets Android’s recommended minimum size.
 
@@ -321,3 +333,8 @@ Run Android Accessibility Scanner/TalkBack checks, test enlarged font sizes, and
 - [Android network security guidance](https://developer.android.com/develop/connectivity/network-ops/connecting)
 - [OWASP Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html)
 - [NIST SP 800-63B, Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html)
+
+
+## Related product specification
+
+- [Cook data capture and export specification](COOK_DATA_AND_EXPORT_SPEC.md)
