@@ -4,7 +4,11 @@ set -euo pipefail
 api_level="${PITTECH_API_LEVEL:-36}"
 device_name="${PITTECH_EMULATOR_DEVICE:-pixel_2}"
 avd_name="pittech-ci-api-${api_level}"
-system_image="system-images;android-${api_level};google_apis;x86_64"
+if [[ "$api_level" == "37" ]]; then
+  system_image="system-images;android-37.0;google_apis_ps16k;x86_64"
+else
+  system_image="system-images;android-${api_level};google_apis;x86_64"
+fi
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"
 emulator_bin="$sdk_root/emulator/emulator"
