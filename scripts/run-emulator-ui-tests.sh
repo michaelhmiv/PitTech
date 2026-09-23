@@ -90,8 +90,13 @@ emulator_pid=$!
 adb start-server
 timeout 600 adb wait-for-device
 if (( api_level >= 37 )); then
-  timeout 30 adb root
+  timeout 30 adb root >/dev/null 2>&1 || true
   timeout 60 adb wait-for-device
+  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\\r')"
+  if [[ "$shell_uid" != "0" ]]; then
+    echo "Android 17 emulator did not grant root shell access." >&2
+    exit 1
+  fi
   timeout 20 adb shell setprop debug.sf.luma_sampling 0
   luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')"
   if [[ "$luma_sampling_value" != "0" ]]; then
