@@ -571,11 +571,22 @@ private fun PhotoThumbnail(photo: com.pittech.data.PhotoEntity) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var bitmap by remember(photo.id) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     LaunchedEffect(photo.id) {
-        val bytes = withContext(Dispatchers.IO) {
+        val decoded = withContext(Dispatchers.IO) {
             val file = java.io.File(context.filesDir, photo.relativePath)
-            if (file.isFile) file.readBytes() else null
+            if (!file.isFile) return@withContext null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            var sampleSize = 1
+            while (bounds.outWidth / sampleSize > 900 || bounds.outHeight / sampleSize > 900) sampleSize *= 2
+            BitmapFactory.decodeFile(
+                file.absolutePath,
+                BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                },
+            )
         }
-        bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+        bitmap = decoded?.asImageBitmap()
     }
     bitmap?.let { Image(it, contentDescription = photo.caption ?: photo.originalFileName, modifier = Modifier.fillMaxWidth().height(190.dp), contentScale = ContentScale.Crop) }
         ?: Text("Photo saved · ${photo.originalFileName}", style = MaterialTheme.typography.bodyMedium)
