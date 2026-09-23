@@ -212,11 +212,52 @@ pull_app_screenshot() {
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 
-echo "Restarting PitTech to verify its local cook survives a process restart."
+echo "Restarting PitTech to verify its saved crash report survives a process restart."
 adb shell am force-stop com.pittech.debug
 timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
 
 window_dump="$output_dir/restarted-window.xml"
+deadline=$((SECONDS + 30))
+until (( SECONDS >= deadline )); do
+  timeout 20 adb shell uiautomator dump /sdcard/pittech-window.xml >/dev/null 2>&1 || true
+  timeout 20 adb exec-out cat /sdcard/pittech-window.xml > "$window_dump" 2>/dev/null || true
+  if grep -q "Synthetic diagnostic for UI test" "$window_dump"; then
+    break
+  fi
+  sleep 2
+done
+
+read -r tap_x tap_y <<< "$(python3 - "$window_dump" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+visible_text = " ".join(
+    node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
+    for node in root.iter()
+)
+if "PitTech stopped unexpectedly" not in visible_text:
+    raise SystemExit("Crash recovery screen was not shown after force-stop and relaunch.")
+if "Synthetic diagnostic for UI test" not in visible_text:
+    raise SystemExit("Saved crash summary was not visible after relaunch.")
+if re.search(r"PT-[0-9A-F]{8}", visible_text) is None:
+    raise SystemExit("Saved crash reference code was not visible after relaunch.")
+button = next(
+    (node for node in root.iter() if node.attrib.get("text") == "Continue to PitTech"),
+    None,
+)
+if button is None:
+    raise SystemExit("Continue button was not found on the crash recovery screen.")
+bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", button.attrib.get("bounds", ""))
+if bounds is None:
+    raise SystemExit("Continue button bounds were missing from the accessibility tree.")
+left, top, right, bottom = map(int, bounds.groups())
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)"
+timeout 20 adb shell input tap "$tap_x" "$tap_y"
+
 deadline=$((SECONDS + 30))
 until (( SECONDS >= deadline )); do
   timeout 20 adb shell uiautomator dump /sdcard/pittech-window.xml >/dev/null 2>&1 || true
@@ -231,8 +272,7 @@ python3 - "$window_dump" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 
-path = sys.argv[1]
-root = ET.parse(path).getroot()
+root = ET.parse(sys.argv[1]).getroot()
 visible_text = " ".join(
     node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
     for node in root.iter()
@@ -240,8 +280,8 @@ visible_text = " ".join(
 expected = ("Saturday brisket", "Whole packer")
 missing = [value for value in expected if value not in visible_text]
 if missing:
-    raise SystemExit("Cook data was not visible after restart: " + ", ".join(missing))
-print("Cook title and dish are visible after force-stop and relaunch.")
+    raise SystemExit("Cook data was not visible after crash-report recovery: " + ", ".join(missing))
+print("Crash report survived force-stop and relaunch; the saved cook is visible after continuing.")
 PY
 
 sleep 3

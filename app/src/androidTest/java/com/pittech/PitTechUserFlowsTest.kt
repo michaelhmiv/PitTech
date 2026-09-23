@@ -170,8 +170,6 @@ class PitTechUserFlowsTest {
         assertTrue("Copied diagnostic is missing its reference code.", copiedText.contains(report.referenceCode))
         assertTrue("Copied diagnostic is missing the exception summary.", copiedText.contains("Synthetic diagnostic for UI test"))
 
-        composeRule.onNodeWithTag("crash-report-continue").performClick()
-        composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
