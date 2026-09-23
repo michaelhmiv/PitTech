@@ -108,7 +108,7 @@ class PitTechUserFlowsTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("Saturday brisket").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("Whole packer").assertIsDisplayed()
+        composeRule.onNodeWithText("Whole packer").performScrollTo().assertIsDisplayed()
         saveScreenshot("cook-saved")
 
         val application = targetContext.applicationContext as PitTechApplication

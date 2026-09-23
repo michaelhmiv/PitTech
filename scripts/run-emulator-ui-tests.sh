@@ -104,16 +104,37 @@ echo "Running $instrumentation_target without uninstalling the app afterward."
 timeout 25m adb shell am instrument -w -r \
   -e class com.pittech.PitTechUserFlowsTest \
   "$instrumentation_target" | tee "$test_output"
-if ! grep -q '^INSTRUMENTATION_CODE: -1' "$test_output"; then
-  echo "PitTech UI tests did not report a successful instrumentation result." >&2
+expected_tests=(
+  "test01_homeNavigationAndPrimaryActionAreClear"
+  "test02_createCookWithDishAndPreparationAndSaveLocally"
+)
+passed_test_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$test_output" || true)"
+if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] || ! grep -q '^INSTRUMENTATION_CODE: -1' "$test_output"; then
+  echo "PitTech instrumentation did not report success for every UI test." >&2
   exit 1
 fi
+for expected_test in "${expected_tests[@]}"; do
+  if ! grep -q "INSTRUMENTATION_STATUS: test=${expected_test}" "$test_output"; then
+    echo "Expected UI test did not run: $expected_test" >&2
+    exit 1
+  fi
+done
+echo "All ${#expected_tests[@]} expected PitTech UI tests passed."
 
 pull_app_screenshot() {
   local name="$1"
-  timeout 20 adb exec-out run-as com.pittech cat "files/pittech-ui-test/${name}.png" > "$output_dir/${name}.png"
-  if [[ ! -s "$output_dir/${name}.png" ]]; then
-    echo "No ${name} screenshot was produced." >&2
+  local screenshot="$output_dir/${name}.png"
+  timeout 20 adb exec-out run-as com.pittech cat "files/pittech-ui-test/${name}.png" > "$screenshot"
+  if ! python3 - "$screenshot" <<'PY'
+import pathlib
+import sys
+
+if not pathlib.Path(sys.argv[1]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+    raise SystemExit(1)
+PY
+  then
+    rm -f "$screenshot"
+    echo "The ${name} screenshot is missing or invalid." >&2
     exit 1
   fi
   echo "Saved emulator screenshot: ${name}.png"
