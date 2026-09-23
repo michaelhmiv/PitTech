@@ -5,8 +5,8 @@ api_level="36"
 avd_name="pittech-ci-api-${api_level}"
 system_image="system-images;android-${api_level};google_apis;x86_64"
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-avdmanager_bin="$(command -v avdmanager || true)"
-emulator_bin="$(command -v emulator || true)"
+avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"
+emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
 
@@ -14,8 +14,11 @@ if [[ -z "$sdk_root" ]]; then
   echo "ANDROID_SDK_ROOT or ANDROID_HOME must point to the Android SDK." >&2
   exit 1
 fi
-if [[ -z "$avdmanager_bin" || -z "$emulator_bin" ]]; then
-  echo "Android command-line tools and emulator must be on PATH." >&2
+if [[ ! -x "$avdmanager_bin" ]]; then
+  avdmanager_bin="$(find "$sdk_root/cmdline-tools" -mindepth 3 -maxdepth 3 -type f -name avdmanager 2>/dev/null | sort -V | tail -n 1)"
+fi
+if [[ ! -x "$avdmanager_bin" || ! -x "$emulator_bin" ]]; then
+  echo "Android SDK command-line tools and emulator are not installed in $sdk_root." >&2
   exit 1
 fi
 
