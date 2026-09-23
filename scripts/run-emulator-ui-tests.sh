@@ -104,7 +104,7 @@ echo "Running $instrumentation_target without uninstalling the app afterward."
 timeout 25m adb shell am instrument -w -r \
   -e class com.pittech.PitTechUserFlowsTest \
   "$instrumentation_target" | tee "$test_output"
-if ! grep -q '^INSTRUMENTATION_CODE: 0' "$test_output"; then
+if ! grep -q '^INSTRUMENTATION_CODE: -1' "$test_output"; then
   echo "PitTech UI tests did not report a successful instrumentation result." >&2
   exit 1
 fi
