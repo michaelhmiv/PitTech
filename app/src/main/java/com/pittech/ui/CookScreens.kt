@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -143,6 +144,7 @@ fun PitTechApp(viewModel: CooksViewModel) {
                         onClick = { selectedSection = item.name },
                         icon = { Icon(item.icon, contentDescription = null) },
                         label = { Text(item.title) },
+                        modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
                     )
                 }
             }
@@ -197,7 +199,7 @@ private fun CooksHome(
     ) {
         Button(
             onClick = onStartCook,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp).testTag("start-cook"),
             shape = RoundedCornerShape(14.dp),
         ) {
             Icon(Icons.Filled.Add, contentDescription = null)
@@ -371,7 +373,7 @@ private fun StartCookScreen(
                             )
                         },
                         enabled = !saving && CookEntryValidation.isOptionalPositiveNumberValid(setpoint),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("cook-save"),
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text(if (saving) "Saving cook…" else "Start cook")
@@ -395,7 +397,7 @@ private fun StartCookScreen(
                 label = { Text("Cook name (optional)") },
                 placeholder = { Text("Saturday brisket") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("cook-title"),
             )
             OutlinedTextField(
                 value = smoker,
@@ -403,7 +405,7 @@ private fun StartCookScreen(
                 label = { Text("Smoker or grill (optional)") },
                 placeholder = { Text("Pit Boss Austin XL") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("cook-smoker"),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
@@ -418,13 +420,14 @@ private fun StartCookScreen(
                             Text("Enter a positive number, or leave it blank.")
                         }
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).testTag("cook-setpoint"),
                 )
                 SimpleDropdownField(
                     label = "Unit",
                     value = setpointUnit,
                     options = listOf("°F", "°C"),
                     onSelect = { setpointUnit = it },
+                    testTag = "cook-setpoint-unit",
                     modifier = Modifier.width(96.dp),
                 )
             }
@@ -434,13 +437,13 @@ private fun StartCookScreen(
                 label = { Text("Cook notes (optional)") },
                 placeholder = { Text("Weather, timing, changes, or anything to remember") },
                 minLines = 2,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("cook-notes"),
             )
 
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 SectionHeading("Dishes")
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showDishDialog = true }) {
+                TextButton(onClick = { showDishDialog = true }, modifier = Modifier.testTag("cook-add-dish")) {
                     Icon(Icons.Filled.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Add dish")
@@ -547,13 +550,14 @@ private fun DishEditorDialog(
                     singleLine = true,
                     isError = nameError,
                     supportingText = { if (nameError) Text("Enter a dish name or cut.") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("dish-name"),
                 )
                 SimpleDropdownField(
                     label = "Food type",
                     value = foodType,
                     options = listOf("Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Other"),
                     onSelect = { foodType = it },
+                    testTag = "dish-food-type",
                 )
                 OutlinedTextField(
                     value = cut,
@@ -561,7 +565,7 @@ private fun DishEditorDialog(
                     label = { Text("Specific cut (optional)") },
                     placeholder = { Text("St. Louis ribs, pork shoulder") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("dish-cut"),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -572,18 +576,19 @@ private fun DishEditorDialog(
                         singleLine = true,
                         isError = weightError,
                         supportingText = { if (weightError) Text("Use a positive number.") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).testTag("dish-weight"),
                     )
                     SimpleDropdownField(
                         label = "Unit",
                         value = weightUnit,
                         options = listOf("lb", "oz", "kg", "g"),
                         onSelect = { weightUnit = it },
+                        testTag = "dish-weight-unit",
                         modifier = Modifier.width(96.dp),
                     )
                 }
 
-                TextButton(onClick = { detailsExpanded = !detailsExpanded }) {
+                TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("dish-details-toggle")) {
                     Text(if (detailsExpanded) "Hide preparation details" else "Add preparation details")
                 }
 
@@ -594,6 +599,7 @@ private fun DishEditorDialog(
                         value = startingCondition ?: "Not set",
                         options = listOf("Not set", "Refrigerated", "Thawed", "Frozen", "Other"),
                         onSelect = { startingCondition = it.takeUnless { value -> value == "Not set" } },
+                        testTag = "dish-starting-condition",
                     )
                     Text("Bone-in or boneless", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -601,11 +607,13 @@ private fun DishEditorDialog(
                             selected = boneIn == true,
                             onClick = { boneIn = if (boneIn == true) null else true },
                             label = { Text("Bone-in") },
+                            modifier = Modifier.testTag("dish-bone-in"),
                         )
                         FilterChip(
                             selected = boneIn == false,
                             onClick = { boneIn = if (boneIn == false) null else false },
                             label = { Text("Boneless") },
+                            modifier = Modifier.testTag("dish-boneless"),
                         )
                     }
 
@@ -626,6 +634,7 @@ private fun DishEditorDialog(
                                         if (i == index) current.copy(stage = value.lowercase().replace(' ', '_')) else current
                                     }
                                 },
+                                testTag = "preparation-type-$index",
                             )
                             OutlinedTextField(
                                 value = item.name,
@@ -634,7 +643,7 @@ private fun DishEditorDialog(
                                 },
                                 label = { Text("Ingredient or preparation") },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().testTag("preparation-name-$index"),
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 OutlinedTextField(
@@ -652,7 +661,7 @@ private fun DishEditorDialog(
                                             Text("Enter a positive number, or leave the amount blank.")
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f).testTag("preparation-amount-$index"),
                                 )
                                 SimpleDropdownField(
                                     label = "Unit",
@@ -661,12 +670,13 @@ private fun DishEditorDialog(
                                     onSelect = { value ->
                                         preparationItems = preparationItems.mapIndexed { i, current -> if (i == index) current.copy(amountUnit = value) else current }
                                     },
+                                    testTag = "preparation-unit-$index",
                                     modifier = Modifier.width(106.dp),
                                 )
                             }
                         }
                     }
-                    TextButton(onClick = { preparationItems = preparationItems + IngredientDraft(name = "") }) {
+                    TextButton(onClick = { preparationItems = preparationItems + IngredientDraft(name = "") }, modifier = Modifier.testTag("preparation-add-item")) {
                         Icon(Icons.Filled.Add, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("Add preparation item")
@@ -677,7 +687,7 @@ private fun DishEditorDialog(
                         label = { Text("Preparation notes (optional)") },
                         placeholder = { Text("Trimmed the fat cap; used mustard as binder") },
                         minLines = 2,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("preparation-notes"),
                     )
                 }
 
@@ -685,7 +695,7 @@ private fun DishEditorDialog(
                     onClick = {
                         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("dish-add-photos"),
                 ) {
                     Text(if (photoUris.isEmpty()) "Add photos" else "Add more photos (${photoUris.size})")
                 }
@@ -720,7 +730,7 @@ private fun DishEditorDialog(
                         ),
                     )
                 }
-            }) { Text("Add dish") }
+            }, modifier = Modifier.testTag("dish-save")) { Text("Add dish") }
         },
         dismissButton = { TextButton(onClick = requestDismiss) { Text("Cancel") } },
     )
@@ -747,6 +757,7 @@ private fun SimpleDropdownField(
     value: String,
     options: List<String>,
     onSelect: (String) -> Unit,
+    testTag: String? = null,
     modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -755,7 +766,10 @@ private fun SimpleDropdownField(
         Box {
             OutlinedButton(
                 onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .then(if (testTag == null) Modifier else Modifier.testTag(testTag)),
             ) {
                 Text(value, modifier = Modifier.weight(1f))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose $label")

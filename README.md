@@ -146,7 +146,9 @@ The export, restore, live monitoring, full timeline editing, and cross-cook anal
 
 - Open this repository in Android Studio with JDK 17 and Android SDK 37 installed, or use `./gradlew` from the repository root.
 - Run `./gradlew testDebugUnitTest assembleDebug` to run the current input-validation tests and build the debug APK.
-- GitHub Actions runs the same test/build check for pushes and pull requests. Successful runs attach a `pittech-debug-apk` artifact for 14 days so the current build can be tried on an Android phone.
+- Run `./gradlew connectedDebugAndroidTest` with an Android emulator or device connected to exercise the app UI.
+- GitHub Actions also boots a clean API 36 Pixel emulator with larger system text, navigates all four tabs, creates a cook with dish and preparation details, checks validation and saved Room records, then force-stops and relaunches the app to check that the cook remains visible.
+- The workflow saves emulator screenshots, the post-restart accessibility hierarchy, Android test reports, and logcat as the `pittech-emulator-test-evidence` artifact. Successful runs also attach a `pittech-debug-apk` artifact for 14 days.
 
 
 ## Product design

@@ -360,6 +360,12 @@ interface CookDao {
     @Query("SELECT * FROM cooks WHERE id = :cookId LIMIT 1")
     fun observeCook(cookId: String): Flow<CookWithDishes?>
 
+    @Query("SELECT * FROM ingredients WHERE cookId = :cookId ORDER BY createdAtUtcMillis ASC")
+    suspend fun getIngredientsForCook(cookId: String): List<IngredientEntity>
+
+    @Query("SELECT * FROM timeline_events WHERE cookId = :cookId ORDER BY occurredAtUtcMillis ASC")
+    suspend fun getTimelineEventsForCook(cookId: String): List<TimelineEventEntity>
+
     @Query("UPDATE cooks SET status = 'completed', endedAtUtcMillis = :endedAtUtcMillis, updatedAtUtcMillis = :endedAtUtcMillis WHERE id = :cookId")
     suspend fun finishCook(cookId: String, endedAtUtcMillis: Long)
 

@@ -1,15 +1,23 @@
-name: Android build
+name: Android checks
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: pittech-android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  android-checks:
+    name: Build and emulator UI tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -23,21 +31,43 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4.0.4
 
-      - name: Install Android SDK packages
-        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Install Android SDK and clean emulator image
+        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "system-images;android-36;google_apis;x86_64" "emulator"
 
       - name: Set up Gradle 9.6.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.1'
 
-      - name: Run unit tests and assemble debug app
-        run: gradle testDebugUnitTest assembleDebug
+      - name: Run JVM tests and prebuild app plus instrumented tests
+        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest
 
-      - name: Upload Android debug APK
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Boot emulator and run app UI flows
+        run: bash scripts/run-emulator-ui-tests.sh
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v7.0.1
         with:
           name: pittech-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload emulator screenshots, UI hierarchy, and test reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-emulator-test-evidence
+          path: |
+            app/build/ci-emulator/**
+            app/build/reports/androidTests/connected/**
+            app/build/outputs/androidTest-results/connected/**
+          if-no-files-found: warn
           retention-days: 14
