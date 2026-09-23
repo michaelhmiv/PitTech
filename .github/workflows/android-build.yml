@@ -33,3 +33,11 @@ jobs:
 
       - name: Run unit tests and assemble debug app
         run: gradle testDebugUnitTest assembleDebug
+
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

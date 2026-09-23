@@ -146,7 +146,7 @@ The export, restore, live monitoring, full timeline editing, and cross-cook anal
 
 - Open this repository in Android Studio with JDK 17 and Android SDK 37 installed, or use `./gradlew` from the repository root.
 - Run `./gradlew testDebugUnitTest assembleDebug` to run the current input-validation tests and build the debug APK.
-- GitHub Actions runs the same test/build check for pushes and pull requests.
+- GitHub Actions runs the same test/build check for pushes and pull requests. Successful runs attach a `pittech-debug-apk` artifact for 14 days so the current build can be tried on an Android phone.
 
 
 ## Product design
