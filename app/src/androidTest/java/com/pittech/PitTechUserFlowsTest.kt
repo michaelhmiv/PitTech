@@ -28,7 +28,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
@@ -45,8 +44,7 @@ class PitTechUserFlowsTest {
     private val targetContext: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Before
-    fun clearLocalData() {
+    private fun clearLocalData() {
         CrashDiagnostics.clearPendingReport(targetContext)
         val application = targetContext.applicationContext as PitTechApplication
         runBlocking(Dispatchers.IO) {
@@ -56,6 +54,7 @@ class PitTechUserFlowsTest {
 
     @Test
     fun test01_homeNavigationAndPrimaryActionAreClear() {
+        clearLocalData()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed().assertHeightIsAtLeast(56.dp)
@@ -76,6 +75,7 @@ class PitTechUserFlowsTest {
 
     @Test
     fun test02_createCookWithDishAndPreparationAndSaveLocally() {
+        clearLocalData()
         composeRule.onNodeWithTag("start-cook").performClick()
 
         composeRule.onNodeWithTag("cook-title").performTextInput("Saturday brisket")
