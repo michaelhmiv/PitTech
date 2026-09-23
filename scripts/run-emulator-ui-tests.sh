@@ -121,10 +121,9 @@ for expected_test in "${expected_tests[@]}"; do
 done
 echo "All ${#expected_tests[@]} expected PitTech UI tests passed."
 
-pull_app_screenshot() {
+assert_png_file() {
   local name="$1"
-  local screenshot="$output_dir/${name}.png"
-  timeout 20 adb exec-out run-as com.pittech cat "files/pittech-ui-test/${name}.png" > "$screenshot"
+  local screenshot="$2"
   if ! python3 - "$screenshot" <<'PY'
 import pathlib
 import sys
@@ -135,8 +134,15 @@ PY
   then
     rm -f "$screenshot"
     echo "The ${name} screenshot is missing or invalid." >&2
-    exit 1
+    return 1
   fi
+}
+
+pull_app_screenshot() {
+  local name="$1"
+  local screenshot="$output_dir/${name}.png"
+  timeout 20 adb exec-out run-as com.pittech cat "files/pittech-ui-test/${name}.png" > "$screenshot"
+  assert_png_file "$name" "$screenshot"
   echo "Saved emulator screenshot: ${name}.png"
 }
 
@@ -175,4 +181,6 @@ if missing:
 print("Cook title and dish are visible after force-stop and relaunch.")
 PY
 
+sleep 3
 timeout 20 adb exec-out screencap -p > "$output_dir/restarted-home.png"
+assert_png_file "restarted-home" "$output_dir/restarted-home.png"
