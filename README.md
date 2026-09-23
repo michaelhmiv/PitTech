@@ -132,4 +132,4 @@ Remote access is a product requirement, but compatibility is not yet a verified 
 - [Android offline-first architecture](https://developer.android.com/topic/architecture/data-layer/offline-first)
 - [Android network security guidance](https://developer.android.com/develop/connectivity/network-ops/connecting)
 - [OWASP Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html)
-- [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html)
+- [NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html)
