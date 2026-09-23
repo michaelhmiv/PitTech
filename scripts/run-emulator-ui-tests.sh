@@ -15,8 +15,10 @@ emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
 emulator_memory_args=()
+emulator_property_args=()
 if (( api_level >= 37 )); then
   emulator_memory_args=(-memory 4096)
+  emulator_property_args=(-prop debug.sf.luma_sampling=0)
 fi
 
 if [[ -z "$sdk_root" ]]; then
@@ -83,26 +85,21 @@ fi
   -no-snapshot \
   -camera-back none \
   "${emulator_memory_args[@]}" \
+  "${emulator_property_args[@]}" \
   -wipe-data \
   > "$output_dir/emulator.log" 2>&1 &
 emulator_pid=$!
 
 adb start-server
 timeout 600 adb wait-for-device
-luma_sampling_disabled=false
-for _ in $(seq 1 30); do
-  if timeout 10 adb shell setprop debug.sf.luma_sampling 0 >/dev/null 2>&1 \
-    && [[ "$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')" == "0" ]]; then
-    luma_sampling_disabled=true
-    break
+if (( api_level >= 37 )); then
+  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')"
+  if [[ "$luma_sampling_value" != "0" ]]; then
+    echo "Expected boot-time SurfaceFlinger luma sampling property to be 0; got '$luma_sampling_value'." >&2
+    exit 1
   fi
-  sleep 1
-done
-if [[ "$luma_sampling_disabled" != true ]]; then
-  echo "Could not disable headless SurfaceFlinger luma sampling." >&2
-  exit 1
+  echo "Verified boot-time SurfaceFlinger luma sampling is disabled."
 fi
-echo "Disabled SurfaceFlinger luma sampling for the headless emulator."
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
   if (( SECONDS >= boot_deadline )); then
