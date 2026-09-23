@@ -171,6 +171,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed")
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
+        waitForText("Edit timeline entry")
         composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
