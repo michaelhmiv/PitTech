@@ -207,8 +207,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Finish cook").performScrollTo().performClick()
-        waitForText("Record results")
-        composeRule.onNodeWithText("Also finish this cook").performScrollTo().performClick()
+        waitForText("Save results")
+        composeRule.onNodeWithTag("results-finish-toggle", useUnmergedTree = true).performScrollTo().performClick()
         waitForText("Finish cook when saved")
         composeRule.onNodeWithText("Save results").performClick()
 

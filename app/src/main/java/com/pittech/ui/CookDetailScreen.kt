@@ -859,7 +859,12 @@ private fun ResultsDialog(
                     OutlinedTextField(seasoning, { seasoning = it; error = null }, label = { Text("Seasoning (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
                 OutlinedTextField(notes, { notes = it }, label = { Text("What would you change next time?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                if (data.cook.status != CookStatus.COMPLETED) FilterChip(selected = finish, onClick = { finish = !finish }, label = { Text(if (finish) "Finish cook when saved" else "Also finish this cook") })
+                if (data.cook.status != CookStatus.COMPLETED) FilterChip(
+                    selected = finish,
+                    onClick = { finish = !finish },
+                    label = { Text(if (finish) "Finish cook when saved" else "Also finish this cook") },
+                    modifier = Modifier.testTag("results-finish-toggle"),
+                )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
