@@ -40,7 +40,7 @@ jobs:
         uses: android-actions/setup-android@v4.0.4
 
       - name: Install Android SDK and clean emulator image
-        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "system-images;android-36;google_apis;x86_64" "system-images;android-37;google_apis;x86_64" "emulator"
+        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "system-images;android-36;google_apis;x86_64" "system-images;android-37.0;google_apis_ps16k;x86_64" "emulator"
 
       - name: Set up Gradle 9.6.1
         uses: gradle/actions/setup-gradle@v5
