@@ -106,7 +106,8 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("cook-save").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithText("Saturday brisket").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("Saturday brisket").fetchSemanticsNodes().isNotEmpty() &&
+                composeRule.onAllNodesWithText("Whole packer").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("Whole packer").performScrollTo().assertIsDisplayed()
         saveScreenshot("cook-saved")
