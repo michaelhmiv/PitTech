@@ -55,6 +55,25 @@ printf 'no\n' | "$avdmanager_bin" create avd \
   --package "$system_image" \
   --device "$device_name"
 
+avd_config="$ANDROID_AVD_HOME/${avd_name}.avd/config.ini"
+if (( api_level >= 37 )); then
+  if [[ ! -f "$avd_config" ]]; then
+    echo "The emulator AVD config was not created: $avd_config" >&2
+    exit 1
+  fi
+  if grep -q '^disk.dataPartition.size=' "$avd_config"; then
+    sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=4G/' "$avd_config"
+  else
+    printf '\ndisk.dataPartition.size=4G\n' >> "$avd_config"
+  fi
+  configured_data_partition="$(grep '^disk.dataPartition.size=' "$avd_config")"
+  if [[ "$configured_data_partition" != "disk.dataPartition.size=4G" ]]; then
+    echo "Could not set the Android 17 emulator data partition size." >&2
+    exit 1
+  fi
+  echo "Configured Android 17 emulator data partition: 4G."
+fi
+
 "$emulator_bin" \
   -avd "$avd_name" \
   -no-window \
