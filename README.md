@@ -102,7 +102,7 @@ Later analysis can add cook comparisons and finish estimates. Derived findings s
 - Do not require an account to use the app.
 - Keep the local database as the canonical source for cook records.
 - Provide per-cook and full-library export and restore.
-- Provide CSV for sensor readings and a versioned portable PitTech archive for structured cook data and attachments.
+- Provide a familiar Excel workbook (.xlsx), standalone CSV tables, and a complete standard ZIP archive with CSV, structured JSON, original photos, and a data dictionary. Preserve raw readings, explicit units, stable IDs, timestamps, and source information for analysis and restore.
 - Make import/export understandable without technical setup.
 - If remote access uses a service, keep it separate from the local cook library and disclose exactly what is transmitted and retained.
 
@@ -138,3 +138,4 @@ Remote access is a product requirement, but compatibility is not yet a verified 
 ## Product design
 
 - [Detailed Android UI/UX plan](docs/UI_UX_PLAN.md)
+- [Cook data capture and export specification](docs/COOK_DATA_AND_EXPORT_SPEC.md)
