@@ -62,23 +62,22 @@ if (( api_level >= 37 )); then
     exit 1
   fi
   if grep -q '^disk.dataPartition.size=' "$avd_config"; then
-    sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=4G/' "$avd_config"
+    sed -i 's/^disk.dataPartition.size=.*/disk.dataPartition.size=8G/' "$avd_config"
   else
-    printf '\ndisk.dataPartition.size=4G\n' >> "$avd_config"
+    printf '\ndisk.dataPartition.size=8G\n' >> "$avd_config"
   fi
   configured_data_partition="$(grep '^disk.dataPartition.size=' "$avd_config")"
-  if [[ "$configured_data_partition" != "disk.dataPartition.size=4G" ]]; then
+  if [[ "$configured_data_partition" != "disk.dataPartition.size=8G" ]]; then
     echo "Could not set the Android 17 emulator data partition size." >&2
     exit 1
   fi
-  echo "Configured Android 17 emulator data partition: 4G."
+  echo "Configured Android 17 emulator data partition: 8G."
 fi
 
 "$emulator_bin" \
   -avd "$avd_name" \
   -no-window \
-  -gpu swiftshader \
-  -feature -Vulkan \
+  -gpu lavapipe \
   -noaudio \
   -no-boot-anim \
   -no-snapshot \
@@ -90,6 +89,20 @@ emulator_pid=$!
 
 adb start-server
 timeout 600 adb wait-for-device
+luma_sampling_disabled=false
+for _ in $(seq 1 30); do
+  if timeout 10 adb shell setprop debug.sf.luma_sampling 0 >/dev/null 2>&1 \
+    && [[ "$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')" == "0" ]]; then
+    luma_sampling_disabled=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$luma_sampling_disabled" != true ]]; then
+  echo "Could not disable headless SurfaceFlinger luma sampling." >&2
+  exit 1
+fi
+echo "Disabled SurfaceFlinger luma sampling for the headless emulator."
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
   if (( SECONDS >= boot_deadline )); then
