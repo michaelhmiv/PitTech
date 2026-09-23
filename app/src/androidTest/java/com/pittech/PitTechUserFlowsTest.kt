@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -25,6 +26,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.data.CookStatus
 import com.pittech.data.DeviceEntity
 import com.pittech.data.ProbeEntity
+import com.pittech.data.SensorReadingEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -70,7 +72,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Controller setup is paused until your grill arrives.").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
-        composeRule.onNodeWithText("Export complete backup (ZIP)").assertIsDisplayed()
+        composeRule.onNodeWithText("Export complete backup (ZIP)").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-cooks").performClick()
         composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
@@ -156,7 +158,10 @@ class PitTechUserFlowsTest {
     @Test
     fun test03_timelineTemperatureResultsAndInsightsWork() {
         composeRule.onNodeWithText("Saturday brisket").performClick()
-        composeRule.onNodeWithTag("cook-tab-timeline").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("timeline-add").performClick()
         composeRule.onNodeWithTag("timeline-entry-type").performClick()
         composeRule.onNodeWithText("Spritz").performClick()
@@ -197,9 +202,9 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-value").performTextInput("250")
         composeRule.onNodeWithTag("temperature-save").performClick()
 
-        composeRule.onNodeWithTag("cook-tab-charts").performClick()
+        composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
-        composeRule.onNodeWithTag("cook-tab-live").performClick()
+        composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Finish cook").performScrollTo().performClick()
         composeRule.onNodeWithText("Also finish this cook").performScrollTo().performClick()
         composeRule.onNodeWithText("Save results").performClick()
@@ -267,10 +272,24 @@ class PitTechUserFlowsTest {
                 source = "manual",
                 createdAtUtcMillis = cook.createdAtUtcMillis,
             )
+            val reading = SensorReadingEntity(
+                id = "test-reading",
+                cookId = cook.id,
+                dishId = dishId,
+                probeId = probe.id,
+                probeName = probe.name,
+                measurementType = "internal_temperature",
+                value = 220.0,
+                unit = "°F",
+                measuredAtUtcMillis = cook.startedAtUtcMillis,
+                timeZoneId = cook.startedTimeZoneId,
+                source = "manual",
+                recordedAtUtcMillis = cook.startedAtUtcMillis,
+            )
             val relatedSnapshot = snapshot.copy(
                 devices = snapshot.devices + device,
                 probes = snapshot.probes + probe,
-                readings = snapshot.readings.map { it.copy(probeId = probe.id) },
+                readings = listOf(reading),
             )
             application.database.clearAllTables()
             val relationRestore = application.cookRepository.importSnapshot(relatedSnapshot, emptyMap())
