@@ -78,6 +78,7 @@ fi
   -avd "$avd_name" \
   -no-window \
   -gpu swiftshader \
+  -feature -Vulkan \
   -noaudio \
   -no-boot-anim \
   -no-snapshot \
