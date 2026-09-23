@@ -15,10 +15,8 @@ emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
 emulator_memory_args=()
-emulator_property_args=()
 if (( api_level >= 37 )); then
   emulator_memory_args=(-memory 4096)
-  emulator_property_args=(-prop debug.sf.luma_sampling=0)
 fi
 
 if [[ -z "$sdk_root" ]]; then
@@ -85,7 +83,6 @@ fi
   -no-snapshot \
   -camera-back none \
   "${emulator_memory_args[@]}" \
-  "${emulator_property_args[@]}" \
   -wipe-data \
   > "$output_dir/emulator.log" 2>&1 &
 emulator_pid=$!
@@ -93,12 +90,32 @@ emulator_pid=$!
 adb start-server
 timeout 600 adb wait-for-device
 if (( api_level >= 37 )); then
+  timeout 30 adb root
+  timeout 60 adb wait-for-device
+  timeout 20 adb shell setprop debug.sf.luma_sampling 0
   luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')"
   if [[ "$luma_sampling_value" != "0" ]]; then
-    echo "Expected boot-time SurfaceFlinger luma sampling property to be 0; got '$luma_sampling_value'." >&2
+    echo "Could not set SurfaceFlinger luma sampling to 0; got '$luma_sampling_value'." >&2
     exit 1
   fi
-  echo "Verified boot-time SurfaceFlinger luma sampling is disabled."
+
+  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\\r' || true)"
+  timeout 20 adb shell stop surfaceflinger
+  timeout 20 adb shell start surfaceflinger
+  surfaceflinger_restarted=false
+  for _ in $(seq 1 30); do
+    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\\r' || true)"
+    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
+      surfaceflinger_restarted=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$surfaceflinger_restarted" != true ]]; then
+    echo "Could not restart SurfaceFlinger with luma sampling disabled." >&2
+    exit 1
+  fi
+  echo "Restarted SurfaceFlinger with luma sampling disabled."
 fi
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
