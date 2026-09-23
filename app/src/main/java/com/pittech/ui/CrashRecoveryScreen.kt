@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.pittech.CrashDiagnosticReport
 
 @Composable
-fun CrashRecoveryScreen(
+internal fun CrashRecoveryScreen(
     report: CrashDiagnosticReport,
     onCopyReport: () -> Unit,
     onContinue: () -> Unit,
