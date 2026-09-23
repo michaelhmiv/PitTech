@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-api_level="36"
+api_level="${PITTECH_API_LEVEL:-36}"
+device_name="${PITTECH_EMULATOR_DEVICE:-pixel_2}"
 avd_name="pittech-ci-api-${api_level}"
 system_image="system-images;android-${api_level};google_apis;x86_64"
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
@@ -9,6 +10,10 @@ avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"
 emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
+emulator_memory_args=()
+if (( api_level >= 37 )); then
+  emulator_memory_args=(-memory 4096)
+fi
 
 if [[ -z "$sdk_root" ]]; then
   echo "ANDROID_SDK_ROOT or ANDROID_HOME must point to the Android SDK." >&2
@@ -39,12 +44,12 @@ collect_evidence_and_stop() {
 }
 trap collect_evidence_and_stop EXIT
 
-echo "Creating a clean Pixel 2 emulator image for API ${api_level}."
+echo "Creating a clean ${device_name} emulator image for API ${api_level}."
 printf 'no\n' | "$avdmanager_bin" create avd \
   --force \
   --name "$avd_name" \
   --package "$system_image" \
-  --device pixel_2
+  --device "$device_name"
 
 "$emulator_bin" \
   -avd "$avd_name" \
@@ -54,6 +59,7 @@ printf 'no\n' | "$avdmanager_bin" create avd \
   -no-boot-anim \
   -no-snapshot \
   -camera-back none \
+  "${emulator_memory_args[@]}" \
   -wipe-data \
   > "$output_dir/emulator.log" 2>&1 &
 emulator_pid=$!
