@@ -15,9 +15,17 @@ permissions:
 
 jobs:
   android-checks:
-    name: Build and emulator UI tests
+    name: Build and emulator UI tests (API ${{ matrix.api }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 36
+            device: pixel_2
+          - api: 37
+            device: pixel_8_pro
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -32,7 +40,7 @@ jobs:
         uses: android-actions/setup-android@v4.0.4
 
       - name: Install Android SDK and clean emulator image
-        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "system-images;android-36;google_apis;x86_64" "emulator"
+        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "system-images;android-36;google_apis;x86_64" "system-images;android-37;google_apis;x86_64" "emulator"
 
       - name: Set up Gradle 9.6.1
         uses: gradle/actions/setup-gradle@v5
@@ -50,12 +58,15 @@ jobs:
           test -e /dev/kvm
 
       - name: Boot emulator and run app UI flows
+        env:
+          PITTECH_API_LEVEL: ${{ matrix.api }}
+          PITTECH_EMULATOR_DEVICE: ${{ matrix.device }}
         run: bash scripts/run-emulator-ui-tests.sh
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: pittech-debug-apk
+          name: pittech-debug-apk-api-${{ matrix.api }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -64,7 +75,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: pittech-emulator-test-evidence
+          name: pittech-emulator-test-evidence-api-${{ matrix.api }}
           path: |
             app/build/ci-emulator/**
             app/build/reports/androidTests/connected/**
