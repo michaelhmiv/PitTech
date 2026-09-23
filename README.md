@@ -136,18 +136,18 @@ Remote access is a product requirement, but compatibility is not yet a verified 
 
 ## Android app foundation
 
-The first Android implementation slice is on the `codex/cook-entry-foundation` branch. It uses Jetpack Compose for the phone UI and Room as the local source of truth. Picked photos are copied to app-private storage so the cook record can still use them offline.
+The Android app uses Jetpack Compose for the phone UI and Room as the local source of truth. The feature work on `codex/non-controller-features` builds on the cook-entry foundation already on `main`. Cook records and picked photos stay in app-private storage, so the log is available offline and needs no account.
 
-The current entry flow supports starting a cook without filling out a long form, adding multiple dishes, and optionally recording food type, cut, weight, starting condition, bone-in status, preparation items/seasonings, cook and preparation notes, and photos. The local schema also includes timeline events, targets, results, devices, probes, and full-resolution sensor samples for the next implementation steps.
+Users can start and edit a cook, add multiple dishes, and record meat type and cut, weight, starting condition, bone-in status, placement, grade or source, thickness, preparation items with brands and amounts, notes, and photos. Each cook has Live, Timeline, and Charts views. The timeline supports manual events, notes, and temperature readings with add, edit, and delete/undo actions. Cook records also include targets, finish details, rest time, overall and detailed ratings, and notes about what to change next time.
 
-The export, restore, live monitoring, full timeline editing, and cross-cook analysis screens are not implemented yet. The model is being established first so those features can use stable IDs, explicit units, timestamps, and sources.
+Insights summarize completed cooks and allow comparisons across selected cooks. The app exports a multi-sheet Excel workbook, a temperature-readings CSV, or a complete ZIP archive containing structured JSON, record-level CSV files, and original photos. ZIP restore previews the contents and skips duplicate cook IDs. Temperature and weight preferences affect new entries; saved values retain their units. Grill-controller setup and away-from-home monitoring are deferred until the controller hardware arrives; cooks can be logged and charted manually in the meantime.
 
 ### Build and test
 
 - Open this repository in Android Studio with JDK 17 and Android SDK 37 installed, or use `./gradlew` from the repository root.
 - Run `./gradlew testDebugUnitTest assembleDebug` to run the current input-validation tests and build the debug APK.
-- For an automated emulator run, build the app and test APKs with `./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest`, then run `bash scripts/run-emulator-ui-tests.sh` from the repository root with the Android SDK installed. The script boots a clean API 36 Pixel emulator with larger system text, installs both APKs, exercises the app UI, then force-stops and relaunches PitTech to verify the saved cook remains visible.
-- GitHub Actions runs the same emulator flow on pull requests and pushes to `main`. Its `pittech-emulator-test-evidence` artifact includes screenshots, the post-restart accessibility hierarchy, instrumentation output, and logcat. Successful runs also attach a `pittech-debug-apk` artifact for 14 days.
+- For an automated emulator run, build the app and test APKs with `./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest`, then run `bash scripts/run-emulator-ui-tests.sh` from the repository root with the Android SDK installed. The script boots a clean emulator with larger system text and checks cook entry, timeline editing, manual readings, results, export/restore, crash recovery, and persisted data after relaunch.
+- GitHub Actions runs this emulator flow on pull requests and pushes to `main`: API 36 is blocking and API 37 is advisory. The evidence artifact includes emulator screenshots, the post-restart accessibility hierarchy, instrumentation output, and logcat. Successful builds also attach a debug APK for 14 days.
 
 
 ## Product design
