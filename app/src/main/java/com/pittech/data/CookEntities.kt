@@ -12,6 +12,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
@@ -31,6 +32,12 @@ data class CookEntity(
     val notes: String? = null,
     val createdAtUtcMillis: Long,
     val updatedAtUtcMillis: Long,
+    val fuelType: String? = null,
+    val woodOrPelletBlend: String? = null,
+    val outdoorTemperatureValue: Double? = null,
+    val outdoorTemperatureUnit: String? = null,
+    val weatherNotes: String? = null,
+    val windNotes: String? = null,
 )
 
 @Entity(
@@ -60,6 +67,8 @@ data class DishEntity(
     val prepNotes: String? = null,
     val createdAtUtcMillis: Long,
     val updatedAtUtcMillis: Long,
+    val gradeOrSource: String? = null,
+    val thicknessNotes: String? = null,
 )
 
 @Entity(
@@ -335,6 +344,23 @@ data class CookWithDishes(
     val dishes: List<DishEntity>,
 )
 
+data class CookDetailData(
+    val cook: CookEntity,
+    val dishes: List<DishEntity>,
+    val ingredients: List<IngredientEntity>,
+    val events: List<TimelineEventEntity>,
+    val readings: List<SensorReadingEntity>,
+    val targets: List<TargetEntity>,
+    val results: List<CookResultEntity>,
+    val photos: List<PhotoEntity>,
+)
+
+data class InsightsSnapshot(
+    val cooks: List<CookWithDishes>,
+    val readings: List<SensorReadingEntity>,
+    val results: List<CookResultEntity>,
+)
+
 @Dao
 interface CookDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -352,6 +378,78 @@ interface CookDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPhotos(photos: List<PhotoEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCooksIgnoringDuplicates(cooks: List<CookEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertDishesIgnoringDuplicates(dishes: List<DishEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIngredientsIgnoringDuplicates(ingredients: List<IngredientEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEventsIgnoringDuplicates(events: List<TimelineEventEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertReadingsIgnoringDuplicates(readings: List<SensorReadingEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTargetsIgnoringDuplicates(targets: List<TargetEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertResultsIgnoringDuplicates(results: List<CookResultEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertDevicesIgnoringDuplicates(devices: List<DeviceEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertProbesIgnoringDuplicates(probes: List<ProbeEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertPhotosIgnoringDuplicates(photos: List<PhotoEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertResult(result: CookResultEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTimelineEvent(event: TimelineEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertSensorReading(reading: SensorReadingEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertDish(dish: DishEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTarget(target: TargetEntity)
+
+    @Delete
+    suspend fun deleteTarget(target: TargetEntity)
+
+    @Query("DELETE FROM cook_results WHERE id = :id")
+    suspend fun deleteResult(id: String)
+
+    @Update
+    suspend fun updateCook(cook: CookEntity)
+
+    @Update
+    suspend fun updateDish(dish: DishEntity)
+
+    @Delete
+    suspend fun deleteDish(dish: DishEntity)
+
+    @Update
+    suspend fun updateTimelineEvent(event: TimelineEventEntity)
+
+    @Update
+    suspend fun updateSensorReading(reading: SensorReadingEntity)
+
+    @Delete
+    suspend fun deleteTimelineEvent(event: TimelineEventEntity)
+
+    @Delete
+    suspend fun deleteSensorReading(reading: SensorReadingEntity)
+
     @Transaction
     @Query("SELECT * FROM cooks ORDER BY startedAtUtcMillis DESC")
     fun observeCooks(): Flow<List<CookWithDishes>>
@@ -359,6 +457,69 @@ interface CookDao {
     @Transaction
     @Query("SELECT * FROM cooks WHERE id = :cookId LIMIT 1")
     fun observeCook(cookId: String): Flow<CookWithDishes?>
+
+    @Query("SELECT * FROM cooks ORDER BY startedAtUtcMillis DESC")
+    suspend fun getAllCooks(): List<CookEntity>
+
+    @Query("SELECT * FROM dishes ORDER BY createdAtUtcMillis ASC")
+    suspend fun getAllDishes(): List<DishEntity>
+
+    @Query("SELECT * FROM ingredients ORDER BY createdAtUtcMillis ASC")
+    suspend fun getAllIngredients(): List<IngredientEntity>
+
+    @Query("SELECT * FROM timeline_events ORDER BY occurredAtUtcMillis ASC")
+    suspend fun getAllTimelineEvents(): List<TimelineEventEntity>
+
+    @Query("SELECT * FROM sensor_readings ORDER BY measuredAtUtcMillis ASC")
+    suspend fun getAllSensorReadings(): List<SensorReadingEntity>
+
+    @Query("SELECT * FROM targets")
+    suspend fun getAllTargets(): List<TargetEntity>
+
+    @Query("SELECT * FROM cook_results")
+    suspend fun getAllResults(): List<CookResultEntity>
+
+    @Query("SELECT * FROM devices")
+    suspend fun getAllDevices(): List<DeviceEntity>
+
+    @Query("SELECT * FROM probes")
+    suspend fun getAllProbes(): List<ProbeEntity>
+
+    @Query("SELECT * FROM photos")
+    suspend fun getAllPhotos(): List<PhotoEntity>
+
+    @Query("SELECT * FROM cooks WHERE id = :cookId LIMIT 1")
+    suspend fun getCook(cookId: String): CookEntity?
+
+    @Query("SELECT * FROM dishes WHERE cookId = :cookId ORDER BY createdAtUtcMillis ASC")
+    fun observeDishes(cookId: String): Flow<List<DishEntity>>
+
+    @Query("SELECT * FROM ingredients WHERE cookId = :cookId ORDER BY createdAtUtcMillis ASC")
+    fun observeIngredients(cookId: String): Flow<List<IngredientEntity>>
+
+    @Query("SELECT * FROM timeline_events WHERE cookId = :cookId ORDER BY occurredAtUtcMillis ASC")
+    fun observeTimelineEvents(cookId: String): Flow<List<TimelineEventEntity>>
+
+    @Query("SELECT * FROM sensor_readings WHERE cookId = :cookId ORDER BY measuredAtUtcMillis ASC")
+    fun observeSensorReadings(cookId: String): Flow<List<SensorReadingEntity>>
+
+    @Query("SELECT * FROM targets WHERE cookId = :cookId")
+    fun observeTargets(cookId: String): Flow<List<TargetEntity>>
+
+    @Query("SELECT * FROM cook_results WHERE cookId = :cookId")
+    fun observeResults(cookId: String): Flow<List<CookResultEntity>>
+
+    @Query("SELECT * FROM photos WHERE cookId = :cookId ORDER BY addedAtUtcMillis ASC")
+    fun observePhotos(cookId: String): Flow<List<PhotoEntity>>
+
+    @Query("SELECT * FROM photos WHERE cookId = :cookId")
+    suspend fun getPhotosForCook(cookId: String): List<PhotoEntity>
+
+    @Query("SELECT * FROM sensor_readings ORDER BY measuredAtUtcMillis ASC")
+    fun observeAllSensorReadings(): Flow<List<SensorReadingEntity>>
+
+    @Query("SELECT * FROM cook_results")
+    fun observeAllResults(): Flow<List<CookResultEntity>>
 
     @Query("SELECT * FROM ingredients WHERE cookId = :cookId ORDER BY createdAtUtcMillis ASC")
     suspend fun getIngredientsForCook(cookId: String): List<IngredientEntity>

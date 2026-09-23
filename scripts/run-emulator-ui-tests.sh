@@ -169,7 +169,9 @@ timeout 25m adb shell am instrument -w -r \
 expected_tests=(
   "test01_homeNavigationAndPrimaryActionAreClear"
   "test02_createCookWithDishAndPreparationAndSaveLocally"
-  "test03_crashReportIsVisibleAndCopyable"
+  "test03_timelineTemperatureResultsAndInsightsWork"
+  "test04_portableArchiveAndWorkbookRoundTrip"
+  "test05_crashReportIsVisibleAndCopyable"
 )
 passed_test_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$test_output" || true)"
 if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] || ! grep -q '^INSTRUMENTATION_CODE: -1' "$test_output"; then
