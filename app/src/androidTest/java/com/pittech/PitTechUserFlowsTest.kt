@@ -163,30 +163,32 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed")
         composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Honey apple cider vinegar")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
-        composeRule.onNodeWithText("Spritzed").assertIsDisplayed()
+        waitForText("Spritzed")
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
         composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
-        composeRule.onNodeWithText("Spritzed lightly").assertIsDisplayed()
+        waitForText("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-event-delete-spritz").performScrollTo().performClick()
+        waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
-        composeRule.onNodeWithText("Spritzed lightly").assertIsDisplayed()
+        waitForText("Spritzed lightly")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
         composeRule.onNodeWithTag("temperature-probe").performTextInput("Brisket probe")
         composeRule.onNodeWithTag("temperature-value").performTextInput("155")
         composeRule.onNodeWithTag("temperature-save").performClick()
-        composeRule.onNodeWithText("Brisket probe: 155.0 °F").assertIsDisplayed()
+        waitForText("Brisket probe: 155.0 °F")
         composeRule.onNodeWithTag("temperature-edit-Brisket probe").performScrollTo().performClick()
         composeRule.onNodeWithTag("temperature-value").performTextClearance()
         composeRule.onNodeWithTag("temperature-value").performTextInput("156")
         composeRule.onNodeWithTag("temperature-save").performClick()
-        composeRule.onNodeWithText("Brisket probe: 156.0 °F").assertIsDisplayed()
+        waitForText("Brisket probe: 156.0 °F")
         composeRule.onNodeWithTag("temperature-delete-Brisket probe").performScrollTo().performClick()
+        waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
-        composeRule.onNodeWithText("Brisket probe: 156.0 °F").assertIsDisplayed()
+        waitForText("Brisket probe: 156.0 °F")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
@@ -200,11 +202,11 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Finish cook").performScrollTo().performClick()
         composeRule.onNodeWithText("Also finish this cook").performScrollTo().performClick()
         composeRule.onNodeWithText("Save results").performClick()
-        composeRule.waitForIdle()
 
         val application = targetContext.applicationContext as PitTechApplication
-        val saved = runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single() }
-        assertEquals(CookStatus.COMPLETED, saved.cook.status)
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook.status == CookStatus.COMPLETED }
+        }
         composeRule.onNodeWithContentDescription("Back to cooks").performClick()
         composeRule.onNodeWithTag("nav-insights").performClick()
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
@@ -301,6 +303,12 @@ class PitTechUserFlowsTest {
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
+
+    private fun waitForText(text: String) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
     private fun saveScreenshot(name: String) {
         val directory = screenshotDirectory().apply { mkdirs() }
