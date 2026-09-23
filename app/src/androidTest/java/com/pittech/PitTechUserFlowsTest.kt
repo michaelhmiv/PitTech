@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -186,6 +187,7 @@ class PitTechUserFlowsTest {
         val application = targetContext.applicationContext as PitTechApplication
         val saved = runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single() }
         assertEquals(CookStatus.COMPLETED, saved.cook.status)
+        composeRule.onNodeWithContentDescription("Back to cooks").performClick()
         composeRule.onNodeWithTag("nav-insights").performClick()
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
         composeRule.onNodeWithText("Saturday brisket").assertIsDisplayed()
