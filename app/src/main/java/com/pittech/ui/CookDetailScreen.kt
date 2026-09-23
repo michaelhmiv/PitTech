@@ -490,8 +490,8 @@ private fun TimelineEventCard(event: TimelineEventEntity, data: CookDetailData, 
             photo?.let { PhotoThumbnail(it) }
             if (event.source == "manual") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp)) { Icon(Icons.Filled.Edit, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Edit") }
-                    TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Icon(Icons.Filled.Delete, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Delete") }
+                    TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-event-edit-${event.eventType}")) { Icon(Icons.Filled.Edit, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Edit") }
+                    TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-event-delete-${event.eventType}")) { Icon(Icons.Filled.Delete, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Delete") }
                 }
             }
         }
@@ -505,8 +505,8 @@ private fun TemperatureTimelineCard(reading: SensorReadingEntity, onEdit: () -> 
             Text("${reading.probeName}: ${reading.value} ${reading.unit}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("${formatTimestamp(reading.measuredAtUtcMillis)} · ${reading.measurementType.replace('_', ' ')} · ${reading.source}", style = MaterialTheme.typography.bodyMedium)
             if (reading.source == "manual") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit") }
-                TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Text("Delete") }
+                TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("temperature-edit-${reading.probeName}")) { Text("Edit") }
+                TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp).testTag("temperature-delete-${reading.probeName}")) { Text("Delete") }
             }
         }
     }
