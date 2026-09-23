@@ -154,7 +154,7 @@ fi
 timeout 120 adb install -r "$app_apk"
 timeout 120 adb install -r -t "$test_apk"
 
-instrumentation_target="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech)$/\1/p' | head -n 1 | tr -d '\r')"
+instrumentation_target="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
 if [[ -z "$instrumentation_target" ]]; then
   echo "Could not find the installed PitTech instrumentation runner." >&2
   adb shell pm list instrumentation >&2
@@ -204,7 +204,7 @@ PY
 pull_app_screenshot() {
   local name="$1"
   local screenshot="$output_dir/${name}.png"
-  timeout 20 adb exec-out run-as com.pittech cat "files/pittech-ui-test/${name}.png" > "$screenshot"
+  timeout 20 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${name}.png" > "$screenshot"
   assert_png_file "$name" "$screenshot"
   echo "Saved emulator screenshot: ${name}.png"
 }
@@ -213,8 +213,8 @@ pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 
 echo "Restarting PitTech to verify its local cook survives a process restart."
-adb shell am force-stop com.pittech
-timeout 60 adb shell am start -W -n com.pittech/com.pittech.MainActivity
+adb shell am force-stop com.pittech.debug
+timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
 
 window_dump="$output_dir/restarted-window.xml"
 deadline=$((SECONDS + 30))
