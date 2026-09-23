@@ -1,5 +1,6 @@
 package com.pittech
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.FixMethodOrder
 import org.junit.Rule
@@ -45,6 +47,7 @@ class PitTechUserFlowsTest {
 
     @Before
     fun clearLocalData() {
+        CrashDiagnostics.clearPendingReport(targetContext)
         val application = targetContext.applicationContext as PitTechApplication
         runBlocking(Dispatchers.IO) {
             application.database.clearAllTables()
@@ -144,6 +147,31 @@ class PitTechUserFlowsTest {
         assertEquals(savedCook.cook.startedAtUtcMillis, events.first().occurredAtUtcMillis)
         assertEquals(savedCook.cook.startedTimeZoneId, events.first().timeZoneId)
         assertFalse(events.any { it.source != "manual" })
+    }
+
+
+    @Test
+    fun test03_crashReportIsVisibleAndCopyable() {
+        val report = CrashDiagnostics.recordUncaughtException(
+            targetContext,
+            Thread.currentThread(),
+            IllegalStateException("Synthetic diagnostic for UI test"),
+        )
+
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithText("PitTech stopped unexpectedly").assertIsDisplayed()
+        composeRule.onNodeWithText(report.referenceCode).assertIsDisplayed()
+        composeRule.onNodeWithText("IllegalStateException: Synthetic diagnostic for UI test").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("crash-report-copy").performClick()
+        composeRule.waitForIdle()
+        val clipboard = targetContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val copiedText = clipboard.primaryClip?.getItemAt(0)?.coerceToText(targetContext)?.toString().orEmpty()
+        assertTrue("Copied diagnostic is missing its reference code.", copiedText.contains(report.referenceCode))
+        assertTrue("Copied diagnostic is missing the exception summary.", copiedText.contains("Synthetic diagnostic for UI test"))
+
+        composeRule.onNodeWithTag("crash-report-continue").performClick()
+        composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")

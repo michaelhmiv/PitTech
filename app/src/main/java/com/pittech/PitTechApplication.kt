@@ -7,6 +7,11 @@ import com.pittech.data.PitTechDatabase
 import com.pittech.data.PhotoStorage
 
 class PitTechApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        CrashDiagnostics.install(this)
+    }
+
     val database: PitTechDatabase by lazy {
         Room.databaseBuilder(this, PitTechDatabase::class.java, "pittech-local.db")
             .build()
