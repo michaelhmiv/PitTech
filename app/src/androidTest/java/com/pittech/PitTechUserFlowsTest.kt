@@ -160,6 +160,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-add").performClick()
         composeRule.onNodeWithTag("timeline-entry-type").performClick()
         composeRule.onNodeWithText("Spritz").performClick()
+        composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed")
         composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Honey apple cider vinegar")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
