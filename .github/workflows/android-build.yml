@@ -25,7 +25,7 @@ jobs:
           - api: 36
             device: pixel_2
           - api: 37
-            device: pixel_8_pro
+            device: pixel_2
     steps:
       - name: Check out source
         uses: actions/checkout@v6
