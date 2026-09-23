@@ -134,6 +134,20 @@ Remote access is a product requirement, but compatibility is not yet a verified 
 - [OWASP Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html)
 - [NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html)
 
+## Android app foundation
+
+The first Android implementation slice is on the `codex/cook-entry-foundation` branch. It uses Jetpack Compose for the phone UI and Room as the local source of truth. Picked photos are copied to app-private storage so the cook record can still use them offline.
+
+The current entry flow supports starting a cook without filling out a long form, adding multiple dishes, and optionally recording food type, cut, weight, starting condition, bone-in status, preparation items/seasonings, cook and preparation notes, and photos. The local schema also includes timeline events, targets, results, devices, probes, and full-resolution sensor samples for the next implementation steps.
+
+The export, restore, live monitoring, full timeline editing, and cross-cook analysis screens are not implemented yet. The model is being established first so those features can use stable IDs, explicit units, timestamps, and sources.
+
+### Build and test
+
+- Open this repository in Android Studio with JDK 17 and Android SDK 37 installed, or use `./gradlew` from the repository root.
+- Run `./gradlew testDebugUnitTest assembleDebug` to run the current input-validation tests and build the debug APK.
+- GitHub Actions runs the same test/build check for pushes and pull requests.
+
 
 ## Product design
 
