@@ -502,7 +502,7 @@ class CookRepository(
                 dao.insertPhotosIgnoringDuplicates(restoredPhotos)
             }
         } catch (failure: Throwable) {
-            restoredPhotos.forEach { photoStorage.delete(photo.relativePath) }
+            restoredPhotos.forEach { photo -> photoStorage.delete(photo.relativePath) }
             throw failure
         }
         return ImportSummary(newCooks.size, snapshot.cooks.size - newCooks.size, restoredPhotos.size)
