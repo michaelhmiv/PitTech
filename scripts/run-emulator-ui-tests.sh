@@ -77,7 +77,7 @@ fi
 "$emulator_bin" \
   -avd "$avd_name" \
   -no-window \
-  -gpu swiftshader_indirect \
+  -gpu swiftshader \
   -noaudio \
   -no-boot-anim \
   -no-snapshot \
