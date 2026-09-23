@@ -212,9 +212,26 @@ pull_app_screenshot() {
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 
+check_saved_diagnostic_report() {
+  local checkpoint="$1"
+  local report_contents
+  if ! report_contents="$(timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-last-crash.properties 2>/dev/null)"; then
+    echo "The saved diagnostic report could not be read $checkpoint." >&2
+    return 1
+  fi
+  if ! grep -Fq "Synthetic diagnostic for UI test" <<< "$report_contents"; then
+    echo "The synthetic diagnostic report contents were missing $checkpoint." >&2
+    return 1
+  fi
+  echo "The synthetic diagnostic report is present $checkpoint."
+}
+
+check_saved_diagnostic_report "after instrumentation"
 echo "Restarting PitTech to verify its saved crash report survives a process restart."
 adb shell am force-stop com.pittech.debug
+check_saved_diagnostic_report "after force-stop"
 timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
+check_saved_diagnostic_report "after relaunch"
 
 window_dump="$output_dir/restarted-window.xml"
 deadline=$((SECONDS + 30))
@@ -238,6 +255,7 @@ visible_text = " ".join(
     for node in root.iter()
 )
 if "PitTech stopped unexpectedly" not in visible_text:
+    print("Visible UI after relaunch: " + visible_text, file=sys.stderr)
     raise SystemExit("Crash recovery screen was not shown after force-stop and relaunch.")
 if "Synthetic diagnostic for UI test" not in visible_text:
     raise SystemExit("Saved crash summary was not visible after relaunch.")
