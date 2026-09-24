@@ -1,0 +1,46 @@
+name: Build Play App Bundle
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  play-bundle:
+    name: Build unsigned Play bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK 37
+        run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
+
+      - name: Set up Gradle 9.6.1
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Build release App Bundle
+        run: gradle bundleRelease
+
+      - name: Upload unsigned Play App Bundle
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-play-bundle-unsigned
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
