@@ -90,37 +90,36 @@ emulator_pid=$!
 adb start-server
 timeout 600 adb wait-for-device
 if (( api_level >= 37 )); then
+  # This preview image aborts in SurfaceFlinger's RegionSampling thread when
+  # its ranchu graphics mapper reads a color buffer through DMA.
   timeout 30 adb root >/dev/null 2>&1 || true
   timeout 60 adb wait-for-device
-  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\\r')"
+  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\r')"
   if [[ "$shell_uid" != "0" ]]; then
     echo "Android 17 emulator did not grant root shell access." >&2
     exit 1
   fi
   timeout 20 adb shell setprop debug.sf.luma_sampling 0
-  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')"
+  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\r')"
   if [[ "$luma_sampling_value" != "0" ]]; then
-    echo "Could not set SurfaceFlinger luma sampling to 0; got '$luma_sampling_value'." >&2
+    echo "Could not disable SurfaceFlinger luma sampling." >&2
     exit 1
   fi
-
-  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\\r' || true)"
+  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
   timeout 20 adb shell stop surfaceflinger
   timeout 20 adb shell start surfaceflinger
-  surfaceflinger_restarted=false
+  timeout 60 adb wait-for-device
   for _ in $(seq 1 30); do
-    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\\r' || true)"
+    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
     if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
-      surfaceflinger_restarted=true
       break
     fi
     sleep 1
   done
-  if [[ "$surfaceflinger_restarted" != true ]]; then
-    echo "Could not restart SurfaceFlinger with luma sampling disabled." >&2
+  if [[ -z "$new_surfaceflinger_pid" || "$new_surfaceflinger_pid" == "$old_surfaceflinger_pid" ]]; then
+    echo "SurfaceFlinger did not restart with luma sampling disabled." >&2
     exit 1
   fi
-  echo "Restarted SurfaceFlinger with luma sampling disabled."
 fi
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
@@ -151,6 +150,21 @@ if [[ ! -f "$app_apk" || ! -f "$test_apk" ]]; then
   exit 1
 fi
 
+previous_dir="${RUNNER_TEMP:-/tmp}/pittech-before"
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Installing the previous release and saving a cook before updating in place."
+  timeout 120 adb install -r "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
+  timeout 120 adb install -r -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  previous_instrumentation="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally' \
+    "$previous_instrumentation" | tee "$output_dir/previous-release-cook.txt"
+  grep -q '^INSTRUMENTATION_STATUS_CODE: 0' "$output_dir/previous-release-cook.txt"
+  grep -q 'OK (1 test)' "$output_dir/previous-release-cook.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/previous-release-cook.txt"
+  timeout 20 adb shell am force-stop com.pittech.debug
+fi
+
 timeout 120 adb install -r "$app_apk"
 timeout 120 adb install -r -t "$test_apk"
 
@@ -161,18 +175,38 @@ if [[ -z "$instrumentation_target" ]]; then
   exit 1
 fi
 
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Checking the previous cook and its ingredients after the APK and Room schema upgrade."
+  timeout 12m adb shell am instrument -w -r \
+    -e class com.pittech.UpgradeValidationTest \
+    "$instrumentation_target" | tee "$output_dir/upgrade-validation.txt"
+  grep -q '^INSTRUMENTATION_STATUS_CODE: 0' "$output_dir/upgrade-validation.txt"
+  grep -q 'OK (1 test)' "$output_dir/upgrade-validation.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/upgrade-validation.txt"
+fi
+
 test_output="$output_dir/instrumented-tests.txt"
-echo "Running $instrumentation_target without uninstalling the app afterward."
+if (( api_level >= 37 )); then
+  test_selector='com.pittech.PitTechUserFlowsTest#test01_homeNavigationAndPrimaryActionAreClear,com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally'
+  expected_tests=("test01_homeNavigationAndPrimaryActionAreClear" "test02_createCookWithDishAndPreparationAndSaveLocally")
+else
+  test_selector='com.pittech.PitTechUserFlowsTest'
+  expected_tests=(
+    "test01_homeNavigationAndPrimaryActionAreClear"
+    "test02_createCookWithDishAndPreparationAndSaveLocally"
+    "test03_timelineTemperatureResultsAndInsightsWork"
+    "test04_portableArchiveAndWorkbookRoundTrip"
+    "test05_crashReportIsVisibleAndCopyable"
+  )
+fi
+echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
 timeout 25m adb shell am instrument -w -r \
-  -e class com.pittech.PitTechUserFlowsTest \
+  -e class "$test_selector" \
   "$instrumentation_target" | tee "$test_output"
-expected_tests=(
-  "test01_homeNavigationAndPrimaryActionAreClear"
-  "test02_createCookWithDishAndPreparationAndSaveLocally"
-  "test03_crashReportIsVisibleAndCopyable"
-)
 passed_test_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$test_output" || true)"
-if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] || ! grep -q '^INSTRUMENTATION_CODE: -1' "$test_output"; then
+if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] ||
+   ! grep -q "OK (${#expected_tests[@]} tests)" "$test_output" ||
+   grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$test_output"; then
   echo "PitTech instrumentation did not report success for every UI test." >&2
   exit 1
 fi
@@ -211,6 +245,11 @@ pull_app_screenshot() {
 
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
+
+if (( api_level >= 37 )); then
+  echo "Android 17 launch and cook-save smoke checks passed."
+  exit 0
+fi
 
 check_saved_diagnostic_report() {
   local checkpoint="$1"

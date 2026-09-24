@@ -14,8 +14,10 @@ class PhotoStorage(private val context: Context) {
     suspend fun copyIntoLibrary(
         uriString: String,
         cookId: String,
-        dishId: String,
+        dishId: String?,
         nowUtcMillis: Long,
+        eventId: String? = null,
+        caption: String? = null,
     ): PhotoEntity = withContext(Dispatchers.IO) {
         val uri = Uri.parse(uriString)
         val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
@@ -37,6 +39,8 @@ class PhotoStorage(private val context: Context) {
                 originalFileName = displayName(uri) ?: destination.name,
                 relativePath = "$PHOTO_DIRECTORY/${destination.name}",
                 mimeType = mimeType,
+                eventId = eventId,
+                caption = caption?.trim()?.ifBlank { null },
                 capturedAtUtcMillis = null,
                 addedAtUtcMillis = nowUtcMillis,
             )
@@ -49,6 +53,18 @@ class PhotoStorage(private val context: Context) {
     suspend fun delete(relativePath: String) = withContext(Dispatchers.IO) {
         File(context.filesDir, relativePath).delete()
         Unit
+    }
+
+    suspend fun writeImported(relativePath: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
+        require(relativePath.startsWith("photos/") && !relativePath.contains("..")) { "Invalid photo path in archive." }
+        val destination = File(context.filesDir, relativePath)
+        destination.parentFile?.mkdirs()
+        destination.writeBytes(bytes)
+    }
+
+    suspend fun read(relativePath: String): ByteArray? = withContext(Dispatchers.IO) {
+        val file = File(context.filesDir, relativePath)
+        if (file.isFile) file.readBytes() else null
     }
 
     private fun displayName(uri: Uri): String? = context.contentResolver.query(

@@ -16,7 +16,8 @@ import com.pittech.ui.PitTechTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: CooksViewModel by viewModels {
-        CooksViewModel.Factory((application as PitTechApplication).cookRepository)
+        val app = application as PitTechApplication
+        CooksViewModel.Factory(app.cookRepository, app.dataTransfer, app)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -10,7 +10,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -22,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.data.CookStatus
+import com.pittech.data.DeviceEntity
+import com.pittech.data.ProbeEntity
+import com.pittech.data.SensorReadingEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -61,13 +66,13 @@ class PitTechUserFlowsTest {
         saveScreenshot("home-empty")
 
         composeRule.onNodeWithTag("nav-insights").performClick()
-        composeRule.onNodeWithText("Compare temperatures, cook times, and results across your saved cooks.").assertIsDisplayed()
+        composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-devices").performClick()
-        composeRule.onNodeWithText("Connect a grill controller or probe logger when you are ready.").assertIsDisplayed()
+        composeRule.onNodeWithText("Controller setup is paused until your grill arrives.").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
-        composeRule.onNodeWithText("Your cook records and photos are stored on this phone.").assertIsDisplayed()
+        composeRule.onNodeWithText("Export complete backup (ZIP)").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-cooks").performClick()
         composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
@@ -151,7 +156,159 @@ class PitTechUserFlowsTest {
 
 
     @Test
-    fun test03_crashReportIsVisibleAndCopyable() {
+    fun test03_timelineTemperatureResultsAndInsightsWork() {
+        composeRule.onNodeWithText("Saturday brisket").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("timeline-add").performClick()
+        waitForText("Add to timeline")
+        composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed")
+        composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Honey apple cider vinegar")
+        composeRule.onNodeWithTag("timeline-entry-type").performScrollTo().performClick()
+        composeRule.onNodeWithText("Spritz").performClick()
+        composeRule.onNodeWithTag("timeline-entry-save").performClick()
+        waitForText("Spritzed")
+        composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
+        waitForText("Edit timeline entry")
+        composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
+        composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
+        composeRule.onNodeWithTag("timeline-entry-save").performClick()
+        waitForText("Spritzed lightly")
+        composeRule.onNodeWithTag("timeline-event-delete-spritz").performScrollTo().performClick()
+        waitForText("Undo")
+        composeRule.onNodeWithText("Undo").performClick()
+        waitForText("Spritzed lightly")
+
+        composeRule.onNodeWithTag("timeline-add-temperature").performClick()
+        composeRule.onNodeWithTag("temperature-probe").performTextClearance()
+        composeRule.onNodeWithTag("temperature-probe").performTextInput("Brisket probe")
+        composeRule.onNodeWithTag("temperature-value").performTextInput("155")
+        composeRule.onNodeWithTag("temperature-save").performClick()
+        waitForText("Brisket probe: 155.0 °F")
+        composeRule.onNodeWithTag("temperature-edit-Brisket probe").performScrollTo().performClick()
+        waitForText("Edit temperature")
+        composeRule.onNodeWithTag("temperature-value").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("temperature-value").performTextInput("156")
+        composeRule.onNodeWithTag("temperature-save").performClick()
+        waitForText("Brisket probe: 156.0 °F")
+        composeRule.onNodeWithTag("temperature-delete-Brisket probe").performScrollTo().performClick()
+        waitForText("Undo")
+        composeRule.onNodeWithText("Undo").performClick()
+        waitForText("Brisket probe: 156.0 °F")
+
+        composeRule.onNodeWithTag("timeline-add-temperature").performClick()
+        composeRule.onNodeWithTag("temperature-probe").performTextClearance()
+        composeRule.onNodeWithTag("temperature-probe").performTextInput("Smoker ambient")
+        composeRule.onNodeWithTag("temperature-value").performTextInput("250")
+        composeRule.onNodeWithTag("temperature-save").performClick()
+        waitForText("Smoker ambient: 250.0 °F")
+
+        composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
+        composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("results-dialog-title", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("results-finish-toggle", useUnmergedTree = true).performScrollTo().performClick()
+        waitForText("Finish cook when saved")
+        composeRule.onNodeWithTag("results-save").performClick()
+
+        val application = targetContext.applicationContext as PitTechApplication
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook.status == CookStatus.COMPLETED }
+        }
+        composeRule.onNodeWithContentDescription("Back to cooks").performClick()
+        composeRule.onNodeWithTag("nav-insights").performClick()
+        composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
+        composeRule.onNodeWithText("Saturday brisket").assertIsDisplayed()
+    }
+
+    @Test
+    fun test04_portableArchiveAndWorkbookRoundTrip() {
+        val application = targetContext.applicationContext as PitTechApplication
+        val transfer = application.dataTransfer
+        val zipBytes = java.io.ByteArrayOutputStream()
+        runBlocking(Dispatchers.IO) { transfer.writeZip(zipBytes) }
+        val preview = transfer.previewImport(java.io.ByteArrayInputStream(zipBytes.toByteArray()))
+        assertTrue(preview.cookCount > 0)
+        assertTrue(preview.dishCount > 0)
+
+        val workbook = java.io.ByteArrayOutputStream()
+        runBlocking(Dispatchers.IO) { transfer.writeWorkbook(workbook) }
+        val workbookZip = java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(workbook.toByteArray()))
+        val workbookEntries = mutableListOf<String>()
+        workbookZip.use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                workbookEntries += entry.name
+                entry = zip.nextEntry
+            }
+        }
+        assertTrue(workbookEntries.contains("xl/workbook.xml"))
+        assertTrue(workbookEntries.contains("xl/worksheets/sheet5.xml"))
+
+        runBlocking(Dispatchers.IO) {
+            application.database.clearAllTables()
+            val restored = transfer.import(preview)
+            assertEquals(preview.cookCount, restored.importedCooks)
+            assertEquals(preview.cookCount, application.database.cookDao().observeCooks().first().size)
+            val duplicate = transfer.import(preview)
+            assertEquals(0, duplicate.importedCooks)
+            assertEquals(preview.cookCount, duplicate.skippedCooks)
+
+            val snapshot = application.cookRepository.exportSnapshot()
+            val cook = snapshot.cooks.single()
+            val dishId = snapshot.dishes.firstOrNull()?.id
+            val device = DeviceEntity(
+                id = "test-controller",
+                cookId = cook.id,
+                deviceName = "Imported controller record",
+                role = "controller",
+                createdAtUtcMillis = cook.createdAtUtcMillis,
+            )
+            val probe = ProbeEntity(
+                id = "test-probe",
+                cookId = cook.id,
+                deviceId = device.id,
+                assignedDishId = dishId,
+                name = "Imported probe record",
+                measurementType = "internal_temperature",
+                source = "manual",
+                createdAtUtcMillis = cook.createdAtUtcMillis,
+            )
+            val reading = SensorReadingEntity(
+                id = "test-reading",
+                cookId = cook.id,
+                dishId = dishId,
+                probeId = probe.id,
+                probeName = probe.name,
+                measurementType = "internal_temperature",
+                value = 220.0,
+                unit = "°F",
+                measuredAtUtcMillis = cook.startedAtUtcMillis,
+                timeZoneId = cook.startedTimeZoneId,
+                source = "manual",
+                recordedAtUtcMillis = cook.startedAtUtcMillis,
+            )
+            val relatedSnapshot = snapshot.copy(
+                devices = snapshot.devices + device,
+                probes = snapshot.probes + probe,
+                readings = listOf(reading),
+            )
+            application.database.clearAllTables()
+            val relationRestore = application.cookRepository.importSnapshot(relatedSnapshot, emptyMap())
+            assertEquals(1, relationRestore.importedCooks)
+            assertEquals(device.id, application.database.cookDao().getAllDevices().single().id)
+            assertEquals(probe.id, application.database.cookDao().getAllProbes().single().id)
+            assertEquals(probe.id, application.database.cookDao().getAllSensorReadings().single().probeId)
+        }
+    }
+
+    @Test
+    fun test05_crashReportIsVisibleAndCopyable() {
         val report = CrashDiagnostics.recordUncaughtException(
             targetContext,
             Thread.currentThread(),
@@ -173,6 +330,12 @@ class PitTechUserFlowsTest {
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
+
+    private fun waitForText(text: String) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
     private fun saveScreenshot(name: String) {
         val directory = screenshotDirectory().apply { mkdirs() }

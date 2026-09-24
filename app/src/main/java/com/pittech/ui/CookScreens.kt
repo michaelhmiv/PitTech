@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,11 +91,18 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 fun PitTechApp(viewModel: CooksViewModel) {
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
-    val saving by viewModel.saving.collectAsStateWithLifecycle()
-    val saveError by viewModel.saveError.collectAsStateWithLifecycle()
+    val saving by viewModel.busy.collectAsStateWithLifecycle()
+    val saveError by viewModel.error.collectAsStateWithLifecycle()
     val savedCookId by viewModel.savedCookId.collectAsStateWithLifecycle()
+    val selectedCookId by viewModel.selectedCookId.collectAsStateWithLifecycle()
+    val selectedCook by viewModel.selectedCook.collectAsStateWithLifecycle()
+    val insights by viewModel.insights.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val preferences = remember(context) { context.getSharedPreferences("pittech-preferences", 0) }
+    var temperatureUnit by rememberSaveable { mutableStateOf(preferences.getString("temperature-unit", "°F") ?: "°F") }
+    var weightUnit by rememberSaveable { mutableStateOf(preferences.getString("weight-unit", "lb") ?: "lb") }
 
     LaunchedEffect(savedCookId) {
         if (savedCookId != null) {
@@ -103,10 +112,32 @@ fun PitTechApp(viewModel: CooksViewModel) {
         }
     }
 
+    if (selectedCookId != null) {
+        val detail = selectedCook
+        if (detail == null || detail.cook.id != selectedCookId) {
+            Scaffold { padding ->
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text("Opening cook…", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        } else {
+            CookDetailScreen(
+                data = detail,
+                viewModel = viewModel,
+                preferredTemperatureUnit = temperatureUnit,
+                preferredWeightUnit = weightUnit,
+                onBack = viewModel::closeCook,
+            )
+        }
+        return
+    }
+
     if (isStartingCook) {
         StartCookScreen(
             saving = saving,
             saveError = saveError,
+            preferredTemperatureUnit = temperatureUnit,
+            preferredWeightUnit = weightUnit,
             onBack = {
                 viewModel.clearSaveError()
                 isStartingCook = false
@@ -154,27 +185,35 @@ fun PitTechApp(viewModel: CooksViewModel) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
                 modifier = Modifier.padding(padding),
+                onOpenCook = viewModel::openCook,
                 onStartCook = {
                     viewModel.clearSaveError()
                     isStartingCook = true
                 },
             )
-            MainSection.INSIGHTS -> FeaturePlaceholder(
-                title = "Insights",
-                message = "Compare temperatures, cook times, and results across your saved cooks.",
-                note = "Insights will build from the records you keep here.",
+            MainSection.INSIGHTS -> InsightsScreen(
+                data = insights,
+                onOpenCook = viewModel::openCook,
                 modifier = Modifier.padding(padding),
             )
             MainSection.DEVICES -> FeaturePlaceholder(
                 title = "Devices",
-                message = "Connect a grill controller or probe logger when you are ready.",
-                note = "You can start and save cooks without a connected device.",
+                message = "Controller setup is paused until your grill arrives.",
+                note = "You can log temperatures by hand from any cook. Your cook history stays available offline.",
                 modifier = Modifier.padding(padding),
             )
-            MainSection.SETTINGS -> FeaturePlaceholder(
-                title = "Settings",
-                message = "Your cook records and photos are stored on this phone.",
-                note = "Export, restore, and display options are the next build step.",
+            MainSection.SETTINGS -> SettingsScreen(
+                viewModel = viewModel,
+                temperatureUnit = temperatureUnit,
+                weightUnit = weightUnit,
+                onTemperatureUnitChange = {
+                    temperatureUnit = it
+                    preferences.edit().putString("temperature-unit", it).apply()
+                },
+                onWeightUnitChange = {
+                    weightUnit = it
+                    preferences.edit().putString("weight-unit", it).apply()
+                },
                 modifier = Modifier.padding(padding),
             )
         }
@@ -185,9 +224,10 @@ fun PitTechApp(viewModel: CooksViewModel) {
 private fun CooksHome(
     cooks: List<CookWithDishes>,
     modifier: Modifier = Modifier,
+    onOpenCook: (String) -> Unit,
     onStartCook: () -> Unit,
 ) {
-    val activeCooks = cooks.filter { it.cook.status == CookStatus.ACTIVE }
+    val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
 
     Column(
@@ -215,12 +255,12 @@ private fun CooksHome(
 
         if (activeCooks.isNotEmpty()) {
             SectionHeading("Active cook")
-            activeCooks.forEach { cook -> CookSummaryCard(cook) }
+            activeCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
         }
 
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Recent cooks")
-            finishedCooks.forEach { cook -> CookSummaryCard(cook) }
+            finishedCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
         }
 
         if (cooks.isEmpty()) {
@@ -244,11 +284,11 @@ private fun CooksHome(
 }
 
 @Composable
-private fun CookSummaryCard(cook: CookWithDishes) {
+private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
     val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
         .format(Date(cook.cook.startedAtUtcMillis))
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(14.dp),
     ) {
@@ -258,7 +298,11 @@ private fun CookSummaryCard(cook: CookWithDishes) {
         ) {
             Text(cook.cook.title, style = MaterialTheme.typography.titleLarge)
             Text(
-                if (cook.cook.status == CookStatus.ACTIVE) "In progress · $time" else "Finished · $time",
+                when (cook.cook.status) {
+                    CookStatus.PAUSED -> "Paused · $time"
+                    CookStatus.COMPLETED -> "Finished · $time"
+                    else -> "In progress · $time"
+                },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -301,24 +345,34 @@ private fun FeaturePlaceholder(
 private fun StartCookScreen(
     saving: Boolean,
     saveError: String?,
+    preferredTemperatureUnit: String,
+    preferredWeightUnit: String,
     onBack: () -> Unit,
     onStartCook: (NewCookDraft) -> Unit,
 ) {
     var title by rememberSaveable { mutableStateOf("") }
     var smoker by rememberSaveable { mutableStateOf("") }
     var setpoint by rememberSaveable { mutableStateOf("") }
-    var setpointUnit by rememberSaveable { mutableStateOf("°F") }
+    var setpointUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
     var notes by rememberSaveable { mutableStateOf("") }
+    var fuelType by rememberSaveable { mutableStateOf("") }
+    var woodBlend by rememberSaveable { mutableStateOf("") }
+    var outdoorTemperature by rememberSaveable { mutableStateOf("") }
+    var outdoorTemperatureUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
+    var weather by rememberSaveable { mutableStateOf("") }
+    var wind by rememberSaveable { mutableStateOf("") }
+    var moreCookDetails by rememberSaveable { mutableStateOf(false) }
     val dishes = remember { mutableStateListOf<DishDraft>() }
     var showDishDialog by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     val requestBack = {
-        val hasInput = title.isNotBlank() || smoker.isNotBlank() || setpoint.isNotBlank() || notes.isNotBlank() || dishes.isNotEmpty()
+        val hasInput = title.isNotBlank() || smoker.isNotBlank() || setpoint.isNotBlank() || notes.isNotBlank() || fuelType.isNotBlank() || woodBlend.isNotBlank() || outdoorTemperature.isNotBlank() || weather.isNotBlank() || wind.isNotBlank() || dishes.isNotEmpty()
         if (hasInput) confirmDiscard = true else onBack()
     }
 
     if (showDishDialog) {
         DishEditorDialog(
+            preferredWeightUnit = preferredWeightUnit,
             onDismiss = { showDishDialog = false },
             onSave = { draft ->
                 dishes.add(draft)
@@ -368,6 +422,12 @@ private fun StartCookScreen(
                                     setpointText = setpoint,
                                     setpointUnit = setpointUnit,
                                     notes = notes,
+                                    fuelType = fuelType,
+                                    woodOrPelletBlend = woodBlend,
+                                    outdoorTemperatureText = outdoorTemperature,
+                                    outdoorTemperatureUnit = outdoorTemperatureUnit,
+                                    weatherNotes = weather,
+                                    windNotes = wind,
                                     dishes = dishes.toList(),
                                 ),
                             )
@@ -439,6 +499,19 @@ private fun StartCookScreen(
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth().testTag("cook-notes"),
             )
+            TextButton(onClick = { moreCookDetails = !moreCookDetails }, modifier = Modifier.testTag("cook-more-details")) {
+                Text(if (moreCookDetails) "Hide equipment and conditions" else "Add fuel and outdoor conditions (optional)")
+            }
+            if (moreCookDetails) {
+                OutlinedTextField(fuelType, { fuelType = it }, label = { Text("Fuel type") }, placeholder = { Text("Wood pellets, charcoal, splits") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-fuel"))
+                OutlinedTextField(woodBlend, { woodBlend = it }, label = { Text("Wood or pellet blend") }, placeholder = { Text("Hickory and apple") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-wood-blend"))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(outdoorTemperature, { outdoorTemperature = it }, label = { Text("Outdoor temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.weight(1f).testTag("cook-outdoor-temperature"))
+                    SimpleDropdownField("Unit", outdoorTemperatureUnit, listOf("°F", "°C"), { outdoorTemperatureUnit = it }, modifier = Modifier.width(96.dp))
+                }
+                OutlinedTextField(weather, { weather = it }, label = { Text("Weather") }, placeholder = { Text("Clear, cloudy, rain") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-weather"))
+                OutlinedTextField(wind, { wind = it }, label = { Text("Wind or exposure") }, placeholder = { Text("Breezy from the north") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-wind"))
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 SectionHeading("Dishes")
@@ -503,7 +576,8 @@ private fun DishDraftCard(dish: DishDraft, onRemove: () -> Unit) {
 }
 
 @Composable
-private fun DishEditorDialog(
+internal fun DishEditorDialog(
+    preferredWeightUnit: String = "lb",
     onDismiss: () -> Unit,
     onSave: (DishDraft) -> Unit,
 ) {
@@ -511,10 +585,13 @@ private fun DishEditorDialog(
     var foodType by rememberSaveable { mutableStateOf("Pork") }
     var cut by rememberSaveable { mutableStateOf("") }
     var weight by rememberSaveable { mutableStateOf("") }
-    var weightUnit by rememberSaveable { mutableStateOf("lb") }
+    var weightUnit by rememberSaveable { mutableStateOf(preferredWeightUnit) }
     var detailsExpanded by rememberSaveable { mutableStateOf(false) }
     var startingCondition by rememberSaveable { mutableStateOf<String?>(null) }
     var boneIn by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var placement by rememberSaveable { mutableStateOf("") }
+    var gradeOrSource by rememberSaveable { mutableStateOf("") }
+    var thicknessNotes by rememberSaveable { mutableStateOf("") }
     var prepNotes by rememberSaveable { mutableStateOf("") }
     var preparationItems by remember { mutableStateOf(listOf(IngredientDraft(name = ""))) }
     var photoUris by remember { mutableStateOf(emptyList<String>()) }
@@ -523,7 +600,7 @@ private fun DishEditorDialog(
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     val requestDismiss = {
         val hasInput = name.isNotBlank() || foodType != "Pork" || cut.isNotBlank() || weight.isNotBlank() ||
-            startingCondition != null || boneIn != null || prepNotes.isNotBlank() ||
+            startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() ||
             preparationItems.any { it.name.isNotBlank() || it.amountText.isNotBlank() } || photoUris.isNotEmpty()
         if (hasInput) confirmDiscard = true else onDismiss()
     }
@@ -616,6 +693,9 @@ private fun DishEditorDialog(
                             modifier = Modifier.testTag("dish-boneless"),
                         )
                     }
+                    OutlinedTextField(placement, { placement = it }, label = { Text("Smoker position (optional)") }, placeholder = { Text("Upper rack, left side") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("dish-placement"))
+                    OutlinedTextField(gradeOrSource, { gradeOrSource = it }, label = { Text("Grade, brand, or source (optional)") }, modifier = Modifier.fillMaxWidth().testTag("dish-source"))
+                    OutlinedTextField(thicknessNotes, { thicknessNotes = it }, label = { Text("Size or thickness notes (optional)") }, modifier = Modifier.fillMaxWidth().testTag("dish-thickness"))
 
                     Text("Preparation and ingredients", style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -644,6 +724,15 @@ private fun DishEditorDialog(
                                 label = { Text("Ingredient or preparation") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth().testTag("preparation-name-$index"),
+                            )
+                            OutlinedTextField(
+                                value = item.brand,
+                                onValueChange = { value ->
+                                    preparationItems = preparationItems.mapIndexed { i, current -> if (i == index) current.copy(brand = value) else current }
+                                },
+                                label = { Text("Brand (optional)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("preparation-brand-$index"),
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 OutlinedTextField(
@@ -724,6 +813,9 @@ private fun DishEditorDialog(
                             weightUnit = weightUnit,
                             startingCondition = startingCondition,
                             boneIn = boneIn,
+                            placement = placement,
+                            gradeOrSource = gradeOrSource,
+                            thicknessNotes = thicknessNotes,
                             prepNotes = prepNotes,
                             preparationItems = preparationItems.filter { it.name.isNotBlank() },
                             photoUris = photoUris,
@@ -752,7 +844,7 @@ private fun DishEditorDialog(
 }
 
 @Composable
-private fun SimpleDropdownField(
+internal fun SimpleDropdownField(
     label: String,
     value: String,
     options: List<String>,
