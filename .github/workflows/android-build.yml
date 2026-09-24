@@ -51,8 +51,8 @@ jobs:
         with:
           gradle-version: '9.6.1'
 
-      - name: Run JVM tests and build debug, instrumented, unsigned regular app, and Play bundle
-        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease bundleRelease
+      - name: Run JVM tests and build debug, instrumented, and unsigned regular app
+        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease
 
       - name: Build previous release for a data-preserving upgrade test
         if: matrix.api == 36 && github.event_name == 'pull_request'
@@ -99,15 +99,6 @@ jobs:
         with:
           name: pittech-unsigned-release-apk
           path: app/build/outputs/apk/release/app-release-unsigned.apk
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Upload unsigned Play App Bundle for private signing
-        if: matrix.api == 36
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: pittech-play-bundle-unsigned
-          path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 1
 
