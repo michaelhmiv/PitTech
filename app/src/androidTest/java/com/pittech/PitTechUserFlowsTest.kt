@@ -203,11 +203,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-probe").performTextInput("Smoker ambient")
         composeRule.onNodeWithTag("temperature-value").performTextInput("250")
         composeRule.onNodeWithTag("temperature-save").performClick()
+        waitForText("Smoker ambient: 250.0 °F")
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithTag("live-finish-cook", useUnmergedTree = true).performScrollTo().performClick()
+        composeRule.onNodeWithTag("live-finish-cook", useUnmergedTree = true).performScrollTo().assertIsEnabled().performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("results-save", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
