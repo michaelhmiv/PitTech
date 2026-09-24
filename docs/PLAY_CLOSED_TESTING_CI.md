@@ -10,7 +10,7 @@ Add these as repository Actions secrets before merging the workflow:
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS`
 - `ANDROID_KEY_PASSWORD`
-- `PLAY_SERVICE_ACCOUNT_JSON` — raw JSON key for a Google Cloud service account invited in Play Console with permission to manage this app's testing releases.
+- `GCP_SERVICE_ACCOUNT_JSON` — raw JSON key for a Google Cloud service account invited in Play Console with permission to manage this app's testing releases. The Cloud Owner role is not needed for this upload workflow; grant only the access required for the app's testing track.
 
 Do not commit the keystore or service-account JSON, and do not paste either into an issue or pull request. Do not generate a replacement upload key for this workflow: it must match the upload certificate already registered for the app.
 
