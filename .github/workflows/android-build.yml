@@ -84,6 +84,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload APK signing tool for locally secured preview builds
+        if: matrix.api == 36
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-apksigner-tool
+          path: ${{ env.ANDROID_SDK_ROOT }}/build-tools/37.0.0/lib/apksigner.jar
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload emulator screenshots, UI hierarchy, and test reports
         if: always()
         uses: actions/upload-artifact@v7.0.1

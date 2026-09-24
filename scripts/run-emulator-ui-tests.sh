@@ -92,12 +92,34 @@ timeout 600 adb wait-for-device
 if (( api_level >= 37 )); then
   # This preview image aborts in SurfaceFlinger's RegionSampling thread when
   # its ranchu graphics mapper reads a color buffer through DMA.
-  timeout 30 adb root >/dev/null 2>&1
+  timeout 30 adb root >/dev/null 2>&1 || true
   timeout 60 adb wait-for-device
+  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\r')"
+  if [[ "$shell_uid" != "0" ]]; then
+    echo "Android 17 emulator did not grant root shell access." >&2
+    exit 1
+  fi
   timeout 20 adb shell setprop debug.sf.luma_sampling 0
+  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\r')"
+  if [[ "$luma_sampling_value" != "0" ]]; then
+    echo "Could not disable SurfaceFlinger luma sampling." >&2
+    exit 1
+  fi
+  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
   timeout 20 adb shell stop surfaceflinger
   timeout 20 adb shell start surfaceflinger
   timeout 60 adb wait-for-device
+  for _ in $(seq 1 30); do
+    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\r' || true)"
+    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ -z "$new_surfaceflinger_pid" || "$new_surfaceflinger_pid" == "$old_surfaceflinger_pid" ]]; then
+    echo "SurfaceFlinger did not restart with luma sampling disabled." >&2
+    exit 1
+  fi
 fi
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
