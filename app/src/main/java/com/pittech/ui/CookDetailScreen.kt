@@ -281,6 +281,7 @@ fun CookDetailScreen(
                         onClick = {
                             focusManager.clearFocus(force = true)
                             keyboardController?.hide()
+                            snackbar.currentSnackbarData?.dismiss()
                             selectedTab = tab.name
                         },
                         label = { Text(tab.label) },
