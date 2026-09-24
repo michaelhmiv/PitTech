@@ -106,6 +106,7 @@ fun CookDetailScreen(
     var showExportCook by remember { mutableStateOf(false) }
     var photoCaptionUri by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
@@ -169,11 +170,13 @@ fun CookDetailScreen(
             dishes = data.dishes,
             onDismiss = {
                 focusManager.clearFocus(force = true)
+                keyboardController?.hide()
                 showNewEvent = false
                 editEvent = null
             },
             onSave = { type, title, details, occurred, dishId ->
                 focusManager.clearFocus(force = true)
+                keyboardController?.hide()
                 if (editEvent == null) viewModel.addTimelineEvent(data.cook.id, dishId, type, title, details, occurred)
                 else viewModel.updateTimelineEvent(editEvent!!.copy(dishId = dishId, eventType = type, title = title, details = details, occurredAtUtcMillis = occurred))
                 showNewEvent = false
@@ -188,11 +191,13 @@ fun CookDetailScreen(
             preferredUnit = preferredTemperatureUnit,
             onDismiss = {
                 focusManager.clearFocus(force = true)
+                keyboardController?.hide()
                 showTemperature = false
                 editReading = null
             },
             onSave = { probe, type, value, unit, measuredAt, dishId ->
                 focusManager.clearFocus(force = true)
+                keyboardController?.hide()
                 if (editReading == null) viewModel.addManualTemperature(data.cook.id, dishId, probe, type, value, unit, measuredAt)
                 else viewModel.updateSensorReading(editReading!!.copy(probeName = probe, measurementType = type, value = value, unit = unit, measuredAtUtcMillis = measuredAt, dishId = dishId))
                 showTemperature = false
@@ -218,6 +223,7 @@ fun CookDetailScreen(
             onDismiss = { showResults = false },
             onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish ->
                 focusManager.clearFocus(force = true)
+                keyboardController?.hide()
                 viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish)
                 showResults = false
             },
@@ -292,7 +298,11 @@ fun CookDetailScreen(
                     onEditDish = { editDish = it },
                     onResults = { showResults = true },
                     onExport = { showExportCook = true },
-                    onFinish = { showResults = true },
+                    onFinish = {
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        showResults = true
+                    },
                     onDelete = { confirmDeleteCook = true },
                     onCopySetup = { viewModel.duplicateCookSetup(data.cook.id) },
                     onError = error,
