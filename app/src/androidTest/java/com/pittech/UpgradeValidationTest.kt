@@ -2,6 +2,7 @@ package com.pittech
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -49,6 +50,9 @@ class UpgradeValidationTest {
         })
 
         composeRule.onNodeWithText("Saturday brisket").performClick()
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Cook history").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Back to cooks").performClick()

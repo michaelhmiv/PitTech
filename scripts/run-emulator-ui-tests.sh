@@ -129,7 +129,9 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 12m adb shell am instrument -w -r \
     -e class 'com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally' \
     "$previous_instrumentation" | tee "$output_dir/previous-release-cook.txt"
-  grep -q '^INSTRUMENTATION_CODE: -1' "$output_dir/previous-release-cook.txt"
+  grep -q '^INSTRUMENTATION_STATUS_CODE: 0' "$output_dir/previous-release-cook.txt"
+  grep -q 'OK (1 test)' "$output_dir/previous-release-cook.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/previous-release-cook.txt"
   timeout 20 adb shell am force-stop com.pittech.debug
 fi
 
@@ -148,7 +150,9 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 12m adb shell am instrument -w -r \
     -e class com.pittech.UpgradeValidationTest \
     "$instrumentation_target" | tee "$output_dir/upgrade-validation.txt"
-  grep -q '^INSTRUMENTATION_CODE: -1' "$output_dir/upgrade-validation.txt"
+  grep -q '^INSTRUMENTATION_STATUS_CODE: 0' "$output_dir/upgrade-validation.txt"
+  grep -q 'OK (1 test)' "$output_dir/upgrade-validation.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/upgrade-validation.txt"
 fi
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -164,7 +168,9 @@ expected_tests=(
   "test05_crashReportIsVisibleAndCopyable"
 )
 passed_test_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$test_output" || true)"
-if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] || ! grep -q '^INSTRUMENTATION_CODE: -1' "$test_output"; then
+if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] ||
+   ! grep -q "OK (${#expected_tests[@]} tests)" "$test_output" ||
+   grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$test_output"; then
   echo "PitTech instrumentation did not report success for every UI test." >&2
   exit 1
 fi
