@@ -15,8 +15,10 @@ emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
 emulator_memory_args=()
+emulator_gpu_args=(-gpu lavapipe)
 if (( api_level >= 37 )); then
   emulator_memory_args=(-memory 4096)
+  emulator_gpu_args=(-gpu swiftshader -feature -Vulkan)
 fi
 
 if [[ -z "$sdk_root" ]]; then
@@ -77,7 +79,7 @@ fi
 "$emulator_bin" \
   -avd "$avd_name" \
   -no-window \
-  -gpu lavapipe \
+  "${emulator_gpu_args[@]}" \
   -noaudio \
   -no-boot-anim \
   -no-snapshot \
@@ -89,39 +91,6 @@ emulator_pid=$!
 
 adb start-server
 timeout 600 adb wait-for-device
-if (( api_level >= 37 )); then
-  timeout 30 adb root >/dev/null 2>&1 || true
-  timeout 60 adb wait-for-device
-  shell_uid="$(timeout 10 adb shell id -u 2>/dev/null | tr -d '\\r')"
-  if [[ "$shell_uid" != "0" ]]; then
-    echo "Android 17 emulator did not grant root shell access." >&2
-    exit 1
-  fi
-  timeout 20 adb shell setprop debug.sf.luma_sampling 0
-  luma_sampling_value="$(timeout 10 adb shell getprop debug.sf.luma_sampling 2>/dev/null | tr -d '\\r')"
-  if [[ "$luma_sampling_value" != "0" ]]; then
-    echo "Could not set SurfaceFlinger luma sampling to 0; got '$luma_sampling_value'." >&2
-    exit 1
-  fi
-
-  old_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\\r' || true)"
-  timeout 20 adb shell stop surfaceflinger
-  timeout 20 adb shell start surfaceflinger
-  surfaceflinger_restarted=false
-  for _ in $(seq 1 30); do
-    new_surfaceflinger_pid="$(timeout 10 adb shell pidof surfaceflinger 2>/dev/null | tr -d '\\r' || true)"
-    if [[ -n "$new_surfaceflinger_pid" && "$new_surfaceflinger_pid" != "$old_surfaceflinger_pid" ]]; then
-      surfaceflinger_restarted=true
-      break
-    fi
-    sleep 1
-  done
-  if [[ "$surfaceflinger_restarted" != true ]]; then
-    echo "Could not restart SurfaceFlinger with luma sampling disabled." >&2
-    exit 1
-  fi
-  echo "Restarted SurfaceFlinger with luma sampling disabled."
-fi
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
   if (( SECONDS >= boot_deadline )); then
@@ -151,6 +120,19 @@ if [[ ! -f "$app_apk" || ! -f "$test_apk" ]]; then
   exit 1
 fi
 
+previous_dir="${RUNNER_TEMP:-/tmp}/pittech-before"
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Installing the previous release and saving a cook before updating in place."
+  timeout 120 adb install -r "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
+  timeout 120 adb install -r -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  previous_instrumentation="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally' \
+    "$previous_instrumentation" | tee "$output_dir/previous-release-cook.txt"
+  grep -q '^INSTRUMENTATION_CODE: -1' "$output_dir/previous-release-cook.txt"
+  timeout 20 adb shell am force-stop com.pittech.debug
+fi
+
 timeout 120 adb install -r "$app_apk"
 timeout 120 adb install -r -t "$test_apk"
 
@@ -159,6 +141,14 @@ if [[ -z "$instrumentation_target" ]]; then
   echo "Could not find the installed PitTech instrumentation runner." >&2
   adb shell pm list instrumentation >&2
   exit 1
+fi
+
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Checking the previous cook and its ingredients after the APK and Room schema upgrade."
+  timeout 12m adb shell am instrument -w -r \
+    -e class com.pittech.UpgradeValidationTest \
+    "$instrumentation_target" | tee "$output_dir/upgrade-validation.txt"
+  grep -q '^INSTRUMENTATION_CODE: -1' "$output_dir/upgrade-validation.txt"
 fi
 
 test_output="$output_dir/instrumented-tests.txt"
