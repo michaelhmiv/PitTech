@@ -278,7 +278,11 @@ fun CookDetailScreen(
                 CookTab.entries.forEach { tab ->
                     FilterChip(
                         selected = selectedTab == tab.name,
-                        onClick = { selectedTab = tab.name },
+                        onClick = {
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                            selectedTab = tab.name
+                        },
                         label = { Text(tab.label) },
                         modifier = Modifier.heightIn(min = 48.dp).testTag("cook-tab-${tab.name.lowercase()}"),
                     )
