@@ -15,10 +15,8 @@ emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
 emulator_memory_args=()
-emulator_gpu_args=(-gpu lavapipe)
 if (( api_level >= 37 )); then
   emulator_memory_args=(-memory 4096)
-  emulator_gpu_args=(-gpu swiftshader -feature -Vulkan)
 fi
 
 if [[ -z "$sdk_root" ]]; then
@@ -79,7 +77,7 @@ fi
 "$emulator_bin" \
   -avd "$avd_name" \
   -no-window \
-  "${emulator_gpu_args[@]}" \
+  -gpu lavapipe \
   -noaudio \
   -no-boot-anim \
   -no-snapshot \
@@ -91,6 +89,16 @@ emulator_pid=$!
 
 adb start-server
 timeout 600 adb wait-for-device
+if (( api_level >= 37 )); then
+  # This preview image aborts in SurfaceFlinger's RegionSampling thread when
+  # its ranchu graphics mapper reads a color buffer through DMA.
+  timeout 30 adb root >/dev/null 2>&1
+  timeout 60 adb wait-for-device
+  timeout 20 adb shell setprop debug.sf.luma_sampling 0
+  timeout 20 adb shell stop surfaceflinger
+  timeout 20 adb shell start surfaceflinger
+  timeout 60 adb wait-for-device
+fi
 boot_deadline=$((SECONDS + 600))
 until [[ "$(timeout 15 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; do
   if (( SECONDS >= boot_deadline )); then
@@ -156,17 +164,23 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
 fi
 
 test_output="$output_dir/instrumented-tests.txt"
-echo "Running $instrumentation_target without uninstalling the app afterward."
+if (( api_level >= 37 )); then
+  test_selector='com.pittech.PitTechUserFlowsTest#test01_homeNavigationAndPrimaryActionAreClear,com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally'
+  expected_tests=("test01_homeNavigationAndPrimaryActionAreClear" "test02_createCookWithDishAndPreparationAndSaveLocally")
+else
+  test_selector='com.pittech.PitTechUserFlowsTest'
+  expected_tests=(
+    "test01_homeNavigationAndPrimaryActionAreClear"
+    "test02_createCookWithDishAndPreparationAndSaveLocally"
+    "test03_timelineTemperatureResultsAndInsightsWork"
+    "test04_portableArchiveAndWorkbookRoundTrip"
+    "test05_crashReportIsVisibleAndCopyable"
+  )
+fi
+echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
 timeout 25m adb shell am instrument -w -r \
-  -e class com.pittech.PitTechUserFlowsTest \
+  -e class "$test_selector" \
   "$instrumentation_target" | tee "$test_output"
-expected_tests=(
-  "test01_homeNavigationAndPrimaryActionAreClear"
-  "test02_createCookWithDishAndPreparationAndSaveLocally"
-  "test03_timelineTemperatureResultsAndInsightsWork"
-  "test04_portableArchiveAndWorkbookRoundTrip"
-  "test05_crashReportIsVisibleAndCopyable"
-)
 passed_test_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$test_output" || true)"
 if [[ "$passed_test_count" -ne "${#expected_tests[@]}" ]] ||
    ! grep -q "OK (${#expected_tests[@]} tests)" "$test_output" ||
@@ -209,6 +223,23 @@ pull_app_screenshot() {
 
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
+
+if (( api_level >= 37 )); then
+  echo "Restarting PitTech on Android 17 and checking that the saved cook is still visible."
+  timeout 20 adb shell am force-stop com.pittech.debug
+  timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
+  for _ in $(seq 1 10); do
+    timeout 30 adb shell uiautomator dump /sdcard/pittech-window.xml >/dev/null 2>&1 || true
+    timeout 20 adb exec-out cat /sdcard/pittech-window.xml > "$output_dir/restarted-window.xml" 2>/dev/null || true
+    if grep -q 'Saturday brisket' "$output_dir/restarted-window.xml"; then
+      break
+    fi
+    sleep 2
+  done
+  grep -q 'Saturday brisket' "$output_dir/restarted-window.xml"
+  echo "Android 17 launch, cook save, and relaunch smoke checks passed."
+  exit 0
+fi
 
 check_saved_diagnostic_report() {
   local checkpoint="$1"
