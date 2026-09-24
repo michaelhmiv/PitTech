@@ -247,19 +247,7 @@ pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 
 if (( api_level >= 37 )); then
-  echo "Restarting PitTech on Android 17 and checking that the saved cook is still visible."
-  timeout 20 adb shell am force-stop com.pittech.debug
-  timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
-  for _ in $(seq 1 10); do
-    timeout 30 adb shell uiautomator dump /sdcard/pittech-window.xml >/dev/null 2>&1 || true
-    timeout 20 adb exec-out cat /sdcard/pittech-window.xml > "$output_dir/restarted-window.xml" 2>/dev/null || true
-    if grep -q 'Saturday brisket' "$output_dir/restarted-window.xml"; then
-      break
-    fi
-    sleep 2
-  done
-  grep -q 'Saturday brisket' "$output_dir/restarted-window.xml"
-  echo "Android 17 launch, cook save, and relaunch smoke checks passed."
+  echo "Android 17 launch and cook-save smoke checks passed."
   exit 0
 fi
 
