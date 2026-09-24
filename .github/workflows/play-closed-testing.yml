@@ -21,13 +21,13 @@ jobs:
       - name: Check out main
         uses: actions/checkout@v6
 
-      - name: Verify Play publishing secrets are configured
+      - name: Verify signing and Google service-account secrets are configured
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
           for secret_name in \
@@ -35,13 +35,13 @@ jobs:
             ANDROID_KEYSTORE_PASSWORD \
             ANDROID_KEY_ALIAS \
             ANDROID_KEY_PASSWORD \
-            PLAY_SERVICE_ACCOUNT_JSON; do
+            GCP_SERVICE_ACCOUNT_JSON; do
             if [[ -z "${!secret_name}" ]]; then
               echo "::error::Required GitHub Actions secret ${secret_name} is not configured."
               exit 1
             fi
           done
-          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" | jq -e \
+          printf '%s' "$GCP_SERVICE_ACCOUNT_JSON" | jq -e \
             '.type == "service_account" and (.private_key | type == "string")' >/dev/null
 
       - name: Set up JDK 17
@@ -107,7 +107,7 @@ jobs:
       - name: Publish to Play Alpha closed testing
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          serviceAccountJsonPlainText: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
           packageName: com.pittech
           releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
           releaseName: main-${{ github.run_number }}
