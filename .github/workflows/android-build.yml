@@ -51,8 +51,8 @@ jobs:
         with:
           gradle-version: '9.6.1'
 
-      - name: Run JVM tests and prebuild app plus instrumented tests
-        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest
+      - name: Run JVM tests and build debug, instrumented, and unsigned regular app
+        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease
 
       - name: Build previous release for a data-preserving upgrade test
         if: matrix.api == 36 && github.event_name == 'pull_request'
@@ -90,6 +90,15 @@ jobs:
         with:
           name: pittech-apksigner-tool
           path: ${{ env.ANDROID_SDK_ROOT }}/build-tools/37.0.0/lib/apksigner.jar
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload unsigned regular app for private signing
+        if: matrix.api == 36
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-unsigned-release-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
           retention-days: 1
 
