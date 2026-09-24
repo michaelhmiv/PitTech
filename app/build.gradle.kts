@@ -4,6 +4,13 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val pittechVersionCode = providers.gradleProperty("pittechVersionCode").orNull?.toIntOrNull() ?: 1
+val pittechVersionName = providers.gradleProperty("pittechVersionName").orNull ?: "0.1.0"
+
+require(pittechVersionCode in 1..2_100_000_000) {
+    "pittechVersionCode must be between 1 and 2100000000."
+}
+
 android {
     namespace = "com.pittech"
     compileSdk = 37
@@ -12,8 +19,8 @@ android {
         applicationId = "com.pittech"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = pittechVersionCode
+        versionName = pittechVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
