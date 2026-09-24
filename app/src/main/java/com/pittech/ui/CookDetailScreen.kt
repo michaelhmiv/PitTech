@@ -57,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -702,6 +703,8 @@ private fun TimelineEventDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, String?, Long, String?) -> Unit,
 ) {
+    val dialogFocusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var type by rememberSaveable(event?.id) { mutableStateOf(event?.eventType ?: "note") }
     var title by rememberSaveable(event?.id) { mutableStateOf(event?.title ?: "") }
     var details by rememberSaveable(event?.id) { mutableStateOf(event?.details.orEmpty()) }
@@ -728,7 +731,11 @@ private fun TimelineEventDialog(
             TextButton(onClick = {
                 val parsed = parseEditableTimestamp(time)
                 timeError = parsed == null
-                if (parsed != null && title.isNotBlank()) onSave(type, title.trim(), details.trim().ifBlank { null }, parsed, dishId.takeUnless { it == "whole" })
+                if (parsed != null && title.isNotBlank()) {
+                    dialogFocusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    onSave(type, title.trim(), details.trim().ifBlank { null }, parsed, dishId.takeUnless { it == "whole" })
+                }
             }, modifier = Modifier.testTag("timeline-entry-save")) { Text("Save entry") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -743,6 +750,8 @@ private fun TemperatureEntryDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, Double, String, Long, String?) -> Unit,
 ) {
+    val dialogFocusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var probe by rememberSaveable(reading?.id) { mutableStateOf(reading?.probeName ?: "Food probe") }
     var value by rememberSaveable(reading?.id) { mutableStateOf(reading?.value?.toString().orEmpty()) }
     var type by rememberSaveable(reading?.id) { mutableStateOf(reading?.measurementType ?: "food_probe") }
@@ -770,7 +779,11 @@ private fun TemperatureEntryDialog(
                 if (probe.isBlank()) error = "Enter a probe or location name."
                 else if (parsedValue == null) error = "Enter a valid temperature."
                 else if (parsedTime == null) error = "Enter a valid date and time."
-                else onSave(probe.trim(), type, parsedValue, unit, parsedTime, dishId.takeUnless { it == "whole" })
+                else {
+                    dialogFocusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    onSave(probe.trim(), type, parsedValue, unit, parsedTime, dishId.takeUnless { it == "whole" })
+                }
             }, modifier = Modifier.testTag("temperature-save")) { Text("Save temperature") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -821,6 +834,8 @@ private fun ResultsDialog(
     onDismiss: () -> Unit,
     onSave: (String?, String, String, String, Map<String, String>, String, Boolean) -> Unit,
 ) {
+    val dialogFocusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val firstDishId = data.dishes.firstOrNull()?.id ?: "whole"
     var selectedDishId by rememberSaveable(data.cook.id) { mutableStateOf(firstDishId) }
     val selectedDishKey = selectedDishId.takeUnless { it == "whole" }
@@ -874,7 +889,11 @@ private fun ResultsDialog(
                 val valid = CookEntryValidation.isOptionalPositiveNumberValid(finalTemp) && CookEntryValidation.isOptionalPositiveNumberValid(rest) &&
                     allRatings.all { it.isBlank() || CookEntryValidation.optionalPositiveNumber(it)?.let { number -> number in 1.0..5.0 } == true }
                 if (!valid) error = "Use positive values; ratings must be from 1 to 5."
-                else onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, finish)
+                else {
+                    dialogFocusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, finish)
+                }
             }, modifier = Modifier.testTag("results-save")) { Text("Save results") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
