@@ -856,7 +856,7 @@ private fun ResultsDialog(
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (data.cook.status == CookStatus.ACTIVE) "Record results" else "Edit results") },
+        title = { Text(if (data.cook.status == CookStatus.ACTIVE) "Record results" else "Edit results", modifier = Modifier.testTag("results-dialog-title")) },
         text = {
             Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
