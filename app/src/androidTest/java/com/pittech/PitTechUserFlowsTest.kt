@@ -207,11 +207,13 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("Finish cook").performScrollTo().performClick()
-        waitForText("Save results")
+        composeRule.onNodeWithTag("live-finish-cook", useUnmergedTree = true).performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("results-save", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("results-finish-toggle", useUnmergedTree = true).performScrollTo().performClick()
         waitForText("Finish cook when saved")
-        composeRule.onNodeWithText("Save results").performClick()
+        composeRule.onNodeWithTag("results-save", useUnmergedTree = true).performClick()
 
         val application = targetContext.applicationContext as PitTechApplication
         composeRule.waitUntil(timeoutMillis = 10_000) {

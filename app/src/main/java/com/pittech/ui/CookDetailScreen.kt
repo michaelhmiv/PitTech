@@ -428,7 +428,7 @@ private fun LiveCookTab(
             OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Use this setup for a new cook") }
             Text("Copies the smoker setup, dishes, and preparation items. It starts a new log without old events, readings, photos, or results.", style = MaterialTheme.typography.bodyMedium)
             if (data.cook.status == CookStatus.ACTIVE) {
-                Button(onClick = onFinish, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)) { Text("Finish cook") }
+                Button(onClick = onFinish, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("live-finish-cook")) { Text("Finish cook") }
             }
             TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Filled.Delete, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Delete cook") }
             onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
@@ -875,7 +875,7 @@ private fun ResultsDialog(
                     allRatings.all { it.isBlank() || CookEntryValidation.optionalPositiveNumber(it)?.let { number -> number in 1.0..5.0 } == true }
                 if (!valid) error = "Use positive values; ratings must be from 1 to 5."
                 else onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, finish)
-            }) { Text("Save results") }
+            }, modifier = Modifier.testTag("results-save")) { Text("Save results") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
