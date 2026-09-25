@@ -72,6 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.ads.shouldShowCookHistoryNativeAd
 import com.pittech.R
+import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookStatus
 import com.pittech.data.CookWithDishes
 import com.pittech.domain.CookEntryValidation
@@ -614,10 +615,12 @@ internal fun DishEditorDialog(
     var thicknessNotes by rememberSaveable { mutableStateOf("") }
     var prepNotes by rememberSaveable { mutableStateOf("") }
     var preparationItems by remember { mutableStateOf(listOf(IngredientDraft(name = ""))) }
-    var photoUris by remember { mutableStateOf(emptyList<String>()) }
+    var photoUris by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var nameError by rememberSaveable { mutableStateOf(false) }
     var weightError by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    var showPhotoSource by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     val requestDismiss = {
         val hasInput = name.isNotBlank() || foodType != "Pork" || cut.isNotBlank() || weight.isNotBlank() ||
             startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() ||
@@ -629,6 +632,9 @@ internal fun DishEditorDialog(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
     ) { selected ->
         photoUris = (photoUris + selected.map { it.toString() }).distinct().take(10)
+    }
+    val addCameraPhoto = rememberCameraPhotoCapture { uri ->
+        photoUris = (photoUris + uri.toString()).distinct().take(10)
     }
 
     AlertDialog(
@@ -801,9 +807,7 @@ internal fun DishEditorDialog(
                 }
 
                 OutlinedButton(
-                    onClick = {
-                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
+                    onClick = { showPhotoSource = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("dish-add-photos"),
                 ) {
                     Text(if (photoUris.isEmpty()) "Add photos" else "Add more photos (${photoUris.size})")
@@ -811,7 +815,10 @@ internal fun DishEditorDialog(
                 photoUris.forEachIndexed { index, _ ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Photo ${index + 1}", modifier = Modifier.weight(1f))
-                        TextButton(onClick = { photoUris = photoUris.filterIndexed { i, _ -> i != index } }) {
+                        TextButton(onClick = {
+                            CameraPhotoFiles.delete(context, photoUris[index])
+                            photoUris = photoUris.filterIndexed { i, _ -> i != index }
+                        }) {
                             Text("Remove")
                         }
                     }
@@ -847,6 +854,20 @@ internal fun DishEditorDialog(
         dismissButton = { TextButton(onClick = requestDismiss) { Text("Cancel") } },
     )
 
+    if (showPhotoSource) {
+        PhotoSourceDialog(
+            onDismiss = { showPhotoSource = false },
+            onTakePhoto = {
+                showPhotoSource = false
+                addCameraPhoto()
+            },
+            onChooseFromLibrary = {
+                showPhotoSource = false
+                photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+        )
+    }
+
     if (confirmDiscard) {
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
@@ -854,6 +875,7 @@ internal fun DishEditorDialog(
             text = { Text("The dish details and selected photos have not been saved.") },
             confirmButton = {
                 TextButton(onClick = {
+                    photoUris.forEach { CameraPhotoFiles.delete(context, it) }
                     confirmDiscard = false
                     onDismiss()
                 }) { Text("Discard") }

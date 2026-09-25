@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
+import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookDetailData
 import com.pittech.data.CookStatus
 import com.pittech.data.DishEntity
@@ -104,7 +106,9 @@ fun CookDetailScreen(
     var showResults by remember { mutableStateOf(false) }
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
-    var photoCaptionUri by remember { mutableStateOf<String?>(null) }
+    var showPhotoSource by rememberSaveable { mutableStateOf(false) }
+    var photoCaptionUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -115,6 +119,7 @@ fun CookDetailScreen(
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> photoCaptionUri = uri?.toString() }
+    val addCameraPhoto = rememberCameraPhotoCapture { uri -> photoCaptionUri = uri.toString() }
     val exportWorkbook = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         if (uri != null) viewModel.export(uri, CooksViewModel.FORMAT_XLSX, data.cook.id)
     }
@@ -244,9 +249,25 @@ fun CookDetailScreen(
             },
         )
     }
+    if (showPhotoSource) {
+        PhotoSourceDialog(
+            onDismiss = { showPhotoSource = false },
+            onTakePhoto = {
+                showPhotoSource = false
+                addCameraPhoto()
+            },
+            onChooseFromLibrary = {
+                showPhotoSource = false
+                photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+        )
+    }
     if (photoCaptionUri != null) {
         PhotoCaptionDialog(
-            onDismiss = { photoCaptionUri = null },
+            onDismiss = {
+                photoCaptionUri?.let { CameraPhotoFiles.delete(context, it) }
+                photoCaptionUri = null
+            },
             onSave = { caption ->
                 viewModel.addCookPhoto(data.cook.id, photoCaptionUri!!, caption)
                 photoCaptionUri = null
@@ -298,7 +319,7 @@ fun CookDetailScreen(
                     onAddTarget = { showTarget = true },
                     onDeleteTarget = viewModel::deleteTarget,
                     onAddEvent = { showNewEvent = true },
-                    onAddPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onAddPhoto = { showPhotoSource = true },
                     onAddDish = { addDish = true },
                     onEditDish = { editDish = it },
                     onResults = { showResults = true },
@@ -317,7 +338,7 @@ fun CookDetailScreen(
                     viewModel = viewModel,
                     onAdd = { showNewEvent = true },
                     onAddTemperature = { showTemperature = true },
-                    onAddPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onAddPhoto = { showPhotoSource = true },
                     onEditEvent = { editEvent = it },
                     onEditReading = { editReading = it },
                     onError = error,
@@ -482,7 +503,7 @@ private fun TimelineTab(
             Button(onClick = onAdd, modifier = Modifier.weight(1f).heightIn(min = 50.dp).testTag("timeline-add")) { Text("+ Add entry") }
             OutlinedButton(onClick = onAddTemperature, modifier = Modifier.weight(1f).heightIn(min = 50.dp).testTag("timeline-add-temperature")) { Text("Temperature") }
         }
-        OutlinedButton(onClick = onAddPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add photo") }
+        OutlinedButton(onClick = onAddPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("timeline-add-photo")) { Text("Add photo") }
         if (rows.isEmpty()) {
             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.Center) {
                 Text("No timeline entries yet", style = MaterialTheme.typography.titleLarge)
