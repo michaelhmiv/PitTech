@@ -92,6 +92,8 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 fun PitTechApp(
     viewModel: CooksViewModel,
+    themeMode: PitTechThemeMode,
+    onThemeModeChange: (PitTechThemeMode) -> Unit,
     adsEnabled: Boolean = false,
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
@@ -211,6 +213,8 @@ fun PitTechApp(
             )
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
                 temperatureUnit = temperatureUnit,
                 weightUnit = weightUnit,
                 onTemperatureUnitChange = {

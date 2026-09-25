@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pittech.data.SensorReadingEntity
@@ -46,14 +47,25 @@ fun TemperatureChart(
     val minY = data.minOf { it.y }
     val maxY = data.maxOf { it.y }.let { if (it <= minY) minY + 1 else it }
     val series = data.groupBy { it.name }.toSortedMap()
-    val colors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.secondary,
-        Color(0xFF416C8A),
-        Color(0xFF805E8B),
-        Color(0xFF9A6B21),
-        Color(0xFF365A43),
-    )
+    val chartColors = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.secondary,
+            Color(0xFF83B6CE),
+            Color(0xFFC29BCD),
+            Color(0xFFE5BE6A),
+            Color(0xFF91B58A),
+        )
+    } else {
+        listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.secondary,
+            Color(0xFF416C8A),
+            Color(0xFF805E8B),
+            Color(0xFF9A6B21),
+            Color(0xFF365A43),
+        )
+    }
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Temperature over time · $unit", style = MaterialTheme.typography.titleMedium)
@@ -67,7 +79,7 @@ fun TemperatureChart(
                 drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
             }
             series.values.forEachIndexed { index, points ->
-                val color = colors[index % colors.size]
+                val color = chartColors[index % chartColors.size]
                 val sorted = points.sortedBy { it.x }
                 sorted.zipWithNext().forEach { (a, b) ->
                     val start = Offset(
@@ -93,7 +105,7 @@ fun TemperatureChart(
             series.keys.forEachIndexed { index, name ->
                 Text(
                     "● $name",
-                    color = colors[index % colors.size],
+                    color = chartColors[index % chartColors.size],
                     fontSize = 13.sp,
                     maxLines = 2,
                 )

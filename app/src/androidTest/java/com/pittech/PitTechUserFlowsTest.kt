@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -27,6 +28,7 @@ import com.pittech.data.CookStatus
 import com.pittech.data.DeviceEntity
 import com.pittech.data.ProbeEntity
 import com.pittech.data.SensorReadingEntity
+import com.pittech.ui.PitTechThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -51,6 +53,10 @@ class PitTechUserFlowsTest {
 
     private fun clearLocalData() {
         CrashDiagnostics.clearPendingReport(targetContext)
+        targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE)
+            .edit()
+            .remove(PitTechThemeMode.PREFERENCE_KEY)
+            .apply()
         val application = targetContext.applicationContext as PitTechApplication
         runBlocking(Dispatchers.IO) {
             application.database.clearAllTables()
@@ -73,6 +79,24 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Controller setup is paused until your grill arrives.").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
+        composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
+        composeRule.onNodeWithText("PitTech follows your device appearance.").assertIsDisplayed()
+        composeRule.onNodeWithTag("theme-mode-dark").performClick()
+        composeRule.onNodeWithTag("theme-mode-dark").assertIsSelected()
+        composeRule.onNodeWithText("Dark appearance is selected.").assertIsDisplayed()
+        saveScreenshot("settings-dark")
+        assertEquals(
+            "DARK",
+            targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE)
+                .getString(PitTechThemeMode.PREFERENCE_KEY, null),
+        )
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("nav-settings").performClick()
+        composeRule.onNodeWithTag("theme-mode-dark").assertIsSelected()
+        composeRule.onNodeWithTag("theme-mode-system").performClick()
+        composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
+
         composeRule.onNodeWithText("Export complete backup (ZIP)").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-cooks").performClick()

@@ -245,6 +245,7 @@ pull_app_screenshot() {
 
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
+pull_app_screenshot settings-dark
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."

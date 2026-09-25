@@ -16,6 +16,7 @@ import com.pittech.ads.PitTechAdsConsentManager
 import com.pittech.ui.CrashRecoveryScreen
 import com.pittech.ui.PitTechApp
 import com.pittech.ui.PitTechTheme
+import com.pittech.ui.PitTechThemeMode
 
 class MainActivity : ComponentActivity() {
     private val adsConsentManager by lazy { PitTechAdsConsentManager(this) }
@@ -28,13 +29,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val preferences = remember(this@MainActivity) {
+                this@MainActivity.getSharedPreferences("pittech-preferences", MODE_PRIVATE)
+            }
+            var themeMode by remember(preferences) {
+                mutableStateOf(PitTechThemeMode.fromPreference(preferences.getString(PitTechThemeMode.PREFERENCE_KEY, null)))
+            }
             var crashReport by remember {
                 mutableStateOf(CrashDiagnostics.pendingReport(this@MainActivity))
             }
             val canRequestAds by adsConsentManager.canRequestAds.collectAsStateWithLifecycle()
             val adsSdkReady by adsConsentManager.sdkReady.collectAsStateWithLifecycle()
             val privacyOptionsRequired by adsConsentManager.privacyOptionsRequired.collectAsStateWithLifecycle()
-            PitTechTheme {
+            PitTechTheme(themeMode = themeMode) {
                 val report = crashReport
                 LaunchedEffect(report) {
                     if (report == null) adsConsentManager.requestConsent()
@@ -55,6 +62,11 @@ class MainActivity : ComponentActivity() {
                 } else {
                     PitTechApp(
                         viewModel = viewModel,
+                        themeMode = themeMode,
+                        onThemeModeChange = { newMode ->
+                            themeMode = newMode
+                            preferences.edit().putString(PitTechThemeMode.PREFERENCE_KEY, newMode.name).apply()
+                        },
                         adsEnabled = canRequestAds && adsSdkReady,
                         privacyOptionsRequired = privacyOptionsRequired,
                         onShowPrivacyOptions = adsConsentManager::showPrivacyOptions,
