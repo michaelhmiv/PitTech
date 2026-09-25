@@ -134,6 +134,13 @@ Remote access is a product requirement, but compatibility is not yet a verified 
 - [OWASP Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html)
 - [NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html)
 
+## Release channels
+
+- **Main development:** `main` is the trunk. Pull requests run Android checks; each successful push to `main` produces a separately installable `PitTech Dev` APK (`com.pittech.dev`) and distributes it to the Firebase `pittech-dev` tester group.
+- **Milestone testing:** the owner-triggered `Play closed testing` workflow publishes a candidate to the existing Google Play Alpha track under the production package ID (`com.pittech`).
+- **Public release:** production remains a deliberate promotion through Google Play after an Alpha milestone is accepted. There is no long-lived beta branch.
+
+The Firebase workflow reuses the existing Android signing and Google service-account secrets. The service account must have the **Firebase App Distribution Admin** role on the `pittech-529a1` project. The Firebase app `PitTech Dev` (`com.pittech.dev`) and its `pittech-dev` group are registered in Firebase App Distribution.
 ## Android app foundation
 
 The Android app uses Jetpack Compose for the phone UI and Room as the local source of truth. The feature work on `codex/non-controller-features` builds on the cook-entry foundation already on `main`. Cook records and picked photos stay in app-private storage, so the log is available offline and needs no account.
