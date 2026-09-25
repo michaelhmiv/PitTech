@@ -40,6 +40,7 @@ internal object CrashDiagnostics {
     private const val REPORT_FILE = "pittech-last-crash.properties"
     private const val PREFERENCES = "pittech-diagnostics"
     private const val LAST_EXIT_TIMESTAMP = "last-exit-timestamp"
+    private const val ACKNOWLEDGED_REPORT = "acknowledged-report"
     private const val MAX_STACK_TRACE_LENGTH = 24_000
 
     fun install(application: Application) {
@@ -86,7 +87,17 @@ internal object CrashDiagnostics {
         return report
     }
 
+    /** Report that still needs to be acknowledged by the crash-recovery screen. */
     internal fun pendingReport(context: Context): CrashDiagnosticReport? {
+        val report = savedReport(context) ?: return null
+        val acknowledgedReference = context
+            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(ACKNOWLEDGED_REPORT, null)
+        return report.takeIf { it.referenceCode != acknowledgedReference }
+    }
+
+    /** Most recent report, retained locally until replaced or explicitly deleted. */
+    internal fun savedReport(context: Context): CrashDiagnosticReport? {
         val file = File(context.filesDir, REPORT_FILE)
         if (!file.isFile) return null
 
@@ -103,8 +114,21 @@ internal object CrashDiagnostics {
         }.getOrNull()
     }
 
+    internal fun acknowledgeReport(context: Context, report: CrashDiagnosticReport) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putString(ACKNOWLEDGED_REPORT, report.referenceCode)
+            .apply()
+    }
+
     internal fun clearPendingReport(context: Context) {
         runCatching { File(context.filesDir, REPORT_FILE).delete() }
+        runCatching {
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .remove(ACKNOWLEDGED_REPORT)
+                .apply()
+        }
     }
 
     private fun recordPreviousSystemExit(application: Application) {

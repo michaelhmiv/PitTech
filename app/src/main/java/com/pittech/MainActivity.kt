@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
                             )
                         },
                         onContinue = {
-                            CrashDiagnostics.clearPendingReport(this@MainActivity)
+                            CrashDiagnostics.acknowledgeReport(this@MainActivity, report)
                             crashReport = null
                         },
                     )
