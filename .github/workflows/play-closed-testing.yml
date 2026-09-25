@@ -132,9 +132,8 @@ jobs:
           releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
           releaseName: main-${{ github.run_number }}
           tracks: alpha
-          # Bootstrap release for this Draft app; switch to completed after first rollout.
-          status: draft
-          changesNotSentForReview: true
+          # Alpha already has an active release; make this update available to enrolled testers.
+          status: completed
 
       - name: Keep a copy of the uploaded bundle
         uses: actions/upload-artifact@v7.0.1
