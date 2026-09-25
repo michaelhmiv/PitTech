@@ -3,9 +3,9 @@ package com.pittech.ads
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import com.google.android.gms.ump.ConsentInformation
-import com.google.android.gms.ump.ConsentRequestParameters
-import com.google.android.gms.ump.UserMessagingPlatform
+import com.google.android.ump.ConsentInformation
+import com.google.android.ump.ConsentRequestParameters
+import com.google.android.ump.UserMessagingPlatform
 import com.google.android.libraries.ads.mobile.sdk.MobileAds
 import com.google.android.libraries.ads.mobile.sdk.initialization.InitializationConfig
 import com.pittech.R
