@@ -1,0 +1,20 @@
+name: Bug report
+description: Report a problem in PitTech
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for helping improve PitTech. Review the diagnostic details before submitting."
+  - type: textarea
+    id: details
+    attributes:
+      label: What happened?
+      description: Include the steps that led to the problem and what you expected to happen.
+      placeholder: "1. Opened…\n2. Tapped…\nExpected…"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic details
+      description: "Optional. PitTech can prefill app/device details and recent safe activity. Review this before posting."

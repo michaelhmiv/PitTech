@@ -10,7 +10,9 @@ PitTech stores the cook information you choose to enter. This may include cook a
 
 If you select photos, PitTech copies them into the app's private storage on your device. The app may also save a crash diagnostic locally. That report can include a reference code, time, error summary, exception details, thread name, stack trace, and Android process-exit details.
 
-PitTech has no sign-in or online sync. Cook records, photos, and locally saved crash reports are not uploaded to PitTech or a PitTech server. The app does not use a separate analytics or automatic crash-reporting service.
+PitTech has no account or online sync. Cook records, notes, and photos remain on this phone and are not attached to feedback automatically. If you type those details into a report, they are included in the text you choose to send. The app does not use a separate analytics or automatic crash-reporting service.
+
+When you explicitly open a bug report, PitTech can include a small diagnostic bundle with the app version and build, Android version, device manufacturer and model, up to 20 recent screen/action names and timestamps, and the most recently saved crash report if one exists. PitTech does not automatically attach cook names, notes, ingredients, temperature readings, or photos. If you type those details into a report, they are included in the text you choose to send. You can preview or turn off diagnostics before continuing. Continuing sends the report in a URL to GitHub to prefill a draft issue form. GitHub receives the text when the form opens; the public issue is created only if you submit it. A GitHub account is required to submit. For feature requests, only the title and description are sent to prefill the form. GitHub handles information under its own [Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement).
 
 ## Advertising and Google Mobile Ads
 
@@ -32,11 +34,11 @@ If you open or share a file with another app or service, that recipient may rece
 
 Cook records and photos remain in PitTech's private app storage until you delete them in the app, clear PitTech's app data in Android settings, or uninstall PitTech. Android app-data backup is disabled. Exported files and copies shared with other apps remain at their chosen destinations until you delete them there.
 
-A locally saved crash report is cleared when you continue past the crash-recovery screen. Google handles information collected through its advertising and consent services under its own policies and controls.
+The local diagnostic activity log keeps only the 20 most recent screen/action names and timestamps. It rotates as new events are recorded and is removed when PitTech's app data is cleared or the app is uninstalled. A locally saved crash report is cleared when you continue past the crash-recovery screen. Google handles information collected through its advertising and consent services under its own policies and controls.
 
 ## Security
 
-PitTech stores cook records, photos, and crash diagnostics in Android's private app storage and does not upload them in this release. The app does not claim separate encryption of its local database or exported files. Protect access to your device with its screen lock and other security settings.
+PitTech stores cook records, photos, and diagnostics in Android's private app storage. No diagnostics are sent automatically. If you choose to open a bug report, the selected diagnostic bundle is sent to GitHub to prefill a draft issue; the issue is published only if you submit it. The app does not claim separate encryption of its local database or exported files. Protect access to your device with its screen lock and other security settings.
 
 ## Children and intended audience
 

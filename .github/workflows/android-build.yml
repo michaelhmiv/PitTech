@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, codex/pittech-theme-system-default]
 
 concurrency:
   group: pittech-android-${{ github.event.pull_request.number || github.ref }}

@@ -21,6 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -46,6 +49,7 @@ fun SettingsScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val importPreview by viewModel.importPreview.collectAsStateWithLifecycle()
+    var showFeedback by rememberSaveable { mutableStateOf(false) }
     val xlsx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         if (uri != null) viewModel.export(uri, CooksViewModel.FORMAT_XLSX)
     }
@@ -70,6 +74,8 @@ fun SettingsScreen(
             dismissButton = { TextButton(onClick = viewModel::cancelImport) { Text("Cancel") } },
         )
     }
+
+    if (showFeedback) FeedbackDialog(onDismiss = { showFeedback = false })
 
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
@@ -114,6 +120,19 @@ fun SettingsScreen(
                 }
             }
             Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        SectionCard("Feedback") {
+            Text(
+                "Report a problem or request a feature in GitHub. Submitted issues are public and require a GitHub account; bug reports can include diagnostic details for review.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            OutlinedButton(
+                onClick = { showFeedback = true },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("feedback-open"),
+            ) {
+                Text("Send feedback")
+            }
         }
 
         SectionCard("Your data") {

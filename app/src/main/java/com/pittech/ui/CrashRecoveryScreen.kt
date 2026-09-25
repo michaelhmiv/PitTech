@@ -38,6 +38,7 @@ internal fun CrashRecoveryScreen(
 ) {
     var copied by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
     var showTechnicalDetails by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
+    var showFeedbackDialog by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -50,6 +51,14 @@ internal fun CrashRecoveryScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (showFeedbackDialog) {
+                FeedbackDialog(
+                    onDismiss = { showFeedbackDialog = false },
+                    initialTitle = "PitTech stopped unexpectedly: ${report.summary.take(70)}",
+                    initialDetails = "PitTech stopped unexpectedly at ${report.occurredAtUtc}. Reference code ${report.referenceCode}. Add anything else you remember.",
+                )
+            }
+
             Spacer(Modifier.height(4.dp))
             Text("PitTech", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
             Text(
@@ -58,7 +67,7 @@ internal fun CrashRecoveryScreen(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "We saved a diagnostic report on this phone. Nothing was sent automatically.",
+                "We saved a diagnostic report on this phone. You can review it and choose whether to prepare a GitHub report.",
                 style = MaterialTheme.typography.bodyLarge,
             )
 
@@ -91,6 +100,16 @@ internal fun CrashRecoveryScreen(
                     .testTag("crash-report-copy"),
             ) {
                 Text(if (copied) "Report copied — paste it into our chat" else "Copy diagnostic report")
+            }
+
+            OutlinedButton(
+                onClick = { showFeedbackDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .testTag("crash-report-github"),
+            ) {
+                Text("Report this crash on GitHub")
             }
 
             TextButton(

@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest an improvement to PitTech
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for sharing an idea for PitTech."
+  - type: textarea
+    id: details
+    attributes:
+      label: What would you like PitTech to do?
+      description: Describe the problem or opportunity and how the feature would help.
+      placeholder: "I would like…"
+    validations:
+      required: true

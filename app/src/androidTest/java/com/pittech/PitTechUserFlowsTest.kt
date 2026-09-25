@@ -97,6 +97,14 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("theme-mode-system").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
 
+        composeRule.onNodeWithTag("feedback-open").performScrollTo().performClick()
+        composeRule.onNodeWithText("Feedback for PitTech").assertIsDisplayed()
+        composeRule.onNodeWithTag("feedback-kind-bug").assertIsSelected()
+        composeRule.onNodeWithTag("feedback-include-diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithText("Request a feature").performClick()
+        composeRule.onNodeWithText("What would you like PitTech to do?").assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel").performClick()
+
         composeRule.onNodeWithText("Export complete backup (ZIP)").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-cooks").performClick()
@@ -195,13 +203,13 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Spritz").performClick()
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed")
-        composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
+        clickScrolledTag("timeline-event-edit-spritz")
         waitForText("Edit timeline entry")
         composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed lightly")
-        composeRule.onNodeWithTag("timeline-event-delete-spritz").performScrollTo().performClick()
+        clickScrolledTag("timeline-event-delete-spritz")
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
         waitForText("Spritzed lightly")
@@ -212,13 +220,13 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-value").performTextInput("155")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Brisket probe: 155.0 °F")
-        composeRule.onNodeWithTag("temperature-edit-Brisket probe").performScrollTo().performClick()
+        clickScrolledTag("temperature-edit-Brisket probe")
         waitForText("Edit temperature")
         composeRule.onNodeWithTag("temperature-value").performScrollTo().performTextClearance()
         composeRule.onNodeWithTag("temperature-value").performTextInput("156")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Brisket probe: 156.0 °F")
-        composeRule.onNodeWithTag("temperature-delete-Brisket probe").performScrollTo().performClick()
+        clickScrolledTag("temperature-delete-Brisket probe")
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
         waitForText("Brisket probe: 156.0 °F")
@@ -352,6 +360,23 @@ class PitTechUserFlowsTest {
         assertTrue("Copied diagnostic is missing its reference code.", copiedText.contains(report.referenceCode))
         assertTrue("Copied diagnostic is missing the exception summary.", copiedText.contains("Synthetic diagnostic for UI test"))
 
+        composeRule.onNodeWithTag("crash-report-github").performClick()
+        composeRule.onNodeWithTag("feedback-continue").assertIsEnabled()
+        composeRule.onNodeWithTag("feedback-include-diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithTag("feedback-diagnostics-preview-toggle").performScrollTo()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("feedback-diagnostics-preview-toggle").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("feedback-diagnostics-preview").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("feedback-diagnostics-preview").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel").performClick()
+    }
+
+    private fun clickScrolledTag(tag: String) {
+        composeRule.onNodeWithTag(tag).performScrollTo()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(tag).performClick()
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
