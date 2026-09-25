@@ -1,9 +1,8 @@
 name: Play closed testing
 
 on:
-  # PR merges to main emit a push event. This also intentionally covers direct pushes to main.
-  push:
-    branches: [main]
+  # API edit commits can submit pending Play Console declarations; keep this upload owner-triggered.
+  workflow_dispatch:
 
 concurrency:
   group: pittech-play-closed-testing
@@ -131,6 +130,7 @@ jobs:
           tracks: alpha
           # Bootstrap release for this Draft app; switch to completed after first rollout.
           status: draft
+          changesNotSentForReview: true
 
       - name: Keep a copy of the uploaded bundle
         uses: actions/upload-artifact@v7.0.1
