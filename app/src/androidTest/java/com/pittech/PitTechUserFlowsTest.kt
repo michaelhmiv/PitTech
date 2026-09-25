@@ -173,6 +173,10 @@ class PitTechUserFlowsTest {
             composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("timeline-add-photo").performClick()
+        composeRule.onNodeWithTag("photo-source-camera").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-source-library").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-source-cancel").performClick()
         composeRule.onNodeWithTag("timeline-add").performClick()
         waitForText("Add to timeline")
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed")
