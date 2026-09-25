@@ -124,7 +124,7 @@ fun SettingsScreen(
 
         SectionCard("Feedback") {
             Text(
-                "Send a problem report or suggest a feature. Bug reports can include a small local diagnostic bundle for review.",
+                "Report a problem or request a feature in GitHub. Submitted issues are public and require a GitHub account; bug reports can include diagnostic details for review.",
                 style = MaterialTheme.typography.bodyLarge,
             )
             OutlinedButton(
