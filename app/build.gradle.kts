@@ -27,7 +27,6 @@ android {
         versionCode = pittechVersionCode
         versionName = pittechVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        resValue("string", "admob_app_id", admobAppId)
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
     }
 
