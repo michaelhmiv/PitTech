@@ -32,7 +32,9 @@ internal object FeedbackIssueLink {
         val safeTitle = title.trim().take(80).ifBlank { kind.heading }
         val issueTitle = kind.titlePrefix + safeTitle
         var descriptionExcerpt = description.trim().take(1_500)
-        val fullDiagnostic = diagnosticReport?.toPlainText()
+        val fullDiagnostic = diagnosticReport
+            ?.takeIf { kind == FeedbackKind.BUG }
+            ?.toPlainText()
 
         fun buildBody(descriptionText: String, diagnosticText: String?): String = buildString {
             appendLine("## ${kind.heading}")
