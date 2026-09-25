@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        FeedbackEventLog.record(this, FeedbackEvent.APP_OPENED)
         setContent {
             val preferences = remember(this@MainActivity) {
                 this@MainActivity.getSharedPreferences("pittech-preferences", MODE_PRIVATE)

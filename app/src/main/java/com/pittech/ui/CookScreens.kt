@@ -70,6 +70,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
+import com.pittech.FeedbackEvent
+import com.pittech.FeedbackEventLog
 import com.pittech.ads.shouldShowCookHistoryNativeAd
 import com.pittech.R
 import com.pittech.data.CookStatus
@@ -81,11 +83,15 @@ import com.pittech.domain.NewCookDraft
 import java.text.DateFormat
 import java.util.Date
 
-private enum class MainSection(val title: String, val icon: ImageVector) {
-    COOKS("Cooks", Icons.Filled.Home),
-    INSIGHTS("Insights", Icons.Filled.List),
-    DEVICES("Devices", Icons.Filled.Info),
-    SETTINGS("Settings", Icons.Filled.Settings),
+private enum class MainSection(
+    val title: String,
+    val icon: ImageVector,
+    val feedbackEvent: FeedbackEvent,
+) {
+    COOKS("Cooks", Icons.Filled.Home, FeedbackEvent.OPENED_COOKS),
+    INSIGHTS("Insights", Icons.Filled.List, FeedbackEvent.OPENED_INSIGHTS),
+    DEVICES("Devices", Icons.Filled.Info, FeedbackEvent.OPENED_DEVICES),
+    SETTINGS("Settings", Icons.Filled.Settings, FeedbackEvent.OPENED_SETTINGS),
 }
 
 @Composable
@@ -180,7 +186,10 @@ fun PitTechApp(
                 MainSection.entries.forEach { item ->
                     NavigationBarItem(
                         selected = section == item,
-                        onClick = { selectedSection = item.name },
+                        onClick = {
+                            selectedSection = item.name
+                            FeedbackEventLog.record(context, item.feedbackEvent)
+                        },
                         icon = { Icon(item.icon, contentDescription = null) },
                         label = { Text(item.title) },
                         modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
@@ -196,6 +205,7 @@ fun PitTechApp(
                 modifier = Modifier.padding(padding),
                 onOpenCook = viewModel::openCook,
                 onStartCook = {
+                    FeedbackEventLog.record(context, FeedbackEvent.STARTED_COOK)
                     viewModel.clearSaveError()
                     isStartingCook = true
                 },

@@ -97,6 +97,14 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("theme-mode-system").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
 
+        composeRule.onNodeWithTag("feedback-open").performScrollTo().performClick()
+        composeRule.onNodeWithText("Feedback for PitTech").assertIsDisplayed()
+        composeRule.onNodeWithTag("feedback-kind-bug").assertIsSelected()
+        composeRule.onNodeWithTag("feedback-include-diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithText("Request a feature").performClick()
+        composeRule.onNodeWithText("What would you like PitTech to do?").assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel").performClick()
+
         composeRule.onNodeWithText("Export complete backup (ZIP)").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-cooks").performClick()
@@ -352,6 +360,12 @@ class PitTechUserFlowsTest {
         assertTrue("Copied diagnostic is missing its reference code.", copiedText.contains(report.referenceCode))
         assertTrue("Copied diagnostic is missing the exception summary.", copiedText.contains("Synthetic diagnostic for UI test"))
 
+        composeRule.onNodeWithTag("crash-report-github").performClick()
+        composeRule.onNodeWithTag("feedback-continue").assertIsEnabled()
+        composeRule.onNodeWithTag("feedback-include-diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithText("Preview included diagnostics").performClick()
+        composeRule.onNodeWithText(report.referenceCode).assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel").performClick()
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
