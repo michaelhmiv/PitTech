@@ -195,11 +195,11 @@ private fun createPitTechNativeAdView(context: Context): NativeAdView {
         content,
         FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
     )
-    nativeAdView.setHeadlineView(headline)
-    nativeAdView.setAdvertiserView(advertiser)
-    nativeAdView.setIconView(icon)
-    nativeAdView.setBodyView(body)
-    nativeAdView.setCallToActionView(callToAction)
+    nativeAdView.headlineView = headline
+    nativeAdView.advertiserView = advertiser
+    nativeAdView.iconView = icon
+    nativeAdView.bodyView = body
+    nativeAdView.callToActionView = callToAction
     nativeAdView.tag = PitTechNativeAdAssets(icon, headline, advertiser, media, body, callToAction)
     return nativeAdView
 }
