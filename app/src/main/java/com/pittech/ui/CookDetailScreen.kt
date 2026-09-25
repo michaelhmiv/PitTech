@@ -338,7 +338,7 @@ fun CookDetailScreen(
                     viewModel = viewModel,
                     onAdd = { showNewEvent = true },
                     onAddTemperature = { showTemperature = true },
-                    onAddPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onAddPhoto = { showPhotoSource = true },
                     onEditEvent = { editEvent = it },
                     onEditReading = { editReading = it },
                     onError = error,
@@ -503,7 +503,7 @@ private fun TimelineTab(
             Button(onClick = onAdd, modifier = Modifier.weight(1f).heightIn(min = 50.dp).testTag("timeline-add")) { Text("+ Add entry") }
             OutlinedButton(onClick = onAddTemperature, modifier = Modifier.weight(1f).heightIn(min = 50.dp).testTag("timeline-add-temperature")) { Text("Temperature") }
         }
-        OutlinedButton(onClick = onAddPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add photo") }
+        OutlinedButton(onClick = onAddPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("timeline-add-photo")) { Text("Add photo") }
         if (rows.isEmpty()) {
             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.Center) {
                 Text("No timeline entries yet", style = MaterialTheme.typography.titleLarge)
