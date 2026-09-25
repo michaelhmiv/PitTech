@@ -134,7 +134,6 @@ jobs:
           tracks: alpha
           # Bootstrap release for this Draft app; switch to completed after first rollout.
           status: draft
-          changesNotSentForReview: true
 
       - name: Keep a copy of the uploaded bundle
         uses: actions/upload-artifact@v7.0.1
