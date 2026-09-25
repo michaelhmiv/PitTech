@@ -364,7 +364,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("feedback-continue").assertIsEnabled()
         composeRule.onNodeWithTag("feedback-include-diagnostics").assertIsDisplayed()
         composeRule.onNodeWithText("Preview included diagnostics").performClick()
-        composeRule.onNodeWithText(report.referenceCode).assertIsDisplayed()
+        composeRule.onNodeWithTag("feedback-diagnostics-preview").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").performClick()
     }
 
