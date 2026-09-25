@@ -153,7 +153,7 @@ Insights summarize completed cooks and allow comparisons across selected cooks. 
 ### Build and test
 
 - Open this repository in Android Studio with JDK 17 and Android SDK 37 installed, or use `./gradlew` from the repository root.
-- Run `./gradlew testDebugUnitTest assembleDebug assembleDev` to run the current input-validation tests and build the debug and Firebase Dev APKs.
+- Run `./gradlew testDebugUnitTest assembleDebug` to run the current input-validation tests and build the debug APK. Build the Firebase Dev APK separately with `./gradlew assembleDev`.
 - For an automated emulator run, build the app and test APKs with `./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest`, then run `bash scripts/run-emulator-ui-tests.sh` from the repository root with the Android SDK installed. The script boots a clean emulator with larger system text and checks cook entry, timeline editing, manual readings, results, export/restore, crash recovery, and persisted data after relaunch.
 - GitHub Actions runs this emulator flow on pull requests and pushes to `main`: API 36 is blocking and API 37 is advisory. The evidence artifact includes emulator screenshots, the post-restart accessibility hierarchy, instrumentation output, and logcat. Successful builds also attach a debug APK for 14 days.
 
