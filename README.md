@@ -141,6 +141,7 @@ Remote access is a product requirement, but compatibility is not yet a verified 
 - **Public release:** production remains a deliberate promotion through Google Play after an Alpha milestone is accepted. There is no long-lived beta branch.
 
 The Firebase workflow reuses the existing Android signing and Google service-account secrets. The service account must have the **Firebase App Distribution Admin** role on the `pittech-529a1` project. The Firebase app `PitTech Dev` (`com.pittech.dev`) and its `pittech-dev` group are registered in Firebase App Distribution.
+
 ## Android app foundation
 
 The Android app uses Jetpack Compose for the phone UI and Room as the local source of truth. The feature work on `codex/non-controller-features` builds on the cook-entry foundation already on `main`. Cook records and picked photos stay in app-private storage, so the log is available offline and needs no account.
@@ -152,7 +153,7 @@ Insights summarize completed cooks and allow comparisons across selected cooks. 
 ### Build and test
 
 - Open this repository in Android Studio with JDK 17 and Android SDK 37 installed, or use `./gradlew` from the repository root.
-- Run `./gradlew testDebugUnitTest assembleDebug` to run the current input-validation tests and build the debug APK.
+- Run `./gradlew testDebugUnitTest assembleDebug assembleDev` to run the current input-validation tests and build the debug and Firebase Dev APKs.
 - For an automated emulator run, build the app and test APKs with `./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest`, then run `bash scripts/run-emulator-ui-tests.sh` from the repository root with the Android SDK installed. The script boots a clean emulator with larger system text and checks cook entry, timeline editing, manual readings, results, export/restore, crash recovery, and persisted data after relaunch.
 - GitHub Actions runs this emulator flow on pull requests and pushes to `main`: API 36 is blocking and API 37 is advisory. The evidence artifact includes emulator screenshots, the post-restart accessibility hierarchy, instrumentation output, and logcat. Successful builds also attach a debug APK for 14 days.
 
