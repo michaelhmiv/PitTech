@@ -32,7 +32,7 @@ class PhotoStorage(private val context: Context) {
             input.use { source ->
                 destination.outputStream().use { output -> source.copyTo(output) }
             }
-            PhotoEntity(
+            val photo = PhotoEntity(
                 id = id,
                 cookId = cookId,
                 dishId = dishId,
@@ -44,6 +44,8 @@ class PhotoStorage(private val context: Context) {
                 capturedAtUtcMillis = null,
                 addedAtUtcMillis = nowUtcMillis,
             )
+            CameraPhotoFiles.delete(context, uri)
+            photo
         } catch (failure: Throwable) {
             destination.delete()
             throw failure
