@@ -28,6 +28,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -90,6 +91,12 @@ internal fun PitTechNativeAdPlacement(adsEnabled: Boolean) {
     }
 
     val ad = adState.value ?: return
+    val adStyle = PitTechNativeAdStyle(
+        headlineColor = MaterialTheme.colorScheme.onSurface.toArgb(),
+        secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb(),
+        actionColor = MaterialTheme.colorScheme.primary.toArgb(),
+        actionTextColor = MaterialTheme.colorScheme.onPrimary.toArgb(),
+    )
     Card(
         modifier = Modifier.fillMaxWidth().testTag("cook-history-native-ad"),
         shape = RoundedCornerShape(14.dp),
@@ -106,8 +113,8 @@ internal fun PitTechNativeAdPlacement(adsEnabled: Boolean) {
             )
             AndroidView(
                 modifier = Modifier.fillMaxWidth(),
-                factory = ::createPitTechNativeAdView,
-                update = { view -> bindPitTechNativeAd(view, ad) },
+                factory = { viewContext -> createPitTechNativeAdView(viewContext, adStyle) },
+                update = { view -> bindPitTechNativeAd(view, ad, adStyle) },
             )
         }
     }
@@ -123,7 +130,14 @@ private data class PitTechNativeAdAssets(
     var boundAd: NativeAd? = null,
 )
 
-private fun createPitTechNativeAdView(context: Context): NativeAdView {
+private data class PitTechNativeAdStyle(
+    val headlineColor: Int,
+    val secondaryTextColor: Int,
+    val actionColor: Int,
+    val actionTextColor: Int,
+)
+
+private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdStyle): NativeAdView {
     val nativeAdView = NativeAdView(context).apply {
         setBackgroundColor(Color.TRANSPARENT)
     }
@@ -140,31 +154,31 @@ private fun createPitTechNativeAdView(context: Context): NativeAdView {
         contentDescription = "Advertiser icon"
     }
     val headline = TextView(context).apply {
-        setTextColor(Color.rgb(36, 35, 31))
+        setTextColor(style.headlineColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
         setTypeface(typeface, Typeface.BOLD)
         maxLines = 2
         setPadding(0, 0, context.dp(40), 0)
     }
     val advertiser = TextView(context).apply {
-        setTextColor(Color.rgb(81, 76, 69))
+        setTextColor(style.secondaryTextColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         setPadding(0, context.dp(4), 0, 0)
     }
     val media = MediaView(context)
     val body = TextView(context).apply {
-        setTextColor(Color.rgb(36, 35, 31))
+        setTextColor(style.headlineColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         setPadding(0, context.dp(8), 0, context.dp(8))
     }
     val callToAction = TextView(context).apply {
-        setTextColor(Color.WHITE)
+        setTextColor(style.actionTextColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         setTypeface(typeface, Typeface.BOLD)
         gravity = Gravity.CENTER
         setPadding(context.dp(16), context.dp(11), context.dp(16), context.dp(11))
         background = GradientDrawable().apply {
-            setColor(Color.rgb(123, 64, 36))
+            setColor(style.actionColor)
             cornerRadius = context.dp(8).toFloat()
         }
     }
@@ -204,8 +218,13 @@ private fun createPitTechNativeAdView(context: Context): NativeAdView {
     return nativeAdView
 }
 
-private fun bindPitTechNativeAd(nativeAdView: NativeAdView, ad: NativeAd) {
+private fun bindPitTechNativeAd(nativeAdView: NativeAdView, ad: NativeAd, style: PitTechNativeAdStyle) {
     val assets = nativeAdView.tag as PitTechNativeAdAssets
+    assets.headline.setTextColor(style.headlineColor)
+    assets.advertiser.setTextColor(style.secondaryTextColor)
+    assets.body.setTextColor(style.headlineColor)
+    assets.callToAction.setTextColor(style.actionTextColor)
+    (assets.callToAction.background as? GradientDrawable)?.setColor(style.actionColor)
     if (assets.boundAd === ad) return
     assets.boundAd = ad
 

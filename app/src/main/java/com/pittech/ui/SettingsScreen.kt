@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -22,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
@@ -29,6 +31,8 @@ import com.pittech.CooksViewModel
 @Composable
 fun SettingsScreen(
     viewModel: CooksViewModel,
+    themeMode: PitTechThemeMode,
+    onThemeModeChange: (PitTechThemeMode) -> Unit,
     temperatureUnit: String,
     weightUnit: String,
     onTemperatureUnitChange: (String) -> Unit,
@@ -72,7 +76,29 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        SectionCard("Display") {
+        SectionCard("Appearance") {
+            Text("Theme", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PitTechThemeMode.values().forEach { mode ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                        modifier = Modifier.weight(1f).testTag("theme-mode-${mode.name.lowercase()}"),
+                    )
+                }
+            }
+            Text(
+                when (themeMode) {
+                    PitTechThemeMode.SYSTEM -> "PitTech follows your device appearance."
+                    PitTechThemeMode.LIGHT -> "Light appearance is selected."
+                    PitTechThemeMode.DARK -> "Dark appearance is selected."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        SectionCard("Units") {
             Text("Temperature", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("°F", "°C").forEach { unit ->
