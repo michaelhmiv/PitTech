@@ -38,6 +38,13 @@ android {
             // a developer accidentally passes -PpittechLiveAds=true.
             buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$testNativeAdUnitId\"")
         }
+
+        // Firebase Dev can be installed beside both the Play app and local debug builds.
+        create("dev") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
     }
 
     buildFeatures {

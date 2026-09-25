@@ -1,3 +1,4 @@
 <resources>
+    <string name="app_name">PitTech</string>
     <string name="admob_app_id">ca-app-pub-2708638041809482~5194145527</string>
 </resources>
