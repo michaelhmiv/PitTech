@@ -2,7 +2,11 @@ package com.pittech
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
 import android.graphics.Bitmap
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -23,6 +27,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookStatus
 import com.pittech.data.DeviceEntity
 import com.pittech.data.ProbeEntity
@@ -30,6 +35,7 @@ import com.pittech.data.SensorReadingEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -111,6 +117,10 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
         composeRule.onNodeWithTag("preparation-notes").performScrollTo().performTextInput("Light, even coating.")
+        composeRule.onNodeWithTag("dish-add-photos").performScrollTo().performClick()
+        composeRule.onNodeWithTag("photo-source-camera").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-source-library").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-source-cancel").performClick()
         composeRule.onNodeWithTag("dish-save").performClick()
 
         composeRule.onNodeWithTag("cook-save").performClick()
@@ -328,6 +338,31 @@ class PitTechUserFlowsTest {
         assertTrue("Copied diagnostic is missing its reference code.", copiedText.contains(report.referenceCode))
         assertTrue("Copied diagnostic is missing the exception summary.", copiedText.contains("Synthetic diagnostic for UI test"))
 
+    }
+
+    @Test
+    fun test06_cameraPhotoUriAcceptsCameraOutput() {
+        val photoFile = CameraPhotoFiles.create(targetContext)
+        val uri = CameraPhotoFiles.uri(targetContext, photoFile)
+        try {
+            assertEquals("content", uri.scheme)
+            val intent = ActivityResultContracts.TakePicture().createIntent(targetContext, uri)
+            assertEquals(MediaStore.ACTION_IMAGE_CAPTURE, intent.action)
+            @Suppress("DEPRECATION")
+            val outputUri = intent.getParcelableExtra<Uri>(MediaStore.EXTRA_OUTPUT)
+            assertEquals(uri, outputUri)
+            assertTrue(intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
+
+            val expectedBytes = byteArrayOf(12, 34, 56, 78)
+            targetContext.contentResolver.openOutputStream(uri, "w")!!.use { it.write(expectedBytes) }
+            val actualBytes = targetContext.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+            assertArrayEquals(expectedBytes, actualBytes)
+
+            CameraPhotoFiles.delete(targetContext, uri)
+            assertFalse(photoFile.exists())
+        } finally {
+            photoFile.delete()
+        }
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
