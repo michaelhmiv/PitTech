@@ -154,3 +154,5 @@ Insights summarize completed cooks and allow comparisons across selected cooks. 
 
 - [Detailed Android UI/UX plan](docs/UI_UX_PLAN.md)
 - [Cook data capture and export specification](docs/COOK_DATA_AND_EXPORT_SPEC.md)
+- [Privacy policy](docs/PRIVACY_POLICY.md)
+- [AdMob setup and test-ad release notes](docs/ADMOB_SETUP.md)

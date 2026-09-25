@@ -55,12 +55,13 @@ class PitTechUserFlowsTest {
         runBlocking(Dispatchers.IO) {
             application.database.clearAllTables()
         }
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
     }
 
     @Test
     fun test01_homeNavigationAndPrimaryActionAreClear() {
         clearLocalData()
-        composeRule.waitForIdle()
         composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed().assertHeightIsAtLeast(56.dp)
         saveScreenshot("home-empty")

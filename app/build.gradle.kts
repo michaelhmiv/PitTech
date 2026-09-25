@@ -6,6 +6,11 @@ plugins {
 
 val pittechVersionCode = providers.gradleProperty("pittechVersionCode").orNull?.toIntOrNull() ?: 1
 val pittechVersionName = providers.gradleProperty("pittechVersionName").orNull ?: "0.1.0"
+val pittechLiveAds = providers.gradleProperty("pittechLiveAds").orNull?.toBooleanStrictOrNull() ?: false
+val admobAppId = "ca-app-pub-2708638041809482~5194145527"
+val testNativeAdUnitId = "ca-app-pub-3940256099942544/2247696110"
+val liveNativeAdUnitId = "ca-app-pub-2708638041809482/6602595967"
+val nativeAdUnitId = if (pittechLiveAds) liveNativeAdUnitId else testNativeAdUnitId
 
 require(pittechVersionCode in 1..2_100_000_000) {
     "pittechVersionCode must be between 1 and 2100000000."
@@ -22,17 +27,22 @@ android {
         versionCode = pittechVersionCode
         versionName = pittechVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
     }
 
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // Debug installs and UI tests must never request paid inventory, even if
+            // a developer accidentally passes -PpittechLiveAds=true.
+            buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$testNativeAdUnitId\"")
         }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -48,6 +58,9 @@ ksp {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
+
+    implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.4.0")
+    implementation("com.google.android.ump:user-messaging-platform:4.0.0")
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.foundation:foundation")

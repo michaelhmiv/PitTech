@@ -70,6 +70,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
+import com.pittech.ads.shouldShowCookHistoryNativeAd
 import com.pittech.R
 import com.pittech.data.CookStatus
 import com.pittech.data.CookWithDishes
@@ -89,7 +90,12 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun PitTechApp(viewModel: CooksViewModel) {
+fun PitTechApp(
+    viewModel: CooksViewModel,
+    adsEnabled: Boolean = false,
+    privacyOptionsRequired: Boolean = false,
+    onShowPrivacyOptions: () -> Unit = {},
+) {
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val saving by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
@@ -184,6 +190,7 @@ fun PitTechApp(viewModel: CooksViewModel) {
         when (section) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
+                adsEnabled = adsEnabled,
                 modifier = Modifier.padding(padding),
                 onOpenCook = viewModel::openCook,
                 onStartCook = {
@@ -214,6 +221,8 @@ fun PitTechApp(viewModel: CooksViewModel) {
                     weightUnit = it
                     preferences.edit().putString("weight-unit", it).apply()
                 },
+                privacyOptionsRequired = privacyOptionsRequired,
+                onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -223,12 +232,18 @@ fun PitTechApp(viewModel: CooksViewModel) {
 @Composable
 private fun CooksHome(
     cooks: List<CookWithDishes>,
+    adsEnabled: Boolean,
     modifier: Modifier = Modifier,
     onOpenCook: (String) -> Unit,
     onStartCook: () -> Unit,
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
+    val showHistoryAd = shouldShowCookHistoryNativeAd(
+        adsEnabled = adsEnabled,
+        activeCookCount = activeCooks.size,
+        completedCookCount = finishedCooks.size,
+    )
 
     Column(
         modifier = modifier
@@ -260,7 +275,12 @@ private fun CooksHome(
 
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Recent cooks")
-            finishedCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
+            finishedCooks.forEachIndexed { index, cook ->
+                CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) })
+                if (showHistoryAd && index == 3) {
+                    PitTechNativeAdPlacement(adsEnabled = true)
+                }
+            }
         }
 
         if (cooks.isEmpty()) {

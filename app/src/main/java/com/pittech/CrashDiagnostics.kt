@@ -152,17 +152,18 @@ internal object CrashDiagnostics {
         saveReport(application, report)
     }
 
-    private fun isUnexpectedExit(reason: Int): Boolean = when (reason) {
+    internal fun isUnexpectedExit(
+        reason: Int,
+        sdkInt: Int = Build.VERSION.SDK_INT,
+    ): Boolean = when (reason) {
         ApplicationExitInfo.REASON_CRASH,
         ApplicationExitInfo.REASON_CRASH_NATIVE,
         ApplicationExitInfo.REASON_ANR,
         ApplicationExitInfo.REASON_INITIALIZATION_FAILURE,
         ApplicationExitInfo.REASON_LOW_MEMORY,
         ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE,
-        ApplicationExitInfo.REASON_DEPENDENCY_DIED,
-        ApplicationExitInfo.REASON_SIGNALED,
-        ApplicationExitInfo.REASON_OTHER -> true
-        else -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ApplicationExitInfo.REASON_DEPENDENCY_DIED -> true
+        else -> sdkInt >= Build.VERSION_CODES.TIRAMISU &&
             reason == ApplicationExitInfo.REASON_FREEZER
     }
 

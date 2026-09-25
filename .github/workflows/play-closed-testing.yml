@@ -77,6 +77,7 @@ jobs:
       - name: Run unit tests and build release bundle
         run: >-
           gradle --no-daemon testDebugUnitTest bundleRelease
+          -PpittechLiveAds=false
           -PpittechVersionCode=${{ steps.version.outputs.code }}
           -PpittechVersionName=${{ steps.version.outputs.name }}
 
