@@ -197,6 +197,7 @@ else
     "test03_timelineTemperatureResultsAndInsightsWork"
     "test04_portableArchiveAndWorkbookRoundTrip"
     "test05_crashReportIsVisibleAndCopyable"
+    "test06_cameraPhotoUriAcceptsCameraOutput"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
