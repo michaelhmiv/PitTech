@@ -35,7 +35,7 @@ jobs:
           gradle-version: '9.6.1'
 
       - name: Build release App Bundle
-        run: gradle bundleRelease
+        run: gradle bundleRelease -PpittechLiveAds=false
 
       - name: Upload unsigned Play App Bundle
         uses: actions/upload-artifact@v7.0.1

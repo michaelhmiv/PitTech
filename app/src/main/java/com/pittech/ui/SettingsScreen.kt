@@ -21,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
@@ -32,8 +33,11 @@ fun SettingsScreen(
     weightUnit: String,
     onTemperatureUnitChange: (String) -> Unit,
     onWeightUnitChange: (String) -> Unit,
+    privacyOptionsRequired: Boolean = false,
+    onShowPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val uriHandler = LocalUriHandler.current
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
@@ -100,6 +104,27 @@ fun SettingsScreen(
         SectionCard("Privacy and offline use") {
             Text("You can start, edit, review, and export cooks without internet access. PitTech has no sign-in screen. Photos are copied into the app's private storage so the cook log can use them offline.", style = MaterialTheme.typography.bodyLarge)
             Text("A backup file is your portable copy. Keep it in a place you can find again.", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        SectionCard("Ads and privacy") {
+            Text(
+                "PitTech may show a Google ad in cook history after you have at least four completed cooks and no cook is active. When an ad request is allowed by your privacy choices, Google's SDK may collect and share your IP address, ad interactions, diagnostics, and device or account identifiers for advertising, analytics, and fraud prevention. Google encrypts this data in transit. PitTech does not attach cook records or photos to ad requests.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            TextButton(
+                onClick = { uriHandler.openUri("https://pittech-privacy-production.up.railway.app/") },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text("Read the privacy policy")
+            }
+            if (privacyOptionsRequired) {
+                OutlinedButton(
+                    onClick = onShowPrivacyOptions,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                ) {
+                    Text("Privacy options")
+                }
+            }
         }
     }
 }

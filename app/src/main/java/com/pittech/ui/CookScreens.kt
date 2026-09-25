@@ -70,6 +70,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
+import com.pittech.ads.shouldShowCookHistoryNativeAd
 import com.pittech.R
 import com.pittech.data.CookStatus
 import com.pittech.data.CookWithDishes
@@ -89,7 +90,12 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun PitTechApp(viewModel: CooksViewModel) {
+fun PitTechApp(
+    viewModel: CooksViewModel,
+    adsEnabled: Boolean = false,
+    privacyOptionsRequired: Boolean = false,
+    onShowPrivacyOptions: () -> Unit = {},
+) {
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val saving by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
@@ -184,6 +190,7 @@ fun PitTechApp(viewModel: CooksViewModel) {
         when (section) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
+                adsEnabled = adsEnabled,
                 modifier = Modifier.padding(padding),
                 onOpenCook = viewModel::openCook,
                 onStartCook = {
@@ -214,6 +221,8 @@ fun PitTechApp(viewModel: CooksViewModel) {
                     weightUnit = it
                     preferences.edit().putString("weight-unit", it).apply()
                 },
+                privacyOptionsRequired = privacyOptionsRequired,
+                onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -223,12 +232,18 @@ fun PitTechApp(viewModel: CooksViewModel) {
 @Composable
 private fun CooksHome(
     cooks: List<CookWithDishes>,
+    adsEnabled: Boolean,
     modifier: Modifier = Modifier,
     onOpenCook: (String) -> Unit,
     onStartCook: () -> Unit,
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
+    val showHistoryAd = shouldShowCookHistoryNativeAd(
+        adsEnabled = adsEnabled,
+        activeCookCount = activeCooks.size,
+        completedCookCount = finishedCooks.size,
+    )
 
     Column(
         modifier = modifier
@@ -260,7 +275,12 @@ private fun CooksHome(
 
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Recent cooks")
-            finishedCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
+            finishedCooks.forEachIndexed { index, cook ->
+                CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) })
+                if (showHistoryAd && index == 3) {
+                    PitTechNativeAdPlacement(adsEnabled = true)
+                }
+            }
         }
 
         if (cooks.isEmpty()) {
@@ -467,224 +487,7 @@ private fun StartCookScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cook-smoker"),
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = setpoint,
-                    onValueChange = { setpoint = it },
-                    label = { Text("Starting setpoint (optional)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    isError = !CookEntryValidation.isOptionalPositiveNumberValid(setpoint),
-                    supportingText = {
-                        if (!CookEntryValidation.isOptionalPositiveNumberValid(setpoint)) {
-                            Text("Enter a positive number, or leave it blank.")
-                        }
-                    },
-                    modifier = Modifier.weight(1f).testTag("cook-setpoint"),
-                )
-                SimpleDropdownField(
-                    label = "Unit",
-                    value = setpointUnit,
-                    options = listOf("°F", "°C"),
-                    onSelect = { setpointUnit = it },
-                    testTag = "cook-setpoint-unit",
-                    modifier = Modifier.width(96.dp),
-                )
-            }
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Cook notes (optional)") },
-                placeholder = { Text("Weather, timing, changes, or anything to remember") },
-                minLines = 2,
-                modifier = Modifier.fillMaxWidth().testTag("cook-notes"),
-            )
-            TextButton(onClick = { moreCookDetails = !moreCookDetails }, modifier = Modifier.testTag("cook-more-details")) {
-                Text(if (moreCookDetails) "Hide equipment and conditions" else "Add fuel and outdoor conditions (optional)")
-            }
-            if (moreCookDetails) {
-                OutlinedTextField(fuelType, { fuelType = it }, label = { Text("Fuel type") }, placeholder = { Text("Wood pellets, charcoal, splits") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-fuel"))
-                OutlinedTextField(woodBlend, { woodBlend = it }, label = { Text("Wood or pellet blend") }, placeholder = { Text("Hickory and apple") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-wood-blend"))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(outdoorTemperature, { outdoorTemperature = it }, label = { Text("Outdoor temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.weight(1f).testTag("cook-outdoor-temperature"))
-                    SimpleDropdownField("Unit", outdoorTemperatureUnit, listOf("°F", "°C"), { outdoorTemperatureUnit = it }, modifier = Modifier.width(96.dp))
-                }
-                OutlinedTextField(weather, { weather = it }, label = { Text("Weather") }, placeholder = { Text("Clear, cloudy, rain") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-weather"))
-                OutlinedTextField(wind, { wind = it }, label = { Text("Wind or exposure") }, placeholder = { Text("Breezy from the north") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-wind"))
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                SectionHeading("Dishes")
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showDishDialog = true }, modifier = Modifier.testTag("cook-add-dish")) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add dish")
-                }
-            }
-
-            if (dishes.isEmpty()) {
-                Text(
-                    "No dish added yet. You can start now and add one later.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                dishes.forEachIndexed { index, dish ->
-                    DishDraftCard(
-                        dish = dish,
-                        onRemove = { dishes.removeAt(index) },
-                    )
-                }
-                OutlinedButton(onClick = { showDishDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add another dish")
-                }
-            }
-
-            Spacer(Modifier.height(68.dp))
-        }
-    }
-}
-
-@Composable
-private fun DishDraftCard(dish: DishDraft, onRemove: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(dish.name, style = MaterialTheme.typography.titleLarge)
-                val detail = buildList {
-                    add(dish.foodType)
-                    if (dish.weightText.isNotBlank()) add("${dish.weightText} ${dish.weightUnit}")
-                    if (dish.preparationItems.any { it.name.isNotBlank() }) add("${dish.preparationItems.count { it.name.isNotBlank() }} prep items")
-                    if (dish.photoUris.isNotEmpty()) add("${dish.photoUris.size} photos")
-                }.joinToString(" · ")
-                Text(detail, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Filled.Delete, contentDescription = "Remove ${dish.name}")
-            }
-        }
-    }
-}
-
-@Composable
-internal fun DishEditorDialog(
-    preferredWeightUnit: String = "lb",
-    onDismiss: () -> Unit,
-    onSave: (DishDraft) -> Unit,
-) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var foodType by rememberSaveable { mutableStateOf("Pork") }
-    var cut by rememberSaveable { mutableStateOf("") }
-    var weight by rememberSaveable { mutableStateOf("") }
-    var weightUnit by rememberSaveable { mutableStateOf(preferredWeightUnit) }
-    var detailsExpanded by rememberSaveable { mutableStateOf(false) }
-    var startingCondition by rememberSaveable { mutableStateOf<String?>(null) }
-    var boneIn by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    var placement by rememberSaveable { mutableStateOf("") }
-    var gradeOrSource by rememberSaveable { mutableStateOf("") }
-    var thicknessNotes by rememberSaveable { mutableStateOf("") }
-    var prepNotes by rememberSaveable { mutableStateOf("") }
-    var preparationItems by remember { mutableStateOf(listOf(IngredientDraft(name = ""))) }
-    var photoUris by remember { mutableStateOf(emptyList<String>()) }
-    var nameError by rememberSaveable { mutableStateOf(false) }
-    var weightError by rememberSaveable { mutableStateOf(false) }
-    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
-    val requestDismiss = {
-        val hasInput = name.isNotBlank() || foodType != "Pork" || cut.isNotBlank() || weight.isNotBlank() ||
-            startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() ||
-            preparationItems.any { it.name.isNotBlank() || it.amountText.isNotBlank() } || photoUris.isNotEmpty()
-        if (hasInput) confirmDiscard = true else onDismiss()
-    }
-
-    val photoPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
-    ) { selected ->
-        photoUris = (photoUris + selected.map { it.toString() }).distinct().take(10)
-    }
-
-    AlertDialog(
-        onDismissRequest = requestDismiss,
-        title = { Text("Add a dish") },
-        text = {
-            Column(
-                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it; nameError = false },
-                    label = { Text("Dish name") },
-                    placeholder = { Text("Brisket, ribs, pork loin") },
-                    singleLine = true,
-                    isError = nameError,
-                    supportingText = { if (nameError) Text("Enter a dish name or cut.") },
-                    modifier = Modifier.fillMaxWidth().testTag("dish-name"),
-                )
-                SimpleDropdownField(
-                    label = "Food type",
-                    value = foodType,
-                    options = listOf("Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Other"),
-                    onSelect = { foodType = it },
-                    testTag = "dish-food-type",
-                )
-                OutlinedTextField(
-                    value = cut,
-                    onValueChange = { cut = it },
-                    label = { Text("Specific cut (optional)") },
-                    placeholder = { Text("St. Louis ribs, pork shoulder") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("dish-cut"),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = weight,
-                        onValueChange = { weight = it; weightError = false },
-                        label = { Text("Weight (optional)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        isError = weightError,
-                        supportingText = { if (weightError) Text("Use a positive number.") },
-                        modifier = Modifier.weight(1f).testTag("dish-weight"),
-                    )
-                    SimpleDropdownField(
-                        label = "Unit",
-                        value = weightUnit,
-                        options = listOf("lb", "oz", "kg", "g"),
-                        onSelect = { weightUnit = it },
-                        testTag = "dish-weight-unit",
-                        modifier = Modifier.width(96.dp),
-                    )
-                }
-
-                TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("dish-details-toggle")) {
-                    Text(if (detailsExpanded) "Hide preparation details" else "Add preparation details")
-                }
-
-                if (detailsExpanded) {
-                    Text("Starting condition", style = MaterialTheme.typography.titleMedium)
-                    SimpleDropdownField(
-                        label = "Optional",
-                        value = startingCondition ?: "Not set",
-                        options = listOf("Not set", "Refrigerated", "Thawed", "Frozen", "Other"),
-                        onSelect = { startingCondition = it.takeUnless { value -> value == "Not set" } },
-                        testTag = "dish-starting-condition",
-                    )
-                    Text("Bone-in or boneless", style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = boneIn == true,
-                            onClick = { boneIn = if (boneIn == true) null else true },
-                            label = { Text("Bone-in") },
-                            modifier = Modifier.testTag("dish-bone-in"),
+            Row(horizonta…3153 tokens truncated…                        modifier = Modifier.testTag("dish-bone-in"),
                         )
                         FilterChip(
                             selected = boneIn == false,
