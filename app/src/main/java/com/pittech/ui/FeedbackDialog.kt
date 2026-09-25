@@ -120,7 +120,7 @@ internal fun FeedbackDialog(
                         if (showDiagnosticsPreview) {
                             Text(
                                 diagnosticBundle,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).testTag("feedback-diagnostics-preview"),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                             )
