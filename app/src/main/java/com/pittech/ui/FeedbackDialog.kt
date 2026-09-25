@@ -114,16 +114,25 @@ internal fun FeedbackDialog(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     if (includeDiagnostics) {
-                        TextButton(onClick = { showDiagnosticsPreview = !showDiagnosticsPreview }) {
+                        TextButton(
+                            onClick = { showDiagnosticsPreview = !showDiagnosticsPreview },
+                            modifier = Modifier.testTag("feedback-diagnostics-preview-toggle"),
+                        ) {
                             Text(if (showDiagnosticsPreview) "Hide diagnostics preview" else "Preview included diagnostics")
                         }
                         if (showDiagnosticsPreview) {
-                            Text(
-                                diagnosticBundle,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).testTag("feedback-diagnostics-preview"),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp)
+                                    .testTag("feedback-diagnostics-preview"),
+                            ) {
+                                Text(
+                                    diagnosticBundle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                )
+                            }
                         }
                     }
                 } else {
