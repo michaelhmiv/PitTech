@@ -73,9 +73,13 @@ jobs:
           echo "code=${version_code}" >> "$GITHUB_OUTPUT"
           echo "name=0.1.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Run unit tests and build release bundle
+      # These KSP variants export Room schemas to the same directory, so keep them in separate Gradle invocations.
+      - name: Run unit tests
+        run: gradle --no-daemon testDebugUnitTest -PpittechLiveAds=false
+
+      - name: Build release bundle
         run: >-
-          gradle --no-daemon testDebugUnitTest bundleRelease
+          gradle --no-daemon bundleRelease
           -PpittechLiveAds=false
           -PpittechVersionCode=${{ steps.version.outputs.code }}
           -PpittechVersionName=${{ steps.version.outputs.name }}
