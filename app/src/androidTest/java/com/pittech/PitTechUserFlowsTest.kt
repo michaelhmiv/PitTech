@@ -102,8 +102,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("cook-save").assertIsEnabled()
         composeRule.onNodeWithTag("cook-notes").performTextInput("Cool morning; used hickory.")
 
-        composeRule.onNodeWithTag("cook-add-dish").performClick()
-        composeRule.onNodeWithTag("dish-name").performTextInput("Brisket")
+        composeRule.onNodeWithTag("cook-add-dish").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("dish-name").assertIsDisplayed().performTextInput("Brisket")
         composeRule.onNodeWithTag("dish-food-type").performClick()
         composeRule.onNodeWithText("Beef").performClick()
         composeRule.onNodeWithTag("dish-cut").performTextInput("Whole packer")
