@@ -239,7 +239,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed")
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
-        composeRule.onNodeWithTag("timeline-entry-title").assertIsDisplayed()
+        captureCurrentScreen("timeline-edit-dialog")
+        composeRule.onRoot(useUnmergedTree = true).printToLog("PitTechTimelineEditDialog")
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("timeline-entry-title").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("timeline-entry-title").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
@@ -556,6 +561,9 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("cook-title").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-save").performClick()
         waitForText(defaultCookName)
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-tab-live").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("cook-tab-live").assertIsDisplayed()
 
         val application = targetContext.applicationContext as PitTechApplication
@@ -571,10 +579,12 @@ class PitTechUserFlowsTest {
         val reminder = runBlocking(Dispatchers.IO) { application.database.cookDao().getAllReminders().single() }
         assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
         composeRule.onNodeWithText("Log now").performScrollTo().assertIsDisplayed().performClick()
+        captureCurrentScreen("reminder-after-log-now")
+        composeRule.onRoot(useUnmergedTree = true).printToLog("PitTechReminderAfterLogNow")
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("reminder-checkin-note").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("reminder-checkin-note").assertIsDisplayed()
+        composeRule.onNodeWithTag("reminder-checkin-note").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("How did it go?").assertIsDisplayed()
         saveScreenshot("reminder-check-in")
         composeRule.onNodeWithTag("reminder-checkin-note").performTextInput("Wrapped at 160°F")
@@ -611,6 +621,15 @@ class PitTechUserFlowsTest {
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")
+
+    private fun captureCurrentScreen(name: String) {
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        val output = File(screenshotDirectory().apply { mkdirs() }, "$name.png")
+        output.outputStream().use { stream ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) { "Could not save $name screenshot." }
+        }
+        bitmap.recycle()
+    }
 
     private fun asLegacyV1Archive(bytes: ByteArray): ByteArray = rewriteZip(bytes) { true }.let { source ->
         val output = java.io.ByteArrayOutputStream()
