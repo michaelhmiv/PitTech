@@ -637,9 +637,9 @@ internal fun DishEditorDialog(
     ) { selected ->
         photoUris = (photoUris + selected.map { it.toString() }).distinct().take(10)
     }
-    val addCameraPhoto = rememberCameraPhotoCapture { uri ->
+    val addCameraPhoto = rememberCameraPhotoCapture(onPhotoCaptured = { uri ->
         photoUris = (photoUris + uri.toString()).distinct().take(10)
-    }
+    })
 
     AlertDialog(
         onDismissRequest = requestDismiss,
