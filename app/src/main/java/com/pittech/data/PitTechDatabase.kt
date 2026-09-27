@@ -17,8 +17,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TargetEntity::class,
         CookResultEntity::class,
         PhotoEntity::class,
+        CookReminderEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
@@ -35,6 +36,19 @@ abstract class PitTechDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE cooks ADD COLUMN windNotes TEXT")
                 database.execSQL("ALTER TABLE dishes ADD COLUMN gradeOrSource TEXT")
                 database.execSQL("ALTER TABLE dishes ADD COLUMN thicknessNotes TEXT")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cook_reminders (" +
+                        "id TEXT NOT NULL, cookId TEXT NOT NULL, title TEXT NOT NULL, dueAtUtcMillis INTEGER NOT NULL, " +
+                        "timeZoneId TEXT NOT NULL, status TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, " +
+                        "completedAtUtcMillis INTEGER, PRIMARY KEY(id), " +
+                        "FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_cook_reminders_cookId_status_dueAtUtcMillis ON cook_reminders(cookId, status, dueAtUtcMillis)")
             }
         }
     }

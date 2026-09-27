@@ -192,6 +192,7 @@ if (( api_level >= 37 )); then
 else
   test_selector='com.pittech.PitTechUserFlowsTest'
   expected_tests=(
+    "test00_reminderCheckInBecomesCookTimelineNoteAndRestores"
     "test01_homeNavigationAndPrimaryActionAreClear"
     "test02_createCookWithDishAndPreparationAndSaveLocally"
     "test03_timelineTemperatureResultsAndInsightsWork"

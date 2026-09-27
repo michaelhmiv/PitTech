@@ -51,9 +51,10 @@ internal fun PhotoSourceDialog(
 
 /** Opens the system camera and returns the full-sized image saved to a temporary content URI. */
 @Composable
-internal fun rememberCameraPhotoCapture(onPhotoCaptured: (Uri) -> Unit): () -> Unit {
+internal fun rememberCameraPhotoCapture(onPhotoCaptured: (Uri) -> Unit, onCaptureCancelled: () -> Unit = {}): () -> Unit {
     val context = LocalContext.current
     val currentOnPhotoCaptured by rememberUpdatedState(onPhotoCaptured)
+    val currentOnCaptureCancelled by rememberUpdatedState(onCaptureCancelled)
     var pendingOutputPath by rememberSaveable { mutableStateOf<String?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
         val file = pendingOutputPath?.let(::File)
@@ -62,6 +63,7 @@ internal fun rememberCameraPhotoCapture(onPhotoCaptured: (Uri) -> Unit): () -> U
             currentOnPhotoCaptured(CameraPhotoFiles.uri(context, file))
         } else {
             file?.delete()
+            currentOnCaptureCancelled()
         }
     }
 
@@ -74,6 +76,7 @@ internal fun rememberCameraPhotoCapture(onPhotoCaptured: (Uri) -> Unit): () -> U
             pendingOutputPath = null
             output.delete()
             Toast.makeText(context, "No camera app is available.", Toast.LENGTH_SHORT).show()
+            currentOnCaptureCancelled()
         }
     }
 }

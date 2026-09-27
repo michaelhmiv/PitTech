@@ -1,11 +1,20 @@
 package com.pittech.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Build
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,11 +59,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -63,10 +75,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookDetailData
+import com.pittech.data.CookReminderEntity
 import com.pittech.data.CookStatus
 import com.pittech.data.DishEntity
 import com.pittech.data.SensorReadingEntity
@@ -75,6 +90,7 @@ import com.pittech.domain.CookEntryValidation
 import com.pittech.domain.DishDraft
 import com.pittech.domain.IngredientDraft
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.text.SimpleDateFormat
@@ -108,6 +124,15 @@ fun CookDetailScreen(
     var showExportCook by remember { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
     var photoCaptionUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var showReminderComposer by rememberSaveable { mutableStateOf(false) }
+    var reminderTitle by rememberSaveable { mutableStateOf("Check grill temperature") }
+    var reminderDelayMillis by rememberSaveable { mutableStateOf(60L * 60 * 1000) }
+    var completionReminderId by remember { mutableStateOf<String?>(null) }
+    var showReminderCheckIn by remember { mutableStateOf(false) }
+    var photoFromReminderCheckIn by remember { mutableStateOf(false) }
+    var viewingPhoto by remember { mutableStateOf<com.pittech.data.PhotoEntity?>(null) }
+    var photoToSave by remember { mutableStateOf<com.pittech.data.PhotoEntity?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -115,11 +140,44 @@ fun CookDetailScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val deletedEvent by viewModel.deletedEvent.collectAsStateWithLifecycle()
+    val pendingReminderId by viewModel.pendingReminderId.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> photoCaptionUri = uri?.toString() }
-    val addCameraPhoto = rememberCameraPhotoCapture { uri -> photoCaptionUri = uri.toString() }
+    ) { uri ->
+        photoCaptionUri = uri?.toString()
+        if (uri == null && photoFromReminderCheckIn) {
+            photoFromReminderCheckIn = false
+            showReminderCheckIn = true
+        }
+    }
+    val addCameraPhoto = rememberCameraPhotoCapture(
+        onPhotoCaptured = { uri -> photoCaptionUri = uri.toString() },
+        onCaptureCancelled = {
+            if (photoFromReminderCheckIn) {
+                photoFromReminderCheckIn = false
+                showReminderCheckIn = true
+            }
+        },
+    )
+    val savePhoto = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/*")) { uri ->
+        val selected = photoToSave
+        photoToSave = null
+        if (uri != null && selected != null) coroutineScope.launch {
+            runCatching {
+                val bytes = viewModel.readPhotoBytes(selected.relativePath) ?: error("The photo file is missing.")
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: error("The selected location could not be opened.")
+                }
+            }.onSuccess { android.widget.Toast.makeText(context, "Photo saved.", android.widget.Toast.LENGTH_SHORT).show() }
+                .onFailure { android.widget.Toast.makeText(context, it.message ?: "Photo could not be saved.", android.widget.Toast.LENGTH_LONG).show() }
+        }
+    }
+    val requestReminderPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        viewModel.createCookReminder(data.cook.id, reminderTitle, System.currentTimeMillis() + reminderDelayMillis, granted)
+        showReminderComposer = false
+    }
     val exportWorkbook = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         if (uri != null) viewModel.export(uri, CooksViewModel.FORMAT_XLSX, data.cook.id)
     }
@@ -128,6 +186,39 @@ fun CookDetailScreen(
     }
     val exportCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) viewModel.export(uri, CooksViewModel.FORMAT_CSV, data.cook.id)
+    }
+
+    fun sharePhoto(photo: com.pittech.data.PhotoEntity) {
+        runCatching {
+            val file = java.io.File(context.filesDir, photo.relativePath)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = photo.mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = android.content.ClipData.newUri(context.contentResolver, photo.caption ?: photo.originalFileName, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(send, "Share cook photo"))
+        }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Photo could not be shared.", android.widget.Toast.LENGTH_LONG).show() }
+    }
+
+    fun saveReminder() {
+        val notificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsEnabled) {
+            requestReminderPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.createCookReminder(data.cook.id, reminderTitle, System.currentTimeMillis() + reminderDelayMillis, notificationsEnabled)
+            showReminderComposer = false
+        }
+    }
+
+    LaunchedEffect(pendingReminderId, data.cook.id, data.reminders) {
+        val id = pendingReminderId
+        if (id != null && data.reminders.any { it.id == id && it.status == CookReminderEntity.STATUS_PENDING }) {
+            completionReminderId = id
+            showReminderCheckIn = true
+        }
     }
 
     LaunchedEffect(notice) {
@@ -251,7 +342,10 @@ fun CookDetailScreen(
     }
     if (showPhotoSource) {
         PhotoSourceDialog(
-            onDismiss = { showPhotoSource = false },
+            onDismiss = {
+                showPhotoSource = false
+                if (photoFromReminderCheckIn) { photoFromReminderCheckIn = false; showReminderCheckIn = true }
+            },
             onTakePhoto = {
                 showPhotoSource = false
                 addCameraPhoto()
@@ -267,11 +361,60 @@ fun CookDetailScreen(
             onDismiss = {
                 photoCaptionUri?.let { CameraPhotoFiles.delete(context, it) }
                 photoCaptionUri = null
+                if (photoFromReminderCheckIn) { photoFromReminderCheckIn = false; showReminderCheckIn = true }
             },
             onSave = { caption ->
-                viewModel.addCookPhoto(data.cook.id, photoCaptionUri!!, caption)
+                val fromReminder = photoFromReminderCheckIn
+                viewModel.addCookPhoto(data.cook.id, photoCaptionUri!!, caption) { _ ->
+                    if (fromReminder) {
+                        photoFromReminderCheckIn = false
+                        showReminderCheckIn = true
+                    }
+                }
                 photoCaptionUri = null
             },
+        )
+    }
+    if (showReminderComposer) {
+        ReminderComposerDialog(
+            title = reminderTitle,
+            delayMillis = reminderDelayMillis,
+            onTitleChange = { reminderTitle = it },
+            onDelayChange = { reminderDelayMillis = it },
+            onDismiss = { showReminderComposer = false },
+            onSave = ::saveReminder,
+        )
+    }
+    val checkInReminder = data.reminders.firstOrNull { it.id == completionReminderId && it.status == CookReminderEntity.STATUS_PENDING }
+    if (showReminderCheckIn && checkInReminder != null) {
+        ReminderCheckInDialog(
+            reminder = checkInReminder,
+            onDismiss = {
+                viewModel.snoozeCookReminder(checkInReminder, 60L * 60 * 1000)
+                showReminderCheckIn = false
+                completionReminderId = null
+            },
+            onAddPhoto = {
+                showReminderCheckIn = false
+                photoFromReminderCheckIn = true
+                showPhotoSource = true
+            },
+            onComplete = { note ->
+                viewModel.completeCookReminder(checkInReminder, note)
+                showReminderCheckIn = false
+                completionReminderId = null
+            },
+        )
+    }
+    viewingPhoto?.let { photo ->
+        PhotoViewerDialog(
+            photo = photo,
+            onDismiss = { viewingPhoto = null },
+            onSave = { selected ->
+                photoToSave = selected
+                savePhoto.launch(selected.originalFileName.substringAfterLast('/').ifBlank { "cook-photo.jpg" })
+            },
+            onShare = ::sharePhoto,
         )
     }
     if (confirmDeleteCook) {
@@ -310,16 +453,19 @@ fun CookDetailScreen(
                     )
                 }
             }
+            CookQuickActionsBar(
+                onNote = { showNewEvent = true },
+                onTemperature = { showTemperature = true },
+                onPhoto = { showPhotoSource = true },
+                onReminder = { showReminderComposer = true },
+            )
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
                     busy = busy,
                     onTogglePause = { if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id) },
-                    onRecordTemperature = { showTemperature = true },
                     onAddTarget = { showTarget = true },
                     onDeleteTarget = viewModel::deleteTarget,
-                    onAddEvent = { showNewEvent = true },
-                    onAddPhoto = { showPhotoSource = true },
                     onAddDish = { addDish = true },
                     onEditDish = { editDish = it },
                     onResults = { showResults = true },
@@ -332,19 +478,45 @@ fun CookDetailScreen(
                     onDelete = { confirmDeleteCook = true },
                     onCopySetup = { viewModel.duplicateCookSetup(data.cook.id) },
                     onError = error,
+                    onCancelReminder = viewModel::cancelCookReminder,
+                    onLogReminder = { reminder ->
+                        completionReminderId = reminder.id
+                        showReminderCheckIn = true
+                    },
+                    onPhotoClick = { viewingPhoto = it },
+                    onViewTimeline = { selectedTab = CookTab.TIMELINE.name },
                 )
                 CookTab.TIMELINE -> TimelineTab(
                     data = data,
                     viewModel = viewModel,
-                    onAdd = { showNewEvent = true },
-                    onAddTemperature = { showTemperature = true },
-                    onAddPhoto = { showPhotoSource = true },
                     onEditEvent = { editEvent = it },
                     onEditReading = { editReading = it },
                     onError = error,
+                    onPhotoClick = { viewingPhoto = it },
                 )
                 CookTab.CHARTS -> ChartsTab(data)
             }
+        }
+    }
+}
+
+@Composable
+private fun CookQuickActionsBar(
+    onNote: () -> Unit,
+    onTemperature: () -> Unit,
+    onPhoto: () -> Unit,
+    onReminder: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Quick log", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onNote, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add")) { Text("Note") }
+            OutlinedButton(onClick = onTemperature, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add-temperature")) { Text("Temp") }
+            OutlinedButton(onClick = onPhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add-photo")) { Text("Photo") }
+            OutlinedButton(onClick = onReminder, modifier = Modifier.weight(1.1f).heightIn(min = 48.dp).testTag("cook-add-reminder")) { Text("Remind") }
         }
     }
 }
@@ -354,11 +526,8 @@ private fun LiveCookTab(
     data: CookDetailData,
     busy: Boolean,
     onTogglePause: () -> Unit,
-    onRecordTemperature: () -> Unit,
     onAddTarget: () -> Unit,
     onDeleteTarget: (com.pittech.data.TargetEntity) -> Unit,
-    onAddEvent: () -> Unit,
-    onAddPhoto: () -> Unit,
     onAddDish: () -> Unit,
     onEditDish: (DishEntity) -> Unit,
     onResults: () -> Unit,
@@ -367,30 +536,73 @@ private fun LiveCookTab(
     onDelete: () -> Unit,
     onCopySetup: () -> Unit,
     onError: String?,
+    onCancelReminder: (CookReminderEntity) -> Unit,
+    onLogReminder: (CookReminderEntity) -> Unit,
+    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onViewTimeline: () -> Unit,
 ) {
     val elapsed = calculateElapsed(data)
     val hours = (elapsed.coerceAtLeast(0) / 3_600_000)
     val minutes = (elapsed.coerceAtLeast(0) / 60_000) % 60
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    var showCookDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionCard("Cook summary") {
             Text("${hours}h ${minutes}m ${if (data.cook.status == CookStatus.PAUSED) "paused" else "elapsed"}", style = MaterialTheme.typography.headlineMedium)
-            Text("Manual cook log · no controller connected", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            data.cook.smokerName?.let { Text("Smoker: $it", style = MaterialTheme.typography.bodyLarge) }
-            data.cook.initialSetpointValue?.let { Text("Starting setpoint: $it ${data.cook.initialSetpointUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
-            data.cook.fuelType?.let { Text("Fuel: $it", style = MaterialTheme.typography.bodyLarge) }
-            data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: $it", style = MaterialTheme.typography.bodyLarge) }
-            data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: $it ${data.cook.outdoorTemperatureUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
-            data.cook.weatherNotes?.let { Text("Weather: $it", style = MaterialTheme.typography.bodyLarge) }
-            data.cook.windNotes?.let { Text("Wind: $it", style = MaterialTheme.typography.bodyLarge) }
-            Text("Started ${formatTimestamp(data.cook.startedAtUtcMillis)} · ${data.cook.startedTimeZoneId}", style = MaterialTheme.typography.bodyMedium)
-            data.cook.notes?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+            Text("Started ${formatTimestamp(data.cook.startedAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { showCookDetails = !showCookDetails }, modifier = Modifier.heightIn(min = 44.dp)) { Text(if (showCookDetails) "Hide cook details" else "Cook details") }
+            if (showCookDetails) {
+                data.cook.smokerName?.let { Text("Smoker: $it", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.initialSetpointValue?.let { Text("Starting setpoint: $it ${data.cook.initialSetpointUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.fuelType?.let { Text("Fuel: $it", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: $it", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: $it ${data.cook.outdoorTemperatureUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.weatherNotes?.let { Text("Weather: $it", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.windNotes?.let { Text("Wind: $it", style = MaterialTheme.typography.bodyLarge) }
+                data.cook.notes?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+            }
             if (data.cook.status != CookStatus.COMPLETED) {
-                OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.heightIn(min = 46.dp)) {
                     Text(if (data.cook.status == CookStatus.PAUSED) "Resume cook" else "Pause cook")
                 }
+            }
+        }
+
+        val pendingReminders = data.reminders.filter { it.status == CookReminderEntity.STATUS_PENDING }
+        if (pendingReminders.isNotEmpty()) {
+            SectionCard("Reminders (${pendingReminders.size})") {
+                pendingReminders.forEach { reminder ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Text("Around ${formatTimestamp(reminder.dueAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
+                        TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
+                    }
+                }
+            }
+        }
+
+        val recentRows = buildList {
+            data.events.filter { it.eventType != "temperature" }.forEach { add(TimelineLine.Event(it)) }
+            data.readings.forEach { add(TimelineLine.Reading(it)) }
+        }.sortedBy { it.time }.takeLast(3).asReversed()
+        SectionCard("Latest in the cook log") {
+            if (recentRows.isEmpty()) {
+                Text("Your notes, photos, and temperature checks will show here in order.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                recentRows.forEach { row ->
+                    when (row) {
+                        is TimelineLine.Event -> {
+                            Text(row.event.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Text(formatTimestamp(row.event.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+                            data.photos.filter { it.eventId == row.event.id }.forEach { photo -> PhotoThumbnail(photo, modifier = Modifier.fillMaxWidth().height(120.dp), onClick = { onPhotoClick(photo) }) }
+                        }
+                        is TimelineLine.Reading -> Text("${row.reading.probeName}: ${row.reading.value} ${row.reading.unit} · ${formatTimestamp(row.reading.measuredAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (row != recentRows.last()) androidx.compose.material3.HorizontalDivider()
+                }
+                TextButton(onClick = onViewTimeline, modifier = Modifier.heightIn(min = 44.dp)) { Text("View full cook timeline") }
             }
         }
 
@@ -439,7 +651,6 @@ private fun LiveCookTab(
                     Text("Manual reading · ${formatTimestamp(latest.measuredAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            Button(onClick = onRecordTemperature, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Record temperature") }
         }
 
         SectionCard("Targets") {
@@ -457,22 +668,22 @@ private fun LiveCookTab(
             OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add target") }
         }
 
-        SectionCard("Quick actions") {
-            Button(onClick = onAddEvent, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Add timeline event or note") }
-            OutlinedButton(onClick = onAddPhoto, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Add photo") }
+        SectionCard("Wrap up") {
             OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results") }
-            OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export this cook") }
-            OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Use this setup for a new cook") }
-            Text("Copies the smoker setup, dishes, and preparation items. It starts a new log without old events, readings, photos, or results.", style = MaterialTheme.typography.bodyMedium)
             if (data.cook.status == CookStatus.ACTIVE) {
                 Button(onClick = onFinish, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("live-finish-cook")) { Text("Finish cook") }
             }
-            TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Filled.Delete, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Delete cook") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onExport, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Export") }
+                TextButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Reuse setup") }
+                TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Delete cook") }
+            }
+            Text("Reusing a setup starts a fresh cook log.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
         }
 
         if (data.results.isNotEmpty()) CookResultsCard(data)
-        if (data.photos.isNotEmpty()) PhotoGallery(data.photos)
+        if (data.photos.isNotEmpty()) PhotoGallery(data.photos, onPhotoClick)
     }
 }
 
@@ -480,12 +691,10 @@ private fun LiveCookTab(
 private fun TimelineTab(
     data: CookDetailData,
     viewModel: CooksViewModel,
-    onAdd: () -> Unit,
-    onAddTemperature: () -> Unit,
-    onAddPhoto: () -> Unit,
     onEditEvent: (TimelineEventEntity) -> Unit,
     onEditReading: (SensorReadingEntity) -> Unit,
     onError: String?,
+    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
 ) {
     var eventsOnly by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     val rows = buildList {
@@ -499,21 +708,16 @@ private fun TimelineTab(
             FilterChip(selected = !eventsOnly, onClick = { eventsOnly = false }, label = { Text("All entries") })
             FilterChip(selected = eventsOnly, onClick = { eventsOnly = true }, label = { Text("Events only") })
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = onAdd, modifier = Modifier.weight(1f).heightIn(min = 50.dp).testTag("timeline-add")) { Text("+ Add entry") }
-            OutlinedButton(onClick = onAddTemperature, modifier = Modifier.weight(1f).heightIn(min = 50.dp).testTag("timeline-add-temperature")) { Text("Temperature") }
-        }
-        OutlinedButton(onClick = onAddPhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("timeline-add-photo")) { Text("Add photo") }
         if (rows.isEmpty()) {
             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.Center) {
-                Text("No timeline entries yet", style = MaterialTheme.typography.titleLarge)
-                Text("Add an event, note, temperature, or photo. You can edit or remove entries later.", style = MaterialTheme.typography.bodyLarge)
+                Text("No cook history yet", style = MaterialTheme.typography.titleLarge)
+                Text("Use the quick log buttons above to add a note, temperature, photo, or reminder. Entries will appear here in time order.", style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 rows.forEach { row ->
                     when (row) {
-                        is TimelineLine.Event -> TimelineEventCard(row.event, data, onEdit = { onEditEvent(row.event) }, onDelete = { viewModel.deleteTimelineEvent(row.event) })
+                        is TimelineLine.Event -> TimelineEventCard(row.event, data, onEdit = { onEditEvent(row.event) }, onDelete = { viewModel.deleteTimelineEvent(row.event) }, onPhotoClick = onPhotoClick)
                         is TimelineLine.Reading -> TemperatureTimelineCard(row.reading, onEdit = { onEditReading(row.reading) }, onDelete = { viewModel.deleteSensorReading(row.reading) })
                     }
                 }
@@ -529,15 +733,15 @@ private sealed class TimelineLine(val time: Long) {
 }
 
 @Composable
-private fun TimelineEventCard(event: TimelineEventEntity, data: CookDetailData, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun TimelineEventCard(event: TimelineEventEntity, data: CookDetailData, onEdit: () -> Unit, onDelete: () -> Unit, onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit) {
     val dishName = data.dishes.firstOrNull { it.id == event.dishId }?.name
-    val photo = data.photos.firstOrNull { it.eventId == event.id }
+    val photos = data.photos.filter { it.eventId == event.id }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(event.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("${formatTimestamp(event.occurredAtUtcMillis)} · ${event.source.replaceFirstChar { it.uppercase() }}" + (dishName?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
             event.details?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-            photo?.let { PhotoThumbnail(it) }
+            photos.forEach { photo -> PhotoThumbnail(photo, onClick = { onPhotoClick(photo) }) }
             if (event.source == "manual") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-event-edit-${event.eventType}")) { Icon(Icons.Filled.Edit, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Edit") }
@@ -607,17 +811,21 @@ private fun CookResultsCard(data: CookDetailData) {
 }
 
 @Composable
-private fun PhotoGallery(photos: List<com.pittech.data.PhotoEntity>) {
+private fun PhotoGallery(photos: List<com.pittech.data.PhotoEntity>, onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit) {
     SectionCard("Photos (${photos.size})") {
         photos.forEach { photo ->
-            PhotoThumbnail(photo)
+            PhotoThumbnail(photo, onClick = { onPhotoClick(photo) })
             Text(photo.caption ?: photo.originalFileName, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 @Composable
-private fun PhotoThumbnail(photo: com.pittech.data.PhotoEntity) {
+private fun PhotoThumbnail(
+    photo: com.pittech.data.PhotoEntity,
+    modifier: Modifier = Modifier.fillMaxWidth().height(190.dp),
+    onClick: () -> Unit = {},
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var bitmap by remember(photo.id) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     LaunchedEffect(photo.id) {
@@ -638,8 +846,137 @@ private fun PhotoThumbnail(photo: com.pittech.data.PhotoEntity) {
         }
         bitmap = decoded?.asImageBitmap()
     }
-    bitmap?.let { Image(it, contentDescription = photo.caption ?: photo.originalFileName, modifier = Modifier.fillMaxWidth().height(190.dp), contentScale = ContentScale.Crop) }
-        ?: Text("Photo saved · ${photo.originalFileName}", style = MaterialTheme.typography.bodyMedium)
+    bitmap?.let { Image(it, contentDescription = photo.caption ?: photo.originalFileName, modifier = modifier.clickable(onClick = onClick), contentScale = ContentScale.Crop) }
+        ?: Text("Photo saved · ${photo.originalFileName}", style = MaterialTheme.typography.bodyMedium, modifier = modifier.clickable(onClick = onClick))
+}
+
+@Composable
+private fun PhotoViewerDialog(
+    photo: com.pittech.data.PhotoEntity,
+    onDismiss: () -> Unit,
+    onSave: (com.pittech.data.PhotoEntity) -> Unit,
+    onShare: (com.pittech.data.PhotoEntity) -> Unit,
+) {
+    val context = LocalContext.current
+    var bitmap by remember(photo.id) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var scale by remember(photo.id) { mutableStateOf(1f) }
+    var offsetX by remember(photo.id) { mutableStateOf(0f) }
+    var offsetY by remember(photo.id) { mutableStateOf(0f) }
+    val transformState = rememberTransformableState { zoom, pan, _ ->
+        scale = (scale * zoom).coerceIn(1f, 5f)
+        if (scale == 1f) {
+            offsetX = 0f
+            offsetY = 0f
+        } else {
+            offsetX += pan.x
+            offsetY += pan.y
+        }
+    }
+    LaunchedEffect(photo.id) {
+        val decoded = withContext(Dispatchers.IO) {
+            val file = java.io.File(context.filesDir, photo.relativePath)
+            if (!file.isFile) return@withContext null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            var sampleSize = 1
+            while (bounds.outWidth / sampleSize > 2000 || bounds.outHeight / sampleSize > 2000) sampleSize *= 2
+            BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+            })
+        }
+        bitmap = decoded?.asImageBitmap()
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(onClick = onDismiss) { Text("×", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
+                    Text(photo.caption ?: photo.originalFileName, color = Color.White, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                    TextButton(onClick = { onSave(photo) }) { Text("Save", color = Color.White) }
+                    TextButton(onClick = { onShare(photo) }) { Text("Share", color = Color.White) }
+                }
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().transformable(transformState),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    bitmap?.let {
+                        Image(
+                            it,
+                            contentDescription = photo.caption ?: photo.originalFileName,
+                            modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY),
+                            contentScale = ContentScale.Fit,
+                        )
+                    } ?: Text("Photo could not be loaded", color = Color.White)
+                }
+                Text("Pinch to zoom · Drag to move", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReminderComposerDialog(
+    title: String,
+    delayMillis: Long,
+    onTitleChange: (String) -> Unit,
+    onDelayChange: (Long) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+) {
+    val options = listOf(30L * 60 * 1000 to "30 min", 60L * 60 * 1000 to "1 hour", 2L * 60 * 60 * 1000 to "2 hours", 5L * 60 * 60 * 1000 to "5 hours")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set a cook reminder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = title, onValueChange = onTitleChange, label = { Text("What should you check?") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("reminder-title"))
+                Text("Remind me in", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    options.take(2).forEach { (millis, label) -> FilterChip(selected = delayMillis == millis, onClick = { onDelayChange(millis) }, label = { Text(label) }) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    options.drop(2).forEach { (millis, label) -> FilterChip(selected = delayMillis == millis, onClick = { onDelayChange(millis) }, label = { Text(label) }) }
+                }
+                Text("Notifications may arrive a little after the selected time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = onSave, enabled = title.isNotBlank(), modifier = Modifier.testTag("reminder-save")) { Text("Set reminder") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ReminderCheckInDialog(
+    reminder: CookReminderEntity,
+    onDismiss: () -> Unit,
+    onAddPhoto: () -> Unit,
+    onComplete: (String) -> Unit,
+) {
+    var note by rememberSaveable(reminder.id) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How did it go?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(reminder.title)
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Add a note") },
+                    placeholder = { Text("Checked the grill, added wood…") },
+                    modifier = Modifier.fillMaxWidth().testTag("reminder-checkin-note"),
+                )
+                TextButton(onClick = onAddPhoto, modifier = Modifier.heightIn(min = 44.dp)) { Text("Add a photo") }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text("Log check-in") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Remind me in 1 hour") } },
+    )
 }
 
 @Composable

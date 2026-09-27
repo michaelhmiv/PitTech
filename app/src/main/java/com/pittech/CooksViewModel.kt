@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.pittech.data.CookRepository
 import com.pittech.data.CookWithDishes
+import com.pittech.data.CookReminderEntity
 import com.pittech.data.InsightsSnapshot
 import com.pittech.data.PitTechDataTransfer
 import com.pittech.data.TimelineEventEntity
@@ -63,6 +64,9 @@ class CooksViewModel(
 
     private var deletedReading: SensorReadingEntity? = null
 
+    private val _pendingReminderId = MutableStateFlow<String?>(null)
+    val pendingReminderId: StateFlow<String?> = _pendingReminderId.asStateFlow()
+
     private val _importPreview = MutableStateFlow<PitTechDataTransfer.ImportDraft?>(null)
     val importPreview: StateFlow<PitTechDataTransfer.ImportDraft?> = _importPreview.asStateFlow()
 
@@ -75,6 +79,9 @@ class CooksViewModel(
         _selectedCookId.value = null
         clearMessages()
     }
+
+    fun requestReminderCheckIn(reminderId: String) { _pendingReminderId.value = reminderId }
+    fun consumeReminderCheckIn() { _pendingReminderId.value = null }
 
     fun startCook(draft: NewCookDraft) = perform {
         _savedCookId.value = repository.startCook(draft)
@@ -172,18 +179,47 @@ class CooksViewModel(
         _notice.value = "Target deleted."
     }
 
-    fun addCookPhoto(cookId: String, uri: String, caption: String?) = perform {
+    fun addCookPhoto(cookId: String, uri: String, caption: String?, onFinished: ((Boolean) -> Unit)? = null) = perform({
         repository.addCookPhoto(cookId, uri, caption)
         _notice.value = "Photo added to the cook."
+    }, onFinished)
+
+    fun createCookReminder(cookId: String, title: String, dueAtUtcMillis: Long, notificationsEnabled: Boolean) = perform {
+        val reminder = repository.createCookReminder(cookId, title, dueAtUtcMillis)
+        CookReminderNotifications.schedule(context, reminder)
+        _notice.value = if (notificationsEnabled) "Reminder set for ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(dueAtUtcMillis))}." else "Reminder saved. Turn on PitTech notifications to see the alert when it is due."
+    }
+
+    fun cancelCookReminder(reminder: CookReminderEntity) = perform {
+        repository.cancelCookReminder(reminder.id)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
+        _notice.value = "Reminder cancelled."
+    }
+
+    fun snoozeCookReminder(reminder: CookReminderEntity, delayMillis: Long) = perform {
+        val dueAt = System.currentTimeMillis() + delayMillis
+        repository.snoozeCookReminder(reminder.id, dueAt)?.let { updated ->
+            CookReminderNotifications.cancel(context, reminder.id, reminder.cookId)
+            CookReminderNotifications.schedule(context, updated)
+        }
+        consumeReminderCheckIn()
+        _notice.value = "Reminder moved to ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(dueAt))}."
+    }
+
+    fun completeCookReminder(reminder: CookReminderEntity, note: String) = perform {
+        repository.completeCookReminder(reminder.id, note)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
+        _notice.value = "Check-in added to the cook timeline."
+        consumeReminderCheckIn()
     }
 
     fun saveResults(cookId: String, dishId: String?, finalTemp: String, unit: String, restMinutes: String, ratings: Map<String, String>, notes: String, finish: Boolean) = perform {
         repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish)
+        if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         _notice.value = if (finish) "Cook finished and results saved." else "Results saved."
     }
 
     fun completeCook(cookId: String) = perform {
         repository.completeCook(cookId)
+        repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         _notice.value = "Cook marked finished."
     }
 
@@ -235,6 +271,7 @@ class CooksViewModel(
         val draft = _importPreview.value ?: return
         perform {
             val result = dataTransfer.import(draft)
+            repository.getPendingCookReminders().forEach { CookReminderNotifications.schedule(context, it) }
             _importPreview.value = null
             _notice.value = "Restored ${result.importedCooks} cooks and ${result.importedPhotos} photos. ${result.skippedCooks} duplicate cooks skipped."
         }
@@ -246,18 +283,23 @@ class CooksViewModel(
     fun clearMessages() { _error.value = null; _notice.value = null }
     fun clearSaveError() { _error.value = null }
 
-    private fun perform(block: suspend () -> Unit) {
+    private fun perform(block: suspend () -> Unit) = perform(block, null)
+
+    private fun perform(block: suspend () -> Unit, onFinished: ((Boolean) -> Unit)?) {
         if (_busy.value) return
         viewModelScope.launch {
             _busy.value = true
             _error.value = null
             _notice.value = null
+            var succeeded = false
             try {
                 block()
+                succeeded = true
             } catch (failure: Exception) {
                 _error.value = failure.message ?: "That change could not be saved. Try again."
             } finally {
                 _busy.value = false
+                onFinished?.invoke(succeeded)
             }
         }
     }

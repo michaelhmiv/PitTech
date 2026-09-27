@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleReminderIntent(intent)
         setContent {
             var crashReport by remember {
                 mutableStateOf(CrashDiagnostics.pendingReport(this@MainActivity))
@@ -62,5 +63,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleReminderIntent(intent)
+    }
+
+    private fun handleReminderIntent(intent: android.content.Intent?) {
+        val cookId = intent?.getStringExtra(CookReminderNotifications.EXTRA_COOK_ID) ?: return
+        val reminderId = intent.getStringExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
+        viewModel.openCook(cookId)
+        reminderId?.let(viewModel::requestReminderCheckIn)
+        intent.removeExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
     }
 }

@@ -338,6 +338,28 @@ data class PhotoEntity(
     val addedAtUtcMillis: Long,
 )
 
+@Entity(
+    tableName = "cook_reminders",
+    foreignKeys = [ForeignKey(entity = CookEntity::class, parentColumns = ["id"], childColumns = ["cookId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["cookId", "status", "dueAtUtcMillis"])],
+)
+data class CookReminderEntity(
+    @PrimaryKey val id: String,
+    val cookId: String,
+    val title: String,
+    val dueAtUtcMillis: Long,
+    val timeZoneId: String,
+    val status: String = STATUS_PENDING,
+    val createdAtUtcMillis: Long,
+    val completedAtUtcMillis: Long? = null,
+) {
+    companion object {
+        const val STATUS_PENDING = "pending"
+        const val STATUS_COMPLETED = "completed"
+        const val STATUS_CANCELLED = "cancelled"
+    }
+}
+
 data class CookWithDishes(
     @Embedded val cook: CookEntity,
     @Relation(parentColumn = "id", entityColumn = "cookId")
@@ -353,6 +375,7 @@ data class CookDetailData(
     val targets: List<TargetEntity>,
     val results: List<CookResultEntity>,
     val photos: List<PhotoEntity>,
+    val reminders: List<CookReminderEntity>,
 )
 
 data class InsightsSnapshot(
@@ -377,6 +400,15 @@ interface CookDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPhotos(photos: List<PhotoEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertReminder(reminder: CookReminderEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertRemindersIgnoringDuplicates(reminders: List<CookReminderEntity>)
+
+    @Update
+    suspend fun updateReminder(reminder: CookReminderEntity)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCooksIgnoringDuplicates(cooks: List<CookEntity>)
@@ -488,6 +520,18 @@ interface CookDao {
     @Query("SELECT * FROM photos")
     suspend fun getAllPhotos(): List<PhotoEntity>
 
+    @Query("SELECT * FROM cook_reminders")
+    suspend fun getAllReminders(): List<CookReminderEntity>
+
+    @Query("SELECT * FROM cook_reminders WHERE status = 'pending' ORDER BY dueAtUtcMillis ASC")
+    suspend fun getPendingReminders(): List<CookReminderEntity>
+
+    @Query("SELECT * FROM cook_reminders WHERE cookId = :cookId AND status = 'pending' ORDER BY dueAtUtcMillis ASC")
+    suspend fun getPendingRemindersForCook(cookId: String): List<CookReminderEntity>
+
+    @Query("SELECT * FROM cook_reminders WHERE id = :reminderId LIMIT 1")
+    suspend fun getReminder(reminderId: String): CookReminderEntity?
+
     @Query("SELECT * FROM cooks WHERE id = :cookId LIMIT 1")
     suspend fun getCook(cookId: String): CookEntity?
 
@@ -511,6 +555,9 @@ interface CookDao {
 
     @Query("SELECT * FROM photos WHERE cookId = :cookId ORDER BY addedAtUtcMillis ASC")
     fun observePhotos(cookId: String): Flow<List<PhotoEntity>>
+
+    @Query("SELECT * FROM cook_reminders WHERE cookId = :cookId ORDER BY dueAtUtcMillis ASC")
+    fun observeReminders(cookId: String): Flow<List<CookReminderEntity>>
 
     @Query("SELECT * FROM photos WHERE cookId = :cookId")
     suspend fun getPhotosForCook(cookId: String): List<PhotoEntity>

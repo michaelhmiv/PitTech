@@ -371,7 +371,10 @@ private fun StartCookScreen(
     onBack: () -> Unit,
     onStartCook: (NewCookDraft) -> Unit,
 ) {
-    var title by rememberSaveable { mutableStateOf("") }
+    val defaultCookName = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date()) }
+    var title by rememberSaveable {
+        mutableStateOf(defaultCookName)
+    }
     var smoker by rememberSaveable { mutableStateOf("") }
     var setpoint by rememberSaveable { mutableStateOf("") }
     var setpointUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
@@ -387,7 +390,7 @@ private fun StartCookScreen(
     var showDishDialog by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     val requestBack = {
-        val hasInput = title.isNotBlank() || smoker.isNotBlank() || setpoint.isNotBlank() || notes.isNotBlank() || fuelType.isNotBlank() || woodBlend.isNotBlank() || outdoorTemperature.isNotBlank() || weather.isNotBlank() || wind.isNotBlank() || dishes.isNotEmpty()
+        val hasInput = title != defaultCookName || smoker.isNotBlank() || setpoint.isNotBlank() || notes.isNotBlank() || fuelType.isNotBlank() || woodBlend.isNotBlank() || outdoorTemperature.isNotBlank() || weather.isNotBlank() || wind.isNotBlank() || dishes.isNotEmpty()
         if (hasInput) confirmDiscard = true else onBack()
     }
 
@@ -475,8 +478,9 @@ private fun StartCookScreen(
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Cook name (optional)") },
+                label = { Text("Cook name") },
                 placeholder = { Text("Saturday brisket") },
+                supportingText = { Text("Defaults to today. You can rename this cook any time.") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cook-title"),
             )
@@ -633,9 +637,9 @@ internal fun DishEditorDialog(
     ) { selected ->
         photoUris = (photoUris + selected.map { it.toString() }).distinct().take(10)
     }
-    val addCameraPhoto = rememberCameraPhotoCapture { uri ->
+    val addCameraPhoto = rememberCameraPhotoCapture(onPhotoCaptured = { uri ->
         photoUris = (photoUris + uri.toString()).distinct().take(10)
-    }
+    })
 
     AlertDialog(
         onDismissRequest = requestDismiss,
