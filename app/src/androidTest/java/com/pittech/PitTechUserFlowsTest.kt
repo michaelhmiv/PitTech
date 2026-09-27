@@ -386,7 +386,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("start-cook").performClick()
         composeRule.onNodeWithTag("cook-title").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-save").performClick()
-        waitForText("Cook saved on this phone.")
+        waitForText(defaultCookName)
 
         val application = targetContext.applicationContext as PitTechApplication
         val cook = runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook }
