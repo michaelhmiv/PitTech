@@ -1,5 +1,7 @@
 package com.pittech
 
+import android.Manifest
+import android.os.Build
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -90,6 +92,7 @@ class PitTechUserFlowsTest {
         clearLocalData()
         composeRule.onNodeWithTag("start-cook").performClick()
 
+        composeRule.onNodeWithTag("cook-title").performTextClearance()
         composeRule.onNodeWithTag("cook-title").performTextInput("Saturday brisket")
         composeRule.onNodeWithTag("cook-smoker").performTextInput("Pit Boss Austin XL")
         composeRule.onNodeWithTag("cook-setpoint").performTextInput("0")
@@ -367,6 +370,57 @@ class PitTechUserFlowsTest {
         } finally {
             photoFile.delete()
         }
+    }
+
+    @Test
+    fun test07_reminderCheckInBecomesCookTimelineNoteAndRestores() {
+        clearLocalData()
+        val defaultCookName = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
+                targetContext.packageName,
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
+        }
+
+        composeRule.onNodeWithTag("start-cook").performClick()
+        composeRule.onNodeWithTag("cook-title").assertIsDisplayed()
+        composeRule.onNodeWithTag("cook-save").performClick()
+        waitForText("Cook saved on this phone.")
+
+        val application = targetContext.applicationContext as PitTechApplication
+        val cook = runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook }
+        assertEquals(defaultCookName, cook.title)
+        composeRule.onNodeWithTag("cook-card-${cook.id}").performClick()
+        composeRule.onNodeWithTag("cook-add-reminder").performClick()
+        composeRule.onNodeWithTag("reminder-title").performTextClearance()
+        composeRule.onNodeWithTag("reminder-title").performTextInput("Check the brisket")
+        composeRule.onNodeWithText("30 min").performClick()
+        composeRule.onNodeWithTag("reminder-save").performClick()
+        waitForText("Check the brisket")
+
+        val reminder = runBlocking(Dispatchers.IO) { application.database.cookDao().getAllReminders().single() }
+        assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
+        composeRule.onNodeWithText("Log now").performClick()
+        composeRule.onNodeWithTag("reminder-checkin-note").performTextInput("Wrapped at 160°F")
+        composeRule.onNodeWithTag("reminder-checkin-save").performClick()
+        waitForText("Check-in added to the cook timeline.")
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runBlocking(Dispatchers.IO) {
+                application.database.cookDao().getAllReminders().single().status == com.pittech.data.CookReminderEntity.STATUS_COMPLETED
+            }
+        }
+        val event = runBlocking(Dispatchers.IO) {
+            application.database.cookDao().getTimelineEventsForCook(cook.id).single { it.eventType == "reminder_completed" }
+        }
+        assertEquals("Check-in: Check the brisket", event.title)
+        assertEquals("Wrapped at 160°F", event.details)
+
+        val archive = java.io.ByteArrayOutputStream()
+        runBlocking(Dispatchers.IO) { application.dataTransfer.writeZip(archive, cook.id) }
+        val preview = application.dataTransfer.previewImport(java.io.ByteArrayInputStream(archive.toByteArray()))
+        assertEquals(1, preview.snapshot.reminders.size)
+        assertEquals(com.pittech.data.CookReminderEntity.STATUS_COMPLETED, preview.snapshot.reminders.single().status)
     }
 
     private fun screenshotDirectory() = File(targetContext.filesDir, "pittech-ui-test")

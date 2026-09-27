@@ -31,7 +31,8 @@ class CookRepository(
             dao.observeTargets(cookId),
             dao.observeResults(cookId),
             dao.observePhotos(cookId),
-        ) { targets, results, photos -> CookExtras(targets, results, photos) }
+            dao.observeReminders(cookId),
+        ) { targets, results, photos, reminders -> CookExtras(targets, results, photos, reminders) }
         return combine(core, extras) { first, second ->
             first.cook?.let { relation ->
                 CookDetailData(
@@ -43,6 +44,7 @@ class CookRepository(
                     targets = second.targets,
                     results = second.results,
                     photos = second.photos,
+                    reminders = second.reminders,
                 )
             }
         }
@@ -79,7 +81,7 @@ class CookRepository(
         val setpoint = CookEntryValidation.optionalPositiveNumber(draft.setpointText)
         val cook = CookEntity(
             id = cookId,
-            title = draft.title.trim().ifBlank { "Cook ${DateTimeFormatter.ofPattern("MMM d").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(now))}" },
+            title = draft.title.trim().ifBlank { DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM).withZone(ZoneId.of(timeZoneId)).format(Instant.ofEpochMilli(now)) },
             status = CookStatus.ACTIVE,
             startedAtUtcMillis = now,
             startedTimeZoneId = timeZoneId,
@@ -331,6 +333,62 @@ class CookRepository(
 
     suspend fun deleteTarget(target: TargetEntity) = dao.deleteTarget(target)
 
+    suspend fun createCookReminder(cookId: String, title: String, dueAtUtcMillis: Long): CookReminderEntity {
+        require(dao.getCook(cookId) != null) { "This cook is no longer available." }
+        require(title.isNotBlank()) { "Give the reminder a short title." }
+        require(dueAtUtcMillis > System.currentTimeMillis()) { "Choose a time in the future." }
+        require(dueAtUtcMillis <= System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000) { "Reminders can be scheduled up to 30 days ahead." }
+        val reminder = CookReminderEntity(
+            id = UUID.randomUUID().toString(),
+            cookId = cookId,
+            title = title.trim(),
+            dueAtUtcMillis = dueAtUtcMillis,
+            timeZoneId = ZoneId.systemDefault().id,
+            createdAtUtcMillis = System.currentTimeMillis(),
+        )
+        dao.insertReminder(reminder)
+        return reminder
+    }
+
+    suspend fun cancelCookReminder(reminderId: String): CookReminderEntity? {
+        val reminder = dao.getReminder(reminderId) ?: return null
+        if (reminder.status != CookReminderEntity.STATUS_PENDING) return reminder
+        val cancelled = reminder.copy(status = CookReminderEntity.STATUS_CANCELLED)
+        dao.updateReminder(cancelled)
+        return cancelled
+    }
+
+    suspend fun snoozeCookReminder(reminderId: String, dueAtUtcMillis: Long): CookReminderEntity? {
+        val reminder = dao.getReminder(reminderId) ?: return null
+        if (reminder.status != CookReminderEntity.STATUS_PENDING) return reminder
+        val snoozed = reminder.copy(dueAtUtcMillis = dueAtUtcMillis)
+        dao.updateReminder(snoozed)
+        return snoozed
+    }
+
+    suspend fun completeCookReminder(reminderId: String, note: String?): CookReminderEntity? = database.withTransaction {
+        val reminder = dao.getReminder(reminderId) ?: return@withTransaction null
+        if (reminder.status != CookReminderEntity.STATUS_PENDING) return@withTransaction reminder
+        val now = System.currentTimeMillis()
+        dao.updateReminder(reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = now))
+        dao.insertTimelineEvent(
+            TimelineEventEntity(
+                id = UUID.randomUUID().toString(),
+                cookId = reminder.cookId,
+                eventType = "reminder_completed",
+                title = "Check-in: ${reminder.title}",
+                details = note?.trim()?.ifBlank { null } ?: "Reminder check-in completed.",
+                occurredAtUtcMillis = now,
+                recordedAtUtcMillis = now,
+                timeZoneId = reminder.timeZoneId,
+                source = "manual",
+                createdAtUtcMillis = now,
+                updatedAtUtcMillis = now,
+            ),
+        )
+        reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = now)
+    }
+
     suspend fun addCookPhoto(cookId: String, uri: String, caption: String?): PhotoEntity {
         val now = System.currentTimeMillis()
         val event = addTimelineEvent(cookId, null, "photo", caption?.takeIf { it.isNotBlank() } ?: "Photo added", null, now)
@@ -473,6 +531,7 @@ class CookRepository(
             devices = dao.getAllDevices().filter { it.cookId in selectedCookIds },
             probes = dao.getAllProbes().filter { it.cookId in selectedCookIds },
             photos = dao.getAllPhotos().filter { it.cookId in selectedCookIds },
+            reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
         )
     }
 
@@ -500,6 +559,7 @@ class CookRepository(
                 dao.insertProbesIgnoringDuplicates(snapshot.probes.filter { it.cookId in newIds })
                 dao.insertReadingsIgnoringDuplicates(snapshot.readings.filter { it.cookId in newIds })
                 dao.insertPhotosIgnoringDuplicates(restoredPhotos)
+                dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds })
             }
         } catch (failure: Throwable) {
             restoredPhotos.forEach { photo -> photoStorage.delete(photo.relativePath) }
@@ -509,6 +569,14 @@ class CookRepository(
     }
 
     suspend fun readPhoto(relativePath: String): ByteArray? = photoStorage.read(relativePath)
+
+    suspend fun getPendingCookReminders(): List<CookReminderEntity> = dao.getPendingReminders()
+
+    suspend fun cancelPendingCookReminders(cookId: String): List<CookReminderEntity> = database.withTransaction {
+        val pending = dao.getPendingRemindersForCook(cookId)
+        pending.forEach { dao.updateReminder(it.copy(status = CookReminderEntity.STATUS_CANCELLED)) }
+        pending
+    }
 
     private fun DishDraft.toEntity(cookId: String, dishId: String, now: Long) = DishEntity(
         id = dishId,
@@ -539,6 +607,7 @@ class CookRepository(
         val targets: List<TargetEntity>,
         val results: List<CookResultEntity>,
         val photos: List<PhotoEntity>,
+        val reminders: List<CookReminderEntity>,
     )
 }
 
@@ -553,6 +622,7 @@ data class ExportSnapshot(
     val devices: List<DeviceEntity>,
     val probes: List<ProbeEntity>,
     val photos: List<PhotoEntity>,
+    val reminders: List<CookReminderEntity> = emptyList(),
 )
 
 data class ImportSummary(val importedCooks: Int, val skippedCooks: Int, val importedPhotos: Int)

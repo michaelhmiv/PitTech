@@ -88,7 +88,8 @@ class PitTechDataTransfer(
             .put("timelineEvents", snapshot.events.size)
             .put("readings", snapshot.readings.size)
             .put("results", snapshot.results.size)
-            .put("photos", snapshot.photos.size))
+            .put("photos", snapshot.photos.size)
+            .put("reminders", snapshot.reminders.size))
 
     private fun snapshotJson(snapshot: ExportSnapshot) = JSONObject()
         .put("schemaVersion", ARCHIVE_VERSION)
@@ -101,6 +102,7 @@ class PitTechDataTransfer(
         .put("results", JSONArray().apply { snapshot.results.forEach { put(it.toJson()) } })
         .put("devices", JSONArray().apply { snapshot.devices.forEach { put(it.toJson()) } })
         .put("probes", JSONArray().apply { snapshot.probes.forEach { put(it.toJson()) } })
+        .put("reminders", JSONArray().apply { snapshot.reminders.forEach { put(it.toJson()) } })
         .put("photos", JSONArray().apply {
             snapshot.photos.forEach { photo ->
                 val extension = photo.originalFileName.substringAfterLast('.', "jpg").filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
@@ -119,6 +121,7 @@ class PitTechDataTransfer(
         "devices.csv" to csv("device_id,cook_id,brand,model,device_name,role,firmware_version,created_at_utc", snapshot.devices.map { listOf(it.id,it.cookId,it.brand,it.model,it.deviceName,it.role,it.firmwareVersion,utc(it.createdAtUtcMillis)) }),
         "probes.csv" to csv("probe_id,cook_id,device_id,assigned_dish_id,name,measurement_type,source,created_at_utc", snapshot.probes.map { listOf(it.id,it.cookId,it.deviceId,it.assignedDishId,it.name,it.measurementType,it.source,utc(it.createdAtUtcMillis)) }),
         "photos.csv" to csv("photo_id,cook_id,dish_id,event_id,file_name,mime_type,caption,captured_at_utc,added_at_utc", snapshot.photos.map { listOf(it.id,it.cookId,it.dishId,it.eventId,it.originalFileName,it.mimeType,it.caption,utc(it.capturedAtUtcMillis),utc(it.addedAtUtcMillis)) }),
+        "reminders.csv" to csv("reminder_id,cook_id,title,due_at_utc,time_zone,status,created_at_utc,completed_at_utc", snapshot.reminders.map { listOf(it.id,it.cookId,it.title,utc(it.dueAtUtcMillis),it.timeZoneId,it.status,utc(it.createdAtUtcMillis),utc(it.completedAtUtcMillis)) }),
     )
 
     private fun utc(millis: Long?): String? = millis?.let { Instant.ofEpochMilli(it).toString() }
@@ -188,6 +191,7 @@ class PitTechDataTransfer(
             Sheet("Probes", rows(listOf("Probe ID","Cook ID","Device ID","Dish ID","Name","Measurement","Source","Created UTC").map(::text), s.probes.map { listOf(text(it.id),text(it.cookId),text(it.deviceId),text(it.assignedDishId),text(it.name),text(it.measurementType),text(it.source),text(utc(it.createdAtUtcMillis))) })),
             Sheet("Photos", rows(listOf("Photo ID","Cook ID","Dish ID","Event ID","Caption","File name","MIME type","Captured UTC","Added UTC").map(::text), s.photos.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventId),text(it.caption),text(it.originalFileName),text(it.mimeType),text(utc(it.capturedAtUtcMillis)),text(utc(it.addedAtUtcMillis))) })),
             Sheet("Derived Metrics", rows(listOf("Cook ID","Probe","Metric","Value","Unit","Method","Source start UTC","Source end UTC","Method version").map(::text), derived)),
+            Sheet("Reminders", rows(listOf("Reminder ID","Cook ID","Title","Due UTC","Time zone","Status","Created UTC","Completed UTC").map(::text), s.reminders.map { listOf(text(it.id),text(it.cookId),text(it.title),text(utc(it.dueAtUtcMillis)),text(it.timeZoneId),text(it.status),text(utc(it.createdAtUtcMillis)),text(utc(it.completedAtUtcMillis))) })),
         )
     }
 
@@ -328,6 +332,11 @@ private fun PhotoEntity.toJson() = JSONObject()
     .put("originalFileName", originalFileName).put("mimeType", mimeType).putNullable("caption", caption)
     .putNullable("capturedAtUtcMillis", capturedAtUtcMillis).put("addedAtUtcMillis", addedAtUtcMillis)
 
+private fun CookReminderEntity.toJson() = JSONObject()
+    .put("id", id).put("cookId", cookId).put("title", title).put("dueAtUtcMillis", dueAtUtcMillis)
+    .put("timeZoneId", timeZoneId).put("status", status).put("createdAtUtcMillis", createdAtUtcMillis)
+    .putNullable("completedAtUtcMillis", completedAtUtcMillis)
+
 private fun JSONObject.string(key: String): String = getString(key)
 private fun JSONObject.stringOrNull(key: String): String? = if (!has(key) || isNull(key)) null else getString(key)
 private fun JSONObject.long(key: String): Long = getLong(key)
@@ -426,10 +435,18 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
             caption=o.stringOrNull("caption"), capturedAtUtcMillis=o.longOrNull("capturedAtUtcMillis"), addedAtUtcMillis=o.long("addedAtUtcMillis"),
         )
     }
+    val reminders = root.arrayObjects("reminders").map { o ->
+        CookReminderEntity(
+            id = o.string("id"), cookId = o.string("cookId"), title = o.string("title"),
+            dueAtUtcMillis = o.long("dueAtUtcMillis"), timeZoneId = o.string("timeZoneId"),
+            status = o.optString("status", CookReminderEntity.STATUS_PENDING),
+            createdAtUtcMillis = o.long("createdAtUtcMillis"), completedAtUtcMillis = o.longOrNull("completedAtUtcMillis"),
+        )
+    }
     require(cooks.map { it.id }.distinct().size == cooks.size) { "The backup contains duplicate cook IDs." }
     val cookIds = cooks.map { it.id }.toSet()
-    require(dishes.all { it.cookId in cookIds } && events.all { it.cookId in cookIds } && readings.all { it.cookId in cookIds }) {
+    require(dishes.all { it.cookId in cookIds } && events.all { it.cookId in cookIds } && readings.all { it.cookId in cookIds } && reminders.all { it.cookId in cookIds }) {
         "The backup has records that do not belong to a cook in this archive."
     }
-    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos)
+    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders)
 }

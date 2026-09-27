@@ -16,6 +16,7 @@ class PitTechApplication : Application() {
     val database: PitTechDatabase by lazy {
         Room.databaseBuilder(this, PitTechDatabase::class.java, "pittech-local.db")
             .addMigrations(PitTechDatabase.MIGRATION_1_2)
+            .addMigrations(PitTechDatabase.MIGRATION_2_3)
             .build()
     }
 
