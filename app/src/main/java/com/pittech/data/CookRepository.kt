@@ -366,13 +366,12 @@ class CookRepository(
         return snoozed
     }
 
-    suspend fun completeCookReminder(reminderId: String, note: String?): CookReminderEntity? = database.withTransaction {
+    suspend fun completeCookReminder(reminderId: String, note: String?): ReminderCheckIn? = database.withTransaction {
         val reminder = dao.getReminder(reminderId) ?: return@withTransaction null
-        if (reminder.status != CookReminderEntity.STATUS_PENDING) return@withTransaction reminder
+        if (reminder.status != CookReminderEntity.STATUS_PENDING) return@withTransaction null
         val now = System.currentTimeMillis()
-        dao.updateReminder(reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = now))
-        dao.insertTimelineEvent(
-            TimelineEventEntity(
+        val completed = reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = now)
+        val event = TimelineEventEntity(
                 id = UUID.randomUUID().toString(),
                 cookId = reminder.cookId,
                 eventType = "reminder_completed",
@@ -384,28 +383,60 @@ class CookRepository(
                 source = "manual",
                 createdAtUtcMillis = now,
                 updatedAtUtcMillis = now,
-            ),
-        )
-        reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = now)
+            )
+        dao.updateReminder(completed)
+        dao.insertTimelineEvent(event)
+        ReminderCheckIn(completed, event)
     }
 
-    suspend fun addCookPhoto(cookId: String, uri: String, caption: String?): PhotoEntity {
-        val now = System.currentTimeMillis()
-        val event = addTimelineEvent(cookId, null, "photo", caption?.takeIf { it.isNotBlank() } ?: "Photo added", null, now)
-        val photo = try {
-            photoStorage.copyIntoLibrary(uri, cookId, null, now, event.id, caption)
-        } catch (failure: Throwable) {
-            dao.deleteTimelineEvent(event)
-            throw failure
+    suspend fun addTimelineEventWithPhoto(
+        cookId: String,
+        dishId: String?,
+        eventType: String,
+        title: String,
+        details: String?,
+        occurredAtUtcMillis: Long,
+        photoUri: String?,
+        photoCaption: String?,
+    ): CookLogSaveResult {
+        val event = addTimelineEvent(cookId, dishId, eventType, title, details, occurredAtUtcMillis)
+        val attached = if (photoUri == null) true else try {
+            attachPhotoToTimelineEvent(event.id, cookId, dishId, photoUri, photoCaption)
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
         }
+        return CookLogSaveResult(event, attached)
+    }
+
+    suspend fun attachPhotoToTimelineEvent(
+        eventId: String,
+        cookId: String,
+        dishId: String?,
+        uri: String,
+        caption: String?,
+    ): PhotoEntity {
+        val event = dao.getTimelineEvent(eventId) ?: error("This timeline entry is no longer available.")
+        require(event.cookId == cookId) { "A photo can only be attached to an entry in the same cook." }
+        require(dishId == null || dao.getDish(dishId)?.cookId == cookId) { "This dish is not part of the selected cook." }
+        val photo = photoStorage.copyIntoLibrary(uri, cookId, dishId ?: event.dishId, System.currentTimeMillis(), eventId, caption)
         return try {
             dao.insertPhotos(listOf(photo))
             photo
         } catch (failure: Throwable) {
             photoStorage.delete(photo.relativePath)
-            dao.deleteTimelineEvent(event)
             throw failure
         }
+    }
+
+    suspend fun addReminderCheckInPhoto(eventId: String, cookId: String, uri: String, caption: String?): PhotoEntity =
+        attachPhotoToTimelineEvent(eventId, cookId, null, uri, caption)
+
+    suspend fun addCookPhoto(cookId: String, uri: String, caption: String?): PhotoEntity {
+        val event = addTimelineEvent(cookId, null, "photo", caption?.takeIf { it.isNotBlank() } ?: "Photo added", null, System.currentTimeMillis())
+        return attachPhotoToTimelineEvent(event.id, cookId, null, uri, caption)
     }
 
     suspend fun saveCookResults(
@@ -536,6 +567,10 @@ class CookRepository(
     }
 
     suspend fun importSnapshot(snapshot: ExportSnapshot, attachmentData: Map<String, ByteArray>): ImportSummary {
+        require(snapshot.photos.map { it.id }.distinct().size == snapshot.photos.size) { "The backup contains duplicate photo IDs." }
+        require(snapshot.photos.all { attachmentData[it.id]?.isNotEmpty() == true }) {
+            "The backup is incomplete: one or more photo attachments are missing."
+        }
         val existingCookIds = dao.getAllCooks().map { it.id }.toSet()
         val newCooks = snapshot.cooks.filterNot { it.id in existingCookIds }
         val newIds = newCooks.map { it.id }.toSet()
@@ -544,7 +579,7 @@ class CookRepository(
         val restoredPhotos = mutableListOf<PhotoEntity>()
         try {
             photos.forEach { photo ->
-                val bytes = attachmentData[photo.id] ?: return@forEach
+                val bytes = attachmentData.getValue(photo.id)
                 photoStorage.writeImported(photo.relativePath, bytes)
                 restoredPhotos += photo
             }
@@ -624,6 +659,10 @@ data class ExportSnapshot(
     val photos: List<PhotoEntity>,
     val reminders: List<CookReminderEntity> = emptyList(),
 )
+
+data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)
+
+data class ReminderCheckIn(val reminder: CookReminderEntity, val event: TimelineEventEntity)
 
 data class ImportSummary(val importedCooks: Int, val skippedCooks: Int, val importedPhotos: Int)
 

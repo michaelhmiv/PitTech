@@ -535,6 +535,9 @@ interface CookDao {
     @Query("SELECT * FROM cooks WHERE id = :cookId LIMIT 1")
     suspend fun getCook(cookId: String): CookEntity?
 
+    @Query("SELECT * FROM dishes WHERE id = :dishId LIMIT 1")
+    suspend fun getDish(dishId: String): DishEntity?
+
     @Query("SELECT * FROM dishes WHERE cookId = :cookId ORDER BY createdAtUtcMillis ASC")
     fun observeDishes(cookId: String): Flow<List<DishEntity>>
 
@@ -543,6 +546,9 @@ interface CookDao {
 
     @Query("SELECT * FROM timeline_events WHERE cookId = :cookId ORDER BY occurredAtUtcMillis ASC")
     fun observeTimelineEvents(cookId: String): Flow<List<TimelineEventEntity>>
+
+    @Query("SELECT * FROM timeline_events WHERE id = :eventId LIMIT 1")
+    suspend fun getTimelineEvent(eventId: String): TimelineEventEntity?
 
     @Query("SELECT * FROM sensor_readings WHERE cookId = :cookId ORDER BY measuredAtUtcMillis ASC")
     fun observeSensorReadings(cookId: String): Flow<List<SensorReadingEntity>>

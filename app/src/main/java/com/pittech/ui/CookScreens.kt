@@ -1,5 +1,8 @@
 package com.pittech.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -80,6 +83,7 @@ import com.pittech.domain.DishDraft
 import com.pittech.domain.IngredientDraft
 import com.pittech.domain.NewCookDraft
 import java.text.DateFormat
+import java.time.Instant
 import java.util.Date
 
 private enum class MainSection(val title: String, val icon: ImageVector) {
@@ -93,6 +97,8 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 fun PitTechApp(
     viewModel: CooksViewModel,
+    themeMode: PitTechThemeMode,
+    onThemeModeChange: (PitTechThemeMode) -> Unit,
     adsEnabled: Boolean = false,
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
@@ -100,22 +106,76 @@ fun PitTechApp(
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val saving by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
     val savedCookId by viewModel.savedCookId.collectAsStateWithLifecycle()
     val selectedCookId by viewModel.selectedCookId.collectAsStateWithLifecycle()
     val selectedCook by viewModel.selectedCook.collectAsStateWithLifecycle()
     val insights by viewModel.insights.collectAsStateWithLifecycle()
+    val importPreview by viewModel.importPreview.collectAsStateWithLifecycle()
+    val restoredPreferences by viewModel.restoredPreferences.collectAsStateWithLifecycle()
+    val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("pittech-preferences", 0) }
     var temperatureUnit by rememberSaveable { mutableStateOf(preferences.getString("temperature-unit", "°F") ?: "°F") }
     var weightUnit by rememberSaveable { mutableStateOf(preferences.getString("weight-unit", "lb") ?: "lb") }
+    val restoreBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.previewImport(uri)
+    }
+
+    LaunchedEffect(restoredPreferences) {
+        restoredPreferences?.let { restored ->
+            temperatureUnit = restored.temperatureUnit
+            weightUnit = restored.weightUnit
+            onThemeModeChange(PitTechThemeMode.valueOf(restored.themeMode))
+            viewModel.consumeRestoredPreferences()
+        }
+    }
+
+    LaunchedEffect(shareArchiveUri) {
+        val uri = shareArchiveUri ?: return@LaunchedEffect
+        runCatching {
+            context.startActivity(Intent.createChooser(ZipShareIntent.create(uri), "Share PitTech backup"))
+        }.onFailure { failure ->
+            val message = if (failure is ActivityNotFoundException) "No app can share this ZIP. Use Save backup instead." else "The backup could not be shared."
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+        viewModel.consumeShareArchive()
+    }
+
+    if (importPreview != null) {
+        val draft = importPreview!!
+        AlertDialog(
+            onDismissRequest = viewModel::cancelImport,
+            title = { Text("Review backup contents") },
+            text = {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}")
+                    Text("${draft.cookCount} cooks · ${draft.dishCount} dishes · ${draft.eventCount} log entries · ${draft.readingCount} readings · ${draft.resultCount} results · ${draft.photoCount} photos")
+                    Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.")
+                    if (draft.preferences != null) {
+                        Text("This full backup also restores temperature, weight, and appearance preferences.")
+                    } else {
+                        Text("This cook-only or older backup does not include app preferences.")
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = viewModel::confirmImport, enabled = !saving) { Text("Restore backup") } },
+            dismissButton = { TextButton(onClick = viewModel::cancelImport) { Text("Cancel") } },
+        )
+    }
 
     LaunchedEffect(savedCookId) {
-        if (savedCookId != null) {
+        val newCookId = savedCookId
+        if (newCookId != null) {
             isStartingCook = false
             selectedSection = MainSection.COOKS.name
             viewModel.clearSavedCookSignal()
+            viewModel.openCook(newCookId)
         }
     }
 
@@ -192,8 +252,11 @@ fun PitTechApp(
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
                 adsEnabled = adsEnabled,
+                error = saveError,
+                notice = notice,
                 modifier = Modifier.padding(padding),
                 onOpenCook = viewModel::openCook,
+                onRestoreBackup = { restoreBackup.launch(arrayOf("application/zip", "application/x-zip-compressed")) },
                 onStartCook = {
                     viewModel.clearSaveError()
                     isStartingCook = true
@@ -212,6 +275,8 @@ fun PitTechApp(
             )
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
                 temperatureUnit = temperatureUnit,
                 weightUnit = weightUnit,
                 onTemperatureUnitChange = {
@@ -234,8 +299,11 @@ fun PitTechApp(
 private fun CooksHome(
     cooks: List<CookWithDishes>,
     adsEnabled: Boolean,
+    error: String?,
+    notice: String?,
     modifier: Modifier = Modifier,
     onOpenCook: (String) -> Unit,
+    onRestoreBackup: () -> Unit,
     onStartCook: () -> Unit,
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
@@ -268,6 +336,8 @@ private fun CooksHome(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
 
         if (activeCooks.isNotEmpty()) {
             SectionHeading("Active cook")
@@ -298,6 +368,12 @@ private fun CooksHome(
                         "Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.",
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    OutlinedButton(
+                        onClick = onRestoreBackup,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("empty-restore-backup"),
+                    ) {
+                        Text("Restore from backup")
+                    }
                 }
             }
         }
@@ -341,6 +417,10 @@ private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
 private fun SectionHeading(text: String) {
     Text(text, style = MaterialTheme.typography.titleLarge)
 }
+
+private fun formatBackupDate(value: String): String = runCatching {
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(Instant.parse(value).toEpochMilli()))
+}.getOrDefault(value)
 
 @Composable
 private fun FeaturePlaceholder(
@@ -484,6 +564,34 @@ private fun StartCookScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cook-title"),
             )
+
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                SectionHeading("Dishes")
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showDishDialog = true }, modifier = Modifier.testTag("cook-add-dish")) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add dish")
+                }
+            }
+
+            if (dishes.isEmpty()) {
+                Text(
+                    "No dish added yet. You can start now and add one later.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                dishes.forEachIndexed { index, dish ->
+                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index) })
+                }
+                OutlinedButton(onClick = { showDishDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add another dish")
+                }
+            }
+
             OutlinedTextField(
                 value = smoker,
                 onValueChange = { smoker = it },
@@ -525,7 +633,7 @@ private fun StartCookScreen(
                 modifier = Modifier.fillMaxWidth().testTag("cook-notes"),
             )
             TextButton(onClick = { moreCookDetails = !moreCookDetails }, modifier = Modifier.testTag("cook-more-details")) {
-                Text(if (moreCookDetails) "Hide equipment and conditions" else "Add fuel and outdoor conditions (optional)")
+                Text(if (moreCookDetails) "Hide more cook details" else "More cook details (optional)")
             }
             if (moreCookDetails) {
                 OutlinedTextField(fuelType, { fuelType = it }, label = { Text("Fuel type") }, placeholder = { Text("Wood pellets, charcoal, splits") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-fuel"))
@@ -536,36 +644,6 @@ private fun StartCookScreen(
                 }
                 OutlinedTextField(weather, { weather = it }, label = { Text("Weather") }, placeholder = { Text("Clear, cloudy, rain") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-weather"))
                 OutlinedTextField(wind, { wind = it }, label = { Text("Wind or exposure") }, placeholder = { Text("Breezy from the north") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("cook-wind"))
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                SectionHeading("Dishes")
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showDishDialog = true }, modifier = Modifier.testTag("cook-add-dish")) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add dish")
-                }
-            }
-
-            if (dishes.isEmpty()) {
-                Text(
-                    "No dish added yet. You can start now and add one later.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                dishes.forEachIndexed { index, dish ->
-                    DishDraftCard(
-                        dish = dish,
-                        onRemove = { dishes.removeAt(index) },
-                    )
-                }
-                OutlinedButton(onClick = { showDishDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add another dish")
-                }
             }
 
             Spacer(Modifier.height(68.dp))

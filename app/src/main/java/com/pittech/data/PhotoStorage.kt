@@ -58,10 +58,17 @@ class PhotoStorage(private val context: Context) {
     }
 
     suspend fun writeImported(relativePath: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
-        require(relativePath.startsWith("photos/") && !relativePath.contains("..")) { "Invalid photo path in archive." }
+        require(relativePath.matches(Regex("photos/[A-Za-z0-9_-]{1,80}\\.[A-Za-z0-9]{1,8}"))) { "Invalid photo path in archive." }
         val destination = File(context.filesDir, relativePath)
-        destination.parentFile?.mkdirs()
-        destination.writeBytes(bytes)
+        val directory = destination.parentFile ?: error("Invalid photo destination.")
+        check(directory.exists() || directory.mkdirs()) { "Could not create the photo library." }
+        val temporary = File(directory, "${destination.name}.tmp-${UUID.randomUUID()}")
+        try {
+            temporary.outputStream().use { it.write(bytes) }
+            check(temporary.renameTo(destination)) { "Could not finish restoring a photo." }
+        } finally {
+            temporary.delete()
+        }
     }
 
     suspend fun read(relativePath: String): ByteArray? = withContext(Dispatchers.IO) {

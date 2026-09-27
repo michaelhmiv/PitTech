@@ -139,7 +139,9 @@ done
 timeout 30 adb shell settings put global window_animation_scale 0
 timeout 30 adb shell settings put global transition_animation_scale 0
 timeout 30 adb shell settings put global animator_duration_scale 0
-timeout 30 adb shell settings put system font_scale 1.15
+font_scale="${PITTECH_FONT_SCALE:-1.15}"
+timeout 30 adb shell settings put system font_scale "$font_scale"
+echo "Using Android font scale ${font_scale}."
 
 echo "Running Compose UI tests on the booted emulator."
 app_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/debug/app-debug.apk"
@@ -199,6 +201,8 @@ else
     "test04_portableArchiveAndWorkbookRoundTrip"
     "test05_crashReportIsVisibleAndCopyable"
     "test06_cameraPhotoUriAcceptsCameraOutput"
+    "test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore"
+    "test08_zipShareIntentUsesReadOnlyContentUri"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
@@ -247,11 +251,16 @@ pull_app_screenshot() {
 
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
+pull_app_screenshot settings-dark
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."
   exit 0
 fi
+
+pull_app_screenshot cook-log-entry
+pull_app_screenshot cook-live-actions
+pull_app_screenshot reminder-check-in
 
 check_saved_diagnostic_report() {
   local checkpoint="$1"
