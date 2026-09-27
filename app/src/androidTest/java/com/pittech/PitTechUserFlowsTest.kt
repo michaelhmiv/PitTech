@@ -373,7 +373,7 @@ class PitTechUserFlowsTest {
     }
 
     @Test
-    fun test07_reminderCheckInBecomesCookTimelineNoteAndRestores() {
+    fun test00_reminderCheckInBecomesCookTimelineNoteAndRestores() {
         clearLocalData()
         val defaultCookName = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
