@@ -99,7 +99,9 @@ class CooksViewModel(
     fun consumeReminderCheckIn() { _pendingReminderId.value = null }
 
     fun startCook(draft: NewCookDraft) = perform {
-        _savedCookId.value = repository.startCook(draft)
+        val cookId = repository.startCook(draft)
+        _selectedCookId.value = cookId
+        _savedCookId.value = cookId
         _notice.value = "Cook saved on this phone."
     }
 

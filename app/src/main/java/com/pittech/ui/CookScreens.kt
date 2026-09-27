@@ -565,17 +565,17 @@ private fun StartCookScreen(
                 modifier = Modifier.fillMaxWidth().testTag("cook-title"),
             )
 
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                SectionHeading("Dishes")
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showDishDialog = true }, modifier = Modifier.testTag("cook-add-dish")) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add dish")
-                }
-            }
+            SectionHeading("Dishes")
 
             if (dishes.isEmpty()) {
+                OutlinedButton(
+                    onClick = { showDishDialog = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("cook-add-dish"),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add a dish")
+                }
                 Text(
                     "No dish added yet. You can start now and add one later.",
                     style = MaterialTheme.typography.bodyLarge,
@@ -585,7 +585,10 @@ private fun StartCookScreen(
                 dishes.forEachIndexed { index, dish ->
                     DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index) })
                 }
-                OutlinedButton(onClick = { showDishDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
+                OutlinedButton(
+                    onClick = { showDishDialog = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp).testTag("cook-add-another-dish"),
+                ) {
                     Icon(Icons.Filled.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("Add another dish")

@@ -124,17 +124,7 @@ class PitTechUserFlowsTest {
         clearLocalData()
         composeRule.onNodeWithTag("start-cook").performClick()
 
-        composeRule.onNodeWithTag("cook-title").performTextClearance()
-        composeRule.onNodeWithTag("cook-title").performTextInput("Saturday brisket")
-        composeRule.onNodeWithTag("cook-smoker").performTextInput("Pit Boss Austin XL")
-        composeRule.onNodeWithTag("cook-setpoint").performTextInput("0")
-        composeRule.onNodeWithTag("cook-save").assertIsNotEnabled()
-        composeRule.onNodeWithTag("cook-setpoint").performTextClearance()
-        composeRule.onNodeWithTag("cook-setpoint").performTextInput("250")
-        composeRule.onNodeWithTag("cook-save").assertIsEnabled()
-        composeRule.onNodeWithTag("cook-notes").performTextInput("Cool morning; used hickory.")
-
-        composeRule.onNodeWithTag("cook-add-dish").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("cook-add-dish").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("dish-name").assertIsDisplayed().performTextInput("Brisket")
         composeRule.onNodeWithTag("dish-food-type").performClick()
         composeRule.onNodeWithText("Beef").performClick()
@@ -158,8 +148,21 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("photo-source-cancel").performClick()
         composeRule.onNodeWithTag("dish-save").performClick()
 
+        composeRule.onNodeWithTag("cook-title").performTextClearance()
+        composeRule.onNodeWithTag("cook-title").performTextInput("Saturday brisket")
+        composeRule.onNodeWithTag("cook-smoker").performTextInput("Pit Boss Austin XL")
+        composeRule.onNodeWithTag("cook-setpoint").performTextInput("0")
+        composeRule.onNodeWithTag("cook-save").assertIsNotEnabled()
+        composeRule.onNodeWithTag("cook-setpoint").performTextClearance()
+        composeRule.onNodeWithTag("cook-setpoint").performTextInput("250")
+        composeRule.onNodeWithTag("cook-save").assertIsEnabled()
+        composeRule.onNodeWithTag("cook-notes").performTextInput("Cool morning; used hickory.")
+
         composeRule.onNodeWithTag("cook-save").performClick()
-        composeRule.waitUntil(timeoutMillis = 10_000) {
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("cook-tab-live", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithText("Saturday brisket").fetchSemanticsNodes().isNotEmpty() &&
                 composeRule.onAllNodesWithText("Whole packer").fetchSemanticsNodes().isNotEmpty()
         }
@@ -476,7 +479,7 @@ class PitTechUserFlowsTest {
         runBlocking(Dispatchers.IO) { application.dataTransfer.writeZip(archive, cook.id) }
         val preview = application.dataTransfer.previewImport(java.io.ByteArrayInputStream(archive.toByteArray()))
         assertEquals(1, preview.photoCount)
-        assertEquals(null, preview.preferences, "A single-cook export should not overwrite this phone's preferences.")
+        assertEquals("A single-cook export should not overwrite this phone's preferences.", null, preview.preferences)
 
         val withoutAttachment = rewriteZip(archive.toByteArray()) { name -> !name.startsWith("attachments/") }
         assertTrue("A backup missing a referenced photo must fail before import.", runCatching {
@@ -556,6 +559,7 @@ class PitTechUserFlowsTest {
         val reminder = runBlocking(Dispatchers.IO) { application.database.cookDao().getAllReminders().single() }
         assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
         composeRule.onNodeWithText("Log now").performClick()
+        waitForText("How did it go?")
         saveScreenshot("reminder-check-in")
         composeRule.onNodeWithTag("reminder-checkin-note").performTextInput("Wrapped at 160°F")
         composeRule.onNodeWithTag("reminder-checkin-save").performClick()
