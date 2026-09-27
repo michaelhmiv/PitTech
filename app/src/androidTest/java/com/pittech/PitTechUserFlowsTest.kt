@@ -36,6 +36,8 @@ import com.pittech.data.CookStatus
 import com.pittech.data.DeviceEntity
 import com.pittech.data.ProbeEntity
 import com.pittech.data.SensorReadingEntity
+import com.pittech.domain.DishDraft
+import com.pittech.domain.NewCookDraft
 import com.pittech.ui.PitTechThemeMode
 import com.pittech.ui.ZipShareIntent
 import kotlinx.coroutines.Dispatchers
@@ -164,11 +166,11 @@ class PitTechUserFlowsTest {
         }
         composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithText("Saturday brisket").fetchSemanticsNodes().isNotEmpty() &&
-                composeRule.onAllNodesWithText("Whole packer").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithText("Whole packer", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("cook-tab-live").assertIsDisplayed()
         composeRule.onNodeWithText("Log this cook").assertIsDisplayed()
-        composeRule.onNodeWithText("Whole packer").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Whole packer", substring = true).performScrollTo().assertIsDisplayed()
         saveScreenshot("cook-saved")
 
         val application = targetContext.applicationContext as PitTechApplication
@@ -208,6 +210,13 @@ class PitTechUserFlowsTest {
 
     @Test
     fun test03_timelineTemperatureResultsAndInsightsWork() {
+        clearLocalData()
+        val application = targetContext.applicationContext as PitTechApplication
+        val cookId = createTestCook("Saturday brisket")
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-card-$cookId").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("cook-card-$cookId").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -277,7 +286,6 @@ class PitTechUserFlowsTest {
         waitForText("Finish cook when saved")
         composeRule.onNodeWithTag("results-save").performClick()
 
-        val application = targetContext.applicationContext as PitTechApplication
         composeRule.waitUntil(timeoutMillis = 10_000) {
             runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook.status == CookStatus.COMPLETED }
         }
@@ -291,6 +299,8 @@ class PitTechUserFlowsTest {
     fun test04_portableArchiveAndWorkbookRoundTrip() {
         val application = targetContext.applicationContext as PitTechApplication
         val transfer = application.dataTransfer
+        runBlocking(Dispatchers.IO) { application.database.clearAllTables() }
+        createTestCook("Portable archive sample")
         targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE).edit()
             .putString("temperature-unit", "°C")
             .putString("weight-unit", "kg")
@@ -432,6 +442,8 @@ class PitTechUserFlowsTest {
     @Test
     fun test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore() {
         val application = targetContext.applicationContext as PitTechApplication
+        runBlocking(Dispatchers.IO) { application.database.clearAllTables() }
+        createTestCook("Photo backup sample")
         val cook = runBlocking(Dispatchers.IO) { application.database.cookDao().getAllCooks().single() }
         val photoFile = CameraPhotoFiles.create(targetContext)
         val photoUri = CameraPhotoFiles.uri(targetContext, photoFile)
@@ -558,8 +570,12 @@ class PitTechUserFlowsTest {
 
         val reminder = runBlocking(Dispatchers.IO) { application.database.cookDao().getAllReminders().single() }
         assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
-        composeRule.onNodeWithText("Log now").performClick()
-        waitForText("How did it go?")
+        composeRule.onNodeWithText("Log now").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("reminder-checkin-dialog", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("reminder-checkin-dialog", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("How did it go?").assertIsDisplayed()
         saveScreenshot("reminder-check-in")
         composeRule.onNodeWithTag("reminder-checkin-note").performTextInput("Wrapped at 160°F")
         composeRule.onNodeWithTag("reminder-checkin-save").performClick()
@@ -668,6 +684,26 @@ class PitTechUserFlowsTest {
     private fun waitForText(text: String) {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun createTestCook(title: String): String {
+        val application = targetContext.applicationContext as PitTechApplication
+        return runBlocking(Dispatchers.IO) {
+            application.cookRepository.startCook(
+                NewCookDraft(
+                    title = title,
+                    dishes = listOf(
+                        DishDraft(
+                            name = "Brisket",
+                            foodType = "Beef",
+                            cut = "Whole packer",
+                            weightText = "12.5",
+                            startingCondition = "Refrigerated",
+                        ),
+                    ),
+                ),
+            )
         }
     }
 

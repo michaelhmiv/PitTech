@@ -1063,6 +1063,7 @@ private fun ReminderCheckInDialog(
 ) {
     var note by rememberSaveable(reminder.id) { mutableStateOf("") }
     AlertDialog(
+        modifier = Modifier.testTag("reminder-checkin-dialog"),
         onDismissRequest = onDismiss,
         title = { Text("How did it go?") },
         text = {
