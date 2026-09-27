@@ -142,7 +142,7 @@ fun CookDetailScreen(
     var showReminderComposer by rememberSaveable { mutableStateOf(false) }
     var reminderTitle by rememberSaveable { mutableStateOf("Check grill temperature") }
     var reminderDelayMillis by rememberSaveable { mutableStateOf(60L * 60 * 1000) }
-    var completionReminderId by remember { mutableStateOf<String?>(null) }
+    var completionReminder by remember { mutableStateOf<CookReminderEntity?>(null) }
     var showReminderCheckIn by remember { mutableStateOf(false) }
     var pendingPhotoRetry by remember { mutableStateOf<PhotoRetry?>(null) }
     var viewingPhoto by remember { mutableStateOf<com.pittech.data.PhotoEntity?>(null) }
@@ -241,8 +241,9 @@ fun CookDetailScreen(
 
     LaunchedEffect(pendingReminderId, data.cook.id, data.reminders) {
         val id = pendingReminderId
-        if (id != null && data.reminders.any { it.id == id && it.status == CookReminderEntity.STATUS_PENDING }) {
-            completionReminderId = id
+        val reminder = data.reminders.firstOrNull { it.id == id && it.status == CookReminderEntity.STATUS_PENDING }
+        if (reminder != null) {
+            completionReminder = reminder
             showReminderCheckIn = true
         }
     }
@@ -435,7 +436,7 @@ fun CookDetailScreen(
             onSave = ::saveReminder,
         )
     }
-    val checkInReminder = data.reminders.firstOrNull { it.id == completionReminderId && it.status == CookReminderEntity.STATUS_PENDING }
+    val checkInReminder = completionReminder
     if (showReminderCheckIn && checkInReminder != null) {
         ReminderCheckInDialog(
             reminder = checkInReminder,
@@ -448,7 +449,7 @@ fun CookDetailScreen(
                 reminderPhotoUri = null
                 reminderPhotoCaption = ""
                 showReminderCheckIn = false
-                completionReminderId = null
+                completionReminder = null
             },
             onAddPhoto = {
                 showReminderCheckIn = false
@@ -470,7 +471,7 @@ fun CookDetailScreen(
                 reminderPhotoUri = null
                 reminderPhotoCaption = ""
                 showReminderCheckIn = false
-                completionReminderId = null
+                completionReminder = null
             },
         )
     }
@@ -549,7 +550,7 @@ fun CookDetailScreen(
                     onError = error,
                     onCancelReminder = viewModel::cancelCookReminder,
                     onLogReminder = { reminder ->
-                        completionReminderId = reminder.id
+                        completionReminder = reminder
                         showReminderCheckIn = true
                     },
                     onPhotoClick = { viewingPhoto = it },
@@ -1063,7 +1064,6 @@ private fun ReminderCheckInDialog(
 ) {
     var note by rememberSaveable(reminder.id) { mutableStateOf("") }
     AlertDialog(
-        modifier = Modifier.testTag("reminder-checkin-dialog"),
         onDismissRequest = onDismiss,
         title = { Text("How did it go?") },
         text = {

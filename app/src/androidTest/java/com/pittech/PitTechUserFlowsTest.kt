@@ -239,7 +239,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed")
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
-        waitForText("Edit timeline entry")
+        composeRule.onNodeWithTag("timeline-entry-title").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-entry-title").performTextClearance()
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
@@ -572,9 +572,9 @@ class PitTechUserFlowsTest {
         assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
         composeRule.onNodeWithText("Log now").performScrollTo().assertIsDisplayed().performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithTag("reminder-checkin-dialog", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("reminder-checkin-note").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("reminder-checkin-dialog", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("reminder-checkin-note").assertIsDisplayed()
         composeRule.onNodeWithText("How did it go?").assertIsDisplayed()
         saveScreenshot("reminder-check-in")
         composeRule.onNodeWithTag("reminder-checkin-note").performTextInput("Wrapped at 160°F")
