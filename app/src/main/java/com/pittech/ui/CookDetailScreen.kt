@@ -1160,7 +1160,7 @@ private fun TimelineTab(
         } else {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag("timeline-list"),
                     state = listState,
                     contentPadding = PaddingValues(top = 6.dp, bottom = 76.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),

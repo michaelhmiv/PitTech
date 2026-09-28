@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
@@ -417,7 +419,8 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("timeline-filter-temperatures").performClick()
         saveScreenshot("timeline-after-temperature-filter")
-        composeRule.onNodeWithText("Show 6 readings").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
+        composeRule.onNodeWithText("Show 6 readings").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-filter-events").performClick()
