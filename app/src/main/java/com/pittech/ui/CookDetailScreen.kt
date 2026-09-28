@@ -727,11 +727,6 @@ private fun LiveCookTab(
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("Cook at a glance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("${hours}h ${minutes}m", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("live-cook-elapsed"))
-                        Text(
-                            if (isPaused) "Paused" else if (data.cook.status == CookStatus.COMPLETED) "Completed" else "Elapsed",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     Surface(color = statusContainer, contentColor = statusContent, shape = CircleShape) {
                         Text(
@@ -782,9 +777,13 @@ private fun LiveCookTab(
         DashboardSectionPair(
             compact = useCompactDashboardGrid,
             testTag = "live-overview-grid",
-            first = { modifier -> DashboardSectionCard("Latest temperatures", modifier = modifier) {
+            first = { modifier -> DashboardSectionCard(if (useCompactDashboardGrid) "Temps" else "Latest temperatures", modifier = modifier) {
             if (latestTemperatures.isEmpty()) {
-                Text("No readings yet. Use Temperature in Quick actions to record one.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-no-readings"))
+                Text(
+                    if (useCompactDashboardGrid) "No readings yet." else "No readings yet. Use Temperature in Quick actions to record one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("live-no-readings"),
+                )
             } else {
                 latestTemperatures.take(2).forEach { reading ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
