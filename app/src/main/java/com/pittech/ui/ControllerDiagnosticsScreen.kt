@@ -461,7 +461,11 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                     report.transportCapabilities.forEach { (name, value) ->
                         Text("$name: $value", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("PitTech support: " + selectedDevice?.let(ControllerSupportRegistry::label).orEmpty())
+                    Text(
+                        "PitTech support: " + selectedDevice?.let {
+                            ControllerSupportRegistry.label(it, gattInspection, probeReport)
+                        }.orEmpty(),
+                    )
                     TextButton(
                         onClick = { reportExpanded = !reportExpanded },
                         modifier = Modifier.testTag("controller-technical-details"),
@@ -475,7 +479,9 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    if (selectedDevice != null && !ControllerSupportRegistry.isApproved(selectedDevice!!)) {
+                    if (selectedDevice != null &&
+                        !ControllerSupportRegistry.isApproved(selectedDevice!!, gattInspection, probeReport)
+                    ) {
                         OutlinedButton(
                             onClick = {
                                 reportExpanded = true
