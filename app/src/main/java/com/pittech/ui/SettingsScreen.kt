@@ -1,7 +1,5 @@
 package com.pittech.ui
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,8 +39,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
 import com.pittech.CrashDiagnostics
 import com.pittech.CooksViewModel
-import com.pittech.FeedbackIssueLink
+import com.pittech.FeedbackApi
 import com.pittech.FeedbackKind
+import com.pittech.FeedbackRequest
+import com.pittech.FeedbackSubmitResult
 
 @Composable
 fun SettingsScreen(
@@ -68,7 +68,9 @@ fun SettingsScreen(
     var feedbackDescription by rememberSaveable { mutableStateOf("") }
     var includeCrashReport by rememberSaveable { mutableStateOf(false) }
     var showCrashPreview by rememberSaveable { mutableStateOf(false) }
+    var feedbackSubmitting by rememberSaveable { mutableStateOf(false) }
     var feedbackError by rememberSaveable { mutableStateOf<String?>(null) }
+    var feedbackNotice by rememberSaveable { mutableStateOf<String?>(null) }
     val xlsx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         if (uri != null) viewModel.export(uri, CooksViewModel.FORMAT_XLSX)
     }
@@ -88,6 +90,7 @@ fun SettingsScreen(
         feedbackDescription = ""
         includeCrashReport = kind == FeedbackKind.BUG && savedCrashReport != null
         showCrashPreview = false
+        feedbackSubmitting = false
         feedbackError = null
     }
 
@@ -95,7 +98,7 @@ fun SettingsScreen(
     if (feedbackKind != null) {
         val reportToInclude = savedCrashReport.takeIf { feedbackKind == FeedbackKind.BUG && includeCrashReport }
         AlertDialog(
-            onDismissRequest = { feedbackKindName = null },
+            onDismissRequest = { if (!feedbackSubmitting) feedbackKindName = null },
             title = { Text(if (feedbackKind == FeedbackKind.BUG) "Report a problem" else "Request a feature") },
             text = {
                 Column(
@@ -157,7 +160,7 @@ fun SettingsScreen(
                         }
                     }
                     Text(
-                        "PitTech will open a prefilled draft on GitHub. The report text is sent to GitHub to fill that draft; it becomes a public issue only if you submit it there. Review the contents first. You will need a GitHub account to submit.",
+                        "Submitting creates a public issue in the PitTech GitHub repository through PitTech's feedback relay. No GitHub account is required. Review what you entered before sending, and do not include personal information. A saved crash report is sent only when you choose to include it.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     feedbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -165,14 +168,14 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(
-                    enabled = feedbackTitle.isNotBlank(),
+                    enabled = feedbackTitle.isNotBlank() && !feedbackSubmitting,
                     onClick = {
                         val device = listOf(Build.MANUFACTURER, Build.MODEL)
                             .filter { it.isNotBlank() }
                             .distinct()
                             .joinToString(" ")
                             .ifBlank { "Unknown device" }
-                        val link = FeedbackIssueLink.create(
+                        val request = FeedbackRequest(
                             kind = feedbackKind,
                             title = feedbackTitle,
                             description = feedbackDescription,
@@ -181,13 +184,29 @@ fun SettingsScreen(
                             device = device,
                             diagnosticReport = reportToInclude,
                         )
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
-                            .onSuccess { feedbackKindName = null }
-                            .onFailure { feedbackError = "Couldn't open GitHub. Check that a browser is installed and try again." }
+                        feedbackSubmitting = true
+                        feedbackError = null
+                        FeedbackApi.submitAsync(request) { result ->
+                            feedbackSubmitting = false
+                            when (result) {
+                                is FeedbackSubmitResult.Success -> {
+                                    feedbackKindName = null
+                                    feedbackNotice = result.issueNumber
+                                        ?.let { "Thanks — feedback submitted as GitHub issue #$it." }
+                                        ?: "Thanks — your feedback was submitted."
+                                }
+                                is FeedbackSubmitResult.Failure -> feedbackError = result.message
+                            }
+                        }
                     },
-                ) { Text("Continue to GitHub") }
+                ) { Text(if (feedbackSubmitting) "Submitting…" else "Submit feedback") }
             },
-            dismissButton = { TextButton(onClick = { feedbackKindName = null }) { Text("Cancel") } },
+            dismissButton = {
+                TextButton(
+                    onClick = { feedbackKindName = null },
+                    enabled = !feedbackSubmitting,
+                ) { Text("Cancel") }
+            },
         )
     }
 
@@ -252,7 +271,7 @@ fun SettingsScreen(
 
         SectionCard("Feedback") {
             Text(
-                "Tell us about a problem or suggest a feature. Bug reports can include the last saved crash report. Cook records and photos are never added to these drafts.",
+                "Tell us about a problem or suggest a feature without needing a GitHub account. Bug reports can include the last saved crash report when you opt in. Cook records and photos are never included.",
                 style = MaterialTheme.typography.bodyLarge,
             )
             Button(
@@ -263,9 +282,12 @@ fun SettingsScreen(
                 onClick = { openFeedback(FeedbackKind.FEATURE) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text("Request a feature") }
+            feedbackNotice?.let {
+                Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium)
+            }
             savedCrashReport?.let { report ->
                 Text(
-                    "A crash report (${report.referenceCode}) is saved on this phone. It is not sent unless you choose to include it in a GitHub draft.",
+                    "A crash report (${report.referenceCode}) is saved on this phone. It is not sent unless you choose to include it in a problem report.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 TextButton(
