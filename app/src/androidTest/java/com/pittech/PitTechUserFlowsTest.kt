@@ -416,6 +416,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-value").performTextInput("250")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Smoker ambient: 250.0 °F")
+        waitForAnyText("Temperature saved.")
+        waitForTextsToDisappear("Temperature saved.")
 
         composeRule.onNodeWithTag("timeline-filter-temperatures").performClick()
         saveScreenshot("timeline-after-temperature-filter")
