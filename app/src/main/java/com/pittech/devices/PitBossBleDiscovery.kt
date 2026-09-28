@@ -94,6 +94,30 @@ class PitBossBleDiscovery(context: Context) {
             .map { it.toSnapshot() }
             .sortedByDescending { it.rssi }
 
+        var lastPublishedElapsedMillis = 0L
+        var pendingPublish: Runnable? = null
+        fun publishDevices(force: Boolean = false) {
+            val now = SystemClock.elapsedRealtime()
+            val elapsedSinceLastPublish = now - lastPublishedElapsedMillis
+            if (force || elapsedSinceLastPublish >= PUBLISH_INTERVAL_MILLIS) {
+                pendingPublish?.let(handler::removeCallbacks)
+                pendingPublish = null
+                lastPublishedElapsedMillis = now
+                onDevices(snapshot())
+            } else if (pendingPublish == null) {
+                val task = Runnable {
+                    pendingPublish = null
+                    lastPublishedElapsedMillis = SystemClock.elapsedRealtime()
+                    onDevices(snapshot())
+                }
+                pendingPublish = task
+                handler.postDelayed(
+                    task,
+                    (PUBLISH_INTERVAL_MILLIS - elapsedSinceLastPublish).coerceAtLeast(1L),
+                )
+            }
+        }
+
         fun summary(error: String?): BluetoothScanSummary = BluetoothScanSummary(
             startedAtUtc = formatUtc(startWallTime),
             finishedAtUtc = formatUtc(System.currentTimeMillis()),
@@ -153,7 +177,7 @@ class PitBossBleDiscovery(context: Context) {
             if (device == null) {
                 if (found.size >= MAX_TRACKED_DEVICES) {
                     if (omittedDeviceKeys.add(key)) omittedDevices = omittedDeviceKeys.size
-                    onDevices(snapshot())
+                    publishDevices()
                     return
                 }
                 device = MutableDevice(key, advertisedName, address)
@@ -211,7 +235,7 @@ class PitBossBleDiscovery(context: Context) {
                 device.omittedAdvertisementVariants += 1
             }
             device.rssi = result.rssi
-            onDevices(snapshot())
+            publishDevices()
         }
 
         val callback = object : ScanCallback() {
@@ -229,7 +253,7 @@ class PitBossBleDiscovery(context: Context) {
             if (!finished && activeCallback === callback) {
                 finished = true
                 stopScan()
-                onDevices(snapshot())
+                publishDevices(force = true)
                 onFinished(summary(message), message)
             }
         }
