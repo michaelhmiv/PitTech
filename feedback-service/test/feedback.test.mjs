@@ -35,6 +35,53 @@ test("normalizes a valid bug report and includes opted-in diagnostics", () => {
   assert.match(issue.body, /stack frame/);
 });
 
+test("controller diagnostic reports create device-report issues with BLE data", () => {
+  const submission = normalizeSubmission({
+    ...base,
+    kind: "DEVICE_DIAGNOSTIC",
+    title: "BLE controller: unknown model",
+    description: "User-selected unverified device.",
+    diagnosticReport: {
+      referenceCode: "BLE-12345678",
+      occurredAtUtc: "2026-09-28 15:00:00 UTC",
+      source: "Bluetooth controller discovery",
+      summary: "Unverified BLE device; 8 observations captured.",
+      details: "Address: 11:22:33:44:55:66\\nRaw advertisement: 020106",
+    },
+  });
+  const issue = buildGitHubIssue(submission);
+  assert.equal(issue.title, "[Device report] BLE controller: unknown model");
+  assert.deepEqual(issue.labels, ["device-diagnostics"]);
+  assert.match(issue.body, /Controller diagnostic report/);
+  assert.match(issue.body, /11:22:33:44:55:66/);
+  assert.match(issue.body, /020106/);
+  assert.match(issue.body, /explicitly chose to submit/);
+});
+
+test("device diagnostics require a report and accept bounded 46K details", () => {
+  const report = {
+    referenceCode: "BLE-12345678",
+    occurredAtUtc: "2026-09-28 15:00:00 UTC",
+    source: "Bluetooth controller discovery",
+    summary: "BLE scan",
+    details: "x".repeat(46_000),
+  };
+  assert.equal(normalizeSubmission({
+    ...base,
+    kind: "DEVICE_DIAGNOSTIC",
+    diagnosticReport: report,
+  }).diagnosticReport.details.length, 46_000);
+  assert.throws(() => normalizeSubmission({
+    ...base,
+    kind: "DEVICE_DIAGNOSTIC",
+  }), ValidationError);
+  assert.throws(() => normalizeSubmission({
+    ...base,
+    kind: "DEVICE_DIAGNOSTIC",
+    diagnosticReport: { ...report, details: "x".repeat(46_001) },
+  }), ValidationError);
+});
+
 test("feature requests ignore diagnostic data supplied by a client", () => {
   const submission = normalizeSubmission({
     ...base,

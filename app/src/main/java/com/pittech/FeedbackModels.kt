@@ -3,6 +3,7 @@ package com.pittech
 internal enum class FeedbackKind {
     BUG,
     FEATURE,
+    DEVICE_DIAGNOSTIC,
 }
 
 internal data class FeedbackRequest(
@@ -12,7 +13,7 @@ internal data class FeedbackRequest(
     val appVersion: String,
     val androidVersion: String,
     val device: String,
-    val diagnosticReport: CrashDiagnosticReport? = null,
+    val diagnosticReport: FeedbackDiagnosticReport? = null,
 ) {
     fun toJson(): String = buildString {
         append("{")
@@ -28,7 +29,7 @@ internal data class FeedbackRequest(
         append(",")
         appendJsonField("device", device.take(120))
 
-        val report = diagnosticReport.takeIf { kind == FeedbackKind.BUG }
+        val report = diagnosticReport.takeIf { kind != FeedbackKind.FEATURE }
         if (report != null) {
             append(",\"diagnosticReport\":{")
             appendJsonField("referenceCode", report.referenceCode.take(64))
@@ -39,7 +40,7 @@ internal data class FeedbackRequest(
             append(",")
             appendJsonField("summary", report.summary.take(500))
             append(",")
-            appendJsonField("details", report.details.take(24_000))
+            appendJsonField("details", report.details.take(46_000))
             append("}")
         }
         append("}")

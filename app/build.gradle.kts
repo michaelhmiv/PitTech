@@ -28,6 +28,7 @@ android {
         versionName = pittechVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
+        buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
     }
 
     buildTypes {
@@ -37,6 +38,7 @@ android {
             // Debug installs and UI tests must never request paid inventory, even if
             // a developer accidentally passes -PpittechLiveAds=true.
             buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$testNativeAdUnitId\"")
+            buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "true")
         }
 
         // Firebase Dev can be installed beside both the Play app and local debug builds.
@@ -44,6 +46,7 @@ android {
             initWith(getByName("release"))
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "true")
         }
     }
 
@@ -78,6 +81,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
 
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
