@@ -115,7 +115,6 @@ internal object ControllerProbeDiagnostics {
                     }
                     appendLine()
                 }
-            }
 
                 appendLine("ADVERTISEMENT EVIDENCE (lower priority)")
                 selectedDevice.advertisements
@@ -147,6 +146,7 @@ internal object ControllerProbeDiagnostics {
                     appendLine("Advertisement variants omitted from/public capture limits: $reportOmittedAdvertisements")
                 }
                 appendLine()
+            }
 
             appendLine("APP SESSION EVENTS")
             sessionEvents.takeLast(80).forEach {
