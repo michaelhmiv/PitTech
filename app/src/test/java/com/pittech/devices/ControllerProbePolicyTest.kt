@@ -14,6 +14,7 @@ class ControllerProbePolicyTest {
             "RPC.ListEx",
             "RPC.Describe",
             "Sys.GetInfo",
+            "PB.GetState",
             "PB.GetFirmwareVersion",
             "PBL.GetLoaderVersion",
         ).forEach { method ->
