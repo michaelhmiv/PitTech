@@ -49,7 +49,7 @@ class FeedbackRequestTest {
             device = "Google Pixel 8 Pro",
             diagnosticReport = report,
         ).toJson()
-        assertTrue(json.contains("\\"kind\\":\\"DEVICE_DIAGNOSTIC\\""))
+        assertTrue(json.contains("\\\"kind\\\":\\\"DEVICE_DIAGNOSTIC\\\""))
         assertTrue(json.contains("11:22:33:44:55:66"))
         assertTrue(json.contains("020106"))
     }
