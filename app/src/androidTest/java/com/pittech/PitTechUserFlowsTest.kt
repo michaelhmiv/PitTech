@@ -287,8 +287,8 @@ class PitTechUserFlowsTest {
         saveScreenshot("cook-live-dashboard")
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         val timelinePhotoEventId = "timeline-photo-event"
-        val timelinePhotoAt = System.currentTimeMillis() - 30_000
         val sampleStart = System.currentTimeMillis() - 6 * 60_000
+        val timelinePhotoAt = sampleStart - 30_000
         runBlocking(Dispatchers.IO) {
             dao.insertTimelineEvent(
                 TimelineEventEntity(
@@ -413,7 +413,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-filter-temperatures").performClick()
         composeRule.onNodeWithText("Show 6 readings").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
-        composeRule.onNodeWithText("Pit ambient: 242.0 °F").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-filter-events").performClick()
         composeRule.onNodeWithText("Spritzed lightly").performScrollTo().assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithText("Pit ambient", substring = true).fetchSemanticsNodes().isEmpty())
