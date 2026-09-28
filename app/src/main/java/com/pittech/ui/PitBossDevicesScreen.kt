@@ -224,9 +224,9 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                     uiState.statusMessage,
                     modifier = Modifier.testTag("pitboss-connection-status"),
                 )
-                if (uiState.errorMessage != null) {
+                uiState.errorMessage?.let { errorMessage ->
                     Text(
-                        uiState.errorMessage,
+                        errorMessage,
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
