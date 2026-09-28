@@ -56,6 +56,7 @@ internal object BluetoothScanDiagnostics {
                     appendLine("  Periodic advertising interval: ${item.periodicAdvertisingInterval ?: "(not reported)"}")
                     appendLine("  Data status: ${item.dataStatus ?: "(not reported)"}")
                     appendLine("  Service UUIDs: ${item.serviceUuids.joinToString().ifBlank { "(none)" }}")
+                    appendLine("  Service solicitation UUIDs: ${item.serviceSolicitationUuids.joinToString().ifBlank { "(none)" }}")
                     appendLine("  Manufacturer data (company ID -> hex):")
                     if (item.manufacturerData.isEmpty()) appendLine("    (none)")
                     item.manufacturerData.forEach { (id, bytes) -> appendLine("    $id -> $bytes") }
