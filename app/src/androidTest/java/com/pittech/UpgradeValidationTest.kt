@@ -54,7 +54,7 @@ class UpgradeValidationTest {
             composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("Cook history").assertIsDisplayed()
+        composeRule.onNodeWithText("Cook timeline").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Back to cooks").performClick()
 
         composeRule.activityRule.scenario.recreate()

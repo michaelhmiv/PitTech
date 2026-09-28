@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
@@ -37,6 +39,7 @@ import com.pittech.data.DeviceEntity
 import com.pittech.data.PhotoEntity
 import com.pittech.data.ProbeEntity
 import com.pittech.data.SensorReadingEntity
+import com.pittech.data.TimelineEventEntity
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
 import com.pittech.ui.PitTechThemeMode
@@ -285,6 +288,65 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("live-recent-photo").performScrollTo().assertIsDisplayed()
         saveScreenshot("cook-live-dashboard")
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+        val timelinePhotoEventId = "timeline-photo-event"
+        val sampleStart = System.currentTimeMillis() - 30 * 60_000
+        val cookStartedAt = sampleStart - 7 * 60_000
+        val timelinePhotoAt = sampleStart - 30_000
+        runBlocking(Dispatchers.IO) {
+            dao.getCook(cookId)?.let { dao.updateCook(it.copy(startedAtUtcMillis = cookStartedAt)) }
+            dao.getTimelineEventsForCook(cookId).forEach { event ->
+                dao.updateTimelineEvent(event.copy(occurredAtUtcMillis = cookStartedAt, recordedAtUtcMillis = cookStartedAt))
+            }
+            dao.insertTimelineEvent(
+                TimelineEventEntity(
+                    id = timelinePhotoEventId,
+                    cookId = cookId,
+                    eventType = "photo",
+                    title = "Bark photo",
+                    details = "Bark set before the spritz.",
+                    occurredAtUtcMillis = timelinePhotoAt,
+                    recordedAtUtcMillis = timelinePhotoAt,
+                    timeZoneId = "America/New_York",
+                    source = "manual",
+                    createdAtUtcMillis = timelinePhotoAt,
+                    updatedAtUtcMillis = timelinePhotoAt,
+                ),
+            )
+            dao.insertPhotos(
+                listOf(
+                    PhotoEntity(
+                        id = "timeline-bark-photo",
+                        cookId = cookId,
+                        eventId = timelinePhotoEventId,
+                        originalFileName = "bark.jpg",
+                        relativePath = "photos/missing-bark-photo.jpg",
+                        mimeType = "image/jpeg",
+                        caption = "Bark set",
+                        capturedAtUtcMillis = timelinePhotoAt,
+                        addedAtUtcMillis = timelinePhotoAt,
+                    ),
+                ),
+            )
+            dao.insertReadingsIgnoringDuplicates(
+                (0 until 6).map { index ->
+                    val measuredAt = sampleStart
+                    SensorReadingEntity(
+                        id = "pit-sample-$index",
+                        cookId = cookId,
+                        probeName = "Pit ambient",
+                        measurementType = "ambient_temperature",
+                        value = 240.0 + index,
+                        unit = "°F",
+                        measuredAtUtcMillis = measuredAt,
+                        timeZoneId = "America/New_York",
+                        source = "controller",
+                        sourceDeviceId = "test-controller",
+                        qualityStatus = "valid",
+                        recordedAtUtcMillis = measuredAt,
+                    )
+                },
+            )
+        }
         composeRule.onNodeWithTag("timeline-add-photo").performClick()
         composeRule.onNodeWithTag("photo-source-camera").assertIsDisplayed()
         composeRule.onNodeWithTag("photo-source-library").assertIsDisplayed()
@@ -304,7 +366,8 @@ class PitTechUserFlowsTest {
         waitForText("Spritzed")
         waitForAnyText("Entry added to the timeline.")
         waitForTextsToDisappear("Entry added to the timeline.")
-        composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-event-actions-spritz").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-event-edit-spritz").performClick()
         captureCurrentScreen("timeline-edit-dialog")
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("timeline-entry-title").fetchSemanticsNodes().isNotEmpty()
@@ -316,7 +379,8 @@ class PitTechUserFlowsTest {
         waitForText("Spritzed lightly")
         waitForAnyText("Timeline entry updated.")
         waitForTextsToDisappear("Timeline entry updated.")
-        composeRule.onNodeWithTag("timeline-event-delete-spritz").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-event-actions-spritz").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-event-delete-spritz").performClick()
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
         waitForText("Spritzed lightly")
@@ -331,7 +395,8 @@ class PitTechUserFlowsTest {
         waitForText("Brisket probe: 155.0 °F")
         waitForAnyText("Temperature saved.")
         waitForTextsToDisappear("Temperature saved.")
-        composeRule.onNodeWithTag("temperature-edit-Brisket probe").performScrollTo().performClick()
+        composeRule.onNodeWithTag("temperature-actions-Brisket probe").performScrollTo().performClick()
+        composeRule.onNodeWithTag("temperature-edit-Brisket probe").performClick()
         waitForText("Edit temperature")
         composeRule.onNodeWithTag("temperature-value").performScrollTo().performTextClearance()
         composeRule.onNodeWithTag("temperature-value").performTextInput("156")
@@ -339,7 +404,8 @@ class PitTechUserFlowsTest {
         waitForText("Brisket probe: 156.0 °F")
         waitForAnyText("Temperature entry updated.")
         waitForTextsToDisappear("Temperature entry updated.")
-        composeRule.onNodeWithTag("temperature-delete-Brisket probe").performScrollTo().performClick()
+        composeRule.onNodeWithTag("temperature-actions-Brisket probe").performScrollTo().performClick()
+        composeRule.onNodeWithTag("temperature-delete-Brisket probe").performClick()
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
         waitForText("Brisket probe: 156.0 °F")
@@ -350,6 +416,35 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-value").performTextInput("250")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Smoker ambient: 250.0 °F")
+        waitForAnyText("Temperature saved.")
+        waitForTextsToDisappear("Temperature saved.")
+
+        composeRule.onNodeWithTag("timeline-filter-temperatures").performClick()
+        saveScreenshot("timeline-after-temperature-filter")
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
+        composeRule.onNodeWithText("Show 6 readings").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
+        composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-filter-events").performClick()
+        composeRule.onNodeWithText("Spritzed lightly").performScrollTo().assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("Pit ambient", substring = true).fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("timeline-filter-photos").performClick()
+        composeRule.onNodeWithText("Bark photo").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-photo-gallery-$timelinePhotoEventId").performScrollTo().performClick()
+        composeRule.onNodeWithText("Photos (3)").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-gallery-close").performClick()
+        assertTrue(composeRule.onAllNodesWithText("Spritzed lightly").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("timeline-sort").performClick()
+        composeRule.onNodeWithTag("timeline-sort-oldest").performClick()
+        composeRule.onNodeWithTag("timeline-sort").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-filter-all").performClick()
+        composeRule.onNodeWithTag("timeline-sort").performClick()
+        composeRule.onNodeWithTag("timeline-sort-newest").performClick()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Cook started"))
+        composeRule.onNodeWithText("Cook started").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-jump-latest").assertIsDisplayed().performClick()
+        saveScreenshot("cook-timeline-dashboard")
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Quick actions").assertIsDisplayed()

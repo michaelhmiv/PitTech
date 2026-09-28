@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi

@@ -57,14 +57,15 @@ A cook has three consistent sections:
 
 ### Timeline
 
-- Present events chronologically from cook start to finish.
+- Show the newest activity first by default, with an oldest-first option for reviewing a cook from start to finish. Group entries by date and show the elapsed time since the cook started.
+- Give milestones, notes/actions, photos, and temperatures distinct visual cues. Keep photo previews compact and let users open the rest of a cook's gallery.
 - Include user entries, controller-reported events, and meaningful automatic milestones in the same timeline, with a clear source label.
 - Record notes, photos, dish assignment, event type, occurred time, and entry time.
 - Include common actions such as meat on, spritz, wrap, temperature check, remove, rest, and finish, plus custom events.
 - Allow add, edit, correct-time, and delete actions. Provide undo after deletion.
 - Store occurred time separately from entry time so correcting a historical time does not create a duplicate event or shift unrelated events.
 - Preserve device provenance for automatic samples. If a user corrects or deletes an automatic reading, update charts and analysis accordingly.
-- Store the full sensor stream. In the readable timeline, group dense samples into expandable time blocks; provide a way to inspect individual samples and the full-resolution chart without losing data.
+- Store the full sensor stream. In the readable timeline, group dense device samples into expandable time blocks; provide a way to inspect individual samples and the full-resolution chart without losing data. Keep manually entered temperatures as individual entries.
 - Do not auto-scroll away from an older entry while the user is reading it. Offer a clear Jump to latest action when new records arrive.
 
 ### Charts and analysis
