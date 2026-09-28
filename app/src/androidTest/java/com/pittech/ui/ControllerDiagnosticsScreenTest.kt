@@ -4,7 +4,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -40,7 +40,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ControllerDiagnosticsScreenTest {
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ControllerDiagnosticsTestActivity>()
 
     @Test
     fun selectedControllerIsAutomaticallyInterrogatedAndReportCanBeReviewedSubmittedOrCanceled() {
