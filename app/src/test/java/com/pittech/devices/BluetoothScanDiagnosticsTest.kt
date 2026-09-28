@@ -46,7 +46,6 @@ class BluetoothScanDiagnosticsTest {
         advertisedName = "PitBoss-ABC123",
         address = "AA:BB:CC:DD:EE:FF",
         rssi = -49,
-        relayIdentifier = "PITBOSS-ABC123",
         advertisements = listOf(sample(rawRecordHex)),
         omittedAdvertisementVariants = 2,
     )
@@ -158,7 +157,7 @@ class BluetoothScanDiagnosticsTest {
         assertTrue(details.contains("Characteristic 00002A19"))
         assertTrue(details.contains("Descriptor 00002902"))
         assertTrue(details.contains("Value (hex): 64"))
-        assertTrue(details.contains("the app did not write characteristics"))
+        assertTrue(details.contains("this inventory phase does not write characteristics"))
         assertTrue(details.contains("BLE scan finished; results=9"))
     }
 
