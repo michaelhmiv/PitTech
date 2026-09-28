@@ -47,6 +47,7 @@ data class BluetoothAdvertisementVariant(
     val periodicAdvertisingInterval: Int?,
     val dataStatus: Int?,
     val serviceUuids: List<String>,
+    val serviceSolicitationUuids: List<String>,
     val manufacturerData: Map<String, String>,
     val serviceData: Map<String, String>,
     val rawRecordHex: String,
@@ -87,6 +88,7 @@ class PitBossBleDiscovery(context: Context) {
         val found = linkedMapOf<String, MutableDevice>()
         var totalResults = 0
         var omittedDevices = 0
+        val omittedDeviceKeys = mutableSetOf<String>()
 
         fun snapshot(): List<NearbyBluetoothDevice> = found.values
             .map { it.toSnapshot() }
@@ -124,6 +126,7 @@ class PitBossBleDiscovery(context: Context) {
             val advertisedName = record?.deviceName?.takeIf { it.isNotBlank() }
             val rawRecordHex = record?.bytes?.toHex().orEmpty()
             val serviceUuids = record?.serviceUuids.orEmpty().map { it.uuid.toString() }.sorted()
+            val serviceSolicitationUuids = record?.serviceSolicitationUuids.orEmpty().map { it.uuid.toString() }.sorted()
             val manufacturerData = record?.manufacturerSpecificData?.let { sparse ->
                 buildMap {
                     for (index in 0 until sparse.size()) {
@@ -145,7 +148,7 @@ class PitBossBleDiscovery(context: Context) {
             var device = found[key]
             if (device == null) {
                 if (found.size >= MAX_TRACKED_DEVICES) {
-                    omittedDevices += 1
+                    if (omittedDeviceKeys.add(key)) omittedDevices = omittedDeviceKeys.size
                     onDevices(snapshot())
                     return
                 }
@@ -165,6 +168,7 @@ class PitBossBleDiscovery(context: Context) {
             val variantKey = listOf(
                 rawRecordHex,
                 serviceUuids.joinToString(","),
+                serviceSolicitationUuids.joinToString(","),
                 manufacturerData.toString(),
                 serviceData.toString(),
                 txPower.toString(),
@@ -194,6 +198,7 @@ class PitBossBleDiscovery(context: Context) {
                     } else null,
                     dataStatus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) result.dataStatus else null,
                     serviceUuids = serviceUuids,
+                    serviceSolicitationUuids = serviceSolicitationUuids,
                     manufacturerData = manufacturerData,
                     serviceData = serviceData,
                     rawRecordHex = rawRecordHex,
@@ -308,6 +313,7 @@ class PitBossBleDiscovery(context: Context) {
         val periodicAdvertisingInterval: Int?,
         val dataStatus: Int?,
         val serviceUuids: List<String>,
+        val serviceSolicitationUuids: List<String>,
         val manufacturerData: Map<String, String>,
         val serviceData: Map<String, String>,
         val rawRecordHex: String,
@@ -335,6 +341,7 @@ class PitBossBleDiscovery(context: Context) {
             periodicAdvertisingInterval = periodicAdvertisingInterval,
             dataStatus = dataStatus,
             serviceUuids = serviceUuids,
+            serviceSolicitationUuids = serviceSolicitationUuids,
             manufacturerData = manufacturerData,
             serviceData = serviceData,
             rawRecordHex = rawRecordHex,
