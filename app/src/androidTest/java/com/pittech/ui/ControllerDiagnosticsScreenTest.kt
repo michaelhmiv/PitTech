@@ -2,7 +2,6 @@ package com.pittech.ui
 
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -77,7 +76,7 @@ class ControllerDiagnosticsScreenTest {
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("PBL (device suffix withheld)")
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("sha256=")
         composeRule.onNodeWithTag("controller-report-cancel").performClick()
-        composeRule.onNodeWithText("Review controller diagnostics").assertDoesNotExist()
+        composeRule.onAllNodesWithText("Review controller diagnostics").assertCountEquals(0)
         assertEquals(null, submittedRequest)
 
         composeRule.onNodeWithTag("controller-submit-diagnostics").performClick()
