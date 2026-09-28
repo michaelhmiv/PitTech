@@ -126,7 +126,11 @@ class PitBossBleDiscovery(context: Context) {
             val advertisedName = record?.deviceName?.takeIf { it.isNotBlank() }
             val rawRecordHex = record?.bytes?.toHex().orEmpty()
             val serviceUuids = record?.serviceUuids.orEmpty().map { it.uuid.toString() }.sorted()
-            val serviceSolicitationUuids = record?.serviceSolicitationUuids.orEmpty().map { it.uuid.toString() }.sorted()
+            val serviceSolicitationUuids = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                record?.serviceSolicitationUuids.orEmpty().map { it.uuid.toString() }.sorted()
+            } else {
+                emptyList()
+            }
             val manufacturerData = record?.manufacturerSpecificData?.let { sparse ->
                 buildMap {
                     for (index in 0 until sparse.size()) {
