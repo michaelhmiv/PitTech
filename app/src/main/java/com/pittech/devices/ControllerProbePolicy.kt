@@ -24,6 +24,7 @@ internal object ControllerProbePolicy {
         "RPC.ListEx",
         "RPC.Describe",
         "Sys.GetInfo",
+        "PB.GetState",
         "PB.GetFirmwareVersion",
         "PBL.GetLoaderVersion",
     )
@@ -55,6 +56,7 @@ internal object ControllerProbePolicy {
 
     fun plannedReads(methods: Set<String>): List<SafeRpcRequest> = buildList {
         if ("Sys.GetInfo" in methods) add(SafeRpcRequest("System information", "Sys.GetInfo"))
+        if ("PB.GetState" in methods) add(SafeRpcRequest("Current controller state", "PB.GetState"))
         if ("PB.GetFirmwareVersion" in methods) {
             add(SafeRpcRequest("Pit Boss firmware version", "PB.GetFirmwareVersion"))
         }
