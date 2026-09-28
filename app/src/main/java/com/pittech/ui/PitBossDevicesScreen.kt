@@ -252,7 +252,12 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
         recordSessionEvent(stateText)
     }
 
-    val canConnect = selectedDevice?.relayIdentifier.orEmpty().ifBlank { selectedIdentifier }.isNotBlank() &&
+    val relayIdentifier = if (selectedDevice != null) {
+        selectedDevice.relayIdentifier.orEmpty()
+    } else {
+        selectedIdentifier
+    }
+    val canConnect = relayIdentifier.isNotBlank() &&
         uiState.stage != PitBossRelayStage.CONNECTING &&
         uiState.stage != PitBossRelayStage.RELAY_CONNECTED
     val reportDetails = remember(

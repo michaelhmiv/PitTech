@@ -122,7 +122,7 @@ internal class BluetoothGattInspector(context: Context) {
                         return
                     }
 
-                    session.services = discoveredServices.map { service ->
+                    session.services.addAll(discoveredServices.map { service ->
                         BluetoothGattServiceInfo(
                             uuid = service.uuid.toString(),
                             kind = if (service.type == android.bluetooth.BluetoothGattService.SERVICE_TYPE_PRIMARY) {
@@ -144,7 +144,7 @@ internal class BluetoothGattInspector(context: Context) {
                                 )
                             },
                         )
-                    }
+                    })
                     session.totalCharacteristicCount = session.services.sumOf { it.characteristics.size }
                     val readableTargets = discoveredServices.flatMap { service ->
                         service.characteristics.orEmpty()
@@ -246,7 +246,7 @@ internal class BluetoothGattInspector(context: Context) {
         while (session.readQueue.isNotEmpty()) {
             val target = session.readQueue.removeFirst()
             session.activeRead = target
-            val accepted: Boolean
+            var accepted = false
             var failureNote: String? = null
             try {
                 accepted = gatt.readCharacteristic(target.characteristic)
