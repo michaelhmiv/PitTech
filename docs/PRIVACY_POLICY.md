@@ -10,7 +10,7 @@ PitTech stores the cook information you choose to enter. This may include cook a
 
 If you select photos, PitTech copies them into the app's private storage on your device. The app may also save a crash diagnostic locally. That report can include a reference code, time, error summary, exception details, thread name, stack trace, and Android process-exit details.
 
-PitTech has no sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service. In experimental debug and Firebase Dev controller-test builds, BLE scan observations are held in memory for the active scan and are not uploaded automatically.
+PitTech has no sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service. In experimental debug and Firebase Dev controller-test builds, BLE scan observations are held in memory for the current controller-test screen session and are not uploaded automatically. A Pit Boss relay ID is saved in app-private preferences only if you choose to test the relay, so you can reconnect later; raw scan records are not saved.
 
 ## Feedback sent through PitTech
 
