@@ -231,6 +231,24 @@ for expected_test in "${expected_tests[@]}"; do
 done
 echo "All ${#expected_tests[@]} expected PitTech UI tests passed."
 
+if (( api_level == 36 )); then
+  controller_test_selector='com.pittech.ui.ControllerDiagnosticsScreenTest,com.pittech.devices.MongooseRpcInterrogationPlannerTest,com.pittech.devices.MongooseRpcResponseParserTest,com.pittech.devices.ControllerStableFingerprintTest,com.pittech.devices.ControllerDiagnosticSanitizerTest'
+  controller_test_output="$output_dir/controller-diagnostics-tests.txt"
+  controller_expected_count=16
+  echo "Running controller interrogation UI, protocol, fingerprint, and sanitization tests."
+  timeout 12m adb shell am instrument -w -r \
+    -e class "$controller_test_selector" \
+    "$instrumentation_target" | tee "$controller_test_output"
+  controller_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$controller_test_output" || true)"
+  if [[ "$controller_passed_count" -ne "$controller_expected_count" ]] ||
+     ! grep -q "OK (${controller_expected_count} tests)" "$controller_test_output" ||
+     grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$controller_test_output"; then
+    echo "Controller interrogation instrumentation tests did not all pass." >&2
+    exit 1
+  fi
+  echo "All ${controller_expected_count} controller interrogation instrumentation tests passed."
+fi
+
 assert_png_file() {
   local name="$1"
   local screenshot="$2"
