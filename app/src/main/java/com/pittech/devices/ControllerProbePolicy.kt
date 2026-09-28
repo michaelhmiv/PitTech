@@ -1,11 +1,9 @@
 package com.pittech.devices
 
-import org.json.JSONObject
-
 internal data class SafeRpcRequest(
     val label: String,
     val method: String,
-    val params: JSONObject = JSONObject(),
+    val params: Map<String, String> = emptyMap(),
 )
 
 internal object ControllerProbePolicy {
@@ -47,9 +45,9 @@ internal object ControllerProbePolicy {
         return RpcSafetyClass.UNKNOWN
     }
 
-    fun canAutoExecute(method: String, params: JSONObject = JSONObject()): Boolean {
+    fun canAutoExecute(method: String, params: Map<String, String> = emptyMap()): Boolean {
         if (method == "Config.Get") {
-            val key = params.optString("key")
+            val key = params["key"].orEmpty()
             return key in safeConfigKeys
         }
         return classify(method) == RpcSafetyClass.SAFE_AUTOPROBE
@@ -69,7 +67,7 @@ internal object ControllerProbePolicy {
                     SafeRpcRequest(
                         label = "Configuration capability: $key",
                         method = "Config.Get",
-                        params = JSONObject().put("key", key),
+                        params = mapOf("key" to key),
                     ),
                 )
             }
