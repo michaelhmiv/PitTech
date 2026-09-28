@@ -18,7 +18,7 @@ import java.util.TimeZone
 import java.util.UUID
 import kotlin.system.exitProcess
 
-internal data class CrashDiagnosticReport(
+internal data class FeedbackDiagnosticReport(
     val referenceCode: String,
     val occurredAtUtc: String,
     val source: String,
@@ -35,6 +35,8 @@ internal data class CrashDiagnosticReport(
         append(details)
     }.trimEnd()
 }
+
+internal typealias CrashDiagnosticReport = FeedbackDiagnosticReport
 
 internal object CrashDiagnostics {
     private const val REPORT_FILE = "pittech-last-crash.properties"
