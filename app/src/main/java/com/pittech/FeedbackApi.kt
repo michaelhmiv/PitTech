@@ -51,7 +51,7 @@ internal object FeedbackApi {
             val responseBody = readResponseBody(connection, status)
             when (status) {
                 in 200..299 -> FeedbackSubmitResult.Success(
-                    Regex("\\"issueNumber\\"\\s*:\\s*(\\d+)")
+                    Regex("\"issueNumber\"\\s*:\\s*(\\d+)")
                         .find(responseBody)
                         ?.groupValues
                         ?.getOrNull(1)
