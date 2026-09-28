@@ -83,6 +83,7 @@ class PitBossBleDiscovery(context: Context) {
 
         val startWallTime = System.currentTimeMillis()
         val startElapsedTime = SystemClock.elapsedRealtime()
+        val startElapsedNanos = SystemClock.elapsedRealtimeNanos()
         val found = linkedMapOf<String, MutableDevice>()
         var totalResults = 0
         var omittedDevices = 0
@@ -154,8 +155,7 @@ class PitBossBleDiscovery(context: Context) {
                 device.advertisedName = advertisedName
             }
 
-            val offsetMillis = ((result.timestampNanos / 1_000_000L) -
-                (startElapsedTime * 1_000_000L / 1_000_000L)).coerceAtLeast(0L)
+            val offsetMillis = (result.timestampNanos / 1_000_000L - startElapsedNanos / 1_000_000L).coerceAtLeast(0L)
             val txPower = record?.txPowerLevel?.takeIf { it in -127..20 }
             val connectable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 runCatching { result.isConnectable }.getOrNull()
