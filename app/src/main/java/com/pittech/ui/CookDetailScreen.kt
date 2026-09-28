@@ -15,12 +15,15 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +34,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,8 +45,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -49,6 +61,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -69,6 +83,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,6 +125,7 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 import java.util.Calendar
+import java.util.Locale
 
 private enum class CookTab(val label: String) { LIVE("Live"), TIMELINE("Timeline"), CHARTS("Charts") }
 private data class PhotoRetry(val eventId: String, val cookId: String, val dishId: String?, val uri: String, val caption: String?)
@@ -580,6 +596,7 @@ fun CookDetailScreen(
                     onEditReading = { editReading = it },
                     onError = error,
                     onPhotoClick = { viewingPhoto = it },
+                    onShowPhotoGallery = { showPhotoGallery = true },
                 )
                 CookTab.CHARTS -> ChartsTab(data)
             }
@@ -959,6 +976,10 @@ private fun LiveCookTab(
                     Text("${activity.reading.probeName}: ${activity.reading.value} ${activity.reading.unit}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(formatTimestamp(activity.reading.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                is TimelineLine.ReadingGroup -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
+                    Text("${activity.readings.size} recent temperature readings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(formatTimestamp(activity.time), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             TextButton(onClick = onViewTimeline, modifier = Modifier.heightIn(min = 40.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text("Open full timeline") }
         }
@@ -1053,57 +1074,371 @@ private fun TimelineTab(
     onEditReading: (SensorReadingEntity) -> Unit,
     onError: String?,
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onShowPhotoGallery: () -> Unit,
 ) {
-    var eventsOnly by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    val rows = buildList {
-        data.events.filter { it.eventType != "temperature" }.forEach { add(TimelineLine.Event(it)) }
-        if (!eventsOnly) data.readings.forEach { add(TimelineLine.Reading(it)) }
-    }.sortedBy { it.time }
+    var selectedFilterName by rememberSaveable(data.cook.id) { mutableStateOf(TimelineFilter.ALL.name) }
+    var newestFirst by rememberSaveable(data.cook.id) { mutableStateOf(true) }
+    var showSortMenu by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    val selectedFilter = TimelineFilter.valueOf(selectedFilterName)
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val rows = buildTimelineLines(data, selectedFilter, newestFirst)
+    val days = rows.groupBy { timelineDayKey(it.time) }
+    val latestIndex = rows.size + days.size
+    val showJumpToLatest by remember(listState, newestFirst, latestIndex) {
+        derivedStateOf {
+            if (rows.isEmpty()) false
+            else if (newestFirst) listState.firstVisibleItemIndex > 2
+            else listState.firstVisibleItemIndex < (latestIndex - 1).coerceAtLeast(0)
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Text("Cook history", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            FilterChip(selected = !eventsOnly, onClick = { eventsOnly = false }, label = { Text("All entries") })
-            FilterChip(selected = eventsOnly, onClick = { eventsOnly = true }, label = { Text("Events only") })
+            Text("Cook timeline", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1)
+            Box {
+                TextButton(
+                    onClick = { showSortMenu = true },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-sort"),
+                    contentPadding = PaddingValues(horizontal = 6.dp),
+                ) {
+                    Text(if (newestFirst) "Newest first" else "Oldest first", maxLines = 1)
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                }
+                DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Newest first") },
+                        onClick = { newestFirst = true; showSortMenu = false },
+                        modifier = Modifier.testTag("timeline-sort-newest"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Oldest first") },
+                        onClick = { newestFirst = false; showSortMenu = false },
+                        modifier = Modifier.testTag("timeline-sort-oldest"),
+                    )
+                }
+            }
         }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TimelineFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = selectedFilter == filter,
+                    onClick = { selectedFilterName = filter.name },
+                    label = { Text(filter.label) },
+                    modifier = Modifier.testTag("timeline-filter-${filter.name.lowercase(Locale.ROOT)}"),
+                )
+            }
+        }
+
         if (rows.isEmpty()) {
+            val emptyTitle = when (selectedFilter) {
+                TimelineFilter.ALL -> "No cook history yet"
+                TimelineFilter.EVENTS -> "No events yet"
+                TimelineFilter.TEMPERATURES -> "No temperature checks yet"
+                TimelineFilter.PHOTOS -> "No photos yet"
+            }
             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.Center) {
-                Text("No cook history yet", style = MaterialTheme.typography.titleLarge)
-                Text("Use the quick log buttons above to add a note, temperature, photo, or reminder. Entries will appear here in time order.", style = MaterialTheme.typography.bodyLarge)
+                Text(emptyTitle, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (selectedFilter == TimelineFilter.ALL) {
+                        "Notes, temperature checks, and photos will show up here as the cook progresses."
+                    } else {
+                        "Choose another filter or use the quick actions above to add an entry."
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                )
             }
         } else {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                rows.forEach { row ->
-                    when (row) {
-                        is TimelineLine.Event -> TimelineEventCard(row.event, data, onEdit = { onEditEvent(row.event) }, onDelete = { viewModel.deleteTimelineEvent(row.event) }, onPhotoClick = onPhotoClick)
-                        is TimelineLine.Reading -> TemperatureTimelineCard(row.reading, onEdit = { onEditReading(row.reading) }, onDelete = { viewModel.deleteSensorReading(row.reading) })
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(top = 6.dp, bottom = 76.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    item(key = "timeline-summary") {
+                        Text(
+                            "Started ${formatTimeOfDay(data.cook.startedAtUtcMillis)} · ${formatCookDuration(calculateElapsed(data))} elapsed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 4.dp).testTag("timeline-summary"),
+                        )
+                    }
+                    days.forEach { (dayKey, dayRows) ->
+                        item(key = "timeline-day-$dayKey") {
+                            TimelineDayHeading(dayRows.first().time)
+                        }
+                        itemsIndexed(dayRows, key = { _, row -> row.stableKey }) { index, row ->
+                            TimelineEntryRow(
+                                row = row,
+                                isLastInDay = index == dayRows.lastIndex,
+                                data = data,
+                                onEditEvent = { event -> onEditEvent(event) },
+                                onDeleteEvent = { event -> viewModel.deleteTimelineEvent(event) },
+                                onEditReading = onEditReading,
+                                onDeleteReading = { reading -> viewModel.deleteSensorReading(reading) },
+                                onPhotoClick = onPhotoClick,
+                                onShowPhotoGallery = onShowPhotoGallery,
+                            )
+                        }
+                    }
+                    onError?.let { error ->
+                        item(key = "timeline-error") {
+                            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
+                        }
                     }
                 }
-                onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+                if (showJumpToLatest) {
+                    FilledTonalButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(if (newestFirst) 0 else latestIndex)
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).testTag("timeline-jump-latest"),
+                    ) {
+                        Icon(if (newestFirst) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Jump to latest")
+                    }
+                }
             }
         }
     }
 }
 
-private sealed class TimelineLine(val time: Long) {
-    data class Event(val event: TimelineEventEntity) : TimelineLine(event.occurredAtUtcMillis)
-    data class Reading(val reading: SensorReadingEntity) : TimelineLine(reading.measuredAtUtcMillis)
+private enum class TimelineFilter(val label: String) {
+    ALL("All"),
+    EVENTS("Events"),
+    TEMPERATURES("Temps"),
+    PHOTOS("Photos"),
+}
+
+private sealed class TimelineLine {
+    abstract val time: Long
+    abstract val stableKey: String
+
+    data class Event(
+        val event: TimelineEventEntity,
+        val photos: List<com.pittech.data.PhotoEntity> = emptyList(),
+    ) : TimelineLine() {
+        override val time: Long = event.occurredAtUtcMillis
+        override val stableKey: String = "event:${event.id}"
+    }
+
+    data class Reading(val reading: SensorReadingEntity) : TimelineLine() {
+        override val time: Long = reading.measuredAtUtcMillis
+        override val stableKey: String = "reading:${reading.id}"
+    }
+
+    data class ReadingGroup(val readings: List<SensorReadingEntity>) : TimelineLine() {
+        override val time: Long = readings.maxOf { it.measuredAtUtcMillis }
+        override val stableKey: String = "reading-group:${readings.first().id}"
+    }
+}
+
+private const val TIMELINE_READING_GROUP_GAP_MILLIS = 5 * 60_000L
+private const val TIMELINE_READING_GROUP_SPAN_MILLIS = 15 * 60_000L
+private const val TIMELINE_READING_GROUP_MIN_SIZE = 4
+
+private fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, newestFirst: Boolean): List<TimelineLine> {
+    val photosByEvent = data.photos.filter { it.eventId != null }.groupBy { it.eventId.orEmpty() }
+    val rows = mutableListOf<TimelineLine>()
+    if (filter != TimelineFilter.TEMPERATURES) {
+        data.events
+            .filter { it.eventType != "temperature" }
+            .filter { filter != TimelineFilter.PHOTOS || it.eventType == "photo" || !photosByEvent[it.id].isNullOrEmpty() }
+            .forEach { event -> rows += TimelineLine.Event(event, photosByEvent[event.id].orEmpty()) }
+    }
+    if (filter == TimelineFilter.ALL || filter == TimelineFilter.TEMPERATURES) {
+        val pendingDeviceReadings = mutableListOf<SensorReadingEntity>()
+        fun flushDeviceReadings() {
+            if (pendingDeviceReadings.size >= TIMELINE_READING_GROUP_MIN_SIZE) {
+                rows += TimelineLine.ReadingGroup(pendingDeviceReadings.toList())
+            } else {
+                pendingDeviceReadings.forEach { rows += TimelineLine.Reading(it) }
+            }
+            pendingDeviceReadings.clear()
+        }
+
+        val orderedReadings = data.readings.sortedBy { it.measuredAtUtcMillis }
+        orderedReadings.forEach { reading ->
+            if (reading.source == "manual") {
+                flushDeviceReadings()
+                rows += TimelineLine.Reading(reading)
+            } else {
+                val previous = pendingDeviceReadings.lastOrNull()
+                val crossesEvent = previous != null && data.events.any { event ->
+                    event.occurredAtUtcMillis > previous.measuredAtUtcMillis &&
+                        event.occurredAtUtcMillis <= reading.measuredAtUtcMillis
+                }
+                val breaksGroup = previous != null && (
+                    reading.measuredAtUtcMillis - previous.measuredAtUtcMillis > TIMELINE_READING_GROUP_GAP_MILLIS ||
+                        reading.measuredAtUtcMillis - pendingDeviceReadings.first().measuredAtUtcMillis > TIMELINE_READING_GROUP_SPAN_MILLIS ||
+                        reading.source != previous.source ||
+                        reading.sourceDeviceId != previous.sourceDeviceId ||
+                        crossesEvent
+                    )
+                if (breaksGroup) flushDeviceReadings()
+                pendingDeviceReadings += reading
+            }
+        }
+        flushDeviceReadings()
+    }
+    val comparator = if (newestFirst) {
+        compareByDescending<TimelineLine> { it.time }.thenBy { it.stableKey }
+    } else {
+        compareBy<TimelineLine> { it.time }.thenBy { it.stableKey }
+    }
+    return rows.sortedWith(comparator)
 }
 
 @Composable
-private fun TimelineEventCard(event: TimelineEventEntity, data: CookDetailData, onEdit: () -> Unit, onDelete: () -> Unit, onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit) {
+private fun TimelineDayHeading(timestamp: Long) {
+    Text(
+        formatTimelineDay(timestamp).uppercase(Locale.getDefault()),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun TimelineEntryRow(
+    row: TimelineLine,
+    isLastInDay: Boolean,
+    data: CookDetailData,
+    onEditEvent: (TimelineEventEntity) -> Unit,
+    onDeleteEvent: (TimelineEventEntity) -> Unit,
+    onEditReading: (SensorReadingEntity) -> Unit,
+    onDeleteReading: (SensorReadingEntity) -> Unit,
+    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onShowPhotoGallery: () -> Unit,
+) {
+    val kind = when (row) {
+        is TimelineLine.Event -> eventKindLabel(row.event.eventType)
+        is TimelineLine.Reading, is TimelineLine.ReadingGroup -> "TEMPERATURE"
+    }
+    val markerColor = when (kind) {
+        "PHOTO" -> MaterialTheme.colorScheme.secondary
+        "START", "FINISH", "SETPOINT" -> MaterialTheme.colorScheme.primary
+        "TEMPERATURE" -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier.width(18.dp).fillMaxHeight().padding(top = 15.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(Modifier.size(12.dp).background(markerColor, CircleShape))
+            if (!isLastInDay) {
+                Spacer(Modifier.width(2.dp).weight(1f).background(MaterialTheme.colorScheme.outlineVariant))
+            }
+        }
+        when (row) {
+            is TimelineLine.Event -> TimelineEventCard(
+                modifier = Modifier.weight(1f),
+                line = row,
+                data = data,
+                onEdit = { onEditEvent(row.event) },
+                onDelete = { onDeleteEvent(row.event) },
+                onPhotoClick = onPhotoClick,
+                onShowPhotoGallery = onShowPhotoGallery,
+            )
+            is TimelineLine.Reading -> TemperatureTimelineCard(
+                modifier = Modifier.weight(1f),
+                reading = row.reading,
+                cookStartedAt = data.cook.startedAtUtcMillis,
+                onEdit = { onEditReading(row.reading) },
+                onDelete = { onDeleteReading(row.reading) },
+            )
+            is TimelineLine.ReadingGroup -> TemperatureReadingGroupCard(Modifier.weight(1f), row)
+        }
+    }
+}
+
+@Composable
+private fun TimelineEventCard(
+    modifier: Modifier,
+    line: TimelineLine.Event,
+    data: CookDetailData,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onShowPhotoGallery: () -> Unit,
+) {
+    val event = line.event
     val dishName = data.dishes.firstOrNull { it.id == event.dishId }?.name
-    val photos = data.photos.filter { it.eventId == event.id }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    var detailsExpanded by rememberSaveable(event.id) { mutableStateOf(false) }
+    val kind = eventKindLabel(event.eventType)
+    Card(
+        modifier = modifier.testTag("timeline-entry-${event.id}"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TimelineKindChip(kind)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(formatTimeOfDay(event.occurredAtUtcMillis), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${formatSinceCookStart(event.occurredAtUtcMillis, data.cook.startedAtUtcMillis)} · ${event.source.replaceFirstChar { it.uppercase() }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (event.source == "manual") {
+                    TimelineEntryMenu(
+                        stateKey = event.id,
+                        label = event.title,
+                        actionTag = "timeline-event-actions-${event.eventType}",
+                        editTag = "timeline-event-edit-${event.eventType}",
+                        deleteTag = "timeline-event-delete-${event.eventType}",
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                    )
+                }
+            }
             Text(event.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("${formatTimestamp(event.occurredAtUtcMillis)} · ${event.source.replaceFirstChar { it.uppercase() }}" + (dishName?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
-            event.details?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-            photos.forEach { photo -> PhotoThumbnail(photo, onClick = { onPhotoClick(photo) }) }
-            if (event.source == "manual") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-event-edit-${event.eventType}")) { Icon(Icons.Filled.Edit, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Edit") }
-                    TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-event-delete-${event.eventType}")) { Icon(Icons.Filled.Delete, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Delete") }
+            dishName?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+            event.details?.takeIf { it.isNotBlank() }?.let { details ->
+                Text(details, style = MaterialTheme.typography.bodyMedium, maxLines = if (detailsExpanded) Int.MAX_VALUE else 2)
+                if (details.length > 120) {
+                    TextButton(
+                        onClick = { detailsExpanded = !detailsExpanded },
+                        modifier = Modifier.heightIn(min = 40.dp).testTag("timeline-details-toggle-${event.id}"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                    ) { Text(if (detailsExpanded) "Show less" else "Show more") }
+                }
+            }
+            line.photos.firstOrNull()?.let { photo ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PhotoThumbnail(
+                        photo,
+                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).testTag("timeline-photo-${photo.id}"),
+                        onClick = { onPhotoClick(photo) },
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                        if (line.photos.size > 1) {
+                            TextButton(
+                                onClick = onShowPhotoGallery,
+                                modifier = Modifier.heightIn(min = 40.dp).testTag("timeline-photo-gallery-${event.id}"),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                            ) { Text("View all ${line.photos.size} photos") }
+                        }
+                    }
                 }
             }
         }
@@ -1111,16 +1446,196 @@ private fun TimelineEventCard(event: TimelineEventEntity, data: CookDetailData, 
 }
 
 @Composable
-private fun TemperatureTimelineCard(reading: SensorReadingEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("${reading.probeName}: ${reading.value} ${reading.unit}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("${formatTimestamp(reading.measuredAtUtcMillis)} · ${reading.measurementType.replace('_', ' ')} · ${reading.source}", style = MaterialTheme.typography.bodyMedium)
-            if (reading.source == "manual") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("temperature-edit-${reading.probeName}")) { Text("Edit") }
-                TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp).testTag("temperature-delete-${reading.probeName}")) { Text("Delete") }
+private fun TemperatureTimelineCard(
+    modifier: Modifier,
+    reading: SensorReadingEntity,
+    cookStartedAt: Long,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = modifier.testTag("timeline-entry-${reading.id}"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TimelineKindChip("TEMPERATURE")
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(formatTimeOfDay(reading.measuredAtUtcMillis), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text(formatSinceCookStart(reading.measuredAtUtcMillis, cookStartedAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (reading.source == "manual") {
+                    TimelineEntryMenu(
+                        stateKey = reading.id,
+                        label = reading.probeName,
+                        actionTag = "temperature-actions-${reading.probeName}",
+                        editTag = "temperature-edit-${reading.probeName}",
+                        deleteTag = "temperature-delete-${reading.probeName}",
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                    )
+                }
+            }
+            Text("${reading.probeName}: ${formatReadingValue(reading.value)} ${reading.unit}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("${reading.measurementType.replace('_', ' ')} · ${reading.source.replaceFirstChar { it.uppercase() }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun TemperatureReadingGroupCard(modifier: Modifier, line: TimelineLine.ReadingGroup) {
+    var expanded by rememberSaveable(line.stableKey) { mutableStateOf(false) }
+    val readings = line.readings.sortedBy { it.measuredAtUtcMillis }
+    val probeSummaries = readings.groupBy { it.probeName to it.unit }.values
+    Card(
+        modifier = modifier.testTag("timeline-entry-${line.stableKey}"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TimelineKindChip("TEMPERATURES")
+                Text("${readings.size} readings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            }
+            Text(
+                "${formatTimeOfDay(readings.first().measuredAtUtcMillis)}–${formatTimeOfDay(readings.last().measuredAtUtcMillis)} · ${readings.first().source.replaceFirstChar { it.uppercase() }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            probeSummaries.forEach { samples ->
+                val ordered = samples.sortedBy { it.measuredAtUtcMillis }
+                Text(
+                    "${samples.first().probeName}: ${formatReadingValue(samples.minOf { it.value })}–${formatReadingValue(samples.maxOf { it.value })} ${samples.first().unit} · latest ${formatReadingValue(ordered.last().value)} ${ordered.last().unit}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.heightIn(min = 44.dp).testTag("timeline-group-expand-${line.readings.first().id}"),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+            ) {
+                Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text(if (expanded) "Hide readings" else "Show ${readings.size} readings")
+            }
+            if (expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("timeline-group-readings-${line.readings.first().id}")) {
+                    readings.forEach { reading ->
+                        Text(
+                            "${formatTimeOfDay(reading.measuredAtUtcMillis)} · ${reading.probeName}: ${formatReadingValue(reading.value)} ${reading.unit}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun TimelineKindChip(label: String) {
+    val container = when (label) {
+        "PHOTO" -> MaterialTheme.colorScheme.secondaryContainer
+        "TEMPERATURE", "TEMPERATURES" -> MaterialTheme.colorScheme.tertiaryContainer
+        "START", "FINISH", "SETPOINT" -> MaterialTheme.colorScheme.primaryContainer
+        "CHECK-IN" -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val content = when (label) {
+        "PHOTO" -> MaterialTheme.colorScheme.onSecondaryContainer
+        "TEMPERATURE", "TEMPERATURES" -> MaterialTheme.colorScheme.onTertiaryContainer
+        "START", "FINISH", "SETPOINT" -> MaterialTheme.colorScheme.onPrimaryContainer
+        "CHECK-IN" -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(color = container, contentColor = content, shape = CircleShape) {
+        Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+    }
+}
+
+@Composable
+private fun TimelineEntryMenu(
+    stateKey: String,
+    label: String,
+    actionTag: String,
+    editTag: String,
+    deleteTag: String,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var expanded by rememberSaveable(stateKey) { mutableStateOf(false) }
+    Box {
+        androidx.compose.material3.IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(48.dp).testTag(actionTag),
+        ) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "More options for $label")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Filled.Edit, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Edit") } },
+                onClick = { expanded = false; onEdit() },
+                modifier = Modifier.testTag(editTag),
+            )
+            DropdownMenuItem(
+                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Filled.Delete, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Delete") } },
+                onClick = { expanded = false; onDelete() },
+                modifier = Modifier.testTag(deleteTag),
+            )
+        }
+    }
+}
+
+private fun eventKindLabel(eventType: String): String = when (eventType) {
+    "cook_started" -> "START"
+    "cook_finished" -> "FINISH"
+    "setpoint_recorded" -> "SETPOINT"
+    "reminder_completed" -> "CHECK-IN"
+    "photo" -> "PHOTO"
+    "temperature" -> "TEMPERATURE"
+    else -> displayEventType(eventType).uppercase(Locale.getDefault())
+}
+
+private fun formatTimeOfDay(millis: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+
+private fun formatReadingValue(value: Double): String = String.format(Locale.getDefault(), "%.1f", value)
+
+private fun formatSinceCookStart(timestamp: Long, startedAt: Long): String {
+    val elapsed = (timestamp - startedAt).coerceAtLeast(0L)
+    return "+${formatCookDuration(elapsed)}"
+}
+
+private fun formatCookDuration(millis: Long): String {
+    val minutes = millis.coerceAtLeast(0L) / 60_000L
+    val days = minutes / (24 * 60)
+    val hours = (minutes / 60) % 24
+    val remainderMinutes = minutes % 60
+    return when {
+        days > 0 -> "${days}d ${hours}h"
+        hours > 0 -> "${hours}h ${remainderMinutes}m"
+        else -> "${remainderMinutes}m"
+    }
+}
+
+private fun timelineDayKey(millis: Long): String {
+    val calendar = Calendar.getInstance().apply { timeInMillis = millis }
+    return "${calendar.get(Calendar.YEAR)}-${calendar.get(Calendar.MONTH)}-${calendar.get(Calendar.DAY_OF_MONTH)}"
+}
+
+private fun formatTimelineDay(millis: Long): String {
+    val date = Date(millis)
+    val calendar = Calendar.getInstance().apply { time = date }
+    val today = Calendar.getInstance()
+    val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+    val label = DateFormat.getDateInstance(DateFormat.MEDIUM).format(date)
+    return when {
+        calendar.get(Calendar.YEAR) == today.get(Calendar.YEAR) && calendar.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) -> "Today · $label"
+        calendar.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) && calendar.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) -> "Yesterday · $label"
+        else -> label
     }
 }
 
