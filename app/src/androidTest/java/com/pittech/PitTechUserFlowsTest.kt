@@ -273,8 +273,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-value").performTextInput("156")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Brisket probe: 156.0 °F")
-        waitForAnyText("Temperature saved.")
-        waitForTextsToDisappear("Temperature saved.")
+        waitForAnyText("Temperature entry updated.")
+        waitForTextsToDisappear("Temperature entry updated.")
         composeRule.onNodeWithTag("temperature-delete-Brisket probe").performScrollTo().performClick()
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
@@ -600,7 +600,7 @@ class PitTechUserFlowsTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("reminder-checkin-note").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("reminder-checkin-note").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("reminder-checkin-note").assertIsDisplayed()
         composeRule.onNodeWithText("How did it go?").assertIsDisplayed()
         saveScreenshot("reminder-check-in")
         composeRule.onNodeWithTag("reminder-checkin-note").performTextInput("Wrapped at 160°F")
