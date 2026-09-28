@@ -50,7 +50,6 @@ internal object BluetoothScanDiagnostics {
                 appendLine("Selected device")
                 appendLine("Name: ${quoted(selectedDevice.advertisedName ?: "(not advertised)")}")
                 appendLine("Bluetooth address: ${selectedDevice.address ?: "(unavailable)"}")
-                appendLine("Pit Boss relay ID candidate: ${selectedDevice.relayIdentifier ?: "(not recognized)"}")
                 appendLine("PitTech support status: ${ControllerSupportRegistry.label(selectedDevice)}")
                 appendLine("Latest RSSI (dBm): ${selectedDevice.rssi}")
                 appendLine("Captured observations: ${selectedDevice.observationCount}")
