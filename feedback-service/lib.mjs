@@ -8,7 +8,7 @@ const MAX = Object.freeze({
   occurredAtUtc: 80,
   source: 120,
   summary: 500,
-  details: 24000,
+  details: 46000,
 });
 
 export function normalizeSubmission(input) {
@@ -17,8 +17,8 @@ export function normalizeSubmission(input) {
   }
 
   const kind = String(input.kind ?? "").trim().toUpperCase();
-  if (kind !== "BUG" && kind !== "FEATURE") {
-    throw new ValidationError("kind must be BUG or FEATURE.");
+  if (kind !== "BUG" && kind !== "FEATURE" && kind !== "DEVICE_DIAGNOSTIC") {
+    throw new ValidationError("kind must be BUG, FEATURE, or DEVICE_DIAGNOSTIC.");
   }
 
   const title = text(input.title, "title", MAX.title, true);
@@ -28,7 +28,7 @@ export function normalizeSubmission(input) {
   const device = text(input.device, "device", MAX.device, true);
 
   let diagnosticReport = null;
-  if (kind === "BUG" && input.diagnosticReport != null) {
+  if (kind !== "FEATURE" && input.diagnosticReport != null) {
     const report = input.diagnosticReport;
     if (typeof report !== "object" || Array.isArray(report)) {
       throw new ValidationError("diagnosticReport must be an object.");
@@ -42,13 +42,19 @@ export function normalizeSubmission(input) {
     };
   }
 
+  if (kind === "DEVICE_DIAGNOSTIC" && diagnosticReport == null) {
+    throw new ValidationError("DEVICE_DIAGNOSTIC requires a diagnosticReport.");
+  }
+
   return { kind, title, description, appVersion, androidVersion, device, diagnosticReport };
 }
 
 export function buildGitHubIssue(submission) {
   const isBug = submission.kind === "BUG";
+  const isDeviceDiagnostic = submission.kind === "DEVICE_DIAGNOSTIC";
+  const prefix = isDeviceDiagnostic ? "[Device report]" : isBug ? "[Bug]" : "[Feature]";
   const body = [
-    `## ${isBug ? "Problem report" : "Feature request"}`,
+    `## ${isDeviceDiagnostic ? "Controller diagnostic report" : isBug ? "Problem report" : "Feature request"}`,
     submission.description || "(No description provided)",
     "",
     "## App and device",
@@ -61,8 +67,8 @@ export function buildGitHubIssue(submission) {
     const report = submission.diagnosticReport;
     body.push(
       "",
-      "## Saved crash diagnostics",
-      "The user explicitly chose to include the app's locally saved crash report.",
+      "## Diagnostic details",
+      "The user reviewed and explicitly chose to submit this diagnostic report.",
       `- Reference: ${report.referenceCode}`,
       `- Occurred (UTC): ${report.occurredAtUtc}`,
       `- Source: ${report.source}`,
@@ -81,9 +87,9 @@ export function buildGitHubIssue(submission) {
   );
 
   return {
-    title: `${isBug ? "[Bug]" : "[Feature]"} ${submission.title}`,
+    title: `${prefix} ${submission.title}`,
     body: body.join("\n"),
-    labels: [isBug ? "bug" : "enhancement"],
+    labels: [isDeviceDiagnostic ? "device-diagnostics" : isBug ? "bug" : "enhancement"],
   };
 }
 
