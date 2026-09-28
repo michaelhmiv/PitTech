@@ -33,6 +33,7 @@ class BluetoothScanDiagnosticsTest {
         periodicAdvertisingInterval = null,
         dataStatus = 0,
         serviceUuids = listOf("0000180F-0000-1000-8000-00805F9B34FB"),
+        serviceSolicitationUuids = listOf("00001812-0000-1000-8000-00805F9B34FB"),
         manufacturerData = mapOf("0x1234" to "AABB"),
         serviceData = mapOf("0000180F-0000-1000-8000-00805F9B34FB" to "01"),
         rawRecordHex = rawRecordHex,
@@ -63,6 +64,7 @@ class BluetoothScanDiagnosticsTest {
 
         assertTrue(details.contains("Bluetooth address: AA:BB:CC:DD:EE:FF"))
         assertTrue(details.contains("Service UUIDs: 0000180F"))
+        assertTrue(details.contains("Service solicitation UUIDs: 00001812"))
         assertTrue(details.contains("0x1234 -> AABB"))
         assertTrue(details.contains("Raw advertisement record (hex): 020106"))
         assertTrue(details.contains("Distinct advertisement variants omitted: 2"))
