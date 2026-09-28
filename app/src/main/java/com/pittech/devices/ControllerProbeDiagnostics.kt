@@ -249,13 +249,14 @@ internal object ControllerDiagnosticReportBuilder {
             .sortedWith(compareByDescending<IndexedValue<SanitizedDiagnosticSection>> { it.value.priority }.thenBy { it.index })
 
         for ((index, section) in sections.withIndex()) {
-            val heading = "\n${section.title}\n"
+            val value = section.value
+            val heading = "\n${value.title}\n"
             val remaining = maxChars - output.length
             if (remaining <= heading.length + MIN_TRUNCATION_MARKER_CHARS) {
-                omitted += section.title
+                omitted += value.title
                 continue
             }
-            val fullText = heading + section.text
+            val fullText = heading + value.text
             if (fullText.length <= remaining) {
                 output.append(fullText)
                 continue
@@ -265,7 +266,7 @@ internal object ControllerDiagnosticReportBuilder {
             val marker = "\n[Section shortened; approximately $omittedChars characters omitted.]"
             val bodyChars = (remaining - heading.length - marker.length).coerceAtLeast(0)
             output.append(heading)
-            output.append(section.text.take(bodyChars).trimEnd())
+            output.append(value.text.take(bodyChars).trimEnd())
             output.append(marker.take(maxChars - output.length))
             sections.drop(index + 1).forEach { omitted += it.value.title }
             break

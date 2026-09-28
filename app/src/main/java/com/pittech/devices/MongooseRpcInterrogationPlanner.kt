@@ -34,9 +34,10 @@ internal class MongooseRpcInterrogationPlanner {
                     val methods = extractMethods(response.result)
                     if (methods.isNotEmpty() && inventory.isEmpty()) {
                         inventory.addAll(methods)
-                        ControllerProbePolicy.plannedReads(methods).forEach(queue::addLast)
+                        val methodSet = methods.toSet()
+                        ControllerProbePolicy.plannedReads(methodSet).forEach(queue::addLast)
                         if ("RPC.Describe" in methods) {
-                            ControllerProbePolicy.describeCandidates(methods).forEach { method ->
+                            ControllerProbePolicy.describeCandidates(methodSet).forEach { method ->
                                 queue.addLast(
                                     SafeRpcRequest(
                                         label = "Describe $method",
