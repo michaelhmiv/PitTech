@@ -1,6 +1,6 @@
 # PitTech Privacy Policy
 
-Last updated: September 25, 2026
+Last updated: September 28, 2026
 
 This policy describes how PitTech for Android (package com.pittech) handles information. PitTech is a barbecue cook logging app published by Sportfolio on Google Play.
 
@@ -12,11 +12,11 @@ If you select photos, PitTech copies them into the app's private storage on your
 
 PitTech has no sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service.
 
-## Feedback sent to GitHub
+## Feedback sent through PitTech
 
-If you choose **Report a problem** or **Request a feature** in Settings, PitTech opens a prefilled issue draft in the public PitTech GitHub repository. The draft includes the title and description you enter plus the PitTech version, Android version, and device model. For a problem report, you can also choose to include the most recent crash report saved on your phone. That report can contain an exception summary, thread name, stack trace, and Android process-exit details. Review the draft before submitting it; long diagnostics may be shortened to fit the GitHub form link.
+If you choose **Report a problem** or **Request a feature** in Settings, PitTech sends the title and description you enter plus the PitTech version, Android version, and device model to PitTech's feedback relay hosted on Railway. For a problem report, you can also choose to include the most recent crash report saved on your phone. That report can contain a reference code, time, error summary, exception details, thread name, stack trace, and Android process-exit details. The app shows this choice before submission, and crash diagnostics are not included in feature requests.
 
-When you continue to GitHub, the draft details are sent to GitHub to prefill the form. PitTech does not create or submit the issue for you. You need a GitHub account to submit, and any issue you submit to this public repository can be viewed by anyone. PitTech does not add cook records or photos to feedback drafts. GitHub handles information under its own [Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement).
+The relay creates an issue in the public PitTech GitHub repository, so no GitHub account is required to submit feedback. The resulting issue can be viewed by anyone. Do not include personal or sensitive information in feedback. PitTech does not add cook records or photos to feedback submissions. Railway processes the network request used to reach the relay, and GitHub hosts the resulting public issue. Their handling of information is governed by their respective privacy terms and GitHub's [Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement).
 
 ## Advertising and Google Mobile Ads
 
@@ -38,11 +38,11 @@ If you open or share a file with another app or service, that recipient may rece
 
 Cook records and photos remain in PitTech's private app storage until you delete them in the app, clear PitTech's app data in Android settings, or uninstall PitTech. Android app-data backup is disabled. Exported files and copies shared with other apps remain at their chosen destinations until you delete them there.
 
-A locally saved crash report stays on your phone until a newer report replaces it, you delete it in Settings, or you clear PitTech's app data or uninstall the app. If you submit a report to GitHub, GitHub's retention and deletion policies apply to that issue. Google handles information collected through its advertising and consent services under its own policies and controls.
+A locally saved crash report stays on your phone until a newer report replaces it, you delete it in Settings, or you clear PitTech's app data or uninstall the app. If you submit feedback, the relay does not maintain a separate feedback database; the created public GitHub issue is retained under GitHub's retention and deletion policies. Railway may retain operational request logs under its service policies. Google handles information collected through its advertising and consent services under its own policies and controls.
 
 ## Security
 
-PitTech stores cook records, photos, and crash diagnostics in Android's private app storage. Cook records and photos are not uploaded by the feedback flow. A crash report is sent to GitHub only if you select it for a bug draft and continue to GitHub; you must submit the draft there to create a public issue. The app does not claim separate encryption of its local database or exported files. Protect access to your device with its screen lock and other security settings.
+PitTech stores cook records, photos, and crash diagnostics in Android's private app storage. Cook records and photos are not uploaded by the feedback flow. Feedback is transmitted over HTTPS to PitTech's Railway-hosted relay and then to GitHub. A crash report is included only if you select it for a problem report. The relay keeps its GitHub credential on the server and does not place that credential in the Android app. The app does not claim separate encryption of its local database or exported files. Protect access to your device with its screen lock and other security settings.
 
 ## Children and intended audience
 

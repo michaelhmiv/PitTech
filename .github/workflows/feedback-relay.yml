@@ -1,0 +1,53 @@
+name: Feedback relay checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "feedback-service/**"
+      - ".github/workflows/feedback-relay.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "feedback-service/**"
+      - ".github/workflows/feedback-relay.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  feedback-relay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Run relay unit tests
+        working-directory: feedback-service
+        run: npm test
+
+      - name: Validate relay starts without secrets
+        working-directory: feedback-service
+        run: |
+          PORT=3100 node server.mjs > /tmp/pittech-feedback.log 2>&1 &
+          PID=$!
+          trap 'kill $PID || true' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3100/health > /tmp/health.json; then
+              break
+            fi
+            sleep 0.25
+          done
+          grep -q '"status":"ok"' /tmp/health.json
+          grep -q '"githubConfigured":false' /tmp/health.json
+
+          STATUS=$(curl --silent --output /tmp/feedback.json --write-out '%{http_code}'             -H 'Content-Type: application/json'             --data '{"kind":"FEATURE","title":"Test","description":"CI","appVersion":"test","androidVersion":"test","device":"test"}'             http://127.0.0.1:3100/v1/feedback)
+          test "$STATUS" = "503"
+          grep -q '"feedback_relay_not_configured"' /tmp/feedback.json
+
+      - name: Build relay container
+        run: docker build -t pittech-feedback-relay feedback-service
