@@ -431,11 +431,22 @@ internal class MongooseBleRpcProbe(context: Context) {
 
     private fun processRpcResponse(session: Session, gatt: BluetoothGatt, raw: String) {
         val request = session.activeRequest ?: return
-        session.commandTimeout?.let(handler::removeCallbacks)
-        session.commandTimeout = null
 
         try {
             val response = JSONObject(raw)
+            val responseId = response.optInt("id", Int.MIN_VALUE)
+            if (responseId != Int.MIN_VALUE && responseId != session.requestId) {
+                record(
+                    session,
+                    "Ignored stale RPC response id=$responseId while waiting for id=${session.requestId}.",
+                )
+                session.expectedResponseLength = null
+                session.responseBytes.clear()
+                return
+            }
+
+            session.commandTimeout?.let(handler::removeCallbacks)
+            session.commandTimeout = null
             val error = response.optJSONObject("error")
             if (error != null) {
                 val code = error.optInt("code", Int.MIN_VALUE)
