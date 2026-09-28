@@ -82,6 +82,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -596,7 +597,7 @@ private fun CookQuickActionsBar(
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -616,6 +617,7 @@ private fun CookQuickActionsBar(
                 FilledTonalButton(
                     onClick = onTemperature,
                     shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-temperature"),
                 ) {
@@ -627,6 +629,7 @@ private fun CookQuickActionsBar(
                 FilledTonalButton(
                     onClick = onPhoto,
                     shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-photo"),
                 ) {
@@ -638,6 +641,7 @@ private fun CookQuickActionsBar(
                 FilledTonalButton(
                     onClick = onReminder,
                     shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("cook-add-reminder"),
                 ) {
@@ -678,7 +682,10 @@ private fun LiveCookTab(
     var showCookDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var showPrepDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var showAllReminders by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var showAllDishes by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var showMoreTools by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val useCompactDashboardGrid = configuration.screenWidthDp >= 390 && configuration.fontScale <= 1.3f
 
     val pendingReminders = data.reminders
         .filter { it.status == CookReminderEntity.STATUS_PENDING }
@@ -696,14 +703,14 @@ private fun LiveCookTab(
     val isActive = data.cook.status == CookStatus.ACTIVE
     val isPaused = data.cook.status == CookStatus.PAUSED
     val statusContainer = when (data.cook.status) {
-        CookStatus.PAUSED -> MaterialTheme.colorScheme.tertiaryContainer
-        CookStatus.COMPLETED -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.primaryContainer
+        CookStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
+        CookStatus.COMPLETED -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.primary
     }
     val statusContent = when (data.cook.status) {
-        CookStatus.PAUSED -> MaterialTheme.colorScheme.onTertiaryContainer
-        CookStatus.COMPLETED -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onPrimaryContainer
+        CookStatus.PAUSED -> MaterialTheme.colorScheme.onTertiary
+        CookStatus.COMPLETED -> MaterialTheme.colorScheme.onSecondary
+        else -> MaterialTheme.colorScheme.onPrimary
     }
 
     Column(
@@ -712,8 +719,8 @@ private fun LiveCookTab(
     ) {
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)),
         ) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -772,7 +779,10 @@ private fun LiveCookTab(
             }
         }
 
-        DashboardSectionCard("Latest temperatures") {
+        DashboardSectionPair(
+            compact = useCompactDashboardGrid,
+            testTag = "live-overview-grid",
+            first = { modifier -> DashboardSectionCard("Latest temperatures", modifier = modifier) {
             if (latestTemperatures.isEmpty()) {
                 Text("No readings yet. Use Temperature in Quick actions to record one.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-no-readings"))
             } else {
@@ -791,11 +801,11 @@ private fun LiveCookTab(
                     }
                 }
             }
-        }
-
-        DashboardSectionCard("Dishes (${data.dishes.size})") {
+            } },
+            second = { modifier -> DashboardSectionCard("Dishes (${data.dishes.size})", modifier = modifier) {
             if (data.dishes.isEmpty()) Text("Add a dish to keep its preparation and results with this cook.", style = MaterialTheme.typography.bodyMedium)
-            data.dishes.forEach { dish ->
+            val visibleDishes = if (useCompactDashboardGrid && !showAllDishes) data.dishes.take(2) else data.dishes
+            visibleDishes.forEach { dish ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -837,6 +847,13 @@ private fun LiveCookTab(
                     }
                 }
             }
+            if (useCompactDashboardGrid && data.dishes.size > 2) {
+                TextButton(
+                    onClick = { showAllDishes = !showAllDishes },
+                    modifier = Modifier.heightIn(min = 40.dp).testTag("live-dishes-toggle"),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) { Text(if (showAllDishes) "Show fewer dishes" else "Show all ${data.dishes.size} dishes") }
+            }
             OutlinedButton(
                 onClick = onAddDish,
                 enabled = !busy,
@@ -847,19 +864,33 @@ private fun LiveCookTab(
                 Spacer(Modifier.width(8.dp))
                 Text("Add dish")
             }
-        }
+            } },
+        )
 
-        if (pendingReminders.isNotEmpty()) {
-            DashboardSectionCard(if (pendingReminders.size == 1) "Next reminder" else "Next reminder · ${pendingReminders.size} pending") {
+        DashboardSectionPair(
+            compact = useCompactDashboardGrid,
+            testTag = "live-context-grid",
+            first = if (pendingReminders.isNotEmpty()) ({ modifier -> DashboardSectionCard(if (pendingReminders.size == 1) "Next reminder" else "Next reminder · ${pendingReminders.size} pending", modifier = modifier) {
                 val visibleReminders = if (showAllReminders) pendingReminders else pendingReminders.take(1)
                 visibleReminders.forEach { reminder ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    if (useCompactDashboardGrid) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                             Text(formatTimestamp(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
+                                TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
+                            }
                         }
-                        TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
-                        TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                Text(formatTimestamp(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
+                            TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
+                        }
                     }
                 }
                 if (pendingReminders.size > 1) {
@@ -869,34 +900,53 @@ private fun LiveCookTab(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     ) { Text(if (showAllReminders) "Show next reminder only" else "Show ${pendingReminders.size - 1} more reminders") }
                 }
-            }
-        }
-
-        if (latestPhoto != null) {
-            DashboardSectionCard("Recent photo") {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PhotoThumbnail(
-                        latestPhoto,
-                        modifier = Modifier.size(96.dp).testTag("live-recent-photo"),
-                        onClick = { onPhotoClick(latestPhoto) },
-                    )
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            } }) else null,
+            second = latestPhoto?.let { photo -> ({ modifier -> DashboardSectionCard("Recent photo", modifier = modifier) {
+                if (useCompactDashboardGrid) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PhotoThumbnail(
+                            photo,
+                            modifier = Modifier.size(72.dp).testTag("live-recent-photo"),
+                            onClick = { onPhotoClick(photo) },
+                        )
                         Text(
-                            latestPhoto.caption?.takeIf { it.isNotBlank() } ?: latestPhoto.originalFileName,
+                            photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
                         )
-                        Text(formatTimestamp(latestPhoto.capturedAtUtcMillis ?: latestPhoto.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         TextButton(
                             onClick = onShowPhotoGallery,
                             modifier = Modifier.heightIn(min = 40.dp).testTag("live-photo-gallery-open"),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         ) { Text("All photos (${data.photos.size})") }
                     }
+                } else {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PhotoThumbnail(
+                            photo,
+                            modifier = Modifier.size(96.dp).testTag("live-recent-photo"),
+                            onClick = { onPhotoClick(photo) },
+                        )
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                            )
+                            Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextButton(
+                                onClick = onShowPhotoGallery,
+                                modifier = Modifier.heightIn(min = 40.dp).testTag("live-photo-gallery-open"),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            ) { Text("All photos (${data.photos.size})") }
+                        }
+                    }
                 }
-            }
-        }
+            } }) },
+        )
 
         DashboardSectionCard("Latest activity") {
             when (val activity = latestActivity) {
@@ -957,10 +1007,36 @@ private fun LiveCookTab(
 }
 
 @Composable
-private fun DashboardSectionCard(title: String, content: @Composable () -> Unit) {
+private fun DashboardSectionPair(
+    compact: Boolean,
+    testTag: String,
+    first: (@Composable (Modifier) -> Unit)?,
+    second: (@Composable (Modifier) -> Unit)?,
+) {
+    if (first == null && second == null) return
+    if (compact && first != null && second != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth().testTag(testTag),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            first(Modifier.weight(1f))
+            second(Modifier.weight(1f))
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            first?.invoke(Modifier.fillMaxWidth())
+            second?.invoke(Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun DashboardSectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
