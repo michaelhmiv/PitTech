@@ -98,8 +98,9 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("nav-devices").performClick()
         composeRule.onNodeWithText("Controller diagnostics").assertIsDisplayed()
-        composeRule.onNodeWithText("Automatic BLE fingerprinting + safe capability probing").assertIsDisplayed()
-        composeRule.onNodeWithTag("pitboss-scan").assertExists()
+        composeRule.onNodeWithText("No grill settings are changed during inspection. Nothing is shared unless you review and submit a support report.").assertIsDisplayed()
+        composeRule.onNodeWithTag("controller-scan").assertIsDisplayed().assertHeightIsAtLeast(56.dp)
+        composeRule.onNodeWithText("Scan for controllers").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()

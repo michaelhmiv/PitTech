@@ -13,10 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import org.json.JSONArray
-import org.json.JSONObject
 import java.text.SimpleDateFormat
-import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -73,8 +70,7 @@ internal class MongooseBleRpcProbe(context: Context) {
             session.callback = callback
             session.overallTimeout = Runnable {
                 if (isActive(session)) {
-                    record(session, "Overall protocol-probe timeout reached.")
-                    finish(session, "Protocol probe timed out; partial evidence retained.")
+                    recordFailureAndStop(session, ProbeStepState.TIMEOUT, "Overall protocol-probe timeout reached.")
                 }
             }
             handler.postDelayed(session.overallTimeout!!, OVERALL_TIMEOUT_MILLIS)
@@ -89,7 +85,17 @@ internal class MongooseBleRpcProbe(context: Context) {
                 handler,
             )
             session.gatt = gatt
-            if (gatt == null) finish(session, "Android did not create a GATT client for the protocol probe.")
+            if (gatt == null) {
+                finish(session, "Android did not create a GATT client for the protocol probe.")
+            } else {
+                val timeout = Runnable {
+                    if (isActive(session) && session.connected != true) {
+                        recordFailureAndStop(session, ProbeStepState.TIMEOUT, "RPC GATT connection callback timed out.")
+                    }
+                }
+                session.connectionTimeout = timeout
+                handler.postDelayed(timeout, CONNECTION_TIMEOUT_MILLIS)
+            }
         } catch (error: SecurityException) {
             record(session, "Bluetooth permission failure: " + error.javaClass.simpleName)
             finish(session, "Bluetooth connection permission denied.")
@@ -103,6 +109,7 @@ internal class MongooseBleRpcProbe(context: Context) {
         val session = activeSession ?: return
         session.finished = true
         removeTimeouts(session)
+        session.operations.clear()
         activeSession = null
         closeGatt(session.gatt)
     }
@@ -110,13 +117,33 @@ internal class MongooseBleRpcProbe(context: Context) {
     private fun callbackFor(session: Session) = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (!isActive(session)) return
+            session.connected = newState == BluetoothProfile.STATE_CONNECTED
+            if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTING) {
+                session.connectionTimeout?.let(handler::removeCallbacks)
+                session.connectionTimeout = null
+            }
             record(session, "RPC GATT connection callback status=$status state=$newState.")
             when {
                 status != BluetoothGatt.GATT_SUCCESS -> finish(session, "RPC GATT connection failed with status $status.")
                 newState == BluetoothProfile.STATE_CONNECTED -> {
+                    if (!session.operations.begin(GattOperationKind.DISCOVER_SERVICES)) {
+                        finish(session, "A GATT operation was already active before RPC service discovery.")
+                        return
+                    }
                     val accepted = runCatching { gatt.discoverServices() }.getOrDefault(false)
                     record(session, "RPC discoverServices accepted=$accepted.")
-                    if (!accepted) finish(session, "Android did not start RPC service discovery.")
+                    if (!accepted) {
+                        session.operations.complete(GattOperationKind.DISCOVER_SERVICES)
+                        finish(session, "Android did not start RPC service discovery.")
+                    } else {
+                        val timeout = Runnable {
+                            if (isActive(session) && session.operations.timedOut(GattOperationKind.DISCOVER_SERVICES)) {
+                                recordFailureAndStop(session, ProbeStepState.TIMEOUT, "RPC GATT service-discovery callback timed out.")
+                            }
+                        }
+                        session.serviceDiscoveryTimeout = timeout
+                        handler.postDelayed(timeout, SERVICE_DISCOVERY_TIMEOUT_MILLIS)
+                    }
                 }
                 newState == BluetoothProfile.STATE_DISCONNECTED -> finish(
                     session,
@@ -127,6 +154,12 @@ internal class MongooseBleRpcProbe(context: Context) {
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (!isActive(session)) return
+            session.serviceDiscoveryTimeout?.let(handler::removeCallbacks)
+            session.serviceDiscoveryTimeout = null
+            if (!session.operations.complete(GattOperationKind.DISCOVER_SERVICES)) {
+                record(session, "Ignored unmatched RPC service-discovery callback.")
+                return
+            }
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 finish(session, "RPC service discovery failed with status $status.")
                 return
@@ -203,6 +236,17 @@ internal class MongooseBleRpcProbe(context: Context) {
         purpose: NotificationPurpose,
     ) {
         session.notificationPurpose = purpose
+        val supportsNotifications = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
+            characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+        if (!supportsNotifications) {
+            if (purpose == NotificationPurpose.RPC_RX) {
+                finish(session, "Mongoose RPC RX-control characteristic does not support notifications or indications.")
+            } else {
+                record(session, "Mongoose debug characteristic has no notification or indication property; continuing without debug capture.")
+                beginRpcSequence(session, gatt)
+            }
+            return
+        }
         val localEnabled = runCatching { gatt.setCharacteristicNotification(characteristic, true) }.getOrDefault(false)
         if (!localEnabled) {
             if (purpose == NotificationPurpose.RPC_RX) {
@@ -216,8 +260,12 @@ internal class MongooseBleRpcProbe(context: Context) {
 
         val cccd = characteristic.getDescriptor(CCCD_UUID)
         if (cccd == null) {
-            record(session, "CCCD was not exposed for ${purpose.name}; continuing with local notification registration only.")
-            if (purpose == NotificationPurpose.RPC_RX) enableDebugOrBegin(session, gatt) else beginRpcSequence(session, gatt)
+            if (purpose == NotificationPurpose.RPC_RX) {
+                finish(session, "CCCD was not exposed for Mongoose RPC response notifications.")
+            } else {
+                record(session, "CCCD was not exposed for debug notifications; continuing without debug capture.")
+                beginRpcSequence(session, gatt)
+            }
             return
         }
         val payload = if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) {
@@ -225,13 +273,39 @@ internal class MongooseBleRpcProbe(context: Context) {
         } else {
             BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         }
+        if (!session.operations.begin(GattOperationKind.WRITE_DESCRIPTOR, cccd.uuid.toString())) {
+            recordFailureAndStop(
+                session,
+                ProbeStepState.TRANSPORT_ERROR,
+                "Another GATT operation was still in flight before notification setup.",
+            )
+            return
+        }
         if (!writeDescriptorCompat(gatt, cccd, payload)) {
+            session.operations.complete(GattOperationKind.WRITE_DESCRIPTOR, cccd.uuid.toString())
             if (purpose == NotificationPurpose.RPC_RX) {
                 finish(session, "Android rejected the RPC notification descriptor write.")
             } else {
                 record(session, "Debug CCCD write was rejected; continuing without debug stream.")
                 beginRpcSequence(session, gatt)
             }
+        } else {
+            val timeout = Runnable {
+                if (isActive(session) && session.notificationPurpose == purpose &&
+                    session.operations.timedOut(GattOperationKind.WRITE_DESCRIPTOR, cccd.uuid.toString())
+                ) {
+                    session.descriptorTimeout = null
+                    runCatching { gatt.setCharacteristicNotification(characteristic, false) }
+                    record(session, "${purpose.name} notification descriptor callback timed out.")
+                    if (purpose == NotificationPurpose.RPC_RX) {
+                        finish(session, "RPC response notifications could not be enabled before timeout.")
+                    } else {
+                        beginRpcSequence(session, gatt)
+                    }
+                }
+            }
+            session.descriptorTimeout = timeout
+            handler.postDelayed(timeout, DESCRIPTOR_WRITE_TIMEOUT_MILLIS)
         }
     }
 
@@ -242,11 +316,20 @@ internal class MongooseBleRpcProbe(context: Context) {
         status: Int,
     ) {
         if (!isActive(session) || descriptor.uuid != CCCD_UUID) return
+        if (!session.operations.complete(GattOperationKind.WRITE_DESCRIPTOR, descriptor.uuid.toString())) {
+            record(session, "Ignored unmatched notification descriptor callback.")
+            return
+        }
+        session.descriptorTimeout?.let(handler::removeCallbacks)
+        session.descriptorTimeout = null
         val purpose = session.notificationPurpose
         record(session, "Notification descriptor write for ${purpose?.name ?: "unknown"} status=$status.")
         if (status != BluetoothGatt.GATT_SUCCESS && purpose == NotificationPurpose.RPC_RX) {
             finish(session, "Could not enable RPC response notifications; GATT status $status.")
             return
+        }
+        if (purpose == NotificationPurpose.DEBUG && status == BluetoothGatt.GATT_SUCCESS) {
+            session.debugCaptureStartedAtElapsedMillis = SystemClock.elapsedRealtime()
         }
         if (purpose == NotificationPurpose.RPC_RX) enableDebugOrBegin(session, gatt) else beginRpcSequence(session, gatt)
     }
@@ -264,8 +347,7 @@ internal class MongooseBleRpcProbe(context: Context) {
     private fun beginRpcSequence(session: Session, gatt: BluetoothGatt) {
         if (session.startedCommands) return
         session.startedCommands = true
-        session.queue.add(SafeRpcRequest("RPC transport ping", "RPC.Ping"))
-        session.queue.add(SafeRpcRequest("RPC method inventory", "RPC.List"))
+        session.planner.start()
         sendNext(session, gatt)
     }
 
@@ -273,7 +355,7 @@ internal class MongooseBleRpcProbe(context: Context) {
         if (!isActive(session)) return
         session.commandTimeout?.let(handler::removeCallbacks)
         session.commandTimeout = null
-        session.activeRequest = session.queue.pollFirst()
+        session.activeRequest = session.planner.next()
         val request = session.activeRequest
         if (request == null) {
             finish(session, "Automatic observational controller interrogation completed.")
@@ -293,32 +375,31 @@ internal class MongooseBleRpcProbe(context: Context) {
         }
 
         session.requestId = (session.requestId + 1) and 2047
-        val payload = JSONObject()
-            .put("id", session.requestId)
-            .put("method", request.method)
-            .put(
-                "params",
-                JSONObject().apply {
-                    request.params.forEach { (key, value) -> put(key, value) }
-                },
-            )
-            .toString()
-            .toByteArray(Charsets.UTF_8)
+        val payload = MongooseRpcFraming.encodeRequest(session.requestId, request.method, request.params)
         session.pendingPayload = payload
         session.payloadOffset = 0
         session.writePhase = WritePhase.TX_LENGTH
-        session.expectedResponseLength = null
-        session.responseBytes.clear()
+        session.responseAssembler = null
 
         record(session, "Sending allowlisted observational RPC ${request.label} (${request.method}).")
-        if (!writeCharacteristicCompat(gatt, session.txCtlChar!!, encodeLength(payload.size))) {
-            recordFailureAndContinue(session, gatt, ProbeStepState.TRANSPORT_ERROR, "TX control write was rejected by Android.")
+        if (!writeCharacteristic(
+                session,
+                gatt,
+                session.txCtlChar!!,
+                MongooseRpcFraming.encodeLength(payload.size),
+            )
+        ) {
+            recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "TX control write was rejected by Android.")
             return
         }
 
         val timeout = Runnable {
             if (isActive(session) && session.activeRequest === request) {
-                recordFailureAndContinue(session, gatt, ProbeStepState.TIMEOUT, "No RPC response before timeout.")
+                recordFailureAndStop(
+                    session,
+                    ProbeStepState.TIMEOUT,
+                    "No RPC response before timeout; stopped further requests to preserve one in-flight response frame.",
+                )
             }
         }
         session.commandTimeout = timeout
@@ -332,8 +413,16 @@ internal class MongooseBleRpcProbe(context: Context) {
         status: Int,
     ) {
         if (!isActive(session)) return
+        if (!session.operations.complete(
+                GattOperationKind.WRITE_CHARACTERISTIC,
+                characteristic.uuid.toString(),
+            )
+        ) {
+            record(session, "Ignored unmatched characteristic-write callback for ${characteristic.uuid}.")
+            return
+        }
         if (status != BluetoothGatt.GATT_SUCCESS) {
-            recordFailureAndContinue(session, gatt, ProbeStepState.TRANSPORT_ERROR, "Characteristic write failed with GATT status $status.")
+            recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "Characteristic write failed with GATT status $status.")
             return
         }
 
@@ -352,13 +441,16 @@ internal class MongooseBleRpcProbe(context: Context) {
         val payload = session.pendingPayload
         if (session.payloadOffset >= payload.size) {
             session.writePhase = WritePhase.WAITING_RESPONSE
+            if (session.responseAssembler != null && !readRpcResponseChunk(session, gatt)) {
+                recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "Android rejected the deferred RPC response read.")
+            }
             return
         }
         val end = minOf(payload.size, session.payloadOffset + BLE_CHUNK_BYTES)
         val chunk = payload.copyOfRange(session.payloadOffset, end)
         session.payloadOffset = end
-        if (!writeCharacteristicCompat(gatt, session.dataChar!!, chunk)) {
-            recordFailureAndContinue(session, gatt, ProbeStepState.TRANSPORT_ERROR, "RPC data write was rejected by Android.")
+        if (!writeCharacteristic(session, gatt, session.dataChar!!, chunk)) {
+            recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "RPC data write was rejected by Android.")
         }
     }
 
@@ -372,28 +464,63 @@ internal class MongooseBleRpcProbe(context: Context) {
         val uuid = characteristic.uuid.toString()
         when {
             uuid.equals(ControllerProtocolDetector.MONGOOSE_DEBUG_LOG, ignoreCase = true) -> {
-                if (session.debugMessages.size < MAX_DEBUG_MESSAGES) {
-                    session.debugMessages += String(value, Charsets.UTF_8).take(MAX_DEBUG_MESSAGE_CHARS)
-                } else {
+                val captureStart = session.debugCaptureStartedAtElapsedMillis
+                if (captureStart == null || SystemClock.elapsedRealtime() - captureStart > DEBUG_OBSERVATION_WINDOW_MILLIS) {
                     session.omittedDebugMessages += 1
+                } else if (session.debugNotificationCount >= MAX_DEBUG_NOTIFICATION_COUNT) {
+                    session.omittedDebugMessages += 1
+                } else {
+                    val message = String(
+                        value,
+                        0,
+                        minOf(value.size, MAX_DEBUG_EVENT_BYTES),
+                        Charsets.UTF_8,
+                    ).take(MAX_DEBUG_MESSAGE_CHARS)
+                    session.debugNotificationCount += 1
+                    if (message != session.lastDebugMessage) session.debugPayloadChangeCount += 1
+                    session.lastDebugMessage = message
+                    if (value.size <= MAX_DEBUG_EVENT_BYTES && session.debugMessages.size < MAX_DEBUG_MESSAGES &&
+                        session.retainedDebugBytes + value.size <= MAX_DEBUG_TOTAL_BYTES
+                    ) {
+                        session.retainedDebugBytes += value.size
+                        session.debugMessages += message
+                    } else {
+                        session.omittedDebugMessages += 1
+                    }
                 }
             }
             uuid.equals(ControllerProtocolDetector.MONGOOSE_RPC_RX_CTL, ignoreCase = true) -> {
-                if (value.size < 4) {
-                    recordFailureAndContinue(session, gatt, ProbeStepState.PROTOCOL_ERROR, "RPC response-length notification was shorter than four bytes.")
+                val length = try {
+                    MongooseRpcFraming.decodeResponseLength(value)
+                } catch (error: IllegalArgumentException) {
+                    recordFailureAndStop(
+                        session,
+                        ProbeStepState.PROTOCOL_ERROR,
+                        error.message ?: "Malformed RPC response-length notification.",
+                    )
                     return
                 }
-                val length = decodeLength(value)
-                if (length !in 0..MAX_RPC_RESPONSE_BYTES) {
-                    recordFailureAndContinue(session, gatt, ProbeStepState.PROTOCOL_ERROR, "RPC response announced implausible length $length.")
-                    return
-                }
-                session.expectedResponseLength = length
-                session.responseBytes.clear()
                 if (length == 0) {
-                    processRpcResponse(session, gatt, "{}")
-                } else if (!runCatching { gatt.readCharacteristic(session.dataChar!!) }.getOrDefault(false)) {
-                    recordFailureAndContinue(session, gatt, ProbeStepState.TRANSPORT_ERROR, "Android rejected the RPC response read.")
+                    recordFailureAndStop(session, ProbeStepState.PROTOCOL_ERROR, "RPC response announced an empty frame.")
+                    return
+                }
+                if (session.responseAssembler != null) {
+                    recordFailureAndStop(session, ProbeStepState.PROTOCOL_ERROR, "A new RPC response arrived before the previous frame was fully read.")
+                    return
+                }
+                session.responseAssembler = MongooseRpcResponseAssembler(length)
+                if (session.operations.hasInFlightOperation()) {
+                    if (session.writePhase != WritePhase.DATA && session.writePhase != WritePhase.WAITING_RESPONSE) {
+                        recordFailureAndStop(
+                            session,
+                            ProbeStepState.PROTOCOL_ERROR,
+                            "RPC response arrived while no complete request was being sent.",
+                        )
+                    } else {
+                        record(session, "RPC response length arrived during a serialized write; response read queued after the write callback.")
+                    }
+                } else if (!readRpcResponseChunk(session, gatt)) {
+                    recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "Android rejected the RPC response read.")
                 }
             }
         }
@@ -409,65 +536,90 @@ internal class MongooseBleRpcProbe(context: Context) {
         if (!isActive(session) ||
             !characteristic.uuid.toString().equals(ControllerProtocolDetector.MONGOOSE_RPC_DATA, ignoreCase = true)
         ) return
+        if (!session.operations.complete(
+                GattOperationKind.READ_CHARACTERISTIC,
+                characteristic.uuid.toString(),
+            )
+        ) {
+            record(session, "Ignored unmatched RPC data-read callback.")
+            return
+        }
         if (status != BluetoothGatt.GATT_SUCCESS) {
-            recordFailureAndContinue(session, gatt, ProbeStepState.TRANSPORT_ERROR, "RPC response read failed with GATT status $status.")
+            recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "RPC response read failed with GATT status $status.")
             return
         }
-        if (value.isEmpty()) {
-            recordFailureAndContinue(session, gatt, ProbeStepState.PROTOCOL_ERROR, "RPC response ended before the announced length.")
+        val assembler = session.responseAssembler ?: return
+        val complete = try {
+            assembler.append(value)
+        } catch (error: IllegalArgumentException) {
+            recordFailureAndStop(
+                session,
+                ProbeStepState.PROTOCOL_ERROR,
+                error.message ?: "Malformed RPC response frame.",
+            )
             return
         }
-        val expected = session.expectedResponseLength ?: return
-        session.responseBytes.addAll(value.toList())
-        if (session.responseBytes.size < expected) {
-            if (!runCatching { gatt.readCharacteristic(session.dataChar!!) }.getOrDefault(false)) {
-                recordFailureAndContinue(session, gatt, ProbeStepState.TRANSPORT_ERROR, "Android rejected a subsequent RPC response read.")
+        if (!complete) {
+            if (!readRpcResponseChunk(session, gatt)) {
+                recordFailureAndStop(session, ProbeStepState.TRANSPORT_ERROR, "Android rejected a subsequent RPC response read.")
             }
             return
         }
-        val raw = session.responseBytes.take(expected).toByteArray().toString(Charsets.UTF_8)
+        val raw = assembler.finish().toString(Charsets.UTF_8)
+        session.responseAssembler = null
         processRpcResponse(session, gatt, raw)
+    }
+
+    private fun readRpcResponseChunk(session: Session, gatt: BluetoothGatt): Boolean {
+        val characteristic = session.dataChar ?: return false
+        val uuid = characteristic.uuid.toString()
+        if (!session.operations.begin(GattOperationKind.READ_CHARACTERISTIC, uuid)) return false
+        val accepted = try {
+            gatt.readCharacteristic(characteristic)
+        } catch (_: SecurityException) {
+            false
+        } catch (_: RuntimeException) {
+            false
+        }
+        if (!accepted) session.operations.complete(GattOperationKind.READ_CHARACTERISTIC, uuid)
+        return accepted
     }
 
     private fun processRpcResponse(session: Session, gatt: BluetoothGatt, raw: String) {
         val request = session.activeRequest ?: return
 
-        try {
-            val response = JSONObject(raw)
-            val responseId = response.optInt("id", Int.MIN_VALUE)
-            if (responseId != Int.MIN_VALUE && responseId != session.requestId) {
-                record(
-                    session,
-                    "Ignored stale RPC response id=$responseId while waiting for id=${session.requestId}.",
-                )
-                session.expectedResponseLength = null
-                session.responseBytes.clear()
-                return
-            }
+        val response = MongooseRpcResponseParser.parse(raw, session.requestId)
+        if (response.kind == MongooseRpcResponseKind.STALE_RESPONSE) {
+            record(session, "Ignored stale RPC response id=${response.id} while waiting for id=${session.requestId}.")
+            return
+        }
+        session.commandTimeout?.let(handler::removeCallbacks)
+        session.commandTimeout = null
 
-            session.commandTimeout?.let(handler::removeCallbacks)
-            session.commandTimeout = null
-            val error = response.optJSONObject("error")
-            if (error != null) {
-                val code = error.optInt("code", Int.MIN_VALUE)
-                val message = error.optString("message", "RPC error")
+        when (response.kind) {
+            MongooseRpcResponseKind.MALFORMED -> {
+                session.observations += RpcProbeObservation(
+                    request.label,
+                    request.method,
+                    ProbeStepState.PROTOCOL_ERROR,
+                    error = response.failureReason ?: "Malformed RPC response.",
+                )
+                record(session, "Could not parse ${request.method} response.")
+            }
+            MongooseRpcResponseKind.RPC_ERROR -> {
+                val code = response.errorCode
+                val message = response.errorMessage ?: "RPC error"
                 val state = if (code == 401) ProbeStepState.AUTH_REQUIRED else ProbeStepState.PROTOCOL_ERROR
                 session.observations += RpcProbeObservation(
                     request.label,
                     request.method,
                     state,
-                    error = "code=$code; $message",
+                    error = "code=${code ?: "unknown"}; $message",
                 )
-                record(session, "${request.method} returned error code=$code.")
-                if (request.method == "RPC.List" && code == 404) {
-                    session.queue.addFirst(SafeRpcRequest("RPC method inventory (ListEx)", "RPC.ListEx"))
-                }
-            } else {
-                val result = response.opt("result")
-                val resultText = when (result) {
-                    null, JSONObject.NULL -> "null"
-                    else -> result.toString()
-                }
+                record(session, "${request.method} returned error code=${code ?: "unknown"}.")
+            }
+            MongooseRpcResponseKind.SUCCESS -> {
+                val resultText = response.resultJson
                 session.observations += RpcProbeObservation(
                     request.label,
                     request.method,
@@ -475,75 +627,24 @@ internal class MongooseBleRpcProbe(context: Context) {
                     response = resultText.take(MAX_OBSERVATION_CHARS),
                 )
                 record(session, "${request.method} succeeded; responseChars=${resultText.length}.")
-                when (request.method) {
-                    "RPC.List", "RPC.ListEx" -> {
-                        val methods = extractMethods(result)
-                        if (methods.isNotEmpty() && session.rpcMethods.isEmpty()) {
-                            session.rpcMethods += methods
-                            enqueueInventoryDrivenReads(session)
-                        }
-                    }
-                    "RPC.Describe" -> {
-                        val name = request.params["name"].orEmpty()
-                        if (name.isNotBlank()) session.rpcDescriptions[name] = resultText.take(MAX_DESCRIPTION_CHARS)
-                    }
-                }
             }
-        } catch (error: Exception) {
-            session.observations += RpcProbeObservation(
-                request.label,
-                request.method,
-                ProbeStepState.PROTOCOL_ERROR,
-                error = "Unparseable RPC response (${raw.length} chars): ${error.javaClass.simpleName}",
-            )
-            record(session, "Could not parse ${request.method} response.")
+            MongooseRpcResponseKind.STALE_RESPONSE -> error("Handled above")
         }
 
+        session.planner.accept(request, response)
+        if (request.method == "RPC.List" || request.method == "RPC.ListEx") {
+            record(
+                session,
+                "RPC inventory now contains ${session.planner.rpcMethods.size} method(s); " +
+                    "planned safe reads and bounded introspection requests.",
+            )
+        }
         session.activeRequest = null
         sendNext(session, gatt)
     }
 
-    private fun enqueueInventoryDrivenReads(session: Session) {
-        val methods = session.rpcMethods.toSet()
-        ControllerProbePolicy.plannedReads(methods).forEach(session.queue::addLast)
-        if ("RPC.Describe" in methods) {
-            ControllerProbePolicy.describeCandidates(methods).forEach { method ->
-                session.queue.addLast(
-                    SafeRpcRequest(
-                        label = "Describe $method",
-                        method = "RPC.Describe",
-                        params = mapOf("name" to method),
-                    ),
-                )
-            }
-        }
-        record(
-            session,
-            "RPC inventory captured ${methods.size} method(s); queued explicit safe reads and up to " +
-                ControllerProbePolicy.MAX_DESCRIPTIONS + " introspection requests.",
-        )
-    }
-
-    private fun extractMethods(result: Any?): List<String> {
-        val methods = mutableSetOf<String>()
-        fun visit(value: Any?) {
-            when (value) {
-                is JSONArray -> for (index in 0 until value.length()) visit(value.opt(index))
-                is JSONObject -> {
-                    value.optString("name").takeIf { it.isNotBlank() }?.let(methods::add)
-                    value.optJSONArray("methods")?.let(::visit)
-                    value.optJSONArray("result")?.let(::visit)
-                }
-                is String -> if (value.contains('.')) methods += value
-            }
-        }
-        visit(result)
-        return methods.sorted()
-    }
-
-    private fun recordFailureAndContinue(
+    private fun recordFailureAndStop(
         session: Session,
-        gatt: BluetoothGatt,
         state: ProbeStepState,
         error: String,
     ) {
@@ -552,10 +653,12 @@ internal class MongooseBleRpcProbe(context: Context) {
         session.commandTimeout = null
         if (request != null) {
             session.observations += RpcProbeObservation(request.label, request.method, state, error = error)
-            record(session, "${request.method} failed: $error")
+            record(session, "${request.method} stopped: $error")
+        } else {
+            record(session, "RPC transport stopped: $error")
         }
         session.activeRequest = null
-        sendNext(session, gatt)
+        finish(session, "RPC transport stopped after a framing or timeout failure; collected evidence retained.")
     }
 
     private fun finish(session: Session, outcome: String) {
@@ -563,23 +666,50 @@ internal class MongooseBleRpcProbe(context: Context) {
         record(session, "Protocol probe finished: $outcome")
         session.finished = true
         removeTimeouts(session)
-        val capabilities = linkedMapOf<String, String>()
-        capabilities["Direct BLE"] = if (ControllerProtocolFamily.MONGOOSE_RPC in session.protocols) {
-            if (session.observations.any { it.method == "RPC.Ping" && it.state == ProbeStepState.SUCCESS }) {
-                "Mongoose RPC exchange succeeded"
-            } else {
-                "Mongoose RPC service detected; exchange not confirmed"
-            }
-        } else {
-            "GATT available; known RPC transport not detected"
+        val pingSucceeded = session.observations.any {
+            it.method == "RPC.Ping" && it.state == ProbeStepState.SUCCESS
         }
-        capabilities["Mongoose configuration GATT"] =
-            if (ControllerProtocolFamily.MONGOOSE_CONFIG_GATT in session.protocols) "detected" else "not detected"
-        val httpEvidence = session.observations
-            .filter { it.label.contains("http", ignoreCase = true) && it.state == ProbeStepState.SUCCESS }
-            .joinToString(" | ") { "${it.label}: ${it.response}" }
-        capabilities["Local HTTP RPC"] = httpEvidence.ifBlank { "unknown; no safe positive configuration evidence collected" }
-        capabilities["Vendor cloud relay"] = "not tested by automatic interrogation"
+        val httpEnable = session.observations.firstOrNull {
+            it.label == "Configuration capability: http.enable" && it.state == ProbeStepState.SUCCESS
+        }?.response?.trim()?.trim('"')
+        val httpCapability = when (httpEnable?.lowercase()) {
+            "true" -> ControllerTransportCapability(
+                ControllerTransportType.LOCAL_HTTP,
+                CapabilityState.POSSIBLE,
+                "Controller configuration reports HTTP enabled; local network reachability was not tested.",
+            )
+            "false" -> ControllerTransportCapability(
+                ControllerTransportType.LOCAL_HTTP,
+                CapabilityState.UNAVAILABLE,
+                "Controller configuration reports HTTP disabled.",
+            )
+            else -> ControllerTransportCapability(
+                ControllerTransportType.LOCAL_HTTP,
+                CapabilityState.UNKNOWN,
+                "No safe positive HTTP configuration evidence was collected.",
+            )
+        }
+        val capabilities = listOf(
+            ControllerTransportCapability(
+                ControllerTransportType.BLE,
+                when {
+                    pingSucceeded -> CapabilityState.SUPPORTED
+                    ControllerProtocolFamily.MONGOOSE_RPC in session.protocols -> CapabilityState.POSSIBLE
+                    else -> CapabilityState.UNKNOWN
+                },
+                when {
+                    pingSucceeded -> "Mongoose RPC exchange succeeded."
+                    ControllerProtocolFamily.MONGOOSE_RPC in session.protocols -> "Mongoose RPC GATT service detected; exchange was not confirmed."
+                    else -> "Bluetooth GATT was available; no known RPC transport was detected."
+                },
+            ),
+            httpCapability,
+            ControllerTransportCapability(
+                ControllerTransportType.VENDOR_RELAY,
+                CapabilityState.UNKNOWN,
+                "Not tested during automatic interrogation.",
+            ),
+        )
 
         val report = ControllerProbeReport(
             address = session.address,
@@ -587,16 +717,21 @@ internal class MongooseBleRpcProbe(context: Context) {
             finishedAtUtc = formatUtc(System.currentTimeMillis()),
             outcome = outcome,
             protocols = session.protocols,
-            rpcMethods = session.rpcMethods.distinct().sorted(),
-            rpcDescriptions = session.rpcDescriptions.toSortedMap(),
+            rpcMethods = session.planner.rpcMethods,
+            rpcDescriptions = session.planner.rpcDescriptions,
             observations = session.observations.toList(),
             debugMessages = session.debugMessages.toList(),
+            debugNotificationCount = session.debugNotificationCount,
+            debugPayloadChangeCount = session.debugPayloadChangeCount,
+            debugRetainedBytes = session.retainedDebugBytes,
+            omittedDebugMessageCount = session.omittedDebugMessages,
             transportCapabilities = capabilities,
             events = session.events.toList(),
-            omittedEventCount = session.omittedEvents + session.omittedDebugMessages,
+            omittedEventCount = session.omittedEvents,
         )
         val gatt = session.gatt
         session.gatt = null
+        session.operations.clear()
         if (activeSession === session) activeSession = null
         closeGatt(gatt)
         session.onFinished(report)
@@ -618,6 +753,12 @@ internal class MongooseBleRpcProbe(context: Context) {
     private fun removeTimeouts(session: Session) {
         session.commandTimeout?.let(handler::removeCallbacks)
         session.commandTimeout = null
+        session.connectionTimeout?.let(handler::removeCallbacks)
+        session.connectionTimeout = null
+        session.serviceDiscoveryTimeout?.let(handler::removeCallbacks)
+        session.serviceDiscoveryTimeout = null
+        session.descriptorTimeout?.let(handler::removeCallbacks)
+        session.descriptorTimeout = null
         session.overallTimeout?.let(handler::removeCallbacks)
         session.overallTimeout = null
     }
@@ -626,6 +767,19 @@ internal class MongooseBleRpcProbe(context: Context) {
         if (gatt == null) return
         runCatching { gatt.disconnect() }
         runCatching { gatt.close() }
+    }
+
+    private fun writeCharacteristic(
+        session: Session,
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray,
+    ): Boolean {
+        val target = characteristic.uuid.toString()
+        if (!session.operations.begin(GattOperationKind.WRITE_CHARACTERISTIC, target)) return false
+        val accepted = writeCharacteristicCompat(gatt, characteristic, value)
+        if (!accepted) session.operations.complete(GattOperationKind.WRITE_CHARACTERISTIC, target)
+        return accepted
     }
 
     private fun writeCharacteristicCompat(
@@ -670,19 +824,6 @@ internal class MongooseBleRpcProbe(context: Context) {
         false
     }
 
-    private fun encodeLength(length: Int) = byteArrayOf(
-        ((length ushr 24) and 0xff).toByte(),
-        ((length ushr 16) and 0xff).toByte(),
-        ((length ushr 8) and 0xff).toByte(),
-        (length and 0xff).toByte(),
-    )
-
-    private fun decodeLength(value: ByteArray): Int =
-        ((value[0].toInt() and 0xff) shl 24) or
-            ((value[1].toInt() and 0xff) shl 16) or
-            ((value[2].toInt() and 0xff) shl 8) or
-            (value[3].toInt() and 0xff)
-
     private fun safeMessage(error: Throwable): String =
         (error.javaClass.simpleName + ": " + error.message.orEmpty())
             .replace('\n', ' ')
@@ -714,20 +855,27 @@ internal class MongooseBleRpcProbe(context: Context) {
         var notificationPurpose: NotificationPurpose? = null
         var overallTimeout: Runnable? = null
         var commandTimeout: Runnable? = null
+        var connected: Boolean? = null
+        var connectionTimeout: Runnable? = null
+        var serviceDiscoveryTimeout: Runnable? = null
+        var descriptorTimeout: Runnable? = null
+        val operations = SerializedGattOperationCoordinator()
         var activeRequest: SafeRpcRequest? = null
         var requestId: Int = 0
         var pendingPayload: ByteArray = byteArrayOf()
         var payloadOffset: Int = 0
         var writePhase: WritePhase = WritePhase.IDLE
-        var expectedResponseLength: Int? = null
+        var responseAssembler: MongooseRpcResponseAssembler? = null
         var startedCommands = false
         var finished = false
         var omittedEvents = 0
         var omittedDebugMessages = 0
-        val responseBytes = mutableListOf<Byte>()
-        val queue = ArrayDeque<SafeRpcRequest>()
-        val rpcMethods = mutableListOf<String>()
-        val rpcDescriptions = linkedMapOf<String, String>()
+        var debugCaptureStartedAtElapsedMillis: Long? = null
+        var debugNotificationCount: Int = 0
+        var debugPayloadChangeCount: Int = 0
+        var retainedDebugBytes: Int = 0
+        var lastDebugMessage: String? = null
+        val planner = MongooseRpcInterrogationPlanner()
         val observations = mutableListOf<RpcProbeObservation>()
         val debugMessages = mutableListOf<String>()
         val events = mutableListOf<String>()
@@ -735,14 +883,19 @@ internal class MongooseBleRpcProbe(context: Context) {
 
     private companion object {
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-        const val BLE_CHUNK_BYTES = 20
+        const val BLE_CHUNK_BYTES = MongooseRpcFraming.DEFAULT_CHUNK_BYTES
         const val COMMAND_TIMEOUT_MILLIS = 5_000L
         const val OVERALL_TIMEOUT_MILLIS = 120_000L
-        const val MAX_RPC_RESPONSE_BYTES = 64 * 1024
+        const val CONNECTION_TIMEOUT_MILLIS = 20_000L
+        const val SERVICE_DISCOVERY_TIMEOUT_MILLIS = 15_000L
+        const val DESCRIPTOR_WRITE_TIMEOUT_MILLIS = 3_000L
         const val MAX_OBSERVATION_CHARS = 8_000
-        const val MAX_DESCRIPTION_CHARS = 1_500
         const val MAX_DEBUG_MESSAGES = 40
+        const val MAX_DEBUG_NOTIFICATION_COUNT = 1_000
+        const val MAX_DEBUG_EVENT_BYTES = 2 * 1024
         const val MAX_DEBUG_MESSAGE_CHARS = 600
+        const val MAX_DEBUG_TOTAL_BYTES = 16 * 1024
+        const val DEBUG_OBSERVATION_WINDOW_MILLIS = 15_000L
         const val MAX_EVENTS = 220
         const val MAX_EVENT_CHARS = 350
     }

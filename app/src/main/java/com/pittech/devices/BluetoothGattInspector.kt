@@ -4,17 +4,21 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.bluetooth.BluetoothStatusCodes
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 
 /**
  * Explicit, foreground-only BLE GATT inspection for controller troubleshooting.
@@ -72,6 +76,10 @@ internal class BluetoothGattInspector(context: Context) {
             val callback = object : BluetoothGattCallback() {
                 override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
                     if (!isActive(session)) return
+                    if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTING) {
+                        session.connectionTimeout?.let(handler::removeCallbacks)
+                        session.connectionTimeout = null
+                    }
                     session.connectionStatusCode = status
                     session.connected = newState == BluetoothProfile.STATE_CONNECTED
                     record(
@@ -84,6 +92,10 @@ internal class BluetoothGattInspector(context: Context) {
                             finish(session, "Connection callback failed: " + statusName(status) + ".")
                         }
                         newState == BluetoothProfile.STATE_CONNECTED -> {
+                            if (!session.operations.begin(GattOperationKind.DISCOVER_SERVICES)) {
+                                finish(session, "A GATT operation was already active before service discovery.")
+                                return
+                            }
                             val accepted = try {
                                 gatt.discoverServices()
                             } catch (error: SecurityException) {
@@ -94,7 +106,19 @@ internal class BluetoothGattInspector(context: Context) {
                                 false
                             }
                             record(session, "discoverServices() accepted=" + accepted + ".")
-                            if (!accepted) finish(session, "Android did not start GATT service discovery.")
+                            if (!accepted) {
+                                session.operations.complete(GattOperationKind.DISCOVER_SERVICES)
+                                finish(session, "Android did not start GATT service discovery.")
+                            } else {
+                                val timeout = Runnable {
+                                    if (isActive(session) && session.operations.timedOut(GattOperationKind.DISCOVER_SERVICES)) {
+                                        record(session, "GATT service discovery callback timed out.")
+                                        finish(session, "Service discovery timed out; collected evidence retained.")
+                                    }
+                                }
+                                session.serviceDiscoveryTimeout = timeout
+                                handler.postDelayed(timeout, SERVICE_DISCOVERY_TIMEOUT_MILLIS)
+                            }
                         }
                         newState == BluetoothProfile.STATE_DISCONNECTED -> {
                             finish(session, "Controller disconnected before inspection completed.")
@@ -104,6 +128,12 @@ internal class BluetoothGattInspector(context: Context) {
 
                 override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                     if (!isActive(session)) return
+                    session.serviceDiscoveryTimeout?.let(handler::removeCallbacks)
+                    session.serviceDiscoveryTimeout = null
+                    if (!session.operations.complete(GattOperationKind.DISCOVER_SERVICES)) {
+                        record(session, "Ignored unmatched service-discovery callback.")
+                        return
+                    }
                     session.serviceDiscoveryStatusCode = status
                     record(session, "onServicesDiscovered status=" + statusName(status) + ".")
                     if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -147,20 +177,61 @@ internal class BluetoothGattInspector(context: Context) {
                         )
                     })
                     session.totalCharacteristicCount = session.services.sumOf { it.characteristics.size }
-                    val readableTargets = discoveredServices.flatMap { service ->
+                    val allReadableTargets = discoveredServices.flatMap { service ->
                         service.characteristics.orEmpty()
                             .filter { it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 }
                             .map { ReadTarget(service.uuid.toString(), it) }
                     }
-                    session.readableCharacteristicCount = readableTargets.size
+                    session.readableCharacteristicCount = allReadableTargets.size
+                    val safeReadableTargets = allReadableTargets.filter { target ->
+                        ControllerProtocolDetector.isSafeGattRead(
+                            target.serviceUuid,
+                            target.characteristic.uuid.toString(),
+                        )
+                    }
+                    val safetySkippedTargets = allReadableTargets.filterNot(safeReadableTargets::contains)
+                    session.skippedReadableCharacteristicCount = safetySkippedTargets.size
+                    safetySkippedTargets.forEach { target ->
+                        session.reads += failedRead(
+                            target,
+                            "Skipped for safety: Mongoose configuration value may expose the currently selected setting, including credentials.",
+                        )
+                    }
                     session.omittedReadableCharacteristicCount =
-                        (readableTargets.size - MAX_READS_PER_INSPECTION).coerceAtLeast(0)
-                    readableTargets.take(MAX_READS_PER_INSPECTION).forEach(session.readQueue::addLast)
+                        (safeReadableTargets.size - MAX_READS_PER_INSPECTION).coerceAtLeast(0)
+                    safeReadableTargets.take(MAX_READS_PER_INSPECTION).forEach(session.readQueue::addLast)
+                    val allNotificationTargets = discoveredServices.flatMap { service ->
+                        val serviceUuid = service.uuid.toString()
+                        if (serviceUuid.equals(ControllerProtocolDetector.MONGOOSE_RPC_SERVICE, ignoreCase = true) ||
+                            serviceUuid.equals(ControllerProtocolDetector.MONGOOSE_DEBUG_SERVICE, ignoreCase = true) ||
+                            serviceUuid.equals(ControllerProtocolDetector.MONGOOSE_CONFIG_SERVICE, ignoreCase = true)
+                        ) {
+                            emptyList()
+                        } else {
+                            service.characteristics.orEmpty().mapNotNull { characteristic ->
+                                val canNotify = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
+                                val canIndicate = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+                                if (!canNotify && !canIndicate) return@mapNotNull null
+                                val descriptor = characteristic.getDescriptor(CCCD_UUID)
+                                NotificationTarget(
+                                    serviceUuid = serviceUuid,
+                                    characteristic = characteristic,
+                                    descriptor = descriptor,
+                                )
+                            }
+                        }
+                    }
+                    session.omittedNotificationCharacteristicCount =
+                        (allNotificationTargets.size - MAX_NOTIFICATION_CHARACTERISTICS).coerceAtLeast(0)
+                    val boundedNotificationTargets = allNotificationTargets.take(MAX_NOTIFICATION_CHARACTERISTICS)
+                    session.notificationTargets.addAll(boundedNotificationTargets)
+                    boundedNotificationTargets.forEach(session.notificationQueue::addLast)
                     record(
                         session,
                         "Discovered " + session.services.size + " service(s), " +
-                            session.totalCharacteristicCount + " characteristic(s), and " +
-                            readableTargets.size + " readable characteristic(s); read cap=" +
+                            session.totalCharacteristicCount + " characteristic(s), " +
+                            allReadableTargets.size + " readable characteristic(s), safety-skipped=" +
+                            session.skippedReadableCharacteristicCount + "; read cap=" +
                             MAX_READS_PER_INSPECTION + ".",
                     )
                     readNextCharacteristic(session, gatt)
@@ -189,6 +260,30 @@ internal class BluetoothGattInspector(context: Context) {
                         status,
                     )
                 }
+
+                override fun onDescriptorWrite(
+                    gatt: BluetoothGatt,
+                    descriptor: BluetoothGattDescriptor,
+                    status: Int,
+                ) {
+                    handleNotificationDescriptorWrite(session, gatt, descriptor, status)
+                }
+
+                override fun onCharacteristicChanged(
+                    gatt: BluetoothGatt,
+                    characteristic: BluetoothGattCharacteristic,
+                    value: ByteArray,
+                ) {
+                    observeNotification(session, characteristic, value)
+                }
+
+                @Suppress("DEPRECATION")
+                override fun onCharacteristicChanged(
+                    gatt: BluetoothGatt,
+                    characteristic: BluetoothGattCharacteristic,
+                ) {
+                    observeNotification(session, characteristic, characteristic.value ?: byteArrayOf())
+                }
             }
 
             session.timeout = Runnable {
@@ -213,6 +308,14 @@ internal class BluetoothGattInspector(context: Context) {
                 finish(session, "Android did not create a GATT connection.")
             } else {
                 session.gatt = gatt
+                val connectionTimeout = Runnable {
+                    if (isActive(session) && session.connected != true) {
+                        record(session, "Bluetooth connection callback timed out.")
+                        finish(session, "Bluetooth connection timed out.")
+                    }
+                }
+                session.connectionTimeout = connectionTimeout
+                handler.postDelayed(connectionTimeout, CONNECTION_TIMEOUT_MILLIS)
                 record(session, "connectGatt() returned a GATT client; waiting for connection callback.")
             }
         } catch (error: SecurityException) {
@@ -238,6 +341,7 @@ internal class BluetoothGattInspector(context: Context) {
         val session = activeSession ?: return
         session.finished = true
         removeTimeouts(session)
+        session.operations.clear()
         activeSession = null
         closeGatt(session.gatt)
     }
@@ -247,6 +351,13 @@ internal class BluetoothGattInspector(context: Context) {
         while (session.readQueue.isNotEmpty()) {
             val target = session.readQueue.removeFirst()
             session.activeRead = target
+            if (!session.operations.begin(GattOperationKind.READ_CHARACTERISTIC, target.operationKey)) {
+                session.reads += failedRead(target, "Skipped because another GATT operation is still active.")
+                session.activeRead = null
+                record(session, "Read queue stopped because another GATT operation remained in flight.")
+                finish(session, "GATT inspection stopped after an operation-queue conflict; collected evidence retained.")
+                return
+            }
             var accepted = false
             var failureNote: String? = null
             try {
@@ -266,6 +377,10 @@ internal class BluetoothGattInspector(context: Context) {
                 )
                 val timeout = Runnable {
                     if (isActive(session) && session.activeRead === target) {
+                        session.operations.timedOut(
+                            GattOperationKind.READ_CHARACTERISTIC,
+                            target.operationKey,
+                        )
                         session.reads += failedRead(
                             target,
                             "No characteristic-read callback before timeout.",
@@ -285,6 +400,8 @@ internal class BluetoothGattInspector(context: Context) {
                 return
             }
 
+            session.operations.complete(GattOperationKind.READ_CHARACTERISTIC, target.operationKey)
+
             session.reads += failedRead(
                 target,
                 failureNote ?: "readCharacteristic() returned false.",
@@ -298,7 +415,235 @@ internal class BluetoothGattInspector(context: Context) {
             )
         }
         record(session, "All queued readable characteristic requests completed.")
-        finish(session, "GATT service inspection completed.")
+        startPassiveNotificationInspection(session, gatt)
+    }
+
+    private fun startPassiveNotificationInspection(session: Session, gatt: BluetoothGatt) {
+        if (session.notificationQueue.isEmpty()) {
+            finish(session, "GATT service inspection completed.")
+            return
+        }
+        record(
+            session,
+            "Beginning bounded passive observation for ${session.notificationQueue.size} notification-capable characteristic(s).",
+        )
+        enableNextPassiveNotification(session, gatt)
+    }
+
+    private fun enableNextPassiveNotification(session: Session, gatt: BluetoothGatt) {
+        if (!isActive(session)) return
+        val target = session.notificationQueue.pollFirst()
+        if (target == null) {
+            if (session.enabledNotificationTargets.isEmpty()) {
+                finish(session, "GATT service inspection completed; no passive notification channel could be enabled.")
+                return
+            }
+            session.passiveObservationStartedAtElapsed = SystemClock.elapsedRealtime()
+            session.enabledNotificationTargets.forEach { it.captureStartedAtElapsed = session.passiveObservationStartedAtElapsed }
+            session.notificationCaptureActive = true
+            record(
+                session,
+                "Passively observing ${session.enabledNotificationTargets.size} non-protocol notification channel(s) for " +
+                    "${PASSIVE_NOTIFICATION_WINDOW_MILLIS}ms; controller state will not be changed.",
+            )
+            val timeout = Runnable {
+                if (isActive(session) && session.notificationCaptureActive) {
+                    beginDisablingPassiveNotifications(session, gatt)
+                }
+            }
+            session.notificationWindowTimeout = timeout
+            handler.postDelayed(timeout, PASSIVE_NOTIFICATION_WINDOW_MILLIS)
+            return
+        }
+        session.pendingNotificationTarget = target
+        session.pendingNotificationMode = NotificationWriteMode.ENABLE
+        val descriptor = target.descriptor
+        if (descriptor == null) {
+            target.failure = "CCCD descriptor is not exposed."
+            session.pendingNotificationTarget = null
+            session.pendingNotificationMode = null
+            record(session, "Skipped passive observation for ${target.characteristic.uuid}: CCCD unavailable.")
+            enableNextPassiveNotification(session, gatt)
+            return
+        }
+
+        val localEnabled = runCatching {
+            gatt.setCharacteristicNotification(target.characteristic, true)
+        }.getOrDefault(false)
+        if (!localEnabled) {
+            target.failure = "Android rejected local notification registration."
+            session.pendingNotificationTarget = null
+            session.pendingNotificationMode = null
+            record(session, "Android rejected local notification registration for ${target.characteristic.uuid}.")
+            enableNextPassiveNotification(session, gatt)
+            return
+        }
+
+        val cccdValue = if (target.characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0 &&
+            target.characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY == 0
+        ) {
+            BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+        } else {
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        }
+        if (!writeNotificationDescriptor(session, gatt, target, cccdValue)) {
+            if (session.operations.hasInFlightOperation()) {
+                target.failure = "A GATT operation was still active before notification setup."
+                finish(session, "Passive notification setup stopped after an operation-queue conflict; prior evidence retained.")
+                return
+            }
+            runCatching { gatt.setCharacteristicNotification(target.characteristic, false) }
+            target.failure = "Android rejected the CCCD enable write."
+            session.pendingNotificationTarget = null
+            session.pendingNotificationMode = null
+            record(session, "Android rejected CCCD enable for ${target.characteristic.uuid}; continuing.")
+            enableNextPassiveNotification(session, gatt)
+        }
+    }
+
+    private fun beginDisablingPassiveNotifications(session: Session, gatt: BluetoothGatt) {
+        if (!isActive(session) || session.pendingNotificationMode == NotificationWriteMode.DISABLE) return
+        session.notificationWindowTimeout?.let(handler::removeCallbacks)
+        session.notificationWindowTimeout = null
+        session.notificationCaptureActive = false
+        session.notificationDisableIndex = 0
+        disableNextPassiveNotification(session, gatt)
+    }
+
+    private fun disableNextPassiveNotification(session: Session, gatt: BluetoothGatt) {
+        if (!isActive(session)) return
+        val target = session.enabledNotificationTargets.getOrNull(session.notificationDisableIndex)
+        if (target == null) {
+            finish(session, "GATT services, readable values, and bounded passive notifications were inspected.")
+            return
+        }
+        session.pendingNotificationTarget = target
+        session.pendingNotificationMode = NotificationWriteMode.DISABLE
+        val descriptor = target.descriptor
+        runCatching { gatt.setCharacteristicNotification(target.characteristic, false) }
+        if (descriptor == null || !writeNotificationDescriptor(
+                session,
+                gatt,
+                target,
+                BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE,
+            )
+        ) {
+            if (session.operations.hasInFlightOperation()) {
+                target.failure = target.failure ?: "A GATT operation was still active before notification cleanup."
+                finish(session, "Passive notification cleanup stopped after an operation-queue conflict; prior evidence retained.")
+                return
+            }
+            target.failure = target.failure ?: "Android rejected the CCCD disable write."
+            session.pendingNotificationTarget = null
+            session.pendingNotificationMode = null
+            session.notificationDisableIndex++
+            record(session, "Could not confirm notification cleanup for ${target.characteristic.uuid}; continuing.")
+            disableNextPassiveNotification(session, gatt)
+        }
+    }
+
+    private fun writeNotificationDescriptor(
+        session: Session,
+        gatt: BluetoothGatt,
+        target: NotificationTarget,
+        value: ByteArray,
+    ): Boolean {
+        val descriptor = target.descriptor ?: return false
+        val operationTarget = target.operationKey
+        if (!session.operations.begin(GattOperationKind.WRITE_DESCRIPTOR, operationTarget)) return false
+        val accepted = writeDescriptorCompat(gatt, descriptor, value)
+        if (!accepted) {
+            session.operations.complete(GattOperationKind.WRITE_DESCRIPTOR, operationTarget)
+            return false
+        }
+        val mode = session.pendingNotificationMode
+        val timeout = Runnable {
+            if (isActive(session) && session.pendingNotificationTarget === target &&
+                session.pendingNotificationMode == mode
+            ) {
+                session.operations.timedOut(GattOperationKind.WRITE_DESCRIPTOR, operationTarget)
+                session.notificationDescriptorTimeout = null
+                session.pendingNotificationTarget = null
+                session.pendingNotificationMode = null
+                target.failure = "CCCD write callback timed out."
+                runCatching { gatt.setCharacteristicNotification(target.characteristic, false) }
+                record(session, "CCCD write timed out for ${target.characteristic.uuid}; continuing.")
+                if (mode == NotificationWriteMode.DISABLE) {
+                    session.notificationDisableIndex++
+                    disableNextPassiveNotification(session, gatt)
+                } else {
+                    enableNextPassiveNotification(session, gatt)
+                }
+            }
+        }
+        session.notificationDescriptorTimeout = timeout
+        handler.postDelayed(timeout, NOTIFICATION_DESCRIPTOR_TIMEOUT_MILLIS)
+        return true
+    }
+
+    private fun handleNotificationDescriptorWrite(
+        session: Session,
+        gatt: BluetoothGatt,
+        descriptor: BluetoothGattDescriptor,
+        status: Int,
+    ) {
+        if (!isActive(session) || descriptor.uuid != CCCD_UUID) return
+        val target = session.pendingNotificationTarget ?: return
+        val actualKey = runCatching {
+            "${descriptor.characteristic.service.uuid}/${descriptor.characteristic.uuid}"
+                .lowercase(Locale.ROOT)
+        }.getOrDefault("")
+        if (actualKey != target.operationKey ||
+            !session.operations.complete(GattOperationKind.WRITE_DESCRIPTOR, target.operationKey)
+        ) {
+            record(session, "Ignored unmatched passive-notification descriptor callback.")
+            return
+        }
+        session.notificationDescriptorTimeout?.let(handler::removeCallbacks)
+        session.notificationDescriptorTimeout = null
+        val mode = session.pendingNotificationMode
+        session.pendingNotificationTarget = null
+        session.pendingNotificationMode = null
+        if (status != BluetoothGatt.GATT_SUCCESS) {
+            target.failure = "CCCD ${mode?.name?.lowercase(Locale.ROOT)} write failed with GATT status $status."
+            runCatching { gatt.setCharacteristicNotification(target.characteristic, false) }
+            record(session, "CCCD ${mode?.name?.lowercase(Locale.ROOT)} write failed for ${target.characteristic.uuid}; continuing.")
+        }
+        if (mode == NotificationWriteMode.DISABLE) {
+            session.notificationDisableIndex++
+            disableNextPassiveNotification(session, gatt)
+        } else {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                session.enabledNotificationTargets += target
+            }
+            enableNextPassiveNotification(session, gatt)
+        }
+    }
+
+    private fun observeNotification(
+        session: Session,
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray,
+    ) {
+        if (!isActive(session) || !session.notificationCaptureActive) return
+        val target = session.enabledNotificationTargets.firstOrNull {
+            it.characteristic.uuid == characteristic.uuid &&
+                it.serviceUuid.equals(characteristic.service.uuid.toString(), ignoreCase = true)
+        } ?: return
+        session.receivedNotificationEvents++
+        if (session.receivedNotificationEvents > MAX_NOTIFICATION_EVENTS ||
+            value.size > MAX_NOTIFICATION_BYTES_PER_EVENT ||
+            session.observedNotificationBytes + value.size > MAX_NOTIFICATION_BYTES_TOTAL
+        ) {
+            session.omittedNotificationEvents++
+            if (session.receivedNotificationEvents >= MAX_NOTIFICATION_EVENTS) {
+                record(session, "Passive-notification event cap reached; ending observation early.")
+                beginDisablingPassiveNotifications(session, session.gatt ?: return)
+            }
+            return
+        }
+        target.accumulator.record(value)
+        session.observedNotificationBytes += value.size
     }
 
     private fun completeRead(
@@ -314,6 +659,10 @@ internal class BluetoothGattInspector(context: Context) {
             target.serviceUuid != characteristic.service.uuid.toString()
         ) {
             record(session, "Received an unmatched characteristic-read callback for " + characteristic.uuid + ".")
+            return
+        }
+        if (!session.operations.complete(GattOperationKind.READ_CHARACTERISTIC, target.operationKey)) {
+            record(session, "Ignored a late characteristic-read callback for " + characteristic.uuid + ".")
             return
         }
         session.readTimeout?.let(handler::removeCallbacks)
@@ -395,6 +744,15 @@ internal class BluetoothGattInspector(context: Context) {
                 totalCharacteristicCount = session.totalCharacteristicCount,
                 readableCharacteristicCount = session.readableCharacteristicCount,
                 omittedReadableCharacteristicCount = session.omittedReadableCharacteristicCount,
+                skippedReadableCharacteristicCount = session.skippedReadableCharacteristicCount,
+                notifications = session.notificationTargets.map { target ->
+                    val duration = target.captureStartedAtElapsed
+                        ?.let { (SystemClock.elapsedRealtime() - it).coerceAtLeast(0) }
+                        ?: 0L
+                    target.accumulator.snapshot(duration, target.failure)
+                },
+                omittedNotificationCharacteristicCount = session.omittedNotificationCharacteristicCount,
+                omittedNotificationEventCount = session.omittedNotificationEvents,
                 reads = session.reads.toList(),
                 events = session.events.toList(),
                 omittedEventCount = session.omittedEvents,
@@ -405,14 +763,42 @@ internal class BluetoothGattInspector(context: Context) {
     private fun removeTimeouts(session: Session) {
         session.timeout?.let(handler::removeCallbacks)
         session.timeout = null
+        session.connectionTimeout?.let(handler::removeCallbacks)
+        session.connectionTimeout = null
+        session.serviceDiscoveryTimeout?.let(handler::removeCallbacks)
+        session.serviceDiscoveryTimeout = null
         session.readTimeout?.let(handler::removeCallbacks)
         session.readTimeout = null
+        session.notificationWindowTimeout?.let(handler::removeCallbacks)
+        session.notificationWindowTimeout = null
+        session.notificationDescriptorTimeout?.let(handler::removeCallbacks)
+        session.notificationDescriptorTimeout = null
+        session.operations.clear()
     }
 
     private fun closeGatt(gatt: BluetoothGatt?) {
         if (gatt == null) return
         runCatching { gatt.disconnect() }
         runCatching { gatt.close() }
+    }
+
+    private fun writeDescriptorCompat(
+        gatt: BluetoothGatt,
+        descriptor: BluetoothGattDescriptor,
+        value: ByteArray,
+    ): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeDescriptor(descriptor, value) == BluetoothStatusCodes.SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            descriptor.value = value
+            @Suppress("DEPRECATION")
+            gatt.writeDescriptor(descriptor)
+        }
+    } catch (_: SecurityException) {
+        false
+    } catch (_: RuntimeException) {
+        false
     }
 
     private fun characteristicProperties(mask: Int): List<String> = buildList {
@@ -488,7 +874,27 @@ internal class BluetoothGattInspector(context: Context) {
     private data class ReadTarget(
         val serviceUuid: String,
         val characteristic: BluetoothGattCharacteristic,
-    )
+    ) {
+        val operationKey: String
+            get() = "${serviceUuid.lowercase(Locale.ROOT)}/${characteristic.uuid.toString().lowercase(Locale.ROOT)}"
+    }
+
+    private data class NotificationTarget(
+        val serviceUuid: String,
+        val characteristic: BluetoothGattCharacteristic,
+        val descriptor: BluetoothGattDescriptor?,
+        val accumulator: PassiveNotificationAccumulator = PassiveNotificationAccumulator(
+            serviceUuid,
+            characteristic.uuid.toString(),
+        ),
+        var failure: String? = null,
+        var captureStartedAtElapsed: Long? = null,
+    ) {
+        val operationKey: String
+            get() = "${serviceUuid.lowercase(Locale.ROOT)}/${characteristic.uuid.toString().lowercase(Locale.ROOT)}"
+    }
+
+    private enum class NotificationWriteMode { ENABLE, DISABLE }
 
     private class Session(
         val address: String,
@@ -499,6 +905,8 @@ internal class BluetoothGattInspector(context: Context) {
     ) {
         var gatt: BluetoothGatt? = null
         var timeout: Runnable? = null
+        var connectionTimeout: Runnable? = null
+        var serviceDiscoveryTimeout: Runnable? = null
         var readTimeout: Runnable? = null
         var activeRead: ReadTarget? = null
         var connected: Boolean? = null
@@ -509,20 +917,45 @@ internal class BluetoothGattInspector(context: Context) {
         var totalCharacteristicCount: Int = 0
         var readableCharacteristicCount: Int = 0
         var omittedReadableCharacteristicCount: Int = 0
+        var skippedReadableCharacteristicCount: Int = 0
+        var omittedNotificationCharacteristicCount: Int = 0
+        var omittedNotificationEvents: Int = 0
+        var receivedNotificationEvents: Int = 0
+        var observedNotificationBytes: Int = 0
+        var passiveObservationStartedAtElapsed: Long? = null
+        var notificationCaptureActive = false
+        var notificationDisableIndex = 0
+        var pendingNotificationTarget: NotificationTarget? = null
+        var pendingNotificationMode: NotificationWriteMode? = null
+        var notificationWindowTimeout: Runnable? = null
+        var notificationDescriptorTimeout: Runnable? = null
         var omittedEvents: Int = 0
+        val operations = SerializedGattOperationCoordinator()
         val services = mutableListOf<BluetoothGattServiceInfo>()
         val reads = mutableListOf<BluetoothGattReadResult>()
         val events = mutableListOf<String>()
         val readQueue = ArrayDeque<ReadTarget>()
+        val notificationQueue = ArrayDeque<NotificationTarget>()
+        val notificationTargets = mutableListOf<NotificationTarget>()
+        val enabledNotificationTargets = mutableListOf<NotificationTarget>()
     }
 
     private companion object {
+        val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val MAX_READS_PER_INSPECTION = 256
+        const val MAX_NOTIFICATION_CHARACTERISTICS = 8
+        const val MAX_NOTIFICATION_EVENTS = 64
+        const val MAX_NOTIFICATION_BYTES_PER_EVENT = 512
+        const val MAX_NOTIFICATION_BYTES_TOTAL = 16 * 1024
+        const val PASSIVE_NOTIFICATION_WINDOW_MILLIS = 10_000L
+        const val NOTIFICATION_DESCRIPTOR_TIMEOUT_MILLIS = 3_000L
         const val MAX_VALUE_BYTES_IN_REPORT = 128
         const val MAX_TEXT_PREVIEW_CHARS = 256
         const val MAX_EVENTS = 160
         const val MAX_EVENT_MESSAGE_CHARS = 350
         const val SESSION_TIMEOUT_MILLIS = 120_000L
+        const val CONNECTION_TIMEOUT_MILLIS = 20_000L
+        const val SERVICE_DISCOVERY_TIMEOUT_MILLIS = 15_000L
         const val CHARACTERISTIC_READ_TIMEOUT_MILLIS = 5_000L
     }
 }

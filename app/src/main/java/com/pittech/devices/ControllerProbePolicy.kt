@@ -8,13 +8,14 @@ internal data class SafeRpcRequest(
 
 internal object ControllerProbePolicy {
     private val mutatingFragments = listOf(
-        "set", "save", "put", "remove", "rename", "reboot", "update", "ota",
-        "firmware", "write", "erase", "password", "credential", "ignite",
-        "primer", "auger", "light.on", "light.off", "sendmcucommand",
+        "set", "save", "put", "remove", "delete", "rename", "reboot", "restart", "reset", "load",
+        "update", "ota", "firmware", "write", "erase", "password", "credential", "ignite",
+        "ignition", "primer", "auger", "motor", "fan", "temperature", "power", "light.on",
+        "light.off", "sendmcucommand", "provision", "wifi.config",
     )
 
     private val sensitiveReadFragments = listOf(
-        "wifi.scan", "fs.get", "fs.list", "config.getall", "credential", "password",
+        "wifi.scan", "wifiscan", "fs.get", "fs.list", "config.getall", "credential", "password",
         "certificate", "private", "token", "secret",
     )
 
@@ -31,15 +32,11 @@ internal object ControllerProbePolicy {
 
     val safeConfigKeys = listOf(
         "http.enable",
-        "http.listen_addr",
-        "rpc.http.enable",
-        "bt.enable",
-        "bt.keep_enabled",
-        "bt.config_enable",
     )
 
     fun classify(method: String): RpcSafetyClass {
         if (method in exactSafeMethods) return RpcSafetyClass.SAFE_AUTOPROBE
+        if (method == "Config.Get") return RpcSafetyClass.SENSITIVE_READ
         val lower = method.lowercase()
         if (mutatingFragments.any(lower::contains)) return RpcSafetyClass.KNOWN_MUTATING
         if (sensitiveReadFragments.any(lower::contains)) return RpcSafetyClass.SENSITIVE_READ
@@ -86,6 +83,11 @@ internal object ControllerProbePolicy {
             )
             .take(MAX_DESCRIPTIONS)
     }
+
+    fun initialRequests(): List<SafeRpcRequest> = listOf(
+        SafeRpcRequest("RPC transport ping", "RPC.Ping"),
+        SafeRpcRequest("RPC method inventory", "RPC.List"),
+    )
 
     const val MAX_DESCRIPTIONS = 32
 }

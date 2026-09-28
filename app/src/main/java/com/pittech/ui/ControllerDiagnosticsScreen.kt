@@ -45,15 +45,12 @@ import com.pittech.FeedbackKind
 import com.pittech.FeedbackRequest
 import com.pittech.FeedbackSubmitResult
 import com.pittech.devices.BluetoothGattInspectionReport
-import com.pittech.devices.BluetoothGattInspector
 import com.pittech.devices.BluetoothScanSummary
 import com.pittech.devices.ControllerProbeDiagnostics
 import com.pittech.devices.ControllerProbeReport
 import com.pittech.devices.ControllerProtocolDetector
 import com.pittech.devices.ControllerSupportRegistry
-import com.pittech.devices.MongooseBleRpcProbe
 import com.pittech.devices.NearbyBluetoothDevice
-import com.pittech.devices.ControllerBleDiscovery
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -65,11 +62,18 @@ import java.util.UUID
  * discovery first, protocol identification second.
  */
 @Composable
-fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
+internal fun ControllerDiagnosticsScreen(
+    modifier: Modifier = Modifier,
+    engineOverride: ControllerDiagnosticsEngine? = null,
+    submitterOverride: ControllerReportSubmitter? = null,
+) {
     val context = LocalContext.current
-    val discovery = remember(context) { ControllerBleDiscovery(context) }
-    val gattInspector = remember(context) { BluetoothGattInspector(context) }
-    val mongooseProbe = remember(context) { MongooseBleRpcProbe(context) }
+    val engine = remember(context, engineOverride) {
+        engineOverride ?: AndroidControllerDiagnosticsEngine(context)
+    }
+    val submitter = remember(submitterOverride) {
+        submitterOverride ?: ControllerReportSubmitter(FeedbackApi::submitAsync)
+    }
 
     var nearbyDevices by remember { mutableStateOf(emptyList<NearbyBluetoothDevice>()) }
     var selectedDeviceKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -87,10 +91,20 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
     var sessionRevision by remember { mutableStateOf(0) }
 
     var showReportDialog by remember { mutableStateOf(false) }
-    var reportExpanded by remember { mutableStateOf(true) }
+    var reportExpanded by remember { mutableStateOf(false) }
     var reportSubmitting by remember { mutableStateOf(false) }
     var reportError by remember { mutableStateOf<String?>(null) }
     var reportNotice by remember { mutableStateOf<String?>(null) }
+    val diagnosticReferenceCode = remember {
+        "CTRL-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase(Locale.ROOT)
+    }
+    val appVersion = BuildConfig.VERSION_NAME
+    val androidVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
+    val phoneModel = listOf(Build.MANUFACTURER, Build.MODEL)
+        .filter { it.isNotBlank() }
+        .distinct()
+        .joinToString(" ")
+        .ifBlank { "Unknown Android device" }
 
     fun recordSessionEvent(message: String) {
         val entry = formatReportUtc(System.currentTimeMillis()) + " " + message.take(350)
@@ -136,9 +150,9 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
         probeReport = null
         isProbing = true
         probeStatus = "Connecting and inventorying GATT services…"
-        recordSessionEvent("Automatic interrogation started for selected controller '${device.displayName}'.")
+        recordSessionEvent("Automatic interrogation started for the selected controller.")
 
-        gattInspector.inspect(
+        engine.inspect(
             address = address,
             onProgress = { message -> probeStatus = message },
             onFinished = { inspection ->
@@ -149,8 +163,8 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                         "readable=${inspection.readableCharacteristicCount}, reads=${inspection.reads.size}.",
                 )
 
-                probeStatus = "Identifying protocol family and probing safe capabilities…"
-                mongooseProbe.probe(
+                probeStatus = "Checking controller capabilities…"
+                engine.probe(
                     address = address,
                     inspection = inspection,
                     onProgress = { message -> probeStatus = message },
@@ -170,8 +184,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
     }
 
     fun startScan() {
-        mongooseProbe.closeSilently()
-        gattInspector.closeSilently()
+        engine.close()
         isScanning = true
         isProbing = false
         nearbyDevices = emptyList()
@@ -183,7 +196,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
         scanMessage = "Scanning nearby Bluetooth devices…"
         recordSessionEvent("Generic BLE scan started.")
 
-        discovery.startScan(
+        engine.startScan(
             onDevices = { nearbyDevices = it },
             onFinished = { summary, message ->
                 scanSummary = summary
@@ -205,7 +218,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
-        val connectGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        val connectGranted = !engine.requiresBluetoothPermissions || Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             results[Manifest.permission.BLUETOOTH_CONNECT] == true ||
             ContextCompat.checkSelfPermission(
                 context,
@@ -220,7 +233,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                 isProbing = false
                 probeStatus = "Bluetooth connection permission is required to interrogate this controller."
             }
-        } else if (results[requiredScanPermission] == true ||
+        } else if (!engine.requiresBluetoothPermissions || results[requiredScanPermission] == true ||
             ContextCompat.checkSelfPermission(context, requiredScanPermission) == PackageManager.PERMISSION_GRANTED
         ) {
             startScan()
@@ -233,7 +246,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
 
     fun selectAndProbe(device: NearbyBluetoothDevice) {
         selectedDeviceKey = device.key
-        if (hasConnectPermission) {
+        if (!engine.requiresBluetoothPermissions || hasConnectPermission) {
             startAutomaticProbe(device)
         } else {
             pendingAction = "PROBE"
@@ -265,6 +278,10 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
             probe = probeReport,
             sessionEvents = sessionEvents,
             omittedSessionEventCount = omittedSessionEventCount,
+            pitTechVersion = appVersion,
+            androidVersion = androidVersion,
+            phoneModel = phoneModel,
+            referenceCode = diagnosticReferenceCode,
         )
     }
 
@@ -278,31 +295,39 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
             probe = probeReport,
             sessionEvents = sessionEvents,
             omittedSessionEventCount = omittedSessionEventCount,
+            pitTechVersion = appVersion,
+            androidVersion = androidVersion,
+            phoneModel = phoneModel,
+            referenceCode = diagnosticReferenceCode,
         )
-        val androidDevice = listOf(Build.MANUFACTURER, Build.MODEL)
-            .filter { it.isNotBlank() }
-            .distinct()
-            .joinToString(" ")
-            .ifBlank { "Unknown Android device" }
         val report = FeedbackDiagnosticReport(
-            referenceCode = "CTRL-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase(Locale.ROOT),
+            referenceCode = diagnosticReferenceCode,
             occurredAtUtc = formatReportUtc(System.currentTimeMillis()),
             source = "Automatic controller interrogation",
-            summary = "Unverified controller '${device.displayName}'; automatic BLE/GATT/protocol fingerprint captured.",
+            summary = com.pittech.devices.ControllerDiagnosticSanitizer.sanitizeText(
+                "Unverified controller; automatic Bluetooth and protocol evidence captured.",
+                maxChars = 500,
+            ),
             details = details,
         )
         val request = FeedbackRequest(
             kind = FeedbackKind.DEVICE_DIAGNOSTIC,
-            title = "Controller interrogation: ${device.displayName}",
-            description = "User-reviewed diagnostics for a controller not yet officially verified by PitTech.",
-            appVersion = BuildConfig.VERSION_NAME,
-            androidVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-            device = androidDevice,
+            title = com.pittech.devices.ControllerDiagnosticSanitizer.sanitizeText(
+                "Controller interrogation: unverified controller",
+                maxChars = 180,
+            ),
+            description = com.pittech.devices.ControllerDiagnosticSanitizer.sanitizeText(
+                "User-reviewed diagnostics for a controller not yet officially verified by PitTech.",
+                maxChars = 500,
+            ),
+            appVersion = appVersion,
+            androidVersion = androidVersion,
+            device = phoneModel,
             diagnosticReport = report,
         )
         reportSubmitting = true
         reportError = null
-        FeedbackApi.submitAsync(request) { result ->
+        submitter.submit(request) { result ->
             reportSubmitting = false
             when (result) {
                 is FeedbackSubmitResult.Success -> {
@@ -316,13 +341,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    DisposableEffect(discovery, gattInspector, mongooseProbe) {
-        onDispose {
-            discovery.stopScan()
-            gattInspector.closeSilently()
-            mongooseProbe.closeSilently()
-        }
-    }
+    DisposableEffect(engine) { onDispose { engine.close() } }
 
     LaunchedEffect(hasScanPermission, hasConnectPermission) {
         recordSessionEvent(
@@ -338,25 +357,18 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Controller diagnostics", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "Automatic BLE fingerprinting + safe capability probing",
-            style = MaterialTheme.typography.titleMedium,
-        )
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("How this works", style = MaterialTheme.typography.titleSmall)
+                Text("Inspect a controller", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "PitTech first treats every controller as unknown. After you select a nearby device it automatically inventories its BLE/GATT surface, identifies known protocol families, and exercises only explicitly allowlisted observational RPCs.",
+                    "Turn on your controller and keep your phone nearby. PitTech can inspect Bluetooth controllers to determine whether they can be supported.",
                 )
                 Text(
-                    "Transport writes required to carry read-only RPC requests or enable notifications are allowed. Grill settings, ignition, temperature targets, motors, credentials, firmware, reboot, OTA, file writes, and unknown RPCs are never executed by the automatic probe.",
-                )
-                Text(
-                    "If the controller is not officially supported, review the sanitized capture and submit it through the existing GitHub feedback relay so its fingerprint can become a verified PitTech profile.",
+                    "No grill settings are changed during inspection. Nothing is shared unless you review and submit a support report.",
                 )
             }
         }
@@ -364,16 +376,18 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
         Button(
             onClick = {
                 pendingAction = "SCAN"
-                if (hasScanPermission && hasConnectPermission) {
+                if (!engine.requiresBluetoothPermissions || (hasScanPermission && hasConnectPermission)) {
                     startScan()
                 } else {
                     permissionLauncher.launch(permissionsToRequest)
                 }
             },
             enabled = !isScanning && !isProbing,
-            modifier = Modifier.testTag("pitboss-scan"),
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .testTag("controller-scan"),
         ) {
-            Text(if (isScanning) "Scanning…" else "Scan for controller")
+            Text(if (isScanning) "Scanning…" else "Scan for controllers")
         }
 
         scanMessage?.let { Text(it) }
@@ -386,7 +400,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !isScanning && !isProbing) { selectAndProbe(device) }
-                        .testTag(if (index == 0) "pitboss-candidate" else "pitboss-candidate-$index"),
+                        .testTag(if (index == 0) "controller-candidate" else "controller-candidate-$index"),
                     colors = CardDefaults.cardColors(
                         containerColor = if (selected) {
                             MaterialTheme.colorScheme.secondaryContainer
@@ -420,7 +434,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Text("Automatic controller inspection", style = MaterialTheme.typography.titleSmall)
+                    Text("Inspecting controller", style = MaterialTheme.typography.titleSmall)
                     if (isProbing) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             CircularProgressIndicator()
@@ -429,10 +443,10 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                     } else {
                         Text(probeStatus ?: "Select this controller to begin.")
                     }
-                    Text((if (gattInspection != null) "✓" else "○") + " GATT service/characteristic inventory")
-                    Text((if (probeReport != null) "✓" else "○") + " Protocol-family detection")
-                    Text((if (probeReport?.rpcMethods?.isNotEmpty() == true) "✓" else "○") + " RPC method inventory")
-                    Text((if (probeReport?.observations?.isNotEmpty() == true) "✓" else "○") + " Safe observational capability probes")
+                    Text((if (gattInspection != null) "✓" else "○") + " Bluetooth services and features")
+                    Text((if (probeReport != null) "✓" else "○") + " Controller type detection")
+                    Text((if (probeReport?.rpcMethods?.isNotEmpty() == true) "✓" else "○") + " Controller features discovered")
+                    Text((if (probeReport?.observations?.isNotEmpty() == true) "✓" else "○") + " Read-only capability checks")
                     Text(
                         if (probeReport != null) {
                             "✓ Fingerprint: " + ControllerProtocolDetector.fingerprint(
@@ -455,11 +469,25 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Text("Inspection result", style = MaterialTheme.typography.titleMedium)
-                    Text("Protocol: " + report.protocols.joinToString { it.displayName })
-                    Text("RPC methods discovered: ${report.rpcMethods.size}")
-                    report.transportCapabilities.forEach { (name, value) ->
-                        Text("$name: $value", style = MaterialTheme.typography.bodySmall)
+                    val detected = report.protocols.any {
+                        it != com.pittech.devices.ControllerProtocolFamily.UNKNOWN
+                    }
+                    Text(
+                        if (detected) "Controller detected" else "Controller inspected",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    val protocolLabel = if (com.pittech.devices.ControllerProtocolFamily.MONGOOSE_RPC in report.protocols) {
+                        "Mongoose OS RPC over Bluetooth"
+                    } else {
+                        report.protocols.joinToString { it.displayName }
+                    }
+                    Text("Protocol: $protocolLabel")
+                    Text("Controller features discovered: ${report.rpcMethods.size}")
+                    report.transportCapabilities.forEach { capability ->
+                        Text(
+                            "${capability.transport.displayName}: ${capability.state.displayName} · ${capability.details}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     Text(
                         "PitTech support: " + selectedDevice?.let {
@@ -513,11 +541,11 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        "Submitting creates a public GitHub issue. PitTech removes the permanent Bluetooth address and redacts password-like fields, Wi-Fi SSIDs/BSSIDs, tokens, credentials, and similar values before building this report. Review the complete report below before sending.",
+                        "Submitting creates a public GitHub issue. PitTech withholds raw radio payloads, removes the permanent Bluetooth address, and redacts password-like fields and Wi-Fi identities. Review the complete report below before sending.",
                     )
                     TextButton(
                         onClick = { reportExpanded = !reportExpanded },
-                        modifier = Modifier.testTag("ble-report-preview-toggle"),
+                        modifier = Modifier.testTag("controller-report-preview-toggle"),
                     ) {
                         Text(if (reportExpanded) "Hide full report" else "Preview full report")
                     }
@@ -530,7 +558,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                                     .heightIn(max = 300.dp)
                                     .verticalScroll(rememberScrollState())
                                     .padding(12.dp)
-                                    .testTag("ble-report-preview"),
+                                    .testTag("controller-report-preview"),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                             )
@@ -543,7 +571,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                 TextButton(
                     enabled = !reportSubmitting,
                     onClick = ::submitReport,
-                    modifier = Modifier.testTag("ble-report-submit"),
+                    modifier = Modifier.testTag("controller-report-submit"),
                 ) {
                     if (reportSubmitting) CircularProgressIndicator() else Text("Submit public report")
                 }
@@ -552,6 +580,7 @@ fun ControllerDiagnosticsScreen(modifier: Modifier = Modifier) {
                 TextButton(
                     enabled = !reportSubmitting,
                     onClick = { showReportDialog = false },
+                    modifier = Modifier.testTag("controller-report-cancel"),
                 ) { Text("Cancel") }
             },
         )

@@ -41,9 +41,44 @@ class ControllerProbePolicyTest {
     }
 
     @Test
+    fun automaticProbeNeverExecutesSysReboot() {
+        assertFalse(ControllerProbePolicy.canAutoExecute("Sys.Reboot"))
+    }
+
+    @Test
+    fun automaticProbeNeverExecutesConfigSet() {
+        assertFalse(ControllerProbePolicy.canAutoExecute("Config.Set"))
+    }
+
+    @Test
+    fun automaticProbeNeverExecutesPasswordMutation() {
+        assertFalse(ControllerProbePolicy.canAutoExecute("PB.SetDevicePassword"))
+        assertFalse(ControllerProbePolicy.canAutoExecute("Wifi.SetCredentials"))
+    }
+
+    @Test
+    fun automaticProbeNeverExecutesMcuCommands() {
+        assertFalse(ControllerProbePolicy.canAutoExecute("PB.SendMCUCommand"))
+    }
+
+    @Test
     fun automaticProbeNeverExecutesUnknownRpc() {
-        assertEquals(RpcSafetyClass.UNKNOWN, ControllerProbePolicy.classify("Vendor.DoSomething"))
         assertFalse(ControllerProbePolicy.canAutoExecute("Vendor.DoSomething"))
+    }
+
+    @Test
+    fun automaticProbeNeverExecutesControlAndUpdateCommands() {
+        listOf(
+            "PB.SetTemperature",
+            "PB.SetPower",
+            "PB.IgnitionOn",
+            "PB.PrimerOn",
+            "PB.AugerOn",
+            "OTA.Update",
+            "FS.Put",
+            "FS.Write",
+            "Wifi.SetConfig",
+        ).forEach { assertFalse(it, ControllerProbePolicy.canAutoExecute(it)) }
     }
 
     @Test
@@ -86,6 +121,38 @@ class ControllerProbePolicyTest {
         assertTrue("PB.GetFirmwareVersion" in candidates)
         assertTrue("PBL.GetLoaderVersion" in candidates)
         assertTrue("Sys.GetInfo" in candidates)
+    }
+
+    @Test
+    fun probePlanOnlyExecutesKnownSafeMethodsAndDescribesOtherInventoryEntries() {
+        val inventory = setOf(
+            "RPC.Describe",
+            "Sys.GetInfo",
+            "PB.GetState",
+            "PB.SetTemperature",
+            "PB.SendMCUCommand",
+            "Wifi.SetCredentials",
+            "FS.Put",
+            "Vendor.DoSomething",
+            "Config.Get",
+        )
+        val safeRequests = ControllerProbePolicy.initialRequests() +
+            ControllerProbePolicy.plannedReads(inventory)
+        val descriptionRequests = ControllerProbePolicy.describeCandidates(inventory)
+            .map { name -> SafeRpcRequest("Describe $name", "RPC.Describe", mapOf("name" to name)) }
+        val allRequests = safeRequests + descriptionRequests
+
+        assertEquals(listOf("RPC.Ping", "RPC.List"), ControllerProbePolicy.initialRequests().map { it.method })
+        assertEquals(
+            listOf("Sys.GetInfo", "PB.GetState", "Config.Get"),
+            ControllerProbePolicy.plannedReads(inventory).map { it.method },
+        )
+        assertEquals(mapOf("key" to "http.enable"), ControllerProbePolicy.plannedReads(inventory).last().params)
+        assertTrue(allRequests.all { ControllerProbePolicy.canAutoExecute(it.method, it.params) })
+        assertFalse(allRequests.any { it.method in inventory && it.method !in setOf("RPC.Describe", "Sys.GetInfo", "PB.GetState", "Config.Get") })
+        assertTrue(descriptionRequests.any { it.params["name"] == "PB.SetTemperature" })
+        assertTrue(descriptionRequests.any { it.params["name"] == "PB.SendMCUCommand" })
+        assertTrue(descriptionRequests.any { it.params["name"] == "Vendor.DoSomething" })
     }
 
     @Test

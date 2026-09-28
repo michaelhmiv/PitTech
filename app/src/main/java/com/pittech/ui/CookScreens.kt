@@ -273,7 +273,7 @@ fun PitTechApp(
             } else {
                 FeaturePlaceholder(
                     title = "Devices",
-                    message = "Controller connection testing is available in PitTech's test build.",
+                    message = "Controller diagnostics are available in PitTech's test build.",
                     note = "You can still log temperatures by hand from any cook.",
                     modifier = Modifier.padding(padding),
                 )
