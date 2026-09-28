@@ -422,7 +422,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
         composeRule.onNodeWithText("Show 6 readings").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
-        composeRule.onNodeWithTag("timeline-group-readings-pit-sample-0").assertExists()
+        composeRule.onNodeWithText("Hide readings").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-filter-events").performClick()
