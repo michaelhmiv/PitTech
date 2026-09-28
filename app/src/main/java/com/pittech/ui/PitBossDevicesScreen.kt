@@ -53,7 +53,7 @@ import com.pittech.devices.ControllerProtocolDetector
 import com.pittech.devices.ControllerSupportRegistry
 import com.pittech.devices.MongooseBleRpcProbe
 import com.pittech.devices.NearbyBluetoothDevice
-import com.pittech.devices.PitBossBleDiscovery
+import com.pittech.devices.ControllerBleDiscovery
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,7 +68,7 @@ import java.util.UUID
 @Composable
 fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val discovery = remember(context) { PitBossBleDiscovery(context) }
+    val discovery = remember(context) { ControllerBleDiscovery(context) }
     val gattInspector = remember(context) { BluetoothGattInspector(context) }
     val mongooseProbe = remember(context) { MongooseBleRpcProbe(context) }
 
