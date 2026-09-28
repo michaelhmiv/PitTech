@@ -238,6 +238,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed")
+        waitForAnyText("Entry added to the timeline.")
+        waitForTextsToDisappear("Entry added to the timeline.")
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
         captureCurrentScreen("timeline-edit-dialog")
         composeRule.waitUntil(timeoutMillis = 10_000) {
@@ -248,10 +250,14 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-entry-title").performTextInput("Spritzed lightly")
         composeRule.onNodeWithTag("timeline-entry-save").performClick()
         waitForText("Spritzed lightly")
+        waitForAnyText("Timeline entry updated.")
+        waitForTextsToDisappear("Timeline entry updated.")
         composeRule.onNodeWithTag("timeline-event-delete-spritz").performScrollTo().performClick()
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
         waitForText("Spritzed lightly")
+        waitForAnyText("Entry restored.")
+        waitForTextsToDisappear("Entry restored.")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
@@ -259,12 +265,16 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("temperature-value").performTextInput("155")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Brisket probe: 155.0 °F")
+        waitForAnyText("Temperature saved.")
+        waitForTextsToDisappear("Temperature saved.")
         composeRule.onNodeWithTag("temperature-edit-Brisket probe").performScrollTo().performClick()
         waitForText("Edit temperature")
         composeRule.onNodeWithTag("temperature-value").performScrollTo().performTextClearance()
         composeRule.onNodeWithTag("temperature-value").performTextInput("156")
         composeRule.onNodeWithTag("temperature-save").performClick()
         waitForText("Brisket probe: 156.0 °F")
+        waitForAnyText("Temperature saved.")
+        waitForTextsToDisappear("Temperature saved.")
         composeRule.onNodeWithTag("temperature-delete-Brisket probe").performScrollTo().performClick()
         waitForText("Undo")
         composeRule.onNodeWithText("Undo").performClick()
@@ -574,6 +584,14 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("30 min").performClick()
         composeRule.onNodeWithTag("reminder-save").performClick()
         waitForText("Check the brisket")
+        waitForAnyText(
+            "Reminder set for",
+            "Reminder saved. Turn on PitTech notifications",
+        )
+        waitForTextsToDisappear(
+            "Reminder set for",
+            "Reminder saved. Turn on PitTech notifications",
+        )
 
         val reminder = runBlocking(Dispatchers.IO) { application.database.cookDao().getAllReminders().single() }
         assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
@@ -701,6 +719,22 @@ class PitTechUserFlowsTest {
     private fun waitForText(text: String) {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun waitForAnyText(vararg texts: String) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            texts.any { text ->
+                composeRule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+    }
+
+    private fun waitForTextsToDisappear(vararg texts: String) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            texts.all { text ->
+                composeRule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isEmpty()
+            }
         }
     }
 
