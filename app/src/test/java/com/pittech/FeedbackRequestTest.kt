@@ -32,6 +32,29 @@ class FeedbackRequestTest {
     }
 
     @Test
+    fun deviceDiagnosticPayloadIncludesBleCapture() {
+        val report = FeedbackDiagnosticReport(
+            referenceCode = "BLE-12345678",
+            occurredAtUtc = "2026-09-28 15:00:00 UTC",
+            source = "Bluetooth controller discovery",
+            summary = "Unverified BLE device; 8 observations captured.",
+            details = "Address: 11:22:33:44:55:66\\nRaw advertisement: 020106",
+        )
+        val json = FeedbackRequest(
+            kind = FeedbackKind.DEVICE_DIAGNOSTIC,
+            title = "BLE controller report",
+            description = "Unverified controller.",
+            appVersion = "0.1.0-dev",
+            androidVersion = "17 (API 37)",
+            device = "Google Pixel 8 Pro",
+            diagnosticReport = report,
+        ).toJson()
+        assertTrue(json.contains("\\"kind\\":\\"DEVICE_DIAGNOSTIC\\""))
+        assertTrue(json.contains("11:22:33:44:55:66"))
+        assertTrue(json.contains("020106"))
+    }
+
+    @Test
     fun featurePayloadNeverIncludesCrashDiagnostics() {
         val report = CrashDiagnosticReport(
             referenceCode = "PT-PRIVATE",
