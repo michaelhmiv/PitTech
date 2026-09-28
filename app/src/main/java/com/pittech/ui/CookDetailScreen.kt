@@ -1432,12 +1432,12 @@ private fun TimelineEventCard(
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                        if (line.photos.size > 1) {
+                        if (data.photos.size > 1) {
                             TextButton(
                                 onClick = onShowPhotoGallery,
                                 modifier = Modifier.heightIn(min = 40.dp).testTag("timeline-photo-gallery-${event.id}"),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                            ) { Text("View all ${line.photos.size} photos") }
+                            ) { Text("View all photos (${data.photos.size})") }
                         }
                     }
                 }
