@@ -240,7 +240,6 @@ class PitTechUserFlowsTest {
         waitForText("Spritzed")
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performScrollTo().performClick()
         captureCurrentScreen("timeline-edit-dialog")
-        composeRule.onRoot(useUnmergedTree = true).printToLog("PitTechTimelineEditDialog")
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("timeline-entry-title").fetchSemanticsNodes().isNotEmpty()
         }
@@ -580,7 +579,6 @@ class PitTechUserFlowsTest {
         assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, reminder.status)
         composeRule.onNodeWithText("Log now").performScrollTo().assertIsDisplayed().performClick()
         captureCurrentScreen("reminder-after-log-now")
-        composeRule.onRoot(useUnmergedTree = true).printToLog("PitTechReminderAfterLogNow")
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("reminder-checkin-note").fetchSemanticsNodes().isNotEmpty()
         }
