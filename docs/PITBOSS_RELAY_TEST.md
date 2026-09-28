@@ -1,26 +1,28 @@
-# Pit Boss Bluetooth discovery and relay test
+# Controller Bluetooth discovery and relay test
 
-This is an experimental, read-only test path for PitTech's debug and Firebase Dev builds. The regular release build keeps the Devices placeholder.
+This experimental test path is available only in PitTech debug and Firebase Dev builds. The regular release build keeps the existing Devices placeholder.
 
-## What it tests
+## Discovery and support status
 
-1. PitTech scans nearby BLE advertisements and reads the controller's advertised local name. Pit Boss uses that name as the device ID, so the user does not need to look up or type a grill ID.
-2. After the user selects a nearby controller, the app opens a WebSocket directly to the Pit Boss vendor relay at `socket.dansonscorp.com/to/{device_id}`.
-3. The app sends one `RPC.Ping` and displays redacted relay responses and incoming controller status frames. No grill-control command is sent.
+1. PitTech scans BLE advertisements in the foreground for 12 seconds. It lists nearby BLE devices, not only devices with a Pit Boss-looking name, so a controller with an unknown name can still be investigated.
+2. The app reads the advertised name and, when permission allows, the Bluetooth address. It retains distinct advertisement records plus repeat counts, RSSI ranges, service and solicitation UUIDs, manufacturer/service data, raw bytes, and Bluetooth scan metadata.
+3. A profile appears as verified only after the team has confirmed it works on physical hardware and adds its profile to the explicit verified-profile registry. That registry is empty at the start of this test; protocol guesses do not count as approval.
+4. For an unverified device, the user can review a diagnostic report and submit it directly through the existing anonymous feedback relay. The relay creates a public GitHub issue in the PitTech repository. No GitHub account is needed.
 
-This only uses Bluetooth for discovery in this first slice; it does not yet provision Wi-Fi credentials over GATT. The controller must already be online in the Pit Boss app for the vendor-relay test.
+Each report contains only the selected device's Bluetooth data; nearby devices are not included. A Bluetooth address can uniquely identify a device. The UI previews the full report and explains that the issue is public before the user submits it. An empty-scan report contains scan metadata only. The scanner keeps at most 100 devices and 80 distinct advertisement variants per device in memory; repeat packets are summarized by count, time range, and RSSI range, and omitted counts appear in the issue.
 
-The protocol approach is informed by the public observations in [dknowles2/pytboss](https://github.com/dknowles2/pytboss) and the Home Assistant Pit Boss integration. The pytboss project is licensed under Apache-2.0; its license text is included at [LICENSES/APACHE-2.0.txt](../LICENSES/APACHE-2.0.txt). The Kotlin probe is an independent implementation; it does not include the pytboss package.
+## Pit Boss relay probe
+
+If a selected name looks like a Pit Boss relay ID, the user can test the vendor WebSocket at `socket.dansonscorp.com/to/{device_id}`. The app sends only `RPC.Ping` and displays redacted responses. The controller must already be online through Wi-Fi setup in the Pit Boss app. This does not yet connect to BLE GATT or provision Wi-Fi credentials.
+
+The protocol approach is informed by the public observations in [dknowles2/pytboss](https://github.com/dknowles2/pytboss) and the [Home Assistant Pit Boss integration](https://github.com/dknowles2/ha-pitboss). The pytboss project is licensed under Apache-2.0; its license text is included at [LICENSES/APACHE-2.0.txt](../LICENSES/APACHE-2.0.txt). The Kotlin implementation is independent and does not include pytboss source.
 
 ## Test steps
 
-1. Turn on the controller and keep the phone within Bluetooth range.
-2. In PitTech's **Devices** tab, tap **Scan nearby** and grant Bluetooth scan permission.
-3. Select the controller found by its Bluetooth name, then tap **Test relay**.
-4. Record whether the relay accepted the connection, returned an RPC response, or delivered controller status frames.
+1. Turn on the controller and keep the phone nearby.
+2. In **Devices**, tap **Scan nearby** and allow Nearby devices access.
+3. Find the controller by its advertised name or signal strength. If it is unverified, tap **Review diagnostics**, inspect the full report, and tap **Submit public report** to create the issue.
+4. If the controller has a Pit Boss relay ID candidate and is already online in the Pit Boss app, tap **Test relay**.
+5. Record whether the relay accepted the connection, returned an RPC response, or delivered controller status frames.
 
-The selected controller ID is saved in the app's private preferences. The connection and status frames pass through Pit Boss's vendor relay; PitTech does not proxy or store them on a PitTech server. The test does not collect the Pit Boss account password, and it redacts password-like fields before displaying incoming JSON.
-
-## Limits of this first test
-
-The BLE scan itself is not a GATT connection. It reads the broadcast identity and uses it to test the existing vendor relay. BLE control, Wi-Fi provisioning, local-network discovery, and model-specific status decoding can be added as separate transports after this relay behavior is measured on the controller in hand. A WebSocket handshake alone only proves the relay accepted a socket; an RPC response and controller status frame are stronger end-to-end evidence.
+No scan report is uploaded unless the user reviews and submits it. The report includes the selected controller's advertisement details and any redacted relay messages, not cook records, photos, or data from other nearby devices.
