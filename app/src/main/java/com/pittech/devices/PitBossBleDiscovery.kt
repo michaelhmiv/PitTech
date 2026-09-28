@@ -6,19 +6,67 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
-data class NearbyPitBossController(
-    val identifier: String,
+data class NearbyBluetoothDevice(
+    val key: String,
+    val advertisedName: String?,
+    val address: String?,
     val rssi: Int,
+    val relayIdentifier: String?,
+    val advertisements: List<BluetoothAdvertisementVariant>,
+    val omittedAdvertisementVariants: Int,
+) {
+    val observationCount: Int get() = advertisements.sumOf { it.observationCount }
+    val displayName: String
+        get() = advertisedName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: address?.takeLast(5)?.let { "Unnamed Bluetooth device · $it" }
+            ?: "Unnamed Bluetooth device"
+}
+
+data class BluetoothAdvertisementVariant(
+    val firstSeenOffsetMillis: Long,
+    val lastSeenOffsetMillis: Long,
+    val observationCount: Int,
+    val weakestRssi: Int,
+    val strongestRssi: Int,
+    val advertisedName: String?,
+    val txPower: Int?,
+    val connectable: Boolean?,
+    val advertiseFlags: Int?,
+    val primaryPhy: Int?,
+    val secondaryPhy: Int?,
+    val advertisingSid: Int?,
+    val periodicAdvertisingInterval: Int?,
+    val dataStatus: Int?,
+    val serviceUuids: List<String>,
+    val manufacturerData: Map<String, String>,
+    val serviceData: Map<String, String>,
+    val rawRecordHex: String,
+)
+
+data class BluetoothScanSummary(
+    val startedAtUtc: String,
+    val finishedAtUtc: String,
+    val durationMillis: Long,
+    val scanMode: String,
+    val totalResults: Int,
+    val capturedDeviceCount: Int,
+    val omittedDeviceCount: Int,
+    val error: String?,
 )
 
 /**
- * Foreground-only BLE discovery for the first Pit Boss connection test.
- *
- * The advertised local name is used as the controller identifier; no MAC
- * address or scan payload is retained.
+ * Foreground-only BLE discovery. It retains the distinct advertisements seen
+ * during a short scan so a user can report an unverified device for support.
+ * The report UI sends only the device the user chooses.
  */
 class PitBossBleDiscovery(context: Context) {
     private val appContext = context.applicationContext
@@ -28,34 +76,152 @@ class PitBossBleDiscovery(context: Context) {
     private var timeout: Runnable? = null
 
     fun startScan(
-        onDevices: (List<NearbyPitBossController>) -> Unit,
-        onFinished: (String?) -> Unit,
+        onDevices: (List<NearbyBluetoothDevice>) -> Unit,
+        onFinished: (BluetoothScanSummary, String?) -> Unit,
     ) {
         stopScan()
+
+        val startWallTime = System.currentTimeMillis()
+        val startElapsedTime = SystemClock.elapsedRealtime()
+        val found = linkedMapOf<String, MutableDevice>()
+        var totalResults = 0
+        var omittedDevices = 0
+
+        fun snapshot(): List<NearbyBluetoothDevice> = found.values
+            .map { it.toSnapshot() }
+            .sortedByDescending { it.rssi }
+
+        fun summary(error: String?): BluetoothScanSummary = BluetoothScanSummary(
+            startedAtUtc = formatUtc(startWallTime),
+            finishedAtUtc = formatUtc(System.currentTimeMillis()),
+            durationMillis = (SystemClock.elapsedRealtime() - startElapsedTime).coerceAtLeast(0L),
+            scanMode = "LOW_LATENCY",
+            totalResults = totalResults,
+            capturedDeviceCount = found.size,
+            omittedDeviceCount = omittedDevices,
+            error = error,
+        )
 
         val manager = appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val scanner = try {
             manager?.adapter?.bluetoothLeScanner
         } catch (_: SecurityException) {
-            onFinished("Bluetooth scan permission was not granted.")
+            onFinished(summary("Bluetooth permission was not granted."), "Bluetooth permission was not granted.")
             return
         }
         if (scanner == null) {
-            onFinished("Bluetooth is unavailable or turned off.")
+            onFinished(summary("Bluetooth is unavailable or turned off."), "Bluetooth is unavailable or turned off.")
             return
         }
 
-        val found = linkedMapOf<String, NearbyPitBossController>()
+        lateinit var finish: (String?) -> Unit
+        var finished = false
+
+        fun recordResult(result: ScanResult) {
+            totalResults += 1
+            val record = result.scanRecord
+            val advertisedName = record?.deviceName?.takeIf { it.isNotBlank() }
+            val rawRecordHex = record?.bytes?.toHex().orEmpty()
+            val serviceUuids = record?.serviceUuids.orEmpty().map { it.uuid.toString() }.sorted()
+            val manufacturerData = record?.manufacturerSpecificData?.let { sparse ->
+                buildMap {
+                    for (index in 0 until sparse.size()) {
+                        put("0x%04X".format(Locale.US, sparse.keyAt(index)), sparse.valueAt(index).toHex())
+                    }
+                }.toSortedMap()
+            }.orEmpty()
+            val serviceData = record?.serviceData.orEmpty()
+                .mapKeys { it.key.uuid.toString() }
+                .mapValues { it.value.toHex() }
+                .toSortedMap()
+            val address = runCatching { result.device.address }.getOrNull()
+            val key = address?.uppercase(Locale.ROOT)
+                ?: listOf(advertisedName.orEmpty(), rawRecordHex, serviceUuids.joinToString(","))
+                    .joinToString("|")
+                    .takeIf { it != "||" }
+                    ?.let { "unaddressed:$it" }
+                ?: "unidentified"
+            var device = found[key]
+            if (device == null) {
+                if (found.size >= MAX_TRACKED_DEVICES) {
+                    omittedDevices += 1
+                    onDevices(snapshot())
+                    return
+                }
+                device = MutableDevice(key, advertisedName, address)
+                found[key] = device
+            } else if (device.advertisedName.isNullOrBlank() && advertisedName != null) {
+                device.advertisedName = advertisedName
+            }
+
+            val offsetMillis = ((result.timestampNanos / 1_000_000L) -
+                (startElapsedTime * 1_000_000L / 1_000_000L)).coerceAtLeast(0L)
+            val txPower = record?.txPowerLevel?.takeIf { it in -127..20 }
+            val connectable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                runCatching { result.isConnectable }.getOrNull()
+            } else {
+                null
+            }
+            val variantKey = listOf(
+                rawRecordHex,
+                serviceUuids.joinToString(","),
+                manufacturerData.toString(),
+                serviceData.toString(),
+                txPower.toString(),
+                connectable.toString(),
+            ).joinToString("|")
+            val variant = device.variants[variantKey]
+            if (variant != null) {
+                variant.addObservation(offsetMillis, result.rssi)
+            } else if (device.variants.size < MAX_VARIANTS_PER_DEVICE) {
+                device.variants[variantKey] = MutableVariant(
+                    firstSeenOffsetMillis = offsetMillis,
+                    lastSeenOffsetMillis = offsetMillis,
+                    observationCount = 1,
+                    weakestRssi = result.rssi,
+                    strongestRssi = result.rssi,
+                    advertisedName = advertisedName,
+                    txPower = txPower,
+                    connectable = connectable,
+                    advertiseFlags = record?.advertiseFlags?.takeIf { it >= 0 },
+                    primaryPhy = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) result.primaryPhy else null,
+                    secondaryPhy = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) result.secondaryPhy else null,
+                    advertisingSid = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        result.advertisingSid.takeIf { it >= 0 }
+                    } else null,
+                    periodicAdvertisingInterval = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        result.periodicAdvertisingInterval.takeIf { it >= 0 }
+                    } else null,
+                    dataStatus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) result.dataStatus else null,
+                    serviceUuids = serviceUuids,
+                    manufacturerData = manufacturerData,
+                    serviceData = serviceData,
+                    rawRecordHex = rawRecordHex,
+                )
+            } else {
+                device.omittedAdvertisementVariants += 1
+            }
+            device.rssi = result.rssi
+            onDevices(snapshot())
+        }
+
         val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val advertisedName = result.scanRecord?.deviceName ?: return
-                val identifier = PitBossRelayProtocol.identifierFromBluetoothName(advertisedName) ?: return
-                found[identifier] = NearbyPitBossController(identifier, result.rssi)
-                onDevices(found.values.sortedByDescending { it.rssi })
+            override fun onScanResult(callbackType: Int, result: ScanResult) = recordResult(result)
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                results.forEach(::recordResult)
             }
 
             override fun onScanFailed(errorCode: Int) {
-                finishScan(this, onFinished, "Bluetooth scan failed (code $errorCode).")
+                finish("Bluetooth scan failed (code $errorCode).")
+            }
+        }
+        finish = { message ->
+            if (!finished && activeCallback === callback) {
+                finished = true
+                stopScan()
+                onDevices(snapshot())
+                onFinished(summary(message), message)
             }
         }
 
@@ -72,23 +238,17 @@ class PitBossBleDiscovery(context: Context) {
         } catch (_: SecurityException) {
             activeScanner = null
             activeCallback = null
-            onFinished("Bluetooth scan permission was not granted.")
+            onFinished(summary("Bluetooth scan permission was not granted."), "Bluetooth scan permission was not granted.")
             return
         } catch (_: IllegalStateException) {
             activeScanner = null
             activeCallback = null
-            onFinished("Bluetooth is unavailable or turned off.")
+            onFinished(summary("Bluetooth is unavailable or turned off."), "Bluetooth is unavailable or turned off.")
             return
         }
-        if (activeCallback !== callback) return
 
         val timeoutTask = Runnable {
-            val message = if (found.isEmpty()) {
-                "No controller ID was found. Turn on the controller and scan again."
-            } else {
-                null
-            }
-            finishScan(callback, onFinished, message)
+            finish(if (found.isEmpty()) "No Bluetooth devices were detected." else null)
         }
         timeout = timeoutTask
         handler.postDelayed(timeoutTask, SCAN_DURATION_MILLIS)
@@ -113,17 +273,84 @@ class PitBossBleDiscovery(context: Context) {
         }
     }
 
-    private fun finishScan(
-        callback: ScanCallback,
-        onFinished: (String?) -> Unit,
-        message: String?,
+    private data class MutableDevice(
+        val key: String,
+        var advertisedName: String?,
+        val address: String?,
+        var rssi: Int = Int.MIN_VALUE,
+        val variants: LinkedHashMap<String, MutableVariant> = linkedMapOf(),
+        var omittedAdvertisementVariants: Int = 0,
     ) {
-        if (activeCallback !== callback) return
-        stopScan()
-        onFinished(message)
+        fun toSnapshot() = NearbyBluetoothDevice(
+            key = key,
+            advertisedName = advertisedName,
+            address = address,
+            rssi = rssi,
+            relayIdentifier = advertisedName?.let(PitBossRelayProtocol::identifierFromBluetoothName),
+            advertisements = variants.values.map { it.toSnapshot() },
+            omittedAdvertisementVariants = omittedAdvertisementVariants,
+        )
     }
+
+    private data class MutableVariant(
+        val firstSeenOffsetMillis: Long,
+        var lastSeenOffsetMillis: Long,
+        var observationCount: Int,
+        var weakestRssi: Int,
+        var strongestRssi: Int,
+        val advertisedName: String?,
+        val txPower: Int?,
+        val connectable: Boolean?,
+        val advertiseFlags: Int?,
+        val primaryPhy: Int?,
+        val secondaryPhy: Int?,
+        val advertisingSid: Int?,
+        val periodicAdvertisingInterval: Int?,
+        val dataStatus: Int?,
+        val serviceUuids: List<String>,
+        val manufacturerData: Map<String, String>,
+        val serviceData: Map<String, String>,
+        val rawRecordHex: String,
+    ) {
+        fun addObservation(offsetMillis: Long, rssi: Int) {
+            lastSeenOffsetMillis = offsetMillis
+            observationCount += 1
+            weakestRssi = minOf(weakestRssi, rssi)
+            strongestRssi = maxOf(strongestRssi, rssi)
+        }
+
+        fun toSnapshot() = BluetoothAdvertisementVariant(
+            firstSeenOffsetMillis = firstSeenOffsetMillis,
+            lastSeenOffsetMillis = lastSeenOffsetMillis,
+            observationCount = observationCount,
+            weakestRssi = weakestRssi,
+            strongestRssi = strongestRssi,
+            advertisedName = advertisedName,
+            txPower = txPower,
+            connectable = connectable,
+            advertiseFlags = advertiseFlags,
+            primaryPhy = primaryPhy,
+            secondaryPhy = secondaryPhy,
+            advertisingSid = advertisingSid,
+            periodicAdvertisingInterval = periodicAdvertisingInterval,
+            dataStatus = dataStatus,
+            serviceUuids = serviceUuids,
+            manufacturerData = manufacturerData,
+            serviceData = serviceData,
+            rawRecordHex = rawRecordHex,
+        )
+    }
+
+    private fun ByteArray.toHex(): String = joinToString(separator = "") { "%02X".format(Locale.US, it.toInt() and 0xFF) }
+
+    private fun formatUtc(timestampMillis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'UTC'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date(timestampMillis))
 
     private companion object {
         const val SCAN_DURATION_MILLIS = 12_000L
+        const val MAX_TRACKED_DEVICES = 100
+        const val MAX_VARIANTS_PER_DEVICE = 80
     }
 }
