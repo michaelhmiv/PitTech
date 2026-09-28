@@ -287,7 +287,10 @@ class PitTechUserFlowsTest {
         saveScreenshot("cook-live-dashboard")
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         val timelinePhotoEventId = "timeline-photo-event"
-        val sampleStart = System.currentTimeMillis() - 6 * 60_000
+        val latestExistingEventAt = runBlocking(Dispatchers.IO) {
+            dao.getTimelineEventsForCook(cookId).maxOfOrNull { it.occurredAtUtcMillis } ?: 0L
+        }
+        val sampleStart = maxOf(System.currentTimeMillis() - 60_000, latestExistingEventAt + 60_000)
         val timelinePhotoAt = sampleStart - 30_000
         runBlocking(Dispatchers.IO) {
             dao.insertTimelineEvent(
@@ -322,7 +325,7 @@ class PitTechUserFlowsTest {
             )
             dao.insertReadingsIgnoringDuplicates(
                 (0 until 6).map { index ->
-                    val measuredAt = sampleStart + index * 60_000
+                    val measuredAt = sampleStart + index * 5_000
                     SensorReadingEntity(
                         id = "pit-sample-$index",
                         cookId = cookId,
