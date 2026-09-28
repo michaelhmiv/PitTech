@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -595,7 +596,8 @@ private fun CookQuickActionsBar(
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Quick actions", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -710,7 +712,8 @@ private fun LiveCookTab(
     ) {
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -769,7 +772,7 @@ private fun LiveCookTab(
             }
         }
 
-        SectionCard("Latest temperatures") {
+        DashboardSectionCard("Latest temperatures") {
             if (latestTemperatures.isEmpty()) {
                 Text("No readings yet. Use Temperature in Quick actions to record one.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-no-readings"))
             } else {
@@ -790,7 +793,7 @@ private fun LiveCookTab(
             }
         }
 
-        SectionCard("Dishes (${data.dishes.size})") {
+        DashboardSectionCard("Dishes (${data.dishes.size})") {
             if (data.dishes.isEmpty()) Text("Add a dish to keep its preparation and results with this cook.", style = MaterialTheme.typography.bodyMedium)
             data.dishes.forEach { dish ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -847,7 +850,7 @@ private fun LiveCookTab(
         }
 
         if (pendingReminders.isNotEmpty()) {
-            SectionCard(if (pendingReminders.size == 1) "Next reminder" else "Next reminder · ${pendingReminders.size} pending") {
+            DashboardSectionCard(if (pendingReminders.size == 1) "Next reminder" else "Next reminder · ${pendingReminders.size} pending") {
                 val visibleReminders = if (showAllReminders) pendingReminders else pendingReminders.take(1)
                 visibleReminders.forEach { reminder ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -870,7 +873,7 @@ private fun LiveCookTab(
         }
 
         if (latestPhoto != null) {
-            SectionCard("Recent photo") {
+            DashboardSectionCard("Recent photo") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PhotoThumbnail(
                         latestPhoto,
@@ -895,7 +898,7 @@ private fun LiveCookTab(
             }
         }
 
-        SectionCard("Latest activity") {
+        DashboardSectionCard("Latest activity") {
             when (val activity = latestActivity) {
                 null -> Text("Your notes and temperature checks will appear here.", style = MaterialTheme.typography.bodyMedium)
                 is TimelineLine.Event -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
@@ -911,7 +914,7 @@ private fun LiveCookTab(
             TextButton(onClick = onViewTimeline, modifier = Modifier.heightIn(min = 40.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text("Open full timeline") }
         }
 
-        SectionCard("More cook tools") {
+        DashboardSectionCard("More cook tools") {
             Text("Targets, results, export, and cook management", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(
                 onClick = { showMoreTools = !showMoreTools },
@@ -950,6 +953,20 @@ private fun LiveCookTab(
             }
         }
         onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+    }
+}
+
+@Composable
+private fun DashboardSectionCard(title: String, content: @Composable () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            content()
+        }
     }
 }
 
