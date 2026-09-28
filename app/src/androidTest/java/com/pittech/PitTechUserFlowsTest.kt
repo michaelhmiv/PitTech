@@ -287,7 +287,7 @@ class PitTechUserFlowsTest {
         saveScreenshot("cook-live-dashboard")
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         val timelinePhotoEventId = "timeline-photo-event"
-        val sampleStart = System.currentTimeMillis() - 6 * 60_000
+        val sampleStart = System.currentTimeMillis() - 30 * 60_000
         val cookStartedAt = sampleStart - 7 * 60_000
         val timelinePhotoAt = sampleStart - 30_000
         runBlocking(Dispatchers.IO) {
