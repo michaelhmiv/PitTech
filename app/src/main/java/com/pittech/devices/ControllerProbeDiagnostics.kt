@@ -36,7 +36,10 @@ internal object ControllerProbeDiagnostics {
                     "Stable capability fingerprint: " +
                         ControllerProtocolDetector.fingerprint(selectedDevice, inspection, probe),
                 )
-                appendLine("PitTech support status: ${ControllerSupportRegistry.label(selectedDevice)}")
+                appendLine(
+                    "PitTech support status: " +
+                        ControllerSupportRegistry.label(selectedDevice, inspection, probe),
+                )
                 appendLine("Latest RSSI (dBm): ${selectedDevice.rssi}")
                 appendLine("Captured advertisement observations: ${selectedDevice.observationCount}")
                 appendLine()
