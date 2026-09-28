@@ -11,12 +11,13 @@ class ControllerDiagnosticSanitizerTest {
     @Test
     fun jsonSanitizerRedactsCommonSecrets() {
         val sanitized = ControllerDiagnosticSanitizer.sanitizeJson(
-            """{"ssid":"HomeWifi","password":"hunter2","nested":{"token":"abc"},"firmware":"0.6.0"}""",
+            """{"ssid":"HomeWifi","password":"hunter2","nested":{"token":"abc"},"mac":"AA:BB:CC:DD:EE:FF","firmware":"0.6.0"}""",
         )
 
         assertFalse(sanitized.contains("HomeWifi"))
         assertFalse(sanitized.contains("hunter2"))
         assertFalse(sanitized.contains("\"abc\""))
+        assertFalse(sanitized.contains("AA:BB:CC:DD:EE:FF"))
         assertTrue(sanitized.contains("0.6.0"))
         assertTrue(sanitized.contains("[redacted]"))
     }
