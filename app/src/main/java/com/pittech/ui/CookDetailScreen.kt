@@ -1086,6 +1086,9 @@ private fun TimelineTab(
     val rows = buildTimelineLines(data, selectedFilter, newestFirst)
     val days = rows.groupBy { timelineDayKey(it.time) }
     val latestIndex = rows.size + days.size
+    LaunchedEffect(selectedFilterName, newestFirst) {
+        listState.scrollToItem(0)
+    }
     val showJumpToLatest by remember(listState, newestFirst, latestIndex) {
         derivedStateOf {
             if (rows.isEmpty()) false
