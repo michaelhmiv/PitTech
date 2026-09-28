@@ -18,8 +18,9 @@ import java.util.TimeZone
 
 /**
  * Explicit, foreground-only BLE GATT inspection for controller troubleshooting.
- * It discovers the service tree and reads a bounded number of characteristics
- * marked readable. It never writes a characteristic or enables notifications.
+ * It discovers the full service tree and attempts every characteristic marked
+ * readable, subject only to a high sanity cap and the overall session timeout.
+ * This inventory phase never writes a characteristic or enables notifications.
  */
 internal class BluetoothGattInspector(context: Context) {
     private val appContext = context.applicationContext
@@ -276,7 +277,7 @@ internal class BluetoothGattInspector(context: Context) {
                             "Characteristic read callback timed out for " +
                                 target.characteristic.uuid + ".",
                         )
-                        finish(session, "Characteristic read timed out; remaining reads were stopped.")
+                        readNextCharacteristic(session, gatt)
                     }
                 }
                 session.readTimeout = timeout
@@ -516,12 +517,12 @@ internal class BluetoothGattInspector(context: Context) {
     }
 
     private companion object {
-        const val MAX_READS_PER_INSPECTION = 20
+        const val MAX_READS_PER_INSPECTION = 256
         const val MAX_VALUE_BYTES_IN_REPORT = 128
         const val MAX_TEXT_PREVIEW_CHARS = 256
         const val MAX_EVENTS = 160
         const val MAX_EVENT_MESSAGE_CHARS = 350
-        const val SESSION_TIMEOUT_MILLIS = 90_000L
+        const val SESSION_TIMEOUT_MILLIS = 120_000L
         const val CHARACTERISTIC_READ_TIMEOUT_MILLIS = 5_000L
     }
 }
