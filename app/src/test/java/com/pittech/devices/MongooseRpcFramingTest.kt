@@ -10,9 +10,9 @@ import org.junit.Test
 class MongooseRpcFramingTest {
     @Test
     fun requestAndResponseLengthsUseFourByteBigEndianEncoding() {
-        val encoded = MongooseRpcFraming.encodeLength(0x01020304)
-        assertArrayEquals(byteArrayOf(0x01, 0x02, 0x03, 0x04), encoded)
-        assertEquals(0x01020304, MongooseRpcFraming.decodeResponseLength(encoded))
+        val encoded = MongooseRpcFraming.encodeLength(0x00010203)
+        assertArrayEquals(byteArrayOf(0x00, 0x01, 0x02, 0x03), encoded)
+        assertEquals(0x00010203, MongooseRpcFraming.decodeResponseLength(encoded))
     }
 
     @Test
