@@ -416,6 +416,7 @@ class PitTechUserFlowsTest {
         waitForText("Smoker ambient: 250.0 °F")
 
         composeRule.onNodeWithTag("timeline-filter-temperatures").performClick()
+        saveScreenshot("timeline-after-temperature-filter")
         composeRule.onNodeWithText("Show 6 readings").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).performScrollTo().assertIsDisplayed()
