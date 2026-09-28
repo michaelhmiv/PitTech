@@ -241,6 +241,15 @@ class PitTechUserFlowsTest {
             dao.insertPhotos(
                 listOf(
                     PhotoEntity(
+                        id = "dashboard-photo-old",
+                        cookId = cookId,
+                        originalFileName = "seasoning.jpg",
+                        relativePath = photoPath,
+                        mimeType = "image/jpeg",
+                        caption = "Seasoning",
+                        addedAtUtcMillis = now - 60_000,
+                    ),
+                    PhotoEntity(
                         id = "dashboard-photo",
                         cookId = cookId,
                         originalFileName = "brisket-resting.jpg",
@@ -274,9 +283,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Export").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Add target").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
-        composeRule.onNodeWithTag("live-photo-gallery-open").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("Brisket resting").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("All photos (2)").performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("photo-gallery-title").assertIsDisplayed()
+        composeRule.onNodeWithText("Photos (2)").assertIsDisplayed()
         composeRule.onNodeWithTag("photo-gallery-row-dashboard-photo").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-gallery-row-dashboard-photo-old").assertIsDisplayed()
         composeRule.onNodeWithTag("photo-gallery-item-dashboard-photo").performClick()
         composeRule.onNodeWithTag("photo-viewer-title").assertIsDisplayed()
         composeRule.onNodeWithTag("photo-viewer-close").performClick()
