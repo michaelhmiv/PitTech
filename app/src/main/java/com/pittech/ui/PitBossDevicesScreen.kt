@@ -199,12 +199,6 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                         "retained=${summary.capturedDeviceCount}, omitted=${summary.omittedDeviceCount}.",
                 )
 
-                if (nearbyDevices.size == 1 && hasConnectPermission) {
-                    val only = nearbyDevices.single()
-                    selectedDeviceKey = only.key
-                    recordSessionEvent("Only one nearby BLE device was retained; starting automatic interrogation.")
-                    startAutomaticProbe(only)
-                }
             },
         )
     }
