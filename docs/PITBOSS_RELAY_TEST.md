@@ -10,7 +10,7 @@ This is an experimental, read-only test path for PitTech's debug and Firebase De
 
 This only uses Bluetooth for discovery in this first slice; it does not yet provision Wi-Fi credentials over GATT. The controller must already be online in the Pit Boss app for the vendor-relay test.
 
-The protocol approach is informed by the public observations in [dknowles2/pytboss](https://github.com/dknowles2/pytboss) and the Home Assistant Pit Boss integration. The pytboss project is licensed under Apache-2.0; its license text is included at [LICENSES/PYTBOSS-APACHE-2.0.txt](../LICENSES/PYTBOSS-APACHE-2.0.txt). The Kotlin probe is an independent implementation; it does not include the pytboss package.
+The protocol approach is informed by the public observations in [dknowles2/pytboss](https://github.com/dknowles2/pytboss) and the Home Assistant Pit Boss integration. The pytboss project is licensed under Apache-2.0; its license text is included at [LICENSES/APACHE-2.0.txt](../LICENSES/APACHE-2.0.txt). The Kotlin probe is an independent implementation; it does not include the pytboss package.
 
 ## Test steps
 
