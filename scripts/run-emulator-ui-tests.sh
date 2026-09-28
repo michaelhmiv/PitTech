@@ -337,7 +337,7 @@ deadline=$((SECONDS + 30))
 until (( SECONDS >= deadline )); do
   timeout 20 adb shell uiautomator dump /sdcard/pittech-window.xml >/dev/null 2>&1 || true
   timeout 20 adb exec-out cat /sdcard/pittech-window.xml > "$window_dump" 2>/dev/null || true
-  if grep -q "Saturday brisket" "$window_dump" && grep -q "Whole packer" "$window_dump"; then
+  if grep -q "Photo backup sample" "$window_dump" && grep -q "Whole packer" "$window_dump"; then
     break
   fi
   sleep 2
@@ -352,7 +352,7 @@ visible_text = " ".join(
     node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
     for node in root.iter()
 )
-expected = ("Saturday brisket", "Whole packer")
+expected = ("Photo backup sample", "Whole packer")
 missing = [value for value in expected if value not in visible_text]
 if missing:
     raise SystemExit("Cook data was not visible after crash-report recovery: " + ", ".join(missing))

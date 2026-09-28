@@ -306,7 +306,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithContentDescription("Back to cooks").performClick()
         composeRule.onNodeWithTag("nav-insights").performClick()
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
-        composeRule.onNodeWithText("Saturday brisket").assertIsDisplayed()
+        composeRule.onNodeWithText("Saturday brisket").performScrollTo().assertIsDisplayed()
     }
 
     @Test
