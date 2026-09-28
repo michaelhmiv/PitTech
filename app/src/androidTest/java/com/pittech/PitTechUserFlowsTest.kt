@@ -352,7 +352,7 @@ class PitTechUserFlowsTest {
         waitForText("Smoker ambient: 250.0 °F")
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("Log this cook").assertIsDisplayed()
+        composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
         composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         saveScreenshot("cook-live-actions")
