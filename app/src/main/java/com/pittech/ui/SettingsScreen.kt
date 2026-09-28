@@ -68,7 +68,7 @@ fun SettingsScreen(
     var feedbackDescription by rememberSaveable { mutableStateOf("") }
     var includeCrashReport by rememberSaveable { mutableStateOf(false) }
     var showCrashPreview by rememberSaveable { mutableStateOf(false) }
-    var feedbackSubmitting by rememberSaveable { mutableStateOf(false) }
+    var feedbackSubmitting by remember { mutableStateOf(false) }
     var feedbackError by rememberSaveable { mutableStateOf<String?>(null) }
     var feedbackNotice by rememberSaveable { mutableStateOf<String?>(null) }
     val xlsx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
