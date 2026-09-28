@@ -49,6 +49,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -596,50 +597,52 @@ private fun CookQuickActionsBar(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Quick actions", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onNote,
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add"),
                 ) {
-                    Icon(Icons.Filled.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Add note", maxLines = 1)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Add note", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
                 }
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = onTemperature,
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add-temperature"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-temperature"),
                 ) {
-                    Icon(Icons.Filled.Thermostat, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Temperature", maxLines = 1)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.Thermostat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Temp", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = onPhoto,
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add-photo"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-photo"),
                 ) {
-                    Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Photo", maxLines = 1)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Photo", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
                 }
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = onReminder,
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("cook-add-reminder"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("cook-add-reminder"),
                 ) {
-                    Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Reminder", maxLines = 1)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Remind", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
                 }
             }
         }
