@@ -385,6 +385,7 @@ class PitBossBleDiscovery(context: Context) {
 
     private companion object {
         const val SCAN_DURATION_MILLIS = 12_000L
+        const val PUBLISH_INTERVAL_MILLIS = 250L
         const val MAX_TRACKED_DEVICES = 100
         const val MAX_VARIANTS_PER_DEVICE = 80
     }
