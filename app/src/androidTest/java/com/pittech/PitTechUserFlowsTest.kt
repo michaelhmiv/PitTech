@@ -327,7 +327,7 @@ class PitTechUserFlowsTest {
             )
             dao.insertReadingsIgnoringDuplicates(
                 (0 until 6).map { index ->
-                    val measuredAt = sampleStart + index * 60_000
+                    val measuredAt = sampleStart
                     SensorReadingEntity(
                         id = "pit-sample-$index",
                         cookId = cookId,
