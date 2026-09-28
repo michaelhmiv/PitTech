@@ -17,4 +17,10 @@
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="30" />
 
+    <application>
+        <activity
+            android:name="com.pittech.ui.ControllerDiagnosticsTestActivity"
+            android:exported="false" />
+    </application>
+
 </manifest>
