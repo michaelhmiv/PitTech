@@ -105,7 +105,7 @@ internal object BluetoothGattDiagnostics {
             }
             appendLine()
 
-            appendLine("Read-only characteristic results (the app did not write characteristics or subscribe to notifications):")
+            appendLine("GATT inventory read results (this inventory phase does not write characteristics or subscribe to notifications; protocol-specific probing may separately use transport framing writes and notifications):")
             if (report.reads.isEmpty()) {
                 appendLine("  (no readable characteristics were read)")
             } else {
