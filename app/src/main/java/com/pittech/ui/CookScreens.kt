@@ -72,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pittech.BuildConfig
 import com.pittech.CooksViewModel
 import com.pittech.ads.shouldShowCookHistoryNativeAd
 import com.pittech.R
@@ -267,12 +268,16 @@ fun PitTechApp(
                 onOpenCook = viewModel::openCook,
                 modifier = Modifier.padding(padding),
             )
-            MainSection.DEVICES -> FeaturePlaceholder(
-                title = "Devices",
-                message = "Controller setup is paused until your grill arrives.",
-                note = "You can log temperatures by hand from any cook. Your cook history stays available offline.",
-                modifier = Modifier.padding(padding),
-            )
+            MainSection.DEVICES -> if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
+                PitBossDevicesScreen(modifier = Modifier.padding(padding))
+            } else {
+                FeaturePlaceholder(
+                    title = "Devices",
+                    message = "Controller connection testing is available in PitTech's test build.",
+                    note = "You can still log temperatures by hand from any cook.",
+                    modifier = Modifier.padding(padding),
+                )
+            }
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,
                 themeMode = themeMode,

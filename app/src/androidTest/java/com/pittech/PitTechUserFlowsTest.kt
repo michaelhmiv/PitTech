@@ -97,7 +97,9 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-devices").performClick()
-        composeRule.onNodeWithText("Controller setup is paused until your grill arrives.").assertIsDisplayed()
+        composeRule.onNodeWithText("Controller connection test").assertIsDisplayed()
+        composeRule.onNodeWithTag("pitboss-scan").assertExists()
+        composeRule.onNodeWithTag("pitboss-connect").assertExists()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
