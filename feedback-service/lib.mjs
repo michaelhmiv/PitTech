@@ -63,7 +63,7 @@ export function buildGitHubIssue(submission) {
     `- Device: ${submission.device}`,
   ];
 
-  if (isBug && submission.diagnosticReport) {
+  if (submission.diagnosticReport) {
     const report = submission.diagnosticReport;
     body.push(
       "",
