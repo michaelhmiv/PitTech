@@ -296,7 +296,12 @@ internal class MongooseBleRpcProbe(context: Context) {
         val payload = JSONObject()
             .put("id", session.requestId)
             .put("method", request.method)
-            .put("params", request.params)
+            .put(
+                "params",
+                JSONObject().apply {
+                    request.params.forEach { (key, value) -> put(key, value) }
+                },
+            )
             .toString()
             .toByteArray(Charsets.UTF_8)
         session.pendingPayload = payload
@@ -468,7 +473,7 @@ internal class MongooseBleRpcProbe(context: Context) {
                         }
                     }
                     "RPC.Describe" -> {
-                        val name = request.params.optString("name")
+                        val name = request.params["name"].orEmpty()
                         if (name.isNotBlank()) session.rpcDescriptions[name] = resultText.take(MAX_DESCRIPTION_CHARS)
                     }
                 }
@@ -496,7 +501,7 @@ internal class MongooseBleRpcProbe(context: Context) {
                     SafeRpcRequest(
                         label = "Describe $method",
                         method = "RPC.Describe",
-                        params = JSONObject().put("name", method),
+                        params = mapOf("name" to method),
                     ),
                 )
             }
