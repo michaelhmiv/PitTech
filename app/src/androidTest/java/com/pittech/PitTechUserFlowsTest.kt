@@ -34,6 +34,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookStatus
 import com.pittech.data.DeviceEntity
+import com.pittech.data.PhotoEntity
 import com.pittech.data.ProbeEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.domain.DishDraft
@@ -169,7 +170,7 @@ class PitTechUserFlowsTest {
                 composeRule.onAllNodesWithText("Whole packer", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("cook-tab-live").assertIsDisplayed()
-        composeRule.onNodeWithText("Log this cook").assertIsDisplayed()
+        composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
         composeRule.onNodeWithText("Whole packer", substring = true).performScrollTo().assertIsDisplayed()
         saveScreenshot("cook-saved")
 
@@ -213,6 +214,37 @@ class PitTechUserFlowsTest {
         clearLocalData()
         val application = targetContext.applicationContext as PitTechApplication
         val cookId = createTestCook("Saturday brisket")
+        val dao = application.database.cookDao()
+        val now = System.currentTimeMillis()
+        val photoPath = "photos/dashboard-photo.jpg"
+        val photoFile = File(targetContext.filesDir, photoPath).apply { parentFile?.mkdirs() }
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        photoFile.outputStream().use { output -> assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)) }
+        bitmap.recycle()
+        runBlocking(Dispatchers.IO) {
+            dao.insertPhotos(
+                listOf(
+                    PhotoEntity(
+                        id = "dashboard-photo-old",
+                        cookId = cookId,
+                        originalFileName = "seasoning.jpg",
+                        relativePath = photoPath,
+                        mimeType = "image/jpeg",
+                        caption = "Seasoning",
+                        addedAtUtcMillis = now - 60_000,
+                    ),
+                    PhotoEntity(
+                        id = "dashboard-photo",
+                        cookId = cookId,
+                        originalFileName = "brisket-resting.jpg",
+                        relativePath = photoPath,
+                        mimeType = "image/jpeg",
+                        caption = "Brisket resting",
+                        addedAtUtcMillis = now,
+                    ),
+                ),
+            )
+        }
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("cook-card-$cookId").fetchSemanticsNodes().isNotEmpty()
         }
@@ -220,6 +252,38 @@ class PitTechUserFlowsTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithTag("live-cook-status").assertIsDisplayed()
+        composeRule.onNodeWithTag("live-cook-elapsed").assertIsDisplayed()
+        val configuration = targetContext.resources.configuration
+        if (configuration.screenWidthDp >= 390 && configuration.fontScale <= 1.3f) {
+            composeRule.onNodeWithTag("live-overview-grid").assertExists()
+        } else {
+            assertTrue(composeRule.onAllNodesWithTag("live-overview-grid").fetchSemanticsNodes().isEmpty())
+        }
+        composeRule.onNodeWithTag("timeline-add").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("timeline-add-temperature").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("timeline-add-photo").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("cook-add-reminder").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        saveScreenshot("cook-live-dashboard-top")
+        assertTrue(composeRule.onAllNodesWithText("Starting condition: Refrigerated").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("Export").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Add target").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("Brisket resting").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("All photos (2)").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("photo-gallery-title").assertIsDisplayed()
+        composeRule.onNodeWithText("Photos (2)").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-gallery-row-dashboard-photo").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-gallery-row-dashboard-photo-old").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-gallery-item-dashboard-photo").performClick()
+        composeRule.onNodeWithTag("photo-viewer-title").assertIsDisplayed()
+        composeRule.onNodeWithTag("photo-viewer-close").performClick()
+        composeRule.onNodeWithTag("live-recent-photo").performScrollTo().assertIsDisplayed()
+        saveScreenshot("cook-live-dashboard")
         composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("timeline-add-photo").performClick()
         composeRule.onNodeWithTag("photo-source-camera").assertIsDisplayed()
@@ -288,7 +352,7 @@ class PitTechUserFlowsTest {
         waitForText("Smoker ambient: 250.0 °F")
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("Log this cook").assertIsDisplayed()
+        composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
         composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         saveScreenshot("cook-live-actions")

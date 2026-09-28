@@ -14,12 +14,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -47,8 +50,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,10 +77,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -146,6 +151,7 @@ fun CookDetailScreen(
     var showReminderCheckIn by remember { mutableStateOf(false) }
     var pendingPhotoRetry by remember { mutableStateOf<PhotoRetry?>(null) }
     var viewingPhoto by remember { mutableStateOf<com.pittech.data.PhotoEntity?>(null) }
+    var showPhotoGallery by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var photoToSave by remember { mutableStateOf<com.pittech.data.PhotoEntity?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -486,6 +492,16 @@ fun CookDetailScreen(
             onShare = ::sharePhoto,
         )
     }
+    if (showPhotoGallery) {
+        PhotoGalleryDialog(
+            photos = data.photos.sortedByDescending { it.capturedAtUtcMillis ?: it.addedAtUtcMillis },
+            onDismiss = { showPhotoGallery = false },
+            onPhotoClick = { photo ->
+                showPhotoGallery = false
+                viewingPhoto = photo
+            },
+        )
+    }
     if (confirmDeleteCook) {
         AlertDialog(
             onDismissRequest = { confirmDeleteCook = false },
@@ -554,6 +570,7 @@ fun CookDetailScreen(
                         showReminderCheckIn = true
                     },
                     onPhotoClick = { viewingPhoto = it },
+                    onShowPhotoGallery = { showPhotoGallery = true },
                     onViewTimeline = { selectedTab = CookTab.TIMELINE.name },
                 )
                 CookTab.TIMELINE -> TimelineTab(
@@ -578,41 +595,59 @@ private fun CookQuickActionsBar(
     onReminder: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text("Log this cook", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Capture what happened while it’s fresh.", style = MaterialTheme.typography.bodySmall)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onNote, modifier = Modifier.weight(1.25f).heightIn(min = 52.dp).testTag("timeline-add")) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Quick actions", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = onNote,
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add"),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Add to log")
+                        Text("Add note", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
-                FilledTonalButton(onClick = onTemperature, modifier = Modifier.weight(1f).heightIn(min = 52.dp).testTag("timeline-add-temperature")) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilledTonalButton(
+                    onClick = onTemperature,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-temperature"),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.Thermostat, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Temperature")
+                        Text("Temp", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                FilledTonalButton(onClick = onPhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("timeline-add-photo")) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilledTonalButton(
+                    onClick = onPhoto,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-photo"),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Add photo")
+                        Text("Photo", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
-                OutlinedButton(onClick = onReminder, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("cook-add-reminder")) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilledTonalButton(
+                    onClick = onReminder,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("cook-add-reminder"),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Set reminder")
+                        Text("Remind", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
             }
@@ -638,153 +673,375 @@ private fun LiveCookTab(
     onCancelReminder: (CookReminderEntity) -> Unit,
     onLogReminder: (CookReminderEntity) -> Unit,
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onShowPhotoGallery: () -> Unit,
     onViewTimeline: () -> Unit,
 ) {
-    val elapsed = calculateElapsed(data)
-    val hours = (elapsed.coerceAtLeast(0) / 3_600_000)
-    val minutes = (elapsed.coerceAtLeast(0) / 60_000) % 60
+    val elapsed = calculateElapsed(data).coerceAtLeast(0)
+    val hours = elapsed / 3_600_000
+    val minutes = (elapsed / 60_000) % 60
     var showCookDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SectionCard("Cook summary") {
-            Text("${hours}h ${minutes}m ${if (data.cook.status == CookStatus.PAUSED) "paused" else "elapsed"}", style = MaterialTheme.typography.headlineMedium)
-            Text("Started ${formatTimestamp(data.cook.startedAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { showCookDetails = !showCookDetails }, modifier = Modifier.heightIn(min = 44.dp)) { Text(if (showCookDetails) "Hide cook details" else "Cook details") }
-            if (showCookDetails) {
-                data.cook.smokerName?.let { Text("Smoker: $it", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.initialSetpointValue?.let { Text("Starting setpoint: $it ${data.cook.initialSetpointUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.fuelType?.let { Text("Fuel: $it", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: $it", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: $it ${data.cook.outdoorTemperatureUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.weatherNotes?.let { Text("Weather: $it", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.windNotes?.let { Text("Wind: $it", style = MaterialTheme.typography.bodyLarge) }
-                data.cook.notes?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-            }
-            if (data.cook.status != CookStatus.COMPLETED) {
-                OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.heightIn(min = 46.dp)) {
-                    Text(if (data.cook.status == CookStatus.PAUSED) "Resume cook" else "Pause cook")
+    var showPrepDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var showAllReminders by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var showAllDishes by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var showMoreTools by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val useCompactDashboardGrid = configuration.screenWidthDp >= 390 && configuration.fontScale <= 1.3f
+
+    val pendingReminders = data.reminders
+        .filter { it.status == CookReminderEntity.STATUS_PENDING }
+        .sortedBy { it.dueAtUtcMillis }
+    val latestTemperatures = data.readings
+        .groupBy { it.probeName }
+        .values
+        .mapNotNull { readings -> readings.maxByOrNull { it.measuredAtUtcMillis } }
+        .sortedByDescending { it.measuredAtUtcMillis }
+    val latestActivity = buildList<TimelineLine> {
+        data.events.filter { it.eventType != "temperature" }.forEach { add(TimelineLine.Event(it)) }
+        data.readings.forEach { add(TimelineLine.Reading(it)) }
+    }.maxByOrNull { it.time }
+    val latestPhoto = data.photos.maxByOrNull { it.capturedAtUtcMillis ?: it.addedAtUtcMillis }
+    val isActive = data.cook.status == CookStatus.ACTIVE
+    val isPaused = data.cook.status == CookStatus.PAUSED
+    val statusContainer = when (data.cook.status) {
+        CookStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
+        CookStatus.COMPLETED -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val statusContent = when (data.cook.status) {
+        CookStatus.PAUSED -> MaterialTheme.colorScheme.onTertiary
+        CookStatus.COMPLETED -> MaterialTheme.colorScheme.onSecondary
+        else -> MaterialTheme.colorScheme.onPrimary
+    }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Cook at a glance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${hours}h ${minutes}m", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("live-cook-elapsed"))
+                    }
+                    Surface(color = statusContainer, contentColor = statusContent, shape = CircleShape) {
+                        Text(
+                            statusLabel(data.cook.status).uppercase(),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp).testTag("live-cook-status"),
+                        )
+                    }
+                }
+                Text("Started ${formatTimestamp(data.cook.startedAtUtcMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(
+                    onClick = { showCookDetails = !showCookDetails },
+                    modifier = Modifier.heightIn(min = 40.dp).testTag("live-cook-details-toggle"),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) { Text(if (showCookDetails) "Hide cook details" else "Show cook details") }
+                if (showCookDetails) {
+                    data.cook.smokerName?.let { Text("Smoker: $it", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.initialSetpointValue?.let { Text("Starting setpoint: $it ${data.cook.initialSetpointUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.fuelType?.let { Text("Fuel: $it", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: $it", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: $it ${data.cook.outdoorTemperatureUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.weatherNotes?.let { Text("Weather: $it", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.windNotes?.let { Text("Wind: $it", style = MaterialTheme.typography.bodyLarge) }
+                    data.cook.notes?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                }
+                if (data.cook.status != CookStatus.COMPLETED) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onTogglePause,
+                            enabled = !busy,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        ) { Text(if (isPaused) "Resume" else "Pause cook", maxLines = 1) }
+                        if (isActive) {
+                            Button(
+                                onClick = onFinish,
+                                enabled = !busy,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("live-finish-cook"),
+                            ) { Text("Finish cook", maxLines = 1) }
+                        }
+                    }
                 }
             }
         }
 
-        SectionCard("Dishes (${data.dishes.size})") {
-            if (data.dishes.isEmpty()) Text("No dishes yet. Add one now or later.", style = MaterialTheme.typography.bodyLarge)
-            data.dishes.forEach { dish ->
+        DashboardSectionPair(
+            compact = useCompactDashboardGrid,
+            testTag = "live-overview-grid",
+            first = { modifier -> DashboardSectionCard(if (useCompactDashboardGrid) "Temps" else "Latest temperatures", modifier = modifier) {
+            if (latestTemperatures.isEmpty()) {
+                Text(
+                    if (useCompactDashboardGrid) "No readings yet." else "No readings yet. Use Temperature in Quick actions to record one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("live-no-readings"),
+                )
+            } else {
+                latestTemperatures.take(2).forEach { reading ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(reading.probeName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(formatTimestamp(reading.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("${reading.value} ${reading.unit}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (latestTemperatures.size > 2) {
+                    TextButton(onClick = onViewTimeline, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                        Text("View all ${latestTemperatures.size} probes")
+                    }
+                }
+            }
+            } },
+            second = { modifier -> DashboardSectionCard("Dishes (${data.dishes.size})", modifier = modifier) {
+            if (data.dishes.isEmpty()) Text("Add a dish to keep its preparation and results with this cook.", style = MaterialTheme.typography.bodyMedium)
+            val visibleDishes = if (useCompactDashboardGrid && !showAllDishes) data.dishes.take(2) else data.dishes
+            visibleDishes.forEach { dish ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(dish.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(buildList {
-                                add(dish.foodType)
-                                dish.cut?.let(::add)
-                                dish.weightValue?.let { add("$it ${dish.weightUnit.orEmpty()}") }
-                                dish.startingCondition?.let(::add)
-                                dish.placement?.let { add("Rack: $it") }
-                                dish.gradeOrSource?.let { add(it) }
-                            }.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                            Text(dish.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(
+                                buildList {
+                                    add(dish.foodType)
+                                    dish.cut?.let(::add)
+                                    dish.weightValue?.let { add("$it ${dish.weightUnit.orEmpty()}") }
+                                }.joinToString(" · "),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                            )
                         }
-                        TextButton(onClick = { onEditDish(dish) }) { Text("Edit") }
+                        TextButton(onClick = { onEditDish(dish) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Edit") }
                     }
-                    data.ingredients.filter { it.dishId == dish.id }.forEach { item ->
-                        Text(
-                            "${item.stage.replace('_', ' ').replaceFirstChar { it.titlecase() }}: ${item.name}" +
-                                (item.brand?.let { " · $it" } ?: "") +
-                                (item.amountValue?.let { " · $it ${item.amountUnit.orEmpty()}" } ?: ""),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    dish.placement?.let { Text("Placement: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    val ingredients = data.ingredients.filter { it.dishId == dish.id }
+                    val hasPrepDetails = ingredients.isNotEmpty() || dish.prepNotes != null || dish.startingCondition != null || dish.gradeOrSource != null
+                    if (hasPrepDetails) {
+                        TextButton(
+                            onClick = { showPrepDetails = !showPrepDetails },
+                            modifier = Modifier.heightIn(min = 40.dp).testTag("live-prep-toggle"),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        ) { Text(if (showPrepDetails) "Hide preparation" else "Show preparation") }
                     }
-                    dish.prepNotes?.let { Text("Preparation notes: $it", style = MaterialTheme.typography.bodyMedium) }
+                    if (showPrepDetails) {
+                        dish.startingCondition?.let { Text("Starting condition: $it", style = MaterialTheme.typography.bodyMedium) }
+                        dish.gradeOrSource?.let { Text("Grade or source: $it", style = MaterialTheme.typography.bodyMedium) }
+                        ingredients.forEach { item ->
+                            Text(
+                                "${item.stage.replace('_', ' ').replaceFirstChar { it.titlecase() }}: ${item.name}" +
+                                    (item.brand?.let { " · $it" } ?: "") +
+                                    (item.amountValue?.let { " · $it ${item.amountUnit.orEmpty()}" } ?: ""),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        dish.prepNotes?.let { Text("Preparation notes: $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
                 }
             }
-            OutlinedButton(onClick = onAddDish, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Add dish")
+            if (useCompactDashboardGrid && data.dishes.size > 2) {
+                TextButton(
+                    onClick = { showAllDishes = !showAllDishes },
+                    modifier = Modifier.heightIn(min = 40.dp).testTag("live-dishes-toggle"),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) { Text(if (showAllDishes) "Show fewer dishes" else "Show all ${data.dishes.size} dishes") }
             }
-        }
-
-        SectionCard("Temperatures") {
-            if (data.readings.isEmpty()) {
-                Text("No temperature readings yet. Record a manual check to start a temperature history and chart.", style = MaterialTheme.typography.bodyLarge)
-            } else {
-                data.readings.groupBy { it.probeName }.forEach { (probe, values) ->
-                    val latest = values.maxBy { it.measuredAtUtcMillis }
-                    Text(probe, style = MaterialTheme.typography.titleMedium)
-                    Text("${latest.value} ${latest.unit}", style = MaterialTheme.typography.headlineMedium)
-                    Text("Manual reading · ${formatTimestamp(latest.measuredAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium)
-                }
+            OutlinedButton(
+                onClick = onAddDish,
+                enabled = !busy,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add dish")
             }
-        }
+            } },
+        )
 
-        val pendingReminders = data.reminders.filter { it.status == CookReminderEntity.STATUS_PENDING }
-        if (pendingReminders.isNotEmpty()) {
-            SectionCard("Reminders (${pendingReminders.size})") {
-                pendingReminders.forEach { reminder ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Column(Modifier.weight(1f)) {
+        DashboardSectionPair(
+            compact = useCompactDashboardGrid,
+            testTag = "live-context-grid",
+            first = if (pendingReminders.isNotEmpty()) ({ modifier -> DashboardSectionCard(if (pendingReminders.size == 1) "Next reminder" else "Next reminder · ${pendingReminders.size} pending", modifier = modifier) {
+                val visibleReminders = if (showAllReminders) pendingReminders else pendingReminders.take(1)
+                visibleReminders.forEach { reminder ->
+                    if (useCompactDashboardGrid) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            Text("Around ${formatTimestamp(reminder.dueAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium)
+                            Text(formatTimestamp(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
+                                TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
+                            }
                         }
-                        TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
-                        TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
-                    }
-                }
-            }
-        }
-
-        val recentRows = buildList {
-            data.events.filter { it.eventType != "temperature" }.forEach { add(TimelineLine.Event(it)) }
-            data.readings.forEach { add(TimelineLine.Reading(it)) }
-        }.sortedBy { it.time }.takeLast(3).asReversed()
-        SectionCard("Latest in the cook log") {
-            if (recentRows.isEmpty()) {
-                Text("Your notes, photos, and temperature checks will show here in order.", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                recentRows.forEach { row ->
-                    when (row) {
-                        is TimelineLine.Event -> {
-                            Text(row.event.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            Text(formatTimestamp(row.event.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall)
-                            data.photos.filter { it.eventId == row.event.id }.forEach { photo -> PhotoThumbnail(photo, modifier = Modifier.fillMaxWidth().height(120.dp), onClick = { onPhotoClick(photo) }) }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                Text(formatTimestamp(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
+                            TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
                         }
-                        is TimelineLine.Reading -> Text("${row.reading.probeName}: ${row.reading.value} ${row.reading.unit} · ${formatTimestamp(row.reading.measuredAtUtcMillis)}", style = MaterialTheme.typography.bodyMedium)
                     }
-                    if (row != recentRows.last()) androidx.compose.material3.HorizontalDivider()
                 }
-                TextButton(onClick = onViewTimeline, modifier = Modifier.heightIn(min = 44.dp)) { Text("View full cook timeline") }
+                if (pendingReminders.size > 1) {
+                    TextButton(
+                        onClick = { showAllReminders = !showAllReminders },
+                        modifier = Modifier.heightIn(min = 40.dp).testTag("live-reminders-toggle"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) { Text(if (showAllReminders) "Show next reminder only" else "Show ${pendingReminders.size - 1} more reminders") }
+                }
+            } }) else null,
+            second = latestPhoto?.let { photo -> ({ modifier -> DashboardSectionCard("Recent photo", modifier = modifier) {
+                if (useCompactDashboardGrid) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PhotoThumbnail(
+                            photo,
+                            modifier = Modifier.size(72.dp).testTag("live-recent-photo"),
+                            onClick = { onPhotoClick(photo) },
+                        )
+                        Text(
+                            photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                        )
+                        Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                        TextButton(
+                            onClick = onShowPhotoGallery,
+                            modifier = Modifier.heightIn(min = 40.dp).testTag("live-photo-gallery-open"),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        ) { Text("All photos (${data.photos.size})") }
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PhotoThumbnail(
+                            photo,
+                            modifier = Modifier.size(96.dp).testTag("live-recent-photo"),
+                            onClick = { onPhotoClick(photo) },
+                        )
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                            )
+                            Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextButton(
+                                onClick = onShowPhotoGallery,
+                                modifier = Modifier.heightIn(min = 40.dp).testTag("live-photo-gallery-open"),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            ) { Text("All photos (${data.photos.size})") }
+                        }
+                    }
+                }
+            } }) },
+        )
+
+        DashboardSectionCard("Latest activity") {
+            when (val activity = latestActivity) {
+                null -> Text("Your notes and temperature checks will appear here.", style = MaterialTheme.typography.bodyMedium)
+                is TimelineLine.Event -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
+                    Text(activity.event.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    activity.event.details?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 2) }
+                    Text(formatTimestamp(activity.event.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                is TimelineLine.Reading -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
+                    Text("${activity.reading.probeName}: ${activity.reading.value} ${activity.reading.unit}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(formatTimestamp(activity.reading.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
+            TextButton(onClick = onViewTimeline, modifier = Modifier.heightIn(min = 40.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text("Open full timeline") }
         }
 
-
-
-        SectionCard("Targets") {
-            if (data.targets.isEmpty()) Text("Optional: record a personal finish goal or a food-safety target you are following.", style = MaterialTheme.typography.bodyLarge)
-            data.targets.forEach { target ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(target.targetType.replace('_', ' ').replaceFirstChar { it.titlecase() }, style = MaterialTheme.typography.titleMedium)
-                        Text("${target.value} ${target.unit}" + (target.explanation?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyLarge)
+        DashboardSectionCard("More cook tools") {
+            Text("Targets, results, export, and cook management", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(
+                onClick = { showMoreTools = !showMoreTools },
+                modifier = Modifier.heightIn(min = 40.dp).testTag("live-more-tools-toggle"),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) { Text(if (showMoreTools) "Hide cook tools" else "Show cook tools") }
+            if (showMoreTools) {
+                if (data.targets.isEmpty()) Text("No targets saved.", style = MaterialTheme.typography.bodyMedium)
+                data.targets.forEach { target ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(target.targetType.replace('_', ' ').replaceFirstChar { it.titlecase() }, style = MaterialTheme.typography.titleSmall)
+                            Text("${target.value} ${target.unit}" + (target.explanation?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
+                        }
+                        TextButton(onClick = { onDeleteTarget(target) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Delete") }
                     }
-                    TextButton(onClick = { onDeleteTarget(target) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Delete") }
                 }
-            }
-            Text("A recorded food-safety target is not a safety guarantee or cooking recommendation.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add target") }
-        }
-
-        SectionCard("Wrap up") {
-            OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results") }
-            if (data.cook.status == CookStatus.ACTIVE) {
-                Button(onClick = onFinish, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("live-finish-cook")) { Text("Finish cook") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onExport, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Export") }
-                TextButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Reuse setup") }
+                Text("A recorded food-safety target is not a safety guarantee or cooking recommendation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = onAddTarget, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add target") }
+                OutlinedButton(onClick = onResults, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
+                }
+                if (data.results.isNotEmpty()) {
+                    data.results.forEach { result ->
+                        val label = result.resultType.replace('_', ' ').replaceFirstChar { it.titlecase() }
+                        val value = result.numericValue?.let { "$it ${result.unit.orEmpty()}" } ?: result.textValue.orEmpty()
+                        Text("$label: $value", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onExport, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Export") }
+                    OutlinedButton(onClick = onCopySetup, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Reuse setup") }
+                }
                 TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Delete cook") }
+                Text("Reusing a setup starts a fresh cook log.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("Reusing a setup starts a fresh cook log.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
         }
+        onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+    }
+}
 
-        if (data.results.isNotEmpty()) CookResultsCard(data)
-        if (data.photos.isNotEmpty()) PhotoGallery(data.photos, onPhotoClick)
+@Composable
+private fun DashboardSectionPair(
+    compact: Boolean,
+    testTag: String,
+    first: (@Composable (Modifier) -> Unit)?,
+    second: (@Composable (Modifier) -> Unit)?,
+) {
+    if (first == null && second == null) return
+    if (compact && first != null && second != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth().testTag(testTag),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            first(Modifier.weight(1f))
+            second(Modifier.weight(1f))
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            first?.invoke(Modifier.fillMaxWidth())
+            second?.invoke(Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun DashboardSectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            content()
+        }
     }
 }
 
@@ -922,6 +1179,52 @@ private fun PhotoGallery(photos: List<com.pittech.data.PhotoEntity>, onPhotoClic
 }
 
 @Composable
+private fun PhotoGalleryDialog(
+    photos: List<com.pittech.data.PhotoEntity>,
+    onDismiss: () -> Unit,
+    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 640.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Photos (${photos.size})", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).testTag("photo-gallery-title"), fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 44.dp).testTag("photo-gallery-close")) { Text("Done") }
+                }
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    photos.forEach { photo ->
+                        Row(
+                            Modifier.fillMaxWidth().testTag("photo-gallery-row-${photo.id}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                PhotoThumbnail(
+                                    photo,
+                                    modifier = Modifier.size(84.dp).clip(RoundedCornerShape(12.dp)).testTag("photo-gallery-item-${photo.id}"),
+                                    onClick = { onPhotoClick(photo) },
+                                )
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                                Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PhotoThumbnail(
     photo: com.pittech.data.PhotoEntity,
     modifier: Modifier = Modifier.fillMaxWidth().height(190.dp),
@@ -996,8 +1299,8 @@ private fun PhotoViewerDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    IconButton(onClick = onDismiss) { Text("×", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
-                    Text(photo.caption ?: photo.originalFileName, color = Color.White, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("photo-viewer-close")) { Text("×", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
+                    Text(photo.caption ?: photo.originalFileName, color = Color.White, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).testTag("photo-viewer-title"), maxLines = 1)
                     TextButton(onClick = { onSave(photo) }) { Text("Save", color = Color.White) }
                     TextButton(onClick = { onShare(photo) }) { Text("Share", color = Color.White) }
                 }

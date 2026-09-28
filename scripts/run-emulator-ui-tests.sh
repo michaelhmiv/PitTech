@@ -267,6 +267,8 @@ fi
 
 pull_app_screenshot cook-log-entry
 pull_app_screenshot cook-live-actions
+pull_app_screenshot cook-live-dashboard-top
+pull_app_screenshot cook-live-dashboard
 pull_app_screenshot reminder-check-in
 
 check_saved_diagnostic_report() {
