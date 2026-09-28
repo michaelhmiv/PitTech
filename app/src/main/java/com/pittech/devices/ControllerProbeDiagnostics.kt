@@ -44,25 +44,6 @@ internal object ControllerProbeDiagnostics {
                 appendLine("Captured advertisement observations: ${selectedDevice.observationCount}")
                 appendLine()
 
-                appendLine("ADVERTISEMENTS")
-                selectedDevice.advertisements.forEachIndexed { index, item ->
-                    appendLine("Advertisement variant ${index + 1}")
-                    appendLine("  Observations: ${item.observationCount}")
-                    appendLine("  RSSI range: ${item.weakestRssi} to ${item.strongestRssi} dBm")
-                    appendLine("  Name: ${quoted(item.advertisedName ?: "(none)")}")
-                    appendLine("  Connectable: ${item.connectable ?: "(not reported)"}")
-                    appendLine("  Service UUIDs: ${item.serviceUuids.joinToString().ifBlank { "(none)" }}")
-                    appendLine("  Solicitation UUIDs: ${item.serviceSolicitationUuids.joinToString().ifBlank { "(none)" }}")
-                    appendLine("  Manufacturer IDs: ${item.manufacturerData.keys.joinToString().ifBlank { "(none)" }}")
-                    appendLine("  Manufacturer data: ${item.manufacturerData.entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "(none)" }}")
-                    appendLine("  Service data: ${item.serviceData.entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "(none)" }}")
-                    appendLine("  Raw advertisement hex: ${item.rawRecordHex.ifBlank { "(empty)" }}")
-                }
-                if (selectedDevice.omittedAdvertisementVariants > 0) {
-                    appendLine("Advertisement variants omitted locally: ${selectedDevice.omittedAdvertisementVariants}")
-                }
-                appendLine()
-
                 if (inspection != null &&
                     selectedDevice.address?.equals(inspection.address, ignoreCase = true) == true
                 ) {
@@ -136,6 +117,37 @@ internal object ControllerProbeDiagnostics {
                 }
             }
 
+                appendLine("ADVERTISEMENT EVIDENCE (lower priority)")
+                selectedDevice.advertisements
+                    .take(MAX_ADVERTISEMENT_VARIANTS_IN_REPORT)
+                    .forEachIndexed { index, item ->
+                        appendLine("Advertisement variant ${index + 1}")
+                        appendLine("  Observations: ${item.observationCount}")
+                        appendLine("  RSSI range: ${item.weakestRssi} to ${item.strongestRssi} dBm")
+                        appendLine("  Name: ${quoted(item.advertisedName ?: "(none)")}")
+                        appendLine("  Connectable: ${item.connectable ?: "(not reported)"}")
+                        appendLine("  Service UUIDs: ${item.serviceUuids.joinToString().ifBlank { "(none)" }}")
+                        appendLine("  Solicitation UUIDs: ${item.serviceSolicitationUuids.joinToString().ifBlank { "(none)" }}")
+                        appendLine("  Manufacturer IDs: ${item.manufacturerData.keys.joinToString().ifBlank { "(none)" }}")
+                        appendLine("  Manufacturer data: ${item.manufacturerData.entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "(none)" }}")
+                        appendLine("  Service data: ${item.serviceData.entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "(none)" }}")
+                        val raw = item.rawRecordHex
+                        appendLine(
+                            "  Raw advertisement hex: " +
+                                raw.take(MAX_ADVERTISEMENT_HEX_CHARS).ifBlank { "(empty)" },
+                        )
+                        if (raw.length > MAX_ADVERTISEMENT_HEX_CHARS) {
+                            appendLine("  Raw advertisement hex chars omitted: ${raw.length - MAX_ADVERTISEMENT_HEX_CHARS}")
+                        }
+                    }
+                val reportOmittedAdvertisements =
+                    (selectedDevice.advertisements.size - MAX_ADVERTISEMENT_VARIANTS_IN_REPORT).coerceAtLeast(0) +
+                        selectedDevice.omittedAdvertisementVariants
+                if (reportOmittedAdvertisements > 0) {
+                    appendLine("Advertisement variants omitted from/public capture limits: $reportOmittedAdvertisements")
+                }
+                appendLine()
+
             appendLine("APP SESSION EVENTS")
             sessionEvents.takeLast(80).forEach {
                 appendLine(ControllerDiagnosticSanitizer.sanitizeText(it))
@@ -153,6 +165,9 @@ internal object ControllerProbeDiagnostics {
         val marker = "\n\n[Report truncated to fit the feedback relay. Fingerprint, service inventory, RPC inventory, probe results, and errors are prioritized above repeated/raw details.]"
         return full.take(MAX_DETAILS_CHARS - marker.length) + marker
     }
+
+    private const val MAX_ADVERTISEMENT_VARIANTS_IN_REPORT = 24
+    private const val MAX_ADVERTISEMENT_HEX_CHARS = 1_024
 
     private fun sessionDeviceId(address: String?, seed: String): String {
         if (address.isNullOrBlank()) return "(unavailable)"
