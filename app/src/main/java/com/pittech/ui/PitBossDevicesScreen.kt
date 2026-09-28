@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +50,8 @@ import com.pittech.FeedbackRequest
 import com.pittech.FeedbackSubmitResult
 import com.pittech.devices.BluetoothScanDiagnostics
 import com.pittech.devices.BluetoothScanSummary
+import com.pittech.devices.BluetoothGattInspectionReport
+import com.pittech.devices.BluetoothGattInspector
 import com.pittech.devices.ControllerSupportRegistry
 import com.pittech.devices.NearbyBluetoothDevice
 import com.pittech.devices.PitBossBleDiscovery
@@ -66,6 +71,7 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
     }
     val client = remember { PitBossRelayClient() }
     val discovery = remember(context) { PitBossBleDiscovery(context) }
+    val gattInspector = remember(context) { BluetoothGattInspector(context) }
     val uiState by client.uiState.collectAsStateWithLifecycle()
 
     var nearbyDevices by remember { mutableStateOf(emptyList<NearbyBluetoothDevice>()) }
@@ -76,7 +82,15 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
     var scanSummary by remember { mutableStateOf<BluetoothScanSummary?>(null) }
     var isScanning by remember { mutableStateOf(false) }
     var bluetoothConnectPermissionRequested by rememberSaveable { mutableStateOf(false) }
+    var pendingBluetoothAction by rememberSaveable { mutableStateOf("SCAN") }
     var scanMessage by remember { mutableStateOf<String?>(null) }
+    var isInspectingGatt by remember { mutableStateOf(false) }
+    var gattStatusMessage by remember { mutableStateOf<String?>(null) }
+    var gattInspection by remember { mutableStateOf<BluetoothGattInspectionReport?>(null) }
+    var sessionEvents by remember { mutableStateOf(emptyList<String>()) }
+    var sessionEventRevision by remember { mutableStateOf(0) }
+    var omittedSessionEventCount by remember { mutableStateOf(0) }
+    val eventHandler = remember { Handler(Looper.getMainLooper()) }
 
     var showReportDialog by remember { mutableStateOf(false) }
     var reportDevice by remember { mutableStateOf<NearbyBluetoothDevice?>(null) }
@@ -85,12 +99,25 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
     var reportError by remember { mutableStateOf<String?>(null) }
     var reportNotice by remember { mutableStateOf<String?>(null) }
 
+    fun recordSessionEvent(message: String) {
+        val addEvent = {
+            val entry = formatReportUtc(System.currentTimeMillis()) + " " + message.take(350)
+            if (sessionEvents.size >= 80) omittedSessionEventCount += 1
+            sessionEvents = (sessionEvents + entry).takeLast(80)
+            sessionEventRevision += 1
+        }
+        if (Looper.myLooper() == eventHandler.looper) addEvent() else eventHandler.post { addEvent() }
+    }
+
     fun startScan() {
+        recordSessionEvent("BLE scan started; foreground scan duration is capped at 12 seconds.")
         isScanning = true
         scanMessage = "Scanning nearby Bluetooth devices…"
         nearbyDevices = emptyList()
         scanSummary = null
         selectedDeviceKey = null
+        gattInspection = null
+        gattStatusMessage = null
         discovery.startScan(
             onDevices = { found ->
                 nearbyDevices = found
@@ -100,6 +127,12 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                 }
             },
             onFinished = { summary, message ->
+                recordSessionEvent(
+                    "BLE scan finished; results=" + summary.totalResults +
+                        ", retainedDevices=" + summary.capturedDeviceCount +
+                        ", omittedDevices=" + summary.omittedDeviceCount +
+                        ", error=" + (summary.error ?: "none"),
+                )
                 scanSummary = summary
                 isScanning = false
                 scanMessage = message ?: if (nearbyDevices.isEmpty()) {
@@ -125,24 +158,6 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        if (results[requiredScanPermission] == true) {
-            startScan()
-        } else {
-            isScanning = false
-            scanMessage = "Bluetooth permission is needed to find a nearby controller."
-        }
-    }
-
-    DisposableEffect(client, discovery) {
-        onDispose {
-            discovery.stopScan()
-            client.disconnect()
-        }
-    }
-
     val hasScanPermission = ContextCompat.checkSelfPermission(
         context,
         requiredScanPermission,
@@ -153,15 +168,100 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
             Manifest.permission.BLUETOOTH_CONNECT,
         ) == PackageManager.PERMISSION_GRANTED
     val selectedDevice = nearbyDevices.firstOrNull { it.key == selectedDeviceKey }
-    val relayIdentifier = if (selectedDevice != null) {
-        selectedDevice.relayIdentifier.orEmpty()
-    } else {
-        selectedIdentifier
+
+    fun startGattInspection(device: NearbyBluetoothDevice) {
+        val address = device.address
+        if (address.isNullOrBlank()) {
+            val message = "The scan did not expose a Bluetooth address. Allow Bluetooth connection access and scan again."
+            gattStatusMessage = message
+            recordSessionEvent("GATT inspection could not start because the selected scan record had no address.")
+            return
+        }
+        selectedDeviceKey = device.key
+        gattInspection = null
+        isInspectingGatt = true
+        gattStatusMessage = "Connecting to the selected controller and inspecting readable BLE services…"
+        recordSessionEvent("User started read-only GATT inspection for the selected BLE controller.")
+        gattInspector.inspect(
+            address = address,
+            onProgress = { message -> gattStatusMessage = message },
+            onFinished = { result ->
+                gattInspection = result
+                isInspectingGatt = false
+                gattStatusMessage = result.outcome
+                recordSessionEvent(
+                    "GATT inspection finished; outcome=" + result.outcome +
+                        ", services=" + result.services.size +
+                        ", readableCharacteristics=" + result.readableCharacteristicCount +
+                        ", readsCaptured=" + result.reads.size + ".",
+                )
+            },
+        )
     }
-    val canConnect = relayIdentifier.isNotBlank() &&
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        if (pendingBluetoothAction == "GATT") {
+            val connectGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                results[Manifest.permission.BLUETOOTH_CONNECT] == true ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                ) == PackageManager.PERMISSION_GRANTED
+            val device = nearbyDevices.firstOrNull { it.key == selectedDeviceKey }
+            if (connectGranted && device != null) {
+                recordSessionEvent("Bluetooth connection permission granted for GATT inspection.")
+                startGattInspection(device)
+            } else {
+                isInspectingGatt = false
+                gattStatusMessage = "Bluetooth connection permission is needed to inspect this controller."
+                recordSessionEvent("Bluetooth connection permission was denied for GATT inspection.")
+            }
+        } else if (results[requiredScanPermission] == true) {
+            recordSessionEvent("Bluetooth scan permission granted.")
+            startScan()
+        } else {
+            isScanning = false
+            scanMessage = "Bluetooth permission is needed to find a nearby controller."
+            recordSessionEvent("Bluetooth scan permission was denied.")
+        }
+        pendingBluetoothAction = "SCAN"
+    }
+
+    DisposableEffect(client, discovery, gattInspector) {
+        onDispose {
+            discovery.stopScan()
+            client.disconnect()
+            gattInspector.closeSilently()
+        }
+    }
+
+    LaunchedEffect(hasScanPermission, hasConnectPermission, Build.VERSION.SDK_INT) {
+        recordSessionEvent(
+            "Bluetooth permission state; scan=" + hasScanPermission +
+                ", connect=" + hasConnectPermission +
+                ", Android API=" + Build.VERSION.SDK_INT + ".",
+        )
+    }
+
+    LaunchedEffect(uiState.stage, uiState.statusMessage, uiState.errorMessage) {
+        val stateText = "Relay stage=" + uiState.stage.name +
+            "; status=" + uiState.statusMessage +
+            (uiState.errorMessage?.let { "; error=" + it } ?: "")
+        recordSessionEvent(stateText)
+    }
+
+    val canConnect = selectedDevice?.relayIdentifier.orEmpty().ifBlank { selectedIdentifier }.isNotBlank() &&
         uiState.stage != PitBossRelayStage.CONNECTING &&
         uiState.stage != PitBossRelayStage.RELAY_CONNECTED
-    val reportDetails = remember(reportDevice, scanSummary, uiState) {
+    val reportDetails = remember(
+        reportDevice,
+        scanSummary,
+        uiState,
+        gattInspection,
+        sessionEventRevision,
+    ) {
         BluetoothScanDiagnostics.details(
             summary = scanSummary ?: BluetoothScanSummary(
                 startedAtUtc = "not available",
@@ -177,10 +277,14 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
             relayStage = uiState.stage.name,
             relayStatus = uiState.statusMessage,
             relayMessages = uiState.recentMessages.map { it.title to it.safeJson },
+            inspection = gattInspection?.takeIf { reportDevice?.address == it.address },
+            sessionEvents = sessionEvents,
+            omittedSessionEventCount = omittedSessionEventCount,
         )
     }
 
     fun openReport(device: NearbyBluetoothDevice?) {
+        recordSessionEvent("User opened the public Bluetooth diagnostic report preview.")
         reportDevice = device
         reportDetailsExpanded = true
         reportError = null
@@ -191,12 +295,16 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
     fun submitReport(device: NearbyBluetoothDevice?) {
         val summary = scanSummary ?: return
         val deviceLabel = device?.displayName ?: "No controller detected"
+        recordSessionEvent("User confirmed submission of the public Bluetooth diagnostic issue.")
         val detailText = BluetoothScanDiagnostics.details(
             summary = summary,
             selectedDevice = device,
             relayStage = uiState.stage.name,
             relayStatus = uiState.statusMessage,
             relayMessages = uiState.recentMessages.map { it.title to it.safeJson },
+            inspection = gattInspection?.takeIf { device?.address == it.address },
+            sessionEvents = sessionEvents,
+            omittedSessionEventCount = omittedSessionEventCount,
         )
         val androidDevice = listOf(Build.MANUFACTURER, Build.MODEL)
             .filter { it.isNotBlank() }
@@ -231,8 +339,8 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                 is FeedbackSubmitResult.Success -> {
                     showReportDialog = false
                     reportNotice = result.issueNumber
-                        ?.let { "Diagnostics submitted as GitHub issue #$it." }
-                        ?: "Diagnostics submitted to GitHub."
+                        ?.let { "Diagnostics submitted as GitHub issue #$it. Share the issue number with me so I can inspect the capture." }
+                        ?: "Diagnostics submitted to GitHub. Share the issue number with me so I can inspect the capture."
                 }
                 is FeedbackSubmitResult.Failure -> reportError = result.message
             }
@@ -258,15 +366,16 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("Find your controller", style = MaterialTheme.typography.titleSmall)
-                Text("Turn on the controller and keep it nearby. PitTech scans Bluetooth advertisements and reads a matching Pit Boss relay ID when the name provides one.")
-                Text("An unverified controller can be reported from its device card. Only the device you choose is included; the report is previewed before a public GitHub issue is created.")
-                Text("The relay test uses the Pit Boss vendor relay and requires the controller to be online through the Pit Boss app's Wi-Fi setup.")
+                Text("Turn on the controller and keep it nearby. Scan, select its Bluetooth entry, then inspect BLE services. That opens a read-only GATT session and attempts limited reads from characteristics marked readable; it never writes to the controller.")
+                Text("The report preview contains the selected controller's advertisements, GATT services and readable values, plus timestamped PitTech test events. Nothing uploads until you review and submit the preview; GitHub issues are public.")
+                Text("The optional Pit Boss relay test requires the controller to be online through the Pit Boss app's Wi-Fi setup. Send me the issue number after submission so I can examine the raw report.")
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = {
+                    pendingBluetoothAction = "SCAN"
                     if (!hasScanPermission || (!hasConnectPermission && !bluetoothConnectPermissionRequested)) {
                         bluetoothConnectPermissionRequested = true
                         permissionLauncher.launch(permissionsToRequest)
@@ -274,7 +383,7 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                         startScan()
                     }
                 },
-                enabled = !isScanning,
+                enabled = !isScanning && !isInspectingGatt,
                 modifier = Modifier.testTag("pitboss-scan"),
             ) {
                 Text(if (isScanning) "Scanning…" else "Scan nearby")
@@ -344,9 +453,26 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                             Text("Pit Boss relay ID candidate: ${device.relayIdentifier}", style = MaterialTheme.typography.bodySmall)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (selected && scanSummary != null && !isScanning) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (hasConnectPermission) {
+                                            startGattInspection(device)
+                                        } else {
+                                            pendingBluetoothAction = "GATT"
+                                            permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT))
+                                        }
+                                    },
+                                    enabled = !isInspectingGatt,
+                                    modifier = Modifier.testTag("ble-gatt-inspect-$index"),
+                                ) {
+                                    Text(if (isInspectingGatt) "Inspecting…" else "Inspect BLE services")
+                                }
+                            }
                             if (!approved && scanSummary != null && !isScanning) {
                                 OutlinedButton(
                                     onClick = { openReport(device) },
+                                    enabled = !isInspectingGatt,
                                     modifier = Modifier.testTag("ble-report-$index"),
                                 ) {
                                     Text("Review diagnostics")
@@ -365,6 +491,33 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.testTag("ble-empty-scan-report"),
             ) {
                 Text("Report empty scan")
+            }
+        }
+
+        selectedDevice?.let { device ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("Read-only BLE inspection", style = MaterialTheme.typography.titleSmall)
+                    Text("PitTech discovers the selected controller's GATT services and characteristic properties, then reads up to 20 characteristics marked READ. It does not explicitly bond, write values, or subscribe to notifications.")
+                    gattStatusMessage?.let { Text("Inspection status: " + it) }
+                    gattInspection?.takeIf { it.address == device.address }?.let { result ->
+                        Text(
+                            "Result: " + result.outcome +
+                                " · " + result.services.size + " services · " +
+                                result.reads.size + " read result(s)",
+                            modifier = Modifier.testTag("ble-gatt-result"),
+                        )
+                    }
+                    if (isInspectingGatt) {
+                        TextButton(
+                            onClick = { gattInspector.cancel() },
+                            modifier = Modifier.testTag("ble-gatt-cancel"),
+                        ) { Text("Stop inspection") }
+                    }
+                }
             }
         }
 
@@ -434,7 +587,7 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("Submitting creates a public GitHub issue. The report includes the selected device's advertised name, Bluetooth address when available, signal history, service and manufacturer data, raw advertisement bytes, Android/app details, and redacted Pit Boss relay status. Other nearby devices are not included.")
+                    Text("Submitting creates a public GitHub issue. The report includes the selected controller's Bluetooth address when available, advertisements, GATT service/characteristic/descriptor details, and values from attempted read-only characteristic reads, plus timestamped PitTech scan/connection/relay events and app/device details. It does not include other nearby devices, cook records, or photos. Review any raw values before submitting.")
                     Text("Review the data below before sending. Do not submit if it contains information you do not want public.")
                     TextButton(
                         onClick = { reportDetailsExpanded = !reportDetailsExpanded },

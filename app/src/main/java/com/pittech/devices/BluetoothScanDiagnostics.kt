@@ -13,6 +13,9 @@ internal object BluetoothScanDiagnostics {
         relayStage: String,
         relayStatus: String,
         relayMessages: List<Pair<String, String>>,
+        inspection: BluetoothGattInspectionReport? = null,
+        sessionEvents: List<String> = emptyList(),
+        omittedSessionEventCount: Int = 0,
     ): String {
         val full = buildString {
             appendLine("PitTech Bluetooth controller discovery diagnostics")
@@ -24,6 +27,20 @@ internal object BluetoothScanDiagnostics {
             appendLine("Distinct devices retained locally: ${summary.capturedDeviceCount}")
             appendLine("Devices omitted because the local capture cap was reached: ${summary.omittedDeviceCount}")
             appendLine("Scan error: ${quoted(summary.error ?: "none")}")
+            appendLine()
+            appendLine("PitTech controller-test app event log (UTC):")
+            if (sessionEvents.isEmpty()) {
+                appendLine("  (no app event entries recorded)")
+            } else {
+                val allEvents = sessionEvents.takeLast(80).joinToString("\n") { it.take(350) }
+                val eventMarker = "[Earlier app events omitted for report size.]\n"
+                appendLine(
+                    if (allEvents.length <= MAX_SESSION_EVENT_CHARS) allEvents
+                    else eventMarker + allEvents.takeLast(MAX_SESSION_EVENT_CHARS - eventMarker.length),
+                )
+                val omittedEvents = omittedSessionEventCount + (sessionEvents.size - 80).coerceAtLeast(0)
+                if (omittedEvents > 0) appendLine("  Earlier app events omitted: " + omittedEvents)
+            }
             appendLine()
 
             if (selectedDevice == null) {
@@ -39,6 +56,15 @@ internal object BluetoothScanDiagnostics {
                 appendLine("Captured observations: ${selectedDevice.observationCount}")
                 appendLine("Distinct advertisement variants omitted: ${selectedDevice.omittedAdvertisementVariants}")
                 appendLine()
+                val matchingInspection = inspection?.takeIf {
+                    selectedDevice.address?.equals(it.address, ignoreCase = true) == true
+                }
+                if (matchingInspection != null) {
+                    appendLine(BluetoothGattDiagnostics.format(matchingInspection))
+                    appendLine()
+                } else if (inspection != null) {
+                    appendLine("GATT inspection excluded because its Bluetooth address does not match the selected device.")
+                }
 
                 selectedDevice.advertisements.forEachIndexed { index, item ->
                     appendLine("Advertisement variant ${index + 1}")
@@ -88,6 +114,8 @@ internal object BluetoothScanDiagnostics {
         val marker = "\n\n[Report truncated to fit the feedback service limit. BLE capture caps and omitted counts are listed above.]"
         return full.take(MAX_DETAILS_CHARS - marker.length) + marker
     }
+
+    private const val MAX_SESSION_EVENT_CHARS = 4_000
 
     private fun quoted(value: String): String = buildString(value.length + 8) {
         append('"')

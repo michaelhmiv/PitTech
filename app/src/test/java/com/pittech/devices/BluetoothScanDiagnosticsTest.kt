@@ -51,6 +51,54 @@ class BluetoothScanDiagnosticsTest {
         omittedAdvertisementVariants = 2,
     )
 
+
+    private fun gattReport(address: String = "AA:BB:CC:DD:EE:FF") = BluetoothGattInspectionReport(
+        address = address,
+        startedAtUtc = "2026-09-28 15:00:12.000 UTC",
+        finishedAtUtc = "2026-09-28 15:00:13.000 UTC",
+        outcome = "GATT service inspection completed.",
+        connected = true,
+        connectionStatusCode = 0,
+        serviceDiscoveryStatusCode = 0,
+        services = listOf(
+            BluetoothGattServiceInfo(
+                uuid = "0000180F-0000-1000-8000-00805F9B34FB",
+                kind = "primary",
+                characteristics = listOf(
+                    BluetoothGattCharacteristicInfo(
+                        uuid = "00002A19-0000-1000-8000-00805F9B34FB",
+                        properties = listOf("READ", "NOTIFY"),
+                        permissions = listOf("READ"),
+                        descriptors = listOf(
+                            BluetoothGattDescriptorInfo(
+                                uuid = "00002902-0000-1000-8000-00805F9B34FB",
+                                permissions = listOf("READ"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        totalCharacteristicCount = 1,
+        readableCharacteristicCount = 1,
+        omittedReadableCharacteristicCount = 0,
+        reads = listOf(
+            BluetoothGattReadResult(
+                serviceUuid = "0000180F-0000-1000-8000-00805F9B34FB",
+                characteristicUuid = "00002A19-0000-1000-8000-00805F9B34FB",
+                initiated = true,
+                statusCode = 0,
+                valueLengthBytes = 1,
+                valueHex = "64",
+                valueText = "d",
+                truncatedValueBytes = 0,
+                note = null,
+            ),
+        ),
+        events = listOf("2026-09-28 15:00:12.000 UTC +20ms onServicesDiscovered status=GATT_SUCCESS."),
+        omittedEventCount = 0,
+    )
+
     @Test
     fun reportContainsSelectedDeviceAddressAndFullBleAdvertisementFieldsOnly() {
         val selected = device()
@@ -93,4 +141,51 @@ class BluetoothScanDiagnosticsTest {
         assertEquals(BluetoothScanDiagnostics.MAX_DETAILS_CHARS, details.length)
         assertTrue(details.contains("Report truncated to fit the feedback service limit"))
     }
+
+    @Test
+    fun reportIncludesReadOnlyGattInventoryAndAppEventsForTheSelectedDevice() {
+        val details = BluetoothScanDiagnostics.details(
+            summary = summary,
+            selectedDevice = device(),
+            relayStage = "DISCONNECTED",
+            relayStatus = "Not connected",
+            relayMessages = emptyList(),
+            inspection = gattReport(),
+            sessionEvents = listOf("2026-09-28 15:00:10 UTC BLE scan finished; results=9"),
+        )
+
+        assertTrue(details.contains("Bluetooth GATT inspection"))
+        assertTrue(details.contains("Characteristic 00002A19"))
+        assertTrue(details.contains("Descriptor 00002902"))
+        assertTrue(details.contains("Value (hex): 64"))
+        assertTrue(details.contains("the app did not write characteristics"))
+        assertTrue(details.contains("BLE scan finished; results=9"))
+    }
+
+    @Test
+    fun reportExcludesGattInspectionWhenItBelongsToAnotherDevice() {
+        val details = BluetoothScanDiagnostics.details(
+            summary = summary,
+            selectedDevice = device(),
+            relayStage = "DISCONNECTED",
+            relayStatus = "Not connected",
+            relayMessages = emptyList(),
+            inspection = gattReport("11:22:33:44:55:66"),
+        )
+
+        assertFalse(details.contains("Bluetooth GATT inspection"))
+        assertTrue(details.contains("GATT inspection excluded"))
+    }
+
+    @Test
+    fun gattFormatterBoundsLargeReportsAndMarksTruncation() {
+        val report = gattReport().copy(
+            outcome = "x".repeat(20_000),
+        )
+        val details = BluetoothGattDiagnostics.format(report)
+
+        assertEquals(BluetoothGattDiagnostics.MAX_DETAILS_CHARS, details.length)
+        assertTrue(details.contains("[GATT section truncated"))
+    }
+
 }

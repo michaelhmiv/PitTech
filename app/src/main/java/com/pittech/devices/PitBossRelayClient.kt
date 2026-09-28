@@ -77,7 +77,7 @@ class PitBossRelayClient : ControllerTransport {
                     }
                     _uiState.value = _uiState.value.copy(
                         stage = PitBossRelayStage.RELAY_CONNECTED,
-                        statusMessage = "Relay connected; sending the read-only RPC.Ping check.",
+                        statusMessage = "Relay connected (HTTP " + response.code + "); sending the read-only RPC.Ping check.",
                         errorMessage = null,
                     )
                     if (!webSocket.send(PitBossRelayProtocol.pingPayload(appId))) {
@@ -119,6 +119,11 @@ class PitBossRelayClient : ControllerTransport {
                 }
 
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    if (isCurrent(sessionGeneration)) {
+                        _uiState.value = _uiState.value.copy(
+                            statusMessage = "Relay closing (code " + code + "; " + safeDiagnostic(reason, 120) + ").",
+                        )
+                    }
                     webSocket.close(code, reason)
                 }
 
@@ -127,7 +132,7 @@ class PitBossRelayClient : ControllerTransport {
                     this@PitBossRelayClient.webSocket = null
                     _uiState.value = _uiState.value.copy(
                         stage = PitBossRelayStage.DISCONNECTED,
-                        statusMessage = "The relay closed the connection.",
+                        statusMessage = "Relay closed (code " + code + "; " + safeDiagnostic(reason, 120) + ").",
                     )
                 }
 
@@ -137,7 +142,11 @@ class PitBossRelayClient : ControllerTransport {
                     }
                     setFailure(
                         sessionGeneration,
-                        "Could not connect or the relay closed the session. Check the Bluetooth selection, Internet connection, and controller status.",
+                        "Could not connect or the relay closed the session. Check the Bluetooth selection, Internet connection, and controller status. " +
+                            "Transport exception=" + t.javaClass.name +
+                            "; message=" + safeDiagnostic(t.message.orEmpty(), 220) +
+                            "; HTTP response=" + (response?.code?.toString() ?: "(none)") +
+                            (response?.message?.takeIf { it.isNotBlank() }?.let { "; response message=" + safeDiagnostic(it, 120) } ?: ""),
                     )
                 }
             },
@@ -153,6 +162,9 @@ class PitBossRelayClient : ControllerTransport {
             statusMessage = "Disconnected",
         )
     }
+
+    private fun safeDiagnostic(value: String, maxChars: Int): String =
+        value.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').take(maxChars)
 
     private fun isCurrent(sessionGeneration: Long): Boolean =
         generation.get() == sessionGeneration
