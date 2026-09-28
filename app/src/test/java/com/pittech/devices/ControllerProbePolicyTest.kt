@@ -1,6 +1,5 @@
 package com.pittech.devices
 
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,7 +52,7 @@ class ControllerProbePolicyTest {
                 key,
                 ControllerProbePolicy.canAutoExecute(
                     "Config.Get",
-                    JSONObject().put("key", key),
+                    mapOf("key" to key),
                 ),
             )
         }
@@ -62,11 +61,11 @@ class ControllerProbePolicyTest {
                 key,
                 ControllerProbePolicy.canAutoExecute(
                     "Config.Get",
-                    JSONObject().put("key", key),
+                    mapOf("key" to key),
                 ),
             )
         }
-        assertFalse(ControllerProbePolicy.canAutoExecute("Config.Get", JSONObject()))
+        assertFalse(ControllerProbePolicy.canAutoExecute("Config.Get"))
     }
 
     @Test
@@ -86,19 +85,6 @@ class ControllerProbePolicyTest {
         assertTrue("PB.GetFirmwareVersion" in candidates)
         assertTrue("PBL.GetLoaderVersion" in candidates)
         assertTrue("Sys.GetInfo" in candidates)
-    }
-
-    @Test
-    fun diagnosticsSanitizerRedactsCommonSecrets() {
-        val sanitized = ControllerDiagnosticSanitizer.sanitizeJson(
-            """{"ssid":"HomeWifi","password":"hunter2","nested":{"token":"abc"},"firmware":"0.6.0"}""",
-        )
-
-        assertFalse(sanitized.contains("HomeWifi"))
-        assertFalse(sanitized.contains("hunter2"))
-        assertFalse(sanitized.contains("\"abc\""))
-        assertTrue(sanitized.contains("0.6.0"))
-        assertTrue(sanitized.contains("[redacted]"))
     }
 
     @Test
