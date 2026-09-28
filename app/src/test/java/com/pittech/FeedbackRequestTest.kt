@@ -25,9 +25,9 @@ class FeedbackRequestTest {
             diagnosticReport = report,
         ).toJson()
 
-        assertTrue(json.contains("\\\"kind\\\":\\\"FEATURE\\\""))
+        assertTrue(json.contains("\"kind\":\"BUG\""))
         assertTrue(json.contains("PT-AB12CD34"))
-        assertTrue(json.contains("\\\\\\"failed\\\\\\""))
+        assertTrue(json.contains("\\\"failed\\\""))
         assertTrue(json.contains("stack\\\\frame"))
     }
 
@@ -51,7 +51,7 @@ class FeedbackRequestTest {
             diagnosticReport = report,
         ).toJson()
 
-        assertTrue(json.contains("\\\"kind\\\":\\\"BUG\\\""))
+        assertTrue(json.contains("\"kind\":\"FEATURE\""))
         assertFalse(json.contains("diagnosticReport"))
         assertFalse(json.contains("private trace"))
     }
