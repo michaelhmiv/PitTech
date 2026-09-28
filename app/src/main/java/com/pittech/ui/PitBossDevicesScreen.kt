@@ -75,6 +75,7 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
     }
     var scanSummary by remember { mutableStateOf<BluetoothScanSummary?>(null) }
     var isScanning by remember { mutableStateOf(false) }
+    var bluetoothConnectPermissionRequested by rememberSaveable { mutableStateOf(false) }
     var scanMessage by remember { mutableStateOf<String?>(null) }
 
     var showReportDialog by remember { mutableStateOf(false) }
@@ -142,10 +143,15 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    val canScan = ContextCompat.checkSelfPermission(
+    val hasScanPermission = ContextCompat.checkSelfPermission(
         context,
         requiredScanPermission,
     ) == PackageManager.PERMISSION_GRANTED
+    val hasConnectPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.BLUETOOTH_CONNECT,
+        ) == PackageManager.PERMISSION_GRANTED
     val selectedDevice = nearbyDevices.firstOrNull { it.key == selectedDeviceKey }
     val relayIdentifier = if (selectedDevice != null) {
         selectedDevice.relayIdentifier.orEmpty()
@@ -261,7 +267,12 @@ fun PitBossDevicesScreen(modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = {
-                    if (canScan) startScan() else permissionLauncher.launch(permissionsToRequest)
+                    if (!hasScanPermission || (!hasConnectPermission && !bluetoothConnectPermissionRequested)) {
+                        bluetoothConnectPermissionRequested = true
+                        permissionLauncher.launch(permissionsToRequest)
+                    } else {
+                        startScan()
+                    }
                 },
                 enabled = !isScanning,
                 modifier = Modifier.testTag("pitboss-scan"),
