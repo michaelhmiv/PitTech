@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
@@ -45,6 +47,8 @@ import com.pittech.FeedbackKind
 @Composable
 fun SettingsScreen(
     viewModel: CooksViewModel,
+    themeMode: PitTechThemeMode,
+    onThemeModeChange: (PitTechThemeMode) -> Unit,
     temperatureUnit: String,
     weightUnit: String,
     onTemperatureUnitChange: (String) -> Unit,
@@ -58,7 +62,6 @@ fun SettingsScreen(
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
-    val importPreview by viewModel.importPreview.collectAsStateWithLifecycle()
     var savedCrashReport by remember(context) { mutableStateOf(CrashDiagnostics.savedReport(context)) }
     var feedbackKindName by rememberSaveable { mutableStateOf<String?>(null) }
     var feedbackTitle by rememberSaveable { mutableStateOf("") }
@@ -188,24 +191,34 @@ fun SettingsScreen(
         )
     }
 
-    if (importPreview != null) {
-        AlertDialog(
-            onDismissRequest = viewModel::cancelImport,
-            title = { Text("Review backup contents") },
-            text = {
-                Text("This archive contains ${importPreview!!.cookCount} cooks, ${importPreview!!.dishCount} dishes, and ${importPreview!!.photoCount} photos. PitTech will add cooks that are not already in this phone's library and skip duplicate cook IDs.")
-            },
-            confirmButton = { TextButton(onClick = viewModel::confirmImport, enabled = !busy) { Text("Restore cooks") } },
-            dismissButton = { TextButton(onClick = viewModel::cancelImport) { Text("Cancel") } },
-        )
-    }
-
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        SectionCard("Display") {
+        SectionCard("Appearance") {
+            Text("Theme", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PitTechThemeMode.values().forEach { mode ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                        modifier = Modifier.weight(1f).testTag("theme-mode-${mode.name.lowercase()}"),
+                    )
+                }
+            }
+            Text(
+                when (themeMode) {
+                    PitTechThemeMode.SYSTEM -> "PitTech follows your device appearance."
+                    PitTechThemeMode.LIGHT -> "Light appearance is selected."
+                    PitTechThemeMode.DARK -> "Dark appearance is selected."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        SectionCard("Units") {
             Text("Temperature", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("°F", "°C").forEach { unit ->
@@ -225,7 +238,10 @@ fun SettingsScreen(
 
         SectionCard("Your data") {
             Text("Cook records and photos stay on this phone. No account is needed. Save a backup somewhere you control so you can restore it after changing phones or reinstalling PitTech.", style = MaterialTheme.typography.bodyLarge)
-            Button(onClick = { zip.launch("PitTech_Backup.zip") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export complete backup (ZIP)") }
+            Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, and app preferences.", style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = { zip.launch("PitTech_Backup.zip") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Save full backup (ZIP)") }
+            OutlinedButton(onClick = { viewModel.createShareArchive() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("share-full-backup")) { Text("Share full backup (ZIP)") }
+            Text("Share opens Android's app chooser. The ZIP is sent only after you choose an app; available destinations depend on what is installed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { xlsx.launch("PitTech_Cook_Log.xlsx") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export Excel workbook") }
             OutlinedButton(onClick = { csv.launch("PitTech_Readings.csv") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export temperature readings (CSV)") }
             OutlinedButton(onClick = { restore.launch(arrayOf("application/zip", "application/x-zip-compressed")) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Restore from ZIP backup") }

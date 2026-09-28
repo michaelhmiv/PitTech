@@ -2,12 +2,16 @@ package com.pittech
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import androidx.core.content.FileProvider
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.pittech.data.CookRepository
 import com.pittech.data.CookWithDishes
 import com.pittech.data.CookReminderEntity
+import com.pittech.data.BackupPreferences
 import com.pittech.data.InsightsSnapshot
 import com.pittech.data.PitTechDataTransfer
 import com.pittech.data.TimelineEventEntity
@@ -27,12 +31,17 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class CooksViewModel(
     private val repository: CookRepository,
     private val dataTransfer: PitTechDataTransfer,
     private val context: Context,
 ) : ViewModel() {
+    init {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
+    }
+
     val cooks: StateFlow<List<CookWithDishes>> = repository.observeCooks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -70,6 +79,12 @@ class CooksViewModel(
     private val _importPreview = MutableStateFlow<PitTechDataTransfer.ImportDraft?>(null)
     val importPreview: StateFlow<PitTechDataTransfer.ImportDraft?> = _importPreview.asStateFlow()
 
+    private val _restoredPreferences = MutableStateFlow<BackupPreferences?>(null)
+    val restoredPreferences: StateFlow<BackupPreferences?> = _restoredPreferences.asStateFlow()
+
+    private val _shareArchiveUri = MutableStateFlow<Uri?>(null)
+    val shareArchiveUri: StateFlow<Uri?> = _shareArchiveUri.asStateFlow()
+
     fun openCook(cookId: String) {
         clearMessages()
         _selectedCookId.value = cookId
@@ -84,7 +99,9 @@ class CooksViewModel(
     fun consumeReminderCheckIn() { _pendingReminderId.value = null }
 
     fun startCook(draft: NewCookDraft) = perform {
-        _savedCookId.value = repository.startCook(draft)
+        val cookId = repository.startCook(draft)
+        _selectedCookId.value = cookId
+        _savedCookId.value = cookId
         _notice.value = "Cook saved on this phone."
     }
 
@@ -111,6 +128,20 @@ class CooksViewModel(
     fun addTimelineEvent(cookId: String, dishId: String?, type: String, title: String, details: String?, occurredAt: Long) = perform {
         repository.addTimelineEvent(cookId, dishId, type, title, details, occurredAt)
         _notice.value = "Entry added to the timeline."
+    }
+
+    fun addCookLogEntry(
+        cookId: String,
+        dishId: String?,
+        type: String,
+        title: String,
+        details: String?,
+        occurredAt: Long,
+        photoUri: String?,
+        photoCaption: String?,
+        onSaved: (eventId: String, photoAttached: Boolean) -> Unit,
+    ) = performWithLogResult(onSaved) {
+        repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, occurredAt, photoUri, photoCaption)
     }
 
     fun updateTimelineEvent(event: TimelineEventEntity) = perform {
@@ -205,10 +236,46 @@ class CooksViewModel(
         _notice.value = "Reminder moved to ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(dueAt))}."
     }
 
-    fun completeCookReminder(reminder: CookReminderEntity, note: String) = perform {
-        repository.completeCookReminder(reminder.id, note)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
-        _notice.value = "Check-in added to the cook timeline."
-        consumeReminderCheckIn()
+    fun completeCookReminder(
+        reminder: CookReminderEntity,
+        note: String,
+        photoUri: String?,
+        photoCaption: String?,
+        onSaved: (eventId: String, photoAttached: Boolean) -> Unit,
+    ) {
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.value = true
+            _error.value = null
+            _notice.value = null
+            try {
+                val checkIn = repository.completeCookReminder(reminder.id, note)
+                    ?: error("This reminder has already been completed or is no longer available.")
+                CookReminderNotifications.cancel(context, checkIn.reminder.id, checkIn.reminder.cookId)
+                val photoAttached = if (photoUri == null) true else try {
+                    repository.addReminderCheckInPhoto(checkIn.event.id, checkIn.reminder.cookId, photoUri, photoCaption)
+                    true
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                _notice.value = if (photoAttached) "Check-in added to the cook timeline." else "Check-in saved; its photo could not be attached."
+                consumeReminderCheckIn()
+                onSaved(checkIn.event.id, photoAttached)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _error.value = failure.message ?: "That check-in could not be saved. Try again."
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
+
+    fun attachPhotoToTimelineEvent(eventId: String, cookId: String, dishId: String?, photoUri: String, caption: String?) = perform {
+        repository.attachPhotoToTimelineEvent(eventId, cookId, dishId, photoUri, caption)
+        _notice.value = "Photo attached to the cook log."
     }
 
     fun saveResults(cookId: String, dishId: String?, finalTemp: String, unit: String, restMinutes: String, ratings: Map<String, String>, notes: String, finish: Boolean) = perform {
@@ -259,6 +326,34 @@ class CooksViewModel(
         _notice.value = "Export saved."
     }
 
+    fun createShareArchive(cookId: String? = null) = perform {
+        _shareArchiveUri.value = withContext(Dispatchers.IO) {
+            val directory = File(context.cacheDir, "exports")
+            check(directory.exists() || directory.mkdirs()) { "PitTech could not prepare a temporary backup file." }
+            pruneStaleShareArchives(directory)
+            val archive = File.createTempFile("pittech_export_", ".zip", directory)
+            try {
+                archive.outputStream().buffered().use { dataTransfer.writeZip(it, cookId) }
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", archive)
+            } catch (failure: Throwable) {
+                archive.delete()
+                throw failure
+            }
+        }
+        _notice.value = "Backup ready to share. Choose where to send it."
+    }
+
+    fun consumeShareArchive() { _shareArchiveUri.value = null }
+
+    private fun pruneStaleShareArchives(directory: File = File(context.cacheDir, "exports")) {
+        runCatching {
+            val expiry = System.currentTimeMillis() - SHARE_ARCHIVE_MAX_AGE_MILLIS
+            directory.listFiles().orEmpty()
+                .filter { it.isFile && it.extension.equals("zip", ignoreCase = true) && it.lastModified() < expiry }
+                .forEach(File::delete)
+        }
+    }
+
     fun previewImport(uri: Uri) = perform {
         _importPreview.value = withContext(Dispatchers.IO) {
             val input = context.contentResolver.openInputStream(uri) ?: error("The selected backup could not be opened.")
@@ -271,13 +366,26 @@ class CooksViewModel(
         val draft = _importPreview.value ?: return
         perform {
             val result = dataTransfer.import(draft)
-            repository.getPendingCookReminders().forEach { CookReminderNotifications.schedule(context, it) }
+            draft.preferences?.let { restored ->
+                context.getSharedPreferences(PREFERENCES_FILE, Context.MODE_PRIVATE).edit()
+                    .putString(TEMPERATURE_UNIT_KEY, restored.temperatureUnit)
+                    .putString(WEIGHT_UNIT_KEY, restored.weightUnit)
+                    .putString(THEME_MODE_KEY, restored.themeMode)
+                    .apply()
+                _restoredPreferences.value = restored
+            }
+            val pendingReminders = repository.getPendingCookReminders()
+            pendingReminders.forEach { CookReminderNotifications.schedule(context, it) }
             _importPreview.value = null
-            _notice.value = "Restored ${result.importedCooks} cooks and ${result.importedPhotos} photos. ${result.skippedCooks} duplicate cooks skipped."
+            val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+                (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            val reminderStatus = if (pendingReminders.isNotEmpty() && !notificationsEnabled) " Reminders are saved, but notifications are off so they may not alert." else ""
+            _notice.value = "Restored ${result.importedCooks} cooks and ${result.importedPhotos} photos. ${result.skippedCooks} duplicate cooks skipped.$reminderStatus"
         }
     }
 
     fun cancelImport() { _importPreview.value = null }
+    fun consumeRestoredPreferences() { _restoredPreferences.value = null }
 
     fun clearSavedCookSignal() { _savedCookId.value = null }
     fun clearMessages() { _error.value = null; _notice.value = null }
@@ -295,6 +403,8 @@ class CooksViewModel(
             try {
                 block()
                 succeeded = true
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (failure: Exception) {
                 _error.value = failure.message ?: "That change could not be saved. Try again."
             } finally {
@@ -304,10 +414,38 @@ class CooksViewModel(
         }
     }
 
+    private fun performWithLogResult(
+        onSaved: (eventId: String, photoAttached: Boolean) -> Unit,
+        block: suspend () -> com.pittech.data.CookLogSaveResult,
+    ) {
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.value = true
+            _error.value = null
+            _notice.value = null
+            try {
+                val result = block()
+                _notice.value = if (result.photoAttached) "Entry added to the timeline." else "Entry saved; its photo could not be attached."
+                onSaved(result.event.id, result.photoAttached)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _error.value = failure.message ?: "That timeline entry could not be saved. Try again."
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
+
     companion object {
         const val FORMAT_XLSX = "xlsx"
         const val FORMAT_CSV = "csv"
         const val FORMAT_ZIP = "zip"
+        private const val PREFERENCES_FILE = "pittech-preferences"
+        private const val TEMPERATURE_UNIT_KEY = "temperature-unit"
+        private const val WEIGHT_UNIT_KEY = "weight-unit"
+        private const val THEME_MODE_KEY = "theme-mode"
+        private const val SHARE_ARCHIVE_MAX_AGE_MILLIS = 24L * 60 * 60 * 1000
     }
 
     class Factory(

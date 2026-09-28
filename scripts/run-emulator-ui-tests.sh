@@ -39,6 +39,13 @@ collect_evidence_and_stop() {
   local result=$?
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
+  if (( result != 0 )); then
+    for screenshot in reminder-after-log-now timeline-edit-dialog; do
+      if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
+        timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
+      fi
+    done
+  fi
   timeout 20 adb exec-out screencap -p > "$output_dir/final-emulator-screen.png" 2>/dev/null
   if [[ -n "$emulator_pid" ]]; then
     adb emu kill >/dev/null 2>&1
@@ -139,7 +146,9 @@ done
 timeout 30 adb shell settings put global window_animation_scale 0
 timeout 30 adb shell settings put global transition_animation_scale 0
 timeout 30 adb shell settings put global animator_duration_scale 0
-timeout 30 adb shell settings put system font_scale 1.15
+font_scale="${PITTECH_FONT_SCALE:-1.15}"
+timeout 30 adb shell settings put system font_scale "$font_scale"
+echo "Using Android font scale ${font_scale}."
 
 echo "Running Compose UI tests on the booted emulator."
 app_apk="${GITHUB_WORKSPACE:-$(pwd)}/app/build/outputs/apk/debug/app-debug.apk"
@@ -199,6 +208,8 @@ else
     "test04_portableArchiveAndWorkbookRoundTrip"
     "test05_crashReportIsVisibleAndCopyable"
     "test06_cameraPhotoUriAcceptsCameraOutput"
+    "test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore"
+    "test08_zipShareIntentUsesReadOnlyContentUri"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
@@ -247,11 +258,16 @@ pull_app_screenshot() {
 
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
+pull_app_screenshot settings-dark
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."
   exit 0
 fi
+
+pull_app_screenshot cook-log-entry
+pull_app_screenshot cook-live-actions
+pull_app_screenshot reminder-check-in
 
 check_saved_diagnostic_report() {
   local checkpoint="$1"
@@ -321,7 +337,7 @@ deadline=$((SECONDS + 30))
 until (( SECONDS >= deadline )); do
   timeout 20 adb shell uiautomator dump /sdcard/pittech-window.xml >/dev/null 2>&1 || true
   timeout 20 adb exec-out cat /sdcard/pittech-window.xml > "$window_dump" 2>/dev/null || true
-  if grep -q "Saturday brisket" "$window_dump" && grep -q "Whole packer" "$window_dump"; then
+  if grep -q "Photo backup sample" "$window_dump" && grep -q "Whole packer" "$window_dump"; then
     break
   fi
   sleep 2
@@ -336,7 +352,7 @@ visible_text = " ".join(
     node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
     for node in root.iter()
 )
-expected = ("Saturday brisket", "Whole packer")
+expected = ("Photo backup sample", "Whole packer")
 missing = [value for value in expected if value not in visible_text]
 if missing:
     raise SystemExit("Cook data was not visible after crash-report recovery: " + ", ".join(missing))

@@ -3,15 +3,18 @@ package com.pittech.data
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
+import java.util.zip.ZipException
 import java.util.zip.ZipOutputStream
+import java.util.zip.ZipFile
 
 /** Portable, account-free export and restore formats for the local cook library. */
 class PitTechDataTransfer(
@@ -25,13 +28,15 @@ class PitTechDataTransfer(
 
     suspend fun writeZip(output: OutputStream, cookId: String? = null) {
         val snapshot = repository.exportSnapshot(cookId)
+        val preferences = if (cookId == null) readPreferences() else null
         ZipOutputStream(output.buffered()).use { zip ->
-            putText(zip, "manifest.json", manifest(snapshot).toString(2))
+            putText(zip, "manifest.json", manifest(snapshot, preferences).toString(2))
             putText(zip, "README.txt", README)
-            putText(zip, "data/pittech.json", snapshotJson(snapshot).toString())
+            putText(zip, "data/pittech.json", snapshotJson(snapshot, preferences).toString())
             csvTables(snapshot).forEach { (name, content) -> putText(zip, "csv/$name", content) }
             snapshot.photos.forEach { photo ->
-                val bytes = repository.readPhoto(photo.relativePath) ?: return@forEach
+                val bytes = repository.readPhoto(photo.relativePath)
+                    ?: error("The photo '${photo.originalFileName}' could not be read for backup.")
                 val extension = photo.originalFileName.substringAfterLast('.', "jpg")
                     .filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
                 putBytes(zip, "attachments/${photo.id}.$extension", bytes)
@@ -46,41 +51,93 @@ class PitTechDataTransfer(
     }
 
     fun previewImport(input: InputStream): ImportDraft {
-        val entries = linkedMapOf<String, ByteArray>()
-        var total = 0L
-        ZipInputStream(input.buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                if (!entry.isDirectory) {
-                    require(!entry.name.startsWith("/") && !entry.name.contains("..")) { "The backup contains an invalid file path." }
-                    val bytes = zip.readBounded(MAX_ARCHIVE_ENTRY_BYTES)
-                    total += bytes.size
+        val stagedArchive = File.createTempFile("pittech_restore_", ".zip", context.cacheDir)
+        try {
+            var compressedBytes = 0L
+            stagedArchive.outputStream().buffered().use { output ->
+                input.use { source ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        compressedBytes += count
+                        require(compressedBytes <= MAX_ARCHIVE_COMPRESSED_BYTES) { "This backup file is too large to inspect on this phone." }
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+
+            val entries = linkedMapOf<String, ByteArray>()
+            val seenEntries = mutableSetOf<String>()
+            var total = 0L
+            var entryCount = 0
+            ZipFile(stagedArchive).use { zip ->
+                val archiveEntries = zip.entries()
+                while (archiveEntries.hasMoreElements()) {
+                    val entry = archiveEntries.nextElement()
+                    entryCount++
+                    require(entryCount <= MAX_ARCHIVE_ENTRIES) { "This backup contains too many files." }
+                    require(isSafeArchivePath(entry.name, entry.isDirectory)) { "The backup contains an invalid file path." }
+                    require(seenEntries.add(entry.name)) { "The backup contains a duplicate file path." }
+                    require(entry.size in 0..MAX_ARCHIVE_ENTRY_BYTES.toLong()) { "A file in this backup is too large." }
+                    total += entry.size
                     require(total <= MAX_ARCHIVE_BYTES) { "This backup is too large to preview on this phone." }
-                    if (entry.name == "data/pittech.json" || entry.name.startsWith("attachments/")) {
+                    if (entry.isDirectory) continue
+
+                    val bytes = zip.getInputStream(entry).use { it.readBounded(MAX_ARCHIVE_ENTRY_BYTES) }
+                    require(bytes.size.toLong() == entry.size) { "This backup is incomplete or corrupted." }
+                    val checksum = CRC32().apply { update(bytes) }.value
+                    require(checksum == entry.crc) { "This backup is incomplete or corrupted." }
+                    if (entry.name == "manifest.json" || entry.name == "data/pittech.json" || entry.name.startsWith("attachments/")) {
                         entries[entry.name] = bytes
                     }
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
             }
+
+            val manifestBytes = entries["manifest.json"] ?: error("This ZIP does not contain a PitTech backup manifest.")
+            val manifest = JSONObject(manifestBytes.toString(Charsets.UTF_8))
+            val jsonBytes = entries["data/pittech.json"] ?: error("This ZIP does not contain a PitTech backup.")
+            val root = JSONObject(jsonBytes.toString(Charsets.UTF_8))
+            val archiveVersion = root.optInt("schemaVersion", -1)
+            require(archiveVersion in MIN_SUPPORTED_ARCHIVE_VERSION..ARCHIVE_VERSION) {
+                "This PitTech backup version is not supported by this app."
+            }
+            require(manifest.optString("format") == "PitTech complete cook archive") {
+                "This ZIP is not a PitTech cook backup."
+            }
+            require(manifest.optInt("archiveVersion", archiveVersion) == archiveVersion) {
+                "The backup manifest and cook data use different versions."
+            }
+            require(manifest.optBoolean("includesPreferences", false) == (root.optJSONObject("preferences") != null)) {
+                "The backup manifest and app preferences do not match."
+            }
+            val attachments = mutableMapOf<String, ByteArray>()
+            val snapshot = parseSnapshot(root) { photoId, archivePath ->
+                entries[archivePath]?.also { attachments[photoId] = it }
+            }
+            val preferences = parsePreferences(root.optJSONObject("preferences"))
+            return ImportDraft(
+                snapshot = snapshot,
+                attachments = attachments,
+                preferences = preferences,
+                archiveVersion = archiveVersion,
+                exportedAtUtc = manifest.optString("exportedAtUtc").takeIf { it.isNotBlank() },
+            )
+        } catch (_: ZipException) {
+            error("This backup is incomplete or corrupted.")
+        } finally {
+            stagedArchive.delete()
         }
-        val jsonBytes = entries["data/pittech.json"] ?: error("This ZIP does not contain a PitTech backup.")
-        val root = JSONObject(jsonBytes.toString(Charsets.UTF_8))
-        require(root.optInt("schemaVersion", -1) == ARCHIVE_VERSION) { "This PitTech backup version is not supported by this app." }
-        val attachments = mutableMapOf<String, ByteArray>()
-        val snapshot = parseSnapshot(root) { photoId, archivePath ->
-            entries[archivePath]?.also { attachments[photoId] = it }
-        }
-        return ImportDraft(snapshot, attachments)
     }
 
     suspend fun import(draft: ImportDraft): ImportSummary = repository.importSnapshot(draft.snapshot, draft.attachments)
 
-    private fun manifest(snapshot: ExportSnapshot) = JSONObject()
+    private fun manifest(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
         .put("format", "PitTech complete cook archive")
         .put("archiveVersion", ARCHIVE_VERSION)
         .put("exportedAtUtc", Instant.now().toString())
         .put("appVersion", "0.1.0")
+        .put("includesPreferences", preferences != null)
         .put("counts", JSONObject()
             .put("cooks", snapshot.cooks.size)
             .put("dishes", snapshot.dishes.size)
@@ -91,8 +148,14 @@ class PitTechDataTransfer(
             .put("photos", snapshot.photos.size)
             .put("reminders", snapshot.reminders.size))
 
-    private fun snapshotJson(snapshot: ExportSnapshot) = JSONObject()
+    private fun snapshotJson(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
         .put("schemaVersion", ARCHIVE_VERSION)
+        .putNullable("preferences", preferences?.let {
+            JSONObject()
+                .put("temperatureUnit", it.temperatureUnit)
+                .put("weightUnit", it.weightUnit)
+                .put("themeMode", it.themeMode)
+        })
         .put("cooks", JSONArray().apply { snapshot.cooks.forEach { put(it.toJson()) } })
         .put("dishes", JSONArray().apply { snapshot.dishes.forEach { put(it.toJson()) } })
         .put("ingredients", JSONArray().apply { snapshot.ingredients.forEach { put(it.toJson()) } })
@@ -259,19 +322,63 @@ class PitTechDataTransfer(
         data class Number(val value: String) : Cell
     }
 
-    data class ImportDraft internal constructor(val snapshot: ExportSnapshot, internal val attachments: Map<String, ByteArray>) {
+    data class ImportDraft internal constructor(
+        val snapshot: ExportSnapshot,
+        internal val attachments: Map<String, ByteArray>,
+        val preferences: BackupPreferences?,
+        val archiveVersion: Int,
+        val exportedAtUtc: String?,
+    ) {
         val cookCount: Int get() = snapshot.cooks.size
         val dishCount: Int get() = snapshot.dishes.size
         val photoCount: Int get() = snapshot.photos.size
+        val eventCount: Int get() = snapshot.events.size
+        val readingCount: Int get() = snapshot.readings.size
+        val resultCount: Int get() = snapshot.results.size
     }
 
     private companion object {
-        const val ARCHIVE_VERSION = 1
+        const val ARCHIVE_VERSION = 2
+        const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
-        const val README = "PitTech portable cook archive\n\nThe CSV files use one row per record and include stable IDs for joining related tables. Timestamps are ISO 8601 UTC; each event or reading also includes its local timestamp and time zone. Numeric measurements retain their value and explicit unit. Missing values are blank. Original photos are in attachments/. The structured data/pittech.json file preserves all records and relationships and can be restored in PitTech.\n"
+        const val MAX_ARCHIVE_COMPRESSED_BYTES = 350L * 1024L * 1024L
+        const val MAX_ARCHIVE_ENTRIES = 10_000
+        const val README = "PitTech portable cook archive\n\nThe CSV files use one row per record and include stable IDs for joining related tables. Timestamps are ISO 8601 UTC; each event or reading also includes its local timestamp and time zone. Numeric measurements retain their value and explicit unit. Original photos are in attachments/. The structured data/pittech.json file preserves all records and relationships and can be restored in PitTech. Full-library archives also preserve temperature, weight, and appearance preferences. Older schema v1 archives remain restorable.\n"
+    }
+
+    private fun readPreferences(): BackupPreferences {
+        val values = context.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE)
+        return BackupPreferences(
+            temperatureUnit = values.getString("temperature-unit", "°F")?.takeIf { it in setOf("°F", "°C") } ?: "°F",
+            weightUnit = values.getString("weight-unit", "lb")?.takeIf { it in setOf("lb", "oz", "kg", "g") } ?: "lb",
+            themeMode = values.getString("theme-mode", "SYSTEM")?.uppercase()?.takeIf { it in setOf("SYSTEM", "LIGHT", "DARK") } ?: "SYSTEM",
+        )
+    }
+
+    private fun parsePreferences(json: JSONObject?): BackupPreferences? {
+        if (json == null) return null
+        val temperatureUnit = json.optString("temperatureUnit")
+        val weightUnit = json.optString("weightUnit")
+        val themeMode = json.optString("themeMode").uppercase()
+        require(temperatureUnit in setOf("°F", "°C")) { "The backup contains an invalid temperature preference." }
+        require(weightUnit in setOf("lb", "oz", "kg", "g")) { "The backup contains an invalid weight preference." }
+        require(themeMode in setOf("SYSTEM", "LIGHT", "DARK")) { "The backup contains an invalid appearance preference." }
+        return BackupPreferences(temperatureUnit, weightUnit, themeMode)
+    }
+
+    private fun isSafeArchivePath(path: String, isDirectory: Boolean = false): Boolean {
+        val candidate = if (isDirectory) path.removeSuffix("/") else path
+        if (candidate.isBlank() || candidate.startsWith('/') || candidate.contains('\\') || candidate.contains("//")) return false
+        return candidate.split('/').none { it.isBlank() || it == "." || it == ".." }
     }
 }
+
+data class BackupPreferences(
+    val temperatureUnit: String,
+    val weightUnit: String,
+    val themeMode: String,
+)
 
 private fun JSONObject.putNullable(key: String, value: Any?): JSONObject = put(key, value ?: JSONObject.NULL)
 
@@ -422,11 +529,17 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
             name=o.string("name"), measurementType=o.string("measurementType"), source=o.string("source"), createdAtUtcMillis=o.long("createdAtUtcMillis"),
         )
     }
-    val photos = root.arrayObjects("photos").mapNotNull { o ->
+    val photos = root.arrayObjects("photos").map { o ->
         val id = o.string("id")
         require(id.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "The backup contains an invalid photo ID." }
-        val archivePath = o.stringOrNull("archivePath") ?: return@mapNotNull null
-        if (attachment(id, archivePath) == null) return@mapNotNull null
+        val archivePath = o.stringOrNull("archivePath")
+            ?: error("This backup is incomplete: a photo attachment path is missing.")
+        require(archivePath.matches(Regex("attachments/${Regex.escape(id)}\\.[A-Za-z0-9]{1,8}"))) {
+            "The backup contains an invalid photo attachment path."
+        }
+        val photoBytes = attachment(id, archivePath)
+            ?: error("This backup is incomplete: photo '${o.optString("originalFileName", "")}' is missing.")
+        require(photoBytes.isNotEmpty()) { "This backup contains an empty photo attachment." }
         val name = o.string("originalFileName")
         val extension = name.substringAfterLast('.', "jpg").filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
         PhotoEntity(
@@ -445,7 +558,33 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     }
     require(cooks.map { it.id }.distinct().size == cooks.size) { "The backup contains duplicate cook IDs." }
     val cookIds = cooks.map { it.id }.toSet()
-    require(dishes.all { it.cookId in cookIds } && events.all { it.cookId in cookIds } && readings.all { it.cookId in cookIds } && reminders.all { it.cookId in cookIds }) {
+    val dishesById = dishes.associateBy { it.id }
+    val eventsById = events.associateBy { it.id }
+    require(dishes.map { it.id }.distinct().size == dishes.size && events.map { it.id }.distinct().size == events.size) {
+        "The backup contains duplicate dish or timeline IDs."
+    }
+    require(
+        ingredients.map { it.id }.distinct().size == ingredients.size &&
+            readings.map { it.id }.distinct().size == readings.size &&
+            targets.map { it.id }.distinct().size == targets.size &&
+            results.map { it.id }.distinct().size == results.size &&
+            devices.map { it.id }.distinct().size == devices.size &&
+            probes.map { it.id }.distinct().size == probes.size &&
+            photos.map { it.id }.distinct().size == photos.size &&
+            reminders.map { it.id }.distinct().size == reminders.size
+    ) { "The backup contains duplicate record IDs." }
+    require(
+        dishes.all { it.cookId in cookIds } &&
+            ingredients.all { it.cookId in cookIds && dishesById[it.dishId]?.cookId == it.cookId } &&
+            events.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
+            readings.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
+            targets.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
+            results.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
+            devices.all { it.cookId in cookIds } &&
+            probes.all { it.cookId in cookIds && (it.deviceId == null || devices.any { device -> device.id == it.deviceId && device.cookId == it.cookId }) && (it.assignedDishId == null || dishesById[it.assignedDishId]?.cookId == it.cookId) } &&
+            photos.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && (it.eventId == null || eventsById[it.eventId]?.cookId == it.cookId) } &&
+            reminders.all { it.cookId in cookIds }
+    ) {
         "The backup has records that do not belong to a cook in this archive."
     }
     return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders)
