@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.pittech.FeedbackKind
@@ -63,13 +64,13 @@ class ControllerDiagnosticsScreenTest {
 
         assertTrue(engine.inspectionStarted)
         assertTrue(engine.protocolProbeStarted)
-        composeRule.onNodeWithText("Controller detected").assertIsDisplayed()
-        composeRule.onNodeWithText("Protocol: Mongoose OS RPC over Bluetooth").assertIsDisplayed()
-        composeRule.onNodeWithText("Controller features discovered: 3").assertIsDisplayed()
+        composeRule.onNodeWithText("Controller detected").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Protocol: Mongoose OS RPC over Bluetooth").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Controller features discovered: 3").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Test relay", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("relay ID candidate", substring = true).assertCountEquals(0)
 
-        composeRule.onNodeWithTag("controller-submit-diagnostics").performClick()
+        composeRule.onNodeWithTag("controller-submit-diagnostics").performScrollTo().performClick()
         composeRule.onNodeWithText("Review controller diagnostics").assertIsDisplayed()
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("RPC INVENTORY")
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("PBL (device suffix withheld)")
@@ -78,7 +79,7 @@ class ControllerDiagnosticsScreenTest {
         composeRule.onAllNodesWithText("Review controller diagnostics").assertCountEquals(0)
         assertEquals(null, submittedRequest)
 
-        composeRule.onNodeWithTag("controller-submit-diagnostics").performClick()
+        composeRule.onNodeWithTag("controller-submit-diagnostics").performScrollTo().performClick()
         composeRule.onNodeWithTag("controller-report-submit").performClick()
         assertEquals(FeedbackKind.DEVICE_DIAGNOSTIC, submittedRequest?.kind)
         val publicDetails = submittedRequest?.diagnosticReport?.details.orEmpty()
@@ -99,10 +100,10 @@ class ControllerDiagnosticsScreenTest {
 
         composeRule.onNodeWithTag("controller-scan").performClick()
         composeRule.onNodeWithTag("controller-candidate").performClick()
-        composeRule.onNodeWithText("Controller inspected").assertIsDisplayed()
-        composeRule.onNodeWithText("Protocol: Unknown").assertIsDisplayed()
-        composeRule.onNodeWithText("PitTech support: Not yet verified by PitTech").assertIsDisplayed()
-        composeRule.onNodeWithText("Submit controller for support").assertIsDisplayed()
+        composeRule.onNodeWithText("Controller inspected").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Protocol: Unknown").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("PitTech support: Not yet verified by PitTech").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Submit controller for support").performScrollTo().assertIsDisplayed()
     }
 }
 
