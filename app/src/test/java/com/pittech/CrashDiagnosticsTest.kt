@@ -15,6 +15,16 @@ class CrashDiagnosticsTest {
     }
 
     @Test
+    fun doesNotTreatLowMemoryReclamationAsAnAppProblem() {
+        assertFalse(
+            CrashDiagnostics.isUnexpectedExit(
+                ApplicationExitInfo.REASON_LOW_MEMORY,
+                Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+            ),
+        )
+    }
+
+    @Test
     fun reportsActionableAppExitReasons() {
         assertTrue(CrashDiagnostics.isUnexpectedExit(ApplicationExitInfo.REASON_CRASH, Build.VERSION_CODES.UPSIDE_DOWN_CAKE))
         assertTrue(CrashDiagnostics.isUnexpectedExit(ApplicationExitInfo.REASON_ANR, Build.VERSION_CODES.UPSIDE_DOWN_CAKE))
