@@ -9,34 +9,22 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class PitBossRelayProtocolTest {
-    @Test
-    fun bluetoothAdvertisedNameBecomesRelayIdentifier() {
-        assertEquals(
-            "PBL-3B22CD",
-            PitBossRelayProtocol.identifierFromBluetoothName(" pbl-3b22cd "),
-        )
-        assertEquals(null, PitBossRelayProtocol.identifierFromBluetoothName("   "))
-        assertEquals(null, PitBossRelayProtocol.identifierFromBluetoothName("Kitchen speaker"))
-    }
-
+class PitBossCloudProtocolTest {
     @Test
     fun relayUrlUsesGrillIdPathAndEncodesItAsOneSegment() {
         assertEquals(
             "wss://socket.dansonscorp.com/to/grill%20one%2Fpart",
-            PitBossRelayProtocol.webSocketUrl(" grill one/part "),
+            PitBossCloudProtocol.webSocketUrl(" grill one/part "),
         )
         assertEquals(
             "wss://socket.dansonscorp.com/to/PBL-3B22CD",
-            PitBossRelayProtocol.webSocketUrl(
-                PitBossRelayProtocol.identifierFromBluetoothName("pbl-3b22cd")!!,
-            ),
+            PitBossCloudProtocol.webSocketUrl("PBL-3B22CD"),
         )
     }
 
     @Test
     fun pingPayloadUsesRpcPingAndSessionId() {
-        val payload = JSONObject(PitBossRelayProtocol.pingPayload("abc123"))
+        val payload = JSONObject(PitBossCloudProtocol.pingPayload("abc123"))
         assertEquals(1, payload.getInt("id"))
         assertEquals("RPC.Ping", payload.getString("method"))
         assertEquals("abc123", payload.getString("app_id"))
@@ -45,20 +33,20 @@ class PitBossRelayProtocolTest {
 
     @Test
     fun statusFrameIsRecognizedAndPasswordLikeFieldsAreRedacted() {
-        val message = PitBossRelayProtocol.inspectMessage(
+        val message = PitBossCloudProtocol.inspectMessage(
             """{"status":["FE0B00"],"data":{"psw":"private-grill-value","probe":1}}""",
         )
 
-        assertEquals(PitBossRelayMessageKind.CONTROLLER_STATUS, message.kind)
+        assertEquals(PitBossCloudMessageKind.CONTROLLER_STATUS, message.kind)
         assertTrue(message.safeJson.contains("[redacted]"))
         assertFalse(message.safeJson.contains("private-grill-value"))
     }
 
     @Test
     fun malformedFramesAreNotEchoedIntoTheDebugScreen() {
-        val message = PitBossRelayProtocol.inspectMessage("secret-that-is-not-json")
+        val message = PitBossCloudProtocol.inspectMessage("secret-that-is-not-json")
 
-        assertEquals(PitBossRelayMessageKind.MALFORMED, message.kind)
+        assertEquals(PitBossCloudMessageKind.MALFORMED, message.kind)
         assertFalse(message.safeJson.contains("secret-that-is-not-json"))
     }
 }

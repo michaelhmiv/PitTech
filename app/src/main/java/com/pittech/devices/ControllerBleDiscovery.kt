@@ -20,7 +20,6 @@ data class NearbyBluetoothDevice(
     val advertisedName: String?,
     val address: String?,
     val rssi: Int,
-    val relayIdentifier: String?,
     val advertisements: List<BluetoothAdvertisementVariant>,
     val omittedAdvertisementVariants: Int,
 ) {
@@ -69,7 +68,7 @@ data class BluetoothScanSummary(
  * during a short scan so a user can report an unverified device for support.
  * The report UI sends only the device the user chooses.
  */
-class PitBossBleDiscovery(context: Context) {
+class ControllerBleDiscovery(context: Context) {
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private var activeScanner: BluetoothLeScanner? = null
@@ -319,7 +318,6 @@ class PitBossBleDiscovery(context: Context) {
             advertisedName = advertisedName,
             address = address,
             rssi = rssi,
-            relayIdentifier = advertisedName?.let(PitBossRelayProtocol::identifierFromBluetoothName),
             advertisements = variants.values.map { it.toSnapshot() },
             omittedAdvertisementVariants = omittedAdvertisementVariants,
         )

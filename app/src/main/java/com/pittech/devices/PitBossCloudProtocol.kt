@@ -6,13 +6,13 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /**
- * Small, read-only Pit Boss relay protocol probe.
+ * Small, read-only Pit Boss vendor-cloud protocol adapter.
  *
  * This is an independent Kotlin implementation informed by public protocol
  * observations and the Apache-2.0 pytboss project. It intentionally exposes
  * only RPC.Ping; it does not provide grill-control commands.
  */
-enum class PitBossRelayMessageKind(val title: String) {
+enum class PitBossCloudMessageKind(val title: String) {
     CONTROLLER_STATUS("Controller status"),
     RPC_RESPONSE("RPC response"),
     RPC_ERROR("RPC error"),
@@ -20,27 +20,14 @@ enum class PitBossRelayMessageKind(val title: String) {
     MALFORMED("Unparseable message"),
 }
 
-data class PitBossRelayMessage(
-    val kind: PitBossRelayMessageKind,
+data class PitBossCloudMessage(
+    val kind: PitBossCloudMessageKind,
     val safeJson: String,
 )
 
-object PitBossRelayProtocol {
+object PitBossCloudProtocol {
     private const val HOST = "socket.dansonscorp.com"
     const val PING_REQUEST_ID = 1
-
-    /**
-     * Pit Boss BLE advertisements use the controller's device ID as their
-     * local name. Keep the advertised name as the relay ID, normalized to the
-     * uppercase form used by the vendor app.
-     */
-    fun identifierFromBluetoothName(advertisedName: String): String? {
-        val normalized = advertisedName.trim().uppercase()
-        if (normalized.isBlank() || normalized.startsWith("-") || normalized.endsWith("-")) {
-            return null
-        }
-        return normalized.takeIf { it.contains('-') }
-    }
 
     fun webSocketUrl(grillId: String): String {
         val normalizedId = grillId.trim()
@@ -67,21 +54,21 @@ object PitBossRelayProtocol {
             .toString()
     }
 
-    fun inspectMessage(raw: String): PitBossRelayMessage {
+    fun inspectMessage(raw: String): PitBossCloudMessage {
         return try {
             val json = JSONObject(raw)
             val kind = when {
-                json.has("status") -> PitBossRelayMessageKind.CONTROLLER_STATUS
-                json.has("error") -> PitBossRelayMessageKind.RPC_ERROR
-                json.has("id") && json.has("result") -> PitBossRelayMessageKind.RPC_RESPONSE
-                else -> PitBossRelayMessageKind.OTHER
+                json.has("status") -> PitBossCloudMessageKind.CONTROLLER_STATUS
+                json.has("error") -> PitBossCloudMessageKind.RPC_ERROR
+                json.has("id") && json.has("result") -> PitBossCloudMessageKind.RPC_RESPONSE
+                else -> PitBossCloudMessageKind.OTHER
             }
             redactSensitiveValues(json)
-            PitBossRelayMessage(kind, json.toString(2))
+            PitBossCloudMessage(kind, json.toString(2))
         } catch (_: JSONException) {
             // Never show an unparseable raw frame; it may contain sensitive data.
-            PitBossRelayMessage(
-                PitBossRelayMessageKind.MALFORMED,
+            PitBossCloudMessage(
+                PitBossCloudMessageKind.MALFORMED,
                 "Received an unparseable message (" + raw.length + " characters).",
             )
         }

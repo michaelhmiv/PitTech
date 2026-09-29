@@ -283,6 +283,11 @@ fun CookDetailScreen(
                     else -> null
                 },
                 withDismissAction = true,
+                duration = if (retryAvailable || notice!!.contains("deleted", ignoreCase = true)) {
+                    androidx.compose.material3.SnackbarDuration.Indefinite
+                } else {
+                    androidx.compose.material3.SnackbarDuration.Short
+                },
             )
             if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                 if (retryAvailable && retry != null) {

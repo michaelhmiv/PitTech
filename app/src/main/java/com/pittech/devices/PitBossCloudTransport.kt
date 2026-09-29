@@ -12,7 +12,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-enum class PitBossRelayStage {
+enum class PitBossCloudStage {
     DISCONNECTED,
     CONNECTING,
     RELAY_CONNECTED,
@@ -20,23 +20,23 @@ enum class PitBossRelayStage {
     ERROR,
 }
 
-data class PitBossRelayLogEntry(
+data class PitBossCloudLogEntry(
     val title: String,
     val safeJson: String,
 )
 
-data class PitBossRelayUiState(
-    val stage: PitBossRelayStage = PitBossRelayStage.DISCONNECTED,
+data class PitBossCloudUiState(
+    val stage: PitBossCloudStage = PitBossCloudStage.DISCONNECTED,
     val statusMessage: String = "Not connected",
     val errorMessage: String? = null,
     val controllerStatusSeen: Boolean = false,
-    val recentMessages: List<PitBossRelayLogEntry> = emptyList(),
+    val recentMessages: List<PitBossCloudLogEntry> = emptyList(),
 )
 
-class PitBossRelayClient : ControllerTransport {
+class PitBossCloudTransport : ControllerTransport {
     private val generation = AtomicLong(0L)
-    private val _uiState = MutableStateFlow(PitBossRelayUiState())
-    val uiState: StateFlow<PitBossRelayUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(PitBossCloudUiState())
+    val uiState: StateFlow<PitBossCloudUiState> = _uiState.asStateFlow()
 
     @Volatile
     private var webSocket: WebSocket? = null
@@ -48,19 +48,19 @@ class PitBossRelayClient : ControllerTransport {
         webSocket = null
 
         val socketUrl = try {
-            PitBossRelayProtocol.webSocketUrl(grillId)
+            PitBossCloudProtocol.webSocketUrl(grillId)
         } catch (error: IllegalArgumentException) {
-            _uiState.value = PitBossRelayUiState(
-                stage = PitBossRelayStage.ERROR,
+            _uiState.value = PitBossCloudUiState(
+                stage = PitBossCloudStage.ERROR,
                 statusMessage = error.message ?: "Enter a valid grill ID.",
             )
             return
         }
 
         val appId = UUID.randomUUID().toString().substringAfterLast('-')
-        _uiState.value = PitBossRelayUiState(
-            stage = PitBossRelayStage.CONNECTING,
-            statusMessage = "Connecting to the Pit Boss relay…",
+        _uiState.value = PitBossCloudUiState(
+            stage = PitBossCloudStage.CONNECTING,
+            statusMessage = "Connecting to the optional Pit Boss cloud transport…",
         )
 
         val request = Request.Builder()
@@ -76,28 +76,28 @@ class PitBossRelayClient : ControllerTransport {
                         return
                     }
                     _uiState.value = _uiState.value.copy(
-                        stage = PitBossRelayStage.RELAY_CONNECTED,
+                        stage = PitBossCloudStage.RELAY_CONNECTED,
                         statusMessage = "Relay connected (HTTP " + response.code + "); sending the read-only RPC.Ping check.",
                         errorMessage = null,
                     )
-                    if (!webSocket.send(PitBossRelayProtocol.pingPayload(appId))) {
+                    if (!webSocket.send(PitBossCloudProtocol.pingPayload(appId))) {
                         setFailure(sessionGeneration, "Could not send the Ping check.")
                     }
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     if (!isCurrent(sessionGeneration)) return
-                    val message = PitBossRelayProtocol.inspectMessage(text)
+                    val message = PitBossCloudProtocol.inspectMessage(text)
                     val current = _uiState.value
                     val sawControllerStatus =
                         current.controllerStatusSeen ||
-                            message.kind == PitBossRelayMessageKind.CONTROLLER_STATUS
+                            message.kind == PitBossCloudMessageKind.CONTROLLER_STATUS
                     val pingResponded =
-                        message.kind == PitBossRelayMessageKind.RPC_RESPONSE
+                        message.kind == PitBossCloudMessageKind.RPC_RESPONSE
 
                     _uiState.value = current.copy(
                         stage = if (pingResponded || sawControllerStatus) {
-                            PitBossRelayStage.RPC_RESPONDED
+                            PitBossCloudStage.RPC_RESPONDED
                         } else {
                             current.stage
                         },
@@ -106,14 +106,14 @@ class PitBossRelayClient : ControllerTransport {
                             pingResponded -> "The relay returned an RPC response."
                             else -> current.statusMessage
                         },
-                        errorMessage = if (message.kind == PitBossRelayMessageKind.RPC_ERROR) {
+                        errorMessage = if (message.kind == PitBossCloudMessageKind.RPC_ERROR) {
                             "The RPC returned an error. See the redacted frame below."
                         } else {
                             current.errorMessage
                         },
                         controllerStatusSeen = sawControllerStatus,
                         recentMessages = (listOf(
-                            PitBossRelayLogEntry(message.kind.title, message.safeJson),
+                            PitBossCloudLogEntry(message.kind.title, message.safeJson),
                         ) + current.recentMessages).take(MAX_RECENT_MESSAGES),
                     )
                 }
@@ -129,16 +129,16 @@ class PitBossRelayClient : ControllerTransport {
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     if (!isCurrent(sessionGeneration)) return
-                    this@PitBossRelayClient.webSocket = null
+                    this@PitBossCloudTransport.webSocket = null
                     _uiState.value = _uiState.value.copy(
-                        stage = PitBossRelayStage.DISCONNECTED,
+                        stage = PitBossCloudStage.DISCONNECTED,
                         statusMessage = "Relay closed (code " + code + "; " + safeDiagnostic(reason, 120) + ").",
                     )
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    if (this@PitBossRelayClient.webSocket === webSocket) {
-                        this@PitBossRelayClient.webSocket = null
+                    if (this@PitBossCloudTransport.webSocket === webSocket) {
+                        this@PitBossCloudTransport.webSocket = null
                     }
                     setFailure(
                         sessionGeneration,
@@ -157,8 +157,8 @@ class PitBossRelayClient : ControllerTransport {
         generation.incrementAndGet()
         webSocket?.close(1000, "PitTech test disconnected")
         webSocket = null
-        _uiState.value = PitBossRelayUiState(
-            stage = PitBossRelayStage.DISCONNECTED,
+        _uiState.value = PitBossCloudUiState(
+            stage = PitBossCloudStage.DISCONNECTED,
             statusMessage = "Disconnected",
         )
     }
@@ -172,7 +172,7 @@ class PitBossRelayClient : ControllerTransport {
     private fun setFailure(sessionGeneration: Long, message: String) {
         if (!isCurrent(sessionGeneration)) return
         _uiState.value = _uiState.value.copy(
-            stage = PitBossRelayStage.ERROR,
+            stage = PitBossCloudStage.ERROR,
             statusMessage = "Connection test failed.",
             errorMessage = message,
         )

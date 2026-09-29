@@ -56,10 +56,14 @@ jobs:
         with:
           gradle-version: '9.6.1'
 
-      - name: Run JVM tests and build debug, instrumented, and unsigned regular app
-        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease
+      - name: Run JVM tests and build debug and instrumented apps
+        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest
 
-      # Keep this in a separate Gradle invocation because Room KSP variants share the schema output directory.
+      # Room KSP variants share app/schemas. Keep every non-debug variant in its
+      # own Gradle invocation so parallel KSP tasks cannot read a half-written schema.
+      - name: Build unsigned regular app
+        run: gradle assembleRelease
+
       - name: Build Firebase Dev variant
         run: gradle assembleDev
 

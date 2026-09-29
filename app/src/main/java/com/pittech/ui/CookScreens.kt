@@ -269,11 +269,11 @@ fun PitTechApp(
                 modifier = Modifier.padding(padding),
             )
             MainSection.DEVICES -> if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                PitBossDevicesScreen(modifier = Modifier.padding(padding))
+                ControllerDiagnosticsScreen(modifier = Modifier.padding(padding))
             } else {
                 FeaturePlaceholder(
                     title = "Devices",
-                    message = "Controller connection testing is available in PitTech's test build.",
+                    message = "Controller diagnostics are available in PitTech's test build.",
                     note = "You can still log temperatures by hand from any cook.",
                     modifier = Modifier.padding(padding),
                 )

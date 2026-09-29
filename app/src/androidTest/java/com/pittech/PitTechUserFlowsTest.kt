@@ -97,9 +97,10 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-devices").performClick()
-        composeRule.onNodeWithText("Controller connection test").assertIsDisplayed()
-        composeRule.onNodeWithTag("pitboss-scan").assertExists()
-        composeRule.onNodeWithTag("pitboss-connect").assertExists()
+        composeRule.onNodeWithText("Controller diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithText("No grill settings are changed during inspection. Nothing is shared unless you review and submit a support report.").assertIsDisplayed()
+        composeRule.onNodeWithTag("controller-scan").assertIsDisplayed().assertHeightIsAtLeast(56.dp)
+        composeRule.onNodeWithText("Scan for controllers").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
