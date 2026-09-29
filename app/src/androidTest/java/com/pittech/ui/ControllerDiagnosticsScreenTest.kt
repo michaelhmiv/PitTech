@@ -72,9 +72,9 @@ class ControllerDiagnosticsScreenTest {
 
         composeRule.onNodeWithTag("controller-submit-diagnostics").performScrollTo().performClick()
         composeRule.onNodeWithText("Review controller diagnostics").assertIsDisplayed()
-        composeRule.onNodeWithTag("controller-report-preview").assertTextContains("RPC INVENTORY")
-        composeRule.onNodeWithTag("controller-report-preview").assertTextContains("PBL (device suffix withheld)")
-        composeRule.onNodeWithTag("controller-report-preview").assertTextContains("sha256=")
+        composeRule.onNodeWithTag("controller-report-preview").assertTextContains("RPC INVENTORY", substring = true)
+        composeRule.onNodeWithTag("controller-report-preview").assertTextContains("PBL (device suffix withheld)", substring = true)
+        composeRule.onNodeWithTag("controller-report-preview").assertTextContains("sha256=", substring = true)
         composeRule.onNodeWithTag("controller-report-cancel").performClick()
         composeRule.onAllNodesWithText("Review controller diagnostics").assertCountEquals(0)
         assertEquals(null, submittedRequest)
