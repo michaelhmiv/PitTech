@@ -86,7 +86,9 @@ class ControllerDiagnosticsScreenTest {
         assertTrue(publicDetails.contains("RPC INVENTORY"))
         assertFalse(publicDetails.contains("AA:BB:CC:DD:EE:FF"))
         assertTrue(publicDetails.contains("Session device ID:"))
-        composeRule.onNodeWithText("Controller diagnostics submitted as GitHub issue #812.").assertIsDisplayed()
+        composeRule.onNodeWithText("Controller diagnostics submitted as GitHub issue #812.")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
