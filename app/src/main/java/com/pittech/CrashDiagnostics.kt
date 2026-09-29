@@ -178,6 +178,8 @@ internal object CrashDiagnostics {
         saveReport(application, report)
     }
 
+    // Android can reclaim cached processes under memory pressure as normal lifecycle behavior.
+    // That exit should not trigger the blocking crash-recovery screen on the next launch.
     internal fun isUnexpectedExit(
         reason: Int,
         sdkInt: Int = Build.VERSION.SDK_INT,
@@ -186,7 +188,6 @@ internal object CrashDiagnostics {
         ApplicationExitInfo.REASON_CRASH_NATIVE,
         ApplicationExitInfo.REASON_ANR,
         ApplicationExitInfo.REASON_INITIALIZATION_FAILURE,
-        ApplicationExitInfo.REASON_LOW_MEMORY,
         ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE,
         ApplicationExitInfo.REASON_DEPENDENCY_DIED -> true
         else -> sdkInt >= Build.VERSION_CODES.TIRAMISU &&
