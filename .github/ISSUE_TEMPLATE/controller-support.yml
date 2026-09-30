@@ -1,0 +1,96 @@
+name: Controller support
+description: Report a grill or smoker controller that PitTech cannot find, connect to, or understand.
+title: "[Controller support]: "
+labels:
+  - device-diagnostics
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Controller support issues are public. Do not include a Bluetooth address, serial number, Wi-Fi name or password, account details, QR code, or unredacted system logs. If the PitTech diagnostics screen is available to you, preview its generated report and paste that sanitized report below. Otherwise, fill in what you can.
+  - type: input
+    id: manufacturer
+    attributes:
+      label: Controller manufacturer
+      description: Use the brand printed on the controller or grill. Enter "Unknown" if you cannot tell.
+      placeholder: Pit Boss
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Controller or grill model
+      description: Share the public model name/number only. Leave out serial numbers.
+      placeholder: Model printed on the product label
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Controller firmware version
+      description: If the controller or its companion app shows a firmware version, enter it here.
+      placeholder: Unknown
+    validations:
+      required: false
+  - type: dropdown
+    id: failure_stage
+    attributes:
+      label: Where does support fail?
+      options:
+        - PitTech does not find the controller
+        - PitTech finds it but cannot connect
+        - Connected, but service/characteristic inspection fails
+        - Connected, but controller information is missing or unclear
+        - Temperature readings are unavailable or incorrect
+        - A supported action does not work as expected
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: pittech_build
+    attributes:
+      label: PitTech version/build
+      description: If a diagnostic report is pasted below, this is already included there.
+      placeholder: Version name or Unknown
+    validations:
+      required: false
+  - type: input
+    id: android_device
+    attributes:
+      label: Android phone and version
+      description: If a diagnostic report is pasted below, this is already included there.
+      placeholder: Phone model and Android version
+    validations:
+      required: false
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: What did you expect, and what happened?
+      description: Include the screen/step where it happened and any visible error text. Do not paste raw logs here.
+      placeholder: "Expected: ...\nObserved: ..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include controller power/state and the steps you took. Do not include private network details.
+      placeholder: "1. Power on the controller...\n2. Open PitTech..."
+    validations:
+      required: false
+  - type: textarea
+    id: sanitized_diagnostics
+    attributes:
+      label: Sanitized PitTech controller diagnostics
+      description: In a PitTech debug/Firebase Dev build, open Devices, run controller diagnostics, review the report, then paste the complete report here. If you cannot access diagnostics, leave this blank. The report is useful even when the connection or inspection failed.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy_review
+    attributes:
+      label: Public information review
+      options:
+        - label: I checked this issue and removed Bluetooth addresses, serial numbers, Wi-Fi names/passwords, account details, and other private information.
+          required: true
+
