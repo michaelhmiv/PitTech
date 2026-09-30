@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.pittech.FeedbackKind
@@ -28,6 +29,10 @@ import com.pittech.devices.ControllerProtocolDetector
 import com.pittech.devices.ControllerProtocolFamily
 import com.pittech.devices.ControllerTransportCapability
 import com.pittech.devices.ControllerTransportType
+import com.pittech.devices.GrillirGProtocol
+import com.pittech.devices.GrillirGSetupEngine
+import com.pittech.devices.GrillirGSetupSnapshot
+import com.pittech.devices.GrillirGSetupStage
 import com.pittech.devices.NearbyBluetoothDevice
 import com.pittech.devices.ProbeStepState
 import com.pittech.devices.RpcProbeObservation
@@ -107,6 +112,80 @@ class ControllerDiagnosticsScreenTest {
         composeRule.onNodeWithText("PitTech support: Not yet verified by PitTech").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Submit controller for support").performScrollTo().assertIsDisplayed()
     }
+
+    @Test
+    fun grillirgWifiSetupShowsNetworksAndRequiresConfirmationBeforeSendingPassword() {
+        val engine = FakeGrillirGSetupEngine()
+        composeRule.setContent {
+            PitTechTheme {
+                GrillirGWifiSetupPanel(
+                    address = "AA:BB:CC:DD:EE:FF",
+                    onClose = {},
+                    engineOverride = engine,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("grillirg-scan-wifi").performClick()
+        assertEquals("AA:BB:CC:DD:EE:FF", engine.startedAddress)
+        composeRule.onNodeWithText("PitTech-Setup-Test").assertIsDisplayed()
+        composeRule.onNodeWithTag("grillirg-network-010203040506").performClick()
+        composeRule.onNodeWithTag("grillirg-password").performTextInput("local-test-password")
+        composeRule.onNodeWithTag("grillirg-configure-network").performClick()
+
+        composeRule.onNodeWithText("Send Wi-Fi details to the controller?").assertIsDisplayed()
+        assertEquals(null, engine.submittedPassword)
+        composeRule.onNodeWithTag("grillirg-confirm-provision").performClick()
+
+        assertEquals("PitTech-Setup-Test", engine.submittedNetwork?.ssid)
+        assertEquals("local-test-password", engine.submittedPassword)
+        composeRule.onNodeWithTag("grillirg-setup-status")
+            .assertTextContains("Waiting for the fake controller result", substring = true)
+    }
+}
+
+private class FakeGrillirGSetupEngine : GrillirGSetupEngine {
+    override val requiresBluetoothPermissions: Boolean = false
+    var startedAddress: String? = null
+    var submittedNetwork: GrillirGProtocol.WifiNetwork? = null
+    var submittedPassword: String? = null
+    private var onUpdate: ((GrillirGSetupSnapshot) -> Unit)? = null
+    private val network = GrillirGProtocol.WifiNetwork(
+        signalIndicator = 90,
+        rssiRaw = 45,
+        authMode = 3,
+        cipher = 4,
+        groupCipher = 4,
+        primaryChannel = 6,
+        bssid = byteArrayOf(1, 2, 3, 4, 5, 6),
+        ssid = "PitTech-Setup-Test",
+    )
+
+    override fun start(address: String, onUpdate: (GrillirGSetupSnapshot) -> Unit) {
+        startedAddress = address
+        this.onUpdate = onUpdate
+        onUpdate(
+            GrillirGSetupSnapshot(
+                stage = GrillirGSetupStage.NETWORKS_READY,
+                message = "Found 1 Wi-Fi network(s).",
+                networks = listOf(network),
+            ),
+        )
+    }
+
+    override fun provision(network: GrillirGProtocol.WifiNetwork, password: String) {
+        submittedNetwork = network
+        submittedPassword = password
+        onUpdate?.invoke(
+            GrillirGSetupSnapshot(
+                stage = GrillirGSetupStage.WAITING_FOR_WIFI,
+                message = "Waiting for the fake controller result…",
+                networks = listOf(this.network),
+            ),
+        )
+    }
+
+    override fun close() = Unit
 }
 
 private class FakeControllerDiagnosticsEngine(
