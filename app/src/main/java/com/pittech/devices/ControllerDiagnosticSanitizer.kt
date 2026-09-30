@@ -32,7 +32,7 @@ internal object ControllerDiagnosticSanitizer {
     private val namedMacValue = Regex(
         """(?i)([\"']?(?:bluetooth[_-]?address|device[_-]?address|mac(?:[_-]?address)?|address)[\"']?\s*[:=]\s*)([\"']?)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\2""",
     )
-    private val recognizedNamePrefix = Regex("(?i)^(pit\\s?boss|pitboss|pbl|mongoose|dansons)(?:$|[-_\\s].*)")
+    private val recognizedNamePrefix = Regex("(?i)^(iFireTech|pit\\s?boss|pitboss|pbl|mongoose|dansons)(?:$|[-_\\s0-9].*)")
 
     /** Sanitizes JSON keys and string values recursively without changing its structure. */
     fun sanitizeJson(raw: String, maxChars: Int = MAX_TEXT_CHARS): String {

@@ -68,6 +68,26 @@ Before a controller report can be submitted:
 
 The report includes a stable capability fingerprint derived from non-secret discovery/protocol evidence so later captures can be compared without publishing the Bluetooth address. Firmware/system responses and RPC inventories remain visible after sanitization because they are especially useful for adding support.
 
+## GitHub support intake
+
+Use the **Controller support** issue form for users who cannot share a chat. Ask for the controller brand/model, PitTech and Android versions, the last Bluetooth stage that worked, what they expected, what happened, and reproducible steps. Capture exact error text and any separate tests from Windows or another phone, including the OS version and whether the test was scanning, pairing in system settings, connecting over BLE, or reading GATT services. If the in-app Controller diagnostics flow is available, users can submit its reviewed report and link the generated issue instead of copying the report into a second issue.
+
+### Interpreting a pairing failure
+
+Do not treat "pairing failed" as a complete Bluetooth diagnosis. A scan finding an advertisement, pairing in the operating system's settings, opening a direct BLE/GATT connection, discovering services, reading characteristics, receiving notifications, and exchanging app commands are distinct steps. A failure in Windows Settings alone does not establish that the controller is absent or that PitTech cannot connect. Record the host OS/build, Bluetooth adapter if known, controller state, exact screen/error, and the furthest stage reached. Do not ask users to provision Wi-Fi or send undocumented vendor writes as a pairing workaround.
+
+GitHub issues are public. The form reminds users to review reports and exclude Bluetooth addresses, serial numbers, Wi-Fi names/passwords, account details, and other identifying information. For GATT reads, public reports retain UUIDs, byte counts, and value fingerprints; arbitrary characteristic text is withheld. A recognized family name may be retained with its suffix removed.
+
+## Current hardware lead (unverified)
+
+The user-submitted [controller report #32](https://github.com/michaelhmiv/PitTech/issues/32) records a successful direct BLE connection and five successful GATT reads from an iFireTech-family device on a Pixel 8 Pro running Android 17. The GATT tree included standard Generic Access and Generic Attribute services plus vendor services `000000ff-0000-1000-8000-00805f9b34fb` and `000000fe-0000-1000-8000-00805f9b34fb`. The vendor write/notify characteristic was `0000ff01-0000-1000-8000-00805f9b34fb`; the readable characteristic was `0000ff02-0000-1000-8000-00805f9b34fb` under service `000000fe-0000-1000-8000-00805f9b34fb`. No Mongoose RPC service or RPC methods were found, and no notification payloads arrived during the bounded observation.
+
+The report's initial read sequence succeeded, but the GATT session later disconnected with status 257 during passive notification observation. This does not establish stable connection behavior, temperature-read capability, or the meaning of the vendor characteristics. The inspection did not send an application payload to the vendor write characteristic; notification setup uses the CCCD only. Treat the opaque value read from the vendor service as private until its meaning is established.
+
+iFire-Tech's [P7-PRO-WiFi manual](https://ifire-tech.com/assets/pdf/P7PRO-W.pdf) lists Austin XL compatibility and describes Bluetooth device pairing, Wi-Fi setup, real-time monitoring, and remote temperature adjustment. The GATT name identifies the iFireTech family but does not identify this exact controller model. Record this as a promising hardware lead, not a verified support profile. Do not attempt vendor-characteristic writes until their protocol and effects are known.
+
+A follow-up Windows-hosted BLE probe found one matching family advertisement among eight nearby BLE devices (RSSI about -92 dBm). It connected directly without requesting OS pairing, discovered the same four services and seven characteristics, and successfully read all five readable characteristics; the value fingerprints matched report #32. This shows direct GATT access can work separately from Windows Settings pairing. The `0000ff01` vendor characteristic advertises write and notify properties, but no vendor write or notification subscription was attempted. No live temperature field or command semantics have been identified. The Windows build and adapter model were not captured, and the weak signal plus one short session do not establish reliable range or connection stability.
+
 ## Verification
 
 A controller is not officially supported merely because it resembles a known model or protocol. A verified profile is added only after physical hardware testing proves discovery, connection, state reads, and any supported control operations are reliable.
