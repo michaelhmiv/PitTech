@@ -32,7 +32,10 @@ internal object ControllerProbeDiagnostics {
                 appendLine("Phone model: ${phoneModel ?: "(not reported)"}")
                 appendLine("Probe-engine version: ${ControllerSupportRegistry.CURRENT_PROBE_VERSION}")
                 appendLine("Session reference: ${referenceCode ?: "(not assigned)"}")
-                appendLine("Total BLE results: ${summary.totalResults}")
+                appendLine("Bluetooth scan mode: ${summary.scanMode}")
+                appendLine("Total scan results: ${summary.totalResults}")
+                appendLine("BLE advertisement results: ${summary.bleResultCount}")
+                appendLine("Android adapter discovery results: ${summary.adapterDiscoveryResultCount}")
                 appendLine("Distinct nearby devices retained locally: ${summary.capturedDeviceCount}")
                 appendLine("Scan error: ${summary.error ?: "none"}")
             }.trimEnd(),
@@ -51,6 +54,12 @@ internal object ControllerProbeDiagnostics {
                 100,
                 buildString {
                     appendLine("Advertised name: ${ControllerDiagnosticSanitizer.sanitizeAdvertisedName(selectedDevice.advertisedName)}")
+                    appendLine("Android device name: ${ControllerDiagnosticSanitizer.sanitizeAdvertisedName(selectedDevice.adapterName)}")
+                    appendLine(
+                        "Discovery paths: " +
+                            selectedDevice.discoveryPaths.sortedBy { it.ordinal }.joinToString { it.displayLabel },
+                    )
+                    appendLine("Android Bluetooth device type: ${selectedDevice.bluetoothDeviceType ?: "(not reported)"}")
                     appendLine("Session device ID: ${sessionDeviceId(selectedDevice.address, summary.startedAtUtc)}")
                     appendLine("Stable capability fingerprint: ${fingerprint.value}")
                     appendLine("Stable evidence signals: ${fingerprint.stableSignals.size}")
@@ -58,8 +67,12 @@ internal object ControllerProbeDiagnostics {
                         "PitTech support status: " +
                             ControllerSupportRegistry.label(selectedDevice, inspection, probe),
                     )
-                    appendLine("Latest RSSI (dBm): ${selectedDevice.rssi}")
-                    appendLine("Captured advertisement observations: ${selectedDevice.observationCount}")
+                    appendLine(
+                        "Latest RSSI (dBm): " +
+                            selectedDevice.rssi.takeUnless { it == Int.MIN_VALUE }?.toString().orEmpty()
+                                .ifBlank { "(not reported)" },
+                    )
+                    appendLine("Captured BLE advertisement observations: ${selectedDevice.observationCount}")
                 }.trimEnd(),
             )
 

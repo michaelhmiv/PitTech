@@ -194,7 +194,7 @@ internal fun ControllerDiagnosticsScreen(
         probeReport = null
         probeStatus = null
         scanMessage = "Scanning nearby Bluetooth devices…"
-        recordSessionEvent("Generic BLE scan started.")
+        recordSessionEvent("BLE advertisement and Android adapter discovery started.")
 
         engine.startScan(
             onDevices = { nearbyDevices = it },
@@ -204,11 +204,14 @@ internal fun ControllerDiagnosticsScreen(
                 scanMessage = message ?: if (nearbyDevices.isEmpty()) {
                     "No Bluetooth devices were detected."
                 } else {
-                    "Found ${nearbyDevices.size} Bluetooth device(s). Select the controller to interrogate it automatically."
+                    "Found ${nearbyDevices.size} Bluetooth device(s). Select the controller to interrogate it automatically." +
+                        (summary.error?.let { " Scan detail: $it" } ?: "")
                 }
                 recordSessionEvent(
-                    "BLE scan finished; results=${summary.totalResults}, " +
-                        "retained=${summary.capturedDeviceCount}, omitted=${summary.omittedDeviceCount}.",
+                    "Bluetooth discovery finished; mode=${summary.scanMode}, " +
+                        "BLE-results=${summary.bleResultCount}, adapter-results=${summary.adapterDiscoveryResultCount}, " +
+                        "total=${summary.totalResults}, retained=${summary.capturedDeviceCount}, " +
+                        "omitted=${summary.omittedDeviceCount}.",
                 )
 
             },
@@ -414,8 +417,17 @@ internal fun ControllerDiagnosticsScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(device.displayName, style = MaterialTheme.typography.titleSmall)
+                        val discoveryPathLabel = device.discoveryPaths
+                            .sortedBy { it.ordinal }
+                            .joinToString(" + ") { it.displayLabel }
+                        val signalLabel = if (device.rssi == Int.MIN_VALUE) {
+                            "signal not reported"
+                        } else {
+                            "${device.rssi} dBm"
+                        }
                         Text(
-                            "${device.observationCount} observations · ${device.advertisements.size} advertisement variants · ${device.rssi} dBm",
+                            "$discoveryPathLabel · ${device.observationCount} BLE observations · " +
+                                "${device.advertisements.size} BLE advertisement variants · $signalLabel",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(

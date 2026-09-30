@@ -9,14 +9,15 @@ PitTech treats a newly discovered controller as unknown. Bluetooth discovery is 
 The automatic flow is:
 
 1. scan nearby BLE advertisements without filtering to a vendor-specific name;
-2. select the controller;
-3. connect directly over BLE and inventory the GATT surface;
-4. inventory every service, characteristic, and descriptor, and attempt every safe readable characteristic up to the reported 256-read bound and overall session timeout;
-5. sequentially enable up to eight non-protocol notification channels, observe them together for up to 10 seconds, then disable them; Mongoose RPC/debug channels are reserved for their protocol-specific session;
-6. identify known protocol families from service/characteristic evidence;
-7. when Mongoose OS RPC-over-GATT is present, establish that transport directly and run the explicitly allowlisted observational probe;
-8. build a stable capability fingerprint and compare it with the verified-controller registry;
-9. if the controller is not verified, let the user review a sanitized report and submit it to the existing GitHub issue relay.
+2. run Android adapter discovery and merge results by Bluetooth address, recording which path found each candidate;
+3. select the controller;
+4. connect directly over BLE and inventory the GATT surface;
+5. inventory every service, characteristic, and descriptor, and attempt every safe readable characteristic up to the reported 256-read bound and overall session timeout;
+6. sequentially enable up to eight non-protocol notification channels, observe them together for up to 10 seconds, then disable them; Mongoose RPC/debug channels are reserved for their protocol-specific session;
+7. identify known protocol families from service/characteristic evidence;
+8. when Mongoose OS RPC-over-GATT is present, establish that transport directly and run the explicitly allowlisted observational probe;
+9. build a stable capability fingerprint and compare it with the verified-controller registry;
+10. if the controller is not verified, let the user review a sanitized report and submit it to the existing GitHub issue relay.
 
 Each generic notification observation is limited to 64 events, 512 bytes per event, 16 KiB retained across the session, and at most eight characteristics. The report records event counts, payload changes, byte counts, duration/frequency, and failures; raw notification payloads are not included.
 
