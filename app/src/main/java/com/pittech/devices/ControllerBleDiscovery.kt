@@ -131,6 +131,7 @@ class ControllerBleDiscovery(context: Context) {
     private var activeScanner: BluetoothLeScanner? = null
     private var activeCallback: ScanCallback? = null
     private var activeAdapter: BluetoothAdapter? = null
+    private var ownsAdapterDiscovery = false
     private var activeReceiver: BroadcastReceiver? = null
     private var activeSessionId = 0
     private var timeout: Runnable? = null
@@ -347,6 +348,7 @@ class ControllerBleDiscovery(context: Context) {
                 finishScan()
                 return
             }
+            ownsAdapterDiscovery = true
 
             if (!finished && activeSessionId == scanSessionId) {
                 val timeoutTask = Runnable {
@@ -533,7 +535,9 @@ class ControllerBleDiscovery(context: Context) {
 
         val adapter = activeAdapter
         activeAdapter = null
-        if (adapter != null) {
+        val shouldCancelDiscovery = ownsAdapterDiscovery
+        ownsAdapterDiscovery = false
+        if (adapter != null && shouldCancelDiscovery) {
             try {
                 if (adapter.isDiscovering) adapter.cancelDiscovery()
             } catch (_: SecurityException) {
