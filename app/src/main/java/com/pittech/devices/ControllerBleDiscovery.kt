@@ -29,10 +29,12 @@ data class NearbyBluetoothDevice(
     val omittedAdvertisementVariants: Int,
     val discoveryPaths: Set<BluetoothDiscoveryPath> = setOf(BluetoothDiscoveryPath.BLE_ADVERTISEMENT),
     val bluetoothDeviceType: String? = null,
+    val adapterName: String? = null,
 ) {
     val observationCount: Int get() = advertisements.sumOf { it.observationCount }
     val displayName: String
         get() = advertisedName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: adapterName?.trim()?.takeIf { it.isNotEmpty() }
             ?: address?.takeLast(5)?.let { "Unnamed Bluetooth device · $it" }
             ?: "Unnamed Bluetooth device"
 }
@@ -79,6 +81,7 @@ enum class BluetoothDiscoveryPath(val displayLabel: String) {
 
 internal data class BluetoothDiscoveryMetadata(
     val advertisedName: String?,
+    val adapterName: String?,
     val address: String?,
     val rssi: Int,
     val discoveryPaths: Set<BluetoothDiscoveryPath>,
@@ -88,6 +91,7 @@ internal data class BluetoothDiscoveryMetadata(
 internal fun mergeBluetoothDiscoveryMetadata(
     existing: BluetoothDiscoveryMetadata?,
     advertisedName: String?,
+    adapterName: String?,
     address: String?,
     rssi: Int?,
     discoveryPath: BluetoothDiscoveryPath,
@@ -97,6 +101,7 @@ internal fun mergeBluetoothDiscoveryMetadata(
     if (existing == null) {
         return BluetoothDiscoveryMetadata(
             advertisedName = usableName,
+            adapterName = adapterName?.takeIf { it.isNotBlank() },
             address = address,
             rssi = rssi ?: Int.MIN_VALUE,
             discoveryPaths = setOf(discoveryPath),
@@ -106,6 +111,8 @@ internal fun mergeBluetoothDiscoveryMetadata(
 
     return existing.copy(
         advertisedName = existing.advertisedName?.takeIf { it.isNotBlank() } ?: usableName,
+        adapterName = existing.adapterName?.takeIf { it.isNotBlank() }
+            ?: adapterName?.takeIf { it.isNotBlank() },
         address = existing.address ?: address,
         rssi = rssi ?: existing.rssi,
         discoveryPaths = existing.discoveryPaths + discoveryPath,
@@ -114,9 +121,9 @@ internal fun mergeBluetoothDiscoveryMetadata(
 }
 
 /**
- * Foreground-only BLE discovery. It retains the distinct advertisements seen
- * during a short scan so a user can report an unverified device for support.
- * The report UI sends only the device the user chooses.
+ * Foreground-only Bluetooth discovery. It first retains distinct BLE
+ * advertisements, then runs Android adapter discovery and merges candidates
+ * by address. The report UI sends only the device the user chooses.
  */
 class ControllerBleDiscovery(context: Context) {
     private val appContext = context.applicationContext
@@ -221,6 +228,7 @@ class ControllerBleDiscovery(context: Context) {
         fun mergeCandidate(
             key: String,
             advertisedName: String?,
+            adapterName: String?,
             address: String?,
             rssi: Int?,
             discoveryPath: BluetoothDiscoveryPath,
@@ -237,6 +245,7 @@ class ControllerBleDiscovery(context: Context) {
                     metadata = mergeBluetoothDiscoveryMetadata(
                         existing = null,
                         advertisedName = advertisedName,
+                        adapterName = adapterName,
                         address = address,
                         rssi = rssi,
                         discoveryPath = discoveryPath,
@@ -247,6 +256,7 @@ class ControllerBleDiscovery(context: Context) {
             } else {
                 device.mergeMetadata(
                     advertisedName = advertisedName,
+                    adapterName = adapterName,
                     address = address,
                     rssi = rssi,
                     discoveryPath = discoveryPath,
@@ -261,18 +271,19 @@ class ControllerBleDiscovery(context: Context) {
             totalResults += 1
             adapterDiscoveryResultCount += 1
 
-            val advertisedName = runCatching { device.name }.getOrNull()?.takeIf { it.isNotBlank() }
+            val adapterName = runCatching { device.name }.getOrNull()?.takeIf { it.isNotBlank() }
             val address = runCatching { device.address }.getOrNull()?.takeIf { it.isNotBlank() }
             val deviceType = runCatching { device.type }.getOrNull()?.let(::bluetoothDeviceTypeLabel)
             val key = address?.uppercase(Locale.ROOT)
-                ?: "adapter:${advertisedName.orEmpty()}:${System.identityHashCode(device)}"
+                ?: "adapter:${adapterName.orEmpty()}:${System.identityHashCode(device)}"
             val reportedRssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE)
                 .takeIf { it != Short.MIN_VALUE }
                 ?.toInt()
 
             mergeCandidate(
                 key = key,
-                advertisedName = advertisedName,
+                advertisedName = null,
+                adapterName = adapterName,
                 address = address,
                 rssi = reportedRssi,
                 discoveryPath = BluetoothDiscoveryPath.ANDROID_ADAPTER_DISCOVERY,
@@ -291,8 +302,9 @@ class ControllerBleDiscovery(context: Context) {
             var receivedDiscoveryStarted = false
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
-                    when (intent?.action) {
-                        BluetoothDevice.ACTION_FOUND -> recordAdapterDiscoveryResult(intent)
+                    val receivedIntent = intent ?: return
+                    when (receivedIntent.action) {
+                        BluetoothDevice.ACTION_FOUND -> recordAdapterDiscoveryResult(receivedIntent)
                         BluetoothAdapter.ACTION_DISCOVERY_STARTED -> receivedDiscoveryStarted = true
                         BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                             if (receivedDiscoveryStarted) finishScan()
@@ -387,6 +399,7 @@ class ControllerBleDiscovery(context: Context) {
             val device = mergeCandidate(
                 key = key,
                 advertisedName = advertisedName,
+                adapterName = null,
                 address = address,
                 rssi = result.rssi,
                 discoveryPath = BluetoothDiscoveryPath.BLE_ADVERTISEMENT,
@@ -580,6 +593,7 @@ class ControllerBleDiscovery(context: Context) {
     ) {
         fun mergeMetadata(
             advertisedName: String?,
+            adapterName: String?,
             address: String?,
             rssi: Int?,
             discoveryPath: BluetoothDiscoveryPath,
@@ -588,6 +602,7 @@ class ControllerBleDiscovery(context: Context) {
             metadata = mergeBluetoothDiscoveryMetadata(
                 existing = metadata,
                 advertisedName = advertisedName,
+                adapterName = adapterName,
                 address = address,
                 rssi = rssi,
                 discoveryPath = discoveryPath,
@@ -598,6 +613,7 @@ class ControllerBleDiscovery(context: Context) {
         fun toSnapshot() = NearbyBluetoothDevice(
             key = key,
             advertisedName = metadata.advertisedName,
+            adapterName = metadata.adapterName,
             address = metadata.address,
             rssi = metadata.rssi,
             advertisements = variants.values.map { it.toSnapshot() },
@@ -666,7 +682,8 @@ class ControllerBleDiscovery(context: Context) {
             .format(Date(timestampMillis))
 
     private companion object {
-        const val SCAN_DURATION_MILLIS = 12_000L
+        const val BLE_SCAN_DURATION_MILLIS = 12_000L
+        const val ADAPTER_DISCOVERY_TIMEOUT_MILLIS = 15_000L
         const val PUBLISH_INTERVAL_MILLIS = 250L
         const val MAX_TRACKED_DEVICES = 100
         const val MAX_VARIANTS_PER_DEVICE = 80
