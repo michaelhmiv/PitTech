@@ -74,6 +74,13 @@ A controller is not officially supported merely because it resembles a known mod
 
 Until then, the controller remains unverified and the UI offers Submit controller for support after automatic interrogation.
 
+## Community support intake
+
+The in-app diagnostics flow creates a public GitHub issue only after the user previews and explicitly submits the sanitized report. When that screen or a test build is unavailable, users can open the repository's [Controller support issue form](https://github.com/michaelhmiv/PitTech/issues/new?template=controller-support.yml). The form captures the manufacturer/model, failure stage, reproduction details, phone/app versions, and the optional sanitized report without requiring a chat session.
+
+Maintain the same privacy boundary for manually submitted reports: do not request or publish raw Bluetooth addresses, serial numbers, Wi-Fi identities or credentials, or unredacted system logs. Treat a controller as unverified until physical testing confirms discovery, connection, state reads, and each intended control operation.
+
 ## References
 
 The protocol approach is informed by the [current dknowles2/pytboss implementation](https://github.com/dknowles2/pytboss), [Mongoose OS RPC over BLE GATT documentation](https://mongoose-os.com/docs/mongoose-os/userguide/ble/rpc-over-ble.md), [Mongoose OS RPC inventory and introspection documentation](https://mongoose-os.com/docs/mongoose-os/howtos/rpc-list.md), [Mongoose OS Config service documentation](https://mongoose-os.com/docs/mongoose-os/api/rpc/rpc-service-config.md), [Mongoose OS configuration over BLE GATT documentation](https://mongoose-os.com/docs/mongoose-os/userguide/ble/config-over-ble.md), and [Mongoose OS debug service documentation](https://mongoose-os.com/docs/mongoose-os/api/net/bt-service-debug.md). PitTech's Kotlin implementation is independent. The existing Apache-2.0 attribution for pytboss remains in THIRD_PARTY_NOTICES.md and LICENSES/APACHE-2.0.txt.
+
