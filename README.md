@@ -165,3 +165,5 @@ Insights summarize completed cooks and allow comparisons across selected cooks. 
 - [Cook data capture and export specification](docs/COOK_DATA_AND_EXPORT_SPEC.md)
 - [Privacy policy](docs/PRIVACY_POLICY.md)
 - [AdMob setup and test-ad release notes](docs/ADMOB_SETUP.md)
+- [Controller interrogation and community support intake](docs/CONTROLLER_INTERROGATION.md)
+
