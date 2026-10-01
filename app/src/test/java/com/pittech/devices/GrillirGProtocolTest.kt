@@ -37,6 +37,23 @@ class GrillirGProtocolTest {
     }
 
     @Test
+    fun twoByteWifiStatusDiagnosticsExposeOnlyRecognizedStatusCodeCandidates() {
+        val frame = GrillirGProtocol.Frame(
+            version = 1,
+            command = 4,
+            payload = byteArrayOf(3, 0x7F),
+        )
+
+        assertEquals(listOf(0 to 3), GrillirGProtocol.wifiStatusCodeCandidates(frame))
+        assertTrue(
+            GrillirGProtocol.wifiStatusCodeCandidates(frame.copy(command = 2)).isEmpty(),
+        )
+        assertTrue(
+            GrillirGProtocol.wifiStatusCodeCandidates(frame.copy(payload = byteArrayOf(0x7F, 0x7E))).isEmpty(),
+        )
+    }
+
+    @Test
     fun longCredentialFramesSplitIntoDefaultAttWritesWithoutChangingFrameBytes() {
         val network = GrillirGProtocol.WifiNetwork(
             signalIndicator = 80,
