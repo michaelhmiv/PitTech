@@ -28,12 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.pittech.devices.AndroidGrillirGSetupEngine
 import com.pittech.devices.GrillirGProtocol
 import com.pittech.devices.GrillirGSetupEngine
@@ -49,7 +51,7 @@ internal fun GrillirGWifiSetupPanel(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+    val view = LocalView.current
     val engine = remember(context, engineOverride) {
         engineOverride ?: AndroidGrillirGSetupEngine(context)
     }
@@ -185,7 +187,7 @@ internal fun GrillirGWifiSetupPanel(
             }
             Button(
                 onClick = {
-                    keyboardController?.hide()
+                    ViewCompat.getWindowInsetsController(view)?.hide(WindowInsetsCompat.Type.ime())
                     focusManager.clearFocus()
                     showSendConfirmation = true
                 },
