@@ -205,7 +205,7 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
                 GrillirGSetupStage.WAITING_FOR_WIFI,
                 "The controller received the setup request. Waiting for its Wi-Fi connection result…",
             )
-            armTimeout(WIFI_CONNECT_TIMEOUT_MILLIS, "No Wi-Fi connection result arrived from the controller.")
+            armTimeout(WIFI_CONNECT_TIMEOUT_MILLIS, wifiConnectionTimeoutMessage())
         }
     }
 
@@ -610,9 +610,18 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
             frame.command == 4 && snapshot.stage in WIFI_RESULT_STAGES -> {
                 val status = GrillirGProtocol.wifiConnectStatus(frame)
                 if (status == null) {
-                    recordDiagnosticEvent("wifi_status_frame_malformed payloadBytes=${frame.payload.size}") {
+                    val candidates = GrillirGProtocol.wifiStatusCodeCandidates(frame)
+                        .joinToString { (index, code) -> "byte$index=$code" }
+                        .ifBlank { "none" }
+                    recordDiagnosticEvent(
+                        "wifi_status_frame_malformed payloadBytes=${frame.payload.size} knownStatusCandidates=$candidates",
+                    ) {
                         it.copy(wifiStatusFramesMalformed = it.wifiStatusFramesMalformed + 1)
                     }
+                    snapshot = snapshot.copy(
+                        message = "The controller replied, but PitTech could not decode its ${frame.payload.size}-byte Wi-Fi status frame. Waiting for a supported result.",
+                        diagnostics = diagnostics,
+                    )
                     publish()
                     return
                 }
@@ -644,17 +653,28 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
         "Wi-Fi scanning timed out; the networks received so far are available to select."
     }
 
+    private fun wifiConnectionTimeoutMessage(): String = if (diagnostics.wifiStatusFramesMalformed > 0) {
+        "The controller sent ${diagnostics.wifiStatusFramesMalformed} command-4 frame(s), but PitTech could not decode them as a supported Wi-Fi result."
+    } else {
+        "No Wi-Fi connection result arrived from the controller."
+    }
+
     private fun armTimeout(durationMillis: Long, message: String) {
         cancelTimeout()
         val task = Runnable {
             timeout = null
-            if (message.startsWith("Wi-Fi scanning timed out") && snapshot.networks.isNotEmpty()) {
+            val timeoutMessage = if (snapshot.stage == GrillirGSetupStage.WAITING_FOR_WIFI) {
+                wifiConnectionTimeoutMessage()
+            } else {
+                message
+            }
+            if (timeoutMessage.startsWith("Wi-Fi scanning timed out") && snapshot.networks.isNotEmpty()) {
                 recordDiagnosticEvent("timeout stage=${snapshot.stage.name}") {
                     it.copy(failureAtStage = snapshot.stage.name)
                 }
-                update(GrillirGSetupStage.NETWORKS_READY, message)
+                update(GrillirGSetupStage.NETWORKS_READY, timeoutMessage)
             } else {
-                fail(message)
+                fail(timeoutMessage)
             }
         }
         timeout = task

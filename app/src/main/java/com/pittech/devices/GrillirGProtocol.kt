@@ -134,6 +134,18 @@ internal object GrillirGProtocol {
     fun wifiConnectStatus(frame: Frame): Int? =
         frame.payload.singleOrNull()?.u8()?.takeIf { frame.command == WIFI_CONNECT_RESPONSE }
 
+    /**
+     * Reports only byte positions that match the finite set of known Wi-Fi status codes.
+     * This gives diagnostics a safe clue for unexpected two-byte replies without retaining
+     * arbitrary response payload bytes.
+     */
+    fun wifiStatusCodeCandidates(frame: Frame): List<Pair<Int, Int>> {
+        if (frame.command != WIFI_CONNECT_RESPONSE || frame.payload.size != 2) return emptyList()
+        return frame.payload.indices.mapNotNull { index ->
+            frame.payload[index].u8().takeIf { it in KNOWN_WIFI_STATUS_CODES }?.let { code -> index to code }
+        }
+    }
+
     fun wifiStatusMessage(status: Int): String = when (status) {
         1 -> "The controller reports that it connected to Wi-Fi."
         3 -> "The password or network authentication was rejected."
@@ -196,6 +208,7 @@ internal object GrillirGProtocol {
     private const val WIFI_NETWORKS_RESPONSE = 2
     private const val WIFI_CONNECT_REQUEST = 3
     private const val WIFI_CONNECT_RESPONSE = 4
+    private val KNOWN_WIFI_STATUS_CODES = setOf(1, 3, 4, 5, 6)
     private const val AES_BLOCK_BYTES = 16
     private const val CRC_POLYNOMIAL = 0x07
     const val DEFAULT_GATT_WRITE_BYTES = 20
