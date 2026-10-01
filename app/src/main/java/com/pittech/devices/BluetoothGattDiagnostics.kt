@@ -117,7 +117,7 @@ internal object BluetoothGattDiagnostics {
                     appendLine(
                         "- service=${read.serviceUuid} characteristic=${read.characteristicUuid} " +
                             "bytes=${read.valueLengthBytes} sha256=${fingerprint(read.valueHex)} " +
-                            "preview=${quoted(read.valueText?.let { ControllerDiagnosticSanitizer.sanitizeText(it, MAX_TEXT_PREVIEW_CHARS) } ?: "(binary or empty)")}" +
+                            "preview=${quoted(publicReadPreview(read))}" +
                             (if (read.truncatedValueBytes > 0) " truncatedBytes=${read.truncatedValueBytes}" else ""),
                     )
                 }
@@ -166,6 +166,19 @@ internal object BluetoothGattDiagnostics {
         return full.take(MAX_DETAILS_CHARS - marker.length) + marker
     }
 
+    /** Do not publish arbitrary GATT strings: custom characteristics can contain device IDs or credentials. */
+    private fun publicReadPreview(read: BluetoothGattReadResult): String {
+        val text = read.valueText ?: return "(binary or empty)"
+        val isGenericAccessDeviceName =
+            read.serviceUuid.equals(GENERIC_ACCESS_SERVICE_UUID, ignoreCase = true) &&
+                read.characteristicUuid.equals(DEVICE_NAME_CHARACTERISTIC_UUID, ignoreCase = true)
+        return if (isGenericAccessDeviceName) {
+            ControllerDiagnosticSanitizer.sanitizeAdvertisedName(text)
+        } else {
+            "present (value withheld for privacy)"
+        }
+    }
+
     private fun status(code: Int?): String = when (code) {
         null -> "(not reported)"
         0 -> "GATT_SUCCESS (0)"
@@ -198,5 +211,6 @@ internal object BluetoothGattDiagnostics {
 
     private const val MAX_EVENTS_IN_REPORT = 32
     private const val MAX_EVENT_CHARS = 180
-    private const val MAX_TEXT_PREVIEW_CHARS = 256
+    private const val GENERIC_ACCESS_SERVICE_UUID = "00001800-0000-1000-8000-00805f9b34fb"
+    private const val DEVICE_NAME_CHARACTERISTIC_UUID = "00002a00-0000-1000-8000-00805f9b34fb"
 }

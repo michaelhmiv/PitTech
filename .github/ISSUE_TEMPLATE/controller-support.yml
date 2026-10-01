@@ -1,0 +1,127 @@
+name: Controller support
+description: Report a controller discovery, connection, reading, or control issue.
+title: "[Controller support]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PitTech uses these details to identify controller families and decide what is safe to support.
+        GitHub issues are public. Do not include Bluetooth addresses, serial numbers, Wi-Fi names or passwords, account details, or unredacted device dumps.
+
+  - type: input
+    id: controller-brand-model
+    attributes:
+      label: Controller brand and model
+      description: Use the model printed on the controller or its manual, if known; write Unknown if you cannot identify it.
+      placeholder: Brand, controller model, and grill model, or Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: controller-firmware
+    attributes:
+      label: Controller firmware
+      description: Leave blank if the controller does not show a version.
+    validations:
+      required: false
+
+  - type: input
+    id: pittech-version
+    attributes:
+      label: PitTech version and build
+      placeholder: For example, 0.1.238-dev-dev
+    validations:
+      required: true
+
+  - type: input
+    id: android-device
+    attributes:
+      label: Android device and version
+      placeholder: For example, Pixel 8 Pro, Android 17
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem-type
+    attributes:
+      label: What is failing?
+      options:
+        - Controller is not found
+        - Bluetooth connection fails or drops
+        - No readings are available
+        - Readings look incorrect
+        - A controller feature is unavailable
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: bluetooth-stage
+    attributes:
+      label: What is the last Bluetooth stage that worked?
+      description: Bluetooth discovery, Windows/Android Settings pairing, direct BLE connection, GATT reads, and app commands are separate stages. Choose the closest match; use the diagnostic report for exact results.
+      options:
+        - I cannot see the controller in a BLE scan
+        - I can see it, but pairing in device settings fails
+        - It is visible, but PitTech cannot connect over BLE
+        - PitTech connects, but service discovery or reads fail
+        - Reads work, but values or controls are missing or incorrect
+        - I have not checked / I am not sure
+    validations:
+      required: true
+
+  - type: input
+    id: other-host-test
+    attributes:
+      label: Other Bluetooth host test (optional)
+      description: If you also tried another phone or computer, include its OS/version and whether it could scan, pair in settings, connect over BLE, or read services. Do not include Bluetooth addresses.
+      placeholder: Windows 11, adapter unknown; visible in scan, Windows Settings pairing failed
+    validations:
+      required: false
+
+  - type: textarea
+    id: exact-error
+    attributes:
+      label: Exact error or observed behavior
+      description: Copy the error text and identify the app or settings screen that showed it. Do not include addresses, serial numbers, or credentials.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: What did you expect, and what happened?
+      description: Include the controller's state (standby, pairing/setup, or cooking) if relevant.
+      placeholder: Expected behavior and observed behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open PitTech...
+        2. Scan/connect...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostic-report
+    attributes:
+      label: Reviewed diagnostic report or report issue link
+      description: If Controller diagnostics is available in your PitTech build, submit its reviewed report and link the resulting GitHub issue here. Otherwise, include any relevant non-sensitive error text.
+      placeholder: Paste a report link or non-sensitive diagnostic details. Remove addresses, serials, Wi-Fi identities, and credentials.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: privacy-review
+    attributes:
+      label: Public report review
+      options:
+        - label: I reviewed the text above and removed Bluetooth addresses, serial numbers, Wi-Fi names/passwords, account details, and other identifying information.
+          required: true

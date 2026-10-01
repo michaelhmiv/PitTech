@@ -85,6 +85,7 @@ internal fun ControllerDiagnosticsScreen(
     var gattInspection by remember { mutableStateOf<BluetoothGattInspectionReport?>(null) }
     var probeReport by remember { mutableStateOf<ControllerProbeReport?>(null) }
     var pendingAction by rememberSaveable { mutableStateOf("SCAN") }
+    var showGrillirGSetup by remember { mutableStateOf(false) }
 
     var sessionEvents by remember { mutableStateOf(emptyList<String>()) }
     var omittedSessionEventCount by remember { mutableStateOf(0) }
@@ -146,6 +147,7 @@ internal fun ControllerDiagnosticsScreen(
         }
 
         selectedDeviceKey = device.key
+        showGrillirGSetup = false
         gattInspection = null
         probeReport = null
         isProbing = true
@@ -189,6 +191,7 @@ internal fun ControllerDiagnosticsScreen(
         isProbing = false
         nearbyDevices = emptyList()
         selectedDeviceKey = null
+        showGrillirGSetup = false
         scanSummary = null
         gattInspection = null
         probeReport = null
@@ -475,6 +478,35 @@ internal fun ControllerDiagnosticsScreen(
             }
         }
 
+        selectedDevice?.let { device ->
+            if (isGrillirGSetupCandidate(device, gattInspection)) {
+                Card {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("GrillirG setup flow identified", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "PitTech found the iFireTech advertisement and the matching BLE setup characteristics. You can ask the controller for its Wi-Fi list, then explicitly choose whether to send Wi-Fi details.",
+                        )
+                        OutlinedButton(
+                            onClick = { showGrillirGSetup = !showGrillirGSetup },
+                            enabled = !isProbing && !device.address.isNullOrBlank(),
+                            modifier = Modifier.testTag("grillirg-open-wifi-setup"),
+                        ) {
+                            Text(if (showGrillirGSetup) "Hide Wi-Fi setup" else "Set up GrillirG Wi-Fi")
+                        }
+                    }
+                }
+                if (showGrillirGSetup && !device.address.isNullOrBlank()) {
+                    GrillirGWifiSetupPanel(
+                        address = device.address,
+                        onClose = { showGrillirGSetup = false },
+                    )
+                }
+            }
+        }
+
         probeReport?.let { report ->
             Card {
                 Column(
@@ -597,6 +629,41 @@ internal fun ControllerDiagnosticsScreen(
             },
         )
     }
+}
+
+private fun isGrillirGSetupCandidate(
+    device: NearbyBluetoothDevice,
+    inspection: BluetoothGattInspectionReport?,
+): Boolean {
+    val services = inspection?.services.orEmpty()
+    val nameMatches = sequenceOf(device.advertisedName, device.adapterName)
+        .plus(device.advertisements.asSequence().map { it.advertisedName })
+        .filterNotNull()
+        .any { it.contains("iFireTech", ignoreCase = true) }
+    val serviceDataMatches = device.advertisements.any { advertisement ->
+        advertisement.serviceData.keys.any {
+            it.equals(com.pittech.devices.GrillirGProtocol.ADVERTISEMENT_DEVICE_ID_UUID, ignoreCase = true)
+        }
+    }
+    val writeNotifyMatches = services.any { service ->
+        service.uuid.equals(com.pittech.devices.GrillirGProtocol.SERVICE_UUID, ignoreCase = true) &&
+            service.characteristics.any { characteristic ->
+                characteristic.uuid.equals(
+                    com.pittech.devices.GrillirGProtocol.WRITE_NOTIFY_CHARACTERISTIC_UUID,
+                    ignoreCase = true,
+                ) && "WRITE" in characteristic.properties && "NOTIFY" in characteristic.properties
+            }
+    }
+    val deviceIdReadMatches = services.any { service ->
+        service.uuid.equals(com.pittech.devices.GrillirGProtocol.DEVICE_ID_SERVICE_UUID, ignoreCase = true) &&
+            service.characteristics.any { characteristic ->
+                characteristic.uuid.equals(
+                    com.pittech.devices.GrillirGProtocol.DEVICE_ID_CHARACTERISTIC_UUID,
+                    ignoreCase = true,
+                ) && "READ" in characteristic.properties
+        }
+    }
+    return (nameMatches || serviceDataMatches) && writeNotifyMatches && deviceIdReadMatches
 }
 
 private fun formatReportUtc(timestampMillis: Long): String =
