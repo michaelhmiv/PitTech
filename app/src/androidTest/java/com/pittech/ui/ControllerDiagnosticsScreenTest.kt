@@ -141,7 +141,7 @@ class ControllerDiagnosticsScreenTest {
         composeRule.onNodeWithTag("grillirg-technical-details")
             .assertTextContains("scan-complete marker observed: yes", substring = true)
             .assertTextContains("Credential write GATT-acknowledged: not reached", substring = true)
-        composeRule.onNodeWithText("PitTech-Setup-Test").assertIsDisplayed()
+        composeRule.onNodeWithText("PitTech-Setup-Test").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("grillirg-network-010203040506").performClick()
         composeRule.onNodeWithTag("grillirg-password").performTextInput("local-test-password")
         composeRule.onNodeWithTag("grillirg-configure-network")
