@@ -36,6 +36,7 @@ import com.pittech.devices.ControllerProtocolFamily
 import com.pittech.devices.ControllerTransportCapability
 import com.pittech.devices.ControllerTransportType
 import com.pittech.devices.GrillirGProtocol
+import com.pittech.devices.GrillirGSetupDiagnostics
 import com.pittech.devices.GrillirGSetupEngine
 import com.pittech.devices.GrillirGSetupSnapshot
 import com.pittech.devices.GrillirGSetupStage
@@ -136,6 +137,10 @@ class ControllerDiagnosticsScreenTest {
 
         composeRule.onNodeWithTag("grillirg-scan-wifi").performClick()
         assertEquals("AA:BB:CC:DD:EE:FF", engine.startedAddress)
+        composeRule.onNodeWithTag("grillirg-technical-details-toggle").performClick()
+        composeRule.onNodeWithTag("grillirg-technical-details")
+            .assertTextContains("scan-complete marker observed: yes", substring = true)
+            .assertTextContains("Credential write GATT-acknowledged: not reached", substring = true)
         composeRule.onNodeWithText("PitTech-Setup-Test").assertIsDisplayed()
         composeRule.onNodeWithTag("grillirg-network-010203040506").performClick()
         composeRule.onNodeWithTag("grillirg-password").performTextInput("local-test-password")
@@ -181,6 +186,19 @@ private class FakeGrillirGSetupEngine : GrillirGSetupEngine {
                 stage = GrillirGSetupStage.NETWORKS_READY,
                 message = "Found 1 Wi-Fi network(s).",
                 networks = listOf(network),
+                diagnostics = GrillirGSetupDiagnostics(
+                    attempted = true,
+                    currentStage = GrillirGSetupStage.NETWORKS_READY.name,
+                    connected = true,
+                    setupServiceFound = true,
+                    writeCharacteristicAvailable = true,
+                    notifyCharacteristicAvailable = true,
+                    cccdAvailable = true,
+                    notificationsEnabled = true,
+                    wifiNetworkRecordsReceived = 1,
+                    wifiScanComplete = true,
+                    events = listOf("+780ms frame_parsed command=2 payloadBytes=44"),
+                ),
             ),
         )
     }

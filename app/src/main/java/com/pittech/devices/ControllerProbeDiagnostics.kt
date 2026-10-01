@@ -18,6 +18,7 @@ internal object ControllerProbeDiagnostics {
         androidVersion: String? = null,
         phoneModel: String? = null,
         referenceCode: String? = null,
+        wifiSetupDiagnostics: GrillirGSetupDiagnostics? = null,
     ): String {
         val sections = mutableListOf<RawDiagnosticSection>()
         sections += RawDiagnosticSection(
@@ -40,6 +41,14 @@ internal object ControllerProbeDiagnostics {
                 appendLine("Scan error: ${summary.error ?: "none"}")
             }.trimEnd(),
         )
+
+        if (wifiSetupDiagnostics?.attempted == true) {
+            sections += RawDiagnosticSection(
+                "GRILLIRG WI-FI SETUP EXCHANGE",
+                99,
+                wifiSetupDiagnostics.reportLines().joinToString("\n"),
+            )
+        }
 
         if (selectedDevice == null) {
             sections += RawDiagnosticSection(

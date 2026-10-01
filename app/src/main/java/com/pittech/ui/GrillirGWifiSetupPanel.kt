@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,12 +29,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.pittech.devices.AndroidGrillirGSetupEngine
 import com.pittech.devices.GrillirGProtocol
+import com.pittech.devices.GrillirGSetupDiagnostics
 import com.pittech.devices.GrillirGSetupEngine
 import com.pittech.devices.GrillirGSetupSnapshot
 import com.pittech.devices.GrillirGSetupStage
@@ -44,6 +47,7 @@ internal fun GrillirGWifiSetupPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     engineOverride: GrillirGSetupEngine? = null,
+    onDiagnosticsChanged: (GrillirGSetupDiagnostics) -> Unit = {},
 ) {
     val context = LocalContext.current
     val engine = remember(context, engineOverride) {
@@ -53,6 +57,16 @@ internal fun GrillirGWifiSetupPanel(
     var selectedNetwork by remember { mutableStateOf<GrillirGProtocol.WifiNetwork?>(null) }
     var password by remember { mutableStateOf("") }
     var showSendConfirmation by remember { mutableStateOf(false) }
+    var diagnosticsExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(snapshot.stage, snapshot.message, snapshot.diagnostics.attempted) {
+        if (snapshot.diagnostics.attempted &&
+            (snapshot.stage in setOf(GrillirGSetupStage.FAILED, GrillirGSetupStage.COMPLETE) ||
+                snapshot.message.contains("timed out", ignoreCase = true))
+        ) {
+            diagnosticsExpanded = true
+        }
+    }
 
     DisposableEffect(engine) { onDispose { engine.close() } }
 
@@ -104,7 +118,10 @@ internal fun GrillirGWifiSetupPanel(
                             message = "Grant PitTech Bluetooth connection permission, then try setup again.",
                         )
                     } else {
-                        engine.start(address) { snapshot = it }
+                        engine.start(address) {
+                            snapshot = it
+                            onDiagnosticsChanged(it.diagnostics)
+                        }
                     }
                 },
                 enabled = !isWorking,
@@ -126,6 +143,30 @@ internal fun GrillirGWifiSetupPanel(
             }
         } else {
             Text(snapshot.message, modifier = Modifier.testTag("grillirg-setup-status"))
+        }
+
+        if (snapshot.diagnostics.attempted) {
+            Card {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    TextButton(
+                        onClick = { diagnosticsExpanded = !diagnosticsExpanded },
+                        modifier = Modifier.testTag("grillirg-technical-details-toggle"),
+                    ) {
+                        Text(if (diagnosticsExpanded) "Hide technical exchange details" else "Show technical exchange details")
+                    }
+                    if (diagnosticsExpanded) {
+                        Text(
+                            snapshot.diagnostics.reportLines().joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.testTag("grillirg-technical-details"),
+                        )
+                    }
+                }
+            }
         }
 
         if (snapshot.networks.isNotEmpty()) {

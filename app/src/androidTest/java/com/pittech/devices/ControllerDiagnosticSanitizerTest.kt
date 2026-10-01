@@ -129,4 +129,50 @@ class ControllerDiagnosticSanitizerTest {
         assertTrue(report.contains("present (value withheld for privacy)"))
         assertTrue(report.contains("sha256="))
     }
+
+    @Test
+    fun grillirgExchangeTraceIsIncludedAsProtocolCountsWithoutNetworkIdentity() {
+        val report = ControllerProbeDiagnostics.details(
+            summary = BluetoothScanSummary(
+                startedAtUtc = "2026-09-30 15:00:00 UTC",
+                finishedAtUtc = "2026-09-30 15:00:02 UTC",
+                durationMillis = 2_000,
+                scanMode = "LOW_LATENCY",
+                totalResults = 1,
+                capturedDeviceCount = 1,
+                omittedDeviceCount = 0,
+                error = null,
+            ),
+            selectedDevice = null,
+            inspection = null,
+            probe = null,
+            wifiSetupDiagnostics = GrillirGSetupDiagnostics(
+                attempted = true,
+                currentStage = "FAILED",
+                elapsedMillis = 30_245,
+                connected = true,
+                connectionGattStatus = 0,
+                credentialWriteAcknowledged = true,
+                credentialWriteChunksAcknowledged = 1,
+                credentialWriteChunksTotal = 1,
+                notificationsReceived = 16,
+                notificationsAfterCredentialRequest = 0,
+                validFramesReceived = 16,
+                parsedCommandCounts = mapOf(2 to 16),
+                wifiNetworkRecordsReceived = 15,
+                wifiScanComplete = true,
+                failureAtStage = "WAITING_FOR_WIFI",
+                events = listOf(
+                    "+245ms write_ack_complete operation=Wi-Fi credentials",
+                    "+30245ms failed stage=WAITING_FOR_WIFI",
+                ),
+            ),
+        )
+
+        assertTrue(report.contains("GRILLIRG WI-FI SETUP EXCHANGE"))
+        assertTrue(report.contains("Credential write GATT-acknowledged: yes"))
+        assertTrue(report.contains("Notifications received: 16 total"))
+        assertTrue(report.contains("Unique Wi-Fi networks reported: 15"))
+        assertTrue(report.contains("No controller-specific advertisement"))
+    }
 }
