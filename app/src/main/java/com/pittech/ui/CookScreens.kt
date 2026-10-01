@@ -269,7 +269,7 @@ fun PitTechApp(
                 modifier = Modifier.padding(padding),
             )
             MainSection.DEVICES -> if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                ControllerDiagnosticsScreen(modifier = Modifier.padding(padding))
+                ControllerDevicesScreen(modifier = Modifier.padding(padding))
             } else {
                 FeaturePlaceholder(
                     title = "Devices",
