@@ -1,6 +1,6 @@
 # PitTech Privacy Policy
 
-Last updated: September 28, 2026
+Last updated: October 1, 2026
 
 This policy describes how PitTech for Android (package com.pittech) handles information. PitTech is a barbecue cook logging app published by Sportfolio on Google Play.
 
@@ -10,7 +10,15 @@ PitTech stores the cook information you choose to enter. This may include cook a
 
 If you select photos, PitTech copies them into the app's private storage on your device. The app may also save a crash diagnostic locally. That report can include a reference code, time, error summary, exception details, thread name, stack trace, and Android process-exit details.
 
-PitTech has no sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service. In experimental debug and Firebase Dev controller-test builds, BLE scan observations, GATT inventory, protocol responses, bounded passive-notification statistics, and bounded controller debug observations are held in memory for the current controller-test screen session and are not uploaded automatically. Raw controller interrogation data is not persisted as a controller history.
+Cook logging does not require sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service. In experimental debug and Firebase Dev controller-test builds, BLE scan observations, GATT inventory, protocol responses, bounded passive-notification statistics, and bounded controller debug observations are held in memory for the current controller-test screen session and are not uploaded automatically. Raw controller interrogation data is not persisted as a controller history.
+
+## Optional GrillirG connection in test builds
+
+The experimental Wi-Fi monitor connects directly over HTTPS to the Prime Polaris backend used by GrillirG. If you request a sign-in code, PitTech sends the email you enter to that service. Signing in sends the email and code to the service and returns an account token. The monitor uses the token to retrieve the account's grill list, connection status and controller readings. These requests are processed by the vendor service; PitTech does not send cook records or photos to it. No email code is requested automatically.
+
+Email and login codes are held in the current form; the code clears on submission. The token, expiry when provided, and selected grill ID are stored locally with Android Keystore AES-GCM encryption in no-backup storage. Sign out removes the saved session. No plaintext credential fallback is used. Up to 120 typed reading observations and 80 request events are kept in memory for the current monitor visit. Monitoring polls while that screen is open and pauses when it is closed or the app is backgrounded.
+
+You can preview and explicitly submit a connection report through the existing public GitHub feedback relay. It includes bounded numeric controller observations, recognized field names, request timings, HTTP/API result codes and alarm counts. It excludes email, login codes, tokens, headers, raw server responses, device IDs/names, Wi-Fi identities and alarm contents. Nothing is submitted automatically.
 
 ## Feedback sent through PitTech
 
