@@ -185,8 +185,8 @@ internal fun GrillirGWifiSetupPanel(
             }
             Button(
                 onClick = {
-                    focusManager.clearFocus()
                     keyboardController?.hide()
+                    focusManager.clearFocus()
                     showSendConfirmation = true
                 },
                 enabled = snapshot.stage == GrillirGSetupStage.NETWORKS_READY && (network.isOpen || password.isNotEmpty()),
