@@ -12,6 +12,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import java.util.UUID
 
 internal enum class GrillirGSetupStage {
@@ -34,7 +35,74 @@ internal data class GrillirGSetupSnapshot(
     val message: String = "Ready to connect to the selected iFireTech controller.",
     val networks: List<GrillirGProtocol.WifiNetwork> = emptyList(),
     val wifiStatusCode: Int? = null,
+    val diagnostics: GrillirGSetupDiagnostics = GrillirGSetupDiagnostics(),
 )
+
+/** Privacy-safe exchange facts. Never store network identity, credentials, or packet contents here. */
+internal data class GrillirGSetupDiagnostics(
+    val attempted: Boolean = false,
+    val currentStage: String = "IDLE",
+    val elapsedMillis: Long = 0,
+    val connected: Boolean? = null,
+    val connectionGattStatus: Int? = null,
+    val negotiatedMtu: Int? = null,
+    val mtuGattStatus: Int? = null,
+    val setupServiceFound: Boolean? = null,
+    val writeCharacteristicAvailable: Boolean? = null,
+    val notifyCharacteristicAvailable: Boolean? = null,
+    val cccdAvailable: Boolean? = null,
+    val notificationsEnabled: Boolean? = null,
+    val writeChunksAcknowledged: Int = 0,
+    val writesStarted: Map<String, Int> = emptyMap(),
+    val writesAcknowledged: Map<String, Int> = emptyMap(),
+    val credentialWriteAcknowledged: Boolean? = null,
+    val credentialWriteChunksAcknowledged: Int = 0,
+    val credentialWriteChunksTotal: Int = 0,
+    val notificationsReceived: Int = 0,
+    val notificationsAfterCredentialRequest: Int = 0,
+    val notificationBytesReceived: Int = 0,
+    val validFramesReceived: Int = 0,
+    val invalidFramesReceived: Int = 0,
+    val parsedCommandCounts: Map<Int, Int> = emptyMap(),
+    val wifiNetworkRecordsReceived: Int = 0,
+    val unparsedWifiNetworkRecords: Int = 0,
+    val wifiScanComplete: Boolean = false,
+    val wifiStatusFramesReceived: Int = 0,
+    val wifiStatusFramesMalformed: Int = 0,
+    val wifiStatusCode: Int? = null,
+    val failureAtStage: String? = null,
+    val events: List<String> = emptyList(),
+) {
+    fun reportLines(): List<String> {
+        if (!attempted) return emptyList()
+        fun yesNoUnknown(value: Boolean?): String = when (value) {
+            true -> "yes"
+            false -> "no"
+            null -> "not reached"
+        }
+        return buildList {
+            add("Final setup stage: $currentStage")
+            add("Elapsed time: ${elapsedMillis} ms")
+            add("BLE connection established: ${yesNoUnknown(connected)}${connectionGattStatus?.let { " (GATT status $it)" }.orEmpty()}")
+            add("Negotiated MTU: ${negotiatedMtu?.let { "$it (status ${mtuGattStatus ?: "unknown"})" } ?: "not reached"}")
+            add("Setup service found: ${yesNoUnknown(setupServiceFound)}; write=${yesNoUnknown(writeCharacteristicAvailable)}, notify=${yesNoUnknown(notifyCharacteristicAvailable)}, CCCD=${yesNoUnknown(cccdAvailable)}")
+            add("Notifications enabled: ${yesNoUnknown(notificationsEnabled)}")
+            add("GATT write chunks acknowledged: $writeChunksAcknowledged")
+            add("Completed GATT writes: ${writesAcknowledged.toSortedMap().entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "none" }}")
+            add("Credential write GATT-acknowledged: ${yesNoUnknown(credentialWriteAcknowledged)}; chunks=${credentialWriteChunksAcknowledged}/${credentialWriteChunksTotal}")
+            add("A GATT write acknowledgement confirms delivery to the BLE stack, not that the controller joined Wi-Fi.")
+            add("Notifications received: $notificationsReceived total, $notificationsAfterCredentialRequest after credential request; $notificationBytesReceived bytes")
+            add("Frames parsed: $validFramesReceived; unparsed notifications: $invalidFramesReceived")
+            add("Parsed protocol commands: ${parsedCommandCounts.toSortedMap().entries.joinToString { "${it.key}=${it.value}" }.ifBlank { "none" }}")
+            add("Unique Wi-Fi networks reported: $wifiNetworkRecordsReceived; record parse failures: $unparsedWifiNetworkRecords; scan-complete marker observed: ${yesNoUnknown(wifiScanComplete)}")
+            add("Wi-Fi status frames: $wifiStatusFramesReceived; malformed status frames: $wifiStatusFramesMalformed; status code: ${wifiStatusCode ?: "none"}")
+            failureAtStage?.let { add("Failure/timeout stage: $it") }
+            add("Exchange events (relative time): ${events.size}")
+            events.forEach { add("- $it") }
+            add("Network names, BSSIDs, passwords, Bluetooth addresses, and raw packet contents are excluded.")
+        }
+    }
+}
 
 internal interface GrillirGSetupEngine {
     val requiresBluetoothPermissions: Boolean get() = true
@@ -56,14 +124,23 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
     private var pendingWrite: PendingWrite? = null
     private var timeout: Runnable? = null
     private var sessionId = 0
+    private var diagnostics = GrillirGSetupDiagnostics()
+    private var setupStartedAtElapsedRealtime = 0L
 
     override fun start(address: String, onUpdate: (GrillirGSetupSnapshot) -> Unit) {
         close()
         val currentSession = sessionId
         callback = onUpdate
+        setupStartedAtElapsedRealtime = SystemClock.elapsedRealtime()
+        diagnostics = GrillirGSetupDiagnostics(
+            attempted = true,
+            currentStage = GrillirGSetupStage.CONNECTING.name,
+        )
+        recordDiagnosticEvent("session_started")
         snapshot = GrillirGSetupSnapshot(
             stage = GrillirGSetupStage.CONNECTING,
             message = "Connecting directly to the selected controller over Bluetooth LE…",
+            diagnostics = diagnostics,
         )
         publish()
 
@@ -141,12 +218,21 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
         callback = null
         closeGatt()
         snapshot = GrillirGSetupSnapshot()
+        diagnostics = GrillirGSetupDiagnostics()
+        setupStartedAtElapsedRealtime = 0L
     }
 
     private fun createGattCallback(currentSession: Int) = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             handler.post {
                 if (currentSession != sessionId) return@post
+                val connected = status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED
+                recordDiagnosticEvent("gatt_connection connected=$connected status=$status") {
+                    it.copy(
+                        connected = if (connected) true else it.connected,
+                        connectionGattStatus = status,
+                    )
+                }
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail("Bluetooth connection failed with GATT status $status.")
                 } else if (newState == BluetoothProfile.STATE_CONNECTED) {
@@ -176,6 +262,9 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             handler.post {
                 if (currentSession != sessionId || snapshot.stage != GrillirGSetupStage.NEGOTIATING_MTU) return@post
+                recordDiagnosticEvent("mtu_result value=$mtu status=$status") {
+                    it.copy(negotiatedMtu = mtu, mtuGattStatus = status)
+                }
                 cancelTimeout()
                 if (status != BluetoothGatt.GATT_SUCCESS || mtu < MINIMUM_GATT_MTU) {
                     fail("The BLE connection negotiated MTU $mtu; at least $MINIMUM_GATT_MTU is required for the controller's Wi-Fi scan records.")
@@ -195,13 +284,27 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
                 }
                 val service = gatt.getService(UUID.fromString(GrillirGProtocol.SERVICE_UUID))
                 val characteristic = service?.getCharacteristic(UUID.fromString(GrillirGProtocol.WRITE_NOTIFY_CHARACTERISTIC_UUID))
+                val canWrite = characteristic?.let {
+                    it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+                } == true
+                val canNotify = characteristic?.let {
+                    it.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
+                } == true
+                val descriptor = characteristic?.getDescriptor(CCCD_UUID)
+                recordDiagnosticEvent(
+                    "setup_gatt service=${service != null} write=$canWrite notify=$canNotify cccd=${descriptor != null}",
+                ) {
+                    it.copy(
+                        setupServiceFound = service != null,
+                        writeCharacteristicAvailable = canWrite,
+                        notifyCharacteristicAvailable = canNotify,
+                        cccdAvailable = descriptor != null,
+                    )
+                }
                 if (characteristic == null) {
                     fail("This device does not expose the expected GrillirG FF01 setup characteristic.")
                     return@post
                 }
-                val canWrite = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
-                val canNotify = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
-                val descriptor = characteristic.getDescriptor(CCCD_UUID)
                 if (!canWrite || !canNotify || descriptor == null) {
                     fail("The GrillirG FF01 characteristic is missing write, notification, or CCCD support.")
                     return@post
@@ -221,6 +324,9 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             handler.post {
                 if (currentSession != sessionId || descriptor.uuid != CCCD_UUID) return@post
+                recordDiagnosticEvent("notification_subscription status=$status") {
+                    it.copy(notificationsEnabled = status == BluetoothGatt.GATT_SUCCESS)
+                }
                 cancelTimeout()
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail("Android could not enable the controller's Wi-Fi setup notifications (status $status).")
@@ -249,14 +355,38 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
                 val write = pendingWrite ?: return@post
                 cancelTimeout()
                 if (status != BluetoothGatt.GATT_SUCCESS) {
+                    recordDiagnosticEvent("write_chunk_rejected operation=${write.label} status=$status") {
+                        it.copy(
+                            credentialWriteAcknowledged = if (write.label == CREDENTIAL_WRITE_LABEL) false else it.credentialWriteAcknowledged,
+                        )
+                    }
                     fail("The controller rejected the ${write.label} write (GATT status $status).")
                 } else {
+                    val chunkNumber = write.nextChunkIndex + 1
+                    recordDiagnosticEvent("write_chunk_ack operation=${write.label} chunk=$chunkNumber/${write.chunks.size}") {
+                        it.copy(
+                            writeChunksAcknowledged = it.writeChunksAcknowledged + 1,
+                            credentialWriteChunksAcknowledged = if (write.label == CREDENTIAL_WRITE_LABEL) {
+                                it.credentialWriteChunksAcknowledged + 1
+                            } else {
+                                it.credentialWriteChunksAcknowledged
+                            },
+                        )
+                    }
                     write.nextChunkIndex += 1
                     if (write.nextChunkIndex < write.chunks.size) {
                         submitNextWriteChunk(write)
                     } else {
                         pendingWrite = null
                         write.chunks.forEach { it.fill(0) }
+                        recordDiagnosticEvent("write_ack_complete operation=${write.label}") {
+                            val completed = it.writesAcknowledged.toMutableMap()
+                            completed[write.label] = (completed[write.label] ?: 0) + 1
+                            it.copy(
+                                writesAcknowledged = completed,
+                                credentialWriteAcknowledged = if (write.label == CREDENTIAL_WRITE_LABEL) true else it.credentialWriteAcknowledged,
+                            )
+                        }
                         write.onSuccess()
                     }
                 }
@@ -362,6 +492,16 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
             fail("The ${label} frame could not be split into Bluetooth writes.")
             return
         }
+        recordDiagnosticEvent("write_started operation=$label frameBytes=${frame.size} chunks=${chunks.size}") {
+            val started = it.writesStarted.toMutableMap()
+            started[label] = (started[label] ?: 0) + 1
+            it.copy(
+                writesStarted = started,
+                credentialWriteAcknowledged = if (label == CREDENTIAL_WRITE_LABEL) false else it.credentialWriteAcknowledged,
+                credentialWriteChunksAcknowledged = if (label == CREDENTIAL_WRITE_LABEL) 0 else it.credentialWriteChunksAcknowledged,
+                credentialWriteChunksTotal = if (label == CREDENTIAL_WRITE_LABEL) chunks.size else it.credentialWriteChunksTotal,
+            )
+        }
         frame.fill(0)
         pendingWrite = PendingWrite(chunks = chunks, label = label, onSuccess = onSuccess)
         submitNextWriteChunk(pendingWrite!!)
@@ -403,11 +543,39 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
     }
 
     private fun handleNotification(bytes: ByteArray) {
-        val frame = GrillirGProtocol.parseFrame(bytes) ?: return
+        recordDiagnosticEvent("notification_received bytes=${bytes.size}") {
+            it.copy(
+                notificationsReceived = it.notificationsReceived + 1,
+                notificationsAfterCredentialRequest = it.notificationsAfterCredentialRequest +
+                    if (it.credentialWriteAcknowledged != null || CREDENTIAL_WRITE_LABEL in it.writesStarted) 1 else 0,
+                notificationBytesReceived = it.notificationBytesReceived + bytes.size,
+            )
+        }
+        val frame = GrillirGProtocol.parseFrame(bytes)
+        if (frame == null) {
+            recordDiagnosticEvent("notification_frame_unparsed") {
+                it.copy(invalidFramesReceived = it.invalidFramesReceived + 1)
+            }
+            publish()
+            return
+        }
+        recordDiagnosticEvent("frame_parsed command=${frame.command} payloadBytes=${frame.payload.size}") {
+            val commandCounts = it.parsedCommandCounts.toMutableMap()
+            commandCounts[frame.command] = (commandCounts[frame.command] ?: 0) + 1
+            it.copy(
+                validFramesReceived = it.validFramesReceived + 1,
+                parsedCommandCounts = commandCounts,
+                wifiStatusFramesReceived = it.wifiStatusFramesReceived +
+                    if (frame.command == 4 && snapshot.stage in WIFI_RESULT_STAGES) 1 else 0,
+            )
+        }
         when {
             frame.command == 2 && snapshot.stage in NETWORK_SCAN_STAGES -> {
                 if (GrillirGProtocol.isWifiScanComplete(frame)) {
                     cancelTimeout()
+                    recordDiagnosticEvent("wifi_scan_complete_marker") {
+                        it.copy(wifiScanComplete = true)
+                    }
                     val message = if (snapshot.networks.isEmpty()) {
                         "The controller finished scanning but returned no Wi-Fi networks."
                     } else {
@@ -415,26 +583,54 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
                     }
                     update(GrillirGSetupStage.NETWORKS_READY, message)
                 } else {
-                    val network = GrillirGProtocol.parseWifiNetwork(frame.payload) ?: return
+                    val network = GrillirGProtocol.parseWifiNetwork(frame.payload)
+                    if (network == null) {
+                        recordDiagnosticEvent("wifi_network_record_unparsed") {
+                            it.copy(unparsedWifiNetworkRecords = it.unparsedWifiNetworkRecords + 1)
+                        }
+                        publish()
+                        return
+                    }
                     val byBssid = snapshot.networks.associateBy { it.key }.toMutableMap()
-                    if (network.key !in byBssid) byBssid[network.key] = network
+                    val isNewNetwork = network.key !in byBssid
+                    if (isNewNetwork) byBssid[network.key] = network
+                    if (isNewNetwork) {
+                        recordDiagnosticEvent("wifi_network_record_received count=${byBssid.size}") {
+                            it.copy(wifiNetworkRecordsReceived = it.wifiNetworkRecordsReceived + 1)
+                        }
+                    }
                     snapshot = snapshot.copy(
                         networks = byBssid.values.toList(),
                         message = "Scanning… found ${byBssid.size} Wi-Fi network(s).",
+                        diagnostics = diagnostics,
                     )
                     publish()
                 }
             }
             frame.command == 4 && snapshot.stage in WIFI_RESULT_STAGES -> {
-                val status = GrillirGProtocol.wifiConnectStatus(frame) ?: return
+                val status = GrillirGProtocol.wifiConnectStatus(frame)
+                if (status == null) {
+                    recordDiagnosticEvent("wifi_status_frame_malformed payloadBytes=${frame.payload.size}") {
+                        it.copy(wifiStatusFramesMalformed = it.wifiStatusFramesMalformed + 1)
+                    }
+                    publish()
+                    return
+                }
                 cancelTimeout()
                 pendingWrite?.chunks?.forEach { it.fill(0) }
                 pendingWrite = null
                 val success = status == 1
+                recordDiagnosticEvent("wifi_status_received code=$status") {
+                    it.copy(
+                        wifiStatusCode = status,
+                        currentStage = if (success) GrillirGSetupStage.COMPLETE.name else GrillirGSetupStage.FAILED.name,
+                    )
+                }
                 snapshot = snapshot.copy(
                     stage = if (success) GrillirGSetupStage.COMPLETE else GrillirGSetupStage.FAILED,
                     message = GrillirGProtocol.wifiStatusMessage(status),
                     wifiStatusCode = status,
+                    diagnostics = diagnostics,
                 )
                 publish()
                 closeGatt()
@@ -453,6 +649,9 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
         val task = Runnable {
             timeout = null
             if (message.startsWith("Wi-Fi scanning timed out") && snapshot.networks.isNotEmpty()) {
+                recordDiagnosticEvent("timeout stage=${snapshot.stage.name}") {
+                    it.copy(failureAtStage = snapshot.stage.name)
+                }
                 update(GrillirGSetupStage.NETWORKS_READY, message)
             } else {
                 fail(message)
@@ -468,20 +667,40 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
     }
 
     private fun update(stage: GrillirGSetupStage, message: String) {
-        snapshot = snapshot.copy(stage = stage, message = message)
+        recordDiagnosticEvent("stage=${stage.name}") { it.copy(currentStage = stage.name) }
+        snapshot = snapshot.copy(stage = stage, message = message, diagnostics = diagnostics)
         publish()
     }
 
+    private fun recordDiagnosticEvent(
+        event: String,
+        transform: (GrillirGSetupDiagnostics) -> GrillirGSetupDiagnostics = { it },
+    ) {
+        val elapsed = if (setupStartedAtElapsedRealtime == 0L) 0L else {
+            (SystemClock.elapsedRealtime() - setupStartedAtElapsedRealtime).coerceAtLeast(0)
+        }
+        val previous = diagnostics
+        diagnostics = transform(previous).copy(
+            elapsedMillis = elapsed,
+            events = (previous.events + "+${elapsed}ms $event").takeLast(MAX_DIAGNOSTIC_EVENTS),
+        )
+        snapshot = snapshot.copy(diagnostics = diagnostics)
+    }
+
     private fun publish() {
-        val value = snapshot.copy(networks = snapshot.networks.toList())
+        val value = snapshot.copy(networks = snapshot.networks.toList(), diagnostics = diagnostics)
         callback?.invoke(value)
     }
 
     private fun fail(message: String) {
+        val failedAtStage = snapshot.stage.name
+        recordDiagnosticEvent("failed stage=$failedAtStage") {
+            it.copy(failureAtStage = failedAtStage, currentStage = GrillirGSetupStage.FAILED.name)
+        }
         cancelTimeout()
         pendingWrite?.chunks?.forEach { it.fill(0) }
         pendingWrite = null
-        snapshot = snapshot.copy(stage = GrillirGSetupStage.FAILED, message = message)
+        snapshot = snapshot.copy(stage = GrillirGSetupStage.FAILED, message = message, diagnostics = diagnostics)
         publish()
         closeGatt()
     }
@@ -505,6 +724,8 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
     )
 
     private companion object {
+        const val CREDENTIAL_WRITE_LABEL = "Wi-Fi credentials"
+        const val MAX_DIAGNOSTIC_EVENTS = 40
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val CONNECTION_TIMEOUT_MILLIS = 18_000L
         const val MTU_NEGOTIATION_TIMEOUT_MILLIS = 10_000L

@@ -50,6 +50,7 @@ import com.pittech.devices.ControllerProbeDiagnostics
 import com.pittech.devices.ControllerProbeReport
 import com.pittech.devices.ControllerProtocolDetector
 import com.pittech.devices.ControllerSupportRegistry
+import com.pittech.devices.GrillirGSetupDiagnostics
 import com.pittech.devices.NearbyBluetoothDevice
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -84,6 +85,7 @@ internal fun ControllerDiagnosticsScreen(
     var probeStatus by remember { mutableStateOf<String?>(null) }
     var gattInspection by remember { mutableStateOf<BluetoothGattInspectionReport?>(null) }
     var probeReport by remember { mutableStateOf<ControllerProbeReport?>(null) }
+    var wifiSetupDiagnostics by remember { mutableStateOf<GrillirGSetupDiagnostics?>(null) }
     var pendingAction by rememberSaveable { mutableStateOf("SCAN") }
     var showGrillirGSetup by remember { mutableStateOf(false) }
 
@@ -148,6 +150,7 @@ internal fun ControllerDiagnosticsScreen(
 
         selectedDeviceKey = device.key
         showGrillirGSetup = false
+        wifiSetupDiagnostics = null
         gattInspection = null
         probeReport = null
         isProbing = true
@@ -192,6 +195,7 @@ internal fun ControllerDiagnosticsScreen(
         nearbyDevices = emptyList()
         selectedDeviceKey = null
         showGrillirGSetup = false
+        wifiSetupDiagnostics = null
         scanSummary = null
         gattInspection = null
         probeReport = null
@@ -266,6 +270,7 @@ internal fun ControllerDiagnosticsScreen(
         scanSummary,
         gattInspection,
         probeReport,
+        wifiSetupDiagnostics,
         sessionRevision,
     ) {
         ControllerProbeDiagnostics.details(
@@ -288,6 +293,7 @@ internal fun ControllerDiagnosticsScreen(
             androidVersion = androidVersion,
             phoneModel = phoneModel,
             referenceCode = diagnosticReferenceCode,
+            wifiSetupDiagnostics = wifiSetupDiagnostics,
         )
     }
 
@@ -305,6 +311,7 @@ internal fun ControllerDiagnosticsScreen(
             androidVersion = androidVersion,
             phoneModel = phoneModel,
             referenceCode = diagnosticReferenceCode,
+            wifiSetupDiagnostics = wifiSetupDiagnostics,
         )
         val report = FeedbackDiagnosticReport(
             referenceCode = diagnosticReferenceCode,
@@ -502,6 +509,7 @@ internal fun ControllerDiagnosticsScreen(
                     GrillirGWifiSetupPanel(
                         address = device.address,
                         onClose = { showGrillirGSetup = false },
+                        onDiagnosticsChanged = { wifiSetupDiagnostics = it },
                     )
                 }
             }
@@ -527,6 +535,12 @@ internal fun ControllerDiagnosticsScreen(
                     }
                     Text("Protocol: $protocolLabel")
                     Text("Controller features discovered: ${report.rpcMethods.size}")
+                    if (selectedDevice?.let { isGrillirGSetupCandidate(it, gattInspection) } == true) {
+                        Text("Separate capability: GrillirG BLE Wi-Fi setup detected (experimental).")
+                        if (report.rpcMethods.isEmpty()) {
+                            Text("Cooking and controller-control protocol: not identified; no RPC methods were found.")
+                        }
+                    }
                     report.transportCapabilities.forEach { capability ->
                         Text(
                             "${capability.transport.displayName}: ${capability.state.displayName} · ${capability.details}",
