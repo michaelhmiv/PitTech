@@ -27,15 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.pittech.devices.AndroidGrillirGSetupEngine
 import com.pittech.devices.GrillirGProtocol
 import com.pittech.devices.GrillirGSetupEngine
@@ -50,8 +46,6 @@ internal fun GrillirGWifiSetupPanel(
     engineOverride: GrillirGSetupEngine? = null,
 ) {
     val context = LocalContext.current
-    val focusManager = LocalFocusManager.current
-    val view = LocalView.current
     val engine = remember(context, engineOverride) {
         engineOverride ?: AndroidGrillirGSetupEngine(context)
     }
@@ -186,11 +180,7 @@ internal fun GrillirGWifiSetupPanel(
                 Text("This network is open; no password is required.")
             }
             Button(
-                onClick = {
-                    ViewCompat.getWindowInsetsController(view)?.hide(WindowInsetsCompat.Type.ime())
-                    focusManager.clearFocus()
-                    showSendConfirmation = true
-                },
+                onClick = { showSendConfirmation = true },
                 enabled = snapshot.stage == GrillirGSetupStage.NETWORKS_READY && (network.isOpen || password.isNotEmpty()),
                 modifier = Modifier.testTag("grillirg-configure-network"),
             ) {

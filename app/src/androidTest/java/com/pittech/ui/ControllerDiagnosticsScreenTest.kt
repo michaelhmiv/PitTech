@@ -1,8 +1,14 @@
 package com.pittech.ui
 
-import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -118,11 +124,13 @@ class ControllerDiagnosticsScreenTest {
         val engine = FakeGrillirGSetupEngine()
         composeRule.setContent {
             PitTechTheme {
-                GrillirGWifiSetupPanel(
-                    address = "AA:BB:CC:DD:EE:FF",
-                    onClose = {},
-                    engineOverride = engine,
-                )
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    GrillirGWifiSetupPanel(
+                        address = "AA:BB:CC:DD:EE:FF",
+                        onClose = {},
+                        engineOverride = engine,
+                    )
+                }
             }
         }
 
@@ -131,7 +139,11 @@ class ControllerDiagnosticsScreenTest {
         composeRule.onNodeWithText("PitTech-Setup-Test").assertIsDisplayed()
         composeRule.onNodeWithTag("grillirg-network-010203040506").performClick()
         composeRule.onNodeWithTag("grillirg-password").performTextInput("local-test-password")
-        composeRule.onNodeWithTag("grillirg-configure-network").performClick()
+        composeRule.onNodeWithTag("grillirg-configure-network")
+            .assertIsEnabled()
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
 
         composeRule.onNodeWithText("Send Wi-Fi details?").assertIsDisplayed()
         assertEquals(null, engine.submittedPassword)
