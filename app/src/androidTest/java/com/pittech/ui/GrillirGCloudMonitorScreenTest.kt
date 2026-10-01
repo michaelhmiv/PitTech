@@ -43,7 +43,7 @@ class GrillirGCloudMonitorScreenTest {
         assertEquals(1, engine.requestedCodes)
         assertEquals("private@example.com", engine.email)
         assertEquals("123456", engine.code)
-        assertTrue(engine.foreground)
+        assertTrue(engine.observedForeground)
     }
 
     @Test fun offlineDataIsMarkedAndPublicReportRequiresPreviewThenSubmission() {
@@ -101,13 +101,13 @@ private class FakePolarisMonitor(initial: PolarisMonitorState = PolarisMonitorSt
     var requestedCodes = 0
     var email = ""
     var code = ""
-    var foreground = false
-    override fun setForeground(active: Boolean) { foreground = active }
+    var observedForeground = false
+    override fun setForeground(active: Boolean) { observedForeground = active }
     override fun requestCode(email: String) { requestedCodes++; this.email = email; state.value = state.value.copy(phase = PolarisPhase.CODE_SENT) }
     override fun signIn(email: String, code: String) { this.email = email; this.code = code; state.value = connectedState() }
     override fun reloadDevices() = Unit
     override fun selectDevice(id: String) = Unit
     override fun refresh() { state.value = connectedState() }
     override fun signOut() { state.value = PolarisMonitorState(phase = PolarisPhase.SIGNED_OUT) }
-    override fun close() { foreground = false }
+    override fun close() { observedForeground = false }
 }
