@@ -201,10 +201,10 @@ internal fun GrillirGWifiSetupPanel(
         val network = selectedNetwork
         AlertDialog(
             onDismissRequest = { showSendConfirmation = false },
-            title = { Text("Send Wi-Fi details to the controller?") },
+            title = { Text("Send Wi-Fi details?") },
             text = {
                 Text(
-                    "PitTech will send the network name and password for \"${network?.ssid.orEmpty()}\" to the nearby controller over Bluetooth. This changes the controller's Wi-Fi configuration. The password is encrypted using the vendor app's bundled compatibility key. PitTech will not upload these Wi-Fi details.",
+                    "Send the Wi-Fi name and password for \"${network?.ssid.orEmpty()}\" to this controller over Bluetooth? This changes its Wi-Fi setup. PitTech will not upload these details.",
                 )
             },
             confirmButton = {

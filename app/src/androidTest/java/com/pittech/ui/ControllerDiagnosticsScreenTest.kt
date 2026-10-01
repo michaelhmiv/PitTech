@@ -133,7 +133,7 @@ class ControllerDiagnosticsScreenTest {
         composeRule.onNodeWithTag("grillirg-password").performTextInput("local-test-password")
         composeRule.onNodeWithTag("grillirg-configure-network").performClick()
 
-        composeRule.onNodeWithText("Send Wi-Fi details to the controller?").assertIsDisplayed()
+        composeRule.onNodeWithText("Send Wi-Fi details?").assertIsDisplayed()
         assertEquals(null, engine.submittedPassword)
         composeRule.onNodeWithTag("grillirg-confirm-provision").performClick()
 
