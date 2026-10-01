@@ -77,7 +77,7 @@ internal class PrimePolarisMonitor(
         if (!active) {
             stopPolling()
             if (session != null) mutableState.value = state.value.copy(phase = PolarisPhase.PAUSED, nextPollAtMillis = null, message = "Monitoring paused while this screen is closed.")
-        } else if (session != null) {
+        } else if (session != null && action?.isActive != true) {
             if (state.value.devices.isEmpty()) reloadDevices() else startPolling()
         }
     }

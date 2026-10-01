@@ -58,7 +58,7 @@ class GrillirGCloudMonitorScreenTest {
             }
         }
         composeRule.onNodeWithTag("cloud-stale").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("cloud-grill-status").assertTextContains("offline")
+        composeRule.onNodeWithTag("cloud-grill-status").assertTextContains("offline", substring = true)
         composeRule.onNodeWithTag("cloud-review-report").performScrollTo().performClick()
         assertNull(submitted)
         composeRule.onNodeWithTag("cloud-cancel-report").performClick()

@@ -21,8 +21,11 @@ class PrimePolarisMonitorTest {
         var deviceList = listOf(PolarisDevice("private-id", "Grill", null, null, null, null))
         var statusFailure: PolarisFailure? = null
         var readingFailure: PolarisFailure? = null
+        var devicesGate: CompletableDeferred<PolarisResult<List<PolarisDevice>>>? = null
+        var deviceCalls = 0
         var readingsGate: CompletableDeferred<PolarisResult<PolarisPayload>>? = null
         var readingCalls = 0
+        val readingDeviceIds = mutableListOf<String>()
         var cancelled = false
         var signInCalls = 0
         override suspend fun requestCode(email: String) = PolarisResult(Unit)
@@ -30,13 +33,17 @@ class PrimePolarisMonitorTest {
             signInCalls++
             return PolarisResult(PolarisSession("private-token"))
         }
-        override suspend fun devices(session: PolarisSession) = PolarisResult(deviceList)
+        override suspend fun devices(session: PolarisSession): PolarisResult<List<PolarisDevice>> {
+            deviceCalls++
+            return devicesGate?.await() ?: PolarisResult(deviceList)
+        }
         override suspend fun status(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
             statusFailure?.let { throw it }
             return PolarisResult(PolarisPayload(mapOf("onlineStatus" to 0.0), listOf("onlineStatus"), 0, null))
         }
         override suspend fun readings(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
             readingCalls++
+            readingDeviceIds += deviceId
             readingFailure?.let { throw it }
             readingsGate?.let {
                 try { return it.await() } catch (error: kotlinx.coroutines.CancellationException) { cancelled = true; throw error }
@@ -102,6 +109,26 @@ class PrimePolarisMonitorTest {
             assertEquals(1, monitor.state.value.failedRequests)
             assertEquals(1, monitor.state.value.consecutiveFailures)
             assertFalse(monitor.state.value.readingsAreOld(1_000_000))
+        } finally { monitor.close() }
+    }
+
+    @Test fun resumeWaitsForDeviceDiscoveryBeforeRestartingPolls() = runBlocking {
+        val backend = Backend()
+        val monitor = monitor(backend)
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.latest != null }
+            val replacement = PolarisDevice("replacement-id", "Replacement", null, null, null, null)
+            val gate = CompletableDeferred<PolarisResult<List<PolarisDevice>>>()
+            backend.devicesGate = gate
+            monitor.reloadDevices()
+            waitFor { backend.deviceCalls == 2 }
+            monitor.setForeground(false)
+            monitor.setForeground(true)
+            assertEquals(1, backend.readingCalls)
+            gate.complete(PolarisResult(listOf(replacement)))
+            waitFor { monitor.state.value.selectedDeviceId == replacement.id && monitor.state.value.latest != null }
+            assertEquals(listOf("private-id", "replacement-id"), backend.readingDeviceIds)
         } finally { monitor.close() }
     }
 
