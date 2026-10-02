@@ -3,14 +3,17 @@ package com.pittech.ui
 import android.content.Intent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.printToLog
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.pittech.CookRecordingService
@@ -36,6 +39,18 @@ class ConnectedCookScreenTest {
     private var fake: PrimePolarisMonitor? = null
     private val app get() = compose.activity.application as PitTechApplication
     @After fun cleanup() {
+        // Keep the UI and binding evidence before clearing the fixture, including
+        // when a real touch fails to reach a control beneath the save snackbar.
+        runCatching {
+            compose.onRoot(useUnmergedTree = true).printToLog("ConnectedCookEvidence")
+            val file = File(app.filesDir, "pittech-ui-test/connected-cook-final.png").apply { parentFile?.mkdirs() }
+            compose.onRoot().captureToImage().asAndroidBitmap().apply {
+                file.outputStream().use { compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; recycle()
+            }
+            val state = fake?.state?.value
+            val recording = runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording() }
+            android.util.Log.i("ConnectedCookEvidence", "mode=${state?.sampling?.mode} phase=${state?.phase} service=${app.recordingServiceRunning.value} active=${recording != null} bindingMatches=${recording?.controllerKey == state?.selectedDeviceId?.let(com.pittech.devices.CookTelemetryPolicy::deviceKey)} received=${recording?.lastReceivedAtUtcMillis}")
+        }
         app.loggingRecordingActive = false
         app.stopService(Intent(app, CookRecordingService::class.java))
         compose.runOnUiThread { fake?.close(); app.grillMonitorForTests = null }
@@ -64,7 +79,8 @@ class ConnectedCookScreenTest {
         compose.waitUntil(10_000) { !app.recordingServiceRunning.value }
         runBlocking(Dispatchers.IO) { app.database.recordingDao().saveRecording(firstRecording.copy(controllerKey = "", status = com.pittech.data.CookRecordingEntity.STOPPED)) }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Attach grill & record").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("cook-recording-toggle").performScrollTo().performClick()
+        dismissCookNotice()
+        compose.onNodeWithTag("cook-recording-toggle").performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(20_000) { runBlocking(Dispatchers.IO) {
             val reattached = app.database.recordingDao().getRecording(firstRecording.cookId)!!
             reattached.deviceId != firstRecording.deviceId && app.database.cookDao().getAllSensorReadings().any { it.sourceDeviceId == reattached.deviceId }
@@ -127,15 +143,24 @@ class ConnectedCookScreenTest {
     }
 
     private fun selectSampling(optionTag: String) {
-        compose.onNodeWithTag("grill-sampling").performScrollTo()
         // Saving a note includes asynchronous Room work; a database row can
         // arrive before the screen releases its busy state.
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("grill-sampling") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("grill-sampling").performClick()
+        dismissCookNotice()
+        compose.onNodeWithTag("grill-sampling").performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(optionTag)).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag(optionTag).performClick()
+    }
+
+    private fun dismissCookNotice() {
+        // performScrollTo places a control at the viewport edge. The transient
+        // save snackbar overlays that edge, especially with enlarged text.
+        // Dismiss it using the same visible action available to the user.
+        val dismiss = compose.onAllNodesWithContentDescription("Dismiss")
+        if (dismiss.fetchSemanticsNodes().isNotEmpty()) dismiss[0].performClick()
+        compose.waitUntil(5_000) { dismiss.fetchSemanticsNodes().isEmpty() }
     }
 
 }
