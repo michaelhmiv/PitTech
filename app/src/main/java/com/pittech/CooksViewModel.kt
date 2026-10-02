@@ -151,6 +151,17 @@ class CooksViewModel(
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
 
+    fun beginGuidance(cookId: String) = perform { app.companionRepository.beginPlan(cookId) }
+    fun updateGuidanceStep(cookId: String, step: com.pittech.domain.PlaybookStep) = perform { app.companionRepository.updateStep(cookId, step) }
+    fun pauseGuidance(cookId: String, paused: Boolean) = perform { app.companionRepository.setPaused(cookId, paused) }
+    fun completeGuidanceStep(cookId: String, step: com.pittech.domain.EvaluatedStep, rest: Boolean = false) = perform {
+        app.companionRepository.completeStep(cookId, step.step.id, step.progress.occurrence)
+        if (rest && step.dishId != null) app.companionRepository.stageAction(cookId, step.dishId, "rest_start")
+    }
+    fun snoozeGuidance(cookId: String, step: com.pittech.domain.EvaluatedStep) = perform { app.companionRepository.snooze(cookId, step.step.id, step.progress.occurrence, System.currentTimeMillis() + 600_000) }
+    fun skipGuidance(cookId: String, stepId: String, anchor: Boolean) = perform { app.companionRepository.skip(cookId, stepId, anchor) }
+    fun changeDishStage(cookId: String, dishId: String, action: String) = perform { app.companionRepository.stageAction(cookId, dishId, action) }
+
     val companionRecords = app.companionRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val _playbookEditor = MutableStateFlow<com.pittech.domain.CookPlaybook?>(null)

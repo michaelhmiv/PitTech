@@ -8,11 +8,16 @@ import com.pittech.data.PitTechDataTransfer
 import com.pittech.data.PhotoStorage
 import com.pittech.data.CookRecordingRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 class PitTechApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            kotlinx.coroutines.flow.combine(database.companionDao().observeAll(), database.cookDao().observeAllTimelineEvents(), database.cookDao().observeAllSensorReadings()) { _, _, _ -> Unit }
+                .collect { companionRepository.reconcileAll(this@PitTechApplication) }
+        }
     }
 
     val database: PitTechDatabase by lazy {
