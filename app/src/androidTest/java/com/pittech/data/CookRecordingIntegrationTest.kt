@@ -147,7 +147,7 @@ class CookRecordingIntegrationTest {
         val transfer = PitTechDataTransfer(context, cooks)
         val output = ByteArrayOutputStream(); transfer.writeZip(output)
         val preview = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
-        assertEquals(4, preview.archiveVersion)
+        assertEquals(5, preview.archiveVersion)
         assertEquals(event.temperatureContextJson, preview.snapshot.events.first { it.id == event.id }.temperatureContextJson)
         assertTrue(preview.snapshot.readings.all { it.timestampBasis == "cloud_receipt" })
         assertEquals("", preview.snapshot.recordings.single().controllerKey)
