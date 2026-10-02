@@ -792,7 +792,6 @@ private fun LiveCookTab(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         grillPanel()
-        playbookTools()
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -850,6 +849,7 @@ private fun LiveCookTab(
             }
         }
 
+        playbookTools()
         DashboardSectionPair(
             compact = useCompactDashboardGrid,
             testTag = "live-overview-grid",
