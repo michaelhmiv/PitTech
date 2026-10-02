@@ -20,6 +20,7 @@ class PrimePolarisMonitorTest {
     private class Backend : PolarisBackend {
         var deviceList = listOf(PolarisDevice("private-id", "Grill", null, null, null, null))
         var statusFailure: PolarisFailure? = null
+        var discoveryFailure: PolarisFailure? = null
         var readingFailure: PolarisFailure? = null
         var devicesGate: CompletableDeferred<PolarisResult<List<PolarisDevice>>>? = null
         var deviceCalls = 0
@@ -28,6 +29,15 @@ class PrimePolarisMonitorTest {
         val readingDeviceIds = mutableListOf<String>()
         var cancelled = false
         var signInCalls = 0
+        var refreshCalls = 0
+        var payload: PolarisPayload? = null
+        var refreshFailure: PolarisFailure? = null
+        val tokensUsed = mutableListOf<String>()
+        override suspend fun refreshSession(session: PolarisSession): PolarisResult<PolarisSession> {
+            refreshCalls++
+            refreshFailure?.let { throw it }
+            return PolarisResult(PolarisSession("renewed-token", 4_000_000L, session.selectedDeviceId, session.refreshToken))
+        }
         override suspend fun requestCode(email: String) = PolarisResult(Unit)
         override suspend fun signIn(email: String, code: String): PolarisResult<PolarisSession> {
             signInCalls++
@@ -35,6 +45,7 @@ class PrimePolarisMonitorTest {
         }
         override suspend fun devices(session: PolarisSession): PolarisResult<List<PolarisDevice>> {
             deviceCalls++
+            discoveryFailure?.let { throw it }
             return devicesGate?.await() ?: PolarisResult(deviceList)
         }
         override suspend fun status(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
@@ -43,12 +54,13 @@ class PrimePolarisMonitorTest {
         }
         override suspend fun readings(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
             readingCalls++
+            tokensUsed += session.token
             readingDeviceIds += deviceId
             readingFailure?.let { throw it }
             readingsGate?.let {
                 try { return it.await() } catch (error: kotlinx.coroutines.CancellationException) { cancelled = true; throw error }
             }
-            return PolarisResult(PolarisPayload(mapOf("furnaceTempMeasured" to 225.0, "tempUnit" to 0.0), listOf("furnaceTempMeasured", "tempUnit"), 0, 0))
+            return PolarisResult(payload ?: PolarisPayload(mapOf("furnaceTempMeasured" to 225.0, "tempUnit" to 0.0), listOf("furnaceTempMeasured", "tempUnit"), 0, 0))
         }
     }
     private suspend fun waitFor(condition: () -> Boolean) { withTimeout(5000) { while (!condition()) delay(5) } }
@@ -208,6 +220,80 @@ class PrimePolarisMonitorTest {
             monitor.setRecording(false)
             assertEquals(PolarisPhase.PAUSED, monitor.state.value.phase)
             assertNull(monitor.state.value.lockedDeviceId)
+        } finally { monitor.close() }
+    }
+
+    @Test fun restoredExpiredTraegerSessionRefreshesOnceAndPersistsWithoutPassword() = runBlocking {
+        val backend = Backend()
+        val store = Store(PolarisSession("old-token", 999L, "private-id", "private-refresh"))
+        val monitor = PrimePolarisMonitor(backend, store, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), now = { 1_000_000L }, provider = GrillProvider.TRAEGER)
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.latest != null }
+            assertEquals(1, backend.refreshCalls)
+            assertEquals(listOf("renewed-token"), backend.tokensUsed)
+            assertEquals("private-refresh", store.session!!.refreshToken)
+            assertEquals("private-id", store.session!!.selectedDeviceId)
+            assertEquals(GrillProvider.TRAEGER, monitor.state.value.provider)
+            assertEquals(0, backend.signInCalls)
+        } finally { monitor.close() }
+    }
+    @Test fun repeatedOutOfOrderAndStaleDeviceReportsCannotRefreshReceiptHistory() = runBlocking {
+        var clock = 1_000_000L
+        val backend = Backend().apply { payload = PolarisPayload(mapOf("tempUnit" to 0.0, "furnaceTempMeasured" to 225.0), emptyList(), 0, null, reportedAtMillis = clock) }
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), now = { clock }, provider = GrillProvider.TRAEGER)
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.samples.size == 1 }
+            clock += 15_000
+            monitor.refresh()
+            waitFor { backend.readingCalls >= 2 && monitor.state.value.nextPollAtMillis != null }
+            assertEquals(1, monitor.state.value.samples.size)
+            assertEquals(1_000_000L, monitor.state.value.latest!!.fetchedAtMillis)
+            clock += 60_000
+            monitor.refresh()
+            waitFor { monitor.state.value.readingRequestFailed }
+            assertEquals(1, monitor.state.value.samples.size)
+            assertTrue(monitor.state.value.readingsAreOld(clock))
+            backend.payload = backend.payload!!.copy(reportedAtMillis = clock)
+            monitor.refresh()
+            waitFor { monitor.state.value.samples.size == 2 }
+            assertFalse(monitor.state.value.readingsAreOld(clock))
+        } finally { monitor.close() }
+    }
+    @Test fun invalidRefreshTokenStopsPollingAndDisconnectsSavedSession() = runBlocking {
+        val backend = Backend().apply { refreshFailure = PolarisFailure(PolarisFailureKind.AUTH, 400) }
+        val store = Store(PolarisSession("old-token", 999L, "private-id", "private-refresh"))
+        val monitor = PrimePolarisMonitor(backend, store, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), now = { 1_000_000L }, provider = GrillProvider.TRAEGER)
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.phase == PolarisPhase.SIGN_IN_REQUIRED }
+            assertNull(store.session)
+            assertEquals(0, backend.readingCalls)
+            assertEquals(0, backend.signInCalls)
+            assertTrue(monitor.state.value.message.contains("Traeger"))
+        } finally { monitor.close() }
+    }
+    @Test fun restoredRecordingRetriesTemporaryDiscoveryFailureWithoutLosingCredentialOrLoggingIn() = runBlocking {
+        val retry = CompletableDeferred<Unit>()
+        val backend = Backend().apply { discoveryFailure = PolarisFailure(PolarisFailureKind.NETWORK) }
+        val store = Store()
+        var pause = 0L
+        val monitor = PrimePolarisMonitor(backend, store, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { 1_000_000L }, provider = GrillProvider.TRAEGER, discoveryWait = { pause = it; retry.await() })
+        try {
+            monitor.setRecording(true)
+            waitFor { monitor.state.value.nextPollAtMillis != null }
+            assertEquals(PolarisPhase.DISCOVERING, monitor.state.value.phase)
+            assertNotNull(store.session)
+            assertEquals(30_000L, pause)
+            assertEquals(0, backend.signInCalls)
+            backend.discoveryFailure = null
+            retry.complete(Unit)
+            waitFor { monitor.state.value.latest != null }
+            assertEquals(2, backend.deviceCalls)
+            assertEquals(0, monitor.state.value.consecutiveFailures)
+            assertEquals(0, backend.signInCalls)
         } finally { monitor.close() }
     }
 

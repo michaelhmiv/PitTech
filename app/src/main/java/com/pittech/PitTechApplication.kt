@@ -7,9 +7,6 @@ import com.pittech.data.PitTechDatabase
 import com.pittech.data.PitTechDataTransfer
 import com.pittech.data.PhotoStorage
 import com.pittech.data.CookRecordingRepository
-import com.pittech.devices.PrimePolarisMonitor
-import com.pittech.devices.PrimePolarisApi
-import com.pittech.devices.AndroidPolarisSessionStore
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class PitTechApplication : Application() {
@@ -34,9 +31,9 @@ class PitTechApplication : Application() {
         PitTechDataTransfer(this, cookRepository)
     }
 
-    private val sharedGrillMonitor by lazy { PrimePolarisMonitor(PrimePolarisApi(), AndroidPolarisSessionStore(this)) }
-    internal var grillMonitorForTests: PrimePolarisMonitor? = null
-    internal val grillMonitor: PrimePolarisMonitor get() = grillMonitorForTests ?: sharedGrillMonitor
+    private val sharedGrillMonitor by lazy { com.pittech.devices.ConnectedGrillMonitor.create(this) }
+    internal var grillMonitorForTests: com.pittech.devices.PolarisMonitorEngine? = null
+    internal val grillMonitor: com.pittech.devices.PolarisMonitorEngine get() = grillMonitorForTests ?: sharedGrillMonitor
     internal val recordingRepository by lazy { CookRecordingRepository(database) }
     internal val recordingServiceRunning = MutableStateFlow(false)
 }

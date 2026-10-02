@@ -9,16 +9,18 @@ internal enum class PolarisOperation(val path: String) {
     DEVICES("/dms/queryDeviceListByUserId"),
     STATUS("/dms/queryDeviceStatus"),
     READINGS("/dms/queryDeviceRealTimeData"),
+    REFRESH_SESSION(""),
 }
 
 internal class PolarisSession(
     val token: String,
     val expiresAtMillis: Long? = null,
     val selectedDeviceId: String? = null,
+    val refreshToken: String? = null,
 ) {
     override fun toString() = "PolarisSession(redacted)"
     fun expired(now: Long) = expiresAtMillis?.let { now >= it - 30_000L } ?: false
-    fun select(id: String?) = PolarisSession(token, expiresAtMillis, id)
+    fun select(id: String?) = PolarisSession(token, expiresAtMillis, id, refreshToken)
 }
 
 internal data class PolarisDevice(
@@ -28,6 +30,7 @@ internal data class PolarisDevice(
     val grillModel: String?,
     val controllerModel: String?,
     val firmware: String?,
+    val probeCount: Int = 2,
 )
 
 internal data class PolarisPayload(
@@ -35,9 +38,12 @@ internal data class PolarisPayload(
     val recognizedFields: List<String>,
     val unknownFieldCount: Int,
     val alarmCount: Int?,
+    val reportedAtMillis: Long? = null,
+    val zeroProbeMeansUnavailable: Boolean = true,
+    val probeCount: Int = 2,
 )
 
-internal data class PolarisResult<T>(val value: T, val httpStatus: Int = 200, val apiCode: Int = 10000)
+internal data class PolarisResult<T>(val value: T, val httpStatus: Int? = 200, val apiCode: Int? = 10000, val observedRemote: Boolean = true)
 
 internal enum class PolarisFailureKind { NETWORK, HTTP, RATE_LIMIT, AUTH, SCHEMA, API, STORAGE }
 
@@ -57,6 +63,12 @@ internal class PolarisFailure(
         PolarisFailureKind.STORAGE -> "PitTech could not open the saved sign-in. Sign in again."
         PolarisFailureKind.HTTP -> "GrillirG returned HTTP ${httpStatus ?: "error"}. Monitoring will retry."
         PolarisFailureKind.API -> "GrillirG rejected this request (code ${apiCode ?: "unknown"})."
+    }
+    fun message(provider: GrillProvider): String = when {
+        provider == GrillProvider.GRILLIRG -> userMessage
+        kind == PolarisFailureKind.AUTH && provider == GrillProvider.PIT_BOSS -> "The controller rejected the connection. Check its ID and controller password in Devices."
+        kind == PolarisFailureKind.AUTH -> "${provider.label} needs you to sign in again in Devices."
+        else -> userMessage.replace("GrillirG", provider.label)
     }
 }
 
@@ -93,9 +105,10 @@ internal data class PolarisMonitorState(
     val exchanges: List<PolarisExchange> = emptyList(),
     val sessionSaved: Boolean = true,
     val lockedDeviceId: String? = null,
+    val provider: GrillProvider = GrillProvider.GRILLIRG,
 ) {
     val selectedDevice get() = devices.firstOrNull { it.id == selectedDeviceId }
-    fun readingsAreOld(now: Long) = latest == null || now - latest.fetchedAtMillis > 45_000L || readingRequestFailed || onlineStatus?.let { it != 0 } == true
+    fun readingsAreOld(now: Long) = latest == null || now - latest.fetchedAtMillis > 45_000L || readingRequestFailed || onlineStatus?.let { it != 0 } == true || latest.payload.reportedAtMillis?.let { now - it > 45_000L || it - now > 300_000L } == true
     fun onlineLabel(now: Long): String = when {
         statusFetchedAtMillis == null -> "Grill connection not reported"
         now - statusFetchedAtMillis > 45_000L -> "Grill connection status is old"
@@ -112,9 +125,9 @@ internal object PolarisMonitorPolicy {
     fun temperature(sample: PolarisSample?, key: String): String {
         val value = sample?.payload?.values?.get(key) ?: return "Not reported"
         val number = if (value % 1.0 == 0.0) value.toInt().toString() else "%.1f".format(java.util.Locale.US, value)
-        return number + when (sample.payload.values["tempUnit"]?.toInt()) {
-            0 -> " °F"
-            1 -> " °C"
+        return number + when (sample.payload.values["tempUnit"]) {
+            0.0 -> " °F"
+            1.0 -> " °C"
             else -> " (unit unknown)"
         }
     }
@@ -131,7 +144,7 @@ internal object PolarisMonitorPolicy {
 
     /** Build from typed, allowlisted facts; never include account names, IDs or raw JSON. */
     fun report(state: PolarisMonitorState, now: Long): String = buildString {
-        appendLine("PitTech GrillirG / Prime Polaris cloud monitor")
+        appendLine("PitTech ${state.provider.label} read-only monitor")
         appendLine("Captured (UTC): ${Instant.ofEpochMilli(now)}")
         appendLine("Phase: ${state.phase}; successful requests=${state.successfulRequests}; failed requests=${state.failedRequests}")
         appendLine("Cloud last reachable (UTC): ${state.lastApiSuccessMillis?.let { Instant.ofEpochMilli(it) } ?: "not reached"}")
@@ -142,7 +155,7 @@ internal object PolarisMonitorPolicy {
         appendLine("Latest fields: ${state.latest?.payload?.recognizedFields?.joinToString() ?: "none"}")
         appendLine("Unknown top-level field count: ${state.latest?.payload?.unknownFieldCount ?: 0}")
         appendLine("Alarm entries: ${state.latest?.payload?.alarmCount ?: "not reported"}; alarm contents omitted")
-        appendLine("Fetch times show receipt from the backend; the backend's device sample age is unknown.")
+        appendLine("Fetch times show receipt from the backend. Device report timestamps, when present, are checked for freshness.")
         appendLine("Recent exchanges (max 80):")
         state.exchanges.asReversed().forEach {
             appendLine("${Instant.ofEpochMilli(it.timeMillis)} ${it.operation.name} duration=${it.durationMillis}ms HTTP=${it.httpStatus ?: "none"} API=${it.apiCode ?: "none"} result=${it.failure?.name ?: "success"}")

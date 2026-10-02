@@ -35,8 +35,8 @@ class GrillirGCloudMonitorScreenTest {
         composeRule.setContent { PitTechTheme { GrillirGCloudMonitorScreen(engineOverride = engine) } }
         composeRule.onNodeWithTag("cloud-request-code").assertIsNotEnabled()
         assertEquals(0, engine.requestedCodes)
-        composeRule.onNodeWithTag("cloud-email").performTextInput("private@example.com")
-        composeRule.onNodeWithTag("cloud-request-code").performClick()
+        composeRule.onNodeWithTag("cloud-email").performScrollTo().performTextInput("private@example.com")
+        composeRule.onNodeWithTag("cloud-request-code").performScrollTo().performClick()
         composeRule.onNodeWithTag("cloud-code").performScrollTo().performTextInput("123456")
         composeRule.onNodeWithTag("cloud-sign-in").performScrollTo().performClick()
         composeRule.onNodeWithTag("cloud-grill-status").performScrollTo().assertIsDisplayed().assertTextContains("Grill online")

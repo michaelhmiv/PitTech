@@ -40,6 +40,8 @@ data class NewCookDraft(
     val recordGrill: Boolean = false,
     val probe1DishIndex: Int? = null,
     val probe2DishIndex: Int? = null,
+    val probe3DishIndex: Int? = null,
+    val probe4DishIndex: Int? = null,
 )
 
 object CookEntryValidation {

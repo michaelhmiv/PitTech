@@ -207,6 +207,22 @@ if [[ "$cloud_passed_count" -ne 5 ]] || ! grep -q 'OK (5 tests)' "$cloud_test_ou
   exit 1
 fi
 
+provider_test_output="$output_dir/connected-provider-tests.txt"
+provider_test_selector='com.pittech.ui.ConnectedGrillProviderScreenTest,com.pittech.devices.ConnectedGrillSessionStoreTest,com.pittech.data.ConnectedGrillCookIntegrationTest,com.pittech.ConnectedGrillRecordingServiceTest'
+echo "Running provider setup, credential isolation, and four-probe cook integration tests on API $api_level."
+timeout 10m adb shell am instrument -w -r \
+  -e class "$provider_test_selector" \
+  "$instrumentation_target" | tee "$provider_test_output"
+provider_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$provider_test_output" || true)"
+if [[ "$provider_passed_count" -ne 11 ]] || ! grep -q 'OK (11 tests)' "$provider_test_output" ||
+   grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$provider_test_output"; then
+  echo "Connected-provider instrumentation tests did not all pass." >&2
+  exit 1
+fi
+if timeout 10 adb shell run-as com.pittech.debug test -f files/pittech-ui-test/provider-four-probe-setup.png; then
+  timeout 10 adb exec-out run-as com.pittech.debug cat files/pittech-ui-test/provider-four-probe-setup.png > "$output_dir/provider-four-probe-setup.png"
+fi
+
 recording_test_output="$output_dir/cook-recording-tests.txt"
 recording_test_selector='com.pittech.data.CookRecordingIntegrationTest,com.pittech.CookRecordingServiceTest,com.pittech.ui.ConnectedCookScreenTest'
 echo "Running connected-cook persistence, migration, background-service, and UI tests on API $api_level."

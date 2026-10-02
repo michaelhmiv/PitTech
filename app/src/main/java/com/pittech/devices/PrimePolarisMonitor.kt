@@ -21,6 +21,9 @@ import kotlinx.coroutines.withContext
 internal interface PolarisMonitorEngine {
     val state: StateFlow<PolarisMonitorState>
     fun setForeground(active: Boolean)
+    fun setRecording(active: Boolean) {}
+    fun lockDevice(id: String) {}
+    fun selectProvider(provider: GrillProvider) {}
     fun requestCode(email: String)
     fun signIn(email: String, code: String)
     fun reloadDevices()
@@ -37,8 +40,10 @@ internal class PrimePolarisMonitor(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val now: () -> Long = System::currentTimeMillis,
     private val elapsed: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val provider: GrillProvider = GrillProvider.GRILLIRG,
+    private val discoveryWait: suspend (Long) -> Unit = { delay(it) },
 ) : PolarisMonitorEngine {
-    private val mutableState = MutableStateFlow(PolarisMonitorState())
+    private val mutableState = MutableStateFlow(PolarisMonitorState(provider = provider))
     override val state = mutableState.asStateFlow()
     private var session: PolarisSession? = null
     private var foreground = false
@@ -54,7 +59,7 @@ internal class PrimePolarisMonitor(
         scope.launch {
             try {
                 session = storageMutex.withLock { withContext(Dispatchers.IO) { storage.load() } }
-                if (session?.expired(now()) == true) {
+                if (session?.expired(now()) == true && session?.refreshToken == null) {
                     session = null
                     storageMutex.withLock { withContext(Dispatchers.IO) { storage.clear() } }
                 }
@@ -62,13 +67,13 @@ internal class PrimePolarisMonitor(
                     phase = if (session == null) PolarisPhase.SIGNED_OUT else PolarisPhase.READY,
                     authenticated = session != null,
                     selectedDeviceId = session?.selectedDeviceId,
-                    message = if (session == null) "Sign in to the account your grill is added to." else "Saved sign-in opened. Loading your grills…",
+                    message = if (session == null) { if (provider == GrillProvider.PIT_BOSS) "Connect your provisioned controller below." else "Sign in to the account your grill is added to." } else "Saved sign-in opened. Loading your grills…",
                 )
                 if (foreground && session != null) reloadDevices()
             } catch (error: CancellationException) { throw error }
             catch (_: Exception) {
                 session = null
-                mutableState.value = state.value.copy(phase = PolarisPhase.SIGNED_OUT, message = PolarisFailure(PolarisFailureKind.STORAGE).userMessage)
+                mutableState.value = state.value.copy(phase = PolarisPhase.SIGNED_OUT, message = PolarisFailure(PolarisFailureKind.STORAGE).message(provider))
             }
         }
     }
@@ -78,13 +83,13 @@ internal class PrimePolarisMonitor(
         updateActive()
     }
 
-    fun setRecording(active: Boolean) {
+    override fun setRecording(active: Boolean) {
         recording = active
         if (!active) mutableState.value = state.value.copy(lockedDeviceId = null)
         updateActive()
     }
 
-    fun lockDevice(id: String) {
+    override fun lockDevice(id: String) {
         mutableState.value = state.value.copy(lockedDeviceId = id)
     }
 
@@ -109,16 +114,38 @@ internal class PrimePolarisMonitor(
         session = track(PolarisOperation.SIGN_IN) { backend.signIn(email, code) }
         mutableState.value = state.value.copy(authenticated = true, devices = emptyList(), selectedDeviceId = null, latest = null, samples = emptyList(), onlineStatus = null, statusFetchedAtMillis = null)
         saveSession()
-        discoverDevices()
+        discoverWithRetry()
     }
 
     override fun reloadDevices() {
         if (session == null) return
-        runAction { discoverDevices() }
+        runAction { discoverWithRetry() }
+    }
+
+    private suspend fun discoverWithRetry() {
+        while (true) {
+            try { discoverDevices(); return }
+            catch (error: CancellationException) { throw error }
+            catch (error: PolarisFailure) {
+                if (!foreground || error.kind !in setOf(PolarisFailureKind.NETWORK, PolarisFailureKind.HTTP, PolarisFailureKind.RATE_LIMIT)) throw error
+                val failures = state.value.consecutiveFailures + 1
+                val pause = PolarisMonitorPolicy.nextDelay(failures, error.retryAfterMillis)
+                mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, busy = false,
+                    consecutiveFailures = failures, nextPollAtMillis = now() + pause,
+                    message = error.message(provider) + " Retrying grill discovery after a pause.")
+                discoveryWait(pause)
+                if (!foreground) return
+            }
+        }
     }
 
     private suspend fun discoverDevices() {
-        val current = session ?: return
+        var current = session ?: return
+        if (current.expired(now())) {
+            current = track(PolarisOperation.REFRESH_SESSION) { backend.refreshSession(current) }
+            session = current
+            saveSession()
+        }
         mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, message = "Finding grills on your account…")
         val devices = track(PolarisOperation.DEVICES) { backend.devices(current) }
         val selected = state.value.lockedDeviceId?.takeIf { id -> devices.any { it.id == id } }
@@ -131,7 +158,7 @@ internal class PrimePolarisMonitor(
             latest = if (changed) null else state.value.latest, samples = if (changed) emptyList() else state.value.samples,
             onlineStatus = if (changed) null else state.value.onlineStatus,
             statusFetchedAtMillis = if (changed) null else state.value.statusFetchedAtMillis,
-            message = if (devices.isEmpty()) "No grills were returned. Check that this account owns your grill or has accepted its sharing invitation in GrillirG." else "Select a grill to monitor.",
+            message = if (devices.isEmpty()) "No grills were returned. Check the selected provider account in Devices and finish pairing in its supported app." else "Select a grill to monitor.",
         )
         saveSession()
         startPolling()
@@ -164,7 +191,7 @@ internal class PrimePolarisMonitor(
         stopPolling()
         action?.cancel()
         session = null
-        mutableState.value = PolarisMonitorState(phase = PolarisPhase.SIGNED_OUT, message = "Signed out on this phone.")
+        mutableState.value = PolarisMonitorState(phase = PolarisPhase.SIGNED_OUT, message = "Disconnected on this phone.", provider = provider)
         action = scope.launch {
             try { withContext(NonCancellable) { storageMutex.withLock { withContext(Dispatchers.IO) { storage.clear() } } } }
             catch (error: CancellationException) { throw error }
@@ -183,6 +210,7 @@ internal class PrimePolarisMonitor(
         generation += 1
         poller?.cancel()
         poller = null
+        backend.disconnect()
     }
 
     private fun runAction(block: suspend () -> Unit) {
@@ -196,7 +224,7 @@ internal class PrimePolarisMonitor(
             catch (error: Exception) {
                 val failure = error as? PolarisFailure
                 if (failure?.kind == PolarisFailureKind.AUTH) invalidateSession(failure)
-                else mutableState.value = state.value.copy(busy = false, message = failure?.userMessage ?: "Check the email and six-digit code, then try again.")
+                else mutableState.value = state.value.copy(busy = false, message = failure?.message(provider) ?: "Check the connection details, then try again.")
             }
         }
     }
@@ -212,17 +240,32 @@ internal class PrimePolarisMonitor(
 
     private fun startPolling() {
         if (!foreground || closed || poller?.isActive == true) return
-        val current = session ?: return
+        var current = session ?: return
         val id = state.value.selectedDeviceId?.takeIf { selected -> state.value.devices.any { it.id == selected } } ?: return
         val attemptGeneration = generation
         poller = scope.launch {
             while (true) {
                 currentCoroutineContext().ensureActive()
                 if (attemptGeneration != generation) return@launch
-                if (current.expired(now())) { invalidateSession(PolarisFailure(PolarisFailureKind.AUTH)); return@launch }
+                if (current.expired(now())) {
+                    try {
+                        current = track(PolarisOperation.REFRESH_SESSION) { backend.refreshSession(current) }
+                        session = current
+                        saveSession()
+                    } catch (error: CancellationException) { throw error }
+                    catch (error: PolarisFailure) {
+                        if (error.kind == PolarisFailureKind.AUTH) { invalidateSession(error); return@launch }
+                        val count = state.value.consecutiveFailures + 1
+                        val pause = PolarisMonitorPolicy.nextDelay(count, error.retryAfterMillis)
+                        mutableState.value = state.value.copy(readingRequestFailed = true, consecutiveFailures = count,
+                            message = error.message(provider), nextPollAtMillis = now() + pause)
+                        delay(pause)
+                        continue
+                    }
+                }
                 mutableState.value = state.value.copy(phase = PolarisPhase.MONITORING, busy = false, nextPollAtMillis = null)
                 var failure: PolarisFailure? = null
-                try {
+                if (backend.hasSeparateStatusRead) try {
                     val status = track(PolarisOperation.STATUS) { backend.status(current, id) }
                     mutableState.value = state.value.copy(onlineStatus = status.values["onlineStatus"]?.toInt(), statusFetchedAtMillis = now())
                 } catch (error: CancellationException) { throw error }
@@ -232,11 +275,16 @@ internal class PrimePolarisMonitor(
                     try {
                         val readings = track(PolarisOperation.READINGS) { backend.readings(current, id) }
                         val sample = PolarisSample(now(), readings)
+                        val reported = readings.reportedAtMillis
+                        val stale = reported?.let { now() - it > 45_000L || it - now() > 300_000L } == true
+                        val repeated = reported != null && state.value.latest?.payload?.reportedAtMillis?.let { reported <= it } == true
                         mutableState.value = state.value.copy(
-                            latest = sample, samples = (state.value.samples + sample).takeLast(120), readingRequestFailed = false,
+                            latest = if (stale || repeated) state.value.latest else sample,
+                            samples = if (stale || repeated) state.value.samples else (state.value.samples + sample).takeLast(120), readingRequestFailed = stale,
                             onlineStatus = readings.values["onlineStatus"]?.toInt() ?: state.value.onlineStatus,
                             statusFetchedAtMillis = if (readings.values.containsKey("onlineStatus")) now() else state.value.statusFetchedAtMillis,
                         )
+                        if (stale) failure = PolarisFailure(PolarisFailureKind.SCHEMA)
                     } catch (error: CancellationException) { throw error }
                     catch (error: PolarisFailure) {
                         failure = error
@@ -248,7 +296,7 @@ internal class PrimePolarisMonitor(
                 val delayMillis = PolarisMonitorPolicy.nextDelay(failures, failure?.retryAfterMillis)
                 mutableState.value = state.value.copy(
                     consecutiveFailures = failures, nextPollAtMillis = now() + delayMillis,
-                    message = failure?.userMessage ?: "Monitoring your grill. Readings are fetched every 15 seconds while PitTech is open or a cook is recording.",
+                    message = failure?.message(provider) ?: "Monitoring your grill. Readings are fetched every 15 seconds while PitTech is open or a cook is recording.",
                 )
                 delay(delayMillis)
             }
@@ -256,13 +304,14 @@ internal class PrimePolarisMonitor(
     }
 
     private suspend fun invalidateSession(failure: PolarisFailure) {
+        backend.disconnect()
         session = null
         generation += 1
         var removed = true
         try { storageMutex.withLock { withContext(Dispatchers.IO) { storage.clear() } } }
         catch (error: CancellationException) { throw error }
         catch (_: Exception) { removed = false }
-        mutableState.value = state.value.copy(phase = PolarisPhase.SIGN_IN_REQUIRED, authenticated = false, busy = false, nextPollAtMillis = null, message = failure.userMessage + if (removed) "" else " Saved sign-in could not be removed.")
+        mutableState.value = state.value.copy(phase = PolarisPhase.SIGN_IN_REQUIRED, authenticated = false, busy = false, nextPollAtMillis = null, message = failure.message(provider) + if (removed) "" else " Saved sign-in could not be removed.")
     }
 
     private suspend fun <T> track(operation: PolarisOperation, request: suspend () -> PolarisResult<T>): T {
@@ -271,7 +320,7 @@ internal class PrimePolarisMonitor(
             val result = request()
             currentCoroutineContext().ensureActive()
             val event = PolarisExchange(now(), operation, (elapsed() - started).coerceAtLeast(0), result.httpStatus, result.apiCode)
-            mutableState.value = state.value.copy(lastApiSuccessMillis = now(), successfulRequests = state.value.successfulRequests + 1, exchanges = (state.value.exchanges + event).takeLast(80))
+            mutableState.value = state.value.copy(lastApiSuccessMillis = if (result.observedRemote) now() else state.value.lastApiSuccessMillis, successfulRequests = state.value.successfulRequests + 1, exchanges = (state.value.exchanges + event).takeLast(80))
             return result.value
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {

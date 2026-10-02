@@ -18,6 +18,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal interface PolarisBackend {
+    val hasSeparateStatusRead: Boolean get() = true
+    suspend fun refreshSession(session: PolarisSession): PolarisResult<PolarisSession> = throw PolarisFailure(PolarisFailureKind.AUTH)
+    fun disconnect() {}
     suspend fun requestCode(email: String): PolarisResult<Unit>
     suspend fun signIn(email: String, code: String): PolarisResult<PolarisSession>
     suspend fun devices(session: PolarisSession): PolarisResult<List<PolarisDevice>>

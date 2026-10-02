@@ -34,6 +34,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import com.pittech.devices.GrillProvider
+import com.pittech.devices.PitBossTelemetry
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -79,10 +83,11 @@ internal fun GrillirGCloudMonitorScreen(
     val owner = LocalLifecycleOwner.current
     val engine = remember(context, engineOverride) { engineOverride ?: (context.applicationContext as com.pittech.PitTechApplication).grillMonitor }
     val state by engine.state.collectAsStateWithLifecycle()
-    var email by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
+    var email by remember(state.provider) { mutableStateOf("") }
+    var code by remember(state.provider) { mutableStateOf("") }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var detailsExpanded by remember { mutableStateOf(false) }
+    var requirementsExpanded by remember { mutableStateOf(false) }
     var report by remember { mutableStateOf<FeedbackDiagnosticReport?>(null) }
     var submitting by remember { mutableStateOf(false) }
     var reportMessage by remember { mutableStateOf<String?>(null) }
@@ -100,36 +105,50 @@ internal fun GrillirGCloudMonitorScreen(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("GrillirG Wi-Fi monitor", style = MaterialTheme.typography.headlineSmall)
-        Text("Monitor the grill already added to your GrillirG account. Your grill and phone need an internet connection.")
+        Text("Wi-Fi grill monitor", style = MaterialTheme.typography.headlineSmall)
+        SimpleDropdownField("Connection", state.provider.label,
+            if (state.lockedDeviceId != null) listOf(state.provider.label) else GrillProvider.entries.map { it.label },
+            { label -> engine.selectProvider(GrillProvider.entries.first { it.label == label }) }, testTag = "cloud-provider")
+        Text("Read-only temperatures. Pair your grill with Wi-Fi in its supported app first.")
+        if (state.provider != GrillProvider.GRILLIRG) Text("Experimental · hardware confirmation pending", style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { requirementsExpanded = !requirementsExpanded }) { Text(if (requirementsExpanded) "Hide connection requirements" else "Connection requirements") }
+        if (requirementsExpanded) Text(state.provider.setup, style = MaterialTheme.typography.bodySmall)
         Text(state.message, modifier = Modifier.testTag("cloud-message"))
         if (state.busy || state.phase == PolarisPhase.RESTORING) CircularProgressIndicator()
 
         if (!state.authenticated) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Sign in with an email code", style = MaterialTheme.typography.titleMedium)
-                    Text("Use the email used in GrillirG. If that app displaces this sign-in, you can use a separate account your grill is shared to.", style = MaterialTheme.typography.bodySmall)
+                    val emailCode = state.provider.emailCode
+                    val pitBoss = state.provider == GrillProvider.PIT_BOSS
+                    Text(if (emailCode) "Sign in with an email code" else if (pitBoss) "Connect your controller" else "Sign in to Traeger", style = MaterialTheme.typography.titleMedium)
+                    Text(if (emailCode) "Use the email used in GrillirG. If that app displaces this sign-in, you can use a separate account your grill is shared to."
+                        else if (pitBoss) "Use the complete controller ID, not a grill model or serial number. The optional password is the controller password, not your Pit Boss account password."
+                        else "Use your Traeger email and password. Account passwords are used only for sign-in; saved tokens are encrypted on this phone. Federated sign-in and MFA challenges are not supported.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
-                        value = email, onValueChange = { email = it.take(254) }, label = { Text("GrillirG account email") },
-                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        value = email, onValueChange = { email = it.take(254) }, label = { Text(if (pitBoss) "Controller ID" else state.provider.label + " account email") },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = if (pitBoss) KeyboardType.Ascii else KeyboardType.Email),
                         modifier = Modifier.fillMaxWidth().testTag("cloud-email"), enabled = !state.busy,
                     )
-                    OutlinedButton(
+                    if (emailCode) OutlinedButton(
                         onClick = { engine.requestCode(email.trim()) },
                         enabled = !state.busy && state.phase != PolarisPhase.RESTORING && PrimePolarisApi.validEmail(email),
                         modifier = Modifier.testTag("cloud-request-code"),
                     ) { Text("Send sign-in code") }
                     OutlinedTextField(
-                        value = code, onValueChange = { code = it.filter(Char::isDigit).take(6) }, label = { Text("Six-digit email code") },
-                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        value = code, onValueChange = { code = if (emailCode) it.filter(Char::isDigit).take(6) else it.take(if (pitBoss) 256 else 1024) },
+                        label = { Text(if (emailCode) "Six-digit email code" else if (pitBoss) "Controller password (optional)" else "Traeger password") },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = if (emailCode) KeyboardType.Number else KeyboardType.Password),
+                        visualTransformation = if (emailCode) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth().testTag("cloud-code"), enabled = !state.busy,
                     )
+                    val valid = if (pitBoss) runCatching { PitBossTelemetry.controllerId(email) }.isSuccess else
+                        PrimePolarisApi.validEmail(email) && if (emailCode) Regex("[0-9]{6}").matches(code) else code.isNotEmpty()
                     Button(
-                        onClick = { val enteredCode = code; code = ""; engine.signIn(email.trim(), enteredCode) },
-                        enabled = !state.busy && state.phase != PolarisPhase.RESTORING && PrimePolarisApi.validEmail(email) && Regex("[0-9]{6}").matches(code),
+                        onClick = { val secret = code; code = ""; engine.signIn(email.trim(), secret) },
+                        enabled = !state.busy && state.phase != PolarisPhase.RESTORING && valid,
                         modifier = Modifier.testTag("cloud-sign-in"),
-                    ) { Text("Sign in & find my grill") }
+                    ) { Text(if (pitBoss) "Connect controller" else "Sign in & find my grill") }
                 }
             }
         } else {
@@ -163,21 +182,25 @@ internal fun GrillirGCloudMonitorScreen(
                     ReadingCard("Chamber", PolarisMonitorPolicy.temperature(sample, "furnaceTempMeasured"), Modifier.weight(1f).testTag("cloud-chamber"))
                     ReadingCard("Target", PolarisMonitorPolicy.temperature(sample, "furnaceTempSetting"), Modifier.weight(1f))
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ReadingCard("Probe 1", PolarisMonitorPolicy.temperature(sample, "probeP1Measured"), Modifier.weight(1f))
-                    ReadingCard("Probe 2", PolarisMonitorPolicy.temperature(sample, "probeP2Measured"), Modifier.weight(1f))
+                (1..device.probeCount.coerceIn(1, 4)).toList().chunked(2).forEach { channels ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        channels.forEach { channel -> ReadingCard("Probe " + channel, PolarisMonitorPolicy.temperature(sample, "probeP" + channel + "Measured"), Modifier.weight(1f)) }
+                    }
                 }
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Controller status", style = MaterialTheme.typography.titleMedium)
                         Text("Operation: " + PolarisMonitorPolicy.runningLabel(sample?.payload?.values?.get("runningStatus")))
+                        sample?.payload?.values?.get("vendorSystemStatus")?.let { Text("Vendor status code: ${it.toInt()}") }
+                        sample?.payload?.values?.get("vendorPowerState")?.let { Text("Controller power: " + switchLabel(it)) }
+                        sample?.payload?.values?.get("pelletLevel")?.let { Text("Pellet level: ${it.toInt()}%") }
                         Text("Smoke mode: " + switchLabel(sample?.payload?.values?.get("smokeMode")))
                         sample?.payload?.values?.get("smokeLevel")?.let { Text("Smoke level: ${it.toInt()}") }
                         Text("Probe 1 target: " + PolarisMonitorPolicy.temperature(sample, "probeP1Setting"))
                         Text("Probe 2 target: " + PolarisMonitorPolicy.temperature(sample, "probeP2Setting"))
                         Text("Alarm entries returned: ${sample?.payload?.alarmCount ?: "not reported"}")
-                        if (sample?.payload?.alarmCount?.let { it > 0 } == true) Text("Check the controller or GrillirG for the alarm details.", color = MaterialTheme.colorScheme.error)
-                        Text("Fetch time is when PitTech received the data. The backend's device sample age is unknown.", style = MaterialTheme.typography.bodySmall)
+                        if (sample?.payload?.alarmCount?.let { it > 0 } == true) Text("Check the controller or its supported app for alarm details.", color = MaterialTheme.colorScheme.error)
+                        Text("Fetch time is when PitTech received the data. " + (sample?.payload?.reportedAtMillis?.let { "Device report: ${age(now, it)}." } ?: "The backend's device sample age is unknown."), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 ChamberHistory(state.samples)
@@ -201,8 +224,8 @@ internal fun GrillirGCloudMonitorScreen(
                     reportMessage = null
                     report = FeedbackDiagnosticReport(
                         referenceCode = "CLOUD-" + UUID.randomUUID().toString().take(8).uppercase(),
-                        occurredAtUtc = Instant.ofEpochMilli(now).toString(), source = "GrillirG cloud monitor",
-                        summary = "GrillirG connection and controller observations", details = PolarisMonitorPolicy.report(state, now),
+                        occurredAtUtc = Instant.ofEpochMilli(now).toString(), source = state.provider.label + " cloud monitor",
+                        summary = state.provider.label + " connection and controller observations", details = PolarisMonitorPolicy.report(state, now),
                     )
                 }, modifier = Modifier.testTag("cloud-review-report"),
             ) { Text("Review connection report") }
@@ -216,7 +239,7 @@ internal fun GrillirGCloudMonitorScreen(
             title = { Text("Review public support report") },
             text = {
                 Column(Modifier.height(350.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Submitting creates a public GitHub issue. Email, codes, tokens, device identities and raw responses are excluded.")
+                    Text("Submitting creates a public GitHub issue. Email, passwords, codes, tokens, device identities and raw responses are excluded.")
                     Text(preview.details, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("cloud-report-preview"))
                 }
             },
@@ -225,7 +248,7 @@ internal fun GrillirGCloudMonitorScreen(
                     submitting = true
                     submitter.submit(
                         FeedbackRequest(
-                            kind = FeedbackKind.DEVICE_DIAGNOSTIC, title = "GrillirG cloud connection report",
+                            kind = FeedbackKind.DEVICE_DIAGNOSTIC, title = state.provider.label + " cloud connection report",
                             description = "User-reviewed read-only backend monitoring diagnostics.", appVersion = BuildConfig.VERSION_NAME,
                             androidVersion = "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
                             device = android.os.Build.MODEL, diagnosticReport = preview,
@@ -270,7 +293,11 @@ internal fun GrillirGCloudMonitorScreen(
                 val first = points.first().fetchedAtMillis
                 val duration = (points.last().fetchedAtMillis - first).coerceAtLeast(1)
                 fun point(index: Int) = Offset(((points[index].fetchedAtMillis - first).toFloat() / duration) * size.width, size.height - ((values[index] - minimum) / range).toFloat() * size.height)
-                for (index in 1 until points.size) drawLine(color, point(index - 1), point(index), strokeWidth = 3.dp.toPx())
+                for (index in 1 until points.size) {
+                    if (points[index].fetchedAtMillis - points[index - 1].fetchedAtMillis <= 45_000 &&
+                        points[index].payload.values["onlineStatus"] != 1.0 && points[index - 1].payload.values["onlineStatus"] != 1.0)
+                        drawLine(color, point(index - 1), point(index), strokeWidth = 3.dp.toPx())
+                }
             }
             Text("Min: ${PolarisMonitorPolicy.temperature(points.minByOrNull { it.payload.values.getValue("furnaceTempMeasured") }, "furnaceTempMeasured")} · Max: ${PolarisMonitorPolicy.temperature(points.maxByOrNull { it.payload.values.getValue("furnaceTempMeasured") }, "furnaceTempMeasured")}", style = MaterialTheme.typography.bodySmall)
         }
