@@ -78,7 +78,7 @@ class CookRecordingService : Service() {
                     app.grillMonitor.state.collect { state ->
                         if (state.phase == PolarisPhase.RESTORING || state.phase == PolarisPhase.DISCOVERING) return@collect
                         if (!state.authenticated) {
-                            app.recordingRepository.pause(recording.cookId, "Connect your grill in Devices, then resume recording.")
+                            app.recordingRepository.pause(recording.cookId, if (state.provider == com.pittech.devices.GrillProvider.PIT_BOSS) "Connect your controller in Devices, then resume recording." else "Sign in to " + state.provider.label + " in Devices, then resume recording.")
                             return@collect
                         }
                         val device = state.devices.firstOrNull { CookTelemetryPolicy.deviceKey(it.id) == recording.controllerKey }

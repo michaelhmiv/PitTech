@@ -43,7 +43,7 @@ internal data class PolarisPayload(
     val probeCount: Int = 2,
 )
 
-internal data class PolarisResult<T>(val value: T, val httpStatus: Int? = 200, val apiCode: Int? = 10000)
+internal data class PolarisResult<T>(val value: T, val httpStatus: Int? = 200, val apiCode: Int? = 10000, val observedRemote: Boolean = true)
 
 internal enum class PolarisFailureKind { NETWORK, HTTP, RATE_LIMIT, AUTH, SCHEMA, API, STORAGE }
 

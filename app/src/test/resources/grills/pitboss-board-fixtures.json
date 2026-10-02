@@ -1,0 +1,677 @@
+{
+  "source": "dknowles2/pytboss@3017d7efc9cdd97efa5ed34ef126a4d2bf92466e/pytboss/grills.json",
+  "kind": "synthetic; audited wire layouts, not physical grill captures",
+  "fixtures": [
+    {
+      "family": "LBL",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070302050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "LBL",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070302050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "LFS",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070302050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "LFS",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070302050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBA",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBA",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBB",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBB",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBC",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBC",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBC2",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBC2",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBD",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBD",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBE",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBE",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBG",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBG",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBL",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBL",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBL2",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBL2",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBL3",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBL3",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBM",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060202050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162
+      },
+      "probes": 3
+    },
+    {
+      "family": "PBM",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060202050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72
+      },
+      "probes": 3
+    },
+    {
+      "family": "PBM2",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060202050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162
+      },
+      "probes": 3
+    },
+    {
+      "family": "PBM2",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060202050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72
+      },
+      "probes": 3
+    },
+    {
+      "family": "PBP",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBP",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBT",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBT",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000000000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBV",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBV",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBV2",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "probeP3Measured": 162,
+        "probeP4Measured": 173
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBV2",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060001060201070300000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "probeP3Measured": 72,
+        "probeP4Measured": 78
+      },
+      "probes": 4
+    },
+    {
+      "family": "PBVA",
+      "unit": "F",
+      "result": {
+        "sc_12": "fe0c00000001050009060000000002050002020501ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150
+      },
+      "probes": 2
+    },
+    {
+      "family": "PBVA",
+      "unit": "C",
+      "result": {
+        "sc_12": "fe0c00000001050009060000000002050002020500ff"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 120,
+        "probeP1Measured": 65
+      },
+      "probes": 2
+    },
+    {
+      "family": "PBX1",
+      "unit": "F",
+      "result": {
+        "sc_11": "fe1a4161417a41160000000000000010"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 0,
+        "furnaceTempMeasured": 225,
+        "furnaceTempSetting": 250,
+        "probeP1Measured": 150,
+        "vendorPowerState": 1
+      },
+      "probes": 2
+    },
+    {
+      "family": "PBX1",
+      "unit": "C",
+      "result": {
+        "sc_11": "fe1a4161417a41160000000000000018"
+      },
+      "expected": {
+        "onlineStatus": 0,
+        "tempUnit": 1,
+        "furnaceTempMeasured": 107,
+        "furnaceTempSetting": 121,
+        "probeP1Measured": 65,
+        "vendorPowerState": 1
+      },
+      "probes": 2
+    }
+  ]
+}
+

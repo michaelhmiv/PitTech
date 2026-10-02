@@ -45,8 +45,8 @@ internal class OkHttpTraegerTransport : TraegerHttpTransport {
 
     companion object {
         fun buildRequest(operation: TraegerHttpOperation, body: String?, token: String?, thing: String?): Request {
-        val contentType = if (operation == TraegerHttpOperation.REFRESH) "application/x-amz-json-1.1" else "application/json"
-        return Request.Builder().url(operation.url(thing))
+            val contentType = if (operation == TraegerHttpOperation.REFRESH) "application/x-amz-json-1.1" else "application/json"
+            return Request.Builder().url(operation.url(thing))
                 .header("Accept", "application/json").header("User-Agent", "Traeger/11 CFNetwork/1209 Darwin/20.2.0")
                 .apply {
                     if (token != null) header("Authorization", token)

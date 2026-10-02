@@ -123,6 +123,42 @@ class PitBossBackendTest {
         catch (error: PolarisFailure) { assertEquals(PolarisFailureKind.NETWORK, error.kind) }
         assertTrue(stalled.closed)
     }
+
+    @Test fun allTwentyAuditedControllerFamiliesDecodeBothUnitsAgainstSourceFixtures() {
+        val source = javaClass.getResourceAsStream("/grills/pitboss-board-fixtures.json")!!.bufferedReader().use { it.readText() }
+        val fixtures = JSONObject(source).getJSONArray("fixtures")
+        assertEquals(40, fixtures.length())
+        val families = mutableSetOf<String>()
+        for (i in 0 until fixtures.length()) {
+            val fixture = fixtures.getJSONObject(i)
+            val family = fixture.getString("family")
+            families += family
+            val payload = PitBossTelemetry.parse(family + "-synthetic", fixture.getJSONObject("result"))
+            val expected = fixture.getJSONObject("expected")
+            val values = expected.keys().asSequence().associateWith { expected.getDouble(it) }
+            assertEquals(family + " " + fixture.getString("unit"), values, payload.values)
+            assertEquals(fixture.getInt("probes"), payload.probeCount)
+        }
+        assertEquals(PitBossTelemetry.families, families)
+    }
+    @Test fun controllerPasswordCodecMatchesIndependentTimedKeyVectorsIncludingUnicode() {
+        // Fixed timed-key vectors audited against pytboss.codec.timed_key, rather than derived by the encoder under test.
+        val cases = listOf(0.0 to listOf(143,248,112,126,146,91,204,25),
+            12345.0 to listOf(203,27,143,113,47,88,231,108),
+            315360000.0 to listOf(200,153,238,25,150,70,236,254))
+        for ((uptime, initial) in cases) {
+            val encoded = PitBossPassword.encode("own-controller-π", uptime).chunked(2).map { it.toInt(16) }
+            val key = initial.toMutableList()
+            val decoded = encoded.mapIndexed { i, value ->
+                val byte = (value xor key[i % key.size]).toByte()
+                val next = (i + 1) % key.size
+                key[next] = ((key[next] xor value) + i) and 255
+                byte
+            }.toByteArray()
+            assertEquals(255, decoded[16].toInt() and 255)
+            assertEquals("own-controller-π", decoded.copyOfRange(17, decoded.size).toString(Charsets.UTF_8))
+        }
+    }
     private fun schema(block: () -> Unit) {
         try { block(); fail("Incomplete or unknown frame") }
         catch (error: PolarisFailure) { assertEquals(PolarisFailureKind.SCHEMA, error.kind) }

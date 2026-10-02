@@ -66,7 +66,7 @@ internal class PrimePolarisMonitor(
                     phase = if (session == null) PolarisPhase.SIGNED_OUT else PolarisPhase.READY,
                     authenticated = session != null,
                     selectedDeviceId = session?.selectedDeviceId,
-                    message = if (session == null) "Sign in to the account your grill is added to." else "Saved sign-in opened. Loading your grills…",
+                    message = if (session == null) { if (provider == GrillProvider.PIT_BOSS) "Connect your provisioned controller below." else "Sign in to the account your grill is added to." } else "Saved sign-in opened. Loading your grills…",
                 )
                 if (foreground && session != null) reloadDevices()
             } catch (error: CancellationException) { throw error }
@@ -247,7 +247,7 @@ internal class PrimePolarisMonitor(
                 }
                 mutableState.value = state.value.copy(phase = PolarisPhase.MONITORING, busy = false, nextPollAtMillis = null)
                 var failure: PolarisFailure? = null
-                try {
+                if (backend.hasSeparateStatusRead) try {
                     val status = track(PolarisOperation.STATUS) { backend.status(current, id) }
                     mutableState.value = state.value.copy(onlineStatus = status.values["onlineStatus"]?.toInt(), statusFetchedAtMillis = now())
                 } catch (error: CancellationException) { throw error }
@@ -302,7 +302,7 @@ internal class PrimePolarisMonitor(
             val result = request()
             currentCoroutineContext().ensureActive()
             val event = PolarisExchange(now(), operation, (elapsed() - started).coerceAtLeast(0), result.httpStatus, result.apiCode)
-            mutableState.value = state.value.copy(lastApiSuccessMillis = now(), successfulRequests = state.value.successfulRequests + 1, exchanges = (state.value.exchanges + event).takeLast(80))
+            mutableState.value = state.value.copy(lastApiSuccessMillis = if (result.observedRemote) now() else state.value.lastApiSuccessMillis, successfulRequests = state.value.successfulRequests + 1, exchanges = (state.value.exchanges + event).takeLast(80))
             return result.value
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {

@@ -14,6 +14,7 @@ import kotlin.math.floor
 
 /** Only explicit, user-owned controller IDs are used; never guessed from a grill model. */
 internal class PitBossBackend(private val sockets: GrillSocketFactory = OkHttpGrillSocketFactory()) : PolarisBackend {
+    override val hasSeparateStatusRead = false
     private val mutex = Mutex()
     @Volatile private var socket: GrillSocket? = null
     private var socketId: String? = null
@@ -35,11 +36,11 @@ internal class PitBossBackend(private val sockets: GrillSocketFactory = OkHttpGr
         val id = configuration(session).getString("controller")
         return PolarisResult(listOf(PolarisDevice("pitboss:" + id, "Dansons " + id.substringBefore('-') + " controller",
             if (id.startsWith("L")) "Louisiana Grills" else "Pit Boss", null, id.substringBefore('-'), null,
-            PitBossTelemetry.probeCount(id))), null, null)
+            PitBossTelemetry.probeCount(id))), null, null, observedRemote = false)
     }
     override suspend fun status(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
         requireSelection(session, deviceId)
-        return PolarisResult(PolarisPayload(emptyMap(), emptyList(), 0, null), null, null)
+        return PolarisResult(PolarisPayload(emptyMap(), emptyList(), 0, null), null, null, observedRemote = false)
     }
     override suspend fun readings(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> = mutex.withLock {
         val config = configuration(session)

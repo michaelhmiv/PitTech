@@ -24,6 +24,7 @@ internal class TraegerBackend(
     private val sockets: GrillSocketFactory = OkHttpGrillSocketFactory(),
     private val now: () -> Long = System::currentTimeMillis,
 ) : PolarisBackend {
+    override val hasSeparateStatusRead = false
     private val mutex = Mutex()
     @Volatile private var socket: GrillSocket? = null
     private var socketDevice: String? = null
@@ -53,7 +54,7 @@ internal class TraegerBackend(
                 .put("AuthParameters", JSONObject().put("REFRESH_TOKEN", refresh)).toString())
         val result = data.value.optJSONObject("AuthenticationResult") ?: throw PolarisFailure(PolarisFailureKind.AUTH)
         val renewed = parseSession(JSONObject().put("idToken", result.opt("IdToken")).put("expiresIn", result.opt("ExpiresIn"))
-            .put("refreshToken", refresh), session.selectedDeviceId)
+            .put("refreshToken", result.opt("RefreshToken") ?: refresh), session.selectedDeviceId)
         disconnect()
         return PolarisResult(renewed, data.httpStatus, null)
     }
@@ -84,7 +85,7 @@ internal class TraegerBackend(
     override suspend fun status(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
         requireOwned(deviceId)
         // MQTT observations report connected themselves. A successful API call never implies grill online.
-        return PolarisResult(PolarisPayload(emptyMap(), emptyList(), 0, null), null, null)
+        return PolarisResult(PolarisPayload(emptyMap(), emptyList(), 0, null), null, null, observedRemote = false)
     }
     override suspend fun readings(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> = mutex.withLock {
         requireOwned(deviceId)
