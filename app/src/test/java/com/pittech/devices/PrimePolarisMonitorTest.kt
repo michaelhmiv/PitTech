@@ -28,7 +28,8 @@ class PrimePolarisMonitorTest {
         var readingsGate: CompletableDeferred<PolarisResult<PolarisPayload>>? = null
         var readingCalls = 0
         var disconnects = 0
-        override fun disconnect() { disconnects++ }
+        var connected = false
+        override fun disconnect() { disconnects++; connected = false }
         val readingDeviceIds = mutableListOf<String>()
         var cancelled = false
         var signInCalls = 0
@@ -59,6 +60,7 @@ class PrimePolarisMonitorTest {
         }
         override suspend fun readings(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
             readingCalls++
+            connected = true
             tokensUsed += session.token
             readingDeviceIds += deviceId
             readingFailure?.let { throw it }
@@ -419,6 +421,24 @@ class PrimePolarisMonitorTest {
             assertNotNull(monitor.snapshot())
             assertEquals(1, backend.readingCalls)
         } finally { monitor.close() }
+    }
+
+    @Test fun oneMinuteAndSlowerCyclesCloseLiveSessionsWhileFastCyclesKeepThem() = runBlocking {
+        for (interval in GrillSamplingPolicy.INTERVALS) {
+            val backend = Backend()
+            val hold = CompletableDeferred<Unit>()
+            var waiting = false
+            val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+                now = { 1_000_000L }, initialSampling = GrillSamplingPolicy(intervalMillis = interval),
+                pollWait = { waiting = true; hold.await() })
+            try {
+                monitor.setForeground(true)
+                waitFor { waiting }
+                assertNotNull(monitor.state.value.latest)
+                assertEquals(interval < 60_000L, backend.connected)
+                assertEquals(1, backend.readingCalls)
+            } finally { monitor.close() }
+        }
     }
 
 }

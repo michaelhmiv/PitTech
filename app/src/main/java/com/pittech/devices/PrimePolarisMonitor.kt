@@ -362,6 +362,9 @@ internal class PrimePolarisMonitor(
                         return@launch
                     }
                     completion?.complete(observed)
+                    // Slow schedules should not pay for 25-second WebSocket pings or
+                    // an idle MQTT subscription. Reopen a bounded read at the next cycle.
+                    if (state.value.sampling.intervalMillis >= 60_000L && generation == attemptGeneration) backend.disconnect()
                     pollWait(delayMillis)
                 }
             } finally {
