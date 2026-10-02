@@ -32,6 +32,8 @@ data class CookRecordingEntity(
     val confirmedSetpoint: Double? = null,
     val pendingSetpoint: Double? = null,
     val pendingSetpointCount: Int = 0,
+    @androidx.room.ColumnInfo(defaultValue = "'periodic'") val samplingMode: String = "periodic",
+    @androidx.room.ColumnInfo(defaultValue = "15000") val samplingIntervalMillis: Long = 60_000L,
 ) {
     companion object {
         const val RECORDING = "recording"

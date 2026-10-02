@@ -635,11 +635,13 @@ class CookRepository(
 
     internal suspend fun temperatureContext(cookId: String, time: Long, dishId: String?): String? {
         val recording = database.recordingDao().getRecording(cookId)
-        val rows = dao.getReadingsForContext(cookId, time - 300_000L, time)
+        val rows = dao.getReadingsForContext(cookId, time - 330_000L, time)
         // Reattaching restored history creates a new local device identity. Older captures
         // retain their original context; new entries must wait for this attached grill.
         val applicable = if (recording != null && time >= recording.startedAtUtcMillis)
-            rows.filter { it.source != "controller_cloud" || it.sourceDeviceId == recording.deviceId }
+            rows.filter { it.source != "controller_cloud" || (it.sourceDeviceId == recording.deviceId &&
+                (recording.samplingMode != com.pittech.devices.GrillSamplingMode.ON_LOG.key || time < recording.resumedAtUtcMillis ||
+                    (it.samplingIntervalMillis == 0L && it.measuredAtUtcMillis >= recording.resumedAtUtcMillis))) }
         else rows
         return TemperatureContext.encode(TemperatureContext.select(applicable, time, dishId))
     }

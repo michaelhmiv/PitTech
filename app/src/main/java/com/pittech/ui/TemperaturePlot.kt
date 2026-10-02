@@ -1,6 +1,7 @@
 package com.pittech.ui
 
 import com.pittech.data.SensorReadingEntity
+import com.pittech.devices.GrillSamplingPolicy
 
 internal object TemperaturePlot {
     /** Stable probe/dish identities separate curves; unavailable samples split them. */
@@ -14,7 +15,8 @@ internal object TemperaturePlot {
                 if (row.qualityStatus != "valid" || !row.value.isFinite() || row.unit !in setOf("°F", "°C")) flush()
                 else {
                     if (previous != null && (previous.dishId != row.dishId ||
-                        (row.source == "controller_cloud" && row.measuredAtUtcMillis - previous.measuredAtUtcMillis > 45_000L))) flush()
+                        (row.source == "controller_cloud" && (row.samplingIntervalMillis == 0L || previous.samplingIntervalMillis == 0L ||
+                            row.measuredAtUtcMillis - previous.measuredAtUtcMillis > GrillSamplingPolicy.receiptWindow(maxOf(row.samplingIntervalMillis, previous.samplingIntervalMillis)))))) flush()
                     current += row
                 }
             }

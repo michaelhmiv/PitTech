@@ -1,5 +1,6 @@
 package com.pittech.devices
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,8 @@ class PrimePolarisMonitorTest {
         var deviceCalls = 0
         var readingsGate: CompletableDeferred<PolarisResult<PolarisPayload>>? = null
         var readingCalls = 0
+        var disconnects = 0
+        override fun disconnect() { disconnects++ }
         val readingDeviceIds = mutableListOf<String>()
         var cancelled = false
         var signInCalls = 0
@@ -186,7 +189,7 @@ class PrimePolarisMonitorTest {
             monitor.setForeground(true)
             waitFor { monitor.state.value.nextPollAtMillis != null }
             assertEquals(0, backend.readingCalls)
-            assertEquals(1_090_000L, monitor.state.value.nextPollAtMillis)
+            assertEquals(1_120_000L, monitor.state.value.nextPollAtMillis)
         } finally { monitor.close() }
     }
 
@@ -295,7 +298,7 @@ class PrimePolarisMonitorTest {
             waitFor { monitor.state.value.nextPollAtMillis != null }
             assertEquals(PolarisPhase.DISCOVERING, monitor.state.value.phase)
             assertNotNull(store.session)
-            assertEquals(30_000L, pause)
+            assertEquals(120_000L, pause)
             assertEquals(0, backend.signInCalls)
             backend.discoveryFailure = null
             retry.complete(Unit)
@@ -303,6 +306,118 @@ class PrimePolarisMonitorTest {
             assertEquals(2, backend.deviceCalls)
             assertEquals(0, monitor.state.value.consecutiveFailures)
             assertEquals(0, backend.signInCalls)
+        } finally { monitor.close() }
+    }
+
+    @Test fun loggingOnlyWaitsForAnActionAndDisconnectsWithoutAnyScheduledWork() = runBlocking {
+        val backend = Backend()
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { 1_000_000L }, initialSampling = GrillSamplingPolicy(GrillSamplingMode.ON_LOG),
+            pollWait = { error("Logging-only must never schedule a wait") })
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.message.startsWith("Temperature queries wait") }
+            assertEquals(0, backend.readingCalls)
+            assertNull(monitor.state.value.nextPollAtMillis)
+            val disconnected = backend.disconnects
+            val value = withTimeout(2_000L) { monitor.snapshot() }!!
+            assertEquals(0L, value.samplingIntervalMillis)
+            assertEquals(1, backend.readingCalls)
+            assertTrue(backend.disconnects > disconnected)
+            assertNull(monitor.state.value.nextPollAtMillis)
+            monitor.setRecording(true)
+            monitor.setForeground(false)
+            delay(50)
+            assertEquals(1, backend.readingCalls)
+            assertNull(monitor.state.value.nextPollAtMillis)
+        } finally { monitor.close() }
+    }
+
+    @Test fun loggingOnlyFailuresAndRepeatedNativeReportsFinishWithoutRetries() = runBlocking {
+        var clock = 1_000_000L
+        val backend = Backend().apply { payload = PolarisPayload(mapOf("tempUnit" to 0.0, "furnaceTempMeasured" to 225.0), emptyList(), 0, null, reportedAtMillis = clock) }
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { clock }, initialSampling = GrillSamplingPolicy(GrillSamplingMode.ON_LOG),
+            pollWait = { error("Unexpected retry timer") })
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.message.startsWith("Temperature queries wait") }
+            assertNotNull(monitor.snapshot())
+            clock += 1_000L
+            assertNull(withTimeout(2_000L) { monitor.snapshot() })
+            assertEquals(2, backend.readingCalls)
+            backend.readingFailure = PolarisFailure(PolarisFailureKind.NETWORK)
+            assertNull(withTimeout(2_000L) { monitor.snapshot() })
+            assertEquals(3, backend.readingCalls)
+            assertNull(monitor.state.value.nextPollAtMillis)
+            assertTrue(monitor.state.value.readingRequestFailed)
+            backend.readingFailure = null
+            backend.payload = backend.payload!!.copy(reportedAtMillis = clock)
+            assertNotNull(withTimeout(2_000L) { monitor.snapshot() })
+            assertFalse(monitor.state.value.readingRequestFailed)
+        } finally { monitor.close() }
+    }
+
+    @Test fun loggingOnlyCancellationClosesTheConnectionAndCannotPublishALateRead() = runBlocking {
+        val gate = CompletableDeferred<PolarisResult<PolarisPayload>>()
+        val backend = Backend().apply { readingsGate = gate }
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            initialSampling = GrillSamplingPolicy(GrillSamplingMode.ON_LOG))
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.message.startsWith("Temperature queries wait") }
+            val request = async { monitor.snapshot() }
+            waitFor { backend.readingCalls == 1 }
+            request.cancel(); request.join()
+            waitFor { backend.cancelled }
+            gate.complete(PolarisResult(PolarisPayload(mapOf("tempUnit" to 0.0), emptyList(), 0, null)))
+            assertNull(monitor.state.value.latest)
+            assertNull(monitor.state.value.nextPollAtMillis)
+        } finally { monitor.close() }
+    }
+
+    @Test fun selectedIntervalOwnsTheNextPollAndChangingToLoggingOnlyCancelsIt() = runBlocking {
+        val pauses = mutableListOf<Long>()
+        val hold = CompletableDeferred<Unit>()
+        val backend = Backend()
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { 1_000_000L }, pollWait = { pauses += it; hold.await() })
+        try {
+            monitor.setForeground(true)
+            waitFor { pauses.isNotEmpty() }
+            assertEquals(60_000L, pauses.last())
+            assertEquals(1_060_000L, monitor.state.value.nextPollAtMillis)
+            monitor.configureSampling(GrillSamplingPolicy(intervalMillis = 300_000L))
+            waitFor { pauses.last() == 300_000L }
+            assertEquals(300_000L, monitor.state.value.latest!!.samplingIntervalMillis)
+            monitor.configureSampling(GrillSamplingPolicy(GrillSamplingMode.ON_LOG))
+            val calls = backend.readingCalls
+            delay(50L)
+            assertEquals(calls, backend.readingCalls)
+            assertNull(monitor.state.value.nextPollAtMillis)
+            assertEquals(PolarisPhase.READY, monitor.state.value.phase)
+        } finally { monitor.close() }
+    }
+
+    @Test fun loggingActionsHonorRateLimitsWithoutCreatingABackgroundRetry() = runBlocking {
+        val backend = Backend().apply { statusFailure = PolarisFailure(PolarisFailureKind.RATE_LIMIT, 429, retryAfterMillis = 900_000L) }
+        var clock = 1_000_000L
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { clock }, initialSampling = GrillSamplingPolicy(GrillSamplingMode.ON_LOG),
+            pollWait = { error("Unexpected rate-limit timer") })
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.message.startsWith("Temperature queries wait") }
+            assertNull(monitor.snapshot())
+            val requests = monitor.state.value.failedRequests
+            assertNull(monitor.snapshot())
+            assertEquals(requests, monitor.state.value.failedRequests)
+            assertEquals(0, backend.readingCalls)
+            assertNull(monitor.state.value.nextPollAtMillis)
+            clock += 900_000L
+            backend.statusFailure = null
+            assertNotNull(monitor.snapshot())
+            assertEquals(1, backend.readingCalls)
         } finally { monitor.close() }
     }
 

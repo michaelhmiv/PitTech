@@ -222,6 +222,7 @@ fun PitTechApp(
             onStartCook = viewModel::startCook,
             grillState = grillState,
             onGrill = { (context.applicationContext as com.pittech.PitTechApplication).grillMonitor.selectDevice(it) },
+            onSampling = viewModel::configureGrillSampling,
         )
         return
     }
@@ -468,6 +469,7 @@ private fun StartCookScreen(
     onStartCook: (NewCookDraft) -> Unit,
     grillState: com.pittech.devices.PolarisMonitorState,
     onGrill: (String) -> Unit,
+    onSampling: (com.pittech.devices.GrillSamplingPolicy) -> Unit,
 ) {
     val defaultCookName = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date()) }
     var title by rememberSaveable {
@@ -596,7 +598,7 @@ private fun StartCookScreen(
             if (BuildConfig.CONTROLLER_TESTING_ENABLED) StartGrillRecordingPanel(
                 grillState, recordGrill, { recordGrill = it }, dishes.mapIndexed { index, dish -> index.toString() to dish.name },
                 probe1, probe2, { probe1 = it }, { probe2 = it }, onGrill,
-                probe3, probe4, { probe3 = it }, { probe4 = it },
+                probe3, probe4, { probe3 = it }, { probe4 = it }, onSampling,
             )
             SectionHeading("Dishes")
 

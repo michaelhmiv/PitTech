@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CookRecordingEntity::class,
         ProbeAssignmentEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
@@ -29,6 +29,14 @@ abstract class PitTechDatabase : RoomDatabase() {
     abstract fun recordingDao(): CookRecordingDao
 
     companion object {
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE cook_recordings ADD COLUMN samplingMode TEXT NOT NULL DEFAULT 'periodic'")
+                database.execSQL("ALTER TABLE cook_recordings ADD COLUMN samplingIntervalMillis INTEGER NOT NULL DEFAULT 15000")
+                database.execSQL("ALTER TABLE sensor_readings ADD COLUMN samplingIntervalMillis INTEGER NOT NULL DEFAULT 15000")
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE timeline_events ADD COLUMN temperatureContextJson TEXT")

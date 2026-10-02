@@ -240,6 +240,7 @@ data class SensorReadingEntity(
     val qualityStatus: String = "valid",
     val recordedAtUtcMillis: Long,
     @androidx.room.ColumnInfo(defaultValue = "'measurement'") val timestampBasis: String = "measurement",
+    @androidx.room.ColumnInfo(defaultValue = "15000") val samplingIntervalMillis: Long = 15_000L,
 )
 
 @Entity(

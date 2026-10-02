@@ -1,6 +1,8 @@
 package com.pittech.data
 
 import android.content.Context
+import com.pittech.devices.GrillSamplingPolicy
+import com.pittech.devices.GrillSamplingMode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -181,13 +183,13 @@ class PitTechDataTransfer(
         "dishes.csv" to csv("dish_id,cook_id,name,food_type,cut,weight,weight_unit,piece_count,starting_condition,bone_in,placement,grade_or_source,thickness_notes,preparation_notes", snapshot.dishes.map { listOf(it.id,it.cookId,it.name,it.foodType,it.cut,it.weightValue,it.weightUnit,it.pieceCount,it.startingCondition,it.boneIn,it.placement,it.gradeOrSource,it.thicknessNotes,it.prepNotes) }),
         "ingredients.csv" to csv("ingredient_use_id,cook_id,dish_id,stage,name,brand,amount,amount_unit,applied_at_utc,notes", snapshot.ingredients.map { listOf(it.id,it.cookId,it.dishId,it.stage,it.name,it.brand,it.amountValue,it.amountUnit,utc(it.appliedAtUtcMillis),it.notes) }),
         "events.csv" to csv("event_id,cook_id,dish_id,event_type,title,details,occurred_at_utc,occurred_at_local,recorded_at_utc,time_zone,source,source_device_id,temperature_context_json", snapshot.events.map { listOf(it.id,it.cookId,it.dishId,it.eventType,it.title,it.details,utc(it.occurredAtUtcMillis),local(it.occurredAtUtcMillis,it.timeZoneId),utc(it.recordedAtUtcMillis),it.timeZoneId,it.source,it.sourceDeviceId,it.temperatureContextJson) }),
-        "readings.csv" to csv("reading_id,cook_id,dish_id,probe_id,probe_name,measurement_type,value,unit,measured_at_utc,measured_at_local,time_zone,source,source_device_id,quality_status,recorded_at_utc,timestamp_basis", snapshot.readings.map { listOf(it.id,it.cookId,it.dishId,it.probeId,it.probeName,it.measurementType,it.value,it.unit,utc(it.measuredAtUtcMillis),local(it.measuredAtUtcMillis,it.timeZoneId),it.timeZoneId,it.source,it.sourceDeviceId,it.qualityStatus,utc(it.recordedAtUtcMillis),it.timestampBasis) }),
+        "readings.csv" to csv("reading_id,cook_id,dish_id,probe_id,probe_name,measurement_type,value,unit,measured_at_utc,measured_at_local,time_zone,source,source_device_id,quality_status,recorded_at_utc,timestamp_basis,sampling_interval_millis", snapshot.readings.map { listOf(it.id,it.cookId,it.dishId,it.probeId,it.probeName,it.measurementType,it.value,it.unit,utc(it.measuredAtUtcMillis),local(it.measuredAtUtcMillis,it.timeZoneId),it.timeZoneId,it.source,it.sourceDeviceId,it.qualityStatus,utc(it.recordedAtUtcMillis),it.timestampBasis,it.samplingIntervalMillis) }),
         "targets.csv" to csv("target_id,cook_id,dish_id,target_type,value,unit,scope,explanation,source_reference,created_at_utc", snapshot.targets.map { listOf(it.id,it.cookId,it.dishId,it.targetType,it.value,it.unit,it.scope,it.explanation,it.sourceReference,utc(it.createdAtUtcMillis)) }),
         "results.csv" to csv("result_id,cook_id,dish_id,result_type,numeric_value,unit,text_value,notes,recorded_at_utc", snapshot.results.map { listOf(it.id,it.cookId,it.dishId,it.resultType,it.numericValue,it.unit,it.textValue,it.notes,utc(it.recordedAtUtcMillis)) }),
         "devices.csv" to csv("device_id,cook_id,brand,model,device_name,role,firmware_version,created_at_utc", snapshot.devices.map { listOf(it.id,it.cookId,it.brand,it.model,it.deviceName,it.role,it.firmwareVersion,utc(it.createdAtUtcMillis)) }),
         "probes.csv" to csv("probe_id,cook_id,device_id,assigned_dish_id,name,measurement_type,source,created_at_utc", snapshot.probes.map { listOf(it.id,it.cookId,it.deviceId,it.assignedDishId,it.name,it.measurementType,it.source,utc(it.createdAtUtcMillis)) }),
         "photos.csv" to csv("photo_id,cook_id,dish_id,event_id,file_name,mime_type,caption,captured_at_utc,added_at_utc,temperature_context_json", snapshot.photos.map { listOf(it.id,it.cookId,it.dishId,it.eventId,it.originalFileName,it.mimeType,it.caption,utc(it.capturedAtUtcMillis),utc(it.addedAtUtcMillis),it.temperatureContextJson) }),
-        "recordings.csv" to csv("cook_id,device_id,status,unit,started_at_utc,last_received_at_utc", snapshot.recordings.map { listOf(it.cookId,it.deviceId,CookRecordingEntity.STOPPED,it.unit,utc(it.startedAtUtcMillis),utc(it.lastReceivedAtUtcMillis)) }),
+        "recordings.csv" to csv("cook_id,device_id,status,unit,started_at_utc,last_received_at_utc,sampling_mode,sampling_interval_millis", snapshot.recordings.map { listOf(it.cookId,it.deviceId,CookRecordingEntity.STOPPED,it.unit,utc(it.startedAtUtcMillis),utc(it.lastReceivedAtUtcMillis),it.samplingMode,it.samplingIntervalMillis) }),
         "probe_assignments.csv" to csv("assignment_id,cook_id,probe_id,dish_id,started_at_utc,ended_at_utc", snapshot.assignments.map { listOf(it.id,it.cookId,it.probeId,it.dishId,utc(it.startedAtUtcMillis),utc(it.endedAtUtcMillis)) }),
         "reminders.csv" to csv("reminder_id,cook_id,title,due_at_utc,time_zone,status,created_at_utc,completed_at_utc", snapshot.reminders.map { listOf(it.id,it.cookId,it.title,utc(it.dueAtUtcMillis),it.timeZoneId,it.status,utc(it.createdAtUtcMillis),utc(it.completedAtUtcMillis)) }),
     )
@@ -241,7 +243,7 @@ class PitTechDataTransfer(
             val duration = cook.endedAtUtcMillis?.let { (it - cook.startedAtUtcMillis).coerceAtLeast(0) / 60_000.0 }
             listOf(text(cook.id),text(cook.title),text(cook.status),text(utc(cook.startedAtUtcMillis)),text(local(cook.startedAtUtcMillis,cook.startedTimeZoneId)),text(cook.startedTimeZoneId),text(utc(cook.endedAtUtcMillis)),text(local(cook.endedAtUtcMillis,cook.startedTimeZoneId)),num(duration),text(cook.smokerName),text(cook.fuelType),text(cook.woodOrPelletBlend),num(cook.outdoorTemperatureValue),text(cook.outdoorTemperatureUnit),text(cook.weatherNotes),text(cook.windNotes),text(s.dishes.filter { it.cookId == cook.id }.joinToString { it.name }),num(s.results.firstOrNull { it.cookId == cook.id && it.resultType == "overall_rating" }?.numericValue),text(cook.notes))
         }
-        val readings = s.readings.sortedBy { it.measuredAtUtcMillis }.map { r -> listOf(text(r.id),text(r.cookId),text(r.dishId),text(r.probeName),text(r.measurementType),num(r.value),text(r.unit),text(utc(r.measuredAtUtcMillis)),text(local(r.measuredAtUtcMillis,r.timeZoneId)),text(r.timeZoneId),text(r.source),text(r.qualityStatus),text(r.timestampBasis)) }
+        val readings = s.readings.sortedBy { it.measuredAtUtcMillis }.map { r -> listOf(text(r.id),text(r.cookId),text(r.dishId),text(r.probeName),text(r.measurementType),num(r.value),text(r.unit),text(utc(r.measuredAtUtcMillis)),text(local(r.measuredAtUtcMillis,r.timeZoneId)),text(r.timeZoneId),text(r.source),text(r.qualityStatus),text(r.timestampBasis),num(r.samplingIntervalMillis)) }
         val derived = s.readings.filter { it.qualityStatus == "valid" }.groupBy { Triple(it.cookId, it.probeName, it.unit) }.flatMap { (key, values) ->
             val sorted = values.sortedBy { it.measuredAtUtcMillis }
             listOf("reading_count" to values.size.toDouble(), "minimum" to values.minOf { it.value }, "maximum" to values.maxOf { it.value }, "last" to sorted.last().value).map { (metric, value) ->
@@ -253,13 +255,13 @@ class PitTechDataTransfer(
             Sheet("Dishes", rows(listOf("Dish ID","Cook ID","Name","Food type","Cut","Weight","Weight unit","Pieces","Starting condition","Bone in","Placement","Grade or source","Thickness notes","Prep notes").map(::text), s.dishes.map { listOf(text(it.id),text(it.cookId),text(it.name),text(it.foodType),text(it.cut),num(it.weightValue),text(it.weightUnit),num(it.pieceCount),text(it.startingCondition),text(it.boneIn),text(it.placement),text(it.gradeOrSource),text(it.thicknessNotes),text(it.prepNotes)) })),
             Sheet("Ingredients", rows(listOf("Ingredient use ID","Cook ID","Dish ID","Stage","Name","Brand","Amount","Unit","Applied UTC","Notes").map(::text), s.ingredients.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.stage),text(it.name),text(it.brand),num(it.amountValue),text(it.amountUnit),text(utc(it.appliedAtUtcMillis)),text(it.notes)) })),
             Sheet("Timeline", rows(listOf("Event ID","Cook ID","Dish ID","Type","Title","Details","Occurred UTC","Recorded UTC","Time zone","Source","Temperature context").map(::text), s.events.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventType),text(it.title),text(it.details),text(utc(it.occurredAtUtcMillis)),text(utc(it.recordedAtUtcMillis)),text(it.timeZoneId),text(it.source),text(it.temperatureContextJson)) })),
-            Sheet("Readings", rows(listOf("Reading ID","Cook ID","Dish ID","Probe","Measurement","Value","Unit","Measured UTC","Measured local time","Time zone","Source","Quality","Timestamp basis").map(::text), readings)),
+            Sheet("Readings", rows(listOf("Reading ID","Cook ID","Dish ID","Probe","Measurement","Value","Unit","Measured UTC","Measured local time","Time zone","Source","Quality","Timestamp basis","Sampling interval millis (0 = on log)").map(::text), readings)),
             Sheet("Targets Results", rows(listOf("Record ID","Cook ID","Dish ID","Type","Value","Unit","Text","Notes","Recorded UTC").map(::text), (s.targets.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.targetType),num(it.value),text(it.unit),text(it.scope),text(it.explanation),text(utc(it.createdAtUtcMillis))) } + s.results.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.resultType),num(it.numericValue),text(it.unit),text(it.textValue),text(it.notes),text(utc(it.recordedAtUtcMillis))) }))),
             Sheet("Devices", rows(listOf("Device ID","Cook ID","Brand","Model","Name","Role","Firmware","Created UTC").map(::text), s.devices.map { listOf(text(it.id),text(it.cookId),text(it.brand),text(it.model),text(it.deviceName),text(it.role),text(it.firmwareVersion),text(utc(it.createdAtUtcMillis))) })),
             Sheet("Probes", rows(listOf("Probe ID","Cook ID","Device ID","Dish ID","Name","Measurement","Source","Created UTC").map(::text), s.probes.map { listOf(text(it.id),text(it.cookId),text(it.deviceId),text(it.assignedDishId),text(it.name),text(it.measurementType),text(it.source),text(utc(it.createdAtUtcMillis))) })),
             Sheet("Photos", rows(listOf("Photo ID","Cook ID","Dish ID","Event ID","Caption","File name","MIME type","Captured UTC","Added UTC","Temperature context").map(::text), s.photos.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventId),text(it.caption),text(it.originalFileName),text(it.mimeType),text(utc(it.capturedAtUtcMillis)),text(utc(it.addedAtUtcMillis)),text(it.temperatureContextJson)) })),
             Sheet("Derived Metrics", rows(listOf("Cook ID","Probe","Metric","Value","Unit","Method","Source start UTC","Source end UTC","Method version").map(::text), derived)),
-            Sheet("Recording History", rows(listOf("Cook ID","Device ID","Status","Unit","Started UTC","Last received UTC").map(::text), s.recordings.map { listOf(text(it.cookId),text(it.deviceId),text(CookRecordingEntity.STOPPED),text(it.unit),text(utc(it.startedAtUtcMillis)),text(utc(it.lastReceivedAtUtcMillis))) })),
+            Sheet("Recording History", rows(listOf("Cook ID","Device ID","Status","Unit","Started UTC","Last received UTC","Sampling mode","Sampling interval millis").map(::text), s.recordings.map { listOf(text(it.cookId),text(it.deviceId),text(CookRecordingEntity.STOPPED),text(it.unit),text(utc(it.startedAtUtcMillis)),text(utc(it.lastReceivedAtUtcMillis)),text(it.samplingMode),num(it.samplingIntervalMillis)) })),
             Sheet("Probe Assignments", rows(listOf("ID","Cook ID","Probe ID","Dish ID","Started UTC","Ended UTC").map(::text), s.assignments.map { listOf(text(it.id),text(it.cookId),text(it.probeId),text(it.dishId),text(utc(it.startedAtUtcMillis)),text(utc(it.endedAtUtcMillis))) })),
             Sheet("Reminders", rows(listOf("Reminder ID","Cook ID","Title","Due UTC","Time zone","Status","Created UTC","Completed UTC").map(::text), s.reminders.map { listOf(text(it.id),text(it.cookId),text(it.title),text(utc(it.dueAtUtcMillis)),text(it.timeZoneId),text(it.status),text(utc(it.createdAtUtcMillis)),text(utc(it.completedAtUtcMillis))) })),
         )
@@ -345,7 +347,7 @@ class PitTechDataTransfer(
     }
 
     private companion object {
-        const val ARCHIVE_VERSION = 3
+        const val ARCHIVE_VERSION = 4
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
@@ -422,7 +424,7 @@ private fun SensorReadingEntity.toJson() = JSONObject()
     .put("id", id).put("cookId", cookId).putNullable("dishId", dishId).putNullable("probeId", probeId)
     .put("probeName", probeName).put("measurementType", measurementType).put("value", value).put("unit", unit)
     .put("measuredAtUtcMillis", measuredAtUtcMillis).put("timeZoneId", timeZoneId).put("source", source)
-    .putNullable("sourceDeviceId", sourceDeviceId).put("qualityStatus", qualityStatus).put("recordedAtUtcMillis", recordedAtUtcMillis).put("timestampBasis", timestampBasis)
+    .putNullable("sourceDeviceId", sourceDeviceId).put("qualityStatus", qualityStatus).put("recordedAtUtcMillis", recordedAtUtcMillis).put("timestampBasis", timestampBasis).put("samplingIntervalMillis", samplingIntervalMillis)
 
 private fun TargetEntity.toJson() = JSONObject()
     .put("id", id).put("cookId", cookId).putNullable("dishId", dishId).put("targetType", targetType).put("value", value)
@@ -449,6 +451,7 @@ private fun PhotoEntity.toJson() = JSONObject()
 
 private fun CookRecordingEntity.toJson() = JSONObject()
     .put("cookId", cookId).put("deviceId", deviceId).put("status", CookRecordingEntity.STOPPED).put("unit", unit)
+    .put("samplingMode", samplingMode).put("samplingIntervalMillis", samplingIntervalMillis)
     .put("startedAtUtcMillis", startedAtUtcMillis).put("resumedAtUtcMillis", resumedAtUtcMillis)
     .putNullable("lastReceivedAtUtcMillis", lastReceivedAtUtcMillis)
 
@@ -520,6 +523,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
             measuredAtUtcMillis=o.long("measuredAtUtcMillis"), timeZoneId=o.string("timeZoneId"), source=o.string("source"),
             sourceDeviceId=o.stringOrNull("sourceDeviceId"), qualityStatus=o.optString("qualityStatus", "valid"), recordedAtUtcMillis=o.long("recordedAtUtcMillis"),
             timestampBasis=o.optString("timestampBasis", "measurement"),
+            samplingIntervalMillis=o.optLong("samplingIntervalMillis", 15_000L),
         )
     }
     val targets = root.arrayObjects("targets").map { o ->
@@ -578,7 +582,9 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     val recordings = root.arrayObjects("recordings").map { o ->
         CookRecordingEntity(o.string("cookId"), o.string("deviceId"), "", CookRecordingEntity.STOPPED,
             o.string("unit"), o.long("startedAtUtcMillis"), o.long("resumedAtUtcMillis"),
-            lastReceivedAtUtcMillis = o.longOrNull("lastReceivedAtUtcMillis"), message = "Restored history · attach a grill to record again.")
+            lastReceivedAtUtcMillis = o.longOrNull("lastReceivedAtUtcMillis"), message = "Restored history · attach a grill to record again.",
+            samplingMode = o.optString("samplingMode", GrillSamplingMode.PERIODIC.key),
+            samplingIntervalMillis = o.optLong("samplingIntervalMillis", 15_000L))
     }
     val assignments = root.arrayObjects("probeAssignments").map { o ->
         ProbeAssignmentEntity(o.string("id"), o.string("cookId"), o.string("probeId"), o.stringOrNull("dishId"),
@@ -614,8 +620,9 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
             probes.all { it.cookId in cookIds && (it.deviceId == null || devices.any { device -> device.id == it.deviceId && device.cookId == it.cookId }) && (it.assignedDishId == null || dishesById[it.assignedDishId]?.cookId == it.cookId) } &&
             photos.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && (it.eventId == null || eventsById[it.eventId]?.cookId == it.cookId) } &&
             reminders.all { it.cookId in cookIds } &&
-            readings.all { it.value.isFinite() && it.timestampBasis in setOf("measurement", "cloud_receipt") } &&
-            recordings.all { it.cookId in cookIds && it.unit in setOf("°F", "°C") && devices.any { device -> device.id == it.deviceId && device.cookId == it.cookId } } &&
+            readings.all { it.value.isFinite() && it.timestampBasis in setOf("measurement", "cloud_receipt") && GrillSamplingPolicy.validSampleInterval(it.samplingIntervalMillis) } &&
+            recordings.all { it.cookId in cookIds && it.unit in setOf("°F", "°C") &&
+                it.samplingMode in GrillSamplingMode.entries.map { mode -> mode.key } && it.samplingIntervalMillis in GrillSamplingPolicy.INTERVALS && devices.any { device -> device.id == it.deviceId && device.cookId == it.cookId } } &&
             assignments.all { it.cookId in cookIds && probes.any { probe -> probe.id == it.probeId && probe.cookId == it.cookId } &&
                 (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && (it.endedAtUtcMillis == null || it.endedAtUtcMillis >= it.startedAtUtcMillis) }
     ) {

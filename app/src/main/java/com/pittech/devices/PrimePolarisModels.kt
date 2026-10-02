@@ -81,7 +81,7 @@ internal data class PolarisExchange(
     val failure: PolarisFailureKind? = null,
 )
 
-internal data class PolarisSample(val fetchedAtMillis: Long, val payload: PolarisPayload)
+internal data class PolarisSample(val fetchedAtMillis: Long, val payload: PolarisPayload, val samplingIntervalMillis: Long = 15_000L)
 
 internal enum class PolarisPhase { RESTORING, SIGNED_OUT, CODE_SENT, DISCOVERING, READY, MONITORING, PAUSED, SIGN_IN_REQUIRED }
 
@@ -106,12 +106,13 @@ internal data class PolarisMonitorState(
     val sessionSaved: Boolean = true,
     val lockedDeviceId: String? = null,
     val provider: GrillProvider = GrillProvider.GRILLIRG,
+    val sampling: GrillSamplingPolicy = GrillSamplingPolicy(),
 ) {
     val selectedDevice get() = devices.firstOrNull { it.id == selectedDeviceId }
-    fun readingsAreOld(now: Long) = latest == null || now - latest.fetchedAtMillis > 45_000L || readingRequestFailed || onlineStatus?.let { it != 0 } == true || latest.payload.reportedAtMillis?.let { now - it > 45_000L || it - now > 300_000L } == true
+    fun readingsAreOld(now: Long) = latest == null || now - latest.fetchedAtMillis > GrillSamplingPolicy.receiptWindow(sampling.sampleIntervalMillis) || readingRequestFailed || onlineStatus?.let { it != 0 } == true || latest.payload.reportedAtMillis?.let { latest.fetchedAtMillis - it > 45_000L || it - latest.fetchedAtMillis > 300_000L } == true
     fun onlineLabel(now: Long): String = when {
         statusFetchedAtMillis == null -> "Grill connection not reported"
-        now - statusFetchedAtMillis > 45_000L -> "Grill connection status is old"
+        now - statusFetchedAtMillis > GrillSamplingPolicy.receiptWindow(sampling.sampleIntervalMillis) -> "Grill connection status is old"
         onlineStatus == 0 -> "Grill online"
         onlineStatus != null -> "Grill offline (status $onlineStatus)"
         else -> "Grill connection not reported"
@@ -119,8 +120,8 @@ internal data class PolarisMonitorState(
 }
 
 internal object PolarisMonitorPolicy {
-    fun nextDelay(failures: Int, retryAfterMillis: Long? = null): Long =
-        maxOf(15_000L * (1L shl failures.coerceIn(0, 3)), retryAfterMillis ?: 0L).coerceAtMost(300_000L)
+    fun nextDelay(failures: Int, retryAfterMillis: Long? = null, intervalMillis: Long = 60_000L): Long =
+        maxOf((intervalMillis * (1L shl failures.coerceIn(0, 3))).coerceAtMost(300_000L), retryAfterMillis ?: 0L)
 
     fun temperature(sample: PolarisSample?, key: String): String {
         val value = sample?.payload?.values?.get(key) ?: return "Not reported"
@@ -147,6 +148,7 @@ internal object PolarisMonitorPolicy {
         appendLine("PitTech ${state.provider.label} read-only monitor")
         appendLine("Captured (UTC): ${Instant.ofEpochMilli(now)}")
         appendLine("Phase: ${state.phase}; successful requests=${state.successfulRequests}; failed requests=${state.failedRequests}")
+        appendLine("Collection: ${state.sampling.label}; requested interval=${state.sampling.sampleIntervalMillis}ms")
         appendLine("Cloud last reachable (UTC): ${state.lastApiSuccessMillis?.let { Instant.ofEpochMilli(it) } ?: "not reached"}")
         appendLine("Grill: ${state.onlineLabel(now)}; consecutive incomplete polls=${state.consecutiveFailures}")
         appendLine("Session stored encrypted: ${if (state.authenticated) state.sessionSaved else "not in use"}")

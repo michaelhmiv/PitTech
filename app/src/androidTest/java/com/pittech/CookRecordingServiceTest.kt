@@ -36,7 +36,7 @@ class CookRecordingServiceTest {
         try {
             waitUntil { monitor.state.value.latest != null }
             val id = app.cookRepository.startCook(NewCookDraft("Background recording"))
-            app.recordingRepository.attach(id, backend.device, "°F")
+            app.recordingRepository.attach(id, backend.device, "°F", sampling = com.pittech.devices.GrillSamplingPolicy(intervalMillis = 15_000L))
             instrumentation.runOnMainSync { CookRecordingService.start(app); monitor.refresh() }
             waitUntil { app.recordingServiceRunning.value && app.database.cookDao().getAllSensorReadings().isNotEmpty() }
             scenario.moveToState(Lifecycle.State.CREATED)

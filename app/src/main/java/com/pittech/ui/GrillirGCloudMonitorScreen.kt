@@ -293,8 +293,10 @@ internal fun GrillirGCloudMonitorScreen(
                 val first = points.first().fetchedAtMillis
                 val duration = (points.last().fetchedAtMillis - first).coerceAtLeast(1)
                 fun point(index: Int) = Offset(((points[index].fetchedAtMillis - first).toFloat() / duration) * size.width, size.height - ((values[index] - minimum) / range).toFloat() * size.height)
+                points.indices.forEach { drawCircle(color, 3.dp.toPx(), point(it)) }
                 for (index in 1 until points.size) {
-                    if (points[index].fetchedAtMillis - points[index - 1].fetchedAtMillis <= 45_000 &&
+                    if (points[index].samplingIntervalMillis > 0 && points[index - 1].samplingIntervalMillis > 0 &&
+                        points[index].fetchedAtMillis - points[index - 1].fetchedAtMillis <= com.pittech.devices.GrillSamplingPolicy.receiptWindow(maxOf(points[index].samplingIntervalMillis, points[index - 1].samplingIntervalMillis)) &&
                         points[index].payload.values["onlineStatus"] != 1.0 && points[index - 1].payload.values["onlineStatus"] != 1.0)
                         drawLine(color, point(index - 1), point(index), strokeWidth = 3.dp.toPx())
                 }

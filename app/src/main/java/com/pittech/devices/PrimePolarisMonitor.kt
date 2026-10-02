@@ -1,6 +1,7 @@
 package com.pittech.devices
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal interface PolarisMonitorEngine {
     val state: StateFlow<PolarisMonitorState>
@@ -29,6 +31,8 @@ internal interface PolarisMonitorEngine {
     fun reloadDevices()
     fun selectDevice(id: String)
     fun refresh()
+    fun configureSampling(policy: GrillSamplingPolicy) {}
+    suspend fun snapshot(): PolarisSample? = null
     fun signOut()
     fun close()
 }
@@ -42,8 +46,10 @@ internal class PrimePolarisMonitor(
     private val elapsed: () -> Long = { System.nanoTime() / 1_000_000L },
     private val provider: GrillProvider = GrillProvider.GRILLIRG,
     private val discoveryWait: suspend (Long) -> Unit = { delay(it) },
+    initialSampling: GrillSamplingPolicy = GrillSamplingPolicy(),
+    private val pollWait: suspend (Long) -> Unit = { delay(it) },
 ) : PolarisMonitorEngine {
-    private val mutableState = MutableStateFlow(PolarisMonitorState(provider = provider))
+    private val mutableState = MutableStateFlow(PolarisMonitorState(provider = provider, sampling = initialSampling))
     override val state = mutableState.asStateFlow()
     private var session: PolarisSession? = null
     private var foreground = false
@@ -54,6 +60,8 @@ internal class PrimePolarisMonitor(
     private var action: Job? = null
     private var poller: Job? = null
     private val storageMutex = Mutex()
+    private val snapshotMutex = Mutex()
+    private var retryNotBeforeMillis = 0L
 
     init {
         scope.launch {
@@ -127,9 +135,9 @@ internal class PrimePolarisMonitor(
             try { discoverDevices(); return }
             catch (error: CancellationException) { throw error }
             catch (error: PolarisFailure) {
-                if (!foreground || error.kind !in setOf(PolarisFailureKind.NETWORK, PolarisFailureKind.HTTP, PolarisFailureKind.RATE_LIMIT)) throw error
+                if (!foreground || state.value.sampling.mode == GrillSamplingMode.ON_LOG || error.kind !in setOf(PolarisFailureKind.NETWORK, PolarisFailureKind.HTTP, PolarisFailureKind.RATE_LIMIT)) throw error
                 val failures = state.value.consecutiveFailures + 1
-                val pause = PolarisMonitorPolicy.nextDelay(failures, error.retryAfterMillis)
+                val pause = PolarisMonitorPolicy.nextDelay(failures, error.retryAfterMillis, state.value.sampling.intervalMillis)
                 mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, busy = false,
                     consecutiveFailures = failures, nextPollAtMillis = now() + pause,
                     message = error.message(provider) + " Retrying grill discovery after a pause.")
@@ -185,7 +193,28 @@ internal class PrimePolarisMonitor(
         if (!foreground || session == null) return
         if (state.value.selectedDeviceId == null) reloadDevices() else {
             stopPolling()
-            startPolling()
+            startPolling(forceRead = true)
+        }
+    }
+
+    override fun configureSampling(policy: GrillSamplingPolicy) {
+        if (policy == state.value.sampling) return
+        stopPolling()
+        mutableState.value = state.value.copy(sampling = policy, nextPollAtMillis = null)
+        if (foreground && action?.isActive != true) startPolling()
+    }
+
+    override suspend fun snapshot(): PolarisSample? = snapshotMutex.withLock {
+        if (closed || !foreground || session == null || state.value.selectedDeviceId == null || action?.isActive == true) return@withLock null
+        val completion = CompletableDeferred<PolarisSample?>()
+        stopPolling()
+        startPolling(forceRead = true, completion = completion)
+        val requestGeneration = generation
+        try {
+            withTimeoutOrNull(30_000L) { completion.await() }
+        } finally {
+            // Logging-only has no idle MQTT subscription or retry timer between user actions.
+            if (state.value.sampling.mode == GrillSamplingMode.ON_LOG && generation == requestGeneration) stopPolling()
         }
     }
 
@@ -193,7 +222,7 @@ internal class PrimePolarisMonitor(
         stopPolling()
         action?.cancel()
         session = null
-        mutableState.value = PolarisMonitorState(phase = PolarisPhase.SIGNED_OUT, message = "Disconnected on this phone.", provider = provider)
+        mutableState.value = PolarisMonitorState(phase = PolarisPhase.SIGNED_OUT, message = "Disconnected on this phone.", provider = provider, sampling = state.value.sampling)
         action = scope.launch {
             try { withContext(NonCancellable) { storageMutex.withLock { withContext(Dispatchers.IO) { storage.clear() } } } }
             catch (error: CancellationException) { throw error }
@@ -240,12 +269,26 @@ internal class PrimePolarisMonitor(
         catch (_: Exception) { mutableState.value = state.value.copy(sessionSaved = false) }
     }
 
-    private fun startPolling() {
-        if (!foreground || closed || poller?.isActive == true) return
-        var current = session ?: return
-        val id = state.value.selectedDeviceId?.takeIf { selected -> state.value.devices.any { it.id == selected } } ?: return
+    private fun startPolling(forceRead: Boolean = false, completion: CompletableDeferred<PolarisSample?>? = null) {
+        if (!foreground || closed || poller?.isActive == true) { completion?.complete(null); return }
+        if (state.value.sampling.mode == GrillSamplingMode.ON_LOG && now() < retryNotBeforeMillis) {
+            completion?.complete(null)
+            return
+        }
+        if (state.value.sampling.mode == GrillSamplingMode.ON_LOG && !forceRead) {
+            // Some providers validate discovery through a live controller read.
+            backend.disconnect()
+            mutableState.value = state.value.copy(phase = PolarisPhase.READY, busy = false, nextPollAtMillis = null,
+                message = "Temperature queries wait for a cook log or an explicit Refresh.")
+            completion?.complete(null)
+            return
+        }
+        var current = session ?: run { completion?.complete(null); return }
+        val id = state.value.selectedDeviceId?.takeIf { selected -> state.value.devices.any { it.id == selected } } ?: run { completion?.complete(null); return }
         val attemptGeneration = generation
         poller = scope.launch {
+            try {
+            if (now() < retryNotBeforeMillis) pollWait(retryNotBeforeMillis - now())
             while (true) {
                 currentCoroutineContext().ensureActive()
                 if (attemptGeneration != generation) return@launch
@@ -258,15 +301,22 @@ internal class PrimePolarisMonitor(
                     catch (error: PolarisFailure) {
                         if (error.kind == PolarisFailureKind.AUTH) { invalidateSession(error); return@launch }
                         val count = state.value.consecutiveFailures + 1
-                        val pause = PolarisMonitorPolicy.nextDelay(count, error.retryAfterMillis)
+                        val pause = PolarisMonitorPolicy.nextDelay(count, error.retryAfterMillis, state.value.sampling.intervalMillis)
+                        if (error.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + pause
                         mutableState.value = state.value.copy(readingRequestFailed = true, consecutiveFailures = count,
                             message = error.message(provider), nextPollAtMillis = now() + pause)
-                        delay(pause)
+                        completion?.complete(null)
+                        if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
+                            mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
+                            return@launch
+                        }
+                        pollWait(pause)
                         continue
                     }
                 }
-                mutableState.value = state.value.copy(phase = PolarisPhase.MONITORING, busy = false, nextPollAtMillis = null)
+                mutableState.value = state.value.copy(phase = PolarisPhase.MONITORING, busy = false, nextPollAtMillis = null, readingRequestFailed = false)
                 var failure: PolarisFailure? = null
+                var received: PolarisSample? = null
                 if (backend.hasSeparateStatusRead) try {
                     val status = track(PolarisOperation.STATUS) { backend.status(current, id) }
                     mutableState.value = state.value.copy(onlineStatus = status.values["onlineStatus"]?.toInt(), statusFetchedAtMillis = now())
@@ -276,10 +326,11 @@ internal class PrimePolarisMonitor(
                 if (failure?.kind != PolarisFailureKind.RATE_LIMIT) {
                     try {
                         val readings = track(PolarisOperation.READINGS) { backend.readings(current, id) }
-                        val sample = PolarisSample(now(), readings)
+                        val sample = PolarisSample(now(), readings, state.value.sampling.sampleIntervalMillis)
                         val reported = readings.reportedAtMillis
                         val stale = reported?.let { now() - it > 45_000L || it - now() > 300_000L } == true
                         val repeated = reported != null && state.value.latest?.payload?.reportedAtMillis?.let { reported <= it } == true
+                        if (!stale && !repeated) received = sample
                         mutableState.value = state.value.copy(
                             latest = if (stale || repeated) state.value.latest else sample,
                             samples = if (stale || repeated) state.value.samples else (state.value.samples + sample).takeLast(120), readingRequestFailed = stale,
@@ -295,12 +346,22 @@ internal class PrimePolarisMonitor(
                 }
                 if (failure?.kind == PolarisFailureKind.AUTH) { invalidateSession(failure); return@launch }
                 val failures = if (failure == null) 0 else state.value.consecutiveFailures + 1
-                val delayMillis = PolarisMonitorPolicy.nextDelay(failures, failure?.retryAfterMillis)
+                val delayMillis = PolarisMonitorPolicy.nextDelay(failures, failure?.retryAfterMillis, state.value.sampling.intervalMillis)
+                if (failure?.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + delayMillis
                 mutableState.value = state.value.copy(
                     consecutiveFailures = failures, nextPollAtMillis = now() + delayMillis,
-                    message = failure?.message(provider) ?: "Monitoring your grill. Readings are fetched every 15 seconds while PitTech is open or a cook is recording.",
+                    message = failure?.message(provider) ?: "Collection: ${state.value.sampling.label}.",
                 )
-                delay(delayMillis)
+                completion?.complete(received?.takeIf { !state.value.readingsAreOld(now()) })
+                if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
+                    mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
+                    return@launch
+                }
+                pollWait(delayMillis)
+            }
+            } finally {
+                completion?.complete(null)
+                if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) backend.disconnect()
             }
         }
     }

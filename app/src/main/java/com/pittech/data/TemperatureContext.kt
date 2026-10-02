@@ -3,6 +3,7 @@ package com.pittech.data
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
+import com.pittech.devices.GrillSamplingPolicy
 
 /** Values are copied at entry creation; later edits/deletion of samples cannot change an entry. */
 data class ContextTemperature(
@@ -24,7 +25,7 @@ object TemperatureContext {
         .filter { it.qualityStatus == "valid" && it.value.isFinite() && it.value in -100.0..1000.0 &&
             it.unit in setOf("°F", "°C") && it.probeName.length in 1..120 &&
             it.source in setOf("manual", "controller_cloud") && it.timestampBasis in setOf("measurement", "cloud_receipt") &&
-            time - it.measuredAtUtcMillis <= if (it.source == "controller_cloud") 45_000L else 300_000L }
+            time - it.measuredAtUtcMillis <= if (it.source == "controller_cloud") GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis) else 300_000L }
         .filter { dishId == null || it.dishId == dishId || it.measurementType in setOf("pit_ambient", "setpoint") }
         .sortedBy { it.probeName }.take(12)
         .map { ContextTemperature(it.probeName, it.value, it.unit, it.measuredAtUtcMillis, it.source, it.timestampBasis) }

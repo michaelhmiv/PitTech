@@ -9,6 +9,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertTextContains
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.pittech.CookRecordingService
@@ -17,6 +19,8 @@ import com.pittech.PitTechApplication
 import com.pittech.devices.CookRecordingFakeBackend
 import com.pittech.devices.CookRecordingFakeStore
 import com.pittech.devices.PrimePolarisMonitor
+import com.pittech.devices.PolarisFailure
+import com.pittech.devices.PolarisFailureKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -32,6 +36,7 @@ class ConnectedCookScreenTest {
     private var fake: PrimePolarisMonitor? = null
     private val app get() = compose.activity.application as PitTechApplication
     @After fun cleanup() {
+        app.loggingRecordingActive = false
         app.stopService(Intent(app, CookRecordingService::class.java))
         compose.runOnUiThread { fake?.close(); app.grillMonitorForTests = null }
         runBlocking(Dispatchers.IO) { app.database.clearAllTables() }
@@ -72,4 +77,48 @@ class ConnectedCookScreenTest {
         compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("event-temperature-context").assertExists()
     }
+    @Test fun loggingOnlyQueriesForANoteSavesFailuresAndSwitchesTheForegroundServiceOff() {
+        runBlocking(Dispatchers.IO) { app.database.clearAllTables() }
+        val backend = CookRecordingFakeBackend()
+        compose.runOnUiThread { fake = PrimePolarisMonitor(backend, CookRecordingFakeStore()); app.grillMonitorForTests = fake }
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(15_000) { fake?.state?.value?.selectedDevice != null }
+        compose.onNodeWithTag("start-cook").performClick()
+        compose.onNodeWithTag("cook-record-grill").performScrollTo().performClick()
+        compose.onNodeWithTag("recording-power-warning").assertExists()
+        compose.onNodeWithTag("grill-sampling").performScrollTo().performClick()
+        compose.onNodeWithTag("grill-sampling-on-log").performClick()
+        compose.onNodeWithTag("recording-log-only-info").assertExists()
+        compose.onNodeWithTag("cook-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording()?.samplingMode == "on_log" } }
+        assertFalse(app.recordingServiceRunning.value)
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().isEmpty() })
+        val before = backend.calls.get()
+        compose.onNodeWithTag("cook-quick-wrap").performClick()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "wrap" } } }
+        val wrap = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "wrap" } }
+        assertTrue(backend.calls.get() > before)
+        assertTrue(com.pittech.data.TemperatureContext.decode(wrap.temperatureContextJson).isNotEmpty())
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().all { it.samplingIntervalMillis == 0L } })
+        assertNull(fake!!.state.value.nextPollAtMillis)
+        compose.onNodeWithTag("grill-sampling").performScrollTo().performClick()
+        compose.onNodeWithTag("grill-sampling-60000").performClick()
+        compose.waitUntil(15_000) { app.recordingServiceRunning.value }
+        compose.onNodeWithTag("grill-sampling").performScrollTo().performClick()
+        compose.onNodeWithTag("grill-sampling-on-log").performClick()
+        compose.waitUntil(15_000) { !app.recordingServiceRunning.value && fake!!.state.value.sampling.mode == com.pittech.devices.GrillSamplingMode.ON_LOG }
+        backend.failure = PolarisFailure(PolarisFailureKind.NETWORK)
+        compose.onNodeWithTag("cook-grill-read-now").performScrollTo().performClick()
+        compose.waitUntil(10_000) { fake!!.state.value.readingRequestFailed }
+        compose.onNodeWithTag("cook-quick-rest").performClick()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "rest" } } }
+        val rest = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "rest" } }
+        assertNull(rest.temperatureContextJson)
+        assertFalse(app.recordingServiceRunning.value)
+        assertNull(fake!!.state.value.nextPollAtMillis)
+        assertEquals(com.pittech.data.CookRecordingEntity.RECORDING, runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording()!!.status })
+    }
+
 }

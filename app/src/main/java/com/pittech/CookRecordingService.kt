@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat
 import com.pittech.data.CookRecordingEntity
 import com.pittech.devices.CookTelemetryPolicy
 import com.pittech.devices.PolarisPhase
+import com.pittech.devices.GrillSamplingMode
+import com.pittech.devices.GrillSamplingPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,8 +62,17 @@ class CookRecordingService : Service() {
         if (!observing) {
             observing = true
             scope.launch {
-                app.database.recordingDao().observeActiveRecording().distinctUntilChangedBy { it?.let { value -> listOf(value.cookId, value.deviceId, value.resumedAtUtcMillis.toString()) } }.collectLatest { recording ->
-                    if (recording == null) { stopSelf(); return@collectLatest }
+                app.database.recordingDao().observeActiveRecording().distinctUntilChangedBy { it?.let { value -> listOf(value.cookId, value.deviceId, value.resumedAtUtcMillis.toString(), value.samplingMode, value.samplingIntervalMillis.toString()) } }.collectLatest { recording ->
+                    if (recording == null) { app.loggingRecordingActive = false; stopSelf(); return@collectLatest }
+                    val sampling = GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis)
+                    app.grillMonitor.configureSampling(sampling)
+                    if (sampling.mode == GrillSamplingMode.ON_LOG) {
+                        app.loggingRecordingActive = true
+                        app.grillMonitor.setRecording(true)
+                        stopSelf()
+                        return@collectLatest
+                    }
+                    app.loggingRecordingActive = false
                     app.grillMonitor.setRecording(true)
                     coroutineScope {
                     launch {
@@ -70,9 +81,9 @@ class CookRecordingService : Service() {
                             val current = app.database.recordingDao().getRecording(recording.cookId)
                             if (current?.status != CookRecordingEntity.RECORDING) return@launch
                             val last = current.lastReceivedAtUtcMillis ?: current.resumedAtUtcMillis
-                            if (System.currentTimeMillis() - last > 45_000L) app.recordingRepository.markGap(recording.cookId, "Waiting for cloud readings. Missing periods are not filled in.")
-                            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(current.message))
-                            delay(15_000L)
+                            if (System.currentTimeMillis() - last > GrillSamplingPolicy.receiptWindow(current.samplingIntervalMillis)) app.recordingRepository.markGap(recording.cookId, "Waiting for cloud readings. Missing periods are not filled in.")
+                            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("${sampling.label} · ${current.message}"))
+                            delay(30_000L)
                         }
                     }
                     app.grillMonitor.state.collect { state ->
@@ -125,7 +136,7 @@ class CookRecordingService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
-        app.grillMonitor.setRecording(false)
+        if (!app.loggingRecordingActive) app.grillMonitor.setRecording(false)
         app.recordingServiceRunning.value = false
         wakeLock?.let { if (it.isHeld) it.release() }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -133,7 +144,7 @@ class CookRecordingService : Service() {
     }
 
     companion object {
-        private const val CHANNEL = "pittech-cook-recording"
+        internal const val CHANNEL = "pittech-cook-recording"
         private const val NOTIFICATION_ID = 9501
         private const val ACTION_PAUSE = "com.pittech.PAUSE_RECORDING"
         internal fun start(context: Context) {
