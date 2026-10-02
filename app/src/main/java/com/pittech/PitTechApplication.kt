@@ -16,7 +16,7 @@ class PitTechApplication : Application() {
         CrashDiagnostics.install(this)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
             kotlinx.coroutines.flow.combine(database.companionDao().observeAll(), database.cookDao().observeAllTimelineEvents(), database.cookDao().observeAllSensorReadings()) { _, _, _ -> Unit }
-                .collect { companionRepository.reconcileAll(this@PitTechApplication) }
+                .collect { companionRepository.reconcileAll(this@PitTechApplication); alertRepository.reconcileAll(this@PitTechApplication) }
         }
     }
 
@@ -34,6 +34,7 @@ class PitTechApplication : Application() {
         CookRepository(database, PhotoStorage(this))
     }
 
+    val alertRepository by lazy { com.pittech.data.CookAlertRepository(database) }
     val companionRepository by lazy { com.pittech.data.CookCompanionRepository(database, PhotoStorage(this)) }
 
     val dataTransfer: PitTechDataTransfer by lazy {

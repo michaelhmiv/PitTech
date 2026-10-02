@@ -18,6 +18,7 @@ import com.pittech.devices.CookTelemetryPolicy
 import com.pittech.devices.PolarisPhase
 import com.pittech.devices.GrillSamplingMode
 import com.pittech.devices.GrillSamplingPolicy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +83,12 @@ class CookRecordingService : Service() {
                             if (current?.status != CookRecordingEntity.RECORDING) return@launch
                             val last = current.lastReceivedAtUtcMillis ?: current.resumedAtUtcMillis
                             if (System.currentTimeMillis() - last > GrillSamplingPolicy.receiptWindow(current.samplingIntervalMillis)) app.recordingRepository.markGap(recording.cookId, "Waiting for cloud readings. Missing periods are not filled in.")
-                            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("${sampling.label} · ${current.message}"))
+                            app.alertRepository.reconcile(this@CookRecordingService, recording.cookId)
+                            val values = app.database.cookDao().observeSensorReadings(recording.cookId).first().filter { it.qualityStatus == "valid" && it.measurementType != "setpoint" }.groupBy { it.probeName }.mapNotNull { (_, rows) -> rows.maxByOrNull { it.measuredAtUtcMillis } }.joinToString { "${it.probeName} ${it.value.toInt()} ${it.unit}" }
+                            val age = (System.currentTimeMillis() - last).coerceAtLeast(0) / 60_000
+                            val plan = app.companionRepository.plan(recording.cookId)
+                            val next = plan?.book?.steps?.firstOrNull { (plan.progress[it.id]?.status ?: "pending") == "pending" }?.title
+                            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("$values · last receipt ${age}m ago\n${next?.let { "Next: $it · " }.orEmpty()}${sampling.label} · ${current.message}"))
                             delay(30_000L)
                         }
                     }
@@ -99,6 +105,7 @@ class CookRecordingService : Service() {
                         }
                         app.grillMonitor.lockDevice(device.id)
                         if (state.selectedDeviceId != device.id) { app.grillMonitor.selectDevice(device.id); return@collect }
+                        app.alertRepository.reportControllerStatus(recording.cookId, state.onlineStatus, state.statusFetchedAtMillis)
                         if (state.readingRequestFailed || state.onlineStatus?.let { it != 0 } == true) app.recordingRepository.markGap(recording.cookId, "Grill offline or cloud readings unavailable.")
                         state.latest?.let { app.recordingRepository.ingest(recording.cookId, recording.controllerKey, it, state) }
                     }
