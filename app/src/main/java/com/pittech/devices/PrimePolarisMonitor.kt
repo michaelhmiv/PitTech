@@ -64,7 +64,7 @@ internal class PrimePolarisMonitor(
                     storageMutex.withLock { withContext(Dispatchers.IO) { storage.clear() } }
                 }
                 mutableState.value = state.value.copy(
-                    phase = if (session == null) PolarisPhase.SIGNED_OUT else PolarisPhase.READY,
+                    phase = if (session == null) PolarisPhase.SIGNED_OUT else if (foreground) PolarisPhase.DISCOVERING else PolarisPhase.READY,
                     authenticated = session != null,
                     selectedDeviceId = session?.selectedDeviceId,
                     message = if (session == null) { if (provider == GrillProvider.PIT_BOSS) "Connect your provisioned controller below." else "Sign in to the account your grill is added to." } else "Saved sign-in opened. Loading your grills…",
