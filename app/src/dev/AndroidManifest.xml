@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-feature
         android:name="android.hardware.bluetooth_le"
@@ -19,4 +23,9 @@
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="30" />
 
+    <application>
+        <service android:name="com.pittech.CookRecordingService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started active pellet-grill cook monitoring: continuously observe temperatures through the grill vendor cloud and record them locally while the phone is locked or the camera is open. A persistent notification lets the user pause. This cook session can exceed six hours and requires live observations; scheduled jobs cannot provide its sampling cadence." />
+        </service>
+    </application>
 </manifest>

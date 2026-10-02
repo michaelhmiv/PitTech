@@ -37,6 +37,9 @@ data class NewCookDraft(
     val weatherNotes: String = "",
     val windNotes: String = "",
     val dishes: List<DishDraft> = emptyList(),
+    val recordGrill: Boolean = false,
+    val probe1DishIndex: Int? = null,
+    val probe2DishIndex: Int? = null,
 )
 
 object CookEntryValidation {

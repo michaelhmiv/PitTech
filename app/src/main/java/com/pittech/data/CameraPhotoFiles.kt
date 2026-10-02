@@ -18,6 +18,14 @@ object CameraPhotoFiles {
     fun uri(context: Context, file: File): Uri =
         FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
 
+    fun capturedAt(context: Context, uri: Uri): Long? {
+        if (uri.authority != context.packageName + ".fileprovider") return null
+        val parts = uri.pathSegments
+        if (parts.size != 2 || parts[0] != CAPTURE_DIRECTORY || !parts[1].matches(Regex("pittech_camera_[A-Za-z0-9_-]+\\.jpg"))) return null
+        val file = File(File(context.cacheDir, CAPTURE_DIRECTORY), parts[1])
+        return file.takeIf { it.isFile && it.length() > 0 }?.lastModified()?.takeIf { it > 0 }
+    }
+
     fun delete(context: Context, uriString: String) = delete(context, Uri.parse(uriString))
 
     fun delete(context: Context, uri: Uri) {

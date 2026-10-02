@@ -71,6 +71,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
 import com.pittech.CooksViewModel
@@ -104,6 +105,14 @@ fun PitTechApp(
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
 ) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            viewModel.setAppForeground(true)
+            try { kotlinx.coroutines.awaitCancellation() } finally { viewModel.setAppForeground(false) }
+        }
+    }
+    val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val saving by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
@@ -211,6 +220,8 @@ fun PitTechApp(
                 isStartingCook = false
             },
             onStartCook = viewModel::startCook,
+            grillState = grillState,
+            onGrill = { (context.applicationContext as com.pittech.PitTechApplication).grillMonitor.selectDevice(it) },
         )
         return
     }
@@ -455,11 +466,16 @@ private fun StartCookScreen(
     preferredWeightUnit: String,
     onBack: () -> Unit,
     onStartCook: (NewCookDraft) -> Unit,
+    grillState: com.pittech.devices.PolarisMonitorState,
+    onGrill: (String) -> Unit,
 ) {
     val defaultCookName = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date()) }
     var title by rememberSaveable {
         mutableStateOf(defaultCookName)
     }
+    var recordGrill by rememberSaveable { mutableStateOf(false) }
+    var probe1 by rememberSaveable { mutableStateOf<String?>(null) }
+    var probe2 by rememberSaveable { mutableStateOf<String?>(null) }
     var smoker by rememberSaveable { mutableStateOf("") }
     var setpoint by rememberSaveable { mutableStateOf("") }
     var setpointUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
@@ -538,6 +554,9 @@ private fun StartCookScreen(
                                     weatherNotes = weather,
                                     windNotes = wind,
                                     dishes = dishes.toList(),
+                                    recordGrill = recordGrill && grillState.selectedDevice != null,
+                                    probe1DishIndex = probe1?.toIntOrNull(),
+                                    probe2DishIndex = probe2?.toIntOrNull(),
                                 ),
                             )
                         },
@@ -570,6 +589,10 @@ private fun StartCookScreen(
                 modifier = Modifier.fillMaxWidth().testTag("cook-title"),
             )
 
+            if (BuildConfig.CONTROLLER_TESTING_ENABLED) StartGrillRecordingPanel(
+                grillState, recordGrill, { recordGrill = it }, dishes.mapIndexed { index, dish -> index.toString() to dish.name },
+                probe1, probe2, { probe1 = it }, { probe2 = it }, onGrill,
+            )
             SectionHeading("Dishes")
 
             if (dishes.isEmpty()) {
@@ -588,7 +611,7 @@ private fun StartCookScreen(
                 )
             } else {
                 dishes.forEachIndexed { index, dish ->
-                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index) })
+                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index); probe1 = null; probe2 = null })
                 }
                 OutlinedButton(
                     onClick = { showDishDialog = true },
@@ -1002,6 +1025,7 @@ internal fun SimpleDropdownField(
                 options.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option) },
+                        modifier = if (testTag == null) Modifier else Modifier.testTag("$testTag-option-${option.lowercase(java.util.Locale.ROOT).replace(' ', '-')}"),
                         onClick = {
                             expanded = false
                             onSelect(option)
