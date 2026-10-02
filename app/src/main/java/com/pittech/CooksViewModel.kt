@@ -151,6 +151,20 @@ class CooksViewModel(
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
 
+    fun saveCookAlert(cookId: String, title: String, rule: com.pittech.domain.CookAlertRule, useTimedMonitoring: Boolean = false) = perform {
+        if (useTimedMonitoring) {
+            val current = app.database.recordingDao().getRecording(cookId) ?: error("Attach a grill before enabling background monitoring.")
+            app.recordingRepository.configureSampling(cookId, com.pittech.devices.GrillSamplingPolicy(com.pittech.devices.GrillSamplingMode.PERIODIC, current.samplingIntervalMillis))
+            reconcileRecording()
+        }
+        app.alertRepository.save(cookId, title, rule)
+        _notice.value = "Alert saved. Manual entries are evaluated when you log them."
+    }
+    fun changeCookAlert(id: String, action: String) = perform {
+        app.alertRepository.change(id, action)
+        com.pittech.CookAlertNotifications.cancel(context, id)
+    }
+
     fun beginGuidance(cookId: String) = perform { app.companionRepository.beginPlan(cookId) }
     fun updateGuidanceStep(cookId: String, step: com.pittech.domain.PlaybookStep) = perform { app.companionRepository.updateStep(cookId, step) }
     fun pauseGuidance(cookId: String, paused: Boolean) = perform { app.companionRepository.setPaused(cookId, paused) }

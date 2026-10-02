@@ -108,6 +108,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         if (recording.status != CookRecordingEntity.RECORDING || cook.status != CookStatus.ACTIVE ||
             recording.controllerKey != controllerKey || state.selectedDeviceId?.let(CookTelemetryPolicy::deviceKey) != controllerKey ||
             sample.fetchedAtMillis < recording.resumedAtUtcMillis || sample.fetchedAtMillis <= (recording.lastProcessedAtUtcMillis ?: Long.MIN_VALUE)) return@withTransaction
+        CookAlertRepository(database).reportControllerStatus(cookId, state.onlineStatus, state.statusFetchedAtMillis)
         if (state.onlineStatus?.let { it != 0 } == true || state.readingRequestFailed || sample.payload.reportedAtMillis?.let { sample.fetchedAtMillis - it > 45_000L || it - sample.fetchedAtMillis > 300_000L } == true) {
             markGap(cookId, "Grill offline or cloud readings unavailable.", sample.fetchedAtMillis)
             recordings.getRecording(cookId)?.let { recordings.saveRecording(it.copy(lastProcessedAtUtcMillis = sample.fetchedAtMillis)) }

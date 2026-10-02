@@ -48,6 +48,15 @@ class CookGuidanceReceiver : BroadcastReceiver() {
             try {
                 val repo = (context.applicationContext as PitTechApplication).companionRepository
                 val occurrence = intent.getIntExtra("occurrence", 0)
+                if (step.startsWith("alert:")) {
+                    val app = context.applicationContext as PitTechApplication
+                    if (intent.action?.startsWith("alert_") == true) {
+                        app.alertRepository.change(step, intent.action!!.removePrefix("alert_"))
+                        CookAlertNotifications.cancel(context, step)
+                    }
+                    app.alertRepository.reconcile(context, cook)
+                    return@launch
+                }
                 when (intent.action) {
                     "done" -> { repo.completeStep(cook, step, occurrence); CookGuidanceNotifications.cancel(context, cook, step) }
                     "snooze" -> { repo.snooze(cook, step, occurrence, System.currentTimeMillis() + 600_000); CookGuidanceNotifications.cancel(context, cook, step) }

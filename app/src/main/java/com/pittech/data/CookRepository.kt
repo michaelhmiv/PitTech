@@ -596,7 +596,7 @@ class CookRepository(
             reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
-            companionRecords = database.companionDao().all().filter { it.cookId == null || it.cookId in selectedCookIds },
+            companionRecords = database.companionDao().all().filter { it.kind != "monitor_status" && (it.cookId == null || it.cookId in selectedCookIds) },
             companionPhotos = database.companionDao().photos().filter { p -> database.companionDao().get(p.recordId)?.let { it.cookId == null || it.cookId in selectedCookIds } == true },
             assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
         )
@@ -640,7 +640,7 @@ class CookRepository(
                 dao.insertReadingsIgnoringDuplicates(snapshot.readings.filter { it.cookId in newIds })
                 dao.insertPhotosIgnoringDuplicates(restoredPhotos)
                 dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds })
-                database.companionDao().restore(newRecords.map { r -> if (r.kind == "plan") r.copy(payload = org.json.JSONObject(r.payload).put("paused", true).toString()) else r })
+                database.companionDao().restore(newRecords.map { r -> if (r.kind == "plan") r.copy(payload = org.json.JSONObject(r.payload).put("paused", true).toString()) else if (r.kind == "alert") { val rule = com.pittech.domain.CookAlertEngine.decode(r.payload).first; r.copy(payload = com.pittech.domain.CookAlertEngine.encode(rule.copy(enabled = false))) } else r })
                 database.companionDao().putPhotos(referencePhotos)
                 database.recordingDao().insertRecordings(snapshot.recordings.filter { it.cookId in newIds }
                     .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") })

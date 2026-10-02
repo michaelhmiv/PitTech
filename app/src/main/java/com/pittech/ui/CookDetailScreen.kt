@@ -600,7 +600,7 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    playbookTools = { CookPlaybookTools(data, viewModel) },
+                    playbookTools = { CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
                             data, grillState, recordingRunning, busy,
