@@ -74,6 +74,10 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val id = draft.playbookId ?: return
         val record = dao.get(id) ?: error("This playbook could not be found.")
         val book = PlaybookCodec.decode(record.payload)
+        applySnapshot(cookId, draft, book, id)
+    }
+
+    suspend fun applySnapshot(cookId: String, draft: NewCookDraft, book: CookPlaybook, id: String?) {
         val dishes = database.cookDao().getDishesForCook(cookId)
         // Dish order is explicit in the preview and preserved when the draft is saved.
         require(dishes.size == book.draft.dishes.size) { "Keep the playbook dishes when following its steps, or choose Setup only." }

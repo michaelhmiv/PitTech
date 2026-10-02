@@ -151,6 +151,32 @@ class CooksViewModel(
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
 
+    private val _servePlanEditor = MutableStateFlow<com.pittech.domain.ServePlan?>(null)
+    val servePlanEditor = _servePlanEditor.asStateFlow()
+    private val _durationEvidence = MutableStateFlow<List<com.pittech.domain.DurationEvidence>>(emptyList())
+    val durationEvidence = _durationEvidence.asStateFlow()
+    private var editingServePlanId: String? = null
+    fun planServeTime(playbookId: String? = null, scheduledId: String? = null) = perform {
+        _durationEvidence.value = app.servePlanRepository.evidence()
+        editingServePlanId = scheduledId
+        val saved = scheduledId?.let { app.companionRepository.get(it) }
+        if (saved != null) _servePlanEditor.value = com.pittech.domain.ServeTimePlanner.decode(saved.payload)
+        else {
+            val book = playbookId?.let { app.companionRepository.get(it)?.let { r -> com.pittech.domain.PlaybookCodec.decode(r.payload) } }
+                ?: com.pittech.domain.CookPlaybook("Planned cook", NewCookDraft("Planned cook", dishes = listOf(DishDraft("Main dish", "Beef"))), emptyList())
+            _servePlanEditor.value = com.pittech.domain.ServePlan(book, System.currentTimeMillis() + 86_400_000, java.time.ZoneId.systemDefault().id,
+                schedules = book.draft.dishes.mapIndexed { i, _ -> com.pittech.domain.DishSchedule(i, evidenceNote = "Enter your duration range", pitF = book.draft.setpointText.toDoubleOrNull()?.let { com.pittech.domain.CookPlanEngine.fahrenheit(it, book.draft.setpointUnit) }) })
+        }
+    }
+    fun closeServePlan() { _servePlanEditor.value = null }
+    fun saveServePlan(plan: com.pittech.domain.ServePlan) = perform { app.servePlanRepository.save(plan, editingServePlanId); _servePlanEditor.value = null; _notice.value = "Cook saved for later. Recording starts only when you start the cook." }
+    fun previewScheduledCook(id: String) = perform {
+        val plan = com.pittech.domain.ServeTimePlanner.decode(app.companionRepository.get(id)?.payload ?: error("Scheduled cook not found."))
+        _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
+        _selectedCookId.value = null
+    }
+    fun deleteScheduledCook(id: String) = perform { app.companionRepository.delete(id) }
+
     fun saveCookAlert(cookId: String, title: String, rule: com.pittech.domain.CookAlertRule, useTimedMonitoring: Boolean = false) = perform {
         if (useTimedMonitoring) {
             val current = app.database.recordingDao().getRecording(cookId) ?: error("Attach a grill before enabling background monitoring.")

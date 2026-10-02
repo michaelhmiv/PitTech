@@ -170,7 +170,9 @@ class CookRepository(
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 dao.insertTimelineEvents(events)
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
-                CookCompanionRepository(database, photoStorage).applyToCook(cookId, draft)
+                val companion = CookCompanionRepository(database, photoStorage)
+                companion.applyToCook(cookId, draft)
+                ServePlanRepository(database, companion).attach(cookId, draft)
             }
         } catch (failure: Throwable) {
             importedPhotos.forEach { photoStorage.delete(it.relativePath) }
