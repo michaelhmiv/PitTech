@@ -159,6 +159,13 @@ class CookRecordingIntegrationTest {
             assertNull(other.recordingDao().getActiveRecording())
             assertEquals(4, other.cookDao().getAllSensorReadings().size)
             assertEquals(2, other.recordingDao().getAllAssignments().size)
+            val reattached = CookRecordingRepository(other)
+            reattached.attach(id, device, "°F", now = base + 2_000)
+            assertNotEquals(preview.snapshot.recordings.single().deviceId, other.recordingDao().getRecording(id)!!.deviceId)
+            assertNull(restored.temperatureContext(id, base + 2_001, null))
+            reattached.ingest(id, CookTelemetryPolicy.deviceKey(device.id), sample(base + 3_000), state(base + 3_000))
+            assertEquals(8, other.cookDao().getAllSensorReadings().size)
+            assertEquals(3, TemperatureContext.decode(restored.temperatureContext(id, base + 3_001, null)).size)
         } finally { other.close() }
         val csv = ByteArrayOutputStream(); transfer.writeCsv(csv)
         assertTrue(csv.toString("UTF-8").contains("cloud_receipt"))

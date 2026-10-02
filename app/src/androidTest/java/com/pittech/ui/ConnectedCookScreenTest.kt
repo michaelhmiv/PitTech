@@ -4,7 +4,7 @@ import android.content.Intent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -53,6 +53,17 @@ class ConnectedCookScreenTest {
         val screenshot = File(app.filesDir, "pittech-ui-test/connected-cook-live.png").apply { parentFile?.mkdirs() }
         compose.onNodeWithTag("cook-grill-live").performScrollTo()
         compose.onRoot().captureToImage().asAndroidBitmap().apply { screenshot.outputStream().use { compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; recycle() }
+        // Imported recordings have no account binding and stay stopped. Reattach explicitly.
+        val firstRecording = runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording()!! }
+        runBlocking(Dispatchers.IO) { app.recordingRepository.stop(firstRecording.cookId) }
+        compose.waitUntil(10_000) { !app.recordingServiceRunning.value }
+        runBlocking(Dispatchers.IO) { app.database.recordingDao().saveRecording(firstRecording.copy(controllerKey = "", status = com.pittech.data.CookRecordingEntity.STOPPED)) }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Attach grill & record").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-recording-toggle").performScrollTo().performClick()
+        compose.waitUntil(20_000) { runBlocking(Dispatchers.IO) {
+            val reattached = app.database.recordingDao().getRecording(firstRecording.cookId)!!
+            reattached.deviceId != firstRecording.deviceId && app.database.cookDao().getAllSensorReadings().any { it.sourceDeviceId == reattached.deviceId }
+        } }
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "wrap" } } }

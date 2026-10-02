@@ -633,8 +633,16 @@ class CookRepository(
 
     suspend fun readPhoto(relativePath: String): ByteArray? = photoStorage.read(relativePath)
 
-    internal suspend fun temperatureContext(cookId: String, time: Long, dishId: String?): String? =
-        TemperatureContext.encode(TemperatureContext.select(dao.getReadingsForContext(cookId, time - 300_000L, time), time, dishId))
+    internal suspend fun temperatureContext(cookId: String, time: Long, dishId: String?): String? {
+        val recording = database.recordingDao().getRecording(cookId)
+        val rows = dao.getReadingsForContext(cookId, time - 300_000L, time)
+        // Reattaching restored history creates a new local device identity. Older captures
+        // retain their original context; new entries must wait for this attached grill.
+        val applicable = if (recording != null && time >= recording.startedAtUtcMillis)
+            rows.filter { it.source != "controller_cloud" || it.sourceDeviceId == recording.deviceId }
+        else rows
+        return TemperatureContext.encode(TemperatureContext.select(applicable, time, dishId))
+    }
 
     suspend fun getPendingCookReminders(): List<CookReminderEntity> = dao.getPendingReminders()
 
