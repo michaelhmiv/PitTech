@@ -264,7 +264,7 @@ class CookRepository(
         details: String?,
         occurredAtUtcMillis: Long,
         timeZoneId: String = ZoneId.systemDefault().id,
-    ): TimelineEventEntity {
+    ): TimelineEventEntity = database.withTransaction {
         require(title.isNotBlank()) { "Enter a title for this entry." }
         val now = System.currentTimeMillis()
         val event = TimelineEventEntity(
@@ -275,7 +275,8 @@ class CookRepository(
             temperatureContextJson = temperatureContext(cookId, occurredAtUtcMillis, dishId),
         )
         dao.insertTimelineEvent(event)
-        return event
+        CookCompanionRepository(database, photoStorage).onEvent(event)
+        event
     }
 
     suspend fun updateTimelineEvent(event: TimelineEventEntity) {
@@ -511,6 +512,12 @@ class CookRepository(
     }
 
     suspend fun completeCook(cookId: String) = database.withTransaction {
+        val plan = CookCompanionRepository(database, photoStorage).plan(cookId)
+        if (plan != null) {
+            val events = dao.getTimelineEventsForCook(cookId).map { com.pittech.domain.PlanEvent(it.id, com.pittech.domain.PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+            require(plan.book.steps.none { s -> (plan.progress[s.id]?.status ?: "pending") == "pending" && s.stage in setOf("resting", "holding") &&
+                s.dishIndex?.let { com.pittech.domain.CookPlanEngine.stage(events, plan.dishIds[it]) == s.stage } != false }) { "Rest or hold checks are still active. Complete or skip them in View plan before finishing." }
+        }
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
         if (cook.status == CookStatus.COMPLETED) return@withTransaction
         val now = System.currentTimeMillis()

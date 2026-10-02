@@ -525,6 +525,9 @@ interface CookDao {
     suspend fun getAllIngredients(): List<IngredientEntity>
 
     @Query("SELECT * FROM timeline_events ORDER BY occurredAtUtcMillis ASC")
+    fun observeAllTimelineEvents(): Flow<List<TimelineEventEntity>>
+
+    @Query("SELECT * FROM timeline_events ORDER BY occurredAtUtcMillis ASC")
     suspend fun getAllTimelineEvents(): List<TimelineEventEntity>
 
     @Query("SELECT * FROM sensor_readings ORDER BY measuredAtUtcMillis ASC")

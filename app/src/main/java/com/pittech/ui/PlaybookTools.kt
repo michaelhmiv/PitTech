@@ -49,7 +49,6 @@ internal fun PlaybookLibrary(viewModel: CooksViewModel) {
 internal fun CookPlaybookTools(data: CookDetailData, viewModel: CooksViewModel) {
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     val plan = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
-    var showPlan by remember { mutableStateOf(false) }
     if (data.cook.status == CookStatus.COMPLETED) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -58,20 +57,8 @@ internal fun CookPlaybookTools(data: CookDetailData, viewModel: CooksViewModel) 
                 OutlinedButton(onClick = { viewModel.previewCookAgain(data.cook.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cook again") }
             }
         }
-    } else if (plan != null) {
-        val book = remember(plan.payload) { PlaybookCodec.decode(plan.payload) }
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp)) {
-                Text("Following ${plan.title}", style = MaterialTheme.typography.titleMedium)
-                Text("${book.steps.size} steps · revision ${book.revision}")
-                TextButton(onClick = { showPlan = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("View playbook") }
-            }
-        }
-        if (showPlan) AlertDialog(onDismissRequest = { showPlan = false }, title = { Text(book.name) }, text = {
-            Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                book.steps.forEach { Text("${it.title}\n${stepDescription(it)}\n${it.instructions}") }
-            }
-        }, confirmButton = { TextButton(onClick = { showPlan = false }) { Text("Close") } })
+    } else {
+        CookGuidanceCard(data, plan, viewModel)
     }
 }
 
