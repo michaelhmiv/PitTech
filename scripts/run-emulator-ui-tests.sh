@@ -291,9 +291,9 @@ done
 echo "All ${#expected_tests[@]} expected PitTech UI tests passed."
 
 if (( api_level == 36 )); then
-  controller_test_selector='com.pittech.ui.ControllerDiagnosticsScreenTest,com.pittech.devices.MongooseRpcInterrogationPlannerTest,com.pittech.devices.MongooseRpcResponseParserTest,com.pittech.devices.ControllerStableFingerprintTest,com.pittech.devices.ControllerDiagnosticSanitizerTest'
+  controller_test_selector='com.pittech.ui.ControllerDiagnosticsScreenTest,com.pittech.devices.MongooseRpcInterrogationPlannerTest,com.pittech.devices.MongooseRpcResponseParserTest,com.pittech.devices.ControllerStableFingerprintTest,com.pittech.devices.ControllerDiagnosticSanitizerTest,com.pittech.devices.PitBossCloudProtocolTest'
   controller_test_output="$output_dir/controller-diagnostics-tests.txt"
-  controller_expected_count=18
+  controller_expected_count=22
   echo "Running controller interrogation UI, protocol, fingerprint, and sanitization tests."
   timeout 12m adb shell am instrument -w -r \
     -e class "$controller_test_selector" \
