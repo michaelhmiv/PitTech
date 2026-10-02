@@ -92,9 +92,17 @@ class ConnectedGrillCookIntegrationTest {
         val other = PolarisDevice("traeger:PBA-synthetic", "Other provider", "Traeger", null, null, null, 4)
         ingest(id, other, traeger(base + 16000), base + 16000)
         assertEquals(6, db.cookDao().getAllSensorReadings().size)
+        val originalDevice = db.recordingDao().getRecording(id)!!.deviceId
+        recording.pause(id, now = base + 17000)
+        recording.attach(id, other, "°C", now = base + 18000)
+        ingest(id, other, traeger(base + 19000), base + 19000)
+        val newDevice = db.recordingDao().getRecording(id)!!.deviceId
+        assertNotEquals(originalDevice, newDevice)
+        assertEquals(6, db.cookDao().getAllSensorReadings().count { it.sourceDeviceId == originalDevice })
+        assertEquals(6, db.cookDao().getAllSensorReadings().count { it.sourceDeviceId == newDevice })
         cooks.completeCook(id)
-        ingest(id, device, payload, base + 16000)
-        assertEquals(6, db.cookDao().getAllSensorReadings().size)
+        ingest(id, other, traeger(base + 31000), base + 31000)
+        assertEquals(12, db.cookDao().getAllSensorReadings().size)
     }
     @Test fun staleNativeTimestampAndOfflineReportsLeaveGapsAndNeverAttachFakePhotoContext() = runBlocking {
         val id = cook()
@@ -113,4 +121,3 @@ class ConnectedGrillCookIntegrationTest {
         assertEquals(1, db.cookDao().getAllTimelineEvents().count { it.eventType == "connection_restored" })
     }
 }
-

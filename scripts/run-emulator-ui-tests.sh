@@ -214,7 +214,7 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$provider_test_selector" \
   "$instrumentation_target" | tee "$provider_test_output"
 provider_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$provider_test_output" || true)"
-if [[ "$provider_passed_count" -ne 10 ]] || ! grep -q 'OK (10 tests)' "$provider_test_output" ||
+if [[ "$provider_passed_count" -ne 11 ]] || ! grep -q 'OK (11 tests)' "$provider_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$provider_test_output"; then
   echo "Connected-provider instrumentation tests did not all pass." >&2
   exit 1

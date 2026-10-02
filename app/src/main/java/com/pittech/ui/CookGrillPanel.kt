@@ -95,7 +95,7 @@ internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, ru
         return
     }
     val matches = state.selectedDeviceId?.let(CookTelemetryPolicy::deviceKey) == recording.controllerKey
-    val needsAttachment = recording.controllerKey.isBlank()
+    val needsAttachment = recording.controllerKey.isBlank() || !matches
     val active = recording.status == CookRecordingEntity.RECORDING && running
     val old = recording.lastReceivedAtUtcMillis == null || now - recording.lastReceivedAtUtcMillis > 45_000L || recording.gapStartedAtUtcMillis != null || (matches && state.readingsAreOld(now))
     val sourceProbes = data.probes.filter { it.deviceId == recording.deviceId }.sortedBy { listOf("Chamber", "Setpoint", "Probe 1", "Probe 2", "Probe 3", "Probe 4").indexOf(it.name) }
@@ -122,7 +122,7 @@ internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, ru
             if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED && data.cook.status != CookStatus.COMPLETED) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = if (active) onPause else if (needsAttachment) onAttach else onResume,
-                        enabled = !busy && data.cook.status == CookStatus.ACTIVE && (!needsAttachment || (state.authenticated && state.sessionSaved && state.selectedDevice != null)),
+                        enabled = !busy && data.cook.status == CookStatus.ACTIVE && (active || !needsAttachment || (state.authenticated && state.sessionSaved && state.selectedDevice != null)),
                         modifier = Modifier.testTag("cook-recording-toggle")) { Text(if (active) "Pause recording" else if (needsAttachment) "Attach grill & record" else "Resume recording") }
                     TextButton(onClick = onStop, enabled = !busy && recording.status != CookRecordingEntity.STOPPED, modifier = Modifier.testTag("cook-recording-stop")) { Text("Stop recording") }
                 }
@@ -131,7 +131,7 @@ internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, ru
                     ProbeDishSelector(probe.name, probe.assignedDishId, data.dishes.map { it.id to it.name }, "assign-${probe.name.replace(' ', '-').lowercase(Locale.ROOT)}") { onAssign(probe.id, it) }
                 }
                 if (!active) Text(recording.message, style = MaterialTheme.typography.bodySmall)
-                if (needsAttachment) Text("Select a grill in Devices, then attach it here to record new temperatures with this restored cook.", style = MaterialTheme.typography.bodySmall)
+                if (needsAttachment && !active) Text("Select a grill in Devices, then attach it here. Earlier readings keep their original grill and dish assignments.", style = MaterialTheme.typography.bodySmall)
                 RecordingPowerOptions()
             }
             val end = data.readings.maxOfOrNull { it.measuredAtUtcMillis } ?: now

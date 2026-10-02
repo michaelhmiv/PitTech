@@ -147,7 +147,7 @@ internal class TraegerBackend(
                     observation.packetId?.let { current.binary(GrillMqtt.acknowledge(it)) }
                     if (observation.topic != "prod/thing/update/" + thing) continue
                     val envelope = try { JSONObject(observation.json) } catch (_: Exception) { throw PolarisFailure(PolarisFailureKind.SCHEMA) }
-                    if (envelope.optString("thingName") != thing) continue
+                    if (envelope.has("thingName") && envelope.optString("thingName") != thing) continue
                     incoming.trySend(parseStatus(envelope))
                 }
             } catch (error: CancellationException) { incoming.cancel(); throw error }

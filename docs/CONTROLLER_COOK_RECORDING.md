@@ -10,7 +10,7 @@ Debug and Firebase Dev builds can attach a GrillirG, provisioned Pit Boss/Louisi
 4. New camera photos preserve the temporary camera file's capture time. Library EXIF dates are accepted only with an explicit offset; ambiguous dates stay unknown. Photos obtain their own context at capture time, not import time. A default photo timeline entry follows known capture time; an unknown gallery date clears its automatic context. Explicitly backdated entries retain their chosen time. Entries/photos without relevant recent data have no fabricated context.
 5. Pause/stop recording independently of the cook. Pausing a cook pauses recording. Resume recording is explicit. Finishing/deleting serializes with ingestion and prevents late samples being added. Restore imports history in a stopped state and never starts background recording.
 
-One selected grill can record into one active cook at a time, with multiple dishes/probes in that cook. A running recording locks both provider and grill selection. A restored cook can attach a grill again; cloud identities and authentication credentials are never exported.
+One selected grill can record into one active cook at a time, with multiple dishes/probes in that cook. A running recording locks both provider and grill selection. After pausing, selecting another provider or grill requires an explicit attachment in the cook. Earlier samples retain their original local device and dish attribution. A restored cook can attach a grill again; cloud identities and authentication credentials are never exported.
 
 ## Collection and timestamps
 

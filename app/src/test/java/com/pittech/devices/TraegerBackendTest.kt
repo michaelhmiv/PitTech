@@ -39,7 +39,7 @@ class TraegerBackendTest {
             report = { listOf(
                 mqttReport("prod/thing/update/other", traegerEnvelope("other").toString(), 40),
                 mqttReport("prod/thing/update/owned_test_grill", traegerEnvelope("other").toString(), 41),
-                mqttReport("prod/thing/update/owned_test_grill", traegerEnvelope().toString(), 42)) }
+                mqttReport("prod/thing/update/owned_test_grill", traegerEnvelope().apply { remove("thingName") }.toString(), 42)) }
         }
         val urls = mutableListOf<String>()
         val backend = TraegerBackend(http, GrillSocketFactory { url, protocol ->

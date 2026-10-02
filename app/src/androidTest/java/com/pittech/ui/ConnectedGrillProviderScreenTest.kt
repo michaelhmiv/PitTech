@@ -11,6 +11,10 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.pittech.devices.*
+import com.pittech.data.CookDetailData
+import com.pittech.data.CookEntity
+import com.pittech.data.CookRecordingEntity
+import com.pittech.data.CookStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
 import org.junit.Rule
@@ -80,6 +84,25 @@ class ConnectedGrillProviderScreenTest {
         assertEquals("private-password", engine.secret)
         compose.onNodeWithText("Probe 4").performScrollTo().assertIsDisplayed()
     }
+    @Test fun pausedCookRequiresExplicitAttachmentWhenSelectedProviderChanges() {
+        val now = System.currentTimeMillis()
+        val device = PolarisDevice("traeger:synthetic", "Test Traeger", "Traeger", null, null, null, 4)
+        val state = PolarisMonitorState(authenticated = true, sessionSaved = true, devices = listOf(device), selectedDeviceId = device.id, provider = GrillProvider.TRAEGER)
+        val cook = CookEntity("test-cook", "Test cook", CookStatus.ACTIVE, now, "UTC", createdAtUtcMillis = now, updatedAtUtcMillis = now)
+        val data = CookDetailData(cook, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(),
+            recording = CookRecordingEntity(cook.id, "old-device", CookTelemetryPolicy.deviceKey("pitboss:PBA-synthetic"), CookRecordingEntity.PAUSED, "°C", now, now))
+        var attached = false
+        var resumed = false
+        compose.setContent { PitTechTheme {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                CookGrillPanel(data, state, false, false, { attached = true }, { resumed = true }, {}, {}, { _, _ -> })
+            }
+        } }
+        assertFalse(attached)
+        compose.onNodeWithTag("cook-recording-toggle").performScrollTo().assertTextContains("Attach grill & record").performClick()
+        assertTrue(attached)
+        assertFalse(resumed)
+    }
     @Test fun fourProbeCookSetupAssignsThirdAndFourthChannelsIndependently() {
         val device = PolarisDevice("traeger:synthetic", "Test Traeger", "Traeger", null, null, null, 4)
         val state = PolarisMonitorState(authenticated = true, devices = listOf(device), selectedDeviceId = device.id, provider = GrillProvider.TRAEGER)
@@ -102,4 +125,3 @@ class ConnectedGrillProviderScreenTest {
         }
     }
 }
-

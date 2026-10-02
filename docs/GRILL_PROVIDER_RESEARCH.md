@@ -34,7 +34,7 @@ Audited [go-traeger at 937e9da](https://github.com/bemeek-io/go-traeger/tree/937
 
 WiFIRE login uses the auth service, and users/self returns the account's confirmed grill identities. The cloud issues a time-limited signed WebSocket URL; telemetry arrives on prod/thing/update/{thingName}. The one commands request allowed by PitTech has a transport-pinned body containing **90**, the documented status read. Caller input cannot substitute a heat/control command. There is no application MQTT publish encoder.
 
-The subscriber handles bounded MQTT framing, fragmented/coalesced packets, subscribe acknowledgements, QoS 0/1 delivery and acknowledgements. A continuous receiver drains the feed and retains the newest matching observation between cook polls. Both topic and envelope must match the selected owned grill. Closing, changing accounts or stopping monitoring tears down the socket; signed URLs renew before expiry.
+The subscriber handles bounded MQTT framing, fragmented/coalesced packets, subscribe acknowledgements, QoS 0/1 delivery and acknowledgements. A continuous receiver drains the feed and retains the newest matching observation between cook polls. The authenticated topic must match the selected owned grill; an explicit envelope identity must also match. Published SDK fixtures omit that optional identity, so its absence does not break a valid topic-routed report. Closing, changing accounts or stopping monitoring tears down the socket; signed URLs renew before expiry.
 
 Traeger units use the opposite numeric convention from GrillirG. Normalization handles that explicitly. Accessory channels p0–p3 retain physical probe identity regardless of array order. Disconnected accessories override cached legacy probe values; connected 0°C remains valid. Unknown/duplicate channels cannot be silently assigned to dishes.
 
@@ -61,7 +61,7 @@ These are **researched routes, not implemented PitTech providers**. Adding them 
 
 Provider credentials use separate Keystore aliases, authenticated encryption contexts and no-backup files. GrillirG's existing file/alias/context are unchanged. Passwords, refresh tokens, signed URLs, account identifiers, controller IDs and raw payloads do not enter public reports or archives. Normalized diagnostic fields and HTTP/API outcomes are provider aware; local device enumeration does not falsely mark the backend reachable.
 
-Collection is approximately every 15 seconds for the implemented adapters while the app is visible or an explicit cook foreground service owns it. Retries back off and honor rate-limit delay. An active cook retains its provider and grill, including while the camera/activity backgrounds. Token rejection pauses recording; no automatic login or credential-request loop is added.
+Collection is approximately every 15 seconds for the implemented adapters while the app is visible or an explicit cook foreground service owns it. Retries back off and honor rate-limit delay, including discovery after restoring a saved session during an outage. An active cook retains its provider and grill, including while the camera/activity backgrounds. After pausing, a different selected grill requires explicit reattachment; earlier samples keep their original device and dish attribution. Token rejection pauses recording; no automatic login or credential-request loop is added.
 
 Times in stored cook data remain cloud receipt times. Traeger's supplied report timestamp, when present, is additionally checked: stale, repeated and out-of-order reports cannot refresh the receipt history. Pit Boss relay state has no established sensor timestamp, so freshness beyond receipt is unknown. Missing/unsupported units or channels stay unavailable. Temperature gaps remain gaps; no physical cook is started or ended from a telemetry operating code.
 
@@ -70,4 +70,3 @@ The test suite includes source-audited synthetic vectors for all 20 Pit Boss boa
 No physical Pit Boss or Traeger grill was available in this environment. Before treating a particular model as confirmed, compare all connected/unplugged channels and units with its supported app, test app background/camera/lock behavior, interrupt/recover the network and test a token/signed-URL renewal. Synthetic fixtures cannot establish overnight reliability or cover undocumented regional/model changes.
 
 See [connected cook recording](CONTROLLER_COOK_RECORDING.md) and [packaged third-party notices](../third_party/README.md).
-

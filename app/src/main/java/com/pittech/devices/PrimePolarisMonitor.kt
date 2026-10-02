@@ -41,6 +41,7 @@ internal class PrimePolarisMonitor(
     private val now: () -> Long = System::currentTimeMillis,
     private val elapsed: () -> Long = { System.nanoTime() / 1_000_000L },
     private val provider: GrillProvider = GrillProvider.GRILLIRG,
+    private val discoveryWait: suspend (Long) -> Unit = { delay(it) },
 ) : PolarisMonitorEngine {
     private val mutableState = MutableStateFlow(PolarisMonitorState(provider = provider))
     override val state = mutableState.asStateFlow()
@@ -113,12 +114,29 @@ internal class PrimePolarisMonitor(
         session = track(PolarisOperation.SIGN_IN) { backend.signIn(email, code) }
         mutableState.value = state.value.copy(authenticated = true, devices = emptyList(), selectedDeviceId = null, latest = null, samples = emptyList(), onlineStatus = null, statusFetchedAtMillis = null)
         saveSession()
-        discoverDevices()
+        discoverWithRetry()
     }
 
     override fun reloadDevices() {
         if (session == null) return
-        runAction { discoverDevices() }
+        runAction { discoverWithRetry() }
+    }
+
+    private suspend fun discoverWithRetry() {
+        while (true) {
+            try { discoverDevices(); return }
+            catch (error: CancellationException) { throw error }
+            catch (error: PolarisFailure) {
+                if (!foreground || error.kind !in setOf(PolarisFailureKind.NETWORK, PolarisFailureKind.HTTP, PolarisFailureKind.RATE_LIMIT)) throw error
+                val failures = state.value.consecutiveFailures + 1
+                val pause = PolarisMonitorPolicy.nextDelay(failures, error.retryAfterMillis)
+                mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, busy = false,
+                    consecutiveFailures = failures, nextPollAtMillis = now() + pause,
+                    message = error.message(provider) + " Retrying grill discovery after a pause.")
+                discoveryWait(pause)
+                if (!foreground) return
+            }
+        }
     }
 
     private suspend fun discoverDevices() {

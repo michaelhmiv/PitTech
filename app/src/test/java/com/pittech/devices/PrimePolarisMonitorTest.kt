@@ -20,6 +20,7 @@ class PrimePolarisMonitorTest {
     private class Backend : PolarisBackend {
         var deviceList = listOf(PolarisDevice("private-id", "Grill", null, null, null, null))
         var statusFailure: PolarisFailure? = null
+        var discoveryFailure: PolarisFailure? = null
         var readingFailure: PolarisFailure? = null
         var devicesGate: CompletableDeferred<PolarisResult<List<PolarisDevice>>>? = null
         var deviceCalls = 0
@@ -44,6 +45,7 @@ class PrimePolarisMonitorTest {
         }
         override suspend fun devices(session: PolarisSession): PolarisResult<List<PolarisDevice>> {
             deviceCalls++
+            discoveryFailure?.let { throw it }
             return devicesGate?.await() ?: PolarisResult(deviceList)
         }
         override suspend fun status(session: PolarisSession, deviceId: String): PolarisResult<PolarisPayload> {
@@ -272,4 +274,27 @@ class PrimePolarisMonitorTest {
             assertTrue(monitor.state.value.message.contains("Traeger"))
         } finally { monitor.close() }
     }
+    @Test fun restoredRecordingRetriesTemporaryDiscoveryFailureWithoutLosingCredentialOrLoggingIn() = runBlocking {
+        val retry = CompletableDeferred<Unit>()
+        val backend = Backend().apply { discoveryFailure = PolarisFailure(PolarisFailureKind.NETWORK) }
+        val store = Store()
+        var pause = 0L
+        val monitor = PrimePolarisMonitor(backend, store, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { 1_000_000L }, provider = GrillProvider.TRAEGER, discoveryWait = { pause = it; retry.await() })
+        try {
+            monitor.setRecording(true)
+            waitFor { monitor.state.value.nextPollAtMillis != null }
+            assertEquals(PolarisPhase.DISCOVERING, monitor.state.value.phase)
+            assertNotNull(store.session)
+            assertEquals(30_000L, pause)
+            assertEquals(0, backend.signInCalls)
+            backend.discoveryFailure = null
+            retry.complete(Unit)
+            waitFor { monitor.state.value.latest != null }
+            assertEquals(2, backend.deviceCalls)
+            assertEquals(0, monitor.state.value.consecutiveFailures)
+            assertEquals(0, backend.signInCalls)
+        } finally { monitor.close() }
+    }
+
 }
