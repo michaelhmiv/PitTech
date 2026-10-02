@@ -1,6 +1,8 @@
 package com.pittech.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +43,9 @@ fun InsightsScreen(
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
+    var favoritesOnly by remember { mutableStateOf(false) }
+    var highlyRated by remember { mutableStateOf(false) }
+    var smoker by remember { mutableStateOf("All smokers") }
     var comparing by remember { mutableStateOf(false) }
     val selectedIds = remember { mutableStateListOf<String>() }
     val completed = data.cooks.filter { it.cook.status == CookStatus.COMPLETED }
@@ -48,9 +53,17 @@ fun InsightsScreen(
         cook.cook.endedAtUtcMillis?.let { (it - cook.cook.startedAtUtcMillis).coerceAtLeast(0) / 60_000.0 }
     }
     val ratings = data.results.filter { it.resultType == "overall_rating" }.mapNotNull { it.numericValue }
+    val favoriteIds = data.results.filter { it.resultType == "favorite" && it.numericValue == 1.0 }.map { it.cookId }.toSet()
     val filtered = data.cooks.filter { item ->
-        query.isBlank() || item.cook.title.contains(query, ignoreCase = true) ||
-            item.dishes.any { it.name.contains(query, true) || it.cut.orEmpty().contains(query, true) }
+        val searchable = buildString {
+            append(item.cook.title).append(' ').append(item.cook.smokerName.orEmpty())
+            item.dishes.forEach { append(" ${it.name} ${it.cut.orEmpty()} ${it.weightValue ?: ""} ${it.weightUnit.orEmpty()} ${it.prepNotes.orEmpty()}") }
+            data.ingredients.filter { it.cookId == item.cook.id }.forEach { append(" ${it.name} ${it.brand.orEmpty()}") }
+            data.results.filter { it.cookId == item.cook.id && it.resultType in setOf("method", "tags") }.forEach { append(" ${it.textValue.orEmpty()}") }
+        }
+        (!favoritesOnly || item.cook.id in favoriteIds) && (smoker == "All smokers" || item.cook.smokerName == smoker) &&
+            (!highlyRated || data.results.any { it.cookId == item.cook.id && it.resultType == "overall_rating" && (it.numericValue ?: 0.0) >= 4.0 }) &&
+            query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.all { searchable.contains(it, true) }
     }
     val selected = completed.filter { it.cook.id in selectedIds }
 
@@ -77,6 +90,12 @@ fun InsightsScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        Text("Search cut, smoker, weight, rub, method or tags.", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(favoritesOnly, { favoritesOnly = !favoritesOnly }, label = { Text("Favorites") })
+            FilterChip(highlyRated, { highlyRated = !highlyRated }, label = { Text("Rated 4+") })
+        }
+        ChoiceField("Smoker", smoker, listOf("All smokers") + data.cooks.mapNotNull { it.cook.smokerName }.distinct()) { smoker = it }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Compare completed cooks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = { comparing = !comparing; selectedIds.clear() }) { Text(if (comparing) "Done" else "Select cooks") }
@@ -116,7 +135,7 @@ fun InsightsScreen(
                 ) {
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(item.cook.title, style = MaterialTheme.typography.titleLarge)
+                            Text((if (item.cook.id in favoriteIds) "★ " else "") + item.cook.title, style = MaterialTheme.typography.titleLarge)
                             Text(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(item.cook.startedAtUtcMillis)), style = MaterialTheme.typography.bodyMedium)
                             Text(item.dishes.joinToString { it.cut?.takeIf(String::isNotBlank) ?: it.name }.ifBlank { "No dishes recorded" }, style = MaterialTheme.typography.bodyLarge)
                             Text("${item.cook.status.replaceFirstChar { it.uppercase() }} · ${data.readings.count { it.cookId == item.cook.id }} readings · ${rating?.let { "rating %.1f/5".format(it) } ?: "no rating"}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

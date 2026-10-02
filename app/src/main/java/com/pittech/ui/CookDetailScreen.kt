@@ -421,10 +421,10 @@ fun CookDetailScreen(
             data = data,
             preferredUnit = preferredTemperatureUnit,
             onDismiss = { showResults = false },
-            onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish ->
+            onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change ->
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
-                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish)
+                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change)
                 showResults = false
             },
         )
@@ -600,7 +600,7 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    playbookTools = { CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel) },
+                    playbookTools = { CookPlaybookTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
                             data, grillState, recordingRunning, busy,
@@ -647,7 +647,7 @@ fun CookDetailScreen(
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
                 )
-                CookTab.CHARTS -> ChartsTab(data) { viewingMarker = it }
+                CookTab.CHARTS -> ChartsTab(data, comparison = { ReferenceComparisonTools(data, viewModel) }) { viewingMarker = it }
             }
         }
     }
@@ -1707,10 +1707,11 @@ private fun formatTimelineDay(millis: Long): String {
 }
 
 @Composable
-private fun ChartsTab(data: CookDetailData, onMarker: (TimelineEventEntity) -> Unit) {
+private fun ChartsTab(data: CookDetailData, comparison: @Composable () -> Unit = {}, onMarker: (TimelineEventEntity) -> Unit) {
     val valid = data.readings.filter { it.qualityStatus == "valid" }
     val grouped = valid.groupBy { it.probeName }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        comparison()
         SectionCard("Temperature chart") {
             if (valid.isEmpty()) {
                 Text("Temperature charts will appear after you record readings. Manual readings work without a grill controller.", style = MaterialTheme.typography.bodyLarge)
@@ -2290,7 +2291,7 @@ private fun ResultsDialog(
     data: CookDetailData,
     preferredUnit: String,
     onDismiss: () -> Unit,
-    onSave: (String?, String, String, String, Map<String, String>, String, Boolean) -> Unit,
+    onSave: (String?, String, String, String, Map<String, String>, String, Boolean, String, String) -> Unit,
 ) {
     val dialogFocusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -2310,6 +2311,9 @@ private fun ResultsDialog(
     var seasoning by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("seasoning")) }
     var detailRatings by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(false) }
     var notes by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "result_notes" }?.textValue.orEmpty()) }
+    var keep by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "keep_doing" }?.textValue.orEmpty()) }
+    var change by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "change_next_time" }?.textValue.orEmpty()) }
+    var showLearning by rememberSaveable { mutableStateOf(false) }
     var finish by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -2331,7 +2335,12 @@ private fun ResultsDialog(
                     OutlinedTextField(smoke, { smoke = it; error = null }, label = { Text("Smoke level (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(seasoning, { seasoning = it; error = null }, label = { Text("Seasoning (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
-                OutlinedTextField(notes, { notes = it }, label = { Text("What would you change next time?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(notes, { notes = it }, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { showLearning = !showLearning }) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
+                if (showLearning) {
+                    OutlinedTextField(keep, { keep = it }, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(change, { change = it }, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
+                }
                 if (data.cook.status != CookStatus.COMPLETED) FilterChip(
                     selected = finish,
                     onClick = { finish = !finish },
@@ -2350,7 +2359,7 @@ private fun ResultsDialog(
                 else {
                     dialogFocusManager.clearFocus(force = true)
                     keyboardController?.hide()
-                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, finish)
+                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, finish, keep, change)
                 }
             }, modifier = Modifier.testTag("results-save")) { Text("Save results") }
         },

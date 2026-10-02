@@ -390,6 +390,7 @@ data class InsightsSnapshot(
     val readings: List<SensorReadingEntity>,
     val results: List<CookResultEntity>,
     val connectionGaps: List<TimelineEventEntity> = emptyList(),
+    val ingredients: List<IngredientEntity> = emptyList(),
 )
 
 @Dao
@@ -520,6 +521,9 @@ interface CookDao {
 
     @Query("SELECT * FROM dishes ORDER BY createdAtUtcMillis ASC")
     suspend fun getAllDishes(): List<DishEntity>
+
+    @Query("SELECT * FROM ingredients ORDER BY createdAtUtcMillis ASC")
+    fun observeAllIngredients(): Flow<List<IngredientEntity>>
 
     @Query("SELECT * FROM ingredients ORDER BY createdAtUtcMillis ASC")
     suspend fun getAllIngredients(): List<IngredientEntity>

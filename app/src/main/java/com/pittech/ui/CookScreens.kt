@@ -616,6 +616,8 @@ private fun StartCookScreen(
                         ChoiceField("Reuse", if (followPlaybook) "Setup and guided steps" else "Setup only", listOf("Setup and guided steps", "Setup only")) { followPlaybook = it == "Setup and guided steps" }
                         TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Hide steps" else "Review ${initialPlaybook.steps.size} steps") }
                         if (showSteps) initialPlaybook.steps.forEach { Text("${it.title} · ${stepDescription(it)}\n${it.instructions}") }
+                        if (initialPlaybook.keepDoing.isNotBlank()) Text("Keep doing: ${initialPlaybook.keepDoing}")
+                        if (initialPlaybook.changeNextTime.isNotBlank()) Text("Change next time: ${initialPlaybook.changeNextTime}")
                         TextButton(onClick = onEditPlaybook) { Text(if (initialDraft?.scheduledPlanId != null) "Adjust schedule and steps" else "Adjust playbook steps") }
                     }
                 }
