@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.pittech.ui
 
 import androidx.compose.foundation.layout.*
@@ -28,9 +30,10 @@ internal fun UpcomingCooks(viewModel: CooksViewModel) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Upcoming · ${r.title}", style = MaterialTheme.typography.titleMedium)
                 Text("Serve ${serveTime(plan.serveAt, plan.zoneId)} · ${plan.zoneId}")
-                Text("Food on from ${serveTime(ServeTimePlanner.windows(plan).minOf { it.foodOnAt }, plan.zoneId)}")
+                val windows = ServeTimePlanner.windows(plan)
+                Text("Prep ${serveTime(windows.minOf { it.prepAt }, plan.zoneId)}\nPreheat ${serveTime(windows.minOf { it.preheatAt }, plan.zoneId)}\nFood on from ${serveTime(windows.minOf { it.foodOnAt }, plan.zoneId)}")
                 Button(onClick = { viewModel.previewScheduledCook(r.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Review and start") }
-                Row { TextButton(onClick = { viewModel.planServeTime(scheduledId = r.id) }) { Text("Adjust schedule") }; TextButton(onClick = { viewModel.deleteScheduledCook(r.id) }) { Text("Delete plan") } }
+                FlowRow { TextButton(onClick = { viewModel.planServeTime(scheduledId = r.id) }) { Text("Adjust schedule") }; TextButton(onClick = { viewModel.deleteScheduledCook(r.id) }) { Text("Delete plan") } }
             }
         }
     }
@@ -55,7 +58,7 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
     var editingSchedule by remember { mutableStateOf<Int?>(null) }
     var editingDish by remember { mutableStateOf<Int?>(null) }
     var editingStep by remember { mutableStateOf<PlaybookStep?>(null) }
-    editingStep?.let { s -> StepEditor(s, plan.book.draft.dishes, { editingStep = null }) { step -> plan = plan.copy(book = plan.book.copy(steps = if (plan.book.steps.any { it.id == step.id }) plan.book.steps.map { if (it.id == step.id) step else it } else plan.book.steps + step)); editingStep = null } }
+    editingStep?.let { s -> StepEditor(s, plan.book.draft.dishes, { editingStep = null }, otherSteps = plan.book.steps) { step -> plan = plan.copy(book = plan.book.copy(steps = if (plan.book.steps.any { it.id == step.id }) plan.book.steps.map { if (it.id == step.id) step else it } else plan.book.steps + step)); editingStep = null } }
     var error by remember { mutableStateOf<String?>(null) }
     editingDish?.let { i -> DishEditorDialog(initial = plan.book.draft.dishes.getOrNull(i), onDismiss = { editingDish = null }, onSave = { dish ->
         val dishes = plan.book.draft.dishes.toMutableList(); if (i in dishes.indices) dishes[i] = dish else dishes.add(dish)
@@ -68,8 +71,8 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
     AlertDialog(onDismissRequest = onClose, title = { Text("Plan serving time") }, text = {
         Column(Modifier.heightIn(max = 490.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(plan.book.name, { plan = plan.copy(book = plan.book.copy(name = it, draft = plan.book.draft.copy(title = it))) }, label = { Text("Cook name") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(date, { date = it }, label = { Text("Serve date YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(time, { time = it }, label = { Text("Serve time HH:mm") }, modifier = Modifier.fillMaxWidth())
+            Text("Serving date and time", style = MaterialTheme.typography.titleMedium)
+            CookDateTimeControls(date, time, { date = it }, { time = it })
             OutlinedTextField(zone, { zone = it }, label = { Text("Time zone") }, modifier = Modifier.fillMaxWidth())
             if (offsets == 2) ChoiceField("This time occurs twice", if (laterOffset) "Later occurrence" else "Earlier occurrence", listOf("Earlier occurrence", "Later occurrence")) { laterOffset = it == "Later occurrence" }
             OutlinedTextField(buffer, { buffer = it }, label = { Text("Extra buffer minutes") }, modifier = Modifier.fillMaxWidth())
@@ -79,7 +82,7 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
                 Text(dish.name, style = MaterialTheme.typography.titleMedium)
                 Text("${s.cookMinMinutes}–${s.cookMaxMinutes} min cooking · ${s.restMinutes} min rest")
                 Text(s.evidenceNote)
-                Row { TextButton(onClick = { editingDish = s.dishIndex }) { Text("Dish and prep") }; TextButton(onClick = { editingSchedule = s.dishIndex }) { Text("Durations") } }
+                FlowRow { TextButton(onClick = { editingDish = s.dishIndex }) { Text("Dish and prep") }; TextButton(onClick = { editingSchedule = s.dishIndex }) { Text("Durations") } }
                 preview?.let { p -> val w = ServeTimePlanner.windows(p).first { it.dishIndex == s.dishIndex }; Text("Prep ${serveTime(w.prepAt, p.zoneId)}\nPreheat ${serveTime(w.preheatAt, p.zoneId)}\nFood on ${serveTime(w.foodOnAt, p.zoneId)}\nReady ${serveTime(w.readyEarliest, p.zoneId)}–${serveTime(w.readyLatest, p.zoneId)}") }
             }
             TextButton(onClick = { editingDish = plan.book.draft.dishes.size }) { Text("Add dish or side") }
@@ -105,7 +108,9 @@ private fun DishScheduleEditor(initial: DishSchedule, dish: DishDraft, book: Coo
     var preheat by remember { mutableStateOf(initial.preheatMinutes.toString()) }
     var rest by remember { mutableStateOf(initial.restMinutes.toString()) }
     var hold by remember { mutableStateOf(initial.holdMinutes.toString()) }
-    var pit by remember { mutableStateOf(initial.pitF?.toString().orEmpty()) }
+    val preferredUnit = preferredInputTemperatureUnit()
+    var tempUnit by remember { mutableStateOf(preferredUnit) }
+    var pit by remember { mutableStateOf(initial.pitF?.let { temperatureText(it, tempUnit) }.orEmpty()) }
     var method by remember { mutableStateOf(initial.method) }
     var count by remember { mutableIntStateOf(initial.evidenceCount) }
     var note by remember { mutableStateOf(initial.evidenceNote) }
@@ -124,13 +129,15 @@ private fun DishScheduleEditor(initial: DishSchedule, dish: DishDraft, book: Coo
             OutlinedTextField(preheat, { preheat = it }, label = { Text("Preheat minutes") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(rest, { rest = it }, label = { Text("Rest minutes") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(hold, { hold = it }, label = { Text("Planned hold minutes") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(pit, { pit = it }, label = { Text("Pit °F (optional, for conflict checks)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(pit, { pit = it }, label = { Text("Pit $tempUnit (optional, for conflict checks)") }, modifier = Modifier.fillMaxWidth())
+            ChoiceField("Temperature unit", tempUnit, listOf("°F", "°C")) { unit -> pit = pit.toDoubleOrNull()?.let { temperatureText(CookPlanEngine.fahrenheit(it, tempUnit), unit) }.orEmpty(); tempUnit = unit }
             OutlinedTextField(method, { method = it }, label = { Text("Cooking equipment (blank uses this smoker)") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = { TextButton(onClick = { runCatching {
         val lo = min.toDouble(); val hi = max.toDouble(); require(lo.isFinite() && hi.isFinite()) { "Enter valid cooking durations." }
-        val s = initial.copy(cookMinMinutes = (lo * 60).toLong(), cookMaxMinutes = (hi * 60).toLong(), prepMinutes = prep.toLong(), preheatMinutes = preheat.toLong(), restMinutes = rest.toLong(), holdMinutes = hold.toLong(), pitF = pit.toDoubleOrNull(), method = method, evidenceCount = count, evidenceNote = if (note == "Enter your duration range") "Your duration range" else note)
+        require(pit.isBlank() || pit.toDoubleOrNull() != null) { "Enter a valid pit temperature or leave it blank." }
+        val s = initial.copy(cookMinMinutes = (lo * 60).toLong(), cookMaxMinutes = (hi * 60).toLong(), prepMinutes = prep.toLong(), preheatMinutes = preheat.toLong(), restMinutes = rest.toLong(), holdMinutes = hold.toLong(), pitF = pit.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, method = method, evidenceCount = count, evidenceNote = if (note == "Enter your duration range") "Your duration range" else note)
         ServeTimePlanner.validate(ServePlan(book, System.currentTimeMillis(), ZoneId.systemDefault().id, schedules = book.draft.dishes.indices.map { if (it == initial.dishIndex) s else DishSchedule(it) }))
         onSave(s)
     }.onFailure { error = it.message ?: "Check durations." } }) { Text("Save durations") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
@@ -142,7 +149,8 @@ internal fun ActiveServeGoal(data: CookDetailData, records: List<CompanionRecord
     val plan = remember(record.payload) { ServeTimePlanner.decode(record.payload) }
     val events = data.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
     Text("Serve ${serveTime(plan.serveAt, plan.zoneId)} · ${plan.zoneId}", style = MaterialTheme.typography.titleMedium)
-    plan.schedules.forEach { s -> data.dishes.getOrNull(s.dishIndex)?.let { dish ->
+    val dishIds = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }?.let { CookPlanEngine.decode(it.payload).dishIds }
+    plan.schedules.forEach { s -> (dishIds?.getOrNull(s.dishIndex)?.let { id -> data.dishes.firstOrNull { it.id == id } } ?: data.dishes.getOrNull(s.dishIndex))?.let { dish ->
         val (low, high) = ServeTimePlanner.updatedReadyWindow(plan, s, events, dish.id)
         Text("${dish.name} · planning window ${serveTime(low, plan.zoneId)}–${serveTime(high, plan.zoneId)}")
         if (high > plan.serveAt) Text("The planned ready window is after serving. Adjust the meal or method.", color = MaterialTheme.colorScheme.error)

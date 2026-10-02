@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CookPlaybookTest {
+    @Test fun rejectsCircularActionDependencies() {
+        val draft = NewCookDraft("Cook", dishes = listOf(DishDraft("Flat", "Beef")))
+        val wrap = PlaybookStep(id = "wrap", dishIndex = 0, action = "wrap", trigger = "after_action", anchor = "spritz")
+        val spritz = PlaybookStep(id = "spritz", dishIndex = 0, action = "spritz", trigger = "after_action", anchor = "wrap")
+        assertThrows(IllegalArgumentException::class.java) { PlaybookCodec.validate(CookPlaybook("Cycle", draft, listOf(wrap, spritz))) }
+        PlaybookCodec.validate(CookPlaybook("Valid", draft, listOf(wrap.copy(trigger = "manual"), spritz)))
+    }
     @Test fun snapshotRoundTripPreservesDishMappingAndUnitsWithoutTransientState() {
         val draft = NewCookDraft("Weekend brisket", smokerName = "Offset", setpointText = "125", setpointUnit = "°C", dishes = listOf(DishDraft("Brisket", "Beef", "Brisket", preparationItems = listOf(IngredientDraft("Salt", amountText = "2", amountUnit = "tbsp")))), recordGrill = true, playbookId = "old")
         val book = CookPlaybook("Favorite", draft, listOf(PlaybookStep(id = "wrap", dishIndex = 0, action = "wrap", title = "Check bark", trigger = "temperature", temperatureF = 165.0)), listOf(PlaybookTarget(0, "personal_finish", 94.0, "°C", "Check tenderness")), "source")

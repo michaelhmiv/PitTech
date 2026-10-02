@@ -8,6 +8,8 @@ Smoking guides commonly cover the cut and weight, trimming, binders and seasonin
 
 ## Product rules
 
+Archive v5 also preserves typed local playbooks/revisions, per-cook guidance progress, disabled-on-restore alert rules, upcoming serving plans, reference comparisons, ingredient combos, checklists, equipment and fuel records. These appear in the saved-guidance CSV/workbook table; independently owned milestone images appear in the reference-photo table and attachments. Full backups contain all local tools. A single-cook export contains its own tools and relevant playbook/equipment records. Import validates dish ownership and restores guidance paused, alerts disabled, and controller recording stopped.
+
 - **Fast first, detail when wanted.** Start a cook and add a dish in a few taps. Every other detail can be added later.
 - **One cook can contain several dishes.** A pork shoulder and a pan of beans can share a cook session while keeping dish-specific probes, prep, events, and results.
 - **Optional means optional.** Do not block a cook because the user does not know the cut, weight, seasoning quantity, or exact time.

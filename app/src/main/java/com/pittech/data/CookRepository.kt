@@ -171,8 +171,8 @@ class CookRepository(
                 dao.insertTimelineEvents(events)
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
                 val companion = CookCompanionRepository(database, photoStorage)
-                companion.applyToCook(cookId, draft)
-                ServePlanRepository(database, companion).attach(cookId, draft)
+                companion.applyToCook(cookId, draft, dishes.map { it.id })
+                ServePlanRepository(database, companion).attach(cookId, draft, dishes.map { it.id })
             }
         } catch (failure: Throwable) {
             importedPhotos.forEach { photoStorage.delete(it.relativePath) }
@@ -256,7 +256,14 @@ class CookRepository(
         dao.updateDish(dish.copy(updatedAtUtcMillis = System.currentTimeMillis()))
     }
 
-    suspend fun deleteDish(dish: DishEntity) = dao.deleteDish(dish)
+    suspend fun deleteDish(dish: DishEntity) = database.withTransaction {
+        CookCompanionRepository(database, photoStorage).detachDish(dish.cookId, dish.id)
+        // Retain the deleted dish's physical history without turning it into whole-cook anchors.
+        dao.getTimelineEventsForCook(dish.cookId).filter { it.dishId == dish.id && com.pittech.domain.PlaybookCodec.action(it.eventType) in com.pittech.domain.PlaybookCodec.actions }.forEach {
+            dao.updateTimelineEvent(it.copy(eventType = "deleted_dish_${it.eventType}", details = listOfNotNull(it.details, "Recorded for removed dish: ${dish.name}").joinToString("\n")))
+        }
+        dao.deleteDish(dish)
+    }
 
     suspend fun addTimelineEvent(
         cookId: String,
@@ -603,6 +610,14 @@ class CookRepository(
         val allCooks = dao.getAllCooks()
         val selectedCookIds = if (cookId == null) allCooks.map { it.id }.toSet() else setOf(cookId).intersect(allCooks.map { it.id }.toSet())
         require(cookId == null || selectedCookIds.isNotEmpty()) { "This cook is no longer in your library." }
+        val allRecords = database.companionDao().all().filter { it.kind != "monitor_status" }
+        val scopedRecords = allRecords.filter { it.cookId in selectedCookIds }
+        val bookIds = scopedRecords.filter { it.kind == "plan" }.mapNotNull { com.pittech.domain.CookPlanEngine.decode(it.payload).playbookId }.toSet()
+        val smokers = allCooks.filter { it.id in selectedCookIds }.mapNotNull { it.smokerName }.toSet()
+        val records = if (cookId == null) allRecords else scopedRecords + allRecords.filter {
+            it.cookId == null && (it.id in bookIds || it.kind == "equipment" && smokers.any { name -> com.pittech.domain.CookPreparation.decodeEquipment(it.payload).name.equals(name, true) })
+        }
+        val recordIds = records.map { it.id }.toSet()
         return ExportSnapshot(
             cooks = allCooks.filter { it.id in selectedCookIds },
             dishes = dao.getAllDishes().filter { it.cookId in selectedCookIds },
@@ -617,8 +632,8 @@ class CookRepository(
             reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
-            companionRecords = database.companionDao().all().filter { it.kind != "monitor_status" && (it.cookId == null || it.cookId in selectedCookIds) },
-            companionPhotos = database.companionDao().photos().filter { p -> database.companionDao().get(p.recordId)?.let { it.cookId == null || it.cookId in selectedCookIds } == true },
+            companionRecords = records,
+            companionPhotos = database.companionDao().photos().filter { it.recordId in recordIds },
             assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
         )
     }
@@ -632,12 +647,15 @@ class CookRepository(
         val newCooks = snapshot.cooks.filterNot { it.id in existingCookIds }
         val newIds = newCooks.map { it.id }.toSet()
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
+        require(snapshot.photos.none { it.cookId in newIds && it.id in existingPhotoIds }) { "A photo ID conflicts with a photo in another saved cook." }
         val photos = snapshot.photos.filter { it.cookId in newIds && it.id !in existingPhotoIds }
         val restoredPhotos = mutableListOf<PhotoEntity>()
         val existingRecordIds = database.companionDao().all().map { it.id }.toSet()
         val newRecords = snapshot.companionRecords.filter { it.id !in existingRecordIds && (it.cookId == null || it.cookId in newIds) }
         val newRecordIds = newRecords.map { it.id }.toSet()
         val referencePhotos = snapshot.companionPhotos.filter { it.recordId in newRecordIds }
+        val savedPhotoIds = existingPhotoIds + database.companionDao().photos().map { it.id }
+        require(referencePhotos.none { it.id in savedPhotoIds } && photos.none { p -> database.companionDao().photos().any { it.id == p.id } }) { "An attachment ID conflicts with an existing photo. Restore into a separate backup first." }
         val writtenReferencePhotos = mutableListOf<CompanionPhoto>()
         try {
             photos.forEach { photo ->

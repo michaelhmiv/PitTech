@@ -10,7 +10,7 @@ import com.pittech.data.CompanionRecord
 object CookAlertNotifications {
     const val CHANNEL = "cook_monitoring_alerts"
     fun canNotify(context: Context): Boolean {
-        if (!CookGuidanceNotifications.canNotify(context)) return false
+        if (!CookGuidanceNotifications.notificationsAvailable(context)) return false
         return context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     }
     fun show(context: Context, record: CompanionRecord, detail: String) {

@@ -1,6 +1,6 @@
 # Play closed-testing automation
 
-`.github/workflows/play-closed-testing.yml` builds a signed Android App Bundle and publishes it to the Play Console's Alpha closed-testing track whenever `main` receives a push (including a pull-request merge). Releases are serialized so concurrent Google Play edits do not race.
+`.github/workflows/play-closed-testing.yml` builds a signed Android App Bundle and publishes it to the Play Console's Alpha closed-testing track when its owner starts a manual workflow run from `main`. Run it only after the intended changes are merged and Android checks pass. Releases are serialized so concurrent Google Play edits do not race. Firebase Dev distribution runs automatically after successful Android checks on a pushed main commit.
 
 ## Required GitHub Actions secrets
 

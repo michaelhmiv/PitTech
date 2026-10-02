@@ -12,6 +12,7 @@ class ServeTimePlannerTest {
         assertEquals(p.serveAt - 810 * 60_000L, w.foodOnAt)
         assertEquals(p.serveAt - 90 * 60_000L, w.readyLatest)
         assertEquals(listOf(0 to 1), ServeTimePlanner.conflicts(p))
+        assertEquals(listOf(0 to 1), ServeTimePlanner.conflicts(p.copy(book = p.book.copy(draft = p.book.draft.copy(smokerName = "Backyard")), schedules = p.schedules.map { if (it.dishIndex == 1) it.copy(method = "Backyard") else it })))
         assertTrue(ServeTimePlanner.conflicts(p.copy(schedules = p.schedules.map { if (it.dishIndex == 1) it.copy(method = "Oven") else it })).isEmpty())
         assertEquals(p, ServeTimePlanner.decode(ServeTimePlanner.encode(p)))
     }

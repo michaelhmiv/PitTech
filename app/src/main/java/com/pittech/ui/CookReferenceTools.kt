@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.pittech.ui
 
 import androidx.compose.foundation.layout.*
@@ -19,7 +21,7 @@ import kotlinx.coroutines.flow.collectLatest
 internal fun CookLearningTools(data: CookDetailData, viewModel: CooksViewModel) {
     val favorite = data.results.any { it.resultType == "favorite" && it.numericValue == 1.0 }
     var editTags by remember { mutableStateOf(false) }
-    Row {
+    FlowRow {
         TextButton(onClick = { viewModel.toggleCookFavorite(data.cook.id, !favorite) }) { Text(if (favorite) "★ Favorite" else "☆ Favorite") }
         TextButton(onClick = { editTags = true }) { Text("Method and tags") }
     }
@@ -59,12 +61,15 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
         Column(Modifier.heightIn(max = 650.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Reference cook", style = MaterialTheme.typography.titleLarge)
             Text("Choose one dish and one recorded channel from each cook. Curves show what was recorded, not a promise about when this cook will finish.")
-            ChoiceField("Current dish", data.dishes.firstOrNull { it.id == dishId }?.name ?: "Choose dish", data.dishes.map { "${it.name} · ${it.id.take(6)}" }) { label -> dishId = data.dishes.first { "${it.name} · ${it.id.take(6)}" == label }.id }
+            val dishLabels = data.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
+            ChoiceField("Current dish", data.dishes.indexOfFirst { it.id == dishId }.takeIf { it >= 0 }?.let { dishLabels[it] } ?: "Choose dish", dishLabels) { label -> dishId = data.dishes[dishLabels.indexOf(label)].id }
             val candidates = cooks.filter { it.cook.id != data.cook.id && it.cook.status == CookStatus.COMPLETED }
-            ChoiceField("Previous cook", candidates.firstOrNull { it.cook.id == sourceCookId }?.cook?.title ?: "Choose cook", candidates.map { "${it.cook.title} · ${it.cook.id.take(6)}" }) { label -> sourceCookId = candidates.first { "${it.cook.title} · ${it.cook.id.take(6)}" == label }.cook.id }
+            val cookLabels = candidates.map { "${it.cook.title} · ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(it.cook.startedAtUtcMillis))}" }.let { names -> names.mapIndexed { i, label -> if (names.count { it == label } > 1) "$label (${i + 1})" else label } }
+            ChoiceField("Previous cook", candidates.indexOfFirst { it.cook.id == sourceCookId }.takeIf { it >= 0 }?.let { cookLabels[it] } ?: "Choose cook", cookLabels) { label -> sourceCookId = candidates[cookLabels.indexOf(label)].cook.id }
             val history = source
             if (history != null) {
-                ChoiceField("Reference dish", history.dishes.firstOrNull { it.id == sourceDishId }?.name ?: "Choose dish", history.dishes.map { "${it.name} · ${it.id.take(6)}" }) { label -> sourceDishId = history.dishes.first { "${it.name} · ${it.id.take(6)}" == label }.id }
+                val sourceLabels = history.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
+                ChoiceField("Reference dish", history.dishes.indexOfFirst { it.id == sourceDishId }.takeIf { it >= 0 }?.let { sourceLabels[it] } ?: "Choose dish", sourceLabels) { label -> sourceDishId = history.dishes[sourceLabels.indexOf(label)].id }
                 ChoiceField("Current channel", currentProbe.ifBlank { "Choose channel" }, data.readings.filter { it.dishId == dishId || it.measurementType == "pit_ambient" }.map { it.probeName }.distinct()) { currentProbe = it }
                 ChoiceField("Reference channel", sourceProbe.ifBlank { "Choose channel" }, history.readings.filter { it.dishId == sourceDishId || it.measurementType == "pit_ambient" }.map { it.probeName }.distinct()) { sourceProbe = it }
                 ChoiceField("Align from", if (anchor == "food_on") "Food on" else "Wrap", listOf("Food on", "Wrap")) { anchor = if (it == "Food on") "food_on" else "wrap" }

@@ -255,9 +255,17 @@ fun SettingsScreen(
             Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.", style = MaterialTheme.typography.bodyMedium)
         }
 
+        SectionCard("Cook notifications") {
+            Text("Guidance reminders and monitoring alerts have separate sound settings. Turn on alerts from a cook when you want to use them.")
+            Text(if (com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) "Notifications allowed" else "Notifications are disabled", style = MaterialTheme.typography.bodyMedium)
+            Text(if (com.pittech.CookGuidanceNotifications.preciseAvailable(context) && context.getSharedPreferences("pittech-preferences", 0).getBoolean("precise-cook-timers", false)) "Precise cook timers enabled" else "Cook timers may be delayed by Android", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Notification settings") }
+            TextButton(onClick = { com.pittech.CookAlertNotifications.test(context) }) { Text("Send test alert") }
+        }
+
         SectionCard("Your data") {
             Text("Cook records and photos stay on this phone. No account is needed. Save a backup somewhere you control so you can restore it after changing phones or reinstalling PitTech.", style = MaterialTheme.typography.bodyLarge)
-            Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, and app preferences.", style = MaterialTheme.typography.bodyMedium)
+            Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.", style = MaterialTheme.typography.bodyMedium)
             Button(onClick = { zip.launch("PitTech_Backup.zip") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Save full backup (ZIP)") }
             OutlinedButton(onClick = { viewModel.createShareArchive() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("share-full-backup")) { Text("Share full backup (ZIP)") }
             Text("Share opens Android's app chooser. The ZIP is sent only after you choose an app; available destinations depend on what is installed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

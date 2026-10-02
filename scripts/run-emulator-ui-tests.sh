@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -177,6 +177,12 @@ fi
 timeout 120 adb install -r "$app_apk"
 timeout 120 adb install -r -t "$test_apk"
 
+if (( api_level >= 37 )); then
+  # Ahead-of-time compilation avoids startup ANRs while this preview image is
+  # still doing first-boot dex work on the CI runner. Test assertions stay identical.
+  timeout 180 adb shell cmd package compile -m speed -f com.pittech.debug
+fi
+
 instrumentation_target="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
 if [[ -z "$instrumentation_target" ]]; then
   echo "Could not find the installed PitTech instrumentation runner." >&2
@@ -242,9 +248,9 @@ fi
 companion_test_output="$output_dir/companion-tests.txt"
 echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest' \
+  -e class 'com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (3 tests)' "$companion_test_output"
+grep -q 'OK (7 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -285,9 +291,9 @@ done
 echo "All ${#expected_tests[@]} expected PitTech UI tests passed."
 
 if (( api_level == 36 )); then
-  controller_test_selector='com.pittech.ui.ControllerDiagnosticsScreenTest,com.pittech.devices.MongooseRpcInterrogationPlannerTest,com.pittech.devices.MongooseRpcResponseParserTest,com.pittech.devices.ControllerStableFingerprintTest,com.pittech.devices.ControllerDiagnosticSanitizerTest'
+  controller_test_selector='com.pittech.ui.ControllerDiagnosticsScreenTest,com.pittech.devices.MongooseRpcInterrogationPlannerTest,com.pittech.devices.MongooseRpcResponseParserTest,com.pittech.devices.ControllerStableFingerprintTest,com.pittech.devices.ControllerDiagnosticSanitizerTest,com.pittech.devices.PitBossCloudProtocolTest'
   controller_test_output="$output_dir/controller-diagnostics-tests.txt"
-  controller_expected_count=18
+  controller_expected_count=22
   echo "Running controller interrogation UI, protocol, fingerprint, and sanitization tests."
   timeout 12m adb shell am instrument -w -r \
     -e class "$controller_test_selector" \
@@ -330,6 +336,8 @@ pull_app_screenshot() {
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 pull_app_screenshot settings-dark
+pull_app_screenshot guidance-plan
+pull_app_screenshot prep-checklist
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."

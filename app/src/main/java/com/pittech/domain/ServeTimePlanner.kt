@@ -18,6 +18,7 @@ data class DurationEvidence(val cut: String?, val foodType: String, val smoker: 
 object ServeTimePlanner {
     fun validate(plan: ServePlan) {
         PlaybookCodec.validate(plan.book); ZoneId.of(plan.zoneId)
+        require(plan.book.draft.dishes.isNotEmpty()) { "Add a dish to the serving plan." }
         require(plan.bufferMinutes in 0..1440 && plan.schedules.map { it.dishIndex }.sorted() == plan.book.draft.dishes.indices.toList()) { "Schedule each dish once and use a valid buffer." }
         plan.schedules.forEach { s -> require(s.cookMinMinutes > 0 && s.cookMaxMinutes in s.cookMinMinutes..100_800 && listOf(s.prepMinutes, s.preheatMinutes, s.restMinutes, s.holdMinutes).all { it in 0..10_080 } && (s.pitF == null || s.pitF.isFinite())) { "Check each dish's cooking and preparation durations." } }
     }
@@ -40,7 +41,9 @@ object ServeTimePlanner {
         val windows = windows(plan).associateBy { it.dishIndex }
         return plan.schedules.flatMapIndexed { index, a -> plan.schedules.drop(index + 1).mapNotNull { b ->
             val wa = windows.getValue(a.dishIndex); val wb = windows.getValue(b.dishIndex)
-            if (a.method.trim().equals(b.method.trim(), true) && a.pitF != null && b.pitF != null && kotlin.math.abs(a.pitF - b.pitF) > 10.0 && wa.foodOnAt < wb.removeLatest && wb.foodOnAt < wa.removeLatest) a.dishIndex to b.dishIndex else null
+            val equipmentA = a.method.trim().ifBlank { plan.book.draft.smokerName.trim() }
+            val equipmentB = b.method.trim().ifBlank { plan.book.draft.smokerName.trim() }
+            if (equipmentA.equals(equipmentB, true) && a.pitF != null && b.pitF != null && kotlin.math.abs(a.pitF - b.pitF) > 10.0 && wa.foodOnAt < wb.removeLatest && wb.foodOnAt < wa.removeLatest) a.dishIndex to b.dishIndex else null
         } }
     }
     fun comparable(dish: DishDraft, draft: NewCookDraft, evidence: List<DurationEvidence>, wrapped: Boolean): List<DurationEvidence> {
@@ -53,7 +56,9 @@ object ServeTimePlanner {
                 (pit == null && e.setpointF == null || pit != null && e.setpointF != null && kotlin.math.abs(pit - e.setpointF) <= 25)
         }.distinctBy { it.cookId }
     }
-    fun weightKg(value: Double?, unit: String): Double? = value?.let { if (unit == "lb") it * 0.45359237 else it }
+    fun weightKg(value: Double?, unit: String): Double? = value?.let {
+        when (unit) { "lb" -> it * 0.45359237; "oz" -> it * 0.028349523125; "g" -> it / 1000.0; "kg" -> it; else -> return null }
+    }
     fun updatedReadyWindow(plan: ServePlan, schedule: DishSchedule, events: List<PlanEvent>, dishId: String): Pair<Long, Long> {
         val scoped = events.filter { it.dishId == dishId || it.dishId == null }
         val remove = scoped.filter { it.action == "remove" }.maxOfOrNull { it.at }

@@ -18,6 +18,7 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val data = database.cookDao().observeCook(cookId).first() ?: error("This cook could not be found.")
         val ingredients = database.cookDao().getIngredientsForCook(cookId)
         val draft = NewCookDraft(title = data.cook.title, smokerName = data.cook.smokerName.orEmpty(),
+            notes = data.cook.notes.orEmpty(),
             setpointText = data.cook.initialSetpointValue?.toString().orEmpty(), setpointUnit = data.cook.initialSetpointUnit ?: "°F",
             fuelType = data.cook.fuelType.orEmpty(), woodOrPelletBlend = data.cook.woodOrPelletBlend.orEmpty(),
             dishes = data.dishes.map { d -> DishDraft(d.name, d.foodType, d.cut.orEmpty(), d.weightValue?.toString().orEmpty(), d.weightUnit ?: "lb", d.startingCondition, d.boneIn, d.placement.orEmpty(), d.gradeOrSource.orEmpty(), d.thicknessNotes.orEmpty(), d.prepNotes.orEmpty(), ingredients.filter { it.dishId == d.id }.map { IngredientDraft(it.name, it.stage, it.brand.orEmpty(), it.amountValue?.toString().orEmpty(), it.amountUnit ?: "tbsp") }) })
@@ -26,9 +27,10 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
             val index = e.dishId?.let { id -> data.dishes.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
             val foodOn = events.firstOrNull { PlaybookCodec.action(it.eventType) == "food_on" && (it.dishId == e.dishId || it.dishId == null) }
             val minutes = foodOn?.let { (e.occurredAtUtcMillis - it.occurredAtUtcMillis).coerceAtLeast(0) / 60_000L } ?: 0L
+            val preparation = foodOn != null && e.occurredAtUtcMillis < foodOn.occurredAtUtcMillis
             // Times suggest a check. Notes and photos can help decide whether the food is ready.
-            PlaybookStep(dishIndex = index, action = PlaybookCodec.action(e.eventType), title = e.title, instructions = e.details.orEmpty(), trigger = if (PlaybookCodec.action(e.eventType) == "food_on" || foodOn == null) "manual" else "elapsed", minutes = minutes,
-                stage = if (PlaybookCodec.action(e.eventType) in setOf("rest_start", "hold_start", "dish_done")) "resting" else "cooking")
+            PlaybookStep(dishIndex = index, action = PlaybookCodec.action(e.eventType), title = e.title, instructions = e.details.orEmpty(), trigger = if (PlaybookCodec.action(e.eventType) == "food_on" || foodOn == null || preparation) "manual" else "elapsed", minutes = minutes,
+                stage = if (preparation) "prep" else if (PlaybookCodec.action(e.eventType) in setOf("rest_start", "hold_start", "dish_done")) "resting" else "cooking", sourceObservations = TemperatureContext.summary(e.temperatureContextJson))
         }
         val targets = database.cookDao().getAllTargets().filter { it.cookId == cookId }.map { t -> PlaybookTarget(t.dishId?.let { id -> data.dishes.indexOfFirst { it.id == id }.takeIf { it >= 0 } }, t.targetType, t.value, t.unit, t.explanation) }
         val results = database.cookDao().getAllResults().filter { it.cookId == cookId }
@@ -71,18 +73,21 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         return id
     }
 
-    suspend fun applyToCook(cookId: String, draft: NewCookDraft) {
+    suspend fun applyToCook(cookId: String, draft: NewCookDraft, orderedDishIds: List<String>? = null) {
         val id = draft.playbookId ?: return
         val record = dao.get(id) ?: error("This playbook could not be found.")
         val book = PlaybookCodec.decode(record.payload)
-        applySnapshot(cookId, draft, book, id)
+        applySnapshot(cookId, draft, book, id, orderedDishIds)
     }
 
-    suspend fun applySnapshot(cookId: String, draft: NewCookDraft, book: CookPlaybook, id: String?) {
-        val dishes = database.cookDao().getDishesForCook(cookId)
-        // Dish order is explicit in the preview and preserved when the draft is saved.
+    suspend fun applySnapshot(cookId: String, draft: NewCookDraft, book: CookPlaybook, id: String?, orderedDishIds: List<String>? = null) {
+        val saved = database.cookDao().getDishesForCook(cookId)
+        val dishes = orderedDishIds?.map { key -> saved.firstOrNull { it.id == key } ?: error("A dish in this setup could not be found.") } ?: saved
+        // Capture draft order explicitly; database relationship queries need not preserve insertion order.
+        if (!draft.followPlaybook && dishes.size != book.draft.dishes.size) return
         require(dishes.size == book.draft.dishes.size) { "Keep the playbook dishes when following its steps, or choose Setup only." }
         val now = System.currentTimeMillis()
+        if (draft.followPlaybook) require(book.steps.none { it.trigger == "clock" && (it.clockAtUtcMillis ?: 0) < now }) { "Review clock reminders for this cook and choose new dates in Adjust playbook steps." }
         database.withTransaction {
             book.targets.forEach { t -> database.cookDao().insertTarget(TargetEntity(UUID.randomUUID().toString(), cookId, t.dishIndex?.let { dishes[it].id }, t.type, t.value, t.unit, if (t.dishIndex == null) "cook" else "dish", t.explanation, createdAtUtcMillis = now)) }
             if (draft.followPlaybook) {
@@ -104,6 +109,21 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val ids = database.cookDao().getDishesForCook(cookId).map { it.id }
         val now = System.currentTimeMillis()
         dao.put(CompanionRecord("plan:$cookId", "plan", cookId, book.name, CookPlanEngine.encode(CookPlan(book, ids, null)), now, now))
+    }
+    suspend fun detachDish(cookId: String, dishId: String) {
+        val plan = plan(cookId)
+        val index = plan?.dishIds?.indexOf(dishId)?.takeIf { it >= 0 }
+        if (plan != null && index != null) {
+            val book = plan.book.copy(draft = plan.book.draft.copy(dishes = plan.book.draft.dishes.filterIndexed { i, _ -> i != index }),
+                steps = plan.book.steps.filterNot { it.dishIndex == index }.map { s -> s.copy(dishIndex = s.dishIndex?.let { if (it > index) it - 1 else it }) },
+                targets = plan.book.targets.filterNot { it.dishIndex == index }.map { t -> t.copy(dishIndex = t.dishIndex?.let { if (it > index) it - 1 else it }) })
+            storePlan(cookId, plan.copy(book = book, dishIds = plan.dishIds.filterNot { it == dishId }, playbookId = null, progress = plan.progress.filterKeys { id -> book.steps.any { it.id == id } }))
+            dao.get("serve:$cookId")?.let { record ->
+                if (book.draft.dishes.isEmpty()) dao.delete(record.id)
+                else { val goal = ServeTimePlanner.decode(record.payload); dao.put(record.copy(payload = ServeTimePlanner.encode(goal.copy(book = book, schedules = goal.schedules.filterNot { it.dishIndex == index }.map { it.copy(dishIndex = if (it.dishIndex > index) it.dishIndex - 1 else it.dishIndex) })))) }
+            }
+        }
+        dao.forCook(cookId).filter { r -> r.kind == "alert" && CookAlertEngine.decode(r.payload).first.dishId == dishId || r.kind == "reference" && CookReferenceCodec.decode(r.payload).dishId == dishId }.forEach { dao.delete(it.id) }
     }
     suspend fun stageAction(cookId: String, dishId: String, action: String) = database.withTransaction {
         require(action in setOf("food_on", "rest_start", "hold_start", "dish_done")) { "Choose a dish stage." }
@@ -139,15 +159,18 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
     suspend fun onEvent(event: TimelineEventEntity) {
         val plan = plan(event.cookId) ?: return
         val action = PlaybookCodec.action(event.eventType)
-        val match = plan.book.steps.firstOrNull { s ->
-            s.action == action && (s.dishIndex?.let { plan.dishIds[it] } == event.dishId || event.dishId == null) &&
+        val matches = plan.book.steps.filter { s ->
+            s.action == action && (s.dishIndex?.let { plan.dishIds[it] } == event.dishId || event.dishId == null || s.dishIndex == null && plan.dishIds.size == 1) &&
                 (plan.progress[s.id]?.status ?: "pending") == "pending" && event.id !in plan.progress[s.id]?.eventIds.orEmpty()
-        } ?: return
-        storePlan(event.cookId, CookPlanEngine.satisfy(plan, match, PlanEvent(event.id, action, event.dishId, event.occurredAtUtcMillis)))
+        }.distinctBy { it.dishIndex }
+        if (matches.isEmpty()) return
+        val updated = matches.fold(plan) { current, step -> CookPlanEngine.satisfy(current, step, PlanEvent(event.id, action, event.dishId, event.occurredAtUtcMillis)) }
+        storePlan(event.cookId, updated)
     }
     suspend fun updateStep(cookId: String, step: PlaybookStep) = database.withTransaction {
         val plan = plan(cookId) ?: return@withTransaction
-        val updated = plan.copy(book = plan.book.copy(steps = if (plan.book.steps.any { it.id == step.id }) plan.book.steps.map { if (it.id == step.id) step else it } else plan.book.steps + step))
+        val progress = plan.progress[step.id]?.let { if (it.status == "pending") it.copy(notifiedOccurrence = null, snoozedUntil = null) else it }
+        val updated = plan.copy(book = plan.book.copy(steps = if (plan.book.steps.any { it.id == step.id }) plan.book.steps.map { if (it.id == step.id) step else it } else plan.book.steps + step), progress = if (progress == null) plan.progress else plan.progress + (step.id to progress))
         PlaybookCodec.validate(updated.book)
         storePlan(cookId, updated)
     }
@@ -155,7 +178,7 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
     suspend fun snooze(cookId: String, stepId: String, occurrence: Int, until: Long) = database.withTransaction {
         val plan = plan(cookId) ?: return@withTransaction
         val p = plan.progress[stepId] ?: StepProgress()
-        if (p.status == "pending" && p.occurrence == occurrence) storePlan(cookId, plan.copy(progress = plan.progress + (stepId to p.copy(snoozedUntil = until))))
+        if (p.status == "pending" && p.occurrence == occurrence) storePlan(cookId, plan.copy(progress = plan.progress + (stepId to p.copy(snoozedUntil = until, notifiedOccurrence = null))))
     }
     suspend fun skip(cookId: String, stepId: String, useNowAsAnchor: Boolean = false) = database.withTransaction {
         val plan = plan(cookId) ?: return@withTransaction
@@ -178,14 +201,20 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val plan = plan(cookId) ?: return
         val cook = database.cookDao().getCook(cookId) ?: return
         val events = database.cookDao().getTimelineEventsForCook(cookId).planEvents()
-        val readings = database.cookDao().observeSensorReadings(cookId).first().map { PlanReading(it.dishId, CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType) }
+        val readings = database.cookDao().observeSensorReadings(cookId).first().map { PlanReading(it.dishId, CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType, it.probeName) }
         val evaluated = CookPlanEngine.evaluate(plan, events, readings, System.currentTimeMillis())
         // One pending wake per step. Missed recurring checks collapse to one current occurrence.
         evaluated.forEach { e ->
             if (plan.paused || cook.status == CookStatus.COMPLETED || e.progress.status != "pending") com.pittech.CookGuidanceNotifications.cancel(context, cookId, e.step.id)
             else {
                 if (e.ready && e.step.trigger != "manual" && com.pittech.CookGuidanceNotifications.canNotify(context) && markNotified(cookId, e.step.id, e.progress.occurrence)) com.pittech.CookGuidanceNotifications.show(context, cookId, e)
-                e.dueAt?.takeIf { it > System.currentTimeMillis() }?.let { com.pittech.CookGuidanceNotifications.schedule(context, cookId, e.step.id, it) }
+                e.dueAt?.takeIf { it > System.currentTimeMillis() }?.let {
+                    com.pittech.CookGuidanceNotifications.cancel(context, cookId, e.step.id)
+                    if (e.progress.notifiedOccurrence != null) database.withTransaction {
+                        this@CookCompanionRepository.plan(cookId)?.let { current -> current.progress[e.step.id]?.let { p -> storePlan(cookId, current.copy(progress = current.progress + (e.step.id to p.copy(notifiedOccurrence = null)))) } }
+                    }
+                    com.pittech.CookGuidanceNotifications.schedule(context, cookId, e.step.id, it, calendar = e.step.trigger == "clock")
+                }
                 if (e.waitingFor != null) com.pittech.CookGuidanceNotifications.cancel(context, cookId, e.step.id)
                 else if (e.dueAt == null) com.pittech.CookGuidanceNotifications.cancelAlarm(context, cookId, e.step.id)
             }

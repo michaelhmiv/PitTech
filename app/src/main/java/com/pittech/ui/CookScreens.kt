@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -168,6 +169,7 @@ fun PitTechApp(
                 ) {
                     Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}")
                     Text("${draft.cookCount} cooks · ${draft.dishCount} dishes · ${draft.eventCount} log entries · ${draft.readingCount} readings · ${draft.resultCount} results · ${draft.photoCount} photos")
+                    if (draft.savedToolsCount > 0) Text("${draft.savedToolsCount} saved playbooks, plans, alerts, checklists or equipment records")
                     Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.")
                     if (draft.preferences != null) {
                         Text("This full backup also restores temperature, weight, and appearance preferences.")
@@ -216,10 +218,12 @@ fun PitTechApp(
     }
 
     if (isStartingCook) {
+        key(setupPreview) {
         StartCookScreen(
             saving = saving,
             saveError = saveError,
             initialDraft = setupPreview,
+            equipmentProfiles = companionRecords.filter { it.kind == "equipment" }.map { com.pittech.domain.CookPreparation.decodeEquipment(it.payload) },
             initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: companionRecords.firstOrNull { it.id == setupPreview?.scheduledPlanId }?.let { com.pittech.domain.ServeTimePlanner.decode(it.payload).book },
             onEditPlaybook = { if (setupPreview?.scheduledPlanId != null) viewModel.planServeTime(scheduledId = setupPreview?.scheduledPlanId) else setupPreview?.playbookId?.let(viewModel::editPlaybook) },
             preferredTemperatureUnit = temperatureUnit,
@@ -234,6 +238,7 @@ fun PitTechApp(
             onGrill = { (context.applicationContext as com.pittech.PitTechApplication).grillMonitor.selectDevice(it) },
             onSampling = viewModel::configureGrillSampling,
         )
+        }
         return
     }
 
@@ -292,15 +297,18 @@ fun PitTechApp(
                 onOpenCook = viewModel::openCook,
                 modifier = Modifier.padding(padding),
             )
-            MainSection.DEVICES -> if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                ControllerDevicesScreen(modifier = Modifier.padding(padding))
-            } else {
-                FeaturePlaceholder(
-                    title = "Devices",
-                    message = "Controller diagnostics are available in PitTech's test build.",
-                    note = "You can still log temperatures by hand from any cook.",
-                    modifier = Modifier.padding(padding),
-                )
+            MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
+                EquipmentTools(viewModel)
+                if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
+                    ControllerDevicesScreen(modifier = Modifier.weight(1f))
+                } else {
+                    FeaturePlaceholder(
+                        title = "Devices",
+                        message = "Controller diagnostics are available in PitTech's test build.",
+                        note = "You can still log temperatures by hand from any cook.",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,
@@ -477,6 +485,7 @@ private fun FeaturePlaceholder(
 @Composable
 private fun StartCookScreen(
     initialDraft: NewCookDraft? = null,
+    equipmentProfiles: List<com.pittech.domain.EquipmentProfile> = emptyList(),
     initialPlaybook: com.pittech.domain.CookPlaybook? = null,
     onEditPlaybook: () -> Unit = {},
     saving: Boolean,
@@ -499,6 +508,15 @@ private fun StartCookScreen(
     var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe4 by rememberSaveable { mutableStateOf<String?>(null) }
     var smoker by rememberSaveable { mutableStateOf(initialDraft?.smokerName.orEmpty()) }
+    val prepApp = LocalContext.current.applicationContext as com.pittech.PitTechApplication
+    var maintenanceNote by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(smoker, equipmentProfiles) {
+        maintenanceNote = null
+        if (equipmentProfiles.any { it.name.equals(smoker.trim(), true) }) {
+            val summary = prepApp.preparationRepository.summaries().firstOrNull { it.profile.name.equals(smoker.trim(), true) }
+            if (summary?.maintenanceDue == true) maintenanceNote = "Maintenance is due for ${summary.profile.name}. Review My equipment in Devices after cleaning."
+        }
+    }
     var setpoint by rememberSaveable { mutableStateOf(initialDraft?.setpointText.orEmpty()) }
     var setpointUnit by rememberSaveable { mutableStateOf(initialDraft?.setpointUnit ?: preferredTemperatureUnit) }
     var notes by rememberSaveable { mutableStateOf(initialDraft?.notes.orEmpty()) }
@@ -669,6 +687,9 @@ private fun StartCookScreen(
                 }
             }
 
+            if (equipmentProfiles.isNotEmpty()) ChoiceField("Saved equipment", "Choose equipment", equipmentProfiles.map { it.name }) { name ->
+                equipmentProfiles.firstOrNull { it.name == name }?.let { profile -> smoker = profile.name; fuelType = profile.fuelType; woodBlend = profile.hopperBlend }
+            }
             OutlinedTextField(
                 value = smoker,
                 onValueChange = { smoker = it },
@@ -677,6 +698,7 @@ private fun StartCookScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cook-smoker"),
             )
+            maintenanceNote?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = setpoint,
@@ -889,6 +911,7 @@ internal fun DishEditorDialog(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    PrepComboTools(preparationItems) { preparationItems = it }
                     preparationItems.forEachIndexed { index, item ->
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             SimpleDropdownField(
