@@ -23,6 +23,7 @@ import com.pittech.PitTechApplication
 import com.pittech.data.*
 import com.pittech.domain.*
 import kotlinx.coroutines.delay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.DateFormat
 import java.util.Date
 
@@ -35,6 +36,7 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     var removing by remember { mutableStateOf<EvaluatedStep?>(null) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(data.cook.id) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
+    val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val plan = remember(record?.payload) { record?.let { CookPlanEngine.decode(it.payload) } }
@@ -62,6 +64,7 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     if (show && plan != null) ModalBottomSheet(onDismissRequest = { show = false }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(plan.book.name, style = MaterialTheme.typography.titleLarge)
+            ActiveServeGoal(data, records)
             Text("Checks use actual action times. Only Done or a logged action confirms what happened.")
             OutlinedButton(onClick = { viewModel.pauseGuidance(data.cook.id, !plan.paused) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (plan.paused) "Resume guidance" else "Pause guidance") }
             Text("Guidance pause leaves recording and physical rest/hold timers running.", style = MaterialTheme.typography.bodySmall)

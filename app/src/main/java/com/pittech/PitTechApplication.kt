@@ -34,6 +34,7 @@ class PitTechApplication : Application() {
         CookRepository(database, PhotoStorage(this))
     }
 
+    val servePlanRepository by lazy { com.pittech.data.ServePlanRepository(database, companionRepository) }
     val alertRepository by lazy { com.pittech.data.CookAlertRepository(database) }
     val companionRepository by lazy { com.pittech.data.CookCompanionRepository(database, PhotoStorage(this)) }
 

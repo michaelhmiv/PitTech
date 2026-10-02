@@ -38,6 +38,7 @@ internal fun PlaybookLibrary(viewModel: CooksViewModel) {
                     val book = remember(record.payload) { PlaybookCodec.decode(record.payload) }
                     Text("Revision ${book.revision} · ${book.draft.dishes.size} dishes · ${book.steps.size} steps")
                     OutlinedButton(onClick = { viewModel.previewPlaybook(record.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cook this") }
+                    TextButton(onClick = { viewModel.planServeTime(record.id) }) { Text("Plan serving time") }
                     TextButton(onClick = { viewModel.editPlaybook(record.id) }) { Text("Edit a new revision") }
                 }
             }

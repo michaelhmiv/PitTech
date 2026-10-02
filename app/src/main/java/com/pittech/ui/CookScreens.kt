@@ -192,6 +192,7 @@ fun PitTechApp(
     }
 
     PlaybookDialogs(viewModel)
+    ServePlanDialogs(viewModel)
     LaunchedEffect(setupPreview) { if (setupPreview != null) { isStartingCook = true; selectedSection = MainSection.COOKS.name } }
 
     if (selectedCookId != null) {
@@ -219,8 +220,8 @@ fun PitTechApp(
             saving = saving,
             saveError = saveError,
             initialDraft = setupPreview,
-            initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) },
-            onEditPlaybook = { setupPreview?.playbookId?.let(viewModel::editPlaybook) },
+            initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: companionRecords.firstOrNull { it.id == setupPreview?.scheduledPlanId }?.let { com.pittech.domain.ServeTimePlanner.decode(it.payload).book },
+            onEditPlaybook = { if (setupPreview?.scheduledPlanId != null) viewModel.planServeTime(scheduledId = setupPreview?.scheduledPlanId) else setupPreview?.playbookId?.let(viewModel::editPlaybook) },
             preferredTemperatureUnit = temperatureUnit,
             preferredWeightUnit = weightUnit,
             onBack = {
@@ -273,7 +274,7 @@ fun PitTechApp(
         when (section) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
-                playbooks = { PlaybookLibrary(viewModel) },
+                playbooks = { UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
                 adsEnabled = adsEnabled,
                 error = saveError,
                 notice = notice,
@@ -579,6 +580,7 @@ private fun StartCookScreen(
                                     weatherNotes = weather,
                                     windNotes = wind,
                                     dishes = dishes.toList(),
+                                    scheduledPlanId = initialDraft?.scheduledPlanId,
                                     playbookId = initialDraft?.playbookId,
                                     followPlaybook = followPlaybook,
                                     recordGrill = recordGrill && grillState.selectedDevice != null,
@@ -614,7 +616,7 @@ private fun StartCookScreen(
                         ChoiceField("Reuse", if (followPlaybook) "Setup and guided steps" else "Setup only", listOf("Setup and guided steps", "Setup only")) { followPlaybook = it == "Setup and guided steps" }
                         TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Hide steps" else "Review ${initialPlaybook.steps.size} steps") }
                         if (showSteps) initialPlaybook.steps.forEach { Text("${it.title} · ${stepDescription(it)}\n${it.instructions}") }
-                        TextButton(onClick = onEditPlaybook) { Text("Adjust playbook steps") }
+                        TextButton(onClick = onEditPlaybook) { Text(if (initialDraft?.scheduledPlanId != null) "Adjust schedule and steps" else "Adjust playbook steps") }
                     }
                 }
                 dishes.forEachIndexed { index, dish -> OutlinedButton(onClick = { editPreviewDish = index }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Adjust ${dish.name}") } }
