@@ -40,9 +40,15 @@ internal fun RecordingPowerOptions() {
         notifications = NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(
+            "Android battery saving can interrupt temperature recording when the screen is off. Missed readings cannot currently be recovered.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("recording-power-warning")
+        )
         TextButton(onClick = { expanded = !expanded; allowed = power.isIgnoringBatteryOptimizations(context.packageName); notifications = NotificationManagerCompat.from(context).areNotificationsEnabled() }, modifier = Modifier.testTag("recording-power-options")) { Text(if (expanded) "Hide screen-off options" else "Screen-off recording options") }
         if (expanded) {
-            Text(if (allowed) "Screen-off network access allowed" else "Android can pause network access while this phone is asleep. Allow screen-off recording for long cooks, or keep the phone charging.", style = MaterialTheme.typography.bodySmall)
+            Text(if (allowed) "Android's battery optimization exemption is enabled. Other power-saving restrictions can still interrupt recording." else "Allow screen-off recording to reduce interruptions from Android battery optimization, or keep the phone charging. These steps do not guarantee uninterrupted recording.", style = MaterialTheme.typography.bodySmall)
             if (!allowed) OutlinedButton(onClick = {
                 try { batteryLauncher.launch(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))) }
                 catch (_: Exception) { message = "Open this app's Battery settings and allow unrestricted background use." }

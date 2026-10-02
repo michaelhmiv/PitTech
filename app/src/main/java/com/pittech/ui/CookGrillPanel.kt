@@ -66,12 +66,12 @@ internal fun StartGrillRecordingPanel(state: PolarisMonitorState, enabled: Boole
                     Text("Automatically record temperatures", modifier = Modifier.padding(top = 12.dp))
                 }
                 if (enabled) {
-                    Text("Recording continues while you use the camera or lock the phone. A cook notification lets you pause.", style = MaterialTheme.typography.bodySmall)
+                    Text("PitTech records in the background with a cook notification and pause action.", style = MaterialTheme.typography.bodySmall)
+                    RecordingPowerOptions()
                     ProbeDishSelector("Probe 1", probe1, dishes, "cook-probe1", onProbe1)
                     if ((state.selectedDevice?.probeCount ?: 2) >= 2) ProbeDishSelector("Probe 2", probe2, dishes, "cook-probe2", onProbe2)
                     if ((state.selectedDevice?.probeCount ?: 2) >= 3) ProbeDishSelector("Probe 3", probe3, dishes, "cook-probe3", onProbe3)
                     if ((state.selectedDevice?.probeCount ?: 2) >= 4) ProbeDishSelector("Probe 4", probe4, dishes, "cook-probe4", onProbe4)
-                    RecordingPowerOptions()
                 }
             }
         }
@@ -89,6 +89,7 @@ internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, ru
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Automatic temperature recording", style = MaterialTheme.typography.titleMedium)
                 Text(if (state.selectedDevice != null) "Attach ${state.selectedDevice!!.name} to this cook." else "Connect and select a grill in Devices, then attach it here.", style = MaterialTheme.typography.bodySmall)
+                if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED && state.selectedDevice != null && state.authenticated) RecordingPowerOptions()
                 Button(onClick = onAttach, enabled = !busy && state.selectedDevice != null && state.authenticated && data.cook.status == CookStatus.ACTIVE, modifier = Modifier.testTag("cook-attach-grill")) { Text("Attach grill & record") }
             }
         }
