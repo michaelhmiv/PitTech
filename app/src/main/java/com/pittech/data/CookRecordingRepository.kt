@@ -27,9 +27,9 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
             dao.insertProbesIgnoringDuplicates(listOf(
                 ProbeEntity("$deviceId:chamber", cookId, deviceId, name = "Chamber", measurementType = "pit_ambient", source = "controller_cloud", createdAtUtcMillis = now),
                 ProbeEntity("$deviceId:setpoint", cookId, deviceId, name = "Setpoint", measurementType = "setpoint", source = "controller_cloud", createdAtUtcMillis = now),
-                ProbeEntity("$deviceId:probe1", cookId, deviceId, name = "Probe 1", measurementType = "food_probe", source = "controller_cloud", createdAtUtcMillis = now),
-                ProbeEntity("$deviceId:probe2", cookId, deviceId, name = "Probe 2", measurementType = "food_probe", source = "controller_cloud", createdAtUtcMillis = now),
-            ))
+            ).plus((1..device.probeCount.coerceIn(1, 4)).map { index ->
+                ProbeEntity("$deviceId:probe$index", cookId, deviceId, name = "Probe $index", measurementType = "food_probe", source = "controller_cloud", createdAtUtcMillis = now)
+            }))
         }
         val recording = if (same) previous!!.copy(status = CookRecordingEntity.RECORDING, resumedAtUtcMillis = now,
             gapStartedAtUtcMillis = previous.gapStartedAtUtcMillis ?: previous.lastReceivedAtUtcMillis?.plus(45_000L)?.takeIf { it < now },
@@ -39,7 +39,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         event(cookId, if (same) "recording_resumed" else "recording_started", if (same) "Temperature recording resumed" else "Grill attached · temperature recording started", now)
         val probes = dao.getProbesForCook(cookId).filter { it.deviceId == deviceId && it.measurementType == "food_probe" }
         probes.forEach { probe ->
-            val channel = if (probe.name == "Probe 1") "probe1" else "probe2"
+            val channel = probe.id.substringAfterLast(':')
             if (!same || probeDishes.containsKey(channel)) assignProbe(probe.id, cookId, probeDishes[channel], now)
         }
     }
@@ -91,7 +91,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         if (recording.status != CookRecordingEntity.RECORDING || cook.status != CookStatus.ACTIVE ||
             recording.controllerKey != controllerKey || state.selectedDeviceId?.let(CookTelemetryPolicy::deviceKey) != controllerKey ||
             sample.fetchedAtMillis < recording.resumedAtUtcMillis || sample.fetchedAtMillis <= (recording.lastProcessedAtUtcMillis ?: Long.MIN_VALUE)) return@withTransaction
-        if (state.onlineStatus?.let { it != 0 } == true || state.readingRequestFailed) {
+        if (state.onlineStatus?.let { it != 0 } == true || state.readingRequestFailed || sample.payload.reportedAtMillis?.let { sample.fetchedAtMillis - it > 45_000L || it - sample.fetchedAtMillis > 300_000L } == true) {
             markGap(cookId, "Grill offline or cloud readings unavailable.", sample.fetchedAtMillis)
             recordings.getRecording(cookId)?.let { recordings.saveRecording(it.copy(lastProcessedAtUtcMillis = sample.fetchedAtMillis)) }
             return@withTransaction

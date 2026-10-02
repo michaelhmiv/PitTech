@@ -476,6 +476,8 @@ private fun StartCookScreen(
     var recordGrill by rememberSaveable { mutableStateOf(false) }
     var probe1 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe2 by rememberSaveable { mutableStateOf<String?>(null) }
+    var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
+    var probe4 by rememberSaveable { mutableStateOf<String?>(null) }
     var smoker by rememberSaveable { mutableStateOf("") }
     var setpoint by rememberSaveable { mutableStateOf("") }
     var setpointUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
@@ -557,6 +559,8 @@ private fun StartCookScreen(
                                     recordGrill = recordGrill && grillState.selectedDevice != null,
                                     probe1DishIndex = probe1?.toIntOrNull(),
                                     probe2DishIndex = probe2?.toIntOrNull(),
+                                    probe3DishIndex = probe3?.toIntOrNull(),
+                                    probe4DishIndex = probe4?.toIntOrNull(),
                                 ),
                             )
                         },
@@ -592,6 +596,7 @@ private fun StartCookScreen(
             if (BuildConfig.CONTROLLER_TESTING_ENABLED) StartGrillRecordingPanel(
                 grillState, recordGrill, { recordGrill = it }, dishes.mapIndexed { index, dish -> index.toString() to dish.name },
                 probe1, probe2, { probe1 = it }, { probe2 = it }, onGrill,
+                probe3, probe4, { probe3 = it }, { probe4 = it },
             )
             SectionHeading("Dishes")
 

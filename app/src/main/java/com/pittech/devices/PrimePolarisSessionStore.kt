@@ -18,16 +18,17 @@ internal interface PolarisSessionStore {
 }
 
 /** Keystore-backed AES-GCM, in no-backup storage. No plaintext fallback. Called on IO. */
-internal class AndroidPolarisSessionStore(context: Context) : PolarisSessionStore {
-    private val file = File(context.applicationContext.noBackupFilesDir, "grillirg-session-v1.bin")
-    private val alias = "pittech-grillirg-session-v1"
-    private val aad = "PitTech GrillirG session v1".toByteArray(Charsets.UTF_8)
+internal class AndroidPolarisSessionStore(context: Context, provider: GrillProvider = GrillProvider.GRILLIRG) : PolarisSessionStore {
+    private val stem = when (provider) { GrillProvider.GRILLIRG -> "grillirg"; GrillProvider.PIT_BOSS -> "pitboss"; GrillProvider.TRAEGER -> "traeger" }
+    private val file = File(context.applicationContext.noBackupFilesDir, "$stem-session-v1.bin")
+    private val alias = "pittech-$stem-session-v1"
+    private val aad = "PitTech ${if (provider == GrillProvider.GRILLIRG) "GrillirG" else provider.name} session v1".toByteArray(Charsets.UTF_8)
 
     @Synchronized override fun load(): PolarisSession? {
         if (!file.exists()) return null
-        require(file.length() in 29..32_768)
+        require(file.length() in 29..65_536)
         val bytes = file.readBytes()
-        require(bytes.size in 29..32_768)
+        require(bytes.size in 29..65_536)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         cipher.updateAAD(aad)
@@ -36,13 +37,15 @@ internal class AndroidPolarisSessionStore(context: Context) : PolarisSessionStor
             val data = JSONObject(String(plaintext, Charsets.UTF_8))
             val token = data.getString("token")
             require(token.isNotBlank() && token.length <= 16_384 && token.none { it.isWhitespace() })
-            return PolarisSession(token, data.optLong("expires").takeIf { it > 0 }, data.optString("selected").takeIf { it.isNotBlank() })
+            val refresh = data.optString("refresh").takeIf { it.isNotBlank() }
+            require(refresh == null || refresh.length <= 16_384 && refresh.none { it.isWhitespace() })
+            return PolarisSession(token, data.optLong("expires").takeIf { it > 0 }, data.optString("selected").takeIf { it.isNotBlank() }, refresh)
         } finally { plaintext.fill(0) }
     }
 
     @Synchronized override fun save(session: PolarisSession) {
         val plaintext = JSONObject().put("token", session.token).put("expires", session.expiresAtMillis ?: 0)
-            .put("selected", session.selectedDeviceId ?: "").toString().toByteArray(Charsets.UTF_8)
+            .put("selected", session.selectedDeviceId ?: "").put("refresh", session.refreshToken ?: "").toString().toByteArray(Charsets.UTF_8)
         val temporary = File(file.parentFile, file.name + ".tmp")
         try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")

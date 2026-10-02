@@ -57,7 +57,7 @@ class CooksViewModel(
 
     private suspend fun attachSelectedGrill(cookId: String, unit: String, probeDishes: Map<String, String?> = emptyMap()) {
         val state = app.grillMonitor.state.value
-        require(state.authenticated && state.sessionSaved) { "Sign in to GrillirG in Devices before attaching a grill." }
+        require(state.authenticated && state.sessionSaved) { "Connect your grill in Devices before attaching a grill." }
         val device = state.selectedDevice ?: error("Choose a grill in Devices first.")
         app.recordingRepository.attach(cookId, device, unit, probeDishes)
         app.grillMonitor.lockDevice(device.id)
@@ -71,7 +71,7 @@ class CooksViewModel(
     }
 
     fun resumeGrillRecording(cookId: String) = perform {
-        require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.sessionSaved) { "Sign in to GrillirG in Devices before resuming recording." }
+        require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.sessionSaved) { "Connect your grill in Devices before resuming recording." }
         val saved = app.database.recordingDao().getRecording(cookId) ?: error("Attach a grill first.")
         val device = app.grillMonitor.state.value.devices.firstOrNull { com.pittech.devices.CookTelemetryPolicy.deviceKey(it.id) == saved.controllerKey }
             ?: error("Sign in and find the attached grill in Devices first.")
@@ -158,7 +158,8 @@ class CooksViewModel(
         _notice.value = "Cook saved on this phone."
         if (draft.recordGrill) {
             val dishes = app.database.cookDao().getDishesForCook(cookId)
-            attachSelectedGrill(cookId, draft.setpointUnit, mapOf("probe1" to draft.probe1DishIndex?.let { dishes.getOrNull(it)?.id }, "probe2" to draft.probe2DishIndex?.let { dishes.getOrNull(it)?.id }))
+            attachSelectedGrill(cookId, draft.setpointUnit, mapOf("probe1" to draft.probe1DishIndex?.let { dishes.getOrNull(it)?.id }, "probe2" to draft.probe2DishIndex?.let { dishes.getOrNull(it)?.id },
+                "probe3" to draft.probe3DishIndex?.let { dishes.getOrNull(it)?.id }, "probe4" to draft.probe4DishIndex?.let { dishes.getOrNull(it)?.id }))
         }
     }
 

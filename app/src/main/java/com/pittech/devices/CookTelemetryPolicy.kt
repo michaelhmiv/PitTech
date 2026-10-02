@@ -21,15 +21,13 @@ internal object CookTelemetryPolicy {
         return listOf(
             Triple("furnaceTempMeasured", "Chamber", "pit_ambient"),
             Triple("furnaceTempSetting", "Setpoint", "setpoint"),
-            Triple("probeP1Measured", "Probe 1", "food_probe"),
-            Triple("probeP2Measured", "Probe 2", "food_probe"),
-        ).mapNotNull { (key, name, type) ->
+        ).plus((1..sample.payload.probeCount.coerceIn(1, 4)).map { Triple("probeP" + it + "Measured", "Probe " + it, "food_probe") }).mapNotNull { (key, name, type) ->
             val reported = raw[key]?.takeIf { it.isFinite() && it in -100.0..1000.0 }
             val value = reported ?: 0.0
             // Zero probe readings were physically confirmed with unplugged probes. Keep them as
             // unavailable samples, not food temperatures. ProbeStatus describes alarm arming,
             // NOT physical attachment. Do not use it to infer that a probe is connected.
-            val quality = if (reported == null || ((type == "food_probe" || type == "setpoint") && value == 0.0)) "unavailable" else "valid"
+            val quality = if (reported == null || ((type == "setpoint" || type == "food_probe" && sample.payload.zeroProbeMeansUnavailable) && value == 0.0)) "unavailable" else "valid"
             CookTelemetryValue(key, name, type, convert(value, from, unit), quality)
         }
     }
