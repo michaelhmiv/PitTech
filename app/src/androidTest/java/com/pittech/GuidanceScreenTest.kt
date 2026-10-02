@@ -29,6 +29,7 @@ class GuidanceScreenTest {
         compose.onNodeWithTag("guidance-done").performClick()
         compose.onNodeWithTag("view-plan").performScrollTo().performClick()
         compose.onNodeWithText("Pause guidance").assertIsDisplayed()
+        compose.onNodeWithTag("guidance-step-check").assertIsDisplayed()
         val file = File(app.filesDir, "pittech-ui-test/guidance-plan.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }

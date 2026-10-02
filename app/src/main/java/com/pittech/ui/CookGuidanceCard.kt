@@ -54,6 +54,9 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     } else Card(Modifier.fillMaxWidth().testTag("next-action-card")) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(if (plan?.paused == true) "Guidance paused" else "Next action", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                data.dishes.forEach { dish -> Text("${dish.name} · ${CookPlanEngine.stage(events, dish.id)}", style = MaterialTheme.typography.bodySmall) }
+            }
             Text(next?.step?.title ?: "${record.title} · view your plan", style = MaterialTheme.typography.titleMedium)
             next?.let { e ->
                 Text(if (e.ready) "Ready to check" else e.dueAt?.let { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) } ?: e.waitingFor ?: "When ready")
@@ -66,12 +69,26 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     editing?.let { s -> StepEditor(s, plan?.book?.draft?.dishes ?: data.dishes.map { DishDraft(it.name, it.foodType) }, { editing = null }, probeNames = (data.probes.filter { it.measurementType == "food_probe" }.map { it.name } + data.readings.filter { it.measurementType in setOf("food", "food_probe") }.map { it.probeName }).distinct(), otherSteps = plan?.book?.steps.orEmpty()) { viewModel.updateGuidanceStep(data.cook.id, it); editing = null } }
     removing?.let { e -> AlertDialog(onDismissRequest = { removing = null }, title = { Text("Remove ${data.dishes.firstOrNull { it.id == e.dishId }?.name.orEmpty()}?") }, text = { Text("Confirm when the food leaves the smoker. You can start its rest now.") }, confirmButton = { TextButton(onClick = { viewModel.completeGuidanceStep(data.cook.id, e, rest = true); removing = null }) { Text("Removed · start rest") } }, dismissButton = { TextButton(onClick = { viewModel.completeGuidanceStep(data.cook.id, e); removing = null }) { Text("Removed only") } }) }
     skipping?.let { e -> AlertDialog(onDismissRequest = { skipping = null }, title = { Text("Skip ${e.step.title}?") }, text = { Text("Skipping records no physical action. If later steps depend on this action, choose whether to use the current time as their planning anchor.") }, confirmButton = { TextButton(onClick = { viewModel.skipGuidance(data.cook.id, e.step.id, false); skipping = null }) { Text("Skip") } }, dismissButton = { TextButton(onClick = { viewModel.skipGuidance(data.cook.id, e.step.id, true); skipping = null }) { Text("Skip · use now for later steps") } }) }
-    if (show && plan != null) ModalBottomSheet(onDismissRequest = { show = false }) {
+    if (show && plan != null) ModalBottomSheet(onDismissRequest = { show = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(plan.book.name, style = MaterialTheme.typography.titleLarge)
             ActiveServeGoal(data, records)
-            Text("Checks use actual action times. Only Done or a logged action confirms what happened.")
             OutlinedButton(onClick = { viewModel.pauseGuidance(data.cook.id, !plan.paused) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (plan.paused) "Resume guidance" else "Pause guidance") }
+            evaluated.forEach { e ->
+                HorizontalDivider()
+                Text(e.step.title, modifier = Modifier.testTag("guidance-step-${e.step.id}"), style = MaterialTheme.typography.titleMedium)
+                e.dishId?.let { id -> Text(data.dishes.firstOrNull { it.id == id }?.name.orEmpty()) }
+                Text(if (e.progress.status != "pending") e.progress.status else e.waitingFor ?: stepDescription(e.step))
+                if (e.step.instructions.isNotBlank()) Text(e.step.instructions)
+                ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication, e.step.action, e.step.dishIndex)
+                if (e.progress.status == "pending") {
+                    OutlinedButton(onClick = { if (e.step.action == "remove" && e.dishId != null) removing = e else viewModel.completeGuidanceStep(data.cook.id, e) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done · ${e.step.title}") }
+                    FlowRow { TextButton(onClick = { viewModel.snoozeGuidance(data.cook.id, e) }) { Text("Snooze 10 min") }; TextButton(onClick = { skipping = e }) { Text("Skip") }; TextButton(onClick = { editing = e.step }) { Text("Edit") } }
+                }
+            }
+            OutlinedButton(onClick = { editing = PlaybookStep() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add step") }
+            HorizontalDivider()
+            Text("Reminder and stage controls", style = MaterialTheme.typography.titleMedium)
             Text("Guidance pause leaves recording and physical rest/hold timers running.", style = MaterialTheme.typography.bodySmall)
             if (!CookGuidanceNotifications.canNotify(context)) OutlinedButton(onClick = {
                 if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -90,19 +107,6 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
                 Text("${dish.name} · $stage", style = MaterialTheme.typography.titleMedium)
                 ChoiceField("Change stage after acting", "Choose an action", when (stage) { "prep" -> listOf("Food on"); "removed", "resting" -> listOf("Start rest", "Start hold", "Ready to serve"); "holding" -> listOf("Ready to serve"); "done" -> emptyList(); else -> listOf("Start rest", "Start hold", "Ready to serve") }) { label -> viewModel.changeDishStage(data.cook.id, dish.id, PlaybookCodec.actions.entries.first { it.value == label }.key) }
             }
-            evaluated.forEach { e ->
-                HorizontalDivider()
-                Text(e.step.title, style = MaterialTheme.typography.titleMedium)
-                e.dishId?.let { id -> Text(data.dishes.firstOrNull { it.id == id }?.name.orEmpty()) }
-                Text(if (e.progress.status != "pending") e.progress.status else e.waitingFor ?: stepDescription(e.step))
-                if (e.step.instructions.isNotBlank()) Text(e.step.instructions)
-                ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication, e.step.action, e.step.dishIndex)
-                if (e.progress.status == "pending") {
-                    OutlinedButton(onClick = { if (e.step.action == "remove" && e.dishId != null) removing = e else viewModel.completeGuidanceStep(data.cook.id, e) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done · ${e.step.title}") }
-                    FlowRow { TextButton(onClick = { viewModel.snoozeGuidance(data.cook.id, e) }) { Text("Snooze 10 min") }; TextButton(onClick = { skipping = e }) { Text("Skip") }; TextButton(onClick = { editing = e.step }) { Text("Edit") } }
-                }
-            }
-            OutlinedButton(onClick = { editing = PlaybookStep() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add step") }
             CookChecklistTools(data, viewModel)
             ReferenceComparisonTools(data, viewModel)
             ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication)
