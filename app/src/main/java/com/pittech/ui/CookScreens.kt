@@ -114,6 +114,8 @@ fun PitTechApp(
     }
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
+    val setupPreview by viewModel.setupPreview.collectAsStateWithLifecycle()
+    val companionRecords by viewModel.companionRecords.collectAsStateWithLifecycle()
     val saving by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
@@ -189,6 +191,9 @@ fun PitTechApp(
         }
     }
 
+    PlaybookDialogs(viewModel)
+    LaunchedEffect(setupPreview) { if (setupPreview != null) { isStartingCook = true; selectedSection = MainSection.COOKS.name } }
+
     if (selectedCookId != null) {
         val detail = selectedCook
         if (detail == null || detail.cook.id != selectedCookId) {
@@ -213,11 +218,15 @@ fun PitTechApp(
         StartCookScreen(
             saving = saving,
             saveError = saveError,
+            initialDraft = setupPreview,
+            initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) },
+            onEditPlaybook = { setupPreview?.playbookId?.let(viewModel::editPlaybook) },
             preferredTemperatureUnit = temperatureUnit,
             preferredWeightUnit = weightUnit,
             onBack = {
                 viewModel.clearSaveError()
                 isStartingCook = false
+                viewModel.consumeSetupPreview()
             },
             onStartCook = viewModel::startCook,
             grillState = grillState,
@@ -264,6 +273,7 @@ fun PitTechApp(
         when (section) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
+                playbooks = { PlaybookLibrary(viewModel) },
                 adsEnabled = adsEnabled,
                 error = saveError,
                 notice = notice,
@@ -272,6 +282,7 @@ fun PitTechApp(
                 onRestoreBackup = { restoreBackup.launch(arrayOf("application/zip", "application/x-zip-compressed")) },
                 onStartCook = {
                     viewModel.clearSaveError()
+                    viewModel.consumeSetupPreview()
                     isStartingCook = true
                 },
             )
@@ -314,6 +325,7 @@ fun PitTechApp(
 
 @Composable
 private fun CooksHome(
+    playbooks: @Composable () -> Unit,
     cooks: List<CookWithDishes>,
     adsEnabled: Boolean,
     error: String?,
@@ -355,6 +367,8 @@ private fun CooksHome(
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
+
+        playbooks()
 
         if (activeCooks.isNotEmpty()) {
             SectionHeading("Active cook")
@@ -461,6 +475,9 @@ private fun FeaturePlaceholder(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StartCookScreen(
+    initialDraft: NewCookDraft? = null,
+    initialPlaybook: com.pittech.domain.CookPlaybook? = null,
+    onEditPlaybook: () -> Unit = {},
     saving: Boolean,
     saveError: String?,
     preferredTemperatureUnit: String,
@@ -473,25 +490,29 @@ private fun StartCookScreen(
 ) {
     val defaultCookName = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date()) }
     var title by rememberSaveable {
-        mutableStateOf(defaultCookName)
+        mutableStateOf(initialDraft?.title ?: defaultCookName)
     }
     var recordGrill by rememberSaveable { mutableStateOf(false) }
     var probe1 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe2 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe4 by rememberSaveable { mutableStateOf<String?>(null) }
-    var smoker by rememberSaveable { mutableStateOf("") }
-    var setpoint by rememberSaveable { mutableStateOf("") }
-    var setpointUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
-    var notes by rememberSaveable { mutableStateOf("") }
-    var fuelType by rememberSaveable { mutableStateOf("") }
-    var woodBlend by rememberSaveable { mutableStateOf("") }
+    var smoker by rememberSaveable { mutableStateOf(initialDraft?.smokerName.orEmpty()) }
+    var setpoint by rememberSaveable { mutableStateOf(initialDraft?.setpointText.orEmpty()) }
+    var setpointUnit by rememberSaveable { mutableStateOf(initialDraft?.setpointUnit ?: preferredTemperatureUnit) }
+    var notes by rememberSaveable { mutableStateOf(initialDraft?.notes.orEmpty()) }
+    var fuelType by rememberSaveable { mutableStateOf(initialDraft?.fuelType.orEmpty()) }
+    var woodBlend by rememberSaveable { mutableStateOf(initialDraft?.woodOrPelletBlend.orEmpty()) }
     var outdoorTemperature by rememberSaveable { mutableStateOf("") }
     var outdoorTemperatureUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
     var weather by rememberSaveable { mutableStateOf("") }
     var wind by rememberSaveable { mutableStateOf("") }
     var moreCookDetails by rememberSaveable { mutableStateOf(false) }
-    val dishes = remember { mutableStateListOf<DishDraft>() }
+    val dishes = remember { mutableStateListOf<DishDraft>().apply { addAll(initialDraft?.dishes.orEmpty()) } }
+    var followPlaybook by rememberSaveable { mutableStateOf(true) }
+    var showSteps by rememberSaveable { mutableStateOf(false) }
+    var editPreviewDish by remember { mutableStateOf<Int?>(null) }
+    editPreviewDish?.let { index -> DishEditorDialog(preferredWeightUnit = preferredWeightUnit, initial = dishes[index], onDismiss = { editPreviewDish = null }, onSave = { dishes[index] = it; editPreviewDish = null }) }
     var showDishDialog by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     val requestBack = {
@@ -558,6 +579,8 @@ private fun StartCookScreen(
                                     weatherNotes = weather,
                                     windNotes = wind,
                                     dishes = dishes.toList(),
+                                    playbookId = initialDraft?.playbookId,
+                                    followPlaybook = followPlaybook,
                                     recordGrill = recordGrill && grillState.selectedDevice != null,
                                     probe1DishIndex = probe1?.toIntOrNull(),
                                     probe2DishIndex = probe2?.toIntOrNull(),
@@ -584,6 +607,18 @@ private fun StartCookScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (initialPlaybook != null) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${initialPlaybook.name} · revision ${initialPlaybook.revision}", style = MaterialTheme.typography.titleMedium)
+                        ChoiceField("Reuse", if (followPlaybook) "Setup and guided steps" else "Setup only", listOf("Setup and guided steps", "Setup only")) { followPlaybook = it == "Setup and guided steps" }
+                        TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Hide steps" else "Review ${initialPlaybook.steps.size} steps") }
+                        if (showSteps) initialPlaybook.steps.forEach { Text("${it.title} · ${stepDescription(it)}\n${it.instructions}") }
+                        TextButton(onClick = onEditPlaybook) { Text("Adjust playbook steps") }
+                    }
+                }
+                dishes.forEachIndexed { index, dish -> OutlinedButton(onClick = { editPreviewDish = index }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Adjust ${dish.name}") } }
+            }
             Text("Add the basics now. You can fill in the rest during or after the cook.", style = MaterialTheme.typography.bodyLarge)
             OutlinedTextField(
                 value = title,
@@ -718,23 +753,24 @@ private fun DishDraftCard(dish: DishDraft, onRemove: () -> Unit) {
 
 @Composable
 internal fun DishEditorDialog(
+    initial: DishDraft? = null,
     preferredWeightUnit: String = "lb",
     onDismiss: () -> Unit,
     onSave: (DishDraft) -> Unit,
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var foodType by rememberSaveable { mutableStateOf("Pork") }
-    var cut by rememberSaveable { mutableStateOf("") }
-    var weight by rememberSaveable { mutableStateOf("") }
-    var weightUnit by rememberSaveable { mutableStateOf(preferredWeightUnit) }
+    var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
+    var foodType by rememberSaveable { mutableStateOf(initial?.foodType ?: "Pork") }
+    var cut by rememberSaveable { mutableStateOf(initial?.cut.orEmpty()) }
+    var weight by rememberSaveable { mutableStateOf(initial?.weightText.orEmpty()) }
+    var weightUnit by rememberSaveable { mutableStateOf(initial?.weightUnit ?: preferredWeightUnit) }
     var detailsExpanded by rememberSaveable { mutableStateOf(false) }
-    var startingCondition by rememberSaveable { mutableStateOf<String?>(null) }
-    var boneIn by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    var placement by rememberSaveable { mutableStateOf("") }
-    var gradeOrSource by rememberSaveable { mutableStateOf("") }
-    var thicknessNotes by rememberSaveable { mutableStateOf("") }
-    var prepNotes by rememberSaveable { mutableStateOf("") }
-    var preparationItems by remember { mutableStateOf(listOf(IngredientDraft(name = ""))) }
+    var startingCondition by rememberSaveable { mutableStateOf(initial?.startingCondition) }
+    var boneIn by rememberSaveable { mutableStateOf(initial?.boneIn) }
+    var placement by rememberSaveable { mutableStateOf(initial?.placement.orEmpty()) }
+    var gradeOrSource by rememberSaveable { mutableStateOf(initial?.gradeOrSource.orEmpty()) }
+    var thicknessNotes by rememberSaveable { mutableStateOf(initial?.thicknessNotes.orEmpty()) }
+    var prepNotes by rememberSaveable { mutableStateOf(initial?.prepNotes.orEmpty()) }
+    var preparationItems by remember { mutableStateOf(initial?.preparationItems?.takeIf { it.isNotEmpty() } ?: listOf(IngredientDraft(name = ""))) }
     var photoUris by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var nameError by rememberSaveable { mutableStateOf(false) }
     var weightError by rememberSaveable { mutableStateOf(false) }

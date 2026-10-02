@@ -20,15 +20,28 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CookReminderEntity::class,
         CookRecordingEntity::class,
         ProbeAssignmentEntity::class,
+        CompanionRecord::class,
+        CompanionPhoto::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
     abstract fun cookDao(): CookDao
     abstract fun recordingDao(): CookRecordingDao
+    abstract fun companionDao(): CookCompanionDao
 
     companion object {
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS companion_records (id TEXT NOT NULL PRIMARY KEY, kind TEXT NOT NULL, cookId TEXT, title TEXT NOT NULL, payload TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_companion_records_cookId ON companion_records(cookId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_companion_records_kind ON companion_records(kind)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS companion_photos (id TEXT NOT NULL PRIMARY KEY, recordId TEXT NOT NULL, relativePath TEXT NOT NULL, mimeType TEXT NOT NULL, caption TEXT NOT NULL, dishIndex INTEGER, action TEXT, FOREIGN KEY(recordId) REFERENCES companion_records(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_companion_photos_recordId ON companion_photos(recordId)")
+            }
+        }
+
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE cook_recordings ADD COLUMN samplingMode TEXT NOT NULL DEFAULT 'periodic'")

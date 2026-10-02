@@ -21,12 +21,15 @@ class PitTechApplication : Application() {
             .addMigrations(PitTechDatabase.MIGRATION_2_3)
             .addMigrations(PitTechDatabase.MIGRATION_3_4)
             .addMigrations(PitTechDatabase.MIGRATION_4_5)
+            .addMigrations(PitTechDatabase.MIGRATION_5_6)
             .build()
     }
 
     val cookRepository: CookRepository by lazy {
         CookRepository(database, PhotoStorage(this))
     }
+
+    val companionRepository by lazy { com.pittech.data.CookCompanionRepository(database, PhotoStorage(this)) }
 
     val dataTransfer: PitTechDataTransfer by lazy {
         PitTechDataTransfer(this, cookRepository)

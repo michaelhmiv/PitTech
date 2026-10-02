@@ -147,7 +147,7 @@ class CookRecordingIntegrationTest {
         val transfer = PitTechDataTransfer(context, cooks)
         val output = ByteArrayOutputStream(); transfer.writeZip(output)
         val preview = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
-        assertEquals(4, preview.archiveVersion)
+        assertEquals(5, preview.archiveVersion)
         assertEquals(event.temperatureContextJson, preview.snapshot.events.first { it.id == event.id }.temperatureContextJson)
         assertTrue(preview.snapshot.readings.all { it.timestampBasis == "cloud_receipt" })
         assertEquals("", preview.snapshot.recordings.single().controllerKey)
@@ -190,7 +190,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 3
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6).build()
         try {
             assertEquals("Legacy cook", migrated.cookDao().getCook(id)!!.title)
             assertEquals("measurement", migrated.cookDao().getAllSensorReadings().single().timestampBasis)
@@ -270,7 +270,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 4
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6).build()
         try {
             val saved = migrated.recordingDao().getRecording(id)!!
             assertEquals("periodic", saved.samplingMode)

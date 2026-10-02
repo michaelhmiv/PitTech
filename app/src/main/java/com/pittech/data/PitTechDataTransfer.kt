@@ -36,6 +36,10 @@ class PitTechDataTransfer(
             putText(zip, "README.txt", README)
             putText(zip, "data/pittech.json", snapshotJson(snapshot, preferences).toString())
             csvTables(snapshot).forEach { (name, content) -> putText(zip, "csv/$name", content) }
+            snapshot.companionPhotos.forEach { photo ->
+                val bytes = repository.readPhoto(photo.relativePath) ?: error("A playbook reference photo could not be read for backup.")
+                putBytes(zip, "attachments/${photo.id}.${photo.relativePath.substringAfterLast('.')}", bytes)
+            }
             snapshot.photos.forEach { photo ->
                 val bytes = repository.readPhoto(photo.relativePath)
                     ?: error("The photo '${photo.originalFileName}' could not be read for backup.")
@@ -171,6 +175,8 @@ class PitTechDataTransfer(
         .put("reminders", JSONArray().apply { snapshot.reminders.forEach { put(it.toJson()) } })
         .put("recordings", JSONArray().apply { snapshot.recordings.forEach { put(it.toJson()) } })
         .put("probeAssignments", JSONArray().apply { snapshot.assignments.forEach { put(it.toJson()) } })
+        .put("companionRecords", JSONArray(snapshot.companionRecords.map { JSONObject().put("id", it.id).put("kind", it.kind).put("cookId", it.cookId).put("title", it.title).put("payload", JSONObject(it.payload)).put("created", it.createdAtUtcMillis).put("updated", it.updatedAtUtcMillis) }))
+        .put("companionPhotos", JSONArray(snapshot.companionPhotos.map { JSONObject().put("id", it.id).put("recordId", it.recordId).put("archivePath", "attachments/${it.id}.${it.relativePath.substringAfterLast('.')}").put("mimeType", it.mimeType).put("caption", it.caption).put("dishIndex", it.dishIndex).put("action", it.action) }))
         .put("photos", JSONArray().apply {
             snapshot.photos.forEach { photo ->
                 val extension = photo.originalFileName.substringAfterLast('.', "jpg").filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
@@ -191,6 +197,8 @@ class PitTechDataTransfer(
         "photos.csv" to csv("photo_id,cook_id,dish_id,event_id,file_name,mime_type,caption,captured_at_utc,added_at_utc,temperature_context_json", snapshot.photos.map { listOf(it.id,it.cookId,it.dishId,it.eventId,it.originalFileName,it.mimeType,it.caption,utc(it.capturedAtUtcMillis),utc(it.addedAtUtcMillis),it.temperatureContextJson) }),
         "recordings.csv" to csv("cook_id,device_id,status,unit,started_at_utc,last_received_at_utc,sampling_mode,sampling_interval_millis", snapshot.recordings.map { listOf(it.cookId,it.deviceId,CookRecordingEntity.STOPPED,it.unit,utc(it.startedAtUtcMillis),utc(it.lastReceivedAtUtcMillis),it.samplingMode,it.samplingIntervalMillis) }),
         "probe_assignments.csv" to csv("assignment_id,cook_id,probe_id,dish_id,started_at_utc,ended_at_utc", snapshot.assignments.map { listOf(it.id,it.cookId,it.probeId,it.dishId,utc(it.startedAtUtcMillis),utc(it.endedAtUtcMillis)) }),
+        "saved_guidance.csv" to csv("record_id,kind,cook_id,title,payload_json,created_at_utc,updated_at_utc", snapshot.companionRecords.map { listOf(it.id,it.kind,it.cookId,it.title,it.payload,utc(it.createdAtUtcMillis),utc(it.updatedAtUtcMillis)) }),
+        "reference_photos.csv" to csv("photo_id,record_id,caption,dish_index,action,mime_type", snapshot.companionPhotos.map { listOf(it.id,it.recordId,it.caption,it.dishIndex,it.action,it.mimeType) }),
         "reminders.csv" to csv("reminder_id,cook_id,title,due_at_utc,time_zone,status,created_at_utc,completed_at_utc", snapshot.reminders.map { listOf(it.id,it.cookId,it.title,utc(it.dueAtUtcMillis),it.timeZoneId,it.status,utc(it.createdAtUtcMillis),utc(it.completedAtUtcMillis)) }),
     )
 
@@ -263,6 +271,8 @@ class PitTechDataTransfer(
             Sheet("Derived Metrics", rows(listOf("Cook ID","Probe","Metric","Value","Unit","Method","Source start UTC","Source end UTC","Method version").map(::text), derived)),
             Sheet("Recording History", rows(listOf("Cook ID","Device ID","Status","Unit","Started UTC","Last received UTC","Sampling mode","Sampling interval millis").map(::text), s.recordings.map { listOf(text(it.cookId),text(it.deviceId),text(CookRecordingEntity.STOPPED),text(it.unit),text(utc(it.startedAtUtcMillis)),text(utc(it.lastReceivedAtUtcMillis)),text(it.samplingMode),num(it.samplingIntervalMillis)) })),
             Sheet("Probe Assignments", rows(listOf("ID","Cook ID","Probe ID","Dish ID","Started UTC","Ended UTC").map(::text), s.assignments.map { listOf(text(it.id),text(it.cookId),text(it.probeId),text(it.dishId),text(utc(it.startedAtUtcMillis)),text(utc(it.endedAtUtcMillis))) })),
+            Sheet("Saved Guidance", rows(listOf("Record ID","Kind","Cook ID","Title","Payload JSON","Created UTC","Updated UTC").map(::text), s.companionRecords.map { listOf(text(it.id),text(it.kind),text(it.cookId),text(it.title),text(it.payload),text(utc(it.createdAtUtcMillis)),text(utc(it.updatedAtUtcMillis))) })),
+            Sheet("Reference Photos", rows(listOf("Photo ID","Record ID","Caption","Dish index","Action","MIME type").map(::text), s.companionPhotos.map { listOf(text(it.id),text(it.recordId),text(it.caption),num(it.dishIndex),text(it.action),text(it.mimeType)) })),
             Sheet("Reminders", rows(listOf("Reminder ID","Cook ID","Title","Due UTC","Time zone","Status","Created UTC","Completed UTC").map(::text), s.reminders.map { listOf(text(it.id),text(it.cookId),text(it.title),text(utc(it.dueAtUtcMillis)),text(it.timeZoneId),text(it.status),text(utc(it.createdAtUtcMillis)),text(utc(it.completedAtUtcMillis))) })),
         )
     }
@@ -347,7 +357,7 @@ class PitTechDataTransfer(
     }
 
     private companion object {
-        const val ARCHIVE_VERSION = 4
+        const val ARCHIVE_VERSION = 5
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
@@ -590,6 +600,25 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
         ProbeAssignmentEntity(o.string("id"), o.string("cookId"), o.string("probeId"), o.stringOrNull("dishId"),
             o.long("startedAtUtcMillis"), o.longOrNull("endedAtUtcMillis"))
     }
+    val companionRecords = root.arrayObjects("companionRecords").map { o ->
+        val kind = o.string("kind")
+        require(kind in setOf("playbook", "plan")) { "Unsupported saved guidance in this archive." }
+        val payload = o.getJSONObject("payload").toString()
+        com.pittech.domain.PlaybookCodec.decode(payload)
+        CompanionRecord(o.string("id"), kind, o.stringOrNull("cookId"), o.string("title"), payload, o.long("created"), o.long("updated"))
+    }
+    require(companionRecords.map { it.id }.distinct().size == companionRecords.size) { "Duplicate saved guidance IDs." }
+    val companionPhotos = root.arrayObjects("companionPhotos").map { o ->
+        val id = o.string("id")
+        require(id.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "Invalid reference photo ID." }
+        val path = o.string("archivePath")
+        require(path.matches(Regex("attachments/${Regex.escape(id)}\\.[A-Za-z0-9]{1,8}"))) { "Invalid reference photo path." }
+        require(attachment(id, path)?.isNotEmpty() == true) { "A reference photo is missing." }
+        CompanionPhoto(id, o.string("recordId"), "photos/${path.substringAfterLast('/')}", o.string("mimeType"), o.string("caption"), o.intOrNull("dishIndex"), o.stringOrNull("action"))
+    }
+    require(companionRecords.all { it.cookId == null || cooks.any { c -> c.id == it.cookId } } &&
+        companionPhotos.all { p -> companionRecords.any { it.id == p.recordId } } &&
+        (companionPhotos.map { it.id } + photos.map { it.id }).distinct().size == companionPhotos.size + photos.size) { "Reference records do not match this archive." }
     require(cooks.map { it.id }.distinct().size == cooks.size) { "The backup contains duplicate cook IDs." }
     val cookIds = cooks.map { it.id }.toSet()
     val dishesById = dishes.associateBy { it.id }
@@ -628,7 +657,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     ) {
         "The backup has records that do not belong to a cook in this archive."
     }
-    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments)
+    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos)
 }
 
 private fun validatedContext(o: JSONObject): String? = o.stringOrNull("temperatureContextJson")?.also {

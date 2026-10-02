@@ -600,6 +600,7 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
+                    playbookTools = { CookPlaybookTools(data, viewModel) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
                             data, grillState, recordingRunning, busy,
@@ -626,7 +627,7 @@ fun CookDetailScreen(
                         showResults = true
                     },
                     onDelete = { confirmDeleteCook = true },
-                    onCopySetup = { viewModel.duplicateCookSetup(data.cook.id) },
+                    onCopySetup = { viewModel.previewCookAgain(data.cook.id) },
                     onError = error,
                     onCancelReminder = viewModel::cancelCookReminder,
                     onLogReminder = { reminder ->
@@ -730,6 +731,7 @@ private fun CookQuickActionsBar(
 private fun LiveCookTab(
     data: CookDetailData,
     grillPanel: @Composable () -> Unit,
+    playbookTools: @Composable () -> Unit,
     busy: Boolean,
     onTogglePause: () -> Unit,
     onAddTarget: () -> Unit,
@@ -790,6 +792,7 @@ private fun LiveCookTab(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         grillPanel()
+        playbookTools()
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
