@@ -240,7 +240,6 @@ class CookRepository(
                 dao.insertDish(dish)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
-                CookCompanionRepository(database, photoStorage).applyToCook(cookId, draft)
             }
         } catch (failure: Throwable) {
             importedPhotos.forEach { photoStorage.delete(it.relativePath) }
@@ -598,7 +597,7 @@ class CookRepository(
 
     suspend fun importSnapshot(snapshot: ExportSnapshot, attachmentData: Map<String, ByteArray>): ImportSummary {
         require(snapshot.photos.map { it.id }.distinct().size == snapshot.photos.size) { "The backup contains duplicate photo IDs." }
-        require((snapshot.photos.map { it.id } + snapshot.companionPhotos.map { it.id }).all { attachmentData[it.id]?.isNotEmpty() == true }) {
+        require((snapshot.photos.map { it.id } + snapshot.companionPhotos.map { it.id }).all { attachmentData[it]?.isNotEmpty() == true }) {
             "The backup is incomplete: one or more photo attachments are missing."
         }
         val existingCookIds = dao.getAllCooks().map { it.id }.toSet()
