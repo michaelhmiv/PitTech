@@ -3,9 +3,6 @@ name: Play closed testing
 on:
   # API edit commits can submit pending Play Console declarations; keep this upload owner-triggered.
   workflow_dispatch:
-  # One-time owner-authorized release; main retains its manual trigger.
-  push:
-    branches: [release/guided-cook-closed-testing-20261002]
 
 concurrency:
   group: pittech-play-closed-testing
@@ -20,10 +17,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out the tested main commit
+      - name: Check out main
         uses: actions/checkout@v6
-        with:
-          ref: c3bc98c48b598843c8936c75d73acd56796354e7
 
       - name: Verify signing and Google service-account secrets are configured
         env:
