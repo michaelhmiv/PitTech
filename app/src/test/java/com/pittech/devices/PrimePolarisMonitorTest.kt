@@ -215,7 +215,10 @@ class PrimePolarisMonitorTest {
             monitor.setForeground(true)
             waitFor { monitor.state.value.devices.size == 2 && !monitor.state.value.busy }
             monitor.selectDevice("private-id")
-            waitFor { monitor.state.value.latest != null }
+            // Unconfined resumes discovery on the storage IO thread. Let that
+            // initial cycle publish its final state before test-thread controls
+            // lock the grill, matching the production Main-thread ordering.
+            waitFor { monitor.state.value.latest != null && monitor.state.value.nextPollAtMillis != null && !monitor.state.value.busy }
             monitor.lockDevice("private-id")
             monitor.setRecording(true)
             monitor.setForeground(false)
