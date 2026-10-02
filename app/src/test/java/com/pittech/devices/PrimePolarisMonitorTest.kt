@@ -295,15 +295,15 @@ class PrimePolarisMonitorTest {
         val retry = CompletableDeferred<Unit>()
         val backend = Backend().apply { discoveryFailure = PolarisFailure(PolarisFailureKind.NETWORK) }
         val store = Store()
-        var pause = 0L
+        val pause = CompletableDeferred<Long>()
         val monitor = PrimePolarisMonitor(backend, store, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            now = { 1_000_000L }, provider = GrillProvider.TRAEGER, discoveryWait = { pause = it; retry.await() })
+            now = { 1_000_000L }, provider = GrillProvider.TRAEGER, discoveryWait = { pause.complete(it); retry.await() })
         try {
             monitor.setRecording(true)
             waitFor { monitor.state.value.nextPollAtMillis != null }
             assertEquals(PolarisPhase.DISCOVERING, monitor.state.value.phase)
             assertNotNull(store.session)
-            assertEquals(120_000L, pause)
+            assertEquals(120_000L, withTimeout(5000) { pause.await() })
             assertEquals(0, backend.signInCalls)
             backend.discoveryFailure = null
             retry.complete(Unit)
