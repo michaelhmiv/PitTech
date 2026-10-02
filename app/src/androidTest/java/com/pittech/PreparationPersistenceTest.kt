@@ -42,6 +42,14 @@ class PreparationPersistenceTest {
             assertTrue(summary.maintenanceDue)
             prep.maintained(profileId)
             assertFalse(prep.summaries().single().maintenanceDue)
+            val active = repo.startCook(NewCookDraft("Manual alert", smokerName = "Backyard", dishes = listOf(DishDraft("Flat", "Beef"))))
+            val activeDish = db.cookDao().getDishesForCook(active).single().id
+            CookAlertRepository(db).save(active, "Check finish", CookAlertRule(dishId = activeDish, targetF = 200.0))
+            val book = CookPlaybook("Future meal", NewCookDraft("Future meal", dishes = listOf(DishDraft("Ribs", "Pork"))), emptyList())
+            ServePlanRepository(db, CookCompanionRepository(db, PhotoStorage(context))).save(ServePlan(book, System.currentTimeMillis() + 86_400_000, "UTC", schedules = listOf(DishSchedule(0))))
+            val cookOnly = repo.exportSnapshot(active)
+            assertFalse(cookOnly.companionRecords.any { it.kind in setOf("upcoming", "prep_combo") })
+            assertTrue(cookOnly.companionRecords.any { it.kind == "alert" })
             val zip = ByteArrayOutputStream(); PitTechDataTransfer(context, repo).writeZip(zip)
             val transfer = PitTechDataTransfer(context, CookRepository(restored, PhotoStorage(context)))
             transfer.import(transfer.previewImport(ByteArrayInputStream(zip.toByteArray())))
@@ -50,6 +58,8 @@ class PreparationPersistenceTest {
             assertEquals(2.0 to 3.0, summaryAfter.burnRangeKgPerHour)
             assertEquals(2, restored.companionDao().all().count { it.kind == "checklist" })
             assertEquals(1, restored.companionDao().all().count { it.kind == "prep_combo" })
+            assertEquals(1, restored.companionDao().all().count { it.kind == "upcoming" })
+            assertFalse(CookAlertEngine.decode(restored.companionDao().all().single { it.kind == "alert" }.payload).first.enabled)
         } finally { db.close(); restored.close() }
     }
 }

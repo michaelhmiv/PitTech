@@ -256,7 +256,14 @@ class CookRepository(
         dao.updateDish(dish.copy(updatedAtUtcMillis = System.currentTimeMillis()))
     }
 
-    suspend fun deleteDish(dish: DishEntity) = dao.deleteDish(dish)
+    suspend fun deleteDish(dish: DishEntity) = database.withTransaction {
+        CookCompanionRepository(database, photoStorage).detachDish(dish.cookId, dish.id)
+        // Retain the deleted dish's physical history without turning it into whole-cook anchors.
+        dao.getTimelineEventsForCook(dish.cookId).filter { it.dishId == dish.id && com.pittech.domain.PlaybookCodec.action(it.eventType) in com.pittech.domain.PlaybookCodec.actions }.forEach {
+            dao.updateTimelineEvent(it.copy(eventType = "deleted_dish_${it.eventType}", details = listOfNotNull(it.details, "Recorded for removed dish: ${dish.name}").joinToString("\n")))
+        }
+        dao.deleteDish(dish)
+    }
 
     suspend fun addTimelineEvent(
         cookId: String,
@@ -640,6 +647,7 @@ class CookRepository(
         val newCooks = snapshot.cooks.filterNot { it.id in existingCookIds }
         val newIds = newCooks.map { it.id }.toSet()
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
+        require(snapshot.photos.none { it.cookId in newIds && it.id in existingPhotoIds }) { "A photo ID conflicts with a photo in another saved cook." }
         val photos = snapshot.photos.filter { it.cookId in newIds && it.id !in existingPhotoIds }
         val restoredPhotos = mutableListOf<PhotoEntity>()
         val existingRecordIds = database.companionDao().all().map { it.id }.toSet()

@@ -177,6 +177,12 @@ fi
 timeout 120 adb install -r "$app_apk"
 timeout 120 adb install -r -t "$test_apk"
 
+if (( api_level >= 37 )); then
+  # Ahead-of-time compilation avoids startup ANRs while this preview image is
+  # still doing first-boot dex work on the CI runner. Test assertions stay identical.
+  timeout 180 adb shell cmd package compile -m speed -f com.pittech.debug
+fi
+
 instrumentation_target="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
 if [[ -z "$instrumentation_target" ]]; then
   echo "Could not find the installed PitTech instrumentation runner." >&2
@@ -244,7 +250,7 @@ echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (5 tests)' "$companion_test_output"
+grep -q 'OK (7 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"

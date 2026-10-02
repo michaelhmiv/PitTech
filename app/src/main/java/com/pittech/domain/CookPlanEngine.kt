@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /** Pure local guidance: actual timeline actions are the only anchors for physical stages. */
 data class PlanEvent(val id: String, val action: String, val dishId: String?, val at: Long)
-data class PlanReading(val dishId: String?, val fahrenheit: Double, val at: Long, val valid: Boolean = true, val type: String = "food")
+data class PlanReading(val dishId: String?, val fahrenheit: Double, val at: Long, val valid: Boolean = true, val type: String = "food", val probeName: String = "")
 data class StepProgress(val status: String = "pending", val eventIds: List<String> = emptyList(), val lastDoneAt: Long? = null,
     val snoozedUntil: Long? = null, val occurrence: Int = 0, val notifiedOccurrence: Int? = null, val skippedAnchorAt: Long? = null)
 data class CookPlan(val book: CookPlaybook, val dishIds: List<String>, val playbookId: String?, val paused: Boolean = false, val progress: Map<String, StepProgress> = emptyMap())
@@ -51,11 +51,11 @@ object CookPlanEngine {
             else -> null
         }
         val eligibleStage = when (s.action) { "food_on" -> currentStage == "prep"; "rest_start" -> currentStage in setOf("cooking", "removed"); "hold_start" -> currentStage in setOf("removed", "resting", "holding"); "dish_done" -> currentStage in setOf("removed", "resting", "holding"); else -> currentStage == s.stage }
-        val temperatureReady = readings.filter { it.valid && it.type in setOf("food", "food_probe") && (dishId == null || it.dishId == dishId) && now - it.at in 0..330_000 }.maxByOrNull { it.at }?.fahrenheit?.let { it >= (s.temperatureF ?: Double.MAX_VALUE) } == true
+        val temperatureReady = readings.filter { it.valid && it.type in setOf("food", "food_probe") && (s.probeName.isBlank() || it.probeName == s.probeName) && (dishId == null || it.dishId == dishId) && now - it.at in 0..330_000 }.maxByOrNull { it.at }?.fahrenheit?.let { it >= (s.temperatureF ?: Double.MAX_VALUE) } == true
         val primaryReady = when (s.trigger) { "manual" -> true; "temperature" -> if (lastActual != null && s.repeatMinutes != null) due != null && now >= due else temperatureReady; else -> due != null && now >= due }
         val ready = !plan.paused && p.status == "pending" && eligibleStage && primaryReady && (p.snoozedUntil == null || now >= p.snoozedUntil)
         EvaluatedStep(s, p, dishId, p.snoozedUntil?.let { snooze -> maxOf(snooze, due ?: snooze) } ?: due, ready,
-            if (!eligibleStage) "Waiting for ${s.stage}" else if (anchorTime == null && s.trigger in setOf("elapsed", "after_action")) "Waiting for ${PlaybookCodec.actions[anchor]}" else if (s.trigger == "temperature" && !temperatureReady) "Waiting for a fresh temperature" else null)
+            if (!eligibleStage) "Waiting for ${s.stage}" else if (anchorTime == null && s.trigger in setOf("elapsed", "after_action")) "Waiting for ${PlaybookCodec.actions[anchor]}" else if (s.trigger == "temperature" && !temperatureReady && !(lastActual != null && s.repeatMinutes != null)) "Waiting for a fresh temperature" else null)
     }
     fun satisfy(plan: CookPlan, step: PlaybookStep, event: PlanEvent): CookPlan {
         val p = plan.progress[step.id] ?: StepProgress()

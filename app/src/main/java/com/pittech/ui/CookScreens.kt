@@ -168,6 +168,7 @@ fun PitTechApp(
                 ) {
                     Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}")
                     Text("${draft.cookCount} cooks · ${draft.dishCount} dishes · ${draft.eventCount} log entries · ${draft.readingCount} readings · ${draft.resultCount} results · ${draft.photoCount} photos")
+                    if (draft.savedToolsCount > 0) Text("${draft.savedToolsCount} saved playbooks, plans, alerts, checklists or equipment records")
                     Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.")
                     if (draft.preferences != null) {
                         Text("This full backup also restores temperature, weight, and appearance preferences.")
@@ -216,6 +217,7 @@ fun PitTechApp(
     }
 
     if (isStartingCook) {
+        key(setupPreview) {
         StartCookScreen(
             saving = saving,
             saveError = saveError,
@@ -235,6 +237,7 @@ fun PitTechApp(
             onGrill = { (context.applicationContext as com.pittech.PitTechApplication).grillMonitor.selectDevice(it) },
             onSampling = viewModel::configureGrillSampling,
         )
+        }
         return
     }
 
@@ -504,6 +507,15 @@ private fun StartCookScreen(
     var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe4 by rememberSaveable { mutableStateOf<String?>(null) }
     var smoker by rememberSaveable { mutableStateOf(initialDraft?.smokerName.orEmpty()) }
+    val prepApp = LocalContext.current.applicationContext as com.pittech.PitTechApplication
+    var maintenanceNote by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(smoker, equipmentProfiles) {
+        maintenanceNote = null
+        if (equipmentProfiles.any { it.name.equals(smoker.trim(), true) }) {
+            val summary = prepApp.preparationRepository.summaries().firstOrNull { it.profile.name.equals(smoker.trim(), true) }
+            if (summary?.maintenanceDue == true) maintenanceNote = "Maintenance is due for ${summary.profile.name}. Review My equipment in Devices after cleaning."
+        }
+    }
     var setpoint by rememberSaveable { mutableStateOf(initialDraft?.setpointText.orEmpty()) }
     var setpointUnit by rememberSaveable { mutableStateOf(initialDraft?.setpointUnit ?: preferredTemperatureUnit) }
     var notes by rememberSaveable { mutableStateOf(initialDraft?.notes.orEmpty()) }
@@ -685,6 +697,7 @@ private fun StartCookScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cook-smoker"),
             )
+            maintenanceNote?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = setpoint,

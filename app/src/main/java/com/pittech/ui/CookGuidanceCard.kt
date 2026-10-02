@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.pittech.ui
 
 import android.Manifest
@@ -17,6 +19,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import com.pittech.CooksViewModel
 import com.pittech.CookGuidanceNotifications
 import com.pittech.PitTechApplication
@@ -38,10 +42,11 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     LaunchedEffect(data.cook.id) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var preciseTimers by remember { mutableStateOf(context.getSharedPreferences("pittech-preferences", 0).getBoolean("precise-cook-timers", false)) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val plan = remember(record?.payload) { record?.let { CookPlanEngine.decode(it.payload) } }
     val events = remember(data.events) { data.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) } }
-    val readings = remember(data.readings) { data.readings.map { PlanReading(it.dishId, CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType) } }
+    val readings = remember(data.readings) { data.readings.map { PlanReading(it.dishId, CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType, it.probeName) } }
     val evaluated = plan?.let { CookPlanEngine.evaluate(it, events, readings, now) }.orEmpty()
     val next = evaluated.firstOrNull { it.ready } ?: evaluated.filter { it.progress.status == "pending" && it.waitingFor == null }.minByOrNull { it.dueAt ?: Long.MAX_VALUE }
     if (record == null) {
@@ -58,7 +63,7 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
             TextButton(onClick = { show = true }, modifier = Modifier.heightIn(min = 48.dp).testTag("view-plan")) { Text("View plan") }
         }
     }
-    editing?.let { s -> StepEditor(s, plan?.book?.draft?.dishes ?: data.dishes.map { DishDraft(it.name, it.foodType) }, { editing = null }) { viewModel.updateGuidanceStep(data.cook.id, it); editing = null } }
+    editing?.let { s -> StepEditor(s, plan?.book?.draft?.dishes ?: data.dishes.map { DishDraft(it.name, it.foodType) }, { editing = null }, probeNames = (data.probes.filter { it.measurementType == "food_probe" }.map { it.name } + data.readings.filter { it.measurementType in setOf("food", "food_probe") }.map { it.probeName }).distinct(), otherSteps = plan?.book?.steps.orEmpty()) { viewModel.updateGuidanceStep(data.cook.id, it); editing = null } }
     removing?.let { e -> AlertDialog(onDismissRequest = { removing = null }, title = { Text("Remove ${data.dishes.firstOrNull { it.id == e.dishId }?.name.orEmpty()}?") }, text = { Text("Confirm when the food leaves the smoker. You can start its rest now.") }, confirmButton = { TextButton(onClick = { viewModel.completeGuidanceStep(data.cook.id, e, rest = true); removing = null }) { Text("Removed · start rest") } }, dismissButton = { TextButton(onClick = { viewModel.completeGuidanceStep(data.cook.id, e); removing = null }) { Text("Removed only") } }) }
     skipping?.let { e -> AlertDialog(onDismissRequest = { skipping = null }, title = { Text("Skip ${e.step.title}?") }, text = { Text("Skipping records no physical action. If later steps depend on this action, choose whether to use the current time as their planning anchor.") }, confirmButton = { TextButton(onClick = { viewModel.skipGuidance(data.cook.id, e.step.id, false); skipping = null }) { Text("Skip") } }, dismissButton = { TextButton(onClick = { viewModel.skipGuidance(data.cook.id, e.step.id, true); skipping = null }) { Text("Skip · use now for later steps") } }) }
     if (show && plan != null) ModalBottomSheet(onDismissRequest = { show = false }) {
@@ -72,11 +77,14 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
                 if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
             }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Enable cook reminders") }
-            TextButton(onClick = {
-                context.getSharedPreferences("pittech-preferences", 0).edit().putBoolean("precise-cook-timers", true).apply()
-                if (Build.VERSION.SDK_INT >= 31 && !CookGuidanceNotifications.preciseAvailable(context)) runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))) }
-            }) { Text(if (CookGuidanceNotifications.preciseAvailable(context)) "Use precise timers" else "Allow precise timers (optional)") }
-            if (!CookGuidanceNotifications.preciseAvailable(context)) Text("Android may delay reminders. Your plan stays available here.", style = MaterialTheme.typography.bodySmall)
+            Row {
+                Switch(preciseTimers, { enabled ->
+                    preciseTimers = enabled; viewModel.setPreciseCookTimers(data.cook.id, enabled)
+                    if (enabled && Build.VERSION.SDK_INT >= 31 && !CookGuidanceNotifications.preciseAvailable(context)) runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))) }
+                }, modifier = Modifier.semantics { contentDescription = "Precise cook timers" })
+                Text("Precise timers (optional)", Modifier.weight(1f).padding(top = 12.dp))
+            }
+            if (!preciseTimers || !CookGuidanceNotifications.preciseAvailable(context)) Text("Android may delay reminders. Your plan stays available here.", style = MaterialTheme.typography.bodySmall)
             data.dishes.forEach { dish ->
                 val stage = CookPlanEngine.stage(events, dish.id)
                 Text("${dish.name} · $stage", style = MaterialTheme.typography.titleMedium)
@@ -88,12 +96,15 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
                 e.dishId?.let { id -> Text(data.dishes.firstOrNull { it.id == id }?.name.orEmpty()) }
                 Text(if (e.progress.status != "pending") e.progress.status else e.waitingFor ?: stepDescription(e.step))
                 if (e.step.instructions.isNotBlank()) Text(e.step.instructions)
+                ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication, e.step.action, e.step.dishIndex)
                 if (e.progress.status == "pending") {
                     OutlinedButton(onClick = { if (e.step.action == "remove" && e.dishId != null) removing = e else viewModel.completeGuidanceStep(data.cook.id, e) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done · ${e.step.title}") }
-                    Row { TextButton(onClick = { viewModel.snoozeGuidance(data.cook.id, e) }) { Text("Snooze 10 min") }; TextButton(onClick = { skipping = e }) { Text("Skip") }; TextButton(onClick = { editing = e.step }) { Text("Edit") } }
+                    FlowRow { TextButton(onClick = { viewModel.snoozeGuidance(data.cook.id, e) }) { Text("Snooze 10 min") }; TextButton(onClick = { skipping = e }) { Text("Skip") }; TextButton(onClick = { editing = e.step }) { Text("Edit") } }
                 }
             }
             OutlinedButton(onClick = { editing = PlaybookStep() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add step") }
+            CookChecklistTools(data, viewModel)
+            ReferenceComparisonTools(data, viewModel)
             ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication)
             Spacer(Modifier.height(24.dp))
         }
@@ -101,10 +112,10 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
 }
 
 @Composable
-private fun ReferencePhotos(id: String?, app: PitTechApplication) {
-    var photos by remember(id) { mutableStateOf(emptyList<CompanionPhoto>()) }
+private fun ReferencePhotos(id: String?, app: PitTechApplication, action: String? = null, dishIndex: Int? = null) {
+    var photos by remember(id, action, dishIndex) { mutableStateOf(emptyList<CompanionPhoto>()) }
     var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(id) { photos = id?.let { app.companionRepository.photos(it) }.orEmpty() }
+    LaunchedEffect(id, action, dishIndex) { photos = id?.let { app.companionRepository.photos(it) }.orEmpty().filter { photo -> action == null || photo.action?.let(PlaybookCodec::action) == action && (dishIndex == null || photo.dishIndex == dishIndex) } }
     if (photos.isNotEmpty()) {
         TextButton(onClick = { expanded = !expanded }) { Text("Reference photos · ${photos.size}") }
         if (expanded) photos.forEach { photo ->

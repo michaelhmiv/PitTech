@@ -18,6 +18,8 @@ data class PlaybookStep(
     val clockAtUtcMillis: Long? = null,
     val repeatMinutes: Long? = null,
     val stage: String = "cooking",
+    val sourceObservations: String = "",
+    val probeName: String = "",
 )
 
 data class PlaybookTarget(val dishIndex: Int?, val type: String, val value: Double, val unit: String, val explanation: String?)
@@ -43,13 +45,28 @@ object PlaybookCodec {
         require(book.draft.dishes.size <= 30 && book.steps.size <= 100) { "This playbook has too many dishes or steps." }
         require(book.steps.map { it.id }.distinct().size == book.steps.size) { "Each step needs its own ID." }
         book.steps.forEach { s ->
-            require(s.title.isNotBlank() && s.action in actions && s.trigger in triggers && s.stage in setOf("cooking", "resting", "holding")) { "Choose a valid action and trigger for each step." }
+            require(s.id.matches(Regex("[A-Za-z0-9_-]{1,100}"))) { "Each step needs a valid ID." }
+            require(s.title.isNotBlank() && s.action in actions && s.trigger in triggers && s.stage in setOf("prep", "cooking", "resting", "holding")) { "Choose a valid action and trigger for each step." }
             require(s.dishIndex == null || s.dishIndex in book.draft.dishes.indices) { "Choose a dish for this step." }
             require(s.minutes in 0..100_800 && (s.repeatMinutes == null || s.repeatMinutes in 1..10_080)) { "Use a positive interval, up to a week." }
             require(s.trigger != "temperature" || s.temperatureF?.let { it.isFinite() && it in 32.0..600.0 } == true) { "Enter a temperature between 32 and 600 °F." }
             require(s.trigger != "clock" || s.clockAtUtcMillis != null) { "Choose a time for this step." }
             require(s.anchor in actions) { "Choose an anchor action." }
         }
+        val dependencies = book.steps.mapIndexedNotNull { index, step ->
+            if (step.trigger != "after_action") return@mapIndexedNotNull null
+            val providers = book.steps.withIndex().filter { (i, candidate) -> i != index && candidate.action == step.anchor && (candidate.dishIndex == step.dishIndex || candidate.dishIndex == null) }
+            val provider = providers.lastOrNull { it.index < index } ?: providers.firstOrNull()
+            require(provider != null || step.action != step.anchor || step.repeatMinutes != null) { "${step.title} depends on itself. Choose another action or a recurring check." }
+            provider?.let { step.id to it.value.id }
+        }.toMap()
+        val visiting = mutableSetOf<String>(); val visited = mutableSetOf<String>()
+        fun visit(id: String) {
+            if (id in visited) return
+            require(visiting.add(id)) { "Steps depend on each other in a loop. Use Food on or an independent action as the anchor." }
+            dependencies[id]?.let(::visit); visiting.remove(id); visited.add(id)
+        }
+        book.steps.forEach { visit(it.id) }
         require(book.targets.all { it.value.isFinite() && it.unit in setOf("°F", "°C") && (it.dishIndex == null || it.dishIndex in book.draft.dishes.indices) }) { "A target is invalid." }
     }
     fun encode(book: CookPlaybook): String {
@@ -66,8 +83,8 @@ object PlaybookCodec {
             objects(o, "targets").map { PlaybookTarget(it.nullInt("dish"), it.getString("type"), it.getDouble("value"), it.getString("unit"), it.nullString("explanation")) },
             o.nullString("sourceCookId"), o.optInt("revision", 1), o.nullString("previousRevisionId"), o.optString("keepDoing"), o.optString("changeNextTime")).also(::validate)
     }
-    fun stepJson(s: PlaybookStep) = JSONObject().put("id", s.id).put("dish", s.dishIndex).put("action", s.action).put("title", s.title).put("instructions", s.instructions).put("trigger", s.trigger).put("minutes", s.minutes).put("temperatureF", s.temperatureF).put("anchor", s.anchor).put("clock", s.clockAtUtcMillis).put("repeat", s.repeatMinutes).put("stage", s.stage)
-    fun step(o: JSONObject) = PlaybookStep(o.getString("id"), o.nullInt("dish"), o.getString("action"), o.getString("title"), o.optString("instructions"), o.optString("trigger", "manual"), o.optLong("minutes"), if (o.isNull("temperatureF")) null else o.getDouble("temperatureF"), o.optString("anchor", "food_on"), if (o.isNull("clock")) null else o.getLong("clock"), if (o.isNull("repeat")) null else o.getLong("repeat"), o.optString("stage", "cooking"))
+    fun stepJson(s: PlaybookStep) = JSONObject().put("id", s.id).put("dish", s.dishIndex).put("action", s.action).put("title", s.title).put("instructions", s.instructions).put("trigger", s.trigger).put("minutes", s.minutes).put("temperatureF", s.temperatureF).put("anchor", s.anchor).put("clock", s.clockAtUtcMillis).put("repeat", s.repeatMinutes).put("stage", s.stage).put("observations", s.sourceObservations).put("probeName", s.probeName)
+    fun step(o: JSONObject) = PlaybookStep(o.getString("id"), o.nullInt("dish"), o.getString("action"), o.getString("title"), o.optString("instructions"), o.optString("trigger", "manual"), o.optLong("minutes"), if (o.isNull("temperatureF")) null else o.getDouble("temperatureF"), o.optString("anchor", "food_on"), if (o.isNull("clock")) null else o.getLong("clock"), if (o.isNull("repeat")) null else o.getLong("repeat"), o.optString("stage", "cooking"), o.optString("observations"), o.optString("probeName"))
     fun draftJson(d: NewCookDraft): JSONObject = JSONObject().put("title", d.title).put("smoker", d.smokerName).put("setpoint", d.setpointText).put("unit", d.setpointUnit).put("notes", d.notes).put("fuel", d.fuelType).put("wood", d.woodOrPelletBlend).put("dishes", JSONArray(d.dishes.map { x -> JSONObject().put("name", x.name).put("foodType", x.foodType).put("cut", x.cut).put("weight", x.weightText).put("weightUnit", x.weightUnit).put("startingCondition", x.startingCondition).put("boneIn", x.boneIn).put("placement", x.placement).put("grade", x.gradeOrSource).put("thickness", x.thicknessNotes).put("prep", x.prepNotes).put("ingredients", JSONArray(x.preparationItems.map { i -> JSONObject().put("name", i.name).put("stage", i.stage).put("brand", i.brand).put("amount", i.amountText).put("unit", i.amountUnit) })) }))
     fun draft(o: JSONObject) = NewCookDraft(title = o.getString("title"), smokerName = o.optString("smoker"), setpointText = o.optString("setpoint"), setpointUnit = o.optString("unit", "°F"), notes = o.optString("notes"), fuelType = o.optString("fuel"), woodOrPelletBlend = o.optString("wood"), dishes = objects(o, "dishes").map { x -> DishDraft(x.getString("name"), x.getString("foodType"), x.optString("cut"), x.optString("weight"), x.optString("weightUnit", "lb"), x.nullString("startingCondition"), if (x.isNull("boneIn")) null else x.getBoolean("boneIn"), x.optString("placement"), x.optString("grade"), x.optString("thickness"), x.optString("prep"), objects(x, "ingredients").map { i -> IngredientDraft(i.getString("name"), i.optString("stage", "seasoning"), i.optString("brand"), i.optString("amount"), i.optString("unit", "tbsp")) }) })
     fun objects(o: JSONObject, key: String): List<JSONObject> = o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()

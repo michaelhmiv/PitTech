@@ -158,7 +158,7 @@ class CooksViewModel(
     fun recordEquipmentFuel(entry: com.pittech.domain.FuelEntry, onFinished: (Boolean) -> Unit) = perform({ app.preparationRepository.addFuel(entry); _equipmentSummaries.value = app.preparationRepository.summaries() }, onFinished)
     fun completeMaintenance(id: String) = perform { app.preparationRepository.maintained(id); _equipmentSummaries.value = app.preparationRepository.summaries() }
     fun createCookChecklist(cookId: String) = perform { app.preparationRepository.createChecklist(cookId) }
-    fun saveCookChecklist(cookId: String, items: List<com.pittech.domain.ChecklistItem>) = perform { app.preparationRepository.saveChecklist(cookId, items) }
+    fun saveCookChecklist(cookId: String, items: List<com.pittech.domain.ChecklistItem>, onFinished: (Boolean) -> Unit) = perform({ app.preparationRepository.saveChecklist(cookId, items) }, onFinished)
     fun checkPrepItem(cookId: String, itemId: String, done: Boolean) = perform { app.preparationRepository.check(cookId, itemId, done) }
 
     fun toggleCookFavorite(cookId: String, favorite: Boolean) = perform { repository.setFavorite(cookId, favorite) }
@@ -184,7 +184,11 @@ class CooksViewModel(
         }
     }
     fun closeServePlan() { _servePlanEditor.value = null }
-    fun saveServePlan(plan: com.pittech.domain.ServePlan) = perform { app.servePlanRepository.save(plan, editingServePlanId); _servePlanEditor.value = null; _notice.value = "Cook saved for later. Recording starts only when you start the cook." }
+    fun saveServePlan(plan: com.pittech.domain.ServePlan) = perform {
+        val id = app.servePlanRepository.save(plan, editingServePlanId)
+        if (_setupPreview.value?.scheduledPlanId == id) _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
+        _servePlanEditor.value = null; _notice.value = "Cook saved for later. Recording starts only when you start the cook."
+    }
     fun previewScheduledCook(id: String) = perform {
         val plan = com.pittech.domain.ServeTimePlanner.decode(app.companionRepository.get(id)?.payload ?: error("Scheduled cook not found."))
         _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
@@ -192,7 +196,7 @@ class CooksViewModel(
     }
     fun deleteScheduledCook(id: String) = perform { app.companionRepository.delete(id) }
 
-    fun saveCookAlert(cookId: String, title: String, rule: com.pittech.domain.CookAlertRule, useTimedMonitoring: Boolean = false) = perform {
+    fun saveCookAlert(cookId: String, title: String, rule: com.pittech.domain.CookAlertRule, useTimedMonitoring: Boolean = false, onFinished: (Boolean) -> Unit = {}) = perform({
         if (useTimedMonitoring) {
             val current = app.database.recordingDao().getRecording(cookId) ?: error("Attach a grill before enabling background monitoring.")
             app.recordingRepository.configureSampling(cookId, com.pittech.devices.GrillSamplingPolicy(com.pittech.devices.GrillSamplingMode.PERIODIC, current.samplingIntervalMillis))
@@ -200,13 +204,17 @@ class CooksViewModel(
         }
         app.alertRepository.save(cookId, title, rule)
         _notice.value = "Alert saved. Manual entries are evaluated when you log them."
-    }
+    }, onFinished)
     fun changeCookAlert(id: String, action: String) = perform {
         app.alertRepository.change(id, action)
         com.pittech.CookAlertNotifications.cancel(context, id)
     }
 
     fun beginGuidance(cookId: String) = perform { app.companionRepository.beginPlan(cookId) }
+    fun setPreciseCookTimers(cookId: String, enabled: Boolean) = perform {
+        context.getSharedPreferences("pittech-preferences", 0).edit().putBoolean("precise-cook-timers", enabled).apply()
+        app.companionRepository.reconcile(context, cookId)
+    }
     fun updateGuidanceStep(cookId: String, step: com.pittech.domain.PlaybookStep) = perform { app.companionRepository.updateStep(cookId, step) }
     fun pauseGuidance(cookId: String, paused: Boolean) = perform { app.companionRepository.setPaused(cookId, paused) }
     fun completeGuidanceStep(cookId: String, step: com.pittech.domain.EvaluatedStep, rest: Boolean = false) = perform {
@@ -344,6 +352,7 @@ class CooksViewModel(
     }
 
     fun deleteDish(dish: DishEntity) = perform {
+        cancelCompanionNotifications(dish.cookId, dish.id)
         repository.deleteDish(dish)
         _notice.value = "Dish deleted. Cook-level notes and timeline entries remain."
     }
@@ -537,10 +546,19 @@ class CooksViewModel(
     }
 
     fun deleteCook(cook: com.pittech.data.CookEntity) = perform {
+        cancelCompanionNotifications(cook.id)
+        app.database.cookDao().getAllReminders().filter { it.cookId == cook.id }.forEach { CookReminderNotifications.cancel(context, it.id, cook.id) }
         repository.deleteCook(cook)
         reconcileRecording()
         closeCook()
         _notice.value = "Cook deleted."
+    }
+
+    private suspend fun cancelCompanionNotifications(cookId: String, dishId: String? = null) {
+        app.database.companionDao().forCook(cookId).forEach { r -> when (r.kind) {
+            "plan" -> com.pittech.domain.CookPlanEngine.decode(r.payload).let { plan -> plan.book.steps.filter { dishId == null || it.dishIndex?.let { i -> plan.dishIds[i] } == dishId }.forEach { CookGuidanceNotifications.cancel(context, cookId, it.id) } }
+            "alert" -> if (dishId == null || com.pittech.domain.CookAlertEngine.decode(r.payload).first.dishId == dishId) { CookGuidanceNotifications.cancelAlarm(context, cookId, r.id); CookAlertNotifications.cancel(context, r.id) }
+        } }
     }
 
     fun duplicateCookSetup(cookId: String) = perform {

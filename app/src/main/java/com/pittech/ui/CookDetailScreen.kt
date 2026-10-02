@@ -600,8 +600,8 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    playbookTools = { CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel) },
-                    preparationTools = { CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel) },
+                    playbookTools = { CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = true) },
+                    preparationTools = { CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = false) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
                             data, grillState, recordingRunning, busy,
@@ -794,7 +794,6 @@ private fun LiveCookTab(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         grillPanel()
-        playbookTools()
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -852,6 +851,7 @@ private fun LiveCookTab(
             }
         }
 
+        playbookTools()
         DashboardSectionPair(
             compact = useCompactDashboardGrid,
             testTag = "live-overview-grid",

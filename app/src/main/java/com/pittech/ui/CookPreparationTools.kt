@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.PitTechApplication
@@ -95,7 +97,7 @@ internal fun CookChecklistTools(data: CookDetailData, viewModel: CooksViewModel)
         Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Ingredients, supplies, and preparation notes for this cook.")
             items.forEach { item -> Row {
-                Checkbox(item.done, enabled = !busy, onCheckedChange = { viewModel.checkPrepItem(data.cook.id, item.id, it) })
+                Checkbox(item.done, enabled = !busy, onCheckedChange = { viewModel.checkPrepItem(data.cook.id, item.id, it) }, modifier = Modifier.semantics { contentDescription = item.text })
                 Text(item.text, Modifier.weight(1f).padding(top = 12.dp))
             } }
             TextButton(enabled = !busy, onClick = { draft = items; editing = true; addition = "" }, modifier = Modifier.testTag("prep-checklist-edit")) { Text("Edit list") }
@@ -112,7 +114,7 @@ internal fun CookChecklistTools(data: CookDetailData, viewModel: CooksViewModel)
             TextButton(onClick = { if (addition.isNotBlank()) { draft = draft + ChecklistItem(text = addition.trim()); addition = "" } }) { Text("Add item") }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(enabled = !busy && draft.all { it.text.isNotBlank() }, onClick = { viewModel.saveCookChecklist(data.cook.id, draft); editing = false }) { Text("Save list") } }, dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancel") } })
+    }, confirmButton = { TextButton(enabled = !busy && draft.all { it.text.isNotBlank() }, onClick = { viewModel.saveCookChecklist(data.cook.id, draft + if (addition.isNotBlank()) listOf(ChecklistItem(text = addition.trim())) else emptyList()) { if (it) editing = false } }) { Text("Save list") } }, dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancel") } })
 }
 
 @Composable
