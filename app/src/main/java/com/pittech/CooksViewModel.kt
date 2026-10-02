@@ -196,9 +196,10 @@ class CooksViewModel(
         occurredAt: Long,
         photoUri: String?,
         photoCaption: String?,
+        usePhotoCaptureTime: Boolean = false,
         onSaved: (eventId: String, photoAttached: Boolean) -> Unit,
     ) = performWithLogResult(onSaved) {
-        repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, occurredAt, photoUri, photoCaption)
+        repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, occurredAt, photoUri, photoCaption, usePhotoCaptureTime)
     }
 
     fun updateTimelineEvent(event: TimelineEventEntity) = perform {
@@ -330,8 +331,8 @@ class CooksViewModel(
         }
     }
 
-    fun attachPhotoToTimelineEvent(eventId: String, cookId: String, dishId: String?, photoUri: String, caption: String?) = perform {
-        repository.attachPhotoToTimelineEvent(eventId, cookId, dishId, photoUri, caption)
+    fun attachPhotoToTimelineEvent(eventId: String, cookId: String, dishId: String?, photoUri: String, caption: String?, usePhotoCaptureTime: Boolean = false) = perform {
+        repository.attachPhotoToTimelineEvent(eventId, cookId, dishId, photoUri, caption, usePhotoCaptureTime)
         _notice.value = "Photo attached to the cook log."
     }
 

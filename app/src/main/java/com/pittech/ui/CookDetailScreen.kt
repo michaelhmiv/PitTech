@@ -129,7 +129,7 @@ import java.util.Calendar
 import java.util.Locale
 
 private enum class CookTab(val label: String) { LIVE("Live"), TIMELINE("Timeline"), CHARTS("Charts") }
-private data class PhotoRetry(val eventId: String, val cookId: String, val dishId: String?, val uri: String, val caption: String?)
+private data class PhotoRetry(val eventId: String, val cookId: String, val dishId: String?, val uri: String, val caption: String?, val useCaptureTime: Boolean = false)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -296,7 +296,7 @@ fun CookDetailScreen(
             if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                 if (retryAvailable && retry != null) {
                     pendingPhotoRetry = null
-                    viewModel.attachPhotoToTimelineEvent(retry.eventId, retry.cookId, retry.dishId, retry.uri, retry.caption)
+                    viewModel.attachPhotoToTimelineEvent(retry.eventId, retry.cookId, retry.dishId, retry.uri, retry.caption, retry.useCaptureTime)
                 } else viewModel.undoLastDelete()
             }
             if (deletedEvent != null) viewModel.clearDeletedEvent()
@@ -359,7 +359,7 @@ fun CookDetailScreen(
                 showNewEvent = false
                 editEvent = null
             },
-            onSave = { type, title, details, occurred, dishId ->
+            onSave = { type, title, details, occurred, dishId, timeWasChosen ->
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
                 if (editEvent == null) {
@@ -367,8 +367,9 @@ fun CookDetailScreen(
                     val caption = logPhotoCaption.takeIf { it.isNotBlank() }
                     val entryType = if (photoEntryMode && type == "note") "photo" else type
                     val entryTitle = if (photoEntryMode && title == "Cook note") "Photo added" else title
-                    viewModel.addCookLogEntry(data.cook.id, dishId, entryType, entryTitle, details, occurred, uri, caption) { eventId, photoAttached ->
-                        if (!photoAttached && uri != null) pendingPhotoRetry = PhotoRetry(eventId, data.cook.id, dishId, uri, caption)
+                    val useCaptureTime = entryType == "photo" && !timeWasChosen
+                    viewModel.addCookLogEntry(data.cook.id, dishId, entryType, entryTitle, details, occurred, uri, caption, useCaptureTime) { eventId, photoAttached ->
+                        if (!photoAttached && uri != null) pendingPhotoRetry = PhotoRetry(eventId, data.cook.id, dishId, uri, caption, useCaptureTime)
                         else pendingPhotoRetry = null
                     }
                     if (uri == null) pendingPhotoRetry = null
@@ -2069,7 +2070,7 @@ private fun TimelineEventDialog(
     onRemovePhoto: () -> Unit,
     onPhotoCaptionChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, String?, Long, String?) -> Unit,
+    onSave: (String, String, String?, Long, String?, Boolean) -> Unit,
 ) {
     val dialogFocusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -2077,6 +2078,7 @@ private fun TimelineEventDialog(
     var title by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.title ?: if (photoEntryMode) "Photo added" else if (initialType == "note") "Cook note" else initialType.replace('_', ' ').replaceFirstChar { it.uppercase() }) }
     var details by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.details.orEmpty()) }
     var time by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.occurredAtUtcMillis ?: System.currentTimeMillis()) }
+    var timeWasChosen by rememberSaveable(draftKey, event?.id) { mutableStateOf(event != null) }
     val defaultDishId = dishes.singleOrNull()?.id ?: "whole"
     var dishId by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.dishId ?: defaultDishId) }
     var showMoreDetails by rememberSaveable(draftKey, event?.id) { mutableStateOf(event != null) }
@@ -2124,7 +2126,7 @@ private fun TimelineEventDialog(
                         }
                     }, testTag = "timeline-entry-type")
                     SimpleDropdownField("For", dishId.takeUnless { it == "whole" }?.let { id -> dishes.firstOrNull { it.id == id }?.name } ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { selected -> dishId = dishes.firstOrNull { it.name == selected }?.id ?: "whole" })
-                    DateTimePickerField("Occurred at", time, { time = it }, "timeline-entry-time")
+                    DateTimePickerField("Occurred at", time, { time = it; timeWasChosen = true }, "timeline-entry-time")
                 }
             }
         },
@@ -2133,7 +2135,7 @@ private fun TimelineEventDialog(
                 if (title.isNotBlank()) {
                     dialogFocusManager.clearFocus(force = true)
                     keyboardController?.hide()
-                    onSave(type, title.trim(), details.trim().ifBlank { null }, time, dishId.takeUnless { it == "whole" })
+                    onSave(type, title.trim(), details.trim().ifBlank { null }, time, dishId.takeUnless { it == "whole" }, timeWasChosen)
                 }
             }, enabled = event != null || type != "note" || details.isNotBlank() || photoUri != null, modifier = Modifier.testTag("timeline-entry-save")) { Text("Save entry") }
         },

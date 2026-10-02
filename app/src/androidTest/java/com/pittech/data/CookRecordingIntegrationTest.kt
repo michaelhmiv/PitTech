@@ -107,6 +107,14 @@ class CookRecordingIntegrationTest {
             assertNull(unknown.temperatureContextJson)
             assertNull(db.cookDao().getTimelineEvent(unknown.eventId!!)!!.temperatureContextJson)
         } finally { gallery.delete() }
+        val selectedTime = System.currentTimeMillis() - 5_000L
+        val chosenCamera = CameraPhotoFiles.create(context)
+        Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { chosenCamera.outputStream().use { compress(Bitmap.CompressFormat.JPEG, 90, it) }; recycle() }
+        chosenCamera.setLastModified(base + 5_000)
+        val chosenEntry = cooks.addTimelineEventWithPhoto(id, null, "photo", "Chosen entry time", null,
+            selectedTime, CameraPhotoFiles.uri(context, chosenCamera).toString(), null, usePhotoCaptureTime = false)
+        assertTrue(chosenEntry.photoAttached)
+        assertEquals(selectedTime, chosenEntry.event.occurredAtUtcMillis)
         val revised = event.copy(occurredAtUtcMillis = base - 3_600_000L)
         cooks.updateTimelineEvent(revised)
         assertNull(db.cookDao().getTimelineEvent(event.id)!!.temperatureContextJson)

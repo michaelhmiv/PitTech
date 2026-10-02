@@ -407,10 +407,11 @@ class CookRepository(
         occurredAtUtcMillis: Long,
         photoUri: String?,
         photoCaption: String?,
+        usePhotoCaptureTime: Boolean = false,
     ): CookLogSaveResult {
         val event = addTimelineEvent(cookId, dishId, eventType, title, details, occurredAtUtcMillis)
         val attached = if (photoUri == null) true else try {
-            attachPhotoToTimelineEvent(event.id, cookId, dishId, photoUri, photoCaption)
+            attachPhotoToTimelineEvent(event.id, cookId, dishId, photoUri, photoCaption, usePhotoCaptureTime)
             true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -426,6 +427,7 @@ class CookRepository(
         dishId: String?,
         uri: String,
         caption: String?,
+        usePhotoCaptureTime: Boolean = false,
     ): PhotoEntity {
         val event = dao.getTimelineEvent(eventId) ?: error("This timeline entry is no longer available.")
         require(event.cookId == cookId) { "A photo can only be attached to an entry in the same cook." }
@@ -435,9 +437,9 @@ class CookRepository(
             val photo = copied.copy(temperatureContextJson = copied.capturedAtUtcMillis?.let { temperatureContext(cookId, it, copied.dishId) })
             database.withTransaction {
                 dao.insertPhotos(listOf(photo))
-                if (event.eventType == "photo" && kotlin.math.abs(event.occurredAtUtcMillis - event.recordedAtUtcMillis) <= 60_000L) {
+                if (event.eventType == "photo" && usePhotoCaptureTime) {
                     // Default photo entries follow known capture time. Unknown gallery dates do
-                    // not get today's temperatures. An explicitly backdated event keeps its time.
+                    // not get today's temperatures. A user-selected entry time is preserved.
                     dao.updateTimelineEvent(event.copy(occurredAtUtcMillis = photo.capturedAtUtcMillis ?: event.occurredAtUtcMillis,
                         temperatureContextJson = photo.temperatureContextJson, updatedAtUtcMillis = System.currentTimeMillis()))
                 }
@@ -454,7 +456,7 @@ class CookRepository(
 
     suspend fun addCookPhoto(cookId: String, uri: String, caption: String?): PhotoEntity {
         val event = addTimelineEvent(cookId, null, "photo", caption?.takeIf { it.isNotBlank() } ?: "Photo added", null, System.currentTimeMillis())
-        return attachPhotoToTimelineEvent(event.id, cookId, null, uri, caption)
+        return attachPhotoToTimelineEvent(event.id, cookId, null, uri, caption, usePhotoCaptureTime = true)
     }
 
     suspend fun saveCookResults(
