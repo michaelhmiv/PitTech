@@ -32,9 +32,11 @@ class PrimePolarisMonitorTest {
         var refreshCalls = 0
         var payload: PolarisPayload? = null
         var refreshFailure: PolarisFailure? = null
+        var refreshGate: CompletableDeferred<Unit>? = null
         val tokensUsed = mutableListOf<String>()
         override suspend fun refreshSession(session: PolarisSession): PolarisResult<PolarisSession> {
             refreshCalls++
+            refreshGate?.await()
             refreshFailure?.let { throw it }
             return PolarisResult(PolarisSession("renewed-token", 4_000_000L, session.selectedDeviceId, session.refreshToken))
         }
@@ -224,11 +226,18 @@ class PrimePolarisMonitorTest {
     }
 
     @Test fun restoredExpiredTraegerSessionRefreshesOnceAndPersistsWithoutPassword() = runBlocking {
-        val backend = Backend()
+        val renewal = CompletableDeferred<Unit>()
+        val backend = Backend().apply { refreshGate = renewal }
         val store = Store(PolarisSession("old-token", 999L, "private-id", "private-refresh"))
         val monitor = PrimePolarisMonitor(backend, store, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), now = { 1_000_000L }, provider = GrillProvider.TRAEGER)
         try {
-            monitor.setForeground(true)
+            monitor.setRecording(true)
+            waitFor { backend.refreshCalls == 1 }
+            assertEquals(PolarisPhase.DISCOVERING, monitor.state.value.phase)
+            assertTrue(monitor.state.value.authenticated)
+            assertTrue(monitor.state.value.devices.isEmpty())
+            assertEquals(0, backend.deviceCalls)
+            renewal.complete(Unit)
             waitFor { monitor.state.value.latest != null }
             assertEquals(1, backend.refreshCalls)
             assertEquals(listOf("renewed-token"), backend.tokensUsed)
