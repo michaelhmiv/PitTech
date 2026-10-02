@@ -119,5 +119,9 @@ class ConnectedGrillCookIntegrationTest {
         ingest(id, device, traeger(base + 91_000), base + 91_000)
         assertEquals(12, db.cookDao().getAllSensorReadings().size)
         assertEquals(1, db.cookDao().getAllTimelineEvents().count { it.eventType == "connection_restored" })
+        val backdated = cooks.addTimelineEvent(id, null, "note", "Earlier outage", null, base + 80_000)
+        assertNull(backdated.temperatureContextJson)
+        val restored = cooks.addTimelineEvent(id, null, "note", "Network restored", null, base + 92_000)
+        assertNotNull(restored.temperatureContextJson)
     }
 }

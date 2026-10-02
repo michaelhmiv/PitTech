@@ -26,3 +26,19 @@ internal data class GrillSamplingPolicy(
         fun validSampleInterval(interval: Long) = interval == 0L || interval in INTERVALS
     }
 }
+
+/** Retry-After can be seconds or an HTTP date; never shorten a valid server pause to five minutes. */
+internal object GrillRetryAfter {
+    fun parse(value: String?, now: Long = System.currentTimeMillis()): Long? {
+        val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            if (text.all(Char::isDigit)) {
+                val seconds = text.toLong()
+                Math.multiplyExact(seconds, 1000L).coerceAtMost(Long.MAX_VALUE - now.coerceAtLeast(0L))
+            } else {
+                val time = java.time.ZonedDateTime.parse(text, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+                (time - now).coerceAtLeast(0L)
+            }
+        }.getOrNull()
+    }
+}

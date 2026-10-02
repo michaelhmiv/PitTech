@@ -288,80 +288,80 @@ internal class PrimePolarisMonitor(
         val attemptGeneration = generation
         poller = scope.launch {
             try {
-            if (now() < retryNotBeforeMillis) pollWait(retryNotBeforeMillis - now())
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                if (attemptGeneration != generation) return@launch
-                if (current.expired(now())) {
-                    try {
-                        current = track(PolarisOperation.REFRESH_SESSION) { backend.refreshSession(current) }
-                        session = current
-                        saveSession()
-                    } catch (error: CancellationException) { throw error }
-                    catch (error: PolarisFailure) {
-                        if (error.kind == PolarisFailureKind.AUTH) { invalidateSession(error); return@launch }
-                        val count = state.value.consecutiveFailures + 1
-                        val pause = PolarisMonitorPolicy.nextDelay(count, error.retryAfterMillis, state.value.sampling.intervalMillis)
-                        if (error.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + pause
-                        mutableState.value = state.value.copy(readingRequestFailed = true, consecutiveFailures = count,
-                            message = error.message(provider), nextPollAtMillis = now() + pause)
-                        completion?.complete(null)
-                        if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
-                            mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
-                            return@launch
+                if (now() < retryNotBeforeMillis) pollWait(retryNotBeforeMillis - now())
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    if (attemptGeneration != generation) return@launch
+                    if (current.expired(now())) {
+                        try {
+                            current = track(PolarisOperation.REFRESH_SESSION) { backend.refreshSession(current) }
+                            session = current
+                            saveSession()
+                        } catch (error: CancellationException) { throw error }
+                        catch (error: PolarisFailure) {
+                            if (error.kind == PolarisFailureKind.AUTH) { invalidateSession(error); return@launch }
+                            val count = state.value.consecutiveFailures + 1
+                            val pause = PolarisMonitorPolicy.nextDelay(count, error.retryAfterMillis, state.value.sampling.intervalMillis)
+                            if (error.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + pause
+                            mutableState.value = state.value.copy(readingRequestFailed = true, consecutiveFailures = count,
+                                message = error.message(provider), nextPollAtMillis = now() + pause)
+                            completion?.complete(null)
+                            if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
+                                mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
+                                return@launch
+                            }
+                            pollWait(pause)
+                            continue
                         }
-                        pollWait(pause)
-                        continue
                     }
-                }
-                mutableState.value = state.value.copy(phase = PolarisPhase.MONITORING, busy = false, nextPollAtMillis = null, readingRequestFailed = false)
-                var failure: PolarisFailure? = null
-                var received: PolarisSample? = null
-                if (backend.hasSeparateStatusRead) try {
-                    val status = track(PolarisOperation.STATUS) { backend.status(current, id) }
-                    mutableState.value = state.value.copy(onlineStatus = status.values["onlineStatus"]?.toInt(), statusFetchedAtMillis = now())
-                } catch (error: CancellationException) { throw error }
-                catch (error: PolarisFailure) { failure = error }
-                if (failure?.kind == PolarisFailureKind.AUTH) { invalidateSession(failure); return@launch }
-                if (failure?.kind != PolarisFailureKind.RATE_LIMIT) {
-                    try {
-                        val readings = track(PolarisOperation.READINGS) { backend.readings(current, id) }
-                        val sample = PolarisSample(now(), readings, state.value.sampling.sampleIntervalMillis)
-                        val reported = readings.reportedAtMillis
-                        val stale = reported?.let { now() - it > 45_000L || it - now() > 300_000L } == true
-                        val repeated = reported != null && state.value.latest?.payload?.reportedAtMillis?.let { reported <= it } == true
-                        if (!stale && !repeated) received = sample
-                        mutableState.value = state.value.copy(
-                            latest = if (stale || repeated) state.value.latest else sample,
-                            samples = if (stale || repeated) state.value.samples else (state.value.samples + sample).takeLast(120), readingRequestFailed = stale,
-                            onlineStatus = readings.values["onlineStatus"]?.toInt() ?: state.value.onlineStatus,
-                            statusFetchedAtMillis = if (readings.values.containsKey("onlineStatus")) now() else state.value.statusFetchedAtMillis,
-                        )
-                        if (stale) failure = PolarisFailure(PolarisFailureKind.SCHEMA)
+                    mutableState.value = state.value.copy(phase = PolarisPhase.MONITORING, busy = false, nextPollAtMillis = null, readingRequestFailed = false)
+                    var failure: PolarisFailure? = null
+                    var received: PolarisSample? = null
+                    if (backend.hasSeparateStatusRead) try {
+                        val status = track(PolarisOperation.STATUS) { backend.status(current, id) }
+                        mutableState.value = state.value.copy(onlineStatus = status.values["onlineStatus"]?.toInt(), statusFetchedAtMillis = now())
                     } catch (error: CancellationException) { throw error }
-                    catch (error: PolarisFailure) {
-                        failure = error
-                        mutableState.value = state.value.copy(readingRequestFailed = true)
+                    catch (error: PolarisFailure) { failure = error }
+                    if (failure?.kind == PolarisFailureKind.AUTH) { invalidateSession(failure); return@launch }
+                    if (failure?.kind != PolarisFailureKind.RATE_LIMIT) {
+                        try {
+                            val readings = track(PolarisOperation.READINGS) { backend.readings(current, id) }
+                            val sample = PolarisSample(now(), readings, state.value.sampling.sampleIntervalMillis)
+                            val reported = readings.reportedAtMillis
+                            val stale = reported?.let { now() - it > 45_000L || it - now() > 300_000L } == true
+                            val repeated = reported != null && state.value.latest?.payload?.reportedAtMillis?.let { reported <= it } == true
+                            if (!stale && !repeated) received = sample
+                            mutableState.value = state.value.copy(
+                                latest = if (stale || repeated) state.value.latest else sample,
+                                samples = if (stale || repeated) state.value.samples else (state.value.samples + sample).takeLast(120), readingRequestFailed = stale,
+                                onlineStatus = readings.values["onlineStatus"]?.toInt() ?: state.value.onlineStatus,
+                                statusFetchedAtMillis = if (readings.values.containsKey("onlineStatus")) now() else state.value.statusFetchedAtMillis,
+                            )
+                            if (stale) failure = PolarisFailure(PolarisFailureKind.SCHEMA)
+                        } catch (error: CancellationException) { throw error }
+                        catch (error: PolarisFailure) {
+                            failure = error
+                            mutableState.value = state.value.copy(readingRequestFailed = true)
+                        }
                     }
+                    if (failure?.kind == PolarisFailureKind.AUTH) { invalidateSession(failure); return@launch }
+                    val failures = if (failure == null) 0 else state.value.consecutiveFailures + 1
+                    val delayMillis = PolarisMonitorPolicy.nextDelay(failures, failure?.retryAfterMillis, state.value.sampling.intervalMillis)
+                    if (failure?.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + delayMillis
+                    mutableState.value = state.value.copy(
+                        consecutiveFailures = failures, nextPollAtMillis = now() + delayMillis,
+                        message = failure?.message(provider) ?: "Collection: ${state.value.sampling.label}.",
+                    )
+                    completion?.complete(received?.takeIf { !state.value.readingsAreOld(now()) })
+                    if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
+                        mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
+                        return@launch
+                    }
+                    pollWait(delayMillis)
                 }
-                if (failure?.kind == PolarisFailureKind.AUTH) { invalidateSession(failure); return@launch }
-                val failures = if (failure == null) 0 else state.value.consecutiveFailures + 1
-                val delayMillis = PolarisMonitorPolicy.nextDelay(failures, failure?.retryAfterMillis, state.value.sampling.intervalMillis)
-                if (failure?.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + delayMillis
-                mutableState.value = state.value.copy(
-                    consecutiveFailures = failures, nextPollAtMillis = now() + delayMillis,
-                    message = failure?.message(provider) ?: "Collection: ${state.value.sampling.label}.",
-                )
-                completion?.complete(received?.takeIf { !state.value.readingsAreOld(now()) })
-                if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
-                    mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
-                    return@launch
-                }
-                pollWait(delayMillis)
-            }
             } finally {
                 completion?.complete(null)
-                if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) backend.disconnect()
+                if (state.value.sampling.mode == GrillSamplingMode.ON_LOG && generation == attemptGeneration) backend.disconnect()
             }
         }
     }

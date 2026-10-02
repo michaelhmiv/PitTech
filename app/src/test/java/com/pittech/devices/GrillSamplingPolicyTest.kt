@@ -32,4 +32,13 @@ class GrillSamplingPolicyTest {
         assertEquals(45_000L, GrillSamplingPolicy.receiptWindow(15_000))
         assertEquals(90_000L, GrillSamplingPolicy.receiptWindow(60_000))
     }
+    @Test fun serverRetryAfterSupportsLongPausesAndHttpDatesWithoutOverflow() {
+        assertEquals(900_000L, GrillRetryAfter.parse("900", 0L))
+        assertEquals(60_000L, GrillRetryAfter.parse("Thu, 1 Jan 1970 00:01:00 GMT", 0L))
+        assertEquals(0L, GrillRetryAfter.parse("Thu, 1 Jan 1970 00:01:00 GMT", 120_000L))
+        assertNull(GrillRetryAfter.parse("-1"))
+        assertNull(GrillRetryAfter.parse("9223372036854775807"))
+        assertNull(GrillRetryAfter.parse("bad"))
+    }
+
 }

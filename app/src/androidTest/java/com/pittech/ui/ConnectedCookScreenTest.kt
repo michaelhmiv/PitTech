@@ -9,8 +9,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.assertTextContains
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.pittech.CookRecordingService
@@ -119,6 +117,14 @@ class ConnectedCookScreenTest {
         assertFalse(app.recordingServiceRunning.value)
         assertNull(fake!!.state.value.nextPollAtMillis)
         assertEquals(com.pittech.data.CookRecordingEntity.RECORDING, runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording()!!.status })
+        backend.failure = PolarisFailure(PolarisFailureKind.AUTH, apiCode = -10108)
+        compose.onNodeWithTag("cook-quick-meat_on").performClick()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "meat_on" } } }
+        assertNull(runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording() })
+        assertNull(fake!!.state.value.lockedDeviceId)
+        assertFalse(fake!!.state.value.authenticated)
+        assertFalse(app.recordingServiceRunning.value)
     }
 
 }

@@ -24,6 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.pittech.data.CookDetailData
 import com.pittech.data.CookRecordingEntity
 import com.pittech.data.CookStatus
@@ -102,7 +105,12 @@ internal fun StartGrillRecordingPanel(state: PolarisMonitorState, enabled: Boole
 internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, running: Boolean, busy: Boolean, onAttach: () -> Unit, onResume: () -> Unit, onPause: () -> Unit, onStop: () -> Unit, onAssign: (String, String?) -> Unit, onSampling: (GrillSamplingPolicy) -> Unit = {}, onReadNow: () -> Unit = {}) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var assignmentsOpen by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000L) } }
+    val owner = LocalLifecycleOwner.current
+    LaunchedEffect(owner) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) { now = System.currentTimeMillis(); delay(1000L) }
+        }
+    }
     val recording = data.recording
     if (recording == null) {
         if (data.cook.status != CookStatus.COMPLETED) Card(Modifier.fillMaxWidth()) {

@@ -221,6 +221,36 @@ class CookRecordingIntegrationTest {
         assertEquals(CookRecordingEntity.STOPPED, imported.snapshot.recordings.single().status)
         assertEquals(setOf(0L, 300_000L), imported.snapshot.readings.map { it.samplingIntervalMillis }.toSet())
         assertEquals(event.temperatureContextJson, imported.snapshot.events.single { it.id == event.id }.temperatureContextJson)
+        val legacyArchive = ByteArrayOutputStream()
+        java.util.zip.ZipInputStream(ByteArrayInputStream(zip.toByteArray())).use { input ->
+            java.util.zip.ZipOutputStream(legacyArchive).use { output ->
+                while (true) {
+                    val entry = input.nextEntry ?: break
+                    var bytes = input.readBytes()
+                    if (entry.name == "data/pittech.json" || entry.name == "manifest.json") {
+                        val json = org.json.JSONObject(String(bytes, Charsets.UTF_8))
+                        if (entry.name == "manifest.json") json.put("archiveVersion", 3)
+                        else {
+                            json.put("schemaVersion", 3)
+                            listOf("recordings", "readings").forEach { key ->
+                                val values = json.getJSONArray(key)
+                                for (index in 0 until values.length()) {
+                                    values.getJSONObject(index).remove("samplingIntervalMillis")
+                                    values.getJSONObject(index).remove("samplingMode")
+                                }
+                            }
+                        }
+                        bytes = json.toString().toByteArray(Charsets.UTF_8)
+                    }
+                    output.putNextEntry(java.util.zip.ZipEntry(entry.name)); output.write(bytes); output.closeEntry()
+                }
+            }
+        }
+        val legacy = transfer.previewImport(ByteArrayInputStream(legacyArchive.toByteArray()))
+        assertEquals(3, legacy.archiveVersion)
+        assertTrue(legacy.snapshot.readings.all { it.samplingIntervalMillis == 15_000L })
+        assertEquals("periodic", legacy.snapshot.recordings.single().samplingMode)
+        assertEquals(15_000L, legacy.snapshot.recordings.single().samplingIntervalMillis)
         val csv = ByteArrayOutputStream(); transfer.writeCsv(csv)
         assertTrue(csv.toString("UTF-8").contains("sampling_interval_millis"))
     }

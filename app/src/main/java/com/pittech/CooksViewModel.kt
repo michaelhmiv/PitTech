@@ -79,13 +79,17 @@ class CooksViewModel(
             (!force && recording.samplingMode != com.pittech.devices.GrillSamplingMode.ON_LOG.key)) return
         val state = app.grillMonitor.state.value
         if (!state.authenticated || state.selectedDeviceId?.let(com.pittech.devices.CookTelemetryPolicy::deviceKey) != recording.controllerKey) {
-            app.recordingRepository.markGap(cookId, "Reconnect the attached grill in Devices to include temperatures with new logs.")
+            app.recordingRepository.pause(cookId, "Reconnect the attached grill in Devices, then resume recording to include temperatures with new logs.")
+            reconcileRecording()
             return
         }
         val recent = state.latest?.takeIf { !force && !state.readingsAreOld(System.currentTimeMillis()) && System.currentTimeMillis() - it.fetchedAtMillis <= 15_000L && it.fetchedAtMillis >= recording.resumedAtUtcMillis }
         try {
             val sample = recent ?: app.grillMonitor.snapshot()
-            if (sample == null) app.recordingRepository.markGap(cookId, "This log's grill reading was unavailable. Your entry can still be saved.")
+            if (!app.grillMonitor.state.value.authenticated) {
+                app.recordingRepository.pause(cookId, "Reconnect the attached grill in Devices, then resume recording.")
+                reconcileRecording()
+            } else if (sample == null) app.recordingRepository.markGap(cookId, "This log's grill reading was unavailable. Your entry can still be saved.")
             else app.recordingRepository.ingest(cookId, recording.controllerKey, sample, app.grillMonitor.state.value)
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { app.recordingRepository.markGap(cookId, "This log's grill reading was unavailable. Your entry can still be saved.") }
