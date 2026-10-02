@@ -141,12 +141,14 @@ internal class PrimePolarisMonitor(
 
     private suspend fun discoverDevices() {
         var current = session ?: return
+        // Discovery includes renewing an expired saved token. A restored recording must
+        // keep waiting here rather than treat an empty device list as a removed grill.
+        mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, message = "Finding grills on your account…")
         if (current.expired(now())) {
             current = track(PolarisOperation.REFRESH_SESSION) { backend.refreshSession(current) }
             session = current
             saveSession()
         }
-        mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, message = "Finding grills on your account…")
         val devices = track(PolarisOperation.DEVICES) { backend.devices(current) }
         val selected = state.value.lockedDeviceId?.takeIf { id -> devices.any { it.id == id } }
             ?: current.selectedDeviceId?.takeIf { id -> devices.any { it.id == id } }
