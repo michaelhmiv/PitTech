@@ -16,6 +16,7 @@ class CookTelemetryIntegrationPolicyTest {
         val data = sample(mapOf("tempUnit" to 0.0, "furnaceTempMeasured" to 212.0, "probeP1Measured" to 150.0))
         assertEquals(100.0, CookTelemetryPolicy.values(data, "°C").first { it.name == "Chamber" }.value, 0.0001)
         assertTrue(CookTelemetryPolicy.values(sample(mapOf("furnaceTempMeasured" to 212.0)), "°F").isEmpty())
+        assertTrue(CookTelemetryPolicy.values(sample(mapOf("tempUnit" to 0.5, "furnaceTempMeasured" to 212.0)), "°F").isEmpty())
         assertEquals(212.0, CookTelemetryPolicy.convert(100.0, "°C", "°F"), 0.001)
     }
     @Test fun zeroAndMissingChannelsRemainUnavailableAndAlarmArmingDoesNotIndicateConnection() {
@@ -32,12 +33,17 @@ class CookTelemetryIntegrationPolicyTest {
         assertNotEquals(key, CookTelemetryPolicy.deviceKey("other"))
     }
     @Test fun contextUsesOnlyPrecedingRecentValidReadingsForTheChosenDish() {
-        val rows = listOf(reading("recent", 90_000), reading("future", 100_001, 190.0), reading("stale", 40_000, 80.0), reading("other", 99_000, 170.0, dish = "other"), reading("invalid", 99_000, quality = "unavailable"))
+        val rows = listOf(reading("recent", 90_000), reading("future", 100_001, 190.0), reading("stale", 40_000, 80.0),
+            reading("other", 99_000, 170.0, dish = "other").copy(probeId = "other-probe"),
+            reading("invalid", 99_000, quality = "unavailable").copy(probeId = "unavailable-probe"))
         val chosen = TemperatureContext.select(rows, 100_000, "dish")
         assertEquals(1, chosen.size)
         assertEquals(150.0, chosen.single().value, 0.01)
         assertEquals(90_000, chosen.single().observedAtUtcMillis)
         assertTrue(TemperatureContext.select(rows, 30_000, "dish").isEmpty())
+        assertTrue(TemperatureContext.select(rows + reading("unplugged", 99_999, quality = "unavailable"), 100_000, "dish").isEmpty())
+        assertTrue(TemperatureContext.select(rows + reading("moved", 99_999, dish = "other"), 100_000, "dish").isEmpty())
+        assertTrue(TemperatureContext.select(listOf(reading("unrepresentable", 90_000, 2_000.0)), 100_000, "dish").isEmpty())
     }
     @Test fun snapshotsKeepCopiedValuesAndSourceTimes() {
         val row = reading("sample", 90_000)

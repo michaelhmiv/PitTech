@@ -17,7 +17,7 @@ internal object CookTelemetryPolicy {
 
     fun values(sample: PolarisSample, unit: String): List<CookTelemetryValue> {
         val raw = sample.payload.values
-        val from = when (raw["tempUnit"]?.toInt()) { 0 -> "°F"; 1 -> "°C"; else -> return emptyList() }
+        val from = when (raw["tempUnit"]) { 0.0 -> "°F"; 1.0 -> "°C"; else -> return emptyList() }
         return listOf(
             Triple("furnaceTempMeasured", "Chamber", "pit_ambient"),
             Triple("furnaceTempSetting", "Setpoint", "setpoint"),

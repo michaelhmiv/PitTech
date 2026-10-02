@@ -16,11 +16,16 @@ data class ContextTemperature(
 
 object TemperatureContext {
     fun select(readings: List<SensorReadingEntity>, time: Long, dishId: String?): List<ContextTemperature> = readings
-        .filter { it.qualityStatus == "valid" && it.value.isFinite() && it.measuredAtUtcMillis <= time &&
-            time - it.measuredAtUtcMillis <= if (it.source == "controller_cloud") 45_000L else 300_000L }
-        .filter { dishId == null || it.dishId == dishId || it.measurementType in setOf("pit_ambient", "setpoint") }
+        .filter { it.measuredAtUtcMillis <= time }
         .groupBy { it.probeId ?: "${it.source}:${it.probeName}" }
         .values.mapNotNull { it.maxByOrNull { reading -> reading.measuredAtUtcMillis } }
+        // A newer unplugged/unavailable sample or dish assignment supersedes the old value.
+        // Never reach back past it to manufacture a current temperature for a log or photo.
+        .filter { it.qualityStatus == "valid" && it.value.isFinite() && it.value in -100.0..1000.0 &&
+            it.unit in setOf("°F", "°C") && it.probeName.length in 1..120 &&
+            it.source in setOf("manual", "controller_cloud") && it.timestampBasis in setOf("measurement", "cloud_receipt") &&
+            time - it.measuredAtUtcMillis <= if (it.source == "controller_cloud") 45_000L else 300_000L }
+        .filter { dishId == null || it.dishId == dishId || it.measurementType in setOf("pit_ambient", "setpoint") }
         .sortedBy { it.probeName }.take(12)
         .map { ContextTemperature(it.probeName, it.value, it.unit, it.measuredAtUtcMillis, it.source, it.timestampBasis) }
 
