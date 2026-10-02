@@ -31,7 +31,8 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
                 stage = if (PlaybookCodec.action(e.eventType) in setOf("rest_start", "hold_start", "dish_done")) "resting" else "cooking")
         }
         val targets = database.cookDao().getAllTargets().filter { it.cookId == cookId }.map { t -> PlaybookTarget(t.dishId?.let { id -> data.dishes.indexOfFirst { it.id == id }.takeIf { it >= 0 } }, t.targetType, t.value, t.unit, t.explanation) }
-        return CookPlaybook(data.cook.title, draft, steps, targets, sourceCookId = cookId)
+        val results = database.cookDao().getAllResults().filter { it.cookId == cookId }
+        return CookPlaybook(data.cook.title, draft, steps, targets, sourceCookId = cookId, keepDoing = results.filter { it.resultType == "keep_doing" }.mapNotNull { it.textValue }.joinToString("\n"), changeNextTime = results.filter { it.resultType in setOf("change_next_time", "result_notes") }.mapNotNull { it.textValue }.distinct().joinToString("\n"))
     }
 
     /** Saving an edit creates a revision. A cook holds its own snapshot, never a live mutable recipe. */
@@ -92,6 +93,11 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         }
     }
 
+    suspend fun saveReference(cookId: String, reference: CookReference) {
+        require(database.cookDao().getDish(reference.dishId)?.cookId == cookId && database.cookDao().getDish(reference.sourceDishId)?.cookId == reference.sourceCookId) { "Choose dishes in the selected cooks." }
+        val now = System.currentTimeMillis()
+        dao.put(CompanionRecord("reference:$cookId:${reference.dishId}", "reference", cookId, "Reference cook", CookReferenceCodec.encode(reference), now, now))
+    }
     suspend fun beginPlan(cookId: String) = database.withTransaction {
         if (plan(cookId) != null) return@withTransaction
         val book = suggest(cookId).copy(steps = emptyList())

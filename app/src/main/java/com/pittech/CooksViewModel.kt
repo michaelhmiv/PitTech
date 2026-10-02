@@ -151,6 +151,11 @@ class CooksViewModel(
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
 
+    fun toggleCookFavorite(cookId: String, favorite: Boolean) = perform { repository.setFavorite(cookId, favorite) }
+    fun saveCookLearning(cookId: String, dishId: String?, keep: String, change: String) = perform { repository.saveLearning(cookId, dishId, keep, change) }
+    fun saveCookTags(cookId: String, method: String, tags: String) = perform { repository.saveCookTags(cookId, method, tags) }
+    fun saveCookReference(cookId: String, reference: com.pittech.domain.CookReference) = perform { app.companionRepository.saveReference(cookId, reference) }
+
     private val _servePlanEditor = MutableStateFlow<com.pittech.domain.ServePlan?>(null)
     val servePlanEditor = _servePlanEditor.asStateFlow()
     private val _durationEvidence = MutableStateFlow<List<com.pittech.domain.DurationEvidence>>(emptyList())
@@ -495,7 +500,8 @@ class CooksViewModel(
         _notice.value = "Photo attached to the cook log."
     }
 
-    fun saveResults(cookId: String, dishId: String?, finalTemp: String, unit: String, restMinutes: String, ratings: Map<String, String>, notes: String, finish: Boolean) = perform {
+    fun saveResults(cookId: String, dishId: String?, finalTemp: String, unit: String, restMinutes: String, ratings: Map<String, String>, notes: String, finish: Boolean, keepDoing: String = "", changeNextTime: String = "") = perform {
+        repository.saveLearning(cookId, dishId, keepDoing, changeNextTime)
         repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish)
         if (finish) reconcileRecording()
         if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }

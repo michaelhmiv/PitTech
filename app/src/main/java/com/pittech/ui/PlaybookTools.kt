@@ -25,6 +25,7 @@ internal fun PlaybookDialogs(viewModel: CooksViewModel) {
 @Composable
 internal fun PlaybookLibrary(viewModel: CooksViewModel) {
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
+    val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val books = records.filter { it.kind == "playbook" }
     var expanded by remember { mutableStateOf(false) }
     TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("playbooks-toggle")) { Text("Playbooks · ${books.size}") }
@@ -37,6 +38,9 @@ internal fun PlaybookLibrary(viewModel: CooksViewModel) {
                     Text(record.title, style = MaterialTheme.typography.titleMedium)
                     val book = remember(record.payload) { PlaybookCodec.decode(record.payload) }
                     Text("Revision ${book.revision} · ${book.draft.dishes.size} dishes · ${book.steps.size} steps")
+                    val cookIds = records.filter { it.kind == "plan" && CookPlanEngine.decode(it.payload).playbookId == record.id }.mapNotNull { it.cookId }.toSet()
+                    val outcomes = cooks.filter { it.cook.id in cookIds && it.cook.status == CookStatus.COMPLETED }
+                    if (outcomes.isNotEmpty()) TextButton(onClick = { viewModel.openCook(outcomes.first().cook.id) }) { Text("${outcomes.size} cooks from this revision · open latest results") }
                     OutlinedButton(onClick = { viewModel.previewPlaybook(record.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cook this") }
                     TextButton(onClick = { viewModel.planServeTime(record.id) }) { Text("Plan serving time") }
                     TextButton(onClick = { viewModel.editPlaybook(record.id) }) { Text("Edit a new revision") }

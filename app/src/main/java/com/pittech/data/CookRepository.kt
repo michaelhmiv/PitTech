@@ -53,12 +53,12 @@ class CookRepository(
         }
     }
 
-    fun observeInsights(): Flow<InsightsSnapshot> = combine(
+    fun observeInsights(): Flow<InsightsSnapshot> = combine(combine(
         dao.observeCooks(),
         dao.observeAllSensorReadings(),
         dao.observeAllResults(),
         dao.observeConnectionGaps(),
-    ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }
+    ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }, dao.observeAllIngredients()) { snapshot, ingredients -> snapshot.copy(ingredients = ingredients) }
 
     suspend fun startCook(draft: NewCookDraft): String {
         require(CookEntryValidation.isOptionalPositiveNumberValid(draft.setpointText)) {
@@ -462,6 +462,25 @@ class CookRepository(
     suspend fun addCookPhoto(cookId: String, uri: String, caption: String?): PhotoEntity {
         val event = addTimelineEvent(cookId, null, "photo", caption?.takeIf { it.isNotBlank() } ?: "Photo added", null, System.currentTimeMillis())
         return attachPhotoToTimelineEvent(event.id, cookId, null, uri, caption, usePhotoCaptureTime = true)
+    }
+
+    suspend fun saveLearning(cookId: String, dishId: String?, keepDoing: String, changeNextTime: String) {
+        val now = System.currentTimeMillis()
+        listOf("keep_doing" to keepDoing, "change_next_time" to changeNextTime).forEach { (type, text) ->
+            val id = "$cookId:${dishId ?: "cook"}:$type"
+            if (text.isBlank()) dao.deleteResult(id) else dao.upsertResult(CookResultEntity(id, cookId, dishId, type, textValue = text.trim(), recordedAtUtcMillis = now))
+        }
+    }
+    suspend fun setFavorite(cookId: String, favorite: Boolean) {
+        val id = "$cookId:cook:favorite"
+        if (!favorite) dao.deleteResult(id) else dao.upsertResult(CookResultEntity(id, cookId, null, "favorite", numericValue = 1.0, recordedAtUtcMillis = System.currentTimeMillis()))
+    }
+    suspend fun saveCookTags(cookId: String, method: String, tags: String) {
+        val now = System.currentTimeMillis()
+        listOf("method" to method, "tags" to tags).forEach { (type, text) ->
+            val id = "$cookId:cook:$type"
+            if (text.isBlank()) dao.deleteResult(id) else dao.upsertResult(CookResultEntity(id, cookId, null, type, textValue = text.trim(), recordedAtUtcMillis = now))
+        }
     }
 
     suspend fun saveCookResults(
