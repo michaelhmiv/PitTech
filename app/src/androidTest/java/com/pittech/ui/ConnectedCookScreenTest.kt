@@ -4,6 +4,9 @@ import android.content.Intent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -84,8 +87,7 @@ class ConnectedCookScreenTest {
         compose.onNodeWithTag("start-cook").performClick()
         compose.onNodeWithTag("cook-record-grill").performScrollTo().performClick()
         compose.onNodeWithTag("recording-power-warning").assertExists()
-        compose.onNodeWithTag("grill-sampling").performScrollTo().performClick()
-        compose.onNodeWithTag("grill-sampling-on-log").performClick()
+        selectSampling("grill-sampling-on-log")
         compose.onNodeWithTag("recording-log-only-info").assertExists()
         compose.onNodeWithTag("cook-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording()?.samplingMode == "on_log" } }
@@ -100,11 +102,9 @@ class ConnectedCookScreenTest {
         assertTrue(com.pittech.data.TemperatureContext.decode(wrap.temperatureContextJson).isNotEmpty())
         assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().all { it.samplingIntervalMillis == 0L } })
         assertNull(fake!!.state.value.nextPollAtMillis)
-        compose.onNodeWithTag("grill-sampling").performScrollTo().performClick()
-        compose.onNodeWithTag("grill-sampling-60000").performClick()
+        selectSampling("grill-sampling-60000")
         compose.waitUntil(15_000) { app.recordingServiceRunning.value }
-        compose.onNodeWithTag("grill-sampling").performScrollTo().performClick()
-        compose.onNodeWithTag("grill-sampling-on-log").performClick()
+        selectSampling("grill-sampling-on-log")
         compose.waitUntil(15_000) { !app.recordingServiceRunning.value && fake!!.state.value.sampling.mode == com.pittech.devices.GrillSamplingMode.ON_LOG }
         backend.failure = PolarisFailure(PolarisFailureKind.NETWORK)
         compose.onNodeWithTag("cook-grill-read-now").performScrollTo().performClick()
@@ -125,6 +125,18 @@ class ConnectedCookScreenTest {
         assertNull(fake!!.state.value.lockedDeviceId)
         assertFalse(fake!!.state.value.authenticated)
         assertFalse(app.recordingServiceRunning.value)
+    }
+
+    private fun selectSampling(optionTag: String) {
+        compose.onNodeWithTag("grill-sampling").performScrollTo()
+        // Saving a note includes asynchronous Room work; a database row can
+        // arrive before the screen releases its busy state.
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("grill-sampling") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("grill-sampling").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(optionTag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(optionTag).performClick()
     }
 
 }

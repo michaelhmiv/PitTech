@@ -423,6 +423,31 @@ class PrimePolarisMonitorTest {
         } finally { monitor.close() }
     }
 
+    @Test fun scheduledRecordingStartsWithANewReadAndRepeatedOwnershipDoesNotRestartIt() = runBlocking {
+        val backend = Backend()
+        var clock = 1_000_000L
+        val hold = CompletableDeferred<Unit>()
+        val pauses = mutableListOf<Long>()
+        val monitor = PrimePolarisMonitor(backend, Store(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            now = { clock }, initialSampling = GrillSamplingPolicy(intervalMillis = 300_000L),
+            pollWait = { pauses += it; hold.await() })
+        try {
+            monitor.setForeground(true)
+            waitFor { pauses.size == 1 }
+            assertEquals(1, backend.readingCalls)
+            clock += 10_000L
+            monitor.setRecording(true)
+            waitFor { pauses.size == 2 }
+            assertEquals(2, backend.readingCalls)
+            assertEquals(clock, monitor.state.value.latest!!.fetchedAtMillis)
+            assertEquals(300_000L, pauses.last())
+            monitor.setRecording(true)
+            monitor.setForeground(false)
+            assertEquals(2, backend.readingCalls)
+            assertEquals(2, pauses.size)
+        } finally { monitor.close() }
+    }
+
     @Test fun oneMinuteAndSlowerCyclesCloseLiveSessionsWhileFastCyclesKeepThem() = runBlocking {
         for (interval in GrillSamplingPolicy.INTERVALS) {
             val backend = Backend()

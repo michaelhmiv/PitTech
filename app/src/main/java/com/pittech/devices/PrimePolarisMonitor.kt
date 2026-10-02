@@ -92,9 +92,14 @@ internal class PrimePolarisMonitor(
     }
 
     override fun setRecording(active: Boolean) {
+        val startingWhileActive = active && !recording && foreground
         recording = active
         if (!active) mutableState.value = state.value.copy(lockedDeviceId = null)
         updateActive()
+        // An inspection sample can precede the cook's resume boundary. Start a
+        // new scheduled recording with its own reading instead of waiting out
+        // the inspection poll's remaining interval. Logging-only stays idle.
+        if (startingWhileActive && state.value.sampling.mode == GrillSamplingMode.PERIODIC && action?.isActive != true) refresh()
     }
 
     override fun lockDevice(id: String) {
