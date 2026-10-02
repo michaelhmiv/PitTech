@@ -1,6 +1,8 @@
 package com.pittech.devices
 
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okio.Buffer
@@ -9,6 +11,8 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class TraegerBackendTest {
     private class Http(val socket: () -> FixtureSocket) : TraegerHttpTransport {
@@ -69,17 +73,31 @@ class TraegerBackendTest {
         val socket = FixtureSocket().apply { mqttHandshake() }
         val http = Http { socket }
         val backend = TraegerBackend(http, GrillSocketFactory { _, _ -> socket }, now = { 1_000_000 })
+        val lastAck = CompletableDeferred<Unit>()
+        val releaseAck = CountDownLatch(1)
         try {
             val session = backend.signIn("synthetic@example.test", "private-password").value
             val id = backend.devices(session).value.single().id
             backend.readings(session, id)
+            socket.onBinary = { packet ->
+                if (packet.contentEquals(byteArrayOf(0x40, 2, 0, 120))) {
+                    lastAck.complete(Unit)
+                    check(releaseAck.await(5, TimeUnit.SECONDS))
+                }
+            }
             for (n in 1..20) socket.binaryFrame(mqttReport("prod/thing/update/owned_test_grill",
                 traegerEnvelope(time = 1_000_000L + n * 1000).toString(), 100 + n))
-            withTimeout(3000) { while (socket.binaries.count { it[0].toInt() == 0x40 } < 21) delay(5) }
+            withTimeout(3000) { lastAck.await() }
+            assertEquals(21, socket.binaries.count { it[0].toInt() == 0x40 })
             http.report = { listOf(mqttReport("prod/thing/update/owned_test_grill", traegerEnvelope(time = 1_030_000L).toString())) }
-            assertEquals(1_030_000L, backend.readings(session, id).value.reportedAtMillis)
+            // Begin a poll while the receiver is held inside its final PUBACK. With the
+            // previous ordering, the cleared older report was published only afterward.
+            val next = async { backend.readings(session, id) }
+            withTimeout(3000) { while (http.operations.count { it == TraegerHttpOperation.STATUS } < 2) delay(5) }
+            releaseAck.countDown()
+            assertEquals(1_030_000L, next.await().value.reportedAtMillis)
             assertEquals(1, http.operations.count { it == TraegerHttpOperation.MQTT_CONNECTION })
-        } finally { backend.disconnect() }
+        } finally { releaseAck.countDown(); backend.disconnect() }
     }
     @Test fun canonicalUnitsStableChannelsDisconnectedProbesAndRealZeroCelsiusArePreserved() {
         val envelope = traegerEnvelope().apply {
@@ -158,4 +176,3 @@ class TraegerBackendTest {
         catch (error: PolarisFailure) { assertEquals(PolarisFailureKind.RATE_LIMIT, error.kind); assertEquals(90_000L, error.retryAfterMillis) }
     }
 }
-

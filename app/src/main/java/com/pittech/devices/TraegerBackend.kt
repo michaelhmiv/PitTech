@@ -144,11 +144,14 @@ internal class TraegerBackend(
                     val packet = stream.next(current)
                     if (packet.header shr 4 != 3) continue
                     val observation = GrillMqtt.observation(packet)
+                    if (observation.topic == "prod/thing/update/" + thing) {
+                        val envelope = try { JSONObject(observation.json) } catch (_: Exception) { throw PolarisFailure(PolarisFailureKind.SCHEMA) }
+                        if (!envelope.has("thingName") || envelope.optString("thingName") == thing)
+                            incoming.trySend(parseStatus(envelope))
+                    }
+                    // Complete routing before acknowledging receipt. Otherwise a poll that
+                    // clears the cache after PUBACK can receive that older observation later.
                     observation.packetId?.let { current.binary(GrillMqtt.acknowledge(it)) }
-                    if (observation.topic != "prod/thing/update/" + thing) continue
-                    val envelope = try { JSONObject(observation.json) } catch (_: Exception) { throw PolarisFailure(PolarisFailureKind.SCHEMA) }
-                    if (envelope.has("thingName") && envelope.optString("thingName") != thing) continue
-                    incoming.trySend(parseStatus(envelope))
                 }
             } catch (error: CancellationException) { incoming.cancel(); throw error }
             catch (error: Exception) { incoming.close(error as? PolarisFailure ?: PolarisFailure(PolarisFailureKind.NETWORK)); current.close() }
@@ -235,4 +238,3 @@ internal class TraegerBackend(
         }
     }
 }
-
