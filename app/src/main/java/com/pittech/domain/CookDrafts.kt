@@ -37,6 +37,8 @@ data class NewCookDraft(
     val weatherNotes: String = "",
     val windNotes: String = "",
     val dishes: List<DishDraft> = emptyList(),
+    val playbookId: String? = null,
+    val followPlaybook: Boolean = true,
     val recordGrill: Boolean = false,
     val probe1DishIndex: Int? = null,
     val probe2DishIndex: Int? = null,

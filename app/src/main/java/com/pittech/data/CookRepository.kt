@@ -170,6 +170,7 @@ class CookRepository(
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 dao.insertTimelineEvents(events)
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
+                CookCompanionRepository(database, photoStorage).applyToCook(cookId, draft)
             }
         } catch (failure: Throwable) {
             importedPhotos.forEach { photoStorage.delete(it.relativePath) }
@@ -239,6 +240,7 @@ class CookRepository(
                 dao.insertDish(dish)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
+                CookCompanionRepository(database, photoStorage).applyToCook(cookId, draft)
             }
         } catch (failure: Throwable) {
             importedPhotos.forEach { photoStorage.delete(it.relativePath) }
@@ -588,13 +590,15 @@ class CookRepository(
             reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
+            companionRecords = database.companionDao().all().filter { it.cookId == null || it.cookId in selectedCookIds },
+            companionPhotos = database.companionDao().photos().filter { p -> database.companionDao().get(p.recordId)?.let { it.cookId == null || it.cookId in selectedCookIds } == true },
             assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
         )
     }
 
     suspend fun importSnapshot(snapshot: ExportSnapshot, attachmentData: Map<String, ByteArray>): ImportSummary {
         require(snapshot.photos.map { it.id }.distinct().size == snapshot.photos.size) { "The backup contains duplicate photo IDs." }
-        require(snapshot.photos.all { attachmentData[it.id]?.isNotEmpty() == true }) {
+        require((snapshot.photos.map { it.id } + snapshot.companionPhotos.map { it.id }).all { attachmentData[it.id]?.isNotEmpty() == true }) {
             "The backup is incomplete: one or more photo attachments are missing."
         }
         val existingCookIds = dao.getAllCooks().map { it.id }.toSet()
@@ -603,11 +607,20 @@ class CookRepository(
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
         val photos = snapshot.photos.filter { it.cookId in newIds && it.id !in existingPhotoIds }
         val restoredPhotos = mutableListOf<PhotoEntity>()
+        val existingRecordIds = database.companionDao().all().map { it.id }.toSet()
+        val newRecords = snapshot.companionRecords.filter { it.id !in existingRecordIds && (it.cookId == null || it.cookId in newIds) }
+        val newRecordIds = newRecords.map { it.id }.toSet()
+        val referencePhotos = snapshot.companionPhotos.filter { it.recordId in newRecordIds }
+        val writtenReferencePhotos = mutableListOf<CompanionPhoto>()
         try {
             photos.forEach { photo ->
                 val bytes = attachmentData.getValue(photo.id)
                 photoStorage.writeImported(photo.relativePath, bytes)
                 restoredPhotos += photo
+            }
+            referencePhotos.forEach { photo ->
+                photoStorage.writeImported(photo.relativePath, attachmentData.getValue(photo.id))
+                writtenReferencePhotos += photo
             }
             database.withTransaction {
                 dao.insertCooksIgnoringDuplicates(newCooks)
@@ -621,12 +634,15 @@ class CookRepository(
                 dao.insertReadingsIgnoringDuplicates(snapshot.readings.filter { it.cookId in newIds })
                 dao.insertPhotosIgnoringDuplicates(restoredPhotos)
                 dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds })
+                database.companionDao().restore(newRecords.map { r -> if (r.kind == "plan") r.copy(payload = org.json.JSONObject(r.payload).put("paused", true).toString()) else r })
+                database.companionDao().putPhotos(referencePhotos)
                 database.recordingDao().insertRecordings(snapshot.recordings.filter { it.cookId in newIds }
                     .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") })
                 database.recordingDao().insertAssignments(snapshot.assignments.filter { it.cookId in newIds })
             }
         } catch (failure: Throwable) {
             restoredPhotos.forEach { photo -> photoStorage.delete(photo.relativePath) }
+            writtenReferencePhotos.forEach { photoStorage.delete(it.relativePath) }
             throw failure
         }
         return ImportSummary(newCooks.size, snapshot.cooks.size - newCooks.size, restoredPhotos.size)
@@ -708,6 +724,8 @@ data class ExportSnapshot(
     val reminders: List<CookReminderEntity> = emptyList(),
     val recordings: List<CookRecordingEntity> = emptyList(),
     val assignments: List<ProbeAssignmentEntity> = emptyList(),
+    val companionRecords: List<CompanionRecord> = emptyList(),
+    val companionPhotos: List<CompanionPhoto> = emptyList(),
 )
 
 data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)

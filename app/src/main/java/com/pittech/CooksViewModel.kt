@@ -151,6 +151,46 @@ class CooksViewModel(
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
 
+    val companionRecords = app.companionRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val _playbookEditor = MutableStateFlow<com.pittech.domain.CookPlaybook?>(null)
+    val playbookEditor = _playbookEditor.asStateFlow()
+    private val _setupPreview = MutableStateFlow<NewCookDraft?>(null)
+    val setupPreview = _setupPreview.asStateFlow()
+    private var editingPlaybookId: String? = null
+    fun preparePlaybook(cookId: String) = perform {
+        editingPlaybookId = null
+        _playbookEditor.value = app.companionRepository.suggest(cookId)
+    }
+    fun newPlaybook() {
+        editingPlaybookId = null
+        _playbookEditor.value = com.pittech.domain.CookPlaybook("My playbook", NewCookDraft("My cook", dishes = listOf(DishDraft("Brisket", "Beef", "Brisket"))), emptyList())
+    }
+    fun editPlaybook(id: String) = perform {
+        editingPlaybookId = id
+        _playbookEditor.value = app.companionRepository.get(id)?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) }
+    }
+    fun closePlaybookEditor() { _playbookEditor.value = null }
+    fun savePlaybook(book: com.pittech.domain.CookPlaybook, photos: Boolean) = perform {
+        val newId = app.companionRepository.save(book, editingPlaybookId, photos)
+        if (_setupPreview.value?.playbookId == editingPlaybookId && editingPlaybookId != null) _setupPreview.value = book.draft.copy(playbookId = newId)
+        _playbookEditor.value = null
+        _notice.value = "Playbook saved on this phone."
+    }
+    fun previewPlaybook(id: String) = perform {
+        val book = app.companionRepository.get(id)?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: error("Playbook not found.")
+        _setupPreview.value = book.draft.copy(title = book.name, playbookId = id)
+        _selectedCookId.value = null
+    }
+    fun previewCookAgain(cookId: String) = perform {
+        val book = app.companionRepository.suggest(cookId)
+        val id = app.companionRepository.save(book)
+        _setupPreview.value = book.draft.copy(playbookId = id)
+        _selectedCookId.value = null
+    }
+    fun consumeSetupPreview() { _setupPreview.value = null }
+    fun deletePlaybook(id: String) = perform { app.companionRepository.delete(id) }
+
     val cooks: StateFlow<List<CookWithDishes>> = repository.observeCooks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
