@@ -57,7 +57,8 @@ class CookRepository(
         dao.observeCooks(),
         dao.observeAllSensorReadings(),
         dao.observeAllResults(),
-    ) { cooks, readings, results -> InsightsSnapshot(cooks, readings, results) }
+        dao.observeConnectionGaps(),
+    ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }
 
     suspend fun startCook(draft: NewCookDraft): String {
         require(CookEntryValidation.isOptionalPositiveNumberValid(draft.setpointText)) {

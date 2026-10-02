@@ -94,7 +94,7 @@ fun InsightsScreen(
                 val ids = selected.map { it.cook.id }.toSet()
                 val startTimes = selected.associate { it.cook.id to it.cook.startedAtUtcMillis }
                 val names = selected.associate { it.cook.id to it.cook.title }
-                TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes)
+                TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes, connectionGaps = data.connectionGaps.filter { it.cookId in ids })
                 Text("Only recorded readings are shown. Empty periods remain empty.", style = MaterialTheme.typography.bodySmall)
             }
         }

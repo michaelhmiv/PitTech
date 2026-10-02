@@ -305,11 +305,13 @@ internal class PrimePolarisMonitor(
                             if (error.kind == PolarisFailureKind.RATE_LIMIT) retryNotBeforeMillis = now() + pause
                             mutableState.value = state.value.copy(readingRequestFailed = true, consecutiveFailures = count,
                                 message = error.message(provider), nextPollAtMillis = now() + pause)
-                            completion?.complete(null)
                             if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
                                 mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
+                                if (generation == attemptGeneration) backend.disconnect()
+                                completion?.complete(null)
                                 return@launch
                             }
+                            completion?.complete(null)
                             pollWait(pause)
                             continue
                         }
@@ -352,11 +354,14 @@ internal class PrimePolarisMonitor(
                         consecutiveFailures = failures, nextPollAtMillis = now() + delayMillis,
                         message = failure?.message(provider) ?: "Collection: ${state.value.sampling.label}.",
                     )
-                    completion?.complete(received?.takeIf { !state.value.readingsAreOld(now()) })
+                    val observed = received?.takeIf { !state.value.readingsAreOld(now()) }
                     if (state.value.sampling.mode == GrillSamplingMode.ON_LOG) {
                         mutableState.value = state.value.copy(nextPollAtMillis = null, phase = PolarisPhase.READY)
+                        if (generation == attemptGeneration) backend.disconnect()
+                        completion?.complete(observed)
                         return@launch
                     }
+                    completion?.complete(observed)
                     pollWait(delayMillis)
                 }
             } finally {

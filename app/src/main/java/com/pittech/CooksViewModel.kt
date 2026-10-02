@@ -78,6 +78,10 @@ class CooksViewModel(
         if (recording.status != com.pittech.data.CookRecordingEntity.RECORDING ||
             (!force && recording.samplingMode != com.pittech.devices.GrillSamplingMode.ON_LOG.key)) return
         val state = app.grillMonitor.state.value
+        if (state.phase == com.pittech.devices.PolarisPhase.RESTORING || state.phase == com.pittech.devices.PolarisPhase.DISCOVERING) {
+            app.recordingRepository.markGap(cookId, "The grill connection is opening. This entry can still be saved.")
+            return
+        }
         if (!state.authenticated || state.selectedDeviceId?.let(com.pittech.devices.CookTelemetryPolicy::deviceKey) != recording.controllerKey) {
             app.recordingRepository.pause(cookId, "Reconnect the attached grill in Devices, then resume recording to include temperatures with new logs.")
             reconcileRecording()

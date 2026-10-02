@@ -172,7 +172,7 @@ internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, ru
             }
             val end = data.readings.maxOfOrNull { it.measuredAtUtcMillis } ?: now
             val recent = data.readings.filter { it.sourceDeviceId == recording.deviceId && it.measuredAtUtcMillis >= end - 3_600_000L }
-            if (recent.any { it.qualityStatus == "valid" }) TemperatureChart(recent, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, chartHeight = 140.dp)
+            if (recent.any { it.qualityStatus == "valid" }) TemperatureChart(recent, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, chartHeight = 140.dp, connectionGaps = data.events)
         }
     }
 }

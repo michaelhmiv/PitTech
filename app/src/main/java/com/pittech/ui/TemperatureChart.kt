@@ -40,6 +40,7 @@ fun TemperatureChart(
     markers: List<TimelineEventEntity> = emptyList(),
     onMarker: ((TimelineEventEntity) -> Unit)? = null,
     chartHeight: Dp = 230.dp,
+    connectionGaps: List<TimelineEventEntity> = emptyList(),
 ) {
     val valid = readings.filter { it.qualityStatus == "valid" && it.value.isFinite() && it.unit in setOf("°F", "°C") }
     if (valid.size < 2) {
@@ -55,7 +56,7 @@ fun TemperatureChart(
         add(reading.probeName)
         reading.dishId?.let { dishNames[it] }?.let(::add)
     }.joinToString(" · ")
-    val segments = TemperaturePlot.segments(readings).map { TemperaturePlot.reduce(it).map { reading ->
+    val segments = TemperaturePlot.segments(readings, markers + connectionGaps).map { TemperaturePlot.reduce(it).map { reading ->
         PlotPoint(label(reading), elapsed(reading.cookId, reading.measuredAtUtcMillis), CookTelemetryPolicy.convert(reading.value, reading.unit, unit))
     } }
     val data = segments.flatten()

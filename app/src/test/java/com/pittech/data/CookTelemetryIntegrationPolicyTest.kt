@@ -80,4 +80,13 @@ class CookTelemetryIntegrationPolicyTest {
         assertTrue(TemperatureContext.select(listOf(second), 299_999L, "dish").isEmpty())
     }
 
+    @Test fun aKnownOutageSplitsSlowCurvesWithoutSplittingAnotherCookOrManualData() {
+        val rows = listOf(reading("one", 0), reading("two", 60_000)).map { it.copy(samplingIntervalMillis = 300_000L) }
+        val gap = TimelineEventEntity("gap", "cook", null, "connection_gap", "Interrupted", null, 10_000L, 10_000L, "UTC", "controller_cloud", createdAtUtcMillis = 10_000L, updatedAtUtcMillis = 10_000L)
+        assertEquals(1, TemperaturePlot.segments(rows).size)
+        assertEquals(2, TemperaturePlot.segments(rows, listOf(gap)).size)
+        assertEquals(1, TemperaturePlot.segments(rows, listOf(gap.copy(cookId = "another"))).size)
+        assertEquals(1, TemperaturePlot.segments(rows.map { it.copy(source = "manual") }, listOf(gap)).size)
+    }
+
 }
