@@ -20,6 +20,7 @@ class PitTechApplication : Application() {
             .addMigrations(PitTechDatabase.MIGRATION_1_2)
             .addMigrations(PitTechDatabase.MIGRATION_2_3)
             .addMigrations(PitTechDatabase.MIGRATION_3_4)
+            .addMigrations(PitTechDatabase.MIGRATION_4_5)
             .build()
     }
 
@@ -36,4 +37,5 @@ class PitTechApplication : Application() {
     internal val grillMonitor: com.pittech.devices.PolarisMonitorEngine get() = grillMonitorForTests ?: sharedGrillMonitor
     internal val recordingRepository by lazy { CookRecordingRepository(database) }
     internal val recordingServiceRunning = MutableStateFlow(false)
+    internal var loggingRecordingActive = false
 }

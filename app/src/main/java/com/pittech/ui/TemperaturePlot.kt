@@ -1,11 +1,14 @@
 package com.pittech.ui
 
 import com.pittech.data.SensorReadingEntity
+import com.pittech.data.TimelineEventEntity
+import com.pittech.devices.GrillSamplingPolicy
 
 internal object TemperaturePlot {
     /** Stable probe/dish identities separate curves; unavailable samples split them. */
-    fun segments(readings: List<SensorReadingEntity>): List<List<SensorReadingEntity>> = readings
+    fun segments(readings: List<SensorReadingEntity>, gapEvents: List<TimelineEventEntity> = emptyList()): List<List<SensorReadingEntity>> = readings
         .groupBy { "${it.cookId}:${it.probeId ?: it.probeName}:${it.source}" }.values.flatMap { rows ->
+            val gaps = gapEvents.filter { it.cookId == rows.first().cookId && it.source == "controller_cloud" && it.eventType == "connection_gap" }.map { it.occurredAtUtcMillis }
             val segments = mutableListOf<List<SensorReadingEntity>>()
             var current = mutableListOf<SensorReadingEntity>()
             fun flush() { if (current.isNotEmpty()) segments += current.toList(); current = mutableListOf() }
@@ -14,7 +17,9 @@ internal object TemperaturePlot {
                 if (row.qualityStatus != "valid" || !row.value.isFinite() || row.unit !in setOf("°F", "°C")) flush()
                 else {
                     if (previous != null && (previous.dishId != row.dishId ||
-                        (row.source == "controller_cloud" && row.measuredAtUtcMillis - previous.measuredAtUtcMillis > 45_000L))) flush()
+                        (row.source == "controller_cloud" && (gaps.any { it > previous.measuredAtUtcMillis && it <= row.measuredAtUtcMillis } ||
+                            row.samplingIntervalMillis == 0L || previous.samplingIntervalMillis == 0L ||
+                            row.measuredAtUtcMillis - previous.measuredAtUtcMillis > GrillSamplingPolicy.receiptWindow(maxOf(row.samplingIntervalMillis, previous.samplingIntervalMillis)))))) flush()
                     current += row
                 }
             }

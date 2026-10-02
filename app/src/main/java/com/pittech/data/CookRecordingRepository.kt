@@ -2,6 +2,8 @@ package com.pittech.data
 
 import androidx.room.withTransaction
 import com.pittech.devices.CookTelemetryPolicy
+import com.pittech.devices.GrillSamplingMode
+import com.pittech.devices.GrillSamplingPolicy
 import com.pittech.devices.PolarisDevice
 import com.pittech.devices.PolarisMonitorState
 import com.pittech.devices.PolarisSample
@@ -12,7 +14,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
     private val dao = database.cookDao()
     private val recordings = database.recordingDao()
 
-    suspend fun attach(cookId: String, device: PolarisDevice, unit: String, probeDishes: Map<String, String?> = emptyMap(), now: Long = System.currentTimeMillis()) = database.withTransaction {
+    suspend fun attach(cookId: String, device: PolarisDevice, unit: String, probeDishes: Map<String, String?> = emptyMap(), now: Long = System.currentTimeMillis(), sampling: GrillSamplingPolicy? = null) = database.withTransaction {
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
         require(cook.status == CookStatus.ACTIVE) { "Resume this cook before recording temperatures." }
         require(unit in setOf("°F", "°C")) { "Choose a temperature unit." }
@@ -20,6 +22,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         require(active == null || active.cookId == cookId) { "Pause or stop recording for the other cook first. One grill can record at a time." }
         val key = CookTelemetryPolicy.deviceKey(device.id)
         val previous = recordings.getRecording(cookId)
+        val policy = sampling ?: previous?.let { GrillSamplingPolicy.stored(it.samplingMode, it.samplingIntervalMillis) } ?: GrillSamplingPolicy()
         val same = previous?.controllerKey == key
         val deviceId = if (same) previous!!.deviceId else UUID.randomUUID().toString()
         if (!same) {
@@ -32,16 +35,26 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
             }))
         }
         val recording = if (same) previous!!.copy(status = CookRecordingEntity.RECORDING, resumedAtUtcMillis = now,
-            gapStartedAtUtcMillis = previous.gapStartedAtUtcMillis ?: previous.lastReceivedAtUtcMillis?.plus(45_000L)?.takeIf { it < now },
+            gapStartedAtUtcMillis = if (policy.mode == GrillSamplingMode.ON_LOG) null else previous.gapStartedAtUtcMillis ?: previous.lastReceivedAtUtcMillis?.plus(GrillSamplingPolicy.receiptWindow(previous.samplingIntervalMillis))?.takeIf { it < now },
             pendingSetpoint = null, pendingSetpointCount = 0, message = "Waiting for a new cloud reading.")
         else CookRecordingEntity(cookId, deviceId, key, CookRecordingEntity.RECORDING, unit, now, now)
-        recordings.saveRecording(recording)
+        recordings.saveRecording(recording.copy(samplingMode = policy.mode.key, samplingIntervalMillis = policy.intervalMillis))
         event(cookId, if (same) "recording_resumed" else "recording_started", if (same) "Temperature recording resumed" else "Grill attached · temperature recording started", now)
         val probes = dao.getProbesForCook(cookId).filter { it.deviceId == deviceId && it.measurementType == "food_probe" }
         probes.forEach { probe ->
             val channel = probe.id.substringAfterLast(':')
             if (!same || probeDishes.containsKey(channel)) assignProbe(probe.id, cookId, probeDishes[channel], now)
         }
+    }
+
+    suspend fun configureSampling(cookId: String, policy: GrillSamplingPolicy, now: Long = System.currentTimeMillis()) = database.withTransaction {
+        val current = recordings.getRecording(cookId) ?: return@withTransaction
+        require(dao.getCook(cookId)?.status != CookStatus.COMPLETED) { "This cook is finished." }
+        if (current.samplingMode == policy.mode.key && current.samplingIntervalMillis == policy.intervalMillis) return@withTransaction
+        recordings.saveRecording(current.copy(samplingMode = policy.mode.key, samplingIntervalMillis = policy.intervalMillis,
+            resumedAtUtcMillis = now, lastReceivedAtUtcMillis = null, gapStartedAtUtcMillis = null,
+            pendingSetpoint = null, pendingSetpointCount = 0, message = "Collection: ${policy.label}."))
+        event(cookId, "recording_schedule_changed", "Temperature collection: ${policy.label}", now)
     }
 
     suspend fun assignProbe(probeId: String, cookId: String, dishId: String?, now: Long = System.currentTimeMillis()) = database.withTransaction {
@@ -77,8 +90,12 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
     suspend fun markGap(cookId: String, reason: String, now: Long = System.currentTimeMillis()) = database.withTransaction {
         val recording = recordings.getRecording(cookId) ?: return@withTransaction
         if (recording.status != CookRecordingEntity.RECORDING) return@withTransaction
+        if (recording.samplingMode == GrillSamplingMode.ON_LOG.key) {
+            recordings.saveRecording(recording.copy(message = reason, pendingSetpoint = null, pendingSetpointCount = 0))
+            return@withTransaction
+        }
         if (recording.gapStartedAtUtcMillis == null) {
-            val started = recording.lastReceivedAtUtcMillis?.plus(45_000L)?.coerceAtMost(now) ?: now
+            val started = recording.lastReceivedAtUtcMillis?.plus(GrillSamplingPolicy.receiptWindow(recording.samplingIntervalMillis))?.coerceAtMost(now) ?: now
             event(cookId, "connection_gap", "Temperature recording interrupted", started, details = reason)
             recordings.saveRecording(recording.copy(gapStartedAtUtcMillis = started, message = reason, pendingSetpoint = null, pendingSetpointCount = 0))
         } else if (recording.message != reason) recordings.saveRecording(recording.copy(message = reason))
@@ -104,7 +121,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         }
         val time = sample.fetchedAtMillis
         // An OS/process suspension can leave no callback. Detect the gap from the saved watermark.
-        val gap = recording.gapStartedAtUtcMillis ?: recording.lastReceivedAtUtcMillis?.plus(45_000L)?.takeIf { it < time }
+        val gap = if (recording.samplingMode == GrillSamplingMode.ON_LOG.key) null else recording.gapStartedAtUtcMillis ?: recording.lastReceivedAtUtcMillis?.plus(GrillSamplingPolicy.receiptWindow(recording.samplingIntervalMillis))?.takeIf { it < time }
         if (gap != null) {
             if (recording.gapStartedAtUtcMillis == null) event(cookId, "connection_gap", "Temperature recording interrupted", gap)
             event(cookId, "connection_restored", "Temperature recording resumed", time, details = "No readings were recorded for ${(time - gap).coerceAtLeast(0) / 1000} seconds. Missing periods stay blank.")
@@ -115,7 +132,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
             val dishId = if (value.type == "food_probe") recordings.assignmentAt(probe.id, time)?.dishId else null
             SensorReadingEntity("${recording.deviceId}:$time:${value.channel}", cookId, dishId, probe.id, value.name, value.type,
                 value.value, recording.unit, time, ZoneId.systemDefault().id, "controller_cloud", recording.deviceId,
-                value.quality, time, "cloud_receipt")
+                value.quality, time, "cloud_receipt", if (recording.samplingMode == GrillSamplingMode.ON_LOG.key) 0L else recording.samplingIntervalMillis)
         }
         dao.insertReadingsIgnoringDuplicates(readings)
         val setpoint = values.firstOrNull { it.type == "setpoint" && it.quality == "valid" }?.value
@@ -132,7 +149,7 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
             }
         } else recording = recording.copy(pendingSetpoint = null, pendingSetpointCount = 0)
         recordings.saveRecording(recording.copy(lastProcessedAtUtcMillis = time, lastReceivedAtUtcMillis = time,
-            gapStartedAtUtcMillis = null, message = "Recording cloud readings every 15 seconds. Sensor sample age is unknown."))
+            gapStartedAtUtcMillis = null, message = "Collection: ${GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis).label}. Readings show cloud receipt time."))
     }
 
     private suspend fun event(cookId: String, type: String, title: String, time: Long, dishId: String? = null, details: String? = null, context: String? = null) {

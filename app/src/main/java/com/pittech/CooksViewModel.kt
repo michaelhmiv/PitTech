@@ -1,6 +1,7 @@
 package com.pittech
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
@@ -42,12 +43,70 @@ class CooksViewModel(
     internal val grillState get() = app.grillMonitor.state
     internal val recordingServiceRunning get() = app.recordingServiceRunning
 
+    internal fun configureGrillSampling(policy: com.pittech.devices.GrillSamplingPolicy) = app.grillMonitor.configureSampling(policy)
+
+    internal fun configureCookSampling(cookId: String, policy: com.pittech.devices.GrillSamplingPolicy) = perform {
+        app.recordingRepository.configureSampling(cookId, policy)
+        reconcileRecording()
+    }
+
+    private suspend fun reconcileRecording() {
+        if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
+        val recording = app.database.recordingDao().getActiveRecording()
+        if (recording == null) {
+            app.loggingRecordingActive = false
+            app.grillMonitor.setRecording(false)
+            context.stopService(Intent(context, CookRecordingService::class.java))
+            return
+        }
+        val policy = com.pittech.devices.GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis)
+        app.loggingRecordingActive = policy.mode == com.pittech.devices.GrillSamplingMode.ON_LOG
+        app.grillMonitor.configureSampling(policy)
+        app.grillMonitor.state.value.devices.firstOrNull { com.pittech.devices.CookTelemetryPolicy.deviceKey(it.id) == recording.controllerKey }?.let { app.grillMonitor.lockDevice(it.id) }
+        app.grillMonitor.setRecording(true)
+        if (policy.mode == com.pittech.devices.GrillSamplingMode.ON_LOG) {
+            context.stopService(Intent(context, CookRecordingService::class.java))
+            // The logging owner has no timers or background queries, but keeps the cook binding.
+            app.grillMonitor.setRecording(true)
+        } else if (!app.recordingServiceRunning.value) CookRecordingService.start(context)
+    }
+
+    /** Log creation may fail independently of the optional grill snapshot. Never prevent saving the log. */
+    internal suspend fun snapshotForCookLog(cookId: String, force: Boolean = false) {
+        if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
+        val recording = app.database.recordingDao().getRecording(cookId) ?: return
+        if (recording.status != com.pittech.data.CookRecordingEntity.RECORDING ||
+            (!force && recording.samplingMode != com.pittech.devices.GrillSamplingMode.ON_LOG.key)) return
+        val state = app.grillMonitor.state.value
+        if (state.phase == com.pittech.devices.PolarisPhase.RESTORING || state.phase == com.pittech.devices.PolarisPhase.DISCOVERING) {
+            app.recordingRepository.markGap(cookId, "The grill connection is opening. This entry can still be saved.")
+            return
+        }
+        if (!state.authenticated || state.selectedDeviceId?.let(com.pittech.devices.CookTelemetryPolicy::deviceKey) != recording.controllerKey) {
+            app.recordingRepository.pause(cookId, "Reconnect the attached grill in Devices, then resume recording to include temperatures with new logs.")
+            reconcileRecording()
+            return
+        }
+        val recent = state.latest?.takeIf { !force && !state.readingsAreOld(System.currentTimeMillis()) && System.currentTimeMillis() - it.fetchedAtMillis <= 15_000L && it.fetchedAtMillis >= recording.resumedAtUtcMillis }
+        try {
+            val sample = recent ?: app.grillMonitor.snapshot()
+            if (!app.grillMonitor.state.value.authenticated) {
+                app.recordingRepository.pause(cookId, "Reconnect the attached grill in Devices, then resume recording.")
+                reconcileRecording()
+            } else if (sample == null) app.recordingRepository.markGap(cookId, "This log's grill reading was unavailable. Your entry can still be saved.")
+            else app.recordingRepository.ingest(cookId, recording.controllerKey, sample, app.grillMonitor.state.value)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { app.recordingRepository.markGap(cookId, "This log's grill reading was unavailable. Your entry can still be saved.") }
+    }
+
+    internal fun readGrillNow(cookId: String) = perform { snapshotForCookLog(cookId, force = true) }
+
     internal fun setAppForeground(active: Boolean) {
         if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
         app.grillMonitor.setForeground(active)
         if (active) viewModelScope.launch {
-            if (app.database.recordingDao().getActiveRecording() != null && !app.recordingServiceRunning.value) {
-                try { CookRecordingService.start(context) }
+            if (app.database.recordingDao().getActiveRecording() != null) {
+                try { reconcileRecording() }
                 catch (_: Exception) { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Android could not resume recording. Tap Resume recording.") } }
             }
         }
@@ -59,9 +118,9 @@ class CooksViewModel(
         val state = app.grillMonitor.state.value
         require(state.authenticated && state.sessionSaved) { "Connect your grill in Devices before attaching a grill." }
         val device = state.selectedDevice ?: error("Choose a grill in Devices first.")
-        app.recordingRepository.attach(cookId, device, unit, probeDishes)
+        app.recordingRepository.attach(cookId, device, unit, probeDishes, sampling = state.sampling)
         app.grillMonitor.lockDevice(device.id)
-        try { CookRecordingService.start(context) }
+        try { reconcileRecording() }
         catch (_: Exception) {
             app.grillMonitor.setRecording(false)
             app.recordingRepository.pause(cookId, "Android could not start recording. Open PitTech and tap Resume recording.")
@@ -78,15 +137,15 @@ class CooksViewModel(
         app.grillMonitor.selectDevice(device.id)
         app.recordingRepository.attach(cookId, device, saved.unit)
         app.grillMonitor.lockDevice(device.id)
-        try { CookRecordingService.start(context) } catch (_: Exception) {
+        try { reconcileRecording() } catch (_: Exception) {
             app.grillMonitor.setRecording(false)
             app.recordingRepository.pause(cookId, "Android could not resume recording.")
             error("Android could not resume recording. Keep PitTech open and try again.")
         }
     }
 
-    fun pauseGrillRecording(cookId: String) = perform { app.recordingRepository.pause(cookId) }
-    fun stopGrillRecording(cookId: String) = perform { app.recordingRepository.stop(cookId) }
+    fun pauseGrillRecording(cookId: String) = perform { app.recordingRepository.pause(cookId); reconcileRecording() }
+    fun stopGrillRecording(cookId: String) = perform { app.recordingRepository.stop(cookId); reconcileRecording() }
     fun assignGrillProbe(cookId: String, probeId: String, dishId: String?) = perform { app.recordingRepository.assignProbe(probeId, cookId, dishId) }
     init {
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
@@ -184,6 +243,7 @@ class CooksViewModel(
     }
 
     fun addTimelineEvent(cookId: String, dishId: String?, type: String, title: String, details: String?, occurredAt: Long) = perform {
+        snapshotForCookLog(cookId)
         repository.addTimelineEvent(cookId, dishId, type, title, details, occurredAt)
         _notice.value = "Entry added to the timeline."
     }
@@ -198,9 +258,12 @@ class CooksViewModel(
         photoUri: String?,
         photoCaption: String?,
         usePhotoCaptureTime: Boolean = false,
+        useCurrentTime: Boolean = false,
         onSaved: (eventId: String, photoAttached: Boolean) -> Unit,
     ) = performWithLogResult(onSaved) {
-        repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, occurredAt, photoUri, photoCaption, usePhotoCaptureTime)
+        snapshotForCookLog(cookId)
+        val time = if (useCurrentTime && app.database.recordingDao().getRecording(cookId)?.samplingMode == com.pittech.devices.GrillSamplingMode.ON_LOG.key) System.currentTimeMillis() else occurredAt
+        repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, time, photoUri, photoCaption, usePhotoCaptureTime)
     }
 
     fun updateTimelineEvent(event: TimelineEventEntity) = perform {
@@ -255,6 +318,7 @@ class CooksViewModel(
     suspend fun readPhotoBytes(relativePath: String): ByteArray? = repository.readPhoto(relativePath)
 
     fun addManualTemperature(cookId: String, dishId: String?, probe: String, type: String, value: Double, unit: String, measuredAt: Long) = perform {
+        snapshotForCookLog(cookId)
         repository.addManualTemperature(cookId, dishId, probe, type, value, unit, measuredAt)
         _notice.value = "Temperature saved."
     }
@@ -270,6 +334,7 @@ class CooksViewModel(
     }
 
     fun addCookPhoto(cookId: String, uri: String, caption: String?, onFinished: ((Boolean) -> Unit)? = null) = perform({
+        snapshotForCookLog(cookId)
         repository.addCookPhoto(cookId, uri, caption)
         _notice.value = "Photo added to the cook."
     }, onFinished)
@@ -308,6 +373,7 @@ class CooksViewModel(
             _error.value = null
             _notice.value = null
             try {
+                snapshotForCookLog(reminder.cookId)
                 val checkIn = repository.completeCookReminder(reminder.id, note)
                     ?: error("This reminder has already been completed or is no longer available.")
                 CookReminderNotifications.cancel(context, checkIn.reminder.id, checkIn.reminder.cookId)
@@ -333,24 +399,28 @@ class CooksViewModel(
     }
 
     fun attachPhotoToTimelineEvent(eventId: String, cookId: String, dishId: String?, photoUri: String, caption: String?, usePhotoCaptureTime: Boolean = false) = perform {
+        snapshotForCookLog(cookId)
         repository.attachPhotoToTimelineEvent(eventId, cookId, dishId, photoUri, caption, usePhotoCaptureTime)
         _notice.value = "Photo attached to the cook log."
     }
 
     fun saveResults(cookId: String, dishId: String?, finalTemp: String, unit: String, restMinutes: String, ratings: Map<String, String>, notes: String, finish: Boolean) = perform {
         repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish)
+        if (finish) reconcileRecording()
         if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         _notice.value = if (finish) "Cook finished and results saved." else "Results saved."
     }
 
     fun completeCook(cookId: String) = perform {
         repository.completeCook(cookId)
+        reconcileRecording()
         repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         _notice.value = "Cook marked finished."
     }
 
     fun pauseCook(cookId: String) = perform {
         repository.pauseCook(cookId)
+        reconcileRecording()
         _notice.value = "Cook paused."
     }
 
@@ -361,6 +431,7 @@ class CooksViewModel(
 
     fun deleteCook(cook: com.pittech.data.CookEntity) = perform {
         repository.deleteCook(cook)
+        reconcileRecording()
         closeCook()
         _notice.value = "Cook deleted."
     }

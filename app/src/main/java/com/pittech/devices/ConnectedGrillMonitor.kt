@@ -16,6 +16,7 @@ internal class ConnectedGrillMonitor(
     initial: GrillProvider = GrillProvider.GRILLIRG,
     private val saveSelection: (GrillProvider) -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    private val saveSampling: (GrillSamplingPolicy) -> Unit = {},
 ) : PolarisMonitorEngine {
     private var selected = initial.takeIf { it in engines } ?: GrillProvider.GRILLIRG
     private val mutableState = MutableStateFlow(engines.getValue(selected).state.value.copy(provider = selected))
@@ -76,12 +77,19 @@ internal class ConnectedGrillMonitor(
         engine.selectDevice(id)
     }
     override fun refresh() = engine.refresh()
+    override suspend fun snapshot() = engine.snapshot()
+    override fun configureSampling(policy: GrillSamplingPolicy) {
+        engines.values.forEach { it.configureSampling(policy) }
+        saveSampling(policy)
+        mutableState.value = state.value.copy(sampling = policy)
+    }
     override fun signOut() = engine.signOut()
     override fun close() { engines.values.forEach { it.close() }; scope.cancel() }
     companion object {
         fun create(context: Context): ConnectedGrillMonitor {
             val preferences = context.getSharedPreferences("connected-grill-provider", Context.MODE_PRIVATE)
             val initial = runCatching { GrillProvider.valueOf(preferences.getString("selected", "") ?: "") }.getOrDefault(GrillProvider.GRILLIRG)
+            val sampling = runCatching { GrillSamplingPolicy.stored(preferences.getString("sampling_mode", "periodic") ?: "periodic", preferences.getLong("sampling_interval", 60_000L)) }.getOrDefault(GrillSamplingPolicy())
             return ConnectedGrillMonitor(
                 GrillProvider.entries.associateWith { provider ->
                     val backend: PolarisBackend = when (provider) {
@@ -89,11 +97,11 @@ internal class ConnectedGrillMonitor(
                         GrillProvider.PIT_BOSS -> PitBossBackend()
                         GrillProvider.TRAEGER -> TraegerBackend()
                     }
-                    PrimePolarisMonitor(backend, AndroidPolarisSessionStore(context, provider), provider = provider)
+                    PrimePolarisMonitor(backend, AndroidPolarisSessionStore(context, provider), provider = provider, initialSampling = sampling)
                 },
                 initial, { preferences.edit().putString("selected", it.name).apply() },
+                saveSampling = { value -> preferences.edit().putString("sampling_mode", value.mode.key).putLong("sampling_interval", value.intervalMillis).apply() },
             )
         }
     }
 }
-

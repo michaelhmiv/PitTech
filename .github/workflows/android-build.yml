@@ -123,6 +123,7 @@ jobs:
           name: pittech-emulator-test-evidence-api-${{ matrix.api }}-font-${{ matrix.font_scale }}
           path: |
             app/build/ci-emulator/**
+            app/schemas/**
             app/build/reports/androidTests/connected/**
             app/build/outputs/androidTest-results/connected/**
           if-no-files-found: warn

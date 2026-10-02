@@ -6,6 +6,8 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.pittech.devices.GrillSamplingPolicy
+import com.pittech.devices.GrillSamplingMode
 import com.pittech.devices.CookTelemetryPolicy
 import com.pittech.devices.PolarisDevice
 import com.pittech.devices.PolarisMonitorState
@@ -145,7 +147,7 @@ class CookRecordingIntegrationTest {
         val transfer = PitTechDataTransfer(context, cooks)
         val output = ByteArrayOutputStream(); transfer.writeZip(output)
         val preview = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
-        assertEquals(3, preview.archiveVersion)
+        assertEquals(4, preview.archiveVersion)
         assertEquals(event.temperatureContextJson, preview.snapshot.events.first { it.id == event.id }.temperatureContextJson)
         assertTrue(preview.snapshot.readings.all { it.timestampBasis == "cloud_receipt" })
         assertEquals("", preview.snapshot.recordings.single().controllerKey)
@@ -185,9 +187,10 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE timeline_events DROP COLUMN temperatureContextJson")
             sql.execSQL("ALTER TABLE photos DROP COLUMN temperatureContextJson")
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN timestampBasis")
+            sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 3
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5).build()
         try {
             assertEquals("Legacy cook", migrated.cookDao().getCook(id)!!.title)
             assertEquals("measurement", migrated.cookDao().getAllSensorReadings().single().timestampBasis)
@@ -195,4 +198,86 @@ class CookRecordingIntegrationTest {
             assertTrue(migrated.recordingDao().getAllRecordings().isEmpty())
         } finally { migrated.close(); context.deleteDatabase(name) }
     }
+    @Test fun fiveMinuteSpacingAndLoggingSnapshotsKeepTheirPolicyWithoutFalseConnectionGaps() = runBlocking {
+        val id = cook()
+        recording.attach(id, device, "°F", now = base, sampling = GrillSamplingPolicy(intervalMillis = 300_000L))
+        ingest(id, base + 1_000L)
+        ingest(id, base + 301_000L)
+        assertTrue(db.cookDao().getAllSensorReadings().all { it.samplingIntervalMillis == 300_000L })
+        assertTrue(db.cookDao().getAllTimelineEvents().none { it.eventType == "connection_gap" })
+        assertNotNull(cooks.temperatureContext(id, base + 626_000L, null))
+        recording.configureSampling(id, GrillSamplingPolicy(GrillSamplingMode.ON_LOG), base + 627_000L)
+        assertNull(cooks.temperatureContext(id, base + 627_001L, null))
+        ingest(id, base + 628_000L)
+        val event = cooks.addTimelineEvent(id, null, "note", "Snapshot", null, base + 628_100L)
+        assertTrue(TemperatureContext.decode(event.temperatureContextJson).isNotEmpty())
+        ingest(id, base + 10_000_000L)
+        recording.markGap(id, "Snapshot unavailable", base + 10_001_000L)
+        assertTrue(db.cookDao().getAllTimelineEvents().none { it.eventType == "connection_gap" || it.eventType == "connection_restored" })
+        val transfer = PitTechDataTransfer(context, cooks)
+        val zip = ByteArrayOutputStream(); transfer.writeZip(zip)
+        val imported = transfer.previewImport(ByteArrayInputStream(zip.toByteArray()))
+        assertEquals("on_log", imported.snapshot.recordings.single().samplingMode)
+        assertEquals(CookRecordingEntity.STOPPED, imported.snapshot.recordings.single().status)
+        assertEquals(setOf(0L, 300_000L), imported.snapshot.readings.map { it.samplingIntervalMillis }.toSet())
+        assertEquals(event.temperatureContextJson, imported.snapshot.events.single { it.id == event.id }.temperatureContextJson)
+        val legacyArchive = ByteArrayOutputStream()
+        java.util.zip.ZipInputStream(ByteArrayInputStream(zip.toByteArray())).use { input ->
+            java.util.zip.ZipOutputStream(legacyArchive).use { output ->
+                while (true) {
+                    val entry = input.nextEntry ?: break
+                    var bytes = input.readBytes()
+                    if (entry.name == "data/pittech.json" || entry.name == "manifest.json") {
+                        val json = org.json.JSONObject(String(bytes, Charsets.UTF_8))
+                        if (entry.name == "manifest.json") json.put("archiveVersion", 3)
+                        else {
+                            json.put("schemaVersion", 3)
+                            listOf("recordings", "readings").forEach { key ->
+                                val values = json.getJSONArray(key)
+                                for (index in 0 until values.length()) {
+                                    values.getJSONObject(index).remove("samplingIntervalMillis")
+                                    values.getJSONObject(index).remove("samplingMode")
+                                }
+                            }
+                        }
+                        bytes = json.toString().toByteArray(Charsets.UTF_8)
+                    }
+                    output.putNextEntry(java.util.zip.ZipEntry(entry.name)); output.write(bytes); output.closeEntry()
+                }
+            }
+        }
+        val legacy = transfer.previewImport(ByteArrayInputStream(legacyArchive.toByteArray()))
+        assertEquals(3, legacy.archiveVersion)
+        assertTrue(legacy.snapshot.readings.all { it.samplingIntervalMillis == 15_000L })
+        assertEquals("periodic", legacy.snapshot.recordings.single().samplingMode)
+        assertEquals(15_000L, legacy.snapshot.recordings.single().samplingIntervalMillis)
+        val csv = ByteArrayOutputStream(); transfer.writeCsv(csv)
+        assertTrue(csv.toString("UTF-8").contains("sampling_interval_millis"))
+    }
+
+    @Test fun schema4MigrationPreservesTheOriginalFifteenSecondRecordingPolicy() = runBlocking {
+        val name = "migration4-${UUID.randomUUID()}.db"
+        val legacy = Room.databaseBuilder(context, PitTechDatabase::class.java, name).build()
+        val legacyCooks = CookRepository(legacy, PhotoStorage(context))
+        val id = legacyCooks.startCook(NewCookDraft("Original recording"))
+        val legacyRecording = CookRecordingRepository(legacy)
+        legacyRecording.attach(id, device, "°F", now = base)
+        legacyRecording.ingest(id, CookTelemetryPolicy.deviceKey(device.id), sample(base + 1_000), state(base + 1_000))
+        legacy.close()
+        SQLiteDatabase.openDatabase(context.getDatabasePath(name).absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            sql.execSQL("ALTER TABLE cook_recordings DROP COLUMN samplingMode")
+            sql.execSQL("ALTER TABLE cook_recordings DROP COLUMN samplingIntervalMillis")
+            sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
+            sql.version = 4
+        }
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5).build()
+        try {
+            val saved = migrated.recordingDao().getRecording(id)!!
+            assertEquals("periodic", saved.samplingMode)
+            assertEquals(15_000L, saved.samplingIntervalMillis)
+            assertEquals(CookRecordingEntity.RECORDING, saved.status)
+            assertTrue(migrated.cookDao().getAllSensorReadings().all { it.samplingIntervalMillis == 15_000L })
+        } finally { migrated.close(); context.deleteDatabase(name) }
+    }
+
 }

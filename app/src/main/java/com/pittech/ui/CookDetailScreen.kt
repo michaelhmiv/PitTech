@@ -158,6 +158,7 @@ fun CookDetailScreen(
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
+    var preparingPhoto by remember { mutableStateOf(false) }
     var photoSourceDestination by rememberSaveable { mutableStateOf("log") }
     var photoEntryMode by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var logComposerSession by rememberSaveable(data.cook.id) { mutableStateOf(0) }
@@ -368,7 +369,7 @@ fun CookDetailScreen(
                     val entryType = if (photoEntryMode && type == "note") "photo" else type
                     val entryTitle = if (photoEntryMode && title == "Cook note") "Photo added" else title
                     val useCaptureTime = entryType == "photo" && !timeWasChosen
-                    viewModel.addCookLogEntry(data.cook.id, dishId, entryType, entryTitle, details, occurred, uri, caption, useCaptureTime) { eventId, photoAttached ->
+                    viewModel.addCookLogEntry(data.cook.id, dishId, entryType, entryTitle, details, occurred, uri, caption, useCaptureTime, useCurrentTime = !timeWasChosen && entryType != "photo") { eventId, photoAttached ->
                         if (!photoAttached && uri != null) pendingPhotoRetry = PhotoRetry(eventId, data.cook.id, dishId, uri, caption, useCaptureTime)
                         else pendingPhotoRetry = null
                     }
@@ -452,12 +453,24 @@ fun CookDetailScreen(
             },
             onTakePhoto = {
                 showPhotoSource = false
-                addCameraPhoto()
+                if (!preparingPhoto) coroutineScope.launch {
+                    preparingPhoto = true
+                    try { viewModel.snapshotForCookLog(data.cook.id); addCameraPhoto() }
+                    finally { preparingPhoto = false }
+                }
             },
             onChooseFromLibrary = {
                 showPhotoSource = false
                 photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
+        )
+    }
+    if (preparingPhoto) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Reading grill before photo…") },
+            text = { Text("The photo will open even if a temperature reading is unavailable.") },
+            confirmButton = {},
         )
     }
     if (showReminderComposer) {
@@ -595,6 +608,8 @@ fun CookDetailScreen(
                             { viewModel.pauseGrillRecording(data.cook.id) },
                             { viewModel.stopGrillRecording(data.cook.id) },
                             { probe, dish -> viewModel.assignGrillProbe(data.cook.id, probe, dish) },
+                            { policy -> if (data.recording == null) viewModel.configureGrillSampling(policy) else viewModel.configureCookSampling(data.cook.id, policy) },
+                            { viewModel.readGrillNow(data.cook.id) },
                         )
                     },
                     busy = busy,
@@ -1458,7 +1473,7 @@ private fun TimelineEventCard(
             val temperatureContext = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
             if (temperatureContext.isNotBlank()) {
                 Text(temperatureContext, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("event-temperature-context"))
-                Text("Recorded context · cloud values use receipt time", style = MaterialTheme.typography.labelSmall)
+                Text(contextTimeLabel(event.temperatureContextJson), style = MaterialTheme.typography.labelSmall)
             }
             dishName?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
             event.details?.takeIf { it.isNotBlank() }?.let { details ->
@@ -1883,7 +1898,7 @@ private fun PhotoViewerDialog(
                 }
                 photo.capturedAtUtcMillis?.let { Text("Captured ${formatTimestamp(it)}", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp)) }
                 val temperatureContext = com.pittech.data.TemperatureContext.summary(photo.temperatureContextJson)
-                Text(if (temperatureContext.isBlank()) "Temperature context unavailable for this photo's capture time" else temperatureContext + " · recorded context", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp).testTag("photo-temperature-context"))
+                Text(if (temperatureContext.isBlank()) "Temperature context unavailable for this photo's capture time" else temperatureContext + " · " + contextTimeLabel(photo.temperatureContextJson), color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp).testTag("photo-temperature-context"))
                 Text("Pinch to zoom · Drag to move", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp))
             }
         }
@@ -2372,3 +2387,9 @@ private fun statusLabel(status: String): String = when (status) {
     CookStatus.COMPLETED -> "Finished"
     else -> "In progress"
 }
+
+private fun contextTimeLabel(json: String?): String = com.pittech.data.TemperatureContext.decode(json)
+    .groupBy { it.source }.entries.joinToString(" · ") { (source, values) ->
+        val label = if (source == "controller_cloud") "Cloud received" else "Measured"
+        label + " " + values.map { it.observedAtUtcMillis }.distinct().sorted().joinToString { formatTimestamp(it) }
+    }

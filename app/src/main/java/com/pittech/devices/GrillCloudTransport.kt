@@ -81,7 +81,7 @@ internal class OkHttpTraegerTransport : TraegerHttpTransport {
                                 bytes.write(chunk, 0, count)
                             }
                             PolarisHttpResponse(it.code, bytes.toString("UTF-8"),
-                                it.header("Retry-After")?.toLongOrNull()?.coerceIn(1, 300)?.times(1000))
+                                GrillRetryAfter.parse(it.header("Retry-After")))
                         }
                         if (continuation.isActive) continuation.resume(result)
                     } catch (error: Exception) {

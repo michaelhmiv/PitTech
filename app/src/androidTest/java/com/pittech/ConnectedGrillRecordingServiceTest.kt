@@ -46,7 +46,7 @@ class ConnectedGrillRecordingServiceTest {
         try {
             waitFor { hub.state.value.latest != null }
             val cook = app.cookRepository.startCook(NewCookDraft("Provider background cook"))
-            app.recordingRepository.attach(cook, active.device, "°F")
+            app.recordingRepository.attach(cook, active.device, "°F", sampling = GrillSamplingPolicy(intervalMillis = 15_000L))
             instrumentation.runOnMainSync { hub.lockDevice(active.device.id); CookRecordingService.start(app); hub.refresh() }
             waitFor { app.recordingServiceRunning.value && app.database.cookDao().getAllSensorReadings().isNotEmpty() }
             scenario.moveToState(Lifecycle.State.CREATED)

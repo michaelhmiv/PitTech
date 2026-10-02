@@ -74,7 +74,7 @@ internal class OkHttpPolarisTransport : PolarisHttpTransport {
                             PolarisHttpResponse(
                                 it.code,
                                 bytes.toString("UTF-8"),
-                                it.header("Retry-After")?.toLongOrNull()?.coerceIn(1, 300)?.times(1000),
+                                GrillRetryAfter.parse(it.header("Retry-After")),
                             )
                         }
                         if (continuation.isActive) continuation.resume(result)

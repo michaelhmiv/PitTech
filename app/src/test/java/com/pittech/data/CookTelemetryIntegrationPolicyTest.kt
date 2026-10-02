@@ -67,4 +67,26 @@ class CookTelemetryIntegrationPolicyTest {
         assertTrue(reduced.any { it.value == 300.0 })
         assertEquals(1000, rows.size)
     }
+    @Test fun slowCollectionHasExpectedSpacingButLoggingSnapshotsNeverFormAContinuousCurve() {
+        val first = reading("one", 0).copy(samplingIntervalMillis = 300_000L)
+        val second = reading("two", 300_000L).copy(samplingIntervalMillis = 300_000L)
+        val missed = reading("missed", 900_000L).copy(samplingIntervalMillis = 300_000L)
+        assertEquals(listOf(listOf("one", "two"), listOf("missed")), TemperaturePlot.segments(listOf(first, second, missed)).map { it.map { row -> row.id } })
+        assertEquals(2, TemperaturePlot.segments(listOf(first.copy(samplingIntervalMillis = 0), second.copy(samplingIntervalMillis = 0))).size)
+        val context = TemperatureContext.select(listOf(first), 300_000L, "dish")
+        assertEquals(0L, context.single().observedAtUtcMillis)
+        assertTrue(TemperatureContext.select(listOf(first), 330_001L, "dish").isEmpty())
+        assertTrue(TemperatureContext.select(listOf(first.copy(samplingIntervalMillis = 0)), 15_001L, "dish").isEmpty())
+        assertTrue(TemperatureContext.select(listOf(second), 299_999L, "dish").isEmpty())
+    }
+
+    @Test fun aKnownOutageSplitsSlowCurvesWithoutSplittingAnotherCookOrManualData() {
+        val rows = listOf(reading("one", 0), reading("two", 60_000)).map { it.copy(samplingIntervalMillis = 300_000L) }
+        val gap = TimelineEventEntity("gap", "cook", null, "connection_gap", "Interrupted", null, 10_000L, 10_000L, "UTC", "controller_cloud", createdAtUtcMillis = 10_000L, updatedAtUtcMillis = 10_000L)
+        assertEquals(1, TemperaturePlot.segments(rows).size)
+        assertEquals(2, TemperaturePlot.segments(rows, listOf(gap)).size)
+        assertEquals(1, TemperaturePlot.segments(rows, listOf(gap.copy(cookId = "another"))).size)
+        assertEquals(1, TemperaturePlot.segments(rows.map { it.copy(source = "manual") }, listOf(gap)).size)
+    }
+
 }

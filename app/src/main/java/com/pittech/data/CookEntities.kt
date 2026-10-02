@@ -240,6 +240,7 @@ data class SensorReadingEntity(
     val qualityStatus: String = "valid",
     val recordedAtUtcMillis: Long,
     @androidx.room.ColumnInfo(defaultValue = "'measurement'") val timestampBasis: String = "measurement",
+    @androidx.room.ColumnInfo(defaultValue = "15000") val samplingIntervalMillis: Long = 15_000L,
 )
 
 @Entity(
@@ -388,10 +389,13 @@ data class InsightsSnapshot(
     val cooks: List<CookWithDishes>,
     val readings: List<SensorReadingEntity>,
     val results: List<CookResultEntity>,
+    val connectionGaps: List<TimelineEventEntity> = emptyList(),
 )
 
 @Dao
 interface CookDao {
+    @Query("SELECT * FROM timeline_events WHERE source = 'controller_cloud' AND eventType = 'connection_gap' ORDER BY occurredAtUtcMillis")
+    fun observeConnectionGaps(): Flow<List<TimelineEventEntity>>
     @Query("SELECT * FROM probes WHERE cookId = :cookId ORDER BY name ASC")
     fun observeProbes(cookId: String): Flow<List<ProbeEntity>>
 

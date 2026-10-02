@@ -127,7 +127,7 @@ class PrimePolarisApiTest {
         assertTrue(PolarisMonitorState(onlineStatus = 1, statusFetchedAtMillis = 100).onlineLabel(1000).contains("offline"))
         assertTrue(PolarisMonitorState().onlineLabel(1000).contains("not reported"))
         assertTrue(PolarisMonitorState(onlineStatus = 0, statusFetchedAtMillis = 100).onlineLabel(100000).contains("old"))
-        assertEquals(listOf(15_000L, 30_000L, 60_000L, 120_000L), (0..3).map { PolarisMonitorPolicy.nextDelay(it) })
-        assertEquals(300_000L, PolarisMonitorPolicy.nextDelay(100, 900_000))
+        assertEquals(listOf(60_000L, 120_000L, 240_000L, 300_000L), (0..3).map { PolarisMonitorPolicy.nextDelay(it) })
+        assertEquals(900_000L, PolarisMonitorPolicy.nextDelay(100, 900_000))
     }
 }

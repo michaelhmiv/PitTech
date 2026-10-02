@@ -1,0 +1,1582 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "e0d40d087938b5440440e3f26fe8a569",
+    "entities": [
+      {
+        "tableName": "cooks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `status` TEXT NOT NULL, `startedAtUtcMillis` INTEGER NOT NULL, `startedTimeZoneId` TEXT NOT NULL, `endedAtUtcMillis` INTEGER, `smokerName` TEXT, `initialSetpointValue` REAL, `initialSetpointUnit` TEXT, `notes` TEXT, `createdAtUtcMillis` INTEGER NOT NULL, `updatedAtUtcMillis` INTEGER NOT NULL, `fuelType` TEXT, `woodOrPelletBlend` TEXT, `outdoorTemperatureValue` REAL, `outdoorTemperatureUnit` TEXT, `weatherNotes` TEXT, `windNotes` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtUtcMillis",
+            "columnName": "startedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedTimeZoneId",
+            "columnName": "startedTimeZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtUtcMillis",
+            "columnName": "endedAtUtcMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "smokerName",
+            "columnName": "smokerName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "initialSetpointValue",
+            "columnName": "initialSetpointValue",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "initialSetpointUnit",
+            "columnName": "initialSetpointUnit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtUtcMillis",
+            "columnName": "updatedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fuelType",
+            "columnName": "fuelType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "woodOrPelletBlend",
+            "columnName": "woodOrPelletBlend",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "outdoorTemperatureValue",
+            "columnName": "outdoorTemperatureValue",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "outdoorTemperatureUnit",
+            "columnName": "outdoorTemperatureUnit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "weatherNotes",
+            "columnName": "weatherNotes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "windNotes",
+            "columnName": "windNotes",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cooks_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cooks_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_cooks_startedAtUtcMillis",
+            "unique": false,
+            "columnNames": [
+              "startedAtUtcMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cooks_startedAtUtcMillis` ON `${TABLE_NAME}` (`startedAtUtcMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "dishes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `name` TEXT NOT NULL, `foodType` TEXT NOT NULL, `cut` TEXT, `weightValue` REAL, `weightUnit` TEXT, `pieceCount` INTEGER, `startingCondition` TEXT, `boneIn` INTEGER, `placement` TEXT, `prepNotes` TEXT, `createdAtUtcMillis` INTEGER NOT NULL, `updatedAtUtcMillis` INTEGER NOT NULL, `gradeOrSource` TEXT, `thicknessNotes` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "foodType",
+            "columnName": "foodType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cut",
+            "columnName": "cut",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "weightValue",
+            "columnName": "weightValue",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "weightUnit",
+            "columnName": "weightUnit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pieceCount",
+            "columnName": "pieceCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "startingCondition",
+            "columnName": "startingCondition",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "boneIn",
+            "columnName": "boneIn",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "placement",
+            "columnName": "placement",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prepNotes",
+            "columnName": "prepNotes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtUtcMillis",
+            "columnName": "updatedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gradeOrSource",
+            "columnName": "gradeOrSource",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "thicknessNotes",
+            "columnName": "thicknessNotes",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dishes_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dishes_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ingredients",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `dishId` TEXT NOT NULL, `stage` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT, `amountValue` REAL, `amountUnit` TEXT, `appliedAtUtcMillis` INTEGER, `notes` TEXT, `createdAtUtcMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "brand",
+            "columnName": "brand",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "amountValue",
+            "columnName": "amountValue",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "amountUnit",
+            "columnName": "amountUnit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appliedAtUtcMillis",
+            "columnName": "appliedAtUtcMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ingredients_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ingredients_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          },
+          {
+            "name": "index_ingredients_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ingredients_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "timeline_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `dishId` TEXT, `eventType` TEXT NOT NULL, `title` TEXT NOT NULL, `details` TEXT, `occurredAtUtcMillis` INTEGER NOT NULL, `recordedAtUtcMillis` INTEGER NOT NULL, `timeZoneId` TEXT NOT NULL, `source` TEXT NOT NULL, `sourceDeviceId` TEXT, `createdAtUtcMillis` INTEGER NOT NULL, `updatedAtUtcMillis` INTEGER NOT NULL, `temperatureContextJson` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "details",
+            "columnName": "details",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "occurredAtUtcMillis",
+            "columnName": "occurredAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAtUtcMillis",
+            "columnName": "recordedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeZoneId",
+            "columnName": "timeZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceDeviceId",
+            "columnName": "sourceDeviceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtUtcMillis",
+            "columnName": "updatedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "temperatureContextJson",
+            "columnName": "temperatureContextJson",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_timeline_events_cookId_occurredAtUtcMillis",
+            "unique": false,
+            "columnNames": [
+              "cookId",
+              "occurredAtUtcMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_events_cookId_occurredAtUtcMillis` ON `${TABLE_NAME}` (`cookId`, `occurredAtUtcMillis`)"
+          },
+          {
+            "name": "index_timeline_events_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_events_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "devices",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `brand` TEXT, `model` TEXT, `deviceName` TEXT NOT NULL, `role` TEXT NOT NULL, `firmwareVersion` TEXT, `createdAtUtcMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "brand",
+            "columnName": "brand",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deviceName",
+            "columnName": "deviceName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firmwareVersion",
+            "columnName": "firmwareVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_devices_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_devices_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "probes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `deviceId` TEXT, `assignedDishId` TEXT, `name` TEXT NOT NULL, `measurementType` TEXT NOT NULL, `source` TEXT NOT NULL, `createdAtUtcMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`deviceId`) REFERENCES `devices`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`assignedDishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assignedDishId",
+            "columnName": "assignedDishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measurementType",
+            "columnName": "measurementType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_probes_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_probes_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          },
+          {
+            "name": "index_probes_deviceId",
+            "unique": false,
+            "columnNames": [
+              "deviceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_probes_deviceId` ON `${TABLE_NAME}` (`deviceId`)"
+          },
+          {
+            "name": "index_probes_assignedDishId",
+            "unique": false,
+            "columnNames": [
+              "assignedDishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_probes_assignedDishId` ON `${TABLE_NAME}` (`assignedDishId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "devices",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "deviceId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "assignedDishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sensor_readings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `dishId` TEXT, `probeId` TEXT, `probeName` TEXT NOT NULL, `measurementType` TEXT NOT NULL, `value` REAL NOT NULL, `unit` TEXT NOT NULL, `measuredAtUtcMillis` INTEGER NOT NULL, `timeZoneId` TEXT NOT NULL, `source` TEXT NOT NULL, `sourceDeviceId` TEXT, `qualityStatus` TEXT NOT NULL, `recordedAtUtcMillis` INTEGER NOT NULL, `timestampBasis` TEXT NOT NULL DEFAULT 'measurement', `samplingIntervalMillis` INTEGER NOT NULL DEFAULT 15000, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`probeId`) REFERENCES `probes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "probeId",
+            "columnName": "probeId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "probeName",
+            "columnName": "probeName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measurementType",
+            "columnName": "measurementType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measuredAtUtcMillis",
+            "columnName": "measuredAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeZoneId",
+            "columnName": "timeZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceDeviceId",
+            "columnName": "sourceDeviceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "qualityStatus",
+            "columnName": "qualityStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAtUtcMillis",
+            "columnName": "recordedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampBasis",
+            "columnName": "timestampBasis",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'measurement'"
+          },
+          {
+            "fieldPath": "samplingIntervalMillis",
+            "columnName": "samplingIntervalMillis",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "15000"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sensor_readings_cookId_measuredAtUtcMillis",
+            "unique": false,
+            "columnNames": [
+              "cookId",
+              "measuredAtUtcMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sensor_readings_cookId_measuredAtUtcMillis` ON `${TABLE_NAME}` (`cookId`, `measuredAtUtcMillis`)"
+          },
+          {
+            "name": "index_sensor_readings_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sensor_readings_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          },
+          {
+            "name": "index_sensor_readings_probeId",
+            "unique": false,
+            "columnNames": [
+              "probeId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sensor_readings_probeId` ON `${TABLE_NAME}` (`probeId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "probes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "probeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "targets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `dishId` TEXT, `targetType` TEXT NOT NULL, `value` REAL NOT NULL, `unit` TEXT NOT NULL, `scope` TEXT NOT NULL, `explanation` TEXT, `sourceReference` TEXT, `createdAtUtcMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetType",
+            "columnName": "targetType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "explanation",
+            "columnName": "explanation",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceReference",
+            "columnName": "sourceReference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_targets_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_targets_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          },
+          {
+            "name": "index_targets_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_targets_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cook_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `dishId` TEXT, `resultType` TEXT NOT NULL, `numericValue` REAL, `unit` TEXT, `textValue` TEXT, `notes` TEXT, `recordedAtUtcMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "resultType",
+            "columnName": "resultType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "numericValue",
+            "columnName": "numericValue",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "textValue",
+            "columnName": "textValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recordedAtUtcMillis",
+            "columnName": "recordedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cook_results_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cook_results_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          },
+          {
+            "name": "index_cook_results_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cook_results_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "photos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `dishId` TEXT, `eventId` TEXT, `originalFileName` TEXT NOT NULL, `relativePath` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `caption` TEXT, `capturedAtUtcMillis` INTEGER, `addedAtUtcMillis` INTEGER NOT NULL, `temperatureContextJson` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "originalFileName",
+            "columnName": "originalFileName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relativePath",
+            "columnName": "relativePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "caption",
+            "columnName": "caption",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "capturedAtUtcMillis",
+            "columnName": "capturedAtUtcMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "addedAtUtcMillis",
+            "columnName": "addedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "temperatureContextJson",
+            "columnName": "temperatureContextJson",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_photos_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photos_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          },
+          {
+            "name": "index_photos_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photos_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          },
+          {
+            "name": "index_photos_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_photos_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "timeline_events",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cook_reminders",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `title` TEXT NOT NULL, `dueAtUtcMillis` INTEGER NOT NULL, `timeZoneId` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAtUtcMillis` INTEGER NOT NULL, `completedAtUtcMillis` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueAtUtcMillis",
+            "columnName": "dueAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeZoneId",
+            "columnName": "timeZoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtcMillis",
+            "columnName": "createdAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAtUtcMillis",
+            "columnName": "completedAtUtcMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cook_reminders_cookId_status_dueAtUtcMillis",
+            "unique": false,
+            "columnNames": [
+              "cookId",
+              "status",
+              "dueAtUtcMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cook_reminders_cookId_status_dueAtUtcMillis` ON `${TABLE_NAME}` (`cookId`, `status`, `dueAtUtcMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cook_recordings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cookId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `controllerKey` TEXT NOT NULL, `status` TEXT NOT NULL, `unit` TEXT NOT NULL, `startedAtUtcMillis` INTEGER NOT NULL, `resumedAtUtcMillis` INTEGER NOT NULL, `lastProcessedAtUtcMillis` INTEGER, `lastReceivedAtUtcMillis` INTEGER, `gapStartedAtUtcMillis` INTEGER, `message` TEXT NOT NULL, `confirmedSetpoint` REAL, `pendingSetpoint` REAL, `pendingSetpointCount` INTEGER NOT NULL, `samplingMode` TEXT NOT NULL DEFAULT 'periodic', `samplingIntervalMillis` INTEGER NOT NULL DEFAULT 15000, PRIMARY KEY(`cookId`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "controllerKey",
+            "columnName": "controllerKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtUtcMillis",
+            "columnName": "startedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resumedAtUtcMillis",
+            "columnName": "resumedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastProcessedAtUtcMillis",
+            "columnName": "lastProcessedAtUtcMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastReceivedAtUtcMillis",
+            "columnName": "lastReceivedAtUtcMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "gapStartedAtUtcMillis",
+            "columnName": "gapStartedAtUtcMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "message",
+            "columnName": "message",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedSetpoint",
+            "columnName": "confirmedSetpoint",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "pendingSetpoint",
+            "columnName": "pendingSetpoint",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "pendingSetpointCount",
+            "columnName": "pendingSetpointCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "samplingMode",
+            "columnName": "samplingMode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'periodic'"
+          },
+          {
+            "fieldPath": "samplingIntervalMillis",
+            "columnName": "samplingIntervalMillis",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "15000"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cookId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cook_recordings_deviceId",
+            "unique": false,
+            "columnNames": [
+              "deviceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cook_recordings_deviceId` ON `${TABLE_NAME}` (`deviceId`)"
+          },
+          {
+            "name": "index_cook_recordings_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cook_recordings_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "probe_assignments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `cookId` TEXT NOT NULL, `probeId` TEXT NOT NULL, `dishId` TEXT, `startedAtUtcMillis` INTEGER NOT NULL, `endedAtUtcMillis` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`cookId`) REFERENCES `cooks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`probeId`) REFERENCES `probes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dishId`) REFERENCES `dishes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookId",
+            "columnName": "cookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "probeId",
+            "columnName": "probeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dishId",
+            "columnName": "dishId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startedAtUtcMillis",
+            "columnName": "startedAtUtcMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtUtcMillis",
+            "columnName": "endedAtUtcMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_probe_assignments_cookId",
+            "unique": false,
+            "columnNames": [
+              "cookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_probe_assignments_cookId` ON `${TABLE_NAME}` (`cookId`)"
+          },
+          {
+            "name": "index_probe_assignments_probeId_startedAtUtcMillis",
+            "unique": false,
+            "columnNames": [
+              "probeId",
+              "startedAtUtcMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_probe_assignments_probeId_startedAtUtcMillis` ON `${TABLE_NAME}` (`probeId`, `startedAtUtcMillis`)"
+          },
+          {
+            "name": "index_probe_assignments_dishId",
+            "unique": false,
+            "columnNames": [
+              "dishId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_probe_assignments_dishId` ON `${TABLE_NAME}` (`dishId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cooks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "probes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "probeId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dishes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dishId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e0d40d087938b5440440e3f26fe8a569')"
+    ]
+  }
+}
