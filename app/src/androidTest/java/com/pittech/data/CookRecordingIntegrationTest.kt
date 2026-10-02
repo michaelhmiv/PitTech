@@ -91,6 +91,22 @@ class CookRecordingIntegrationTest {
         old.setLastModified(base - 3_600_000L)
         val oldPhoto = cooks.attachPhotoToTimelineEvent(event.id, id, null, CameraPhotoFiles.uri(context, old).toString(), "Earlier prep")
         assertNull(oldPhoto.temperatureContextJson)
+        assertEquals(savedContext, db.cookDao().getTimelineEvent(event.id)!!.temperatureContextJson)
+        val camera = CameraPhotoFiles.create(context)
+        Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { camera.outputStream().use { compress(Bitmap.CompressFormat.JPEG, 90, it) }; recycle() }
+        camera.setLastModified(base + 5_000)
+        val cameraPhoto = cooks.addCookPhoto(id, CameraPhotoFiles.uri(context, camera).toString(), "Current photo")
+        val cameraEntry = db.cookDao().getTimelineEvent(cameraPhoto.eventId!!)!!
+        assertEquals(base + 5_000, cameraEntry.occurredAtUtcMillis)
+        assertEquals(cameraPhoto.temperatureContextJson, cameraEntry.temperatureContextJson)
+        val gallery = java.io.File(context.cacheDir, "unknown-date-${UUID.randomUUID()}.jpg")
+        try {
+            Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { gallery.outputStream().use { compress(Bitmap.CompressFormat.JPEG, 90, it) }; recycle() }
+            val unknown = cooks.addCookPhoto(id, android.net.Uri.fromFile(gallery).toString(), "Undated gallery photo")
+            assertNull(unknown.capturedAtUtcMillis)
+            assertNull(unknown.temperatureContextJson)
+            assertNull(db.cookDao().getTimelineEvent(unknown.eventId!!)!!.temperatureContextJson)
+        } finally { gallery.delete() }
         val revised = event.copy(occurredAtUtcMillis = base - 3_600_000L)
         cooks.updateTimelineEvent(revised)
         assertNull(db.cookDao().getTimelineEvent(event.id)!!.temperatureContextJson)

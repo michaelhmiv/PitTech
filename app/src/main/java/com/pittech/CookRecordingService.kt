@@ -95,7 +95,10 @@ class CookRecordingService : Service() {
                 }
             }.invokeOnCompletion { error ->
                 if (error != null && error !is CancellationException) {
-                    scope.launch { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Recording interrupted. Open PitTech to resume.") }; stopSelf() }
+                    scope.launch {
+                        try { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Recording interrupted. Open PitTech to resume.") } }
+                        finally { stopSelf() }
+                    }
                 }
             }
         }

@@ -417,7 +417,7 @@ class CookRepository(
         } catch (_: Exception) {
             false
         }
-        return CookLogSaveResult(event, attached)
+        return CookLogSaveResult(dao.getTimelineEvent(event.id) ?: event, attached)
     }
 
     suspend fun attachPhotoToTimelineEvent(
@@ -431,12 +431,20 @@ class CookRepository(
         require(event.cookId == cookId) { "A photo can only be attached to an entry in the same cook." }
         require(dishId == null || dao.getDish(dishId)?.cookId == cookId) { "This dish is not part of the selected cook." }
         val copied = photoStorage.copyIntoLibrary(uri, cookId, dishId ?: event.dishId, System.currentTimeMillis(), eventId, caption)
-        val photo = copied.copy(temperatureContextJson = copied.capturedAtUtcMillis?.let { temperatureContext(cookId, it, copied.dishId) })
         return try {
-            dao.insertPhotos(listOf(photo))
+            val photo = copied.copy(temperatureContextJson = copied.capturedAtUtcMillis?.let { temperatureContext(cookId, it, copied.dishId) })
+            database.withTransaction {
+                dao.insertPhotos(listOf(photo))
+                if (event.eventType == "photo" && kotlin.math.abs(event.occurredAtUtcMillis - event.recordedAtUtcMillis) <= 60_000L) {
+                    // Default photo entries follow known capture time. Unknown gallery dates do
+                    // not get today's temperatures. An explicitly backdated event keeps its time.
+                    dao.updateTimelineEvent(event.copy(occurredAtUtcMillis = photo.capturedAtUtcMillis ?: event.occurredAtUtcMillis,
+                        temperatureContextJson = photo.temperatureContextJson, updatedAtUtcMillis = System.currentTimeMillis()))
+                }
+            }
             photo
         } catch (failure: Throwable) {
-            photoStorage.delete(photo.relativePath)
+            photoStorage.delete(copied.relativePath)
             throw failure
         }
     }

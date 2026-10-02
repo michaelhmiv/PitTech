@@ -69,6 +69,7 @@ internal fun StartGrillRecordingPanel(state: PolarisMonitorState, enabled: Boole
                     Text("Recording continues while you use the camera or lock the phone. A cook notification lets you pause.", style = MaterialTheme.typography.bodySmall)
                     ProbeDishSelector("Probe 1", probe1, dishes, "cook-probe1", onProbe1)
                     ProbeDishSelector("Probe 2", probe2, dishes, "cook-probe2", onProbe2)
+                    RecordingPowerOptions()
                 }
             }
         }
@@ -125,6 +126,7 @@ internal fun CookGrillPanel(data: CookDetailData, state: PolarisMonitorState, ru
                     ProbeDishSelector(probe.name, probe.assignedDishId, data.dishes.map { it.id to it.name }, "assign-${probe.name.replace(' ', '-').lowercase(Locale.ROOT)}") { onAssign(probe.id, it) }
                 }
                 if (!active) Text(recording.message, style = MaterialTheme.typography.bodySmall)
+                RecordingPowerOptions()
             }
             val end = data.readings.maxOfOrNull { it.measuredAtUtcMillis } ?: now
             val recent = data.readings.filter { it.sourceDeviceId == recording.deviceId && it.measuredAtUtcMillis >= end - 3_600_000L }

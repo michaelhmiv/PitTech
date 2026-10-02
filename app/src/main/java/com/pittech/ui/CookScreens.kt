@@ -1025,6 +1025,7 @@ internal fun SimpleDropdownField(
                 options.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option) },
+                        modifier = if (testTag == null) Modifier else Modifier.testTag("$testTag-option-${option.lowercase(java.util.Locale.ROOT).replace(' ', '-')}"),
                         onClick = {
                             expanded = false
                             onSelect(option)

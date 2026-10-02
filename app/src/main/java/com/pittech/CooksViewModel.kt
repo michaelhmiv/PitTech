@@ -71,6 +71,7 @@ class CooksViewModel(
     }
 
     fun resumeGrillRecording(cookId: String) = perform {
+        require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.sessionSaved) { "Sign in to GrillirG in Devices before resuming recording." }
         val saved = app.database.recordingDao().getRecording(cookId) ?: error("Attach a grill first.")
         val device = app.grillMonitor.state.value.devices.firstOrNull { com.pittech.devices.CookTelemetryPolicy.deviceKey(it.id) == saved.controllerKey }
             ?: error("Sign in and find the attached grill in Devices first.")
