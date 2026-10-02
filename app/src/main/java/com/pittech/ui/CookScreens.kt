@@ -220,6 +220,7 @@ fun PitTechApp(
             saving = saving,
             saveError = saveError,
             initialDraft = setupPreview,
+            equipmentProfiles = companionRecords.filter { it.kind == "equipment" }.map { com.pittech.domain.CookPreparation.decodeEquipment(it.payload) },
             initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: companionRecords.firstOrNull { it.id == setupPreview?.scheduledPlanId }?.let { com.pittech.domain.ServeTimePlanner.decode(it.payload).book },
             onEditPlaybook = { if (setupPreview?.scheduledPlanId != null) viewModel.planServeTime(scheduledId = setupPreview?.scheduledPlanId) else setupPreview?.playbookId?.let(viewModel::editPlaybook) },
             preferredTemperatureUnit = temperatureUnit,
@@ -292,15 +293,18 @@ fun PitTechApp(
                 onOpenCook = viewModel::openCook,
                 modifier = Modifier.padding(padding),
             )
-            MainSection.DEVICES -> if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                ControllerDevicesScreen(modifier = Modifier.padding(padding))
-            } else {
-                FeaturePlaceholder(
-                    title = "Devices",
-                    message = "Controller diagnostics are available in PitTech's test build.",
-                    note = "You can still log temperatures by hand from any cook.",
-                    modifier = Modifier.padding(padding),
-                )
+            MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
+                EquipmentTools(viewModel)
+                if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
+                    ControllerDevicesScreen(modifier = Modifier.weight(1f))
+                } else {
+                    FeaturePlaceholder(
+                        title = "Devices",
+                        message = "Controller diagnostics are available in PitTech's test build.",
+                        note = "You can still log temperatures by hand from any cook.",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,
@@ -477,6 +481,7 @@ private fun FeaturePlaceholder(
 @Composable
 private fun StartCookScreen(
     initialDraft: NewCookDraft? = null,
+    equipmentProfiles: List<com.pittech.domain.EquipmentProfile> = emptyList(),
     initialPlaybook: com.pittech.domain.CookPlaybook? = null,
     onEditPlaybook: () -> Unit = {},
     saving: Boolean,
@@ -669,6 +674,9 @@ private fun StartCookScreen(
                 }
             }
 
+            if (equipmentProfiles.isNotEmpty()) ChoiceField("Saved equipment", "Choose equipment", equipmentProfiles.map { it.name }) { name ->
+                equipmentProfiles.firstOrNull { it.name == name }?.let { profile -> smoker = profile.name; fuelType = profile.fuelType; woodBlend = profile.hopperBlend }
+            }
             OutlinedTextField(
                 value = smoker,
                 onValueChange = { smoker = it },
@@ -889,6 +897,7 @@ internal fun DishEditorDialog(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    PrepComboTools(preparationItems) { preparationItems = it }
                     preparationItems.forEachIndexed { index, item ->
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             SimpleDropdownField(

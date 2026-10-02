@@ -71,16 +71,18 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         return id
     }
 
-    suspend fun applyToCook(cookId: String, draft: NewCookDraft) {
+    suspend fun applyToCook(cookId: String, draft: NewCookDraft, orderedDishIds: List<String>? = null) {
         val id = draft.playbookId ?: return
         val record = dao.get(id) ?: error("This playbook could not be found.")
         val book = PlaybookCodec.decode(record.payload)
-        applySnapshot(cookId, draft, book, id)
+        applySnapshot(cookId, draft, book, id, orderedDishIds)
     }
 
-    suspend fun applySnapshot(cookId: String, draft: NewCookDraft, book: CookPlaybook, id: String?) {
-        val dishes = database.cookDao().getDishesForCook(cookId)
-        // Dish order is explicit in the preview and preserved when the draft is saved.
+    suspend fun applySnapshot(cookId: String, draft: NewCookDraft, book: CookPlaybook, id: String?, orderedDishIds: List<String>? = null) {
+        val saved = database.cookDao().getDishesForCook(cookId)
+        val dishes = orderedDishIds?.map { key -> saved.firstOrNull { it.id == key } ?: error("A dish in this setup could not be found.") } ?: saved
+        // Capture draft order explicitly; database relationship queries need not preserve insertion order.
+        if (!draft.followPlaybook && dishes.size != book.draft.dishes.size) return
         require(dishes.size == book.draft.dishes.size) { "Keep the playbook dishes when following its steps, or choose Setup only." }
         val now = System.currentTimeMillis()
         database.withTransaction {

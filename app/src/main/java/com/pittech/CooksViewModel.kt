@@ -151,6 +151,16 @@ class CooksViewModel(
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
 
+    private val _equipmentSummaries = MutableStateFlow<List<com.pittech.data.EquipmentSummary>>(emptyList())
+    val equipmentSummaries = _equipmentSummaries.asStateFlow()
+    fun refreshEquipment() = perform { _equipmentSummaries.value = app.preparationRepository.summaries() }
+    fun saveEquipment(profile: com.pittech.domain.EquipmentProfile, id: String?, onFinished: (Boolean) -> Unit) = perform({ app.preparationRepository.saveEquipment(profile, id); _equipmentSummaries.value = app.preparationRepository.summaries() }, onFinished)
+    fun recordEquipmentFuel(entry: com.pittech.domain.FuelEntry, onFinished: (Boolean) -> Unit) = perform({ app.preparationRepository.addFuel(entry); _equipmentSummaries.value = app.preparationRepository.summaries() }, onFinished)
+    fun completeMaintenance(id: String) = perform { app.preparationRepository.maintained(id); _equipmentSummaries.value = app.preparationRepository.summaries() }
+    fun createCookChecklist(cookId: String) = perform { app.preparationRepository.createChecklist(cookId) }
+    fun saveCookChecklist(cookId: String, items: List<com.pittech.domain.ChecklistItem>) = perform { app.preparationRepository.saveChecklist(cookId, items) }
+    fun checkPrepItem(cookId: String, itemId: String, done: Boolean) = perform { app.preparationRepository.check(cookId, itemId, done) }
+
     fun toggleCookFavorite(cookId: String, favorite: Boolean) = perform { repository.setFavorite(cookId, favorite) }
     fun saveCookLearning(cookId: String, dishId: String?, keep: String, change: String) = perform { repository.saveLearning(cookId, dishId, keep, change) }
     fun saveCookTags(cookId: String, method: String, tags: String) = perform { repository.saveCookTags(cookId, method, tags) }

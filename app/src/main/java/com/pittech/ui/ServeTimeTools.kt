@@ -142,7 +142,8 @@ internal fun ActiveServeGoal(data: CookDetailData, records: List<CompanionRecord
     val plan = remember(record.payload) { ServeTimePlanner.decode(record.payload) }
     val events = data.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
     Text("Serve ${serveTime(plan.serveAt, plan.zoneId)} · ${plan.zoneId}", style = MaterialTheme.typography.titleMedium)
-    plan.schedules.forEach { s -> data.dishes.getOrNull(s.dishIndex)?.let { dish ->
+    val dishIds = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }?.let { CookPlanEngine.decode(it.payload).dishIds }
+    plan.schedules.forEach { s -> (dishIds?.getOrNull(s.dishIndex)?.let { id -> data.dishes.firstOrNull { it.id == id } } ?: data.dishes.getOrNull(s.dishIndex))?.let { dish ->
         val (low, high) = ServeTimePlanner.updatedReadyWindow(plan, s, events, dish.id)
         Text("${dish.name} · planning window ${serveTime(low, plan.zoneId)}–${serveTime(high, plan.zoneId)}")
         if (high > plan.serveAt) Text("The planned ready window is after serving. Adjust the meal or method.", color = MaterialTheme.colorScheme.error)

@@ -53,7 +53,9 @@ object ServeTimePlanner {
                 (pit == null && e.setpointF == null || pit != null && e.setpointF != null && kotlin.math.abs(pit - e.setpointF) <= 25)
         }.distinctBy { it.cookId }
     }
-    fun weightKg(value: Double?, unit: String): Double? = value?.let { if (unit == "lb") it * 0.45359237 else it }
+    fun weightKg(value: Double?, unit: String): Double? = value?.let {
+        when (unit) { "lb" -> it * 0.45359237; "oz" -> it * 0.028349523125; "g" -> it / 1000.0; "kg" -> it; else -> return null }
+    }
     fun updatedReadyWindow(plan: ServePlan, schedule: DishSchedule, events: List<PlanEvent>, dishId: String): Pair<Long, Long> {
         val scoped = events.filter { it.dishId == dishId || it.dishId == null }
         val remove = scoped.filter { it.action == "remove" }.maxOfOrNull { it.at }

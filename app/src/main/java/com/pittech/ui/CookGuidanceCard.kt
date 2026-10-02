@@ -108,7 +108,17 @@ private fun ReferencePhotos(id: String?, app: PitTechApplication) {
     if (photos.isNotEmpty()) {
         TextButton(onClick = { expanded = !expanded }) { Text("Reference photos · ${photos.size}") }
         if (expanded) photos.forEach { photo ->
-            val bitmap = remember(photo.relativePath) { android.graphics.BitmapFactory.decodeFile(java.io.File(app.filesDir, photo.relativePath).absolutePath)?.asImageBitmap() }
+            var bitmap by remember(photo.relativePath) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+            LaunchedEffect(photo.relativePath) {
+                bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val file = java.io.File(app.filesDir, photo.relativePath)
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    var sample = 1
+                    while (bounds.outWidth / sample > 900 || bounds.outHeight / sample > 900) sample *= 2
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 })?.asImageBitmap()
+                }
+            }
             bitmap?.let { Image(it, contentDescription = photo.caption, modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)) }
             Text(photo.caption)
         }

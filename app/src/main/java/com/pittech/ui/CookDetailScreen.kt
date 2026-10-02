@@ -600,7 +600,8 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    playbookTools = { CookPlaybookTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel) },
+                    playbookTools = { CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel) },
+                    preparationTools = { CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
                             data, grillState, recordingRunning, busy,
@@ -732,6 +733,7 @@ private fun LiveCookTab(
     data: CookDetailData,
     grillPanel: @Composable () -> Unit,
     playbookTools: @Composable () -> Unit,
+    preparationTools: @Composable () -> Unit,
     busy: Boolean,
     onTogglePause: () -> Unit,
     onAddTarget: () -> Unit,
@@ -1051,6 +1053,7 @@ private fun LiveCookTab(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
             ) { Text(if (showMoreTools) "Hide cook tools" else "Show cook tools") }
             if (showMoreTools) {
+                preparationTools()
                 if (data.targets.isEmpty()) Text("No targets saved.", style = MaterialTheme.typography.bodyMedium)
                 data.targets.forEach { target ->
                     Row(verticalAlignment = Alignment.CenterVertically) {

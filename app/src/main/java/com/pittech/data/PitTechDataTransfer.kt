@@ -602,9 +602,9 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     }
     val companionRecords = root.arrayObjects("companionRecords").map { o ->
         val kind = o.string("kind")
-        require(kind in setOf("playbook", "plan", "alert", "upcoming", "serve_goal", "reference")) { "Unsupported saved guidance in this archive." }
+        require(kind in setOf("playbook", "plan", "alert", "upcoming", "serve_goal", "reference", "prep_combo", "checklist", "equipment", "fuel")) { "Unsupported saved guidance in this archive." }
         val payload = o.getJSONObject("payload").toString()
-        when (kind) { "plan" -> com.pittech.domain.CookPlanEngine.decode(payload); "alert" -> com.pittech.domain.CookAlertEngine.decode(payload); "upcoming", "serve_goal" -> com.pittech.domain.ServeTimePlanner.decode(payload); "reference" -> com.pittech.domain.CookReferenceCodec.decode(payload); else -> com.pittech.domain.PlaybookCodec.decode(payload) }
+        when (kind) { "plan" -> com.pittech.domain.CookPlanEngine.decode(payload); "alert" -> com.pittech.domain.CookAlertEngine.decode(payload); "upcoming", "serve_goal" -> com.pittech.domain.ServeTimePlanner.decode(payload); "reference" -> com.pittech.domain.CookReferenceCodec.decode(payload); "prep_combo" -> com.pittech.domain.CookPreparation.decodeCombo(payload); "checklist" -> com.pittech.domain.CookPreparation.decodeChecklist(payload); "equipment" -> com.pittech.domain.CookPreparation.decodeEquipment(payload); "fuel" -> com.pittech.domain.CookPreparation.decodeFuel(payload); else -> com.pittech.domain.PlaybookCodec.decode(payload) }
         CompanionRecord(o.string("id"), kind, o.stringOrNull("cookId"), o.string("title"), payload, o.long("created"), o.long("updated"))
     }
     require(companionRecords.map { it.id }.distinct().size == companionRecords.size) { "Duplicate saved guidance IDs." }

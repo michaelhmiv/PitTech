@@ -30,12 +30,13 @@ class ServePlanRepository(private val db: PitTechDatabase, private val companion
                 cook.initialSetpointValue?.let { CookPlanEngine.fahrenheit(it, cook.initialSetpointUnit ?: "°F") }, duration, cook.id, scoped.any { it.eventType == "wrap" })
         }
     }
-    suspend fun attach(cookId: String, draft: NewCookDraft) = db.withTransaction {
+    suspend fun attach(cookId: String, draft: NewCookDraft, orderedDishIds: List<String>? = null) = db.withTransaction {
         val id = draft.scheduledPlanId ?: return@withTransaction
         val record = db.companionDao().get(id) ?: error("This scheduled cook is no longer saved.")
         val plan = ServeTimePlanner.decode(record.payload)
         require(plan.startedCookId == null) { "This scheduled cook has already started." }
-        companion.applySnapshot(cookId, draft, plan.book, null)
+        require(draft.dishes.size == plan.book.draft.dishes.size) { "Update the serving plan when changing its dish list, then start the cook." }
+        companion.applySnapshot(cookId, draft, plan.book, null, orderedDishIds)
         val started = plan.copy(startedCookId = cookId, book = plan.book.copy(draft = draft))
         db.companionDao().put(record.copy(payload = ServeTimePlanner.encode(started), updatedAtUtcMillis = System.currentTimeMillis()))
         val now = System.currentTimeMillis()
