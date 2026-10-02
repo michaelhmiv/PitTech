@@ -7,7 +7,7 @@ import java.time.Instant
 class ServeTimePlannerTest {
     private val book = CookPlaybook("Meal", NewCookDraft("Meal", dishes = listOf(DishDraft("Brisket", "Beef"), DishDraft("Side", "Vegetables"))), emptyList())
     @Test fun backwardsPlanSeparatesRestHoldAndBufferAndFindsPitConflicts() {
-        val p = ServePlan(book, 100_000_000, "UTC", 60, listOf(DishSchedule(0, 480, 600, restMinutes = 120, holdMinutes = 30, pitF = 225.0), DishSchedule(1, 60, 90, restMinutes = 10, pitF = 350.0)))
+        val p = ServePlan(book, 100_000_000, "UTC", 60, listOf(DishSchedule(0, 480, 600, restMinutes = 120, holdMinutes = 30, pitF = 225.0), DishSchedule(1, 60, 240, restMinutes = 10, pitF = 350.0)))
         val w = ServeTimePlanner.windows(p).first()
         assertEquals(p.serveAt - 810 * 60_000L, w.foodOnAt)
         assertEquals(p.serveAt - 90 * 60_000L, w.readyLatest)
