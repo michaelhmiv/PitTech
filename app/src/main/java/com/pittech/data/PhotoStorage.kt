@@ -8,6 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import android.media.ExifInterface
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /** Copies picked photos into app-private storage so cooks remain available offline. */
 class PhotoStorage(private val context: Context) {
@@ -41,7 +45,7 @@ class PhotoStorage(private val context: Context) {
                 mimeType = mimeType,
                 eventId = eventId,
                 caption = caption?.trim()?.ifBlank { null },
-                capturedAtUtcMillis = null,
+                capturedAtUtcMillis = CameraPhotoFiles.capturedAt(context, uri) ?: captureTime(destination),
                 addedAtUtcMillis = nowUtcMillis,
             )
             CameraPhotoFiles.delete(context, uri)
@@ -56,6 +60,15 @@ class PhotoStorage(private val context: Context) {
         File(context.filesDir, relativePath).delete()
         Unit
     }
+
+    /** EXIF dates without an offset are ambiguous. Never substitute the import time. */
+    private fun captureTime(file: File): Long? = runCatching {
+        val exif = ExifInterface(file.absolutePath)
+        val date = exif.getAttribute("DateTimeOriginal") ?: return null
+        val offset = exif.getAttribute("OffsetTimeOriginal") ?: return null
+        LocalDateTime.parse(date, DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss"))
+            .toInstant(ZoneOffset.of(offset)).toEpochMilli().takeIf { it > 0 && it <= System.currentTimeMillis() + 60_000L }
+    }.getOrNull()
 
     suspend fun writeImported(relativePath: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
         require(relativePath.matches(Regex("photos/[A-Za-z0-9_-]{1,80}\\.[A-Za-z0-9]{1,8}"))) { "Invalid photo path in archive." }

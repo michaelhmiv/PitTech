@@ -135,6 +135,7 @@ data class TimelineEventEntity(
     val sourceDeviceId: String? = null,
     val createdAtUtcMillis: Long,
     val updatedAtUtcMillis: Long,
+    val temperatureContextJson: String? = null,
 )
 
 @Entity(
@@ -238,6 +239,7 @@ data class SensorReadingEntity(
     val sourceDeviceId: String? = null,
     val qualityStatus: String = "valid",
     val recordedAtUtcMillis: Long,
+    @androidx.room.ColumnInfo(defaultValue = "'measurement'") val timestampBasis: String = "measurement",
 )
 
 @Entity(
@@ -336,6 +338,7 @@ data class PhotoEntity(
     val caption: String? = null,
     val capturedAtUtcMillis: Long? = null,
     val addedAtUtcMillis: Long,
+    val temperatureContextJson: String? = null,
 )
 
 @Entity(
@@ -376,6 +379,9 @@ data class CookDetailData(
     val results: List<CookResultEntity>,
     val photos: List<PhotoEntity>,
     val reminders: List<CookReminderEntity>,
+    val recording: CookRecordingEntity? = null,
+    val probes: List<ProbeEntity> = emptyList(),
+    val assignments: List<ProbeAssignmentEntity> = emptyList(),
 )
 
 data class InsightsSnapshot(
@@ -386,6 +392,21 @@ data class InsightsSnapshot(
 
 @Dao
 interface CookDao {
+    @Query("SELECT * FROM probes WHERE cookId = :cookId ORDER BY name ASC")
+    fun observeProbes(cookId: String): Flow<List<ProbeEntity>>
+
+    @Query("SELECT * FROM probes WHERE cookId = :cookId ORDER BY name ASC")
+    suspend fun getProbesForCook(cookId: String): List<ProbeEntity>
+
+    @Update
+    suspend fun updateProbe(probe: ProbeEntity)
+
+    @Query("SELECT * FROM dishes WHERE cookId = :cookId ORDER BY rowid ASC")
+    suspend fun getDishesForCook(cookId: String): List<DishEntity>
+
+    @Query("SELECT * FROM sensor_readings WHERE cookId = :cookId AND measuredAtUtcMillis BETWEEN :after AND :before ORDER BY measuredAtUtcMillis DESC LIMIT 160")
+    suspend fun getReadingsForContext(cookId: String, after: Long, before: Long): List<SensorReadingEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertCook(cook: CookEntity)
 

@@ -92,6 +92,7 @@ internal data class PolarisMonitorState(
     val failedRequests: Int = 0,
     val exchanges: List<PolarisExchange> = emptyList(),
     val sessionSaved: Boolean = true,
+    val lockedDeviceId: String? = null,
 ) {
     val selectedDevice get() = devices.firstOrNull { it.id == selectedDeviceId }
     fun readingsAreOld(now: Long) = latest == null || now - latest.fetchedAtMillis > 45_000L || readingRequestFailed || onlineStatus?.let { it != 0 } == true

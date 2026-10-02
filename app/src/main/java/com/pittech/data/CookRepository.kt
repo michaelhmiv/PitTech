@@ -33,7 +33,7 @@ class CookRepository(
             dao.observePhotos(cookId),
             dao.observeReminders(cookId),
         ) { targets, results, photos, reminders -> CookExtras(targets, results, photos, reminders) }
-        return combine(core, extras) { first, second ->
+        return combine(core, extras, database.recordingDao().observeRecording(cookId), dao.observeProbes(cookId), database.recordingDao().observeAssignments(cookId)) { first, second, recording, probes, assignments ->
             first.cook?.let { relation ->
                 CookDetailData(
                     cook = relation.cook,
@@ -45,6 +45,9 @@ class CookRepository(
                     results = second.results,
                     photos = second.photos,
                     reminders = second.reminders,
+                    recording = recording,
+                    probes = probes,
+                    assignments = assignments,
                 )
             }
         }
@@ -267,6 +270,7 @@ class CookRepository(
             eventType = eventType, title = title.trim(), details = details?.trim()?.ifBlank { null },
             occurredAtUtcMillis = occurredAtUtcMillis, recordedAtUtcMillis = now,
             timeZoneId = timeZoneId, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
+            temperatureContextJson = temperatureContext(cookId, occurredAtUtcMillis, dishId),
         )
         dao.insertTimelineEvent(event)
         return event
@@ -274,11 +278,15 @@ class CookRepository(
 
     suspend fun updateTimelineEvent(event: TimelineEventEntity) {
         require(event.title.isNotBlank()) { "Enter a title for this entry." }
+        val previous = dao.getTimelineEvent(event.id)
+        val context = if (previous == null || previous.occurredAtUtcMillis != event.occurredAtUtcMillis || previous.dishId != event.dishId)
+            temperatureContext(event.cookId, event.occurredAtUtcMillis, event.dishId) else previous.temperatureContextJson
         dao.updateTimelineEvent(
             event.copy(
                 title = event.title.trim(),
                 details = event.details?.trim()?.ifBlank { null },
                 updatedAtUtcMillis = System.currentTimeMillis(),
+                temperatureContextJson = context,
             ),
         )
     }
@@ -376,6 +384,7 @@ class CookRepository(
                 cookId = reminder.cookId,
                 eventType = "reminder_completed",
                 title = "Check-in: ${reminder.title}",
+                temperatureContextJson = temperatureContext(reminder.cookId, now, null),
                 details = note?.trim()?.ifBlank { null } ?: "Reminder check-in completed.",
                 occurredAtUtcMillis = now,
                 recordedAtUtcMillis = now,
@@ -421,7 +430,8 @@ class CookRepository(
         val event = dao.getTimelineEvent(eventId) ?: error("This timeline entry is no longer available.")
         require(event.cookId == cookId) { "A photo can only be attached to an entry in the same cook." }
         require(dishId == null || dao.getDish(dishId)?.cookId == cookId) { "This dish is not part of the selected cook." }
-        val photo = photoStorage.copyIntoLibrary(uri, cookId, dishId ?: event.dishId, System.currentTimeMillis(), eventId, caption)
+        val copied = photoStorage.copyIntoLibrary(uri, cookId, dishId ?: event.dishId, System.currentTimeMillis(), eventId, caption)
+        val photo = copied.copy(temperatureContextJson = copied.capturedAtUtcMillis?.let { temperatureContext(cookId, it, copied.dishId) })
         return try {
             dao.insertPhotos(listOf(photo))
             photo
@@ -488,20 +498,22 @@ class CookRepository(
         if (finish) completeCook(cookId)
     }
 
-    suspend fun completeCook(cookId: String) {
+    suspend fun completeCook(cookId: String) = database.withTransaction {
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
-        if (cook.status == CookStatus.COMPLETED) return
+        if (cook.status == CookStatus.COMPLETED) return@withTransaction
         val now = System.currentTimeMillis()
         dao.updateCook(cook.copy(status = CookStatus.COMPLETED, endedAtUtcMillis = now, updatedAtUtcMillis = now))
         addTimelineEvent(cookId, null, "cook_finished", "Cook finished", null, now)
+        CookRecordingRepository(database).stop(cookId, now)
     }
 
-    suspend fun pauseCook(cookId: String) {
+    suspend fun pauseCook(cookId: String) = database.withTransaction {
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
-        if (cook.status != CookStatus.ACTIVE) return
+        if (cook.status != CookStatus.ACTIVE) return@withTransaction
         val now = System.currentTimeMillis()
         dao.updateCook(cook.copy(status = CookStatus.PAUSED, updatedAtUtcMillis = now))
         addTimelineEvent(cookId, null, "cook_paused", "Cook paused", null, now)
+        CookRecordingRepository(database).pause(cookId, "Cook paused · temperature recording paused.", now)
     }
 
     suspend fun resumeCook(cookId: String) {
@@ -563,6 +575,9 @@ class CookRepository(
             probes = dao.getAllProbes().filter { it.cookId in selectedCookIds },
             photos = dao.getAllPhotos().filter { it.cookId in selectedCookIds },
             reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
+            recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
+                .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
+            assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
         )
     }
 
@@ -595,6 +610,9 @@ class CookRepository(
                 dao.insertReadingsIgnoringDuplicates(snapshot.readings.filter { it.cookId in newIds })
                 dao.insertPhotosIgnoringDuplicates(restoredPhotos)
                 dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds })
+                database.recordingDao().insertRecordings(snapshot.recordings.filter { it.cookId in newIds }
+                    .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") })
+                database.recordingDao().insertAssignments(snapshot.assignments.filter { it.cookId in newIds })
             }
         } catch (failure: Throwable) {
             restoredPhotos.forEach { photo -> photoStorage.delete(photo.relativePath) }
@@ -604,6 +622,9 @@ class CookRepository(
     }
 
     suspend fun readPhoto(relativePath: String): ByteArray? = photoStorage.read(relativePath)
+
+    internal suspend fun temperatureContext(cookId: String, time: Long, dishId: String?): String? =
+        TemperatureContext.encode(TemperatureContext.select(dao.getReadingsForContext(cookId, time - 300_000L, time), time, dishId))
 
     suspend fun getPendingCookReminders(): List<CookReminderEntity> = dao.getPendingReminders()
 
@@ -658,6 +679,8 @@ data class ExportSnapshot(
     val probes: List<ProbeEntity>,
     val photos: List<PhotoEntity>,
     val reminders: List<CookReminderEntity> = emptyList(),
+    val recordings: List<CookRecordingEntity> = emptyList(),
+    val assignments: List<ProbeAssignmentEntity> = emptyList(),
 )
 
 data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)

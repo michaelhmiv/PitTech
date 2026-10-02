@@ -189,4 +189,26 @@ class PrimePolarisMonitorTest {
             assertNull(monitor.state.value.latest)
         } finally { monitor.close() }
     }
+    @Test fun recordingOwnsPollingAcrossScreenClosureAndLocksTheGrill() = runBlocking {
+        val backend = Backend().apply { deviceList += PolarisDevice("second-id", "Second", null, null, null, null) }
+        val monitor = monitor(backend)
+        try {
+            monitor.setForeground(true)
+            waitFor { monitor.state.value.devices.size == 2 && !monitor.state.value.busy }
+            monitor.selectDevice("private-id")
+            waitFor { monitor.state.value.latest != null }
+            monitor.lockDevice("private-id")
+            monitor.setRecording(true)
+            monitor.setForeground(false)
+            val before = backend.readingCalls
+            monitor.refresh()
+            waitFor { backend.readingCalls > before }
+            monitor.selectDevice("second-id")
+            assertEquals("private-id", monitor.state.value.selectedDeviceId)
+            monitor.setRecording(false)
+            assertEquals(PolarisPhase.PAUSED, monitor.state.value.phase)
+            assertNull(monitor.state.value.lockedDeviceId)
+        } finally { monitor.close() }
+    }
+
 }

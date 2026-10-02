@@ -77,7 +77,7 @@ internal fun GrillirGCloudMonitorScreen(
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
-    val engine = remember(context, engineOverride) { engineOverride ?: PrimePolarisMonitor(PrimePolarisApi(), AndroidPolarisSessionStore(context)) }
+    val engine = remember(context, engineOverride) { engineOverride ?: (context.applicationContext as com.pittech.PitTechApplication).grillMonitor }
     val state by engine.state.collectAsStateWithLifecycle()
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
@@ -87,12 +87,12 @@ internal fun GrillirGCloudMonitorScreen(
     var submitting by remember { mutableStateOf(false) }
     var reportMessage by remember { mutableStateOf<String?>(null) }
 
-    DisposableEffect(engine) { onDispose { engine.close() } }
+    DisposableEffect(engine, engineOverride) { onDispose { if (engineOverride != null) engine.close() } }
     LaunchedEffect(engine, owner) {
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            engine.setForeground(true)
+            if (engineOverride != null) engine.setForeground(true)
             try { while (true) { now = System.currentTimeMillis(); delay(1000) } }
-            finally { engine.setForeground(false) }
+            finally { if (engineOverride != null) engine.setForeground(false) }
         }
     }
 
@@ -140,7 +140,7 @@ internal fun GrillirGCloudMonitorScreen(
             if (!state.sessionSaved) Text("This sign-in could not be saved. You will need to sign in again next visit.")
             state.devices.forEachIndexed { index, device ->
                 OutlinedButton(
-                    onClick = { engine.selectDevice(device.id) }, enabled = !state.busy,
+                    onClick = { engine.selectDevice(device.id) }, enabled = !state.busy && (state.lockedDeviceId == null || state.lockedDeviceId == device.id),
                     modifier = Modifier.fillMaxWidth().testTag("cloud-device-$index"),
                 ) { Text((if (state.selectedDeviceId == device.id) "✓ " else "") + device.name) }
             }

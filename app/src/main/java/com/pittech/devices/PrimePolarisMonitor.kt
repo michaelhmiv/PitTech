@@ -42,6 +42,8 @@ internal class PrimePolarisMonitor(
     override val state = mutableState.asStateFlow()
     private var session: PolarisSession? = null
     private var foreground = false
+    private var screenForeground = false
+    private var recording = false
     private var closed = false
     private var generation = 0L
     private var action: Job? = null
@@ -72,11 +74,27 @@ internal class PrimePolarisMonitor(
     }
 
     override fun setForeground(active: Boolean) {
+        screenForeground = active
+        updateActive()
+    }
+
+    fun setRecording(active: Boolean) {
+        recording = active
+        if (!active) mutableState.value = state.value.copy(lockedDeviceId = null)
+        updateActive()
+    }
+
+    fun lockDevice(id: String) {
+        mutableState.value = state.value.copy(lockedDeviceId = id)
+    }
+
+    private fun updateActive() {
+        val active = screenForeground || recording
         if (closed || foreground == active) return
         foreground = active
         if (!active) {
             stopPolling()
-            if (session != null) mutableState.value = state.value.copy(phase = PolarisPhase.PAUSED, nextPollAtMillis = null, message = "Monitoring paused while this screen is closed.")
+            if (session != null) mutableState.value = state.value.copy(phase = PolarisPhase.PAUSED, nextPollAtMillis = null, message = "Monitoring paused while PitTech is closed and no cook is recording.")
         } else if (session != null && action?.isActive != true) {
             if (state.value.devices.isEmpty()) reloadDevices() else startPolling()
         }
@@ -103,7 +121,8 @@ internal class PrimePolarisMonitor(
         val current = session ?: return
         mutableState.value = state.value.copy(phase = PolarisPhase.DISCOVERING, message = "Finding grills on your account…")
         val devices = track(PolarisOperation.DEVICES) { backend.devices(current) }
-        val selected = current.selectedDeviceId?.takeIf { id -> devices.any { it.id == id } }
+        val selected = state.value.lockedDeviceId?.takeIf { id -> devices.any { it.id == id } }
+            ?: current.selectedDeviceId?.takeIf { id -> devices.any { it.id == id } }
             ?: devices.singleOrNull()?.id
         val changed = state.value.selectedDeviceId != selected
         session = current.select(selected)
@@ -119,6 +138,10 @@ internal class PrimePolarisMonitor(
     }
 
     override fun selectDevice(id: String) {
+        if (state.value.lockedDeviceId?.let { it != id } == true) {
+            mutableState.value = state.value.copy(message = "Pause or stop cook recording before selecting another grill.")
+            return
+        }
         if (state.value.devices.none { it.id == id } || session == null) return
         runAction {
             session = session?.select(id)
@@ -225,7 +248,7 @@ internal class PrimePolarisMonitor(
                 val delayMillis = PolarisMonitorPolicy.nextDelay(failures, failure?.retryAfterMillis)
                 mutableState.value = state.value.copy(
                     consecutiveFailures = failures, nextPollAtMillis = now() + delayMillis,
-                    message = failure?.userMessage ?: "Monitoring your grill. Readings are fetched every 15 seconds while this screen is open.",
+                    message = failure?.userMessage ?: "Monitoring your grill. Readings are fetched every 15 seconds while PitTech is open or a cook is recording.",
                 )
                 delay(delayMillis)
             }

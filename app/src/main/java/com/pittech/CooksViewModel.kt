@@ -38,6 +38,55 @@ class CooksViewModel(
     private val dataTransfer: PitTechDataTransfer,
     private val context: Context,
 ) : ViewModel() {
+    private val app get() = context.applicationContext as PitTechApplication
+    internal val grillState get() = app.grillMonitor.state
+    internal val recordingServiceRunning get() = app.recordingServiceRunning
+
+    internal fun setAppForeground(active: Boolean) {
+        if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
+        app.grillMonitor.setForeground(active)
+        if (active) viewModelScope.launch {
+            if (app.database.recordingDao().getActiveRecording() != null && !app.recordingServiceRunning.value) {
+                try { CookRecordingService.start(context) }
+                catch (_: Exception) { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Android could not resume recording. Tap Resume recording.") } }
+            }
+        }
+    }
+
+    fun attachGrill(cookId: String, unit: String) = perform { attachSelectedGrill(cookId, unit) }
+
+    private suspend fun attachSelectedGrill(cookId: String, unit: String, probeDishes: Map<String, String?> = emptyMap()) {
+        val state = app.grillMonitor.state.value
+        require(state.authenticated && state.sessionSaved) { "Sign in to GrillirG in Devices before attaching a grill." }
+        val device = state.selectedDevice ?: error("Choose a grill in Devices first.")
+        app.recordingRepository.attach(cookId, device, unit, probeDishes)
+        app.grillMonitor.lockDevice(device.id)
+        try { CookRecordingService.start(context) }
+        catch (_: Exception) {
+            app.grillMonitor.setRecording(false)
+            app.recordingRepository.pause(cookId, "Android could not start recording. Open PitTech and tap Resume recording.")
+            error("Cook saved, but Android could not start recording. Tap Resume recording to try again.")
+        }
+        _notice.value = "Grill attached. Temperatures will be saved with this cook."
+    }
+
+    fun resumeGrillRecording(cookId: String) = perform {
+        val saved = app.database.recordingDao().getRecording(cookId) ?: error("Attach a grill first.")
+        val device = app.grillMonitor.state.value.devices.firstOrNull { com.pittech.devices.CookTelemetryPolicy.deviceKey(it.id) == saved.controllerKey }
+            ?: error("Sign in and find the attached grill in Devices first.")
+        app.grillMonitor.selectDevice(device.id)
+        app.recordingRepository.attach(cookId, device, saved.unit)
+        app.grillMonitor.lockDevice(device.id)
+        try { CookRecordingService.start(context) } catch (_: Exception) {
+            app.grillMonitor.setRecording(false)
+            app.recordingRepository.pause(cookId, "Android could not resume recording.")
+            error("Android could not resume recording. Keep PitTech open and try again.")
+        }
+    }
+
+    fun pauseGrillRecording(cookId: String) = perform { app.recordingRepository.pause(cookId) }
+    fun stopGrillRecording(cookId: String) = perform { app.recordingRepository.stop(cookId) }
+    fun assignGrillProbe(cookId: String, probeId: String, dishId: String?) = perform { app.recordingRepository.assignProbe(probeId, cookId, dishId) }
     init {
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
@@ -99,10 +148,17 @@ class CooksViewModel(
     fun consumeReminderCheckIn() { _pendingReminderId.value = null }
 
     fun startCook(draft: NewCookDraft) = perform {
-        val cookId = repository.startCook(draft)
+        if (draft.recordGrill) require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.selectedDevice != null) { "Choose a connected grill in Devices before starting automatic recording." }
+        val selected = app.grillMonitor.state.value.selectedDevice
+        val resolved = if (draft.recordGrill && draft.smokerName.isBlank()) draft.copy(smokerName = selected?.name.orEmpty()) else draft
+        val cookId = repository.startCook(resolved)
         _selectedCookId.value = cookId
         _savedCookId.value = cookId
         _notice.value = "Cook saved on this phone."
+        if (draft.recordGrill) {
+            val dishes = app.database.cookDao().getDishesForCook(cookId)
+            attachSelectedGrill(cookId, draft.setpointUnit, mapOf("probe1" to draft.probe1DishIndex?.let { dishes.getOrNull(it)?.id }, "probe2" to draft.probe2DishIndex?.let { dishes.getOrNull(it)?.id }))
+        }
     }
 
     fun updateCookDetails(cookId: String, title: String, smoker: String, setpoint: String, unit: String, notes: String, fuel: String, wood: String, outdoorTemp: String, outdoorUnit: String, weather: String, wind: String) = perform {
