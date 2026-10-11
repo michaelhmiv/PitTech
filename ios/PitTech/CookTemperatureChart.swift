@@ -19,11 +19,14 @@ struct CookTemperatureChart: View {
     @State private var comparisonChannel = ""
     @State private var currentChannel = ""
     @State private var alignment = "food_on"
+    @State private var currentDish = ""
+    @State private var sourceDish = ""
+    @State private var referenceMessage: String?
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var samples: [TemperatureSample] { store.readings(for: cookId) }
     private var sourceSamples: [TemperatureSample] { store.readings(for: comparisonCook) }
-    private var channels: [String] { Array(Set(samples.map(\.seriesId))).sorted() }
-    private var sourceChannels: [String] { Array(Set(sourceSamples.map(\.seriesId))).sorted() }
+    private var channels: [String] { Array(Set(samples.filter { eligible($0, dish: currentDish) }.map(\.seriesId))).sorted() }
+    private var sourceChannels: [String] { Array(Set(sourceSamples.filter { eligible($0, dish: sourceDish) }.map(\.seriesId))).sorted() }
     private var events: [TimelineEntry] { store.events(for: cookId) }
     private var unit: String { store.temperatureUnit }
     private var comparing: Bool { !comparisonCook.isEmpty && !currentChannel.isEmpty && !comparisonChannel.isEmpty && comparisonAnchor != nil && currentAnchor != nil && compatibleChannels }
@@ -33,7 +36,8 @@ struct CookTemperatureChart: View {
         return pit(current) == pit(source)
     }
     private func actionAnchor(_ id: String, channel: String, rows: [TemperatureSample], action: String) -> Date? {
-        let dish = rows.first { $0.seriesId == channel }?.dishId
+        let selectedDish = id == cookId ? currentDish : sourceDish
+        let dish = selectedDish.isEmpty ? rows.first { $0.seriesId == channel }?.dishId : selectedDish
         return store.library.actions(for: id).filter { $0.action == action && ($0.dishIds.isEmpty || dish.map($0.dishIds.contains) == true) }.min(by: { $0.at < $1.at }).map { Date(timeIntervalSince1970: $0.at / 1_000) }
     }
     private var currentAnchor: Date? { actionAnchor(cookId, channel: currentChannel, rows: samples, action: alignment) }
@@ -110,10 +114,12 @@ struct CookTemperatureChart: View {
             }
             if !targets.isEmpty { Text("Dashed lines show current/reference targets. Solid lines show recorded target history from its effective time.").font(.caption).foregroundStyle(.secondary) }
             comparisonControls
-        }.onAppear { reset() }
+        }.onAppear { currentDish = store.dishRecords(cookId).first?.id ?? ""; restoreReference(); reset() }
         .onChange(of: plottedSamples.last?.id) { _, _ in if follow { scrollStart = fullEnd - span } }
         .onChange(of: clockMode) { _, _ in reset() }
-        .onChange(of: comparisonCook) { _, _ in comparisonChannel = ""; reset() }
+        .onChange(of: comparisonCook) { _, _ in if !sourceChannels.contains(comparisonChannel) { comparisonChannel = "" }; if !store.dishRecords(comparisonCook).contains(where: { $0.id == sourceDish }) { sourceDish = store.dishRecords(comparisonCook).first?.id ?? "" }; reset() }
+        .onChange(of: currentDish) { _, _ in if !channels.contains(currentChannel) { currentChannel = "" }; restoreReference() }
+        .onChange(of: sourceDish) { _, _ in if !sourceChannels.contains(comparisonChannel) { comparisonChannel = "" } }
         .onChange(of: comparing) { _, _ in reset() }
     }
     private var controls: some View {
@@ -189,15 +195,35 @@ struct CookTemperatureChart: View {
     private var comparisonControls: some View {
         VStack(alignment: .leading) {
             Text("Compare a prior cook").font(.headline)
+            Picker("Current dish", selection: $currentDish) { Text("Whole cook").tag(""); ForEach(store.dishRecords(cookId)) { Text($0.name).tag($0.id) } }
             Picker("Reference cook", selection: $comparisonCook) { Text("None").tag(""); ForEach(store.completedCooks.filter { $0.id != cookId }) { Text($0.title).tag($0.id) } }
             if !comparisonCook.isEmpty {
+                Picker("Reference dish", selection: $sourceDish) { Text("Whole cook").tag(""); ForEach(store.dishRecords(comparisonCook)) { Text($0.name).tag($0.id) } }
                 Picker("Current channel", selection: $currentChannel) { Text("Choose channel").tag(""); ForEach(channels, id: \.self) { Text(channelLabel($0, rows: samples)).tag($0) } }
                 Picker("Reference channel", selection: $comparisonChannel) { Text("Choose channel").tag(""); ForEach(sourceChannels, id: \.self) { Text(channelLabel($0, rows: sourceSamples)).tag($0) } }
                 Picker("Align at", selection: $alignment) { Text("Food on").tag("food_on"); Text("Wrap").tag("wrap") }
                 if !comparing { Text("Choose matching food or pit channels and log the selected action for both dish scopes to align recorded curves.").font(.caption) }
-                else { Text("Current and reference · minutes since \(CookStore.actionLabel(alignment)) · separate stable channels").font(.caption) }
+                else {
+                    Text("Current and reference · minutes since \(CookStore.actionLabel(alignment)) · separate stable channels").font(.caption)
+                    if !currentDish.isEmpty && !sourceDish.isEmpty { Button("Use this reference") {
+                        do { try store.saveReference(cookId, reference: NativeCookReference(dishId: currentDish, sourceCookId: comparisonCook, sourceDishId: sourceDish, currentProbe: samples.first { $0.seriesId == currentChannel }?.probeName ?? "", sourceProbe: sourceSamples.first { $0.seriesId == comparisonChannel }?.probeName ?? "", anchor: alignment, currentSeriesId: currentChannel, sourceSeriesId: comparisonChannel)); referenceMessage = "Reference saved." }
+                        catch { referenceMessage = error.localizedDescription }
+                    } }
+                }
+                if let referenceMessage { Text(referenceMessage).font(.caption) }
             }
         }
+    }
+    private func eligible(_ sample: TemperatureSample, dish: String) -> Bool { dish.isEmpty || sample.dishId == dish || ["pit", "pit_ambient", "ambient_temperature", "setpoint"].contains(sample.measurementType) }
+    private func restoreReference() {
+        guard let ref = store.savedReference(cookId, dishId: currentDish) else { return }
+        comparisonCook = ref.sourceCookId; sourceDish = ref.sourceDishId; alignment = ref.anchor
+        let current = samples.filter { eligible($0, dish: currentDish) }, source = store.readings(for: ref.sourceCookId).filter { eligible($0, dish: sourceDish) }
+        func key(_ preferred: String?, _ name: String, _ rows: [TemperatureSample]) -> String {
+            if let preferred, rows.contains(where: { $0.seriesId == preferred }) { return preferred }
+            let ids = Set(rows.filter { $0.probeName == name }.map(\.seriesId)); return ids.count == 1 ? ids.first! : ""
+        }
+        currentChannel = key(ref.currentSeriesId, ref.currentProbe, current); comparisonChannel = key(ref.sourceSeriesId, ref.sourceProbe, source)
     }
     private func reset() { hidden = []; selected = nil; follow = true; window = max(1, fullEnd - fullStart); scrollStart = fullStart }
 }
