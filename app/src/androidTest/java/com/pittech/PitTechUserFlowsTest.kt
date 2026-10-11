@@ -274,6 +274,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-add-photo").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag("cook-add-reminder").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         saveScreenshot("cook-live-dashboard-top")
+        composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
         assertTrue(composeRule.onAllNodesWithText("Starting condition: Refrigerated").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
         composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
