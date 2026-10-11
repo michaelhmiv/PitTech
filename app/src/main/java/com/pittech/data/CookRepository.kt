@@ -135,7 +135,7 @@ class CookRepository(
                     id = UUID.randomUUID().toString(),
                     cookId = cookId,
                     eventType = "cook_started",
-                    title = "Cook started",
+                    title = "Preparation started",
                     occurredAtUtcMillis = now,
                     recordedAtUtcMillis = now,
                     timeZoneId = timeZoneId,
@@ -163,6 +163,10 @@ class CookRepository(
             }
         }
 
+        if (draft.alreadyCooking) {
+            val at = draft.foodOnAtUtcMillis ?: now
+            require(at > 0 && at <= now + 60_000) { "Choose the actual Food on time." }
+        }
         val importedPhotos = mutableListOf<PhotoEntity>()
         try {
             dishPairs.forEach { (dishDraft, dishId) ->
@@ -180,6 +184,13 @@ class CookRepository(
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
                 val companion = CookCompanionRepository(database, photoStorage)
                 companion.applyToCook(cookId, draft, dishes.map { it.id })
+                if (draft.alreadyCooking) {
+                    val at = draft.foodOnAtUtcMillis ?: now
+                    val foodOn = TimelineEventEntity(UUID.randomUUID().toString(), cookId, null, "note", "Food on", occurredAtUtcMillis = at,
+                        recordedAtUtcMillis = now, timeZoneId = timeZoneId, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
+                        noteMetadataJson = com.pittech.domain.CookNoteMetadata("action", "food_on").encode())
+                    dao.insertTimelineEvent(foodOn); companion.onEvent(foodOn)
+                }
                 ServePlanRepository(database, companion).attach(cookId, draft, dishes.map { it.id })
             }
         } catch (failure: Throwable) {
@@ -563,6 +574,22 @@ class CookRepository(
         dao.updateCook(cook.copy(status = CookStatus.COMPLETED, endedAtUtcMillis = now, updatedAtUtcMillis = now))
         addTimelineEvent(cookId, null, "cook_finished", "Cook finished", null, now)
         CookRecordingRepository(database).stop(cookId, now)
+    }
+
+    suspend fun adoptFoodOnTiming(cookId: String, foodOnAt: Long?) = database.withTransaction {
+        val cook = dao.getCook(cookId) ?: error("This cook no longer exists.")
+        val events = dao.getTimelineEventsForCook(cookId)
+        if (notePlanEvents(events).none { it.action == "food_on" }) {
+            val at = foodOnAt ?: error("Enter the actual Food on time.")
+            require(at > 0 && at <= (cook.endedAtUtcMillis ?: System.currentTimeMillis()))
+            val now = System.currentTimeMillis()
+            val note = TimelineEventEntity(UUID.randomUUID().toString(), cookId, null, "note", "Food on", occurredAtUtcMillis = at,
+                recordedAtUtcMillis = now, timeZoneId = cook.startedTimeZoneId, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
+                noteMetadataJson = com.pittech.domain.CookNoteMetadata("action", "food_on").encode())
+            com.pittech.domain.CookPhases.validate(notePlanEvents(events + note), dao.getDishesForCook(cookId).map { it.id })
+            dao.insertTimelineEvent(note)
+        } else com.pittech.domain.CookPhases.validate(notePlanEvents(events), dao.getDishesForCook(cookId).map { it.id })
+        database.experienceDao().putLifecycle(CookLifecycle(cookId, "explicit_phases"))
     }
 
     suspend fun pauseCook(cookId: String) = database.withTransaction {

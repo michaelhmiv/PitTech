@@ -369,6 +369,8 @@ data class CookWithDishes(
     @Embedded val cook: CookEntity,
     @Relation(parentColumn = "id", entityColumn = "cookId")
     val dishes: List<DishEntity>,
+    @Relation(parentColumn = "id", entityColumn = "cookId") val events: List<TimelineEventEntity> = emptyList(),
+    @Relation(parentColumn = "id", entityColumn = "cookId") val lifecycles: List<CookLifecycle> = emptyList(),
 )
 
 data class CookDetailData(

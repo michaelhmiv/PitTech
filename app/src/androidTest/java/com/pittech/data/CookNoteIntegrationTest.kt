@@ -34,6 +34,7 @@ class CookNoteIntegrationTest {
         var draft = CookNoteDraft(cookId = id, category = "temperature", action = "wrap", dishIds = dishes.map { it.id },
             description = "Bark set", occurredAt = 42L, temperatures = listOf(NoteTemperature(valueText = "165", measuredAt = 42L)))
         draft = draft.copy(photos = listOf(photo(draft.id), photo(draft.id)))
+        repo.notes.save(CookNoteDraft(cookId = id, action = "food_on", occurredAt = 40L))
         repo.notes.save(draft)
         repo.notes.save(draft.copy(description = "Wrapped with broth"))
         val detail = repo.observeCookDetail(id).first()!!

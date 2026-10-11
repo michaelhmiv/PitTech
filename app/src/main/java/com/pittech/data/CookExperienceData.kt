@@ -40,6 +40,7 @@ data class TargetHistory(@PrimaryKey val id: String, val cookId: String, val dis
     @Query("SELECT * FROM log_reading_links WHERE readingId = :id") suspend fun readingLink(id: String): LogReadingLink?
     @Query("DELETE FROM log_reading_links WHERE eventId = :id") suspend fun unlink(id: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putLifecycle(value: CookLifecycle)
+    @Query("SELECT * FROM cook_lifecycle WHERE cookId = :id") suspend fun lifecycle(id: String): CookLifecycle?
     @Query("SELECT * FROM cook_lifecycle WHERE cookId = :id") fun observeLifecycle(id: String): Flow<CookLifecycle?>
     @Query("SELECT * FROM cook_lifecycle") suspend fun allLifecycles(): List<CookLifecycle>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putDraft(value: CookLogDraft)

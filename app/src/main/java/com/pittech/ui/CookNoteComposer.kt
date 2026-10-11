@@ -39,6 +39,15 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
     var showDetails by rememberSaveable(draft.id) { mutableStateOf(editing) }
     var showPhotoSource by rememberSaveable(draft.id) { mutableStateOf(photoFirst) }
     var staging by remember { mutableStateOf(false) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val latestDraft by rememberUpdatedState(draft)
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE && !busy) viewModel.flushNoteDraft(latestDraft)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     val valid = runCatching { draft.validate() }.isSuccess
     LaunchedEffect(draft, busy) {
         if (!busy) { delay(300); viewModel.persistNoteDraft(draft) }
@@ -119,7 +128,7 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
         },
     )
     if (showPhotoSource) PhotoSourceDialog(onDismiss = { showPhotoSource = false; if (photoFirst && draft.photos.isEmpty()) onClose() },
-        onTakePhoto = { showPhotoSource = false; camera() }, onChooseFromLibrary = { showPhotoSource = false; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+        onTakePhoto = { scope.launch { viewModel.persistNoteDraft(draft); showPhotoSource = false; camera() } }, onChooseFromLibrary = { scope.launch { viewModel.persistNoteDraft(draft); showPhotoSource = false; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } })
 }
 
 @Composable private fun NotePhotoPreview(photo: NotePhoto) {

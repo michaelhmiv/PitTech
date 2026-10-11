@@ -170,6 +170,16 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val updated = matches.fold(plan) { current, step -> CookPlanEngine.satisfy(current, step, PlanEvent(event.id, action, event.dishId, event.occurredAtUtcMillis)) }
         storePlan(event.cookId, updated)
     }
+    /** Anchor edits update future evaluation while preserving occurrence and notification receipts. */
+    suspend fun reconcileEventChanges(cookId: String) {
+        val plan = plan(cookId) ?: return
+        val events = database.cookDao().getTimelineEventsForCook(cookId)
+        val updated = plan.copy(progress = plan.progress.mapValues { (_, p) ->
+            val actual = p.eventIds.mapNotNull { id -> events.firstOrNull { it.id == id }?.occurredAtUtcMillis }.maxOrNull()
+            p.copy(lastDoneAt = actual ?: p.lastDoneAt)
+        })
+        storePlan(cookId, updated)
+    }
     suspend fun updateStep(cookId: String, step: PlaybookStep) = database.withTransaction {
         val plan = plan(cookId) ?: return@withTransaction
         val progress = plan.progress[step.id]?.let { if (it.status == "pending") it.copy(notifiedOccurrence = null, snoozedUntil = null) else it }

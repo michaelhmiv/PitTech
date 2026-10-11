@@ -574,8 +574,14 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    playbookTools = { CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = true) },
-                    preparationTools = { CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = false) },
+                    playbookTools = {
+                        CookPhaseCard(data,
+                            onFoodOn = { dish -> openNote("action", "food_on"); noteDraftJson = noteDraftJson?.let { com.pittech.domain.CookNoteDraft.decode(it).copy(dishId = dish).encode() } },
+                            onPreheat = { openNote("action", "preheat_start") },
+                            onAdopt = { viewModel.adoptFoodOnTiming(data.cook.id, it) })
+                        if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).any { it.phase == "prep" }) CookChecklistTools(data, viewModel)
+                        CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = true) },
+                    preparationTools = { if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).none { it.phase == "prep" }) CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = false) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
                             data, grillState, recordingRunning, busy,
@@ -730,7 +736,7 @@ private fun LiveCookTab(
     val hours = elapsed / 3_600_000
     val minutes = (elapsed / 60_000) % 60
     var showCookDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var showPrepDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var showPrepDetails by rememberSaveable(data.cook.id) { mutableStateOf(data.lifecycle?.timingMode == "explicit_phases" && com.pittech.data.notePlanEvents(data.events).none { it.action == "food_on" }) }
     var showAllReminders by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var showAllDishes by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var showMoreTools by rememberSaveable(data.cook.id) { mutableStateOf(false) }
@@ -776,12 +782,12 @@ private fun LiveCookTab(
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Cook at a glance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (data.lifecycle?.timingMode == "explicit_phases") "Time on heat" else "Cook at a glance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("${hours}h ${minutes}m", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("live-cook-elapsed"))
                     }
                     Surface(color = statusContainer, contentColor = statusContent, shape = CircleShape) {
                         Text(
-                            statusLabel(data.cook.status).uppercase(),
+                            (if (data.cook.status == CookStatus.COMPLETED) "Finished" else if (data.lifecycle?.timingMode == "explicit_phases") com.pittech.domain.CookPhases.summary(com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis())) else statusLabel(data.cook.status)).uppercase(),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp).testTag("live-cook-status"),
@@ -811,7 +817,7 @@ private fun LiveCookTab(
                             enabled = !busy,
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                        ) { Text(if (isPaused) "Resume" else "Pause cook", maxLines = 1) }
+                        ) { Text(if (isPaused) "Resume recording" else "Pause recording", maxLines = 2) }
                         if (isActive) {
                             Button(
                                 onClick = onFinish,
@@ -2366,6 +2372,8 @@ private fun formatTimestamp(millis: Long): String = DateFormat.getDateTimeInstan
 private fun safeFileName(value: String): String = value.replace(Regex("[^A-Za-z0-9 _-]"), "").trim().replace(Regex("\\s+"), "_").ifBlank { "PitTech_Cook" }
 
 private fun calculateElapsed(data: CookDetailData): Long {
+    if (data.lifecycle?.timingMode == "explicit_phases") return com.pittech.domain.CookPhases.heatingMillis(
+        com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, data.cook.endedAtUtcMillis ?: System.currentTimeMillis()))
     var total = 0L
     var runningFrom = data.cook.startedAtUtcMillis
     var isRunning = true

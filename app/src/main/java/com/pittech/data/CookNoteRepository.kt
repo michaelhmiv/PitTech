@@ -53,6 +53,11 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
                 "manual", createdAtUtcMillis = previous?.createdAtUtcMillis ?: now, updatedAtUtcMillis = now,
                 temperatureContextJson = if (previous != null && previous.occurredAtUtcMillis == draft.occurredAt && previous.dishId == draft.dishId) previous.temperatureContextJson else cooks.temperatureContext(draft.cookId, draft.occurredAt, draft.dishId),
                 noteMetadataJson = draft.metadata.encode())
+            if (draft.action in com.pittech.domain.CookPhases.phaseActions && experience.lifecycle(draft.cookId)?.timingMode == "explicit_phases") {
+                require(draft.occurredAt > 0 && draft.occurredAt <= now + 60_000) { "Choose the actual action time, up to now." }
+                val proposed = dao.getTimelineEventsForCook(draft.cookId).filterNot { it.id == draft.id } + note
+                com.pittech.domain.CookPhases.validate(notePlanEvents(proposed), dao.getDishesForCook(draft.cookId).map { it.id })
+            }
             if (previous == null) dao.insertTimelineEvent(note) else dao.updateTimelineEvent(note)
             val owned = experience.readingsForLog(note.id)
             owned.filter { it.id !in draft.temperatures.map { t -> t.id } }.forEach { dao.deleteSensorReading(it) }
@@ -73,7 +78,8 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
             dao.getPhotosForCook(draft.cookId).filter { it.eventId == note.id && it.id !in draft.photos.map { p -> p.id } }
                 .forEach { experience.updatePhoto(it.copy(eventId = null)) }
             copied.forEach { p -> if (experience.photo(p.id) == null) dao.insertPhotos(listOf(p)) else experience.updatePhoto(p) }
-            if (previous == null) CookCompanionRepository(database, storage).onEvent(note)
+            val companion = CookCompanionRepository(database, storage)
+            if (previous == null) companion.onEvent(note) else companion.reconcileEventChanges(draft.cookId)
             note
         }
         if (photoAttached) discardDraft(draft.id)

@@ -40,7 +40,7 @@ object CookPlanEngine {
         val p = plan.progress[s.id] ?: StepProgress()
         val dishId = s.dishIndex?.let { plan.dishIds[it] }
         val scopeEvents = events.filter { it.dishId == null || it.dishId == dishId || (dishId == null && plan.dishIds.size == 1) }
-        val currentStage = if (dishId == null && plan.dishIds.isNotEmpty()) plan.dishIds.map { stage(events, it) }.let { stages -> if (stages.distinct().size == 1) stages.first() else "cooking" } else stage(events, dishId)
+        val currentStage = if (dishId == null && plan.dishIds.isNotEmpty()) plan.dishIds.map { stage(events, it) }.let { stages -> if (stages.distinct().size == 1) stages.first() else "mixed" } else stage(events, dishId)
         val anchor = if (s.trigger == "elapsed") "food_on" else s.anchor
         val anchorTime = scopeEvents.filter { it.action == anchor }.maxOfOrNull { it.at }
             ?: plan.book.steps.firstOrNull { it.action == anchor && it.dishIndex == s.dishIndex }?.let { plan.progress[it.id]?.skippedAnchorAt }
@@ -51,7 +51,7 @@ object CookPlanEngine {
             else -> null
         }
         val eligibleStage = when (s.action) { "food_on" -> currentStage == "prep"; "rest_start" -> currentStage in setOf("cooking", "removed"); "hold_start" -> currentStage in setOf("removed", "resting", "holding"); "dish_done" -> currentStage in setOf("removed", "resting", "holding"); else -> currentStage == s.stage }
-        val temperatureReady = readings.filter { it.valid && it.type in setOf("food", "food_probe") && (s.probeName.isBlank() || it.probeName == s.probeName) && (dishId == null || it.dishId == dishId) && now - it.at in 0..330_000 }.maxByOrNull { it.at }?.fahrenheit?.let { it >= (s.temperatureF ?: Double.MAX_VALUE) } == true
+        val temperatureReady = readings.filter { it.valid && (it.at >= (events.filter { e -> e.action == "food_on" && (e.dishId == null || e.dishId == it.dishId) }.maxOfOrNull { e -> e.at } ?: Long.MAX_VALUE)) && it.type in setOf("food", "food_probe") && (s.probeName.isBlank() || it.probeName == s.probeName) && (dishId == null || it.dishId == dishId) && now - it.at in 0..330_000 }.maxByOrNull { it.at }?.fahrenheit?.let { it >= (s.temperatureF ?: Double.MAX_VALUE) } == true
         val primaryReady = when (s.trigger) { "manual" -> true; "temperature" -> if (lastActual != null && s.repeatMinutes != null) due != null && now >= due else temperatureReady; else -> due != null && now >= due }
         val ready = !plan.paused && p.status == "pending" && eligibleStage && primaryReady && (p.snoozedUntil == null || now >= p.snoozedUntil)
         EvaluatedStep(s, p, dishId, p.snoozedUntil?.let { snooze -> maxOf(snooze, due ?: snooze) } ?: due, ready,

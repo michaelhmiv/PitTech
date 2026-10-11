@@ -447,8 +447,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-filter-all").performClick()
         composeRule.onNodeWithTag("timeline-sort").performClick()
         composeRule.onNodeWithTag("timeline-sort-newest").performClick()
-        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Cook started"))
-        composeRule.onNodeWithText("Cook started").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Preparation started"))
+        composeRule.onNodeWithText("Preparation started").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-jump-latest").assertIsDisplayed().performClick()
         saveScreenshot("cook-timeline-dashboard")
 
