@@ -8,12 +8,9 @@ import org.junit.Test
 
 class AdPlacementPolicyTest {
     @Test
-    fun historyAdRequiresFourCompletedCooksAndNoActiveCook() {
-        assertTrue(shouldShowCookHistoryNativeAd(adsEnabled = true, activeCookCount = 0, completedCookCount = 4))
-        assertTrue(shouldShowCookHistoryNativeAd(adsEnabled = true, activeCookCount = 0, completedCookCount = 8))
-        assertFalse(shouldShowCookHistoryNativeAd(adsEnabled = true, activeCookCount = 0, completedCookCount = 3))
-        assertFalse(shouldShowCookHistoryNativeAd(adsEnabled = true, activeCookCount = 1, completedCookCount = 4))
-        assertFalse(shouldShowCookHistoryNativeAd(adsEnabled = false, activeCookCount = 0, completedCookCount = 4))
+    fun cooksListAdIsShownWheneverConsentAllowsAdRequests() {
+        assertTrue(shouldShowCookListNativeAd(adsEnabled = true))
+        assertFalse(shouldShowCookListNativeAd(adsEnabled = false))
     }
 
     @Test
