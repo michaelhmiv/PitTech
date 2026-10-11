@@ -72,7 +72,7 @@ final class GrillirGMonitor {
             isSignedIn = true
             selectedDeviceId = nil
             keychain.write(token: newToken, deviceId: nil)
-            await fetchDevices()
+            try await fetchDevices()
         }
     }
 
