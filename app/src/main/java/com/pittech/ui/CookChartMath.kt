@@ -10,7 +10,7 @@ internal object CookChartMath {
         val base = 10.0.pow(floor(log10(span / count)))
         val raw = span / count / base
         val step = (when { raw <= 1 -> 1.0; raw <= 2 -> 2.0; raw <= 5 -> 5.0; else -> 10.0 }) * base
-        val low = floor(minimum / step) * step; val high = ceil(maximum / step) * step
+        val low = floor(minimum / step) * step; val high = ceil(maxOf(maximum, minimum + span) / step) * step
         return (0..((high - low) / step).roundToInt()).map { low + it * step }
     }
     /** OLS on accepted contiguous samples only; no prediction or gap interpolation. */
