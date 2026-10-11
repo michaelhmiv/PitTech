@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "preferences": {
+    "temperatureUnit": "F",
+    "weightUnit": "lb",
+    "themeMode": "system"
+  },
+  "cooks": [
+    {
+      "id": "app-store-demo-active",
+      "title": "Weekend Brisket",
+      "status": "active",
+      "startedAtUtcMillis": 1791649800000,
+      "startedTimeZoneId": "America/New_York",
+      "endedAtUtcMillis": null,
+      "smokerName": "Backyard smoker",
+      "initialSetpointValue": 250,
+      "initialSetpointUnit": "F",
+      "notes": "Oak and hickory blend",
+      "createdAtUtcMillis": 1791649800000,
+      "updatedAtUtcMillis": 1791649800000,
+      "fuelType": "pellets",
+      "woodOrPelletBlend": "Oak and hickory",
+      "outdoorTemperatureValue": 68,
+      "outdoorTemperatureUnit": "F",
+      "weatherNotes": "Clear",
+      "windNotes": "Light breeze"
+    },
+    {
+      "id": "app-store-demo-finished",
+      "title": "Sunday Pulled Pork",
+      "status": "completed",
+      "startedAtUtcMillis": 1791118800000,
+      "startedTimeZoneId": "America/New_York",
+      "endedAtUtcMillis": 1791147600000,
+      "smokerName": "Backyard smoker",
+      "initialSetpointValue": 250,
+      "initialSetpointUnit": "F",
+      "notes": "Rested before serving",
+      "createdAtUtcMillis": 1791118800000,
+      "updatedAtUtcMillis": 1791147600000,
+      "fuelType": "pellets",
+      "woodOrPelletBlend": "Apple",
+      "outdoorTemperatureValue": 65,
+      "outdoorTemperatureUnit": "F",
+      "weatherNotes": "Cloudy",
+      "windNotes": null
+    }
+  ],
+  "dishes": [
+    {
+      "id": "app-store-demo-dish-active",
+      "cookId": "app-store-demo-active",
+      "name": "Beef brisket",
+      "foodType": "beef"
+    },
+    {
+      "id": "app-store-demo-dish-finished",
+      "cookId": "app-store-demo-finished",
+      "name": "Pork shoulder",
+      "foodType": "pork"
+    }
+  ],
+  "events": [
+    {
+      "id": "app-store-demo-event",
+      "cookId": "app-store-demo-active",
+      "title": "Wrapped",
+      "details": "Wrapped at 165°F",
+      "occurredAtUtcMillis": 1791663300000,
+      "source": "manual"
+    }
+  ],
+  "readings": [
+    {
+      "id": "app-store-demo-reading-1",
+      "cookId": "app-store-demo-active",
+      "probeName": "Brisket",
+      "measurementType": "food",
+      "value": 165,
+      "unit": "F",
+      "measuredAtUtcMillis": 1791663300000,
+      "source": "manual",
+      "qualityStatus": "valid"
+    },
+    {
+      "id": "app-store-demo-reading-2",
+      "cookId": "app-store-demo-active",
+      "probeName": "Brisket",
+      "measurementType": "food",
+      "value": 172,
+      "unit": "F",
+      "measuredAtUtcMillis": 1791663300000,
+      "source": "manual",
+      "qualityStatus": "valid"
+    }
+  ]
+}

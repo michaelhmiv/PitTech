@@ -34,7 +34,7 @@
 
 ## Build and release path
 
-- `.github/workflows/ios-build.yml` builds the Simulator app on pushes to `main` that change `ios/**` or the workflow. It uses GitHub-hosted macOS 26 and Xcode 26 or later, satisfying Apple's current SDK floor.
+- `.github/workflows/ios-build.yml` builds the Simulator app and captures real iPhone and iPad Simulator screenshots with a local-only sample cook library on pushes to `main` that change `ios/**` or the workflow. The screenshot fixtures are not part of the app bundle. The workflow uses GitHub-hosted macOS 26 and Xcode 26 or later, satisfying Apple's current SDK floor.
 - A manual workflow run can create a signed App Store IPA and archive. It does not upload to App Store Connect or submit the app.
 - Signed builds require a distribution certificate, matching provisioning profile, and production iOS AdMob app and native ad-unit IDs stored in GitHub Actions secrets/variables. These are not in the repository.
 - No App Store build has been uploaded yet. The Windows checkout cannot produce a signed iOS archive locally; GitHub-hosted macOS is the build environment.
@@ -42,7 +42,7 @@
 ## Remaining gates
 
 1. Verify the public Railway privacy page after deploying these policy changes.
-2. Produce and upload real iPhone screenshots that show the current iOS UI.
+2. Download the generated iPhone and iPad screenshots from the GitHub Actions artifact and upload them to the matching App Store Connect screenshot slots.
 3. Add App Review contact information, including a reachable phone number.
 4. Obtain production iOS AdMob app and ad-unit IDs.
 5. Set up Apple signing material in GitHub Actions secrets, then run the manual signed-IPA workflow.

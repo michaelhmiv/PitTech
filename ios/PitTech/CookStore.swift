@@ -173,7 +173,7 @@ final class CookStore {
     static func previewArchive(_ data: Data) throws -> PitTechImportPreview {
         guard data.count <= 64 * 1024 * 1024 else { throw PitTechArchiveError.tooLarge }
         let archive = try Archive(data: data, accessMode: .read)
-        guard archive.reduce(0, { $0 + 1 }) <= 1_000 else { throw PitTechArchiveError.tooManyEntries }
+        guard archive.reduce(0, { count, _ in count + 1 }) <= 1_000 else { throw PitTechArchiveError.tooManyEntries }
         var totalBytes: Int64 = 0
         var manifestData: Data?
         var libraryData: Data?
@@ -181,11 +181,11 @@ final class CookStore {
         for entry in archive {
             guard Self.isSafeArchivePath(entry.path), paths.insert(entry.path).inserted, entry.type == .file,
                   entry.uncompressedSize <= 16 * 1024 * 1024 else { throw PitTechArchiveError.invalidArchive }
-            totalBytes += entry.uncompressedSize
+            totalBytes += Int64(entry.uncompressedSize)
             guard totalBytes <= 64 * 1024 * 1024 else { throw PitTechArchiveError.tooLarge }
             if entry.path == "manifest.json" || entry.path == "data/pittech.json" {
                 var contents = Data()
-                try archive.extract(entry) { chunk in contents.append(chunk) }
+                _ = try archive.extract(entry) { chunk in contents.append(chunk) }
                 if entry.path == "manifest.json" { manifestData = contents } else { libraryData = contents }
             }
         }
@@ -215,7 +215,7 @@ final class CookStore {
         let archive = try Archive(data: data, accessMode: .read)
         guard let entry = archive["data/pittech.json"] else { throw PitTechArchiveError.invalidArchive }
         var jsonData = Data()
-        try archive.extract(entry) { chunk in jsonData.append(chunk) }
+        _ = try archive.extract(entry) { chunk in jsonData.append(chunk) }
         let imported = try JSONDecoder().decode(PitTechLibrary.self, from: jsonData)
         let oldIds = Set(library.cooks.map(\.id))
         let newCooks = imported.cooks.filter { !oldIds.contains($0.id) }
@@ -239,7 +239,6 @@ final class CookStore {
         }
         var attachmentWrites: [(URL, Data)] = []
         if !photoRows.isEmpty {
-            guard let archive = try? Archive(data: data, accessMode: .read) else { throw PitTechArchiveError.invalidArchive }
             for row in photoRows {
                 guard let object = row.objectValue,
                       let id = object["id"]?.stringValue,
@@ -247,7 +246,7 @@ final class CookStore {
                       Self.isExpectedAttachment(path: path, id: id),
                       let entry = archive[path] else { throw PitTechArchiveError.invalidArchive }
                 var bytes = Data()
-                try archive.extract(entry) { chunk in
+                _ = try archive.extract(entry) { chunk in
                     guard bytes.count + chunk.count <= 16 * 1024 * 1024 else { throw PitTechArchiveError.tooLarge }
                     bytes.append(chunk)
                 }
