@@ -277,10 +277,19 @@ class CookRepository(
 
     suspend fun deleteDish(dish: DishEntity) = database.withTransaction {
         CookCompanionRepository(database, photoStorage).detachDish(dish.cookId, dish.id)
-        // Retain the deleted dish's physical history without turning it into whole-cook anchors.
-        dao.getTimelineEventsForCook(dish.cookId).filter { it.dishId == dish.id && com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) in com.pittech.domain.PlaybookCodec.actions }.forEach {
-            dao.updateTimelineEvent(it.copy(eventType = "deleted_dish_${it.eventType}", details = listOfNotNull(it.details, "Recorded for removed dish: ${dish.name}").joinToString("\n")))
+        // Retain notes without converting their removed scope into a whole-cook action.
+        dao.getTimelineEventsForCook(dish.cookId).forEach { event ->
+            val metadata = com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)
+            if (event.dishId == dish.id || dish.id in metadata?.dishIds.orEmpty()) {
+                val remaining = metadata?.dishIds.orEmpty().filterNot { it == dish.id }
+                val detached = remaining.isEmpty()
+                dao.updateTimelineEvent(event.copy(dishId = if (event.dishId == dish.id) remaining.singleOrNull() else event.dishId,
+                    eventType = if (detached) "deleted_dish_${event.eventType}" else event.eventType,
+                    noteMetadataJson = metadata?.copy(action = if (detached) null else metadata.action, dishIds = remaining)?.encode(),
+                    details = listOfNotNull(event.details, "Recorded for removed dish: ${dish.name}").joinToString("\n")))
+            }
         }
+        database.experienceDao().detachDishHistory(dish.id)
         dao.deleteDish(dish)
     }
 

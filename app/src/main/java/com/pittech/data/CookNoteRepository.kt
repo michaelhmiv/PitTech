@@ -53,7 +53,7 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
                 "manual", createdAtUtcMillis = previous?.createdAtUtcMillis ?: now, updatedAtUtcMillis = now,
                 temperatureContextJson = if (previous != null && previous.occurredAtUtcMillis == draft.occurredAt && previous.dishId == draft.dishId) previous.temperatureContextJson else cooks.temperatureContext(draft.cookId, draft.occurredAt, draft.dishId),
                 noteMetadataJson = draft.metadata.encode())
-            if (draft.action in com.pittech.domain.CookPhases.phaseActions && experience.lifecycle(draft.cookId)?.timingMode == "explicit_phases") {
+            if ((draft.action in com.pittech.domain.CookPhases.phaseActions || previous?.let { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) in com.pittech.domain.CookPhases.phaseActions } == true) && experience.lifecycle(draft.cookId)?.timingMode == "explicit_phases") {
                 require(draft.occurredAt > 0 && draft.occurredAt <= now + 60_000) { "Choose the actual action time, up to now." }
                 val proposed = dao.getTimelineEventsForCook(draft.cookId).filterNot { it.id == draft.id } + note
                 com.pittech.domain.CookPhases.validate(notePlanEvents(proposed), dao.getDishesForCook(draft.cookId).map { it.id })
@@ -98,6 +98,9 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
 
     suspend fun delete(eventId: String): DeletedCookNote = database.withTransaction {
         val event = dao.getTimelineEvent(eventId) ?: error("This note no longer exists.")
+        if (experience.lifecycle(event.cookId)?.timingMode == "explicit_phases" && com.pittech.domain.PlaybookCodec.action(event.eventType, event.noteMetadataJson) in com.pittech.domain.CookPhases.phaseActions) {
+            com.pittech.domain.CookPhases.validate(notePlanEvents(dao.getTimelineEventsForCook(event.cookId).filterNot { it.id == eventId }), dao.getDishesForCook(event.cookId).map { it.id })
+        }
         val readings = experience.readingsForLog(eventId)
         val photos = dao.getPhotosForCook(event.cookId).filter { it.eventId == eventId }
         readings.forEach { dao.deleteSensorReading(it) }
