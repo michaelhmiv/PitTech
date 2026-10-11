@@ -54,8 +54,9 @@ struct CookNoteComposer: View {
                 }
                 Section("Photos") {
                     ForEach($draft.photos) { $photo in
-                        if let image = UIImage(contentsOfFile: store.photoURL(photo.path).path) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160) }
+                        if let image = store.photoPreview(photo.path) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160) }
                         TextField("Photo caption", text: $photo.caption)
+                        if let captured = photo.capturedAt { Button("Use photo capture time") { draft.occurredAt = captured } }
                         Button("Remove photo", role: .destructive) { draft.photos.removeAll { $0.id == photo.id } }
                     }
                     PhotosPicker(selection: $pickerItems, maxSelectionCount: 10, matching: .images) { Label("Choose photos", systemImage: "photo.on.rectangle") }

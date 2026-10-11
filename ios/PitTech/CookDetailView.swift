@@ -139,7 +139,7 @@ private struct CookNoteCard: View {
             ForEach(store.readings(for: cookId).filter { ids.contains($0.id) }) { r in Text("\(r.probeName): \(r.value.formatted()) \(r.unit)").font(.subheadline.monospacedDigit()) }
             ForEach(store.library.photos.filter { $0.objectValue?["eventId"]?.stringValue == event.id }.indices, id: \.self) { index in
                 let photos = store.library.photos.filter { $0.objectValue?["eventId"]?.stringValue == event.id }
-                if let o = photos[index].objectValue, let path = o["archivePath"]?.stringValue, let image = UIImage(contentsOfFile: store.photoURL(path).path) {
+                if let o = photos[index].objectValue, let path = o["archivePath"]?.stringValue, let image = store.photoPreview(path) {
                     Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 200).accessibilityLabel(o["caption"]?.stringValue ?? "Cook photo")
                     if let caption = o["caption"]?.stringValue, !caption.isEmpty { Text(caption).font(.caption) }
                 }

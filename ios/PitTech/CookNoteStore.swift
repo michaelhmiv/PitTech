@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import ImageIO
+import UIKit
 import UniformTypeIdentifiers
 
 @MainActor extension CookStore {
@@ -20,10 +21,19 @@ import UniformTypeIdentifiers
         }
     }
     func photoURL(_ path: String) -> URL { storageURL.deletingLastPathComponent().appendingPathComponent(path) }
+    func photoPreview(_ path: String) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(photoURL(path) as CFURL, nil), let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1_024] as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
+    }
     func stagePhoto(_ data: Data, capturedAt: Double? = nil) throws -> NotePhotoDraft {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), let typeId = CGImageSourceGetType(source), let type = UTType(typeId as String) else { throw CookNoteError.missingPhoto }
         let id = UUID().uuidString.lowercased(), ext = type.preferredFilenameExtension ?? "jpg"
-        let photo = NotePhotoDraft(id: id, path: "attachments/\(id).\(ext)", mimeType: type.preferredMIMEType ?? "image/jpeg", capturedAt: capturedAt)
+        var actualCapture = capturedAt
+        if actualCapture == nil, let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any], let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any], let date = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String, let offset = exif[kCGImagePropertyExifOffsetTimeOriginal as String] as? String {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy:MM:dd HH:mm:ss ZZZZZ"
+            actualCapture = formatter.date(from: date + " " + offset).map { $0.timeIntervalSince1970 * 1_000 }
+        }
+        let photo = NotePhotoDraft(id: id, path: "attachments/\(id).\(ext)", mimeType: type.preferredMIMEType ?? "image/jpeg", capturedAt: actualCapture)
         try FileManager.default.createDirectory(at: photoURL("attachments"), withIntermediateDirectories: true)
         try data.write(to: photoURL(photo.path), options: .atomic)
         return photo
