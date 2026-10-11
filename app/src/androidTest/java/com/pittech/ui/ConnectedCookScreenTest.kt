@@ -5,6 +5,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -92,7 +94,7 @@ class ConnectedCookScreenTest {
         val wrapped = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } }
         assertTrue(com.pittech.data.TemperatureContext.decode(wrapped.temperatureContextJson).any { it.name == "Chamber" })
         compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
-        compose.onNodeWithTag("event-temperature-context").assertExists()
+        compose.onNode(hasTestTag("event-temperature-context") and hasAnyAncestor(hasTestTag("timeline-entry-${wrapped.id}")), useUnmergedTree = true).assertExists()
     }
     @Test fun loggingOnlyQueriesForANoteSavesFailuresAndSwitchesTheForegroundServiceOff() {
         runBlocking(Dispatchers.IO) { app.database.clearAllTables() }

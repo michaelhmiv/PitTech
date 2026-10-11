@@ -48,6 +48,7 @@ data class TargetHistory(@PrimaryKey val id: String, val cookId: String, val dis
     @Query("DELETE FROM cook_log_drafts WHERE id = :id") suspend fun deleteDraft(id: String)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun putHistory(values: List<TargetHistory>)
     @Query("SELECT * FROM target_history WHERE cookId = :id ORDER BY effectiveAt") fun observeHistory(id: String): Flow<List<TargetHistory>>
+    @Query("UPDATE target_history SET targetType = 'removed_dish_' || targetType WHERE dishId = :dishId") suspend fun detachDishHistory(dishId: String)
     @Query("SELECT * FROM target_history") suspend fun allHistory(): List<TargetHistory>
     @Query("SELECT * FROM photos WHERE id = :id") suspend fun photo(id: String): PhotoEntity?
     @Update suspend fun updatePhoto(value: PhotoEntity)
