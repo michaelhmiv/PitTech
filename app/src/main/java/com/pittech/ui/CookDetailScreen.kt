@@ -527,7 +527,7 @@ fun CookDetailScreen(
                 val snapshot = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
                 if (snapshot.isNotBlank()) Text(snapshot)
                 data.photos.filter { it.eventId == event.id }.forEach { photo -> PhotoThumbnail(photo, Modifier.size(90.dp)) { viewingMarker = null; viewingPhoto = photo } }
-            } }, confirmButton = { TextButton(onClick = { viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
+            } }, confirmButton = { TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
     }
     Scaffold(
         topBar = {
@@ -621,6 +621,7 @@ fun CookDetailScreen(
                 )
                 CookTab.TIMELINE -> TimelineTab(
                     data = data,
+                    focusEventId = focusedTimelineId,
                     viewModel = viewModel,
                     onEditEvent = { event -> coroutineScope.launch { noteEditing = true; notePhotoFirst = false; noteDraftJson = viewModel.loadNote(event.id).encode() } },
                     onEditReading = { editReading = it },
@@ -628,7 +629,7 @@ fun CookDetailScreen(
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
                 )
-                CookTab.CHARTS -> ChartsTab(data, comparison = { ReferenceComparisonTools(data, viewModel) }) { viewingMarker = it }
+                CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
             }
         }
     }
@@ -1117,6 +1118,7 @@ private fun TimelineTab(
     onError: String?,
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
     onShowPhotoGallery: () -> Unit,
+    focusEventId: String? = null,
 ) {
     var selectedFilterName by rememberSaveable(data.cook.id) { mutableStateOf(TimelineFilter.ALL.name) }
     var newestFirst by rememberSaveable(data.cook.id) { mutableStateOf(true) }
@@ -1127,8 +1129,14 @@ private fun TimelineTab(
     val rows = buildTimelineLines(data, selectedFilter, newestFirst)
     val days = rows.groupBy { timelineDayKey(it.time) }
     val latestIndex = rows.size + days.size
-    LaunchedEffect(selectedFilterName, newestFirst) {
-        listState.scrollToItem(0)
+    LaunchedEffect(focusEventId, selectedFilterName, newestFirst, rows) {
+        if (focusEventId != null) {
+            selectedFilterName = TimelineFilter.ALL.name
+            var position = 1
+            var target: Int? = null
+            days.values.forEach { group -> position++; group.forEach { row -> if (row is TimelineLine.Event && row.event.id == focusEventId) target = position; position++ } }
+            target?.let { listState.scrollToItem(it) }
+        } else listState.scrollToItem(0)
     }
     val showJumpToLatest by remember(listState, newestFirst, latestIndex) {
         derivedStateOf {
@@ -1705,32 +1713,23 @@ private fun formatTimelineDay(millis: Long): String {
 }
 
 @Composable
-private fun ChartsTab(data: CookDetailData, comparison: @Composable () -> Unit = {}, onMarker: (TimelineEventEntity) -> Unit) {
+private fun ChartsTab(data: CookDetailData, displayUnit: String, comparison: @Composable () -> Unit = {}, onMarker: (TimelineEventEntity) -> Unit) {
     val valid = data.readings.filter { it.qualityStatus == "valid" }
-    val grouped = valid.groupBy { it.probeName }
+    val grouped = valid.groupBy { TemperaturePlot.identity(it) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         comparison()
         SectionCard("Temperature chart") {
-            if (valid.isEmpty()) {
-                Text("Temperature charts will appear after you record readings. Manual readings work without a grill controller.", style = MaterialTheme.typography.bodyLarge)
-            } else {
-                TemperatureChart(data.readings, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, markers = data.events.filter { it.eventType != "temperature" }, onMarker = onMarker)
-                Text("Only valid saved readings are plotted. Missing periods are left blank.", style = MaterialTheme.typography.bodyMedium)
-            }
+            TemperatureChart(data.readings, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, markers = data.events.filter { it.eventType != "temperature" }, onMarker = onMarker, displayUnit = displayUnit, targets = data.targets, targetHistory = data.targetHistory, photos = data.photos)
+            Text("Valid recorded points only. Manual samples remain individual points and missing periods stay empty.", style = MaterialTheme.typography.bodyMedium)
         }
         SectionCard("Reading summary") {
             if (grouped.isEmpty()) Text("No readings to summarize yet.", style = MaterialTheme.typography.bodyLarge)
-            grouped.forEach { (probe, readings) ->
+            grouped.forEach { (_, readings) ->
                 val ordered = readings.sortedBy { it.measuredAtUtcMillis }
-                val first = ordered.first()
                 val last = ordered.last()
-                val min = ordered.minOf { it.value }
-                val max = ordered.maxOf { it.value }
-                val hours = ((last.measuredAtUtcMillis - first.measuredAtUtcMillis).coerceAtLeast(1L)) / 3_600_000.0
-                val rise = (last.value - first.value) / hours
-                Text(probe, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("${readings.size} readings · low ${min} · high ${max} · last ${last.value} ${last.unit}", style = MaterialTheme.typography.bodyLarge)
-                Text("Average change from first to last: ${"%.1f".format(rise)} ${last.unit}/hour over recorded span", style = MaterialTheme.typography.bodyMedium)
+                val values = ordered.map { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                Text(last.probeName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("${readings.size} readings · low ${"%.1f".format(values.min())} · high ${"%.1f".format(values.max())} · last ${"%.1f".format(values.last())} $displayUnit", style = MaterialTheme.typography.bodyLarge)
             }
         }
         val duration = calculateElapsed(data)
@@ -1988,7 +1987,7 @@ private fun ReminderCheckInDialog(
 private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave: (String, String, String, String, String, String, String, String, String, String, String) -> Unit) {
     var title by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.title) }
     var smoker by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.smokerName.orEmpty()) }
-    var setpoint by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.initialSetpointValue?.toString().orEmpty()) }
+    var setpoint by rememberSaveable(data.cook.id) { mutableStateOf((data.targetHistory.lastOrNull { it.targetType == "setpoint" }?.value ?: data.cook.initialSetpointValue)?.toString().orEmpty()) }
     var unit by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.initialSetpointUnit ?: "°F") }
     var notes by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.notes.orEmpty()) }
     var fuel by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.fuelType.orEmpty()) }

@@ -40,7 +40,7 @@ internal fun CookLearningTools(data: CookDetailData, viewModel: CooksViewModel) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksViewModel) {
+internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksViewModel, displayUnit: String = "°F") {
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val app = LocalContext.current.applicationContext as PitTechApplication
@@ -53,6 +53,8 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
     var sourceDishId by remember(saved?.sourceDishId, sourceCookId) { mutableStateOf(saved?.sourceDishId.orEmpty()) }
     var anchor by remember(saved?.anchor) { mutableStateOf(saved?.anchor ?: "food_on") }
     var currentProbe by remember(saved?.currentProbe, dishId) { mutableStateOf(saved?.currentProbe ?: data.readings.firstOrNull { it.dishId == dishId && it.measurementType == "food_probe" }?.probeName.orEmpty()) }
+    var currentSeriesId by remember(saved?.currentSeriesId, dishId) { mutableStateOf(saved?.currentSeriesId) }
+    var sourceSeriesId by remember(saved?.sourceSeriesId, sourceCookId, sourceDishId) { mutableStateOf(saved?.sourceSeriesId) }
     var sourceProbe by remember(saved?.sourceProbe, sourceCookId) { mutableStateOf(saved?.sourceProbe.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     if (data.dishes.isEmpty()) return
@@ -70,20 +72,26 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
             if (history != null) {
                 val sourceLabels = history.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
                 ChoiceField("Reference dish", history.dishes.indexOfFirst { it.id == sourceDishId }.takeIf { it >= 0 }?.let { sourceLabels[it] } ?: "Choose dish", sourceLabels) { label -> sourceDishId = history.dishes[sourceLabels.indexOf(label)].id }
-                ChoiceField("Current channel", currentProbe.ifBlank { "Choose channel" }, data.readings.filter { it.dishId == dishId || it.measurementType == "pit_ambient" }.map { it.probeName }.distinct()) { currentProbe = it }
-                ChoiceField("Reference channel", sourceProbe.ifBlank { "Choose channel" }, history.readings.filter { it.dishId == sourceDishId || it.measurementType == "pit_ambient" }.map { it.probeName }.distinct()) { sourceProbe = it }
+                val currentChannels = data.readings.filter { it.dishId == dishId || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
+                val sourceChannels = history.readings.filter { it.dishId == sourceDishId || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
+                fun channelLabels(channels: Map<String, List<com.pittech.data.SensorReadingEntity>>) = channels.entries.associate { (id, rows) -> id to (rows.last().probeName + " · " + rows.last().measurementType.replace('_', ' ') + " · " + (id.hashCode() and Int.MAX_VALUE).toString(16).takeLast(4)) }
+                val currentLabels = channelLabels(currentChannels); val sourceLabels = channelLabels(sourceChannels)
+                val currentKey = currentSeriesId?.takeIf { it in currentChannels } ?: currentChannels.filterValues { it.last().probeName == currentProbe }.keys.singleOrNull()
+                val sourceKey = sourceSeriesId?.takeIf { it in sourceChannels } ?: sourceChannels.filterValues { it.last().probeName == sourceProbe }.keys.singleOrNull()
+                ChoiceField("Current channel", currentLabels[currentKey] ?: "Choose channel", currentLabels.values.toList()) { label -> currentSeriesId = currentLabels.entries.first { it.value == label }.key; currentProbe = currentChannels.getValue(currentSeriesId!!).last().probeName }
+                ChoiceField("Reference channel", sourceLabels[sourceKey] ?: "Choose channel", sourceLabels.values.toList()) { label -> sourceSeriesId = sourceLabels.entries.first { it.value == label }.key; sourceProbe = sourceChannels.getValue(sourceSeriesId!!).last().probeName }
                 ChoiceField("Align from", if (anchor == "food_on") "Food on" else "Wrap", listOf("Food on", "Wrap")) { anchor = if (it == "Food on") "food_on" else "wrap" }
                 val currentEvents = data.events.let { com.pittech.data.notePlanEvents(it) }
                 val sourceEvents = history.events.let { com.pittech.data.notePlanEvents(it) }
                 val currentAnchor = CookReferenceCodec.anchor(currentEvents, dishId, anchor)
                 val sourceAnchor = CookReferenceCodec.anchor(sourceEvents, sourceDishId, anchor)
                 if (currentAnchor == null || sourceAnchor == null) Text("Log ${PlaybookCodec.actions[anchor]} for both dishes to align their curves.")
-                else if (currentProbe.isBlank() || sourceProbe.isBlank()) Text("Choose both channels to compare temperatures.")
-                else if ((data.readings.firstOrNull { it.probeName == currentProbe && (it.dishId == dishId || it.measurementType == "pit_ambient") }?.measurementType == "pit_ambient") != (history.readings.firstOrNull { it.probeName == sourceProbe && (it.dishId == sourceDishId || it.measurementType == "pit_ambient") }?.measurementType == "pit_ambient")) Text("Choose two food channels or two pit channels for a like-for-like comparison.")
+                else if (currentKey == null || sourceKey == null) Text("Choose both channels to compare temperatures.")
+                else if ((currentChannels.getValue(currentKey).last().measurementType in setOf("pit", "pit_ambient", "ambient_temperature")) != (sourceChannels.getValue(sourceKey).last().measurementType in setOf("pit", "pit_ambient", "ambient_temperature"))) Text("Choose two food channels or two pit channels for a like-for-like comparison.")
                 else {
-                    val currentReadings = data.readings.filter { it.probeName == currentProbe && (it.dishId == dishId || it.measurementType == "pit_ambient") && it.measuredAtUtcMillis >= currentAnchor }
-                    val referenceReadings = history.readings.filter { it.probeName == sourceProbe && (it.dishId == sourceDishId || it.measurementType == "pit_ambient") && it.measuredAtUtcMillis >= sourceAnchor }
-                    TemperatureChart(currentReadings + referenceReadings, cookNames = mapOf(data.cook.id to "Current", history.cook.id to "Reference"), cookStartTimes = mapOf(data.cook.id to currentAnchor, history.cook.id to sourceAnchor), connectionGaps = data.events.filter { it.eventType == "connection_gap" } + history.events.filter { it.eventType == "connection_gap" })
+                    val currentReadings = currentChannels.getValue(currentKey)
+                    val referenceReadings = sourceChannels.getValue(sourceKey)
+                    TemperatureChart(currentReadings + referenceReadings, cookNames = mapOf(data.cook.id to "Current", history.cook.id to "Reference"), cookStartTimes = mapOf(data.cook.id to currentAnchor, history.cook.id to sourceAnchor), displayUnit = displayUnit, connectionGaps = data.events.filter { it.eventType == "connection_gap" } + history.events.filter { it.eventType == "connection_gap" })
                     Text("Minutes since ${PlaybookCodec.actions[anchor]} · units normalized · gaps remain empty")
                     PlaybookCodec.actions.keys.forEach { action ->
                         val current = currentEvents.firstOrNull { (it.dishId == dishId || it.dishId == null) && it.action == action }
@@ -91,7 +99,7 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
                         if (current != null || reference != null) Text("${PlaybookCodec.actions[action]} · current ${current?.let { "${(it.at - currentAnchor) / 60_000}m" } ?: "—"} · reference ${reference?.let { "${(it.at - sourceAnchor) / 60_000}m" } ?: "—"}")
                     }
                     history.results.filter { it.dishId == sourceDishId && it.resultType in setOf("keep_doing", "change_next_time", "result_notes") }.forEach { Text(it.textValue.orEmpty()) }
-                    Button(onClick = { viewModel.saveCookReference(data.cook.id, CookReference(dishId, sourceCookId, sourceDishId, currentProbe, sourceProbe, anchor)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use this reference") }
+                    Button(onClick = { viewModel.saveCookReference(data.cook.id, CookReference(dishId, sourceCookId, sourceDishId, currentProbe, sourceProbe, anchor, currentKey, sourceKey)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use this reference") }
                 }
                 TextButton(onClick = { show = false; viewModel.openCook(history.cook.id) }) { Text("Open reference timeline, notes and photos") }
             } else if (sourceCookId.isNotBlank()) Text("The reference cook is unavailable on this phone. Choose another saved cook.")

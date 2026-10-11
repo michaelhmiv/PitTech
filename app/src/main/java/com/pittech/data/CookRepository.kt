@@ -213,17 +213,21 @@ class CookRepository(
         outdoorTemperatureUnit: String,
         weatherNotes: String,
         windNotes: String,
-    ) {
+    ) = database.withTransaction {
         require(CookEntryValidation.isOptionalPositiveNumberValid(setpointText)) { "Enter a positive setpoint or leave it blank." }
         require(CookEntryValidation.isOptionalFiniteNumberValid(outdoorTemperatureText)) { "Enter a valid outdoor temperature or leave it blank." }
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
         val setpoint = CookEntryValidation.optionalPositiveNumber(setpointText)
+        val last = database.experienceDao().observeHistory(cookId).first().lastOrNull { it.targetType == "setpoint" }
+        if (setpoint != null && ((last?.value ?: cook.initialSetpointValue) != setpoint || (last?.unit ?: cook.initialSetpointUnit) != setpointUnit)) {
+            database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), cookId, null, "setpoint", setpoint, setpointUnit, System.currentTimeMillis())))
+        }
         dao.updateCook(
             cook.copy(
                 title = title.trim().ifBlank { cook.title },
                 smokerName = smokerName.trim().ifBlank { null },
-                initialSetpointValue = setpoint,
-                initialSetpointUnit = setpoint?.let { setpointUnit },
+                initialSetpointValue = cook.initialSetpointValue ?: setpoint,
+                initialSetpointUnit = cook.initialSetpointUnit ?: setpoint?.let { setpointUnit },
                 notes = notes.trim().ifBlank { null },
                 fuelType = fuelType.trim().ifBlank { null },
                 woodOrPelletBlend = woodOrPelletBlend.trim().ifBlank { null },
