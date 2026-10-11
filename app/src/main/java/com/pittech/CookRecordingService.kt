@@ -108,7 +108,16 @@ class CookRecordingService : Service() {
                         if (state.selectedDeviceId != device.id) { app.grillMonitor.selectDevice(device.id); return@collect }
                         app.alertRepository.reportControllerStatus(recording.cookId, state.onlineStatus, state.statusFetchedAtMillis)
                         if (state.readingRequestFailed || state.onlineStatus?.let { it != 0 } == true) app.recordingRepository.markGap(recording.cookId, "Grill offline or cloud readings unavailable.")
-                        state.latest?.let { app.recordingRepository.ingest(recording.cookId, recording.controllerKey, it, state) }
+                        state.latest?.let {
+                            app.recordingRepository.ingest(recording.cookId, recording.controllerKey, it, state)
+                            // Durable proof for the live APK upgrade fixture. Android instrumentation
+                            // replaces the target process, so verify background receipt before starting it.
+                            if (BuildConfig.DEBUG && java.io.File(filesDir, "upgrade-recording-fixture.enabled").exists()) {
+                                app.database.recordingDao().getRecording(recording.cookId)?.lastReceivedAtUtcMillis?.let { received ->
+                                    java.io.File(filesDir, "upgrade-recording-receipt.txt").writeText(received.toString())
+                                }
+                            }
+                        }
                     }
                     }
                 }

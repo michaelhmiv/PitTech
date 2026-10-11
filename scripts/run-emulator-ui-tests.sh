@@ -222,12 +222,30 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
     sleep 1
   done
   [[ "$service_ready" == true ]]
-  install_epoch="$(adb shell date +%s | tr -d '\r')"
-  [[ "$install_epoch" =~ ^[0-9]+$ ]]
-  adb shell run-as com.pittech.debug sh -c "'echo ${install_epoch}000 > files/upgrade-install-started.txt'"
+  timeout 120 adb install -r -t "$test_apk"
   # Deliberately NO force-stop: installing the APK interrupts the old service.
   timeout 120 adb install -r "$app_apk"
-  timeout 120 adb install -r -t "$test_apk"
+  # Use a boundary after installation, then wait for another real accepted sample.
+  install_epoch="$(adb shell date +%s | tr -d '\r')"
+  [[ "$install_epoch" =~ ^[0-9]+$ ]]
+  receipt_boundary="$(( (install_epoch + 1) * 1000 ))"
+  adb shell run-as com.pittech.debug sh -c "'echo $receipt_boundary > files/upgrade-install-started.txt'"
+  recovered=false
+  for attempt in $(seq 1 60); do
+    receipt="$(adb shell run-as com.pittech.debug cat files/upgrade-recording-receipt.txt 2>/dev/null | tr -d '\r' || true)"
+    if [[ "$receipt" =~ ^[0-9]+$ ]] && (( receipt > receipt_boundary )) &&
+       adb shell dumpsys activity services com.pittech.debug | grep -q 'isForeground=true'; then
+      recovered=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$recovered" != true ]]; then
+    adb shell dumpsys activity services com.pittech.debug > "$output_dir/live-upgrade-services.txt"
+    adb logcat -d -t 500 > "$output_dir/live-upgrade-logcat.txt"
+    echo "No foreground recorder with an accepted post-update receipt was observed." >&2
+    exit 1
+  fi
   timeout 12m adb shell am instrument -w -r \
     -e class 'com.pittech.LiveUpgradeRecordingTest#recordingRecoversWithoutOpeningActivity' \
     "$instrumentation_target" | tee "$output_dir/live-upgrade-validate.txt"
@@ -256,7 +274,7 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$provider_test_selector" \
   "$instrumentation_target" | tee "$provider_test_output"
 provider_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$provider_test_output" || true)"
-if [[ "$provider_passed_count" -ne 11 ]] || ! grep -q 'OK (15 tests)' "$provider_test_output" ||
+if [[ "$provider_passed_count" -ne 11 ]] || ! grep -q 'OK (11 tests)' "$provider_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$provider_test_output"; then
   echo "Connected-provider instrumentation tests did not all pass." >&2
   exit 1
