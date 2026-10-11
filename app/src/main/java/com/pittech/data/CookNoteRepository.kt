@@ -112,6 +112,8 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
 
     suspend fun restore(bundle: DeletedCookNote) = database.withTransaction {
         require(dao.getTimelineEvent(bundle.event.id) == null)
+        if (experience.lifecycle(bundle.event.cookId)?.timingMode == "explicit_phases") com.pittech.domain.CookPhases.validate(notePlanEvents(dao.getTimelineEventsForCook(bundle.event.cookId) + bundle.event), dao.getDishesForCook(bundle.event.cookId).map { it.id })
+        bundle.photos.forEach { photo -> require(experience.photo(photo.id)?.let { it.eventId == null || it.eventId == bundle.event.id } == true) { "A photo has been removed or attached to another note." } }
         dao.insertTimelineEvent(bundle.event)
         bundle.readings.forEach { dao.insertSensorReading(it) }
         experience.linkReadings(bundle.readings.map { LogReadingLink(it.id, bundle.event.id) })

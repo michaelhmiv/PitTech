@@ -134,6 +134,7 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val event = TimelineEventEntity(UUID.randomUUID().toString(), cookId, dishId, "note", PlaybookCodec.actions.getValue(action),
             occurredAtUtcMillis = now, recordedAtUtcMillis = now, timeZoneId = java.time.ZoneId.systemDefault().id, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
             noteMetadataJson = CookNoteMetadata("action", action).encode())
+        validatePhysicalEvent(event)
         database.cookDao().insertTimelineEvent(event)
         onEvent(event)
     }
@@ -154,8 +155,14 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val event = TimelineEventEntity(UUID.randomUUID().toString(), cookId, step.dishIndex?.let { plan.dishIds[it] }, "note", step.title,
             step.instructions.ifBlank { null }, at, now, java.time.ZoneId.systemDefault().id, "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
             noteMetadataJson = CookNoteMetadata("action", step.action).encode())
+        validatePhysicalEvent(event)
         database.cookDao().insertTimelineEvent(event)
         storePlan(cookId, CookPlanEngine.satisfy(plan, step, PlanEvent(event.id, step.action, event.dishId, at)))
+    }
+    private suspend fun validatePhysicalEvent(event: TimelineEventEntity) {
+        if (PlaybookCodec.action(event.eventType, event.noteMetadataJson) !in CookPhases.phaseActions || database.experienceDao().lifecycle(event.cookId)?.timingMode != "explicit_phases") return
+        require(event.occurredAtUtcMillis > 0 && event.occurredAtUtcMillis <= System.currentTimeMillis() + 60_000) { "Choose the actual action time, up to now." }
+        CookPhases.validate(notePlanEvents(database.cookDao().getTimelineEventsForCook(event.cookId) + event), database.cookDao().getDishesForCook(event.cookId).map { it.id })
     }
     /** The existing quick actions satisfy a matching planned occurrence in the same transaction. */
     suspend fun onEvent(event: TimelineEventEntity) {

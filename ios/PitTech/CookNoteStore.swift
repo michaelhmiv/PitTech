@@ -127,7 +127,10 @@ import UniformTypeIdentifiers
         deletedNote = DeletedNativeNote(event: event, readings: rows, links: links, photos: photos)
     }
     func undoDeleteNote() throws {
-        guard let bundle = deletedNote else { return }
+        guard let bundle = deletedNote, let id = bundle.event.objectValue?["id"]?.stringValue, let cookId = bundle.event.objectValue?["cookId"]?.stringValue else { return }
+        guard !library.events.contains(where: { $0.objectValue?["id"]?.stringValue == id }), bundle.readings.allSatisfy({ row in !library.readings.contains(where: { $0.objectValue?["id"] == row.objectValue?["id"] }) }), bundle.photos.allSatisfy({ row in library.photos.contains(where: { $0.objectValue?["id"] == row.objectValue?["id"] && ($0.objectValue?["eventId"]?.stringValue == nil || $0.objectValue?["eventId"]?.stringValue == id) }) }) else { throw CookNoteError.scope }
+        var candidate = library; candidate.events.append(bundle.event)
+        if timingMode(cookId) == "explicit_phases" { try CookPhaseEngine.validate(candidate.actions(for: cookId), dishIds: dishRecords(cookId).map(\.id)) }
         let prior = library
         library.events.append(bundle.event); library.readings.append(contentsOf: bundle.readings); library.logReadingLinks.append(contentsOf: bundle.links)
         let ids = Set(bundle.photos.compactMap { $0.objectValue?["id"]?.stringValue })
