@@ -12,7 +12,7 @@ import UIKit
     private func jpeg() -> Data {
         UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).jpegData(withCompressionQuality: 1) { context in UIColor.orange.setFill(); context.fill(CGRect(x: 0, y: 0, width: 4, height: 4)) }
     }
-    func testAtomicNoteEditKeepsIdentityTimeReadingsAndPhotosTogether() throws {
+    func testAtomicNoteEditKeepsIdentityTimeReadingsAndPhotosTogether() async throws {
         let store = CookStore(directory: try folder())
         store.startCook(title: "Ribs", firstDish: "Rack")
         let cook = try XCTUnwrap(store.activeCooks.first), dish = try XCTUnwrap(store.dishRecords(cook.id).first)
@@ -40,7 +40,7 @@ import UIKit
         try store.saveNote(CookNoteDraft(cookId: cook.id, temperatures: [NoteTemperatureDraft(valueText: "167", dishId: dish.id)]))
         XCTAssertEqual(Set(store.readings(for: cook.id).map(\.probeId)).count, 1)
     }
-    func testDraftSurvivesRelaunchAndMissingPhotoRetryDoesNotDuplicateEntry() throws {
+    func testDraftSurvivesRelaunchAndMissingPhotoRetryDoesNotDuplicateEntry() async throws {
         let directory = try folder(), store = CookStore(directory: directory)
         store.startCook(title: "Preparation", firstDish: "Brisket")
         let id = try XCTUnwrap(store.activeCooks.first?.id), photo = try store.stagePhoto(jpeg())
@@ -60,7 +60,7 @@ import UIKit
         XCTAssertEqual(restored.events(for: id).count, 1)
         XCTAssertEqual(restored.library.photos.count, 1)
     }
-    func testPhaseActionsValidateOrderAndNeverPausePhysicalClock() throws {
+    func testPhaseActionsValidateOrderAndNeverPausePhysicalClock() async throws {
         let store = CookStore(directory: try folder())
         let foodOn = Date.now.addingTimeInterval(-3_600)
         store.startCook(title: "Already cooking", firstDish: "Pork", alreadyCooking: true, foodOn: foodOn)
@@ -79,7 +79,7 @@ import UIKit
         XCTAssertEqual(reloaded.activeCooks.first?.startedAtUtcMillis, store.activeCooks.first?.startedAtUtcMillis)
         XCTAssertEqual(reloaded.timingMode(id), "explicit_phases")
     }
-    func testDifferentDishesHaveIndependentPhasesAndLegacyTimingRequiresAdoption() throws {
+    func testDifferentDishesHaveIndependentPhasesAndLegacyTimingRequiresAdoption() async throws {
         let store = CookStore(directory: try folder())
         store.startCook(title: "Two dishes", firstDish: "Ribs", alreadyCooking: true, foodOn: Date.now.addingTimeInterval(-60)); let id = try XCTUnwrap(store.activeCooks.first?.id)
         store.addDish(cookId: id, name: "Chicken")
@@ -91,7 +91,7 @@ import UIKit
         XCTAssertEqual(store.timingMode(id), "explicit_phases")
         XCTAssertEqual(store.activeCooks.first?.startedAtUtcMillis, original)
     }
-    func testArchiveRoundTripPreservesPhotosLinksPhaseAndChecklistWithCanonicalUnits() throws {
+    func testArchiveRoundTripPreservesPhotosLinksPhaseAndChecklistWithCanonicalUnits() async throws {
         let store = CookStore(directory: try folder()); store.startCook(title: "Archive", firstDish: "Ribs")
         let id = try XCTUnwrap(store.activeCooks.first?.id)
         let note = CookNoteDraft(cookId: id, metadata: CookNoteMetadata(category: "photo", action: "food_on"), title: "On the grill", temperatures: [NoteTemperatureDraft(valueText: "40")], photos: [try store.stagePhoto(jpeg())])
@@ -111,7 +111,7 @@ import UIKit
         XCTAssertEqual(try Data(contentsOf: destination.photoURL(note.photos[0].path)), try Data(contentsOf: store.photoURL(note.photos[0].path)))
         XCTAssertEqual(try destination.importArchive(archive).imported, 0)
     }
-    func testSaveRejectsForeignReadingIdentityWithoutChangingEitherCook() throws {
+    func testSaveRejectsForeignReadingIdentityWithoutChangingEitherCook() async throws {
         let store = CookStore(directory: try folder()); store.startCook(title: "First", firstDish: "Ribs")
         let first = try XCTUnwrap(store.activeCooks.first?.id)
         let draft = CookNoteDraft(cookId: first, temperatures: [NoteTemperatureDraft(valueText: "165")]); try store.saveNote(draft)
@@ -120,7 +120,7 @@ import UIKit
         XCTAssertThrowsError(try store.saveNote(CookNoteDraft(cookId: second, temperatures: draft.temperatures)))
         XCTAssertEqual(store.readings(for: first).count, 1); XCTAssertTrue(store.readings(for: second).isEmpty)
     }
-    func testChartKeepsIdentityUnitsGapsAndExtremaWithoutInventingTrends() throws {
+    func testChartKeepsIdentityUnitsGapsAndExtremaWithoutInventingTrends() async throws {
         func sample(_ id: String, _ value: Double, _ at: Double, unit: String = "°F", probe: String = "p", source: String = "controller_cloud") -> TemperatureSample {
             TemperatureSample(json: .object(["id": .string(id), "cookId": .string("cook"), "probeId": .string(probe), "probeName": .string("Same name"), "measurementType": .string("food"), "value": .number(value), "unit": .string(unit), "measuredAtUtcMillis": .number(at), "source": .string(source), "samplingIntervalMillis": .number(300_000)]))!
         }
@@ -129,7 +129,12 @@ import UIKit
         XCTAssertEqual(CookChartMath.segments([a, b, c, sample("d", 110, 1_800_000)]).count, 2)
         XCTAssertNotEqual(a.seriesId, sample("other", 100, 0, probe: "other").seriesId)
         XCTAssertNil(CookChartMath.slope([sample("m1", 100, 0, source: "manual"), sample("m2", 110, 1_800_000, source: "manual"), sample("m3", 120, 3_600_000, source: "manual")], unit: "F"))
-        let rows = (0...600).map { sample(String($0), $0 == 302 ? 150 : 200, Double($0) * 1_000, unit: $0 == 302 ? "°C" : "°F") }
+        let rows: [TemperatureSample] = (0...600).map { index in
+            let value: Double = index == 302 ? 150.0 : 200.0
+            let unit: String = index == 302 ? "°C" : "°F"
+            let timestamp: Double = Double(index) * 1_000.0
+            return sample(String(index), value, timestamp, unit: unit)
+        }
         XCTAssertTrue(CookChartMath.reduced(rows).contains { $0.id == "302" })
     }
 }
