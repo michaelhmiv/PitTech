@@ -28,7 +28,7 @@ class GuidanceIntegrationTest {
             assertEquals(listOf(original.dishIds[1]), remaining.dishIds)
             assertEquals(0, remaining.book.steps.single().dishIndex)
             assertFalse(db.companionDao().forCook(cook).any { it.kind == "alert" })
-            val events = db.cookDao().getTimelineEventsForCook(cook).map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+            val events = notePlanEvents(db.cookDao().getTimelineEventsForCook(cook))
             assertEquals("cooking", CookPlanEngine.stage(events, remaining.dishIds.single()))
             val bytes = java.io.ByteArrayOutputStream(); PitTechDataTransfer(app, repo).writeZip(bytes)
             assertEquals(1, PitTechDataTransfer(app, repo).previewImport(java.io.ByteArrayInputStream(bytes.toByteArray())).cookCount)
