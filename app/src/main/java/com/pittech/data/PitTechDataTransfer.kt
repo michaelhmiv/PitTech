@@ -175,6 +175,9 @@ class PitTechDataTransfer(
         .put("reminders", JSONArray().apply { snapshot.reminders.forEach { put(it.toJson()) } })
         .put("recordings", JSONArray().apply { snapshot.recordings.forEach { put(it.toJson()) } })
         .put("probeAssignments", JSONArray().apply { snapshot.assignments.forEach { put(it.toJson()) } })
+        .put("logReadingLinks", JSONArray(snapshot.logReadingLinks.map { JSONObject().put("readingId", it.readingId).put("eventId", it.eventId) }))
+        .put("lifecycles", JSONArray(snapshot.lifecycles.map { JSONObject().put("cookId", it.cookId).put("timingMode", it.timingMode) }))
+        .put("targetHistory", JSONArray(snapshot.targetHistory.map { JSONObject().put("id", it.id).put("cookId", it.cookId).putNullable("dishId", it.dishId).put("targetType", it.targetType).put("value", it.value).put("unit", it.unit).put("effectiveAt", it.effectiveAt) }))
         .put("companionRecords", JSONArray(snapshot.companionRecords.map { JSONObject().put("id", it.id).put("kind", it.kind).put("cookId", it.cookId).put("title", it.title).put("payload", JSONObject(it.payload)).put("created", it.createdAtUtcMillis).put("updated", it.updatedAtUtcMillis) }))
         .put("companionPhotos", JSONArray(snapshot.companionPhotos.map { JSONObject().put("id", it.id).put("recordId", it.recordId).put("archivePath", "attachments/${it.id}.${it.relativePath.substringAfterLast('.')}").put("mimeType", it.mimeType).put("caption", it.caption).put("dishIndex", it.dishIndex).put("action", it.action) }))
         .put("photos", JSONArray().apply {
@@ -185,10 +188,13 @@ class PitTechDataTransfer(
         })
 
     private fun csvTables(snapshot: ExportSnapshot): Map<String, String> = linkedMapOf(
+        "log_reading_links.csv" to csv("event_id,reading_id", snapshot.logReadingLinks.map { listOf(it.eventId, it.readingId) }),
+        "lifecycle.csv" to csv("cook_id,timing_mode", snapshot.lifecycles.map { listOf(it.cookId, it.timingMode) }),
+        "target_history.csv" to csv("id,cook_id,dish_id,target_type,value,unit,effective_at_utc", snapshot.targetHistory.map { listOf(it.id, it.cookId, it.dishId, it.targetType, it.value, it.unit, utc(it.effectiveAt)) }),
         "cooks.csv" to csv("cook_id,title,status,started_at_utc,started_at_local,started_time_zone,ended_at_utc,ended_at_local,smoker,fuel_type,wood_or_pellet_blend,outdoor_temperature,outdoor_temperature_unit,weather,wind,initial_setpoint,initial_setpoint_unit,notes,created_at_utc,updated_at_utc", snapshot.cooks.map { listOf(it.id,it.title,it.status,utc(it.startedAtUtcMillis),local(it.startedAtUtcMillis,it.startedTimeZoneId),it.startedTimeZoneId,utc(it.endedAtUtcMillis),local(it.endedAtUtcMillis,it.startedTimeZoneId),it.smokerName,it.fuelType,it.woodOrPelletBlend,it.outdoorTemperatureValue,it.outdoorTemperatureUnit,it.weatherNotes,it.windNotes,it.initialSetpointValue,it.initialSetpointUnit,it.notes,utc(it.createdAtUtcMillis),utc(it.updatedAtUtcMillis)) }),
         "dishes.csv" to csv("dish_id,cook_id,name,food_type,cut,weight,weight_unit,piece_count,starting_condition,bone_in,placement,grade_or_source,thickness_notes,preparation_notes", snapshot.dishes.map { listOf(it.id,it.cookId,it.name,it.foodType,it.cut,it.weightValue,it.weightUnit,it.pieceCount,it.startingCondition,it.boneIn,it.placement,it.gradeOrSource,it.thicknessNotes,it.prepNotes) }),
         "ingredients.csv" to csv("ingredient_use_id,cook_id,dish_id,stage,name,brand,amount,amount_unit,applied_at_utc,notes", snapshot.ingredients.map { listOf(it.id,it.cookId,it.dishId,it.stage,it.name,it.brand,it.amountValue,it.amountUnit,utc(it.appliedAtUtcMillis),it.notes) }),
-        "events.csv" to csv("event_id,cook_id,dish_id,event_type,title,details,occurred_at_utc,occurred_at_local,recorded_at_utc,time_zone,source,source_device_id,temperature_context_json", snapshot.events.map { listOf(it.id,it.cookId,it.dishId,it.eventType,it.title,it.details,utc(it.occurredAtUtcMillis),local(it.occurredAtUtcMillis,it.timeZoneId),utc(it.recordedAtUtcMillis),it.timeZoneId,it.source,it.sourceDeviceId,it.temperatureContextJson) }),
+        "events.csv" to csv("event_id,cook_id,dish_id,event_type,title,details,occurred_at_utc,occurred_at_local,recorded_at_utc,time_zone,source,source_device_id,temperature_context_json,note_metadata_json", snapshot.events.map { listOf(it.id,it.cookId,it.dishId,it.eventType,it.title,it.details,utc(it.occurredAtUtcMillis),local(it.occurredAtUtcMillis,it.timeZoneId),utc(it.recordedAtUtcMillis),it.timeZoneId,it.source,it.sourceDeviceId,it.temperatureContextJson,it.noteMetadataJson) }),
         "readings.csv" to csv("reading_id,cook_id,dish_id,probe_id,probe_name,measurement_type,value,unit,measured_at_utc,measured_at_local,time_zone,source,source_device_id,quality_status,recorded_at_utc,timestamp_basis,sampling_interval_millis", snapshot.readings.map { listOf(it.id,it.cookId,it.dishId,it.probeId,it.probeName,it.measurementType,it.value,it.unit,utc(it.measuredAtUtcMillis),local(it.measuredAtUtcMillis,it.timeZoneId),it.timeZoneId,it.source,it.sourceDeviceId,it.qualityStatus,utc(it.recordedAtUtcMillis),it.timestampBasis,it.samplingIntervalMillis) }),
         "targets.csv" to csv("target_id,cook_id,dish_id,target_type,value,unit,scope,explanation,source_reference,created_at_utc", snapshot.targets.map { listOf(it.id,it.cookId,it.dishId,it.targetType,it.value,it.unit,it.scope,it.explanation,it.sourceReference,utc(it.createdAtUtcMillis)) }),
         "results.csv" to csv("result_id,cook_id,dish_id,result_type,numeric_value,unit,text_value,notes,recorded_at_utc", snapshot.results.map { listOf(it.id,it.cookId,it.dishId,it.resultType,it.numericValue,it.unit,it.textValue,it.notes,utc(it.recordedAtUtcMillis)) }),
@@ -259,10 +265,13 @@ class PitTechDataTransfer(
             }
         }
         return listOf(
+            Sheet("Log Reading Links", rows(listOf("Event ID", "Reading ID").map(::text), s.logReadingLinks.map { listOf(text(it.eventId), text(it.readingId)) })),
+            Sheet("Lifecycle", rows(listOf("Cook ID", "Timing mode").map(::text), s.lifecycles.map { listOf(text(it.cookId), text(it.timingMode)) })),
+            Sheet("Target History", rows(listOf("ID", "Cook ID", "Dish ID", "Type", "Value", "Unit", "Effective UTC").map(::text), s.targetHistory.map { listOf(text(it.id), text(it.cookId), text(it.dishId), text(it.targetType), num(it.value), text(it.unit), text(utc(it.effectiveAt))) })),
             Sheet("Cook Summary", rows(summaryHeader.map(::text), summary)),
             Sheet("Dishes", rows(listOf("Dish ID","Cook ID","Name","Food type","Cut","Weight","Weight unit","Pieces","Starting condition","Bone in","Placement","Grade or source","Thickness notes","Prep notes").map(::text), s.dishes.map { listOf(text(it.id),text(it.cookId),text(it.name),text(it.foodType),text(it.cut),num(it.weightValue),text(it.weightUnit),num(it.pieceCount),text(it.startingCondition),text(it.boneIn),text(it.placement),text(it.gradeOrSource),text(it.thicknessNotes),text(it.prepNotes)) })),
             Sheet("Ingredients", rows(listOf("Ingredient use ID","Cook ID","Dish ID","Stage","Name","Brand","Amount","Unit","Applied UTC","Notes").map(::text), s.ingredients.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.stage),text(it.name),text(it.brand),num(it.amountValue),text(it.amountUnit),text(utc(it.appliedAtUtcMillis)),text(it.notes)) })),
-            Sheet("Timeline", rows(listOf("Event ID","Cook ID","Dish ID","Type","Title","Details","Occurred UTC","Recorded UTC","Time zone","Source","Temperature context").map(::text), s.events.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventType),text(it.title),text(it.details),text(utc(it.occurredAtUtcMillis)),text(utc(it.recordedAtUtcMillis)),text(it.timeZoneId),text(it.source),text(it.temperatureContextJson)) })),
+            Sheet("Timeline", rows(listOf("Event ID","Cook ID","Dish ID","Type","Title","Details","Occurred UTC","Recorded UTC","Time zone","Source","Temperature context","Note metadata").map(::text), s.events.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventType),text(it.title),text(it.details),text(utc(it.occurredAtUtcMillis)),text(utc(it.recordedAtUtcMillis)),text(it.timeZoneId),text(it.source),text(it.temperatureContextJson),text(it.noteMetadataJson)) })),
             Sheet("Readings", rows(listOf("Reading ID","Cook ID","Dish ID","Probe","Measurement","Value","Unit","Measured UTC","Measured local time","Time zone","Source","Quality","Timestamp basis","Sampling interval millis (0 = on log)").map(::text), readings)),
             Sheet("Targets Results", rows(listOf("Record ID","Cook ID","Dish ID","Type","Value","Unit","Text","Notes","Recorded UTC").map(::text), (s.targets.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.targetType),num(it.value),text(it.unit),text(it.scope),text(it.explanation),text(utc(it.createdAtUtcMillis))) } + s.results.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.resultType),num(it.numericValue),text(it.unit),text(it.textValue),text(it.notes),text(utc(it.recordedAtUtcMillis))) }))),
             Sheet("Devices", rows(listOf("Device ID","Cook ID","Brand","Model","Name","Role","Firmware","Created UTC").map(::text), s.devices.map { listOf(text(it.id),text(it.cookId),text(it.brand),text(it.model),text(it.deviceName),text(it.role),text(it.firmwareVersion),text(utc(it.createdAtUtcMillis))) })),
@@ -358,7 +367,7 @@ class PitTechDataTransfer(
     }
 
     private companion object {
-        const val ARCHIVE_VERSION = 5
+        const val ARCHIVE_VERSION = 6
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
@@ -430,6 +439,7 @@ private fun TimelineEventEntity.toJson() = JSONObject()
     .put("timeZoneId", timeZoneId).put("source", source).putNullable("sourceDeviceId", sourceDeviceId)
     .put("createdAtUtcMillis", createdAtUtcMillis).put("updatedAtUtcMillis", updatedAtUtcMillis)
     .putNullable("temperatureContextJson", temperatureContextJson)
+    .putNullable("noteMetadataJson", noteMetadataJson)
 
 private fun SensorReadingEntity.toJson() = JSONObject()
     .put("id", id).put("cookId", cookId).putNullable("dishId", dishId).putNullable("probeId", probeId)
@@ -525,6 +535,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
             recordedAtUtcMillis=o.long("recordedAtUtcMillis"), timeZoneId=o.string("timeZoneId"), source=o.string("source"),
             sourceDeviceId=o.stringOrNull("sourceDeviceId"), createdAtUtcMillis=o.long("createdAtUtcMillis"), updatedAtUtcMillis=o.long("updatedAtUtcMillis"),
             temperatureContextJson=validatedContext(o),
+            noteMetadataJson=o.stringOrNull("noteMetadataJson")?.also { com.pittech.domain.CookNoteMetadata.decode(it) },
         )
     }
     val readings = root.arrayObjects("readings").map { o ->
@@ -668,7 +679,20 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
         "fuel" -> com.pittech.domain.CookPreparation.decodeFuel(record.payload).cookId == record.cookId
         else -> false
     } }) { "Saved plans or alerts refer to dishes outside their cook." }
-    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos)
+    val links = root.arrayObjects("logReadingLinks").map { LogReadingLink(it.string("readingId"), it.string("eventId")) }
+    val lifecycles = root.arrayObjects("lifecycles").map { CookLifecycle(it.string("cookId"), it.string("timingMode")) }
+    val history = root.arrayObjects("targetHistory").map { TargetHistory(it.string("id"), it.string("cookId"), it.stringOrNull("dishId"), it.string("targetType"), it.double("value"), it.string("unit"), it.long("effectiveAt")) }
+    val readingsById = readings.associateBy { it.id }
+    require(links.map { it.readingId }.distinct().size == links.size && links.all {
+        val event = eventsById[it.eventId]; val reading = readingsById[it.readingId]
+        event != null && reading != null && event.cookId == reading.cookId && reading.source == "manual"
+    }) { "A note temperature belongs to an invalid or different cook." }
+    require(lifecycles.map { it.cookId }.distinct().size == lifecycles.size && lifecycles.all { it.cookId in cookIds && it.timingMode in setOf("legacy_preserved", "explicit_phases") })
+    require(history.map { it.id }.distinct().size == history.size && history.all {
+        it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && it.value.isFinite() && it.unit in setOf("°F", "°C")
+    })
+    require(events.all { event -> com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty().all { dishesById[it]?.cookId == event.cookId } })
+    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history)
 }
 
 private fun validatedContext(o: JSONObject): String? = o.stringOrNull("temperatureContextJson")?.also {

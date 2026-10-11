@@ -73,8 +73,8 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
                 ChoiceField("Current channel", currentProbe.ifBlank { "Choose channel" }, data.readings.filter { it.dishId == dishId || it.measurementType == "pit_ambient" }.map { it.probeName }.distinct()) { currentProbe = it }
                 ChoiceField("Reference channel", sourceProbe.ifBlank { "Choose channel" }, history.readings.filter { it.dishId == sourceDishId || it.measurementType == "pit_ambient" }.map { it.probeName }.distinct()) { sourceProbe = it }
                 ChoiceField("Align from", if (anchor == "food_on") "Food on" else "Wrap", listOf("Food on", "Wrap")) { anchor = if (it == "Food on") "food_on" else "wrap" }
-                val currentEvents = data.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
-                val sourceEvents = history.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+                val currentEvents = data.events.let { com.pittech.data.notePlanEvents(it) }
+                val sourceEvents = history.events.let { com.pittech.data.notePlanEvents(it) }
                 val currentAnchor = CookReferenceCodec.anchor(currentEvents, dishId, anchor)
                 val sourceAnchor = CookReferenceCodec.anchor(sourceEvents, sourceDishId, anchor)
                 if (currentAnchor == null || sourceAnchor == null) Text("Log ${PlaybookCodec.actions[anchor]} for both dishes to align their curves.")

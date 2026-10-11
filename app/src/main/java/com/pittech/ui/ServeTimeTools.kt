@@ -147,7 +147,7 @@ private fun DishScheduleEditor(initial: DishSchedule, dish: DishDraft, book: Coo
 internal fun ActiveServeGoal(data: CookDetailData, records: List<CompanionRecord>) {
     val record = records.firstOrNull { it.kind == "serve_goal" && it.cookId == data.cook.id } ?: return
     val plan = remember(record.payload) { ServeTimePlanner.decode(record.payload) }
-    val events = data.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+    val events = data.events.let { com.pittech.data.notePlanEvents(it) }
     Text("Serve ${serveTime(plan.serveAt, plan.zoneId)} · ${plan.zoneId}", style = MaterialTheme.typography.titleMedium)
     val dishIds = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }?.let { CookPlanEngine.decode(it.payload).dishIds }
     plan.schedules.forEach { s -> (dishIds?.getOrNull(s.dishIndex)?.let { id -> data.dishes.firstOrNull { it.id == id } } ?: data.dishes.getOrNull(s.dishIndex))?.let { dish ->

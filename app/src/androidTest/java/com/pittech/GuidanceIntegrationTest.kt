@@ -54,7 +54,7 @@ class GuidanceIntegrationTest {
             assertNull(companion.plan(cook)!!.progress.getValue("check").notifiedOccurrence)
             assertFalse(CookPlanEngine.evaluate(companion.plan(cook)!!, listOf(PlanEvent("on", "food_on", null, 1_000_000)), emptyList(), 8_000_000).last().ready)
             assertTrue(companion.markNotified(cook, "check", 0))
-            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).count { it.eventType == "meat_on" })
+            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" })
         } finally { db.close() }
     }
     @Test fun repeatedCompletionIsAtomicAndQuickActionSatisfiesOneStep() = runBlocking {
@@ -69,7 +69,7 @@ class GuidanceIntegrationTest {
             val cook = repo.startCook(book.draft.copy(playbookId = id))
             val dish = db.cookDao().getDishesForCook(cook).single().id
             listOf(async { companion.completeStep(cook, "on", 0, 1_000_000) }, async { companion.completeStep(cook, "on", 0, 1_000_000) }).awaitAll()
-            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).count { it.eventType == "meat_on" })
+            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" })
             repo.addTimelineEvent(cook, dish, "spritz", "Spritz", null, 2_000_000)
             assertEquals(1, companion.plan(cook)!!.progress.getValue("spritz").occurrence)
             companion.snooze(cook, "spritz", 0, 9_000_000)

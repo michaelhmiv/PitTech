@@ -34,7 +34,7 @@ class CookAlertRepository(private val db: PitTechDatabase) {
         val now = System.currentTimeMillis()
         val cook = db.cookDao().getCook(cookId) ?: return
         val recording = db.recordingDao().getRecording(cookId)
-        val events = db.cookDao().getTimelineEventsForCook(cookId).map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+        val events = db.cookDao().getTimelineEventsForCook(cookId).let { com.pittech.data.notePlanEvents(it) }
         val readings = db.cookDao().observeSensorReadings(cookId).first()
         val status = db.companionDao().get("monitor-status:$cookId")?.let { JSONObject(it.payload) }
         val offline = status?.takeIf { now - it.getLong("at") in 0..330_000 }?.let { it.getInt("online") != 0 }

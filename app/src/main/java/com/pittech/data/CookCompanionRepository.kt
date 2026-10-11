@@ -23,14 +23,14 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
             fuelType = data.cook.fuelType.orEmpty(), woodOrPelletBlend = data.cook.woodOrPelletBlend.orEmpty(),
             dishes = data.dishes.map { d -> DishDraft(d.name, d.foodType, d.cut.orEmpty(), d.weightValue?.toString().orEmpty(), d.weightUnit ?: "lb", d.startingCondition, d.boneIn, d.placement.orEmpty(), d.gradeOrSource.orEmpty(), d.thicknessNotes.orEmpty(), d.prepNotes.orEmpty(), ingredients.filter { it.dishId == d.id }.map { IngredientDraft(it.name, it.stage, it.brand.orEmpty(), it.amountValue?.toString().orEmpty(), it.amountUnit ?: "tbsp") }) })
         val events = database.cookDao().getTimelineEventsForCook(cookId).sortedBy { it.occurredAtUtcMillis }
-        val steps = events.filter { PlaybookCodec.action(it.eventType) in PlaybookCodec.actions }.map { e ->
+        val steps = events.filter { PlaybookCodec.action(it.eventType, it.noteMetadataJson) in PlaybookCodec.actions }.map { e ->
             val index = e.dishId?.let { id -> data.dishes.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-            val foodOn = events.firstOrNull { PlaybookCodec.action(it.eventType) == "food_on" && (it.dishId == e.dishId || it.dishId == null) }
+            val foodOn = events.firstOrNull { PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" && (it.dishId == e.dishId || it.dishId == null) }
             val minutes = foodOn?.let { (e.occurredAtUtcMillis - it.occurredAtUtcMillis).coerceAtLeast(0) / 60_000L } ?: 0L
             val preparation = foodOn != null && e.occurredAtUtcMillis < foodOn.occurredAtUtcMillis
             // Times suggest a check. Notes and photos can help decide whether the food is ready.
-            PlaybookStep(dishIndex = index, action = PlaybookCodec.action(e.eventType), title = e.title, instructions = e.details.orEmpty(), trigger = if (PlaybookCodec.action(e.eventType) == "food_on" || foodOn == null || preparation) "manual" else "elapsed", minutes = minutes,
-                stage = if (preparation) "prep" else if (PlaybookCodec.action(e.eventType) in setOf("rest_start", "hold_start", "dish_done")) "resting" else "cooking", sourceObservations = TemperatureContext.summary(e.temperatureContextJson))
+            PlaybookStep(dishIndex = index, action = PlaybookCodec.action(e.eventType, e.noteMetadataJson), title = e.title, instructions = e.details.orEmpty(), trigger = if (PlaybookCodec.action(e.eventType, e.noteMetadataJson) == "food_on" || foodOn == null || preparation) "manual" else "elapsed", minutes = minutes,
+                stage = if (preparation) "prep" else if (PlaybookCodec.action(e.eventType, e.noteMetadataJson) in setOf("rest_start", "hold_start", "dish_done")) "resting" else "cooking", sourceObservations = TemperatureContext.summary(e.temperatureContextJson))
         }
         val targets = database.cookDao().getAllTargets().filter { it.cookId == cookId }.map { t -> PlaybookTarget(t.dishId?.let { id -> data.dishes.indexOfFirst { it.id == id }.takeIf { it >= 0 } }, t.targetType, t.value, t.unit, t.explanation) }
         val results = database.cookDao().getAllResults().filter { it.cookId == cookId }
@@ -131,12 +131,13 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         require(cook.status != CookStatus.COMPLETED) { "This cook is finished." }
         require(database.cookDao().getDish(dishId)?.cookId == cookId) { "Dish does not belong to this cook." }
         val now = System.currentTimeMillis()
-        val event = TimelineEventEntity(UUID.randomUUID().toString(), cookId, dishId, PlaybookCodec.eventType(action), PlaybookCodec.actions.getValue(action),
-            occurredAtUtcMillis = now, recordedAtUtcMillis = now, timeZoneId = java.time.ZoneId.systemDefault().id, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now)
+        val event = TimelineEventEntity(UUID.randomUUID().toString(), cookId, dishId, "note", PlaybookCodec.actions.getValue(action),
+            occurredAtUtcMillis = now, recordedAtUtcMillis = now, timeZoneId = java.time.ZoneId.systemDefault().id, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
+            noteMetadataJson = CookNoteMetadata("action", action).encode())
         database.cookDao().insertTimelineEvent(event)
         onEvent(event)
     }
-    private fun List<TimelineEventEntity>.planEvents() = map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+    private fun List<TimelineEventEntity>.planEvents() = notePlanEvents(this)
     suspend fun plan(cookId: String): CookPlan? = dao.get("plan:$cookId")?.let { CookPlanEngine.decode(it.payload) }
     private suspend fun storePlan(cookId: String, plan: CookPlan) {
         val record = dao.get("plan:$cookId") ?: return
@@ -150,17 +151,19 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
         val progress = plan.progress[step.id] ?: StepProgress()
         if (progress.status != "pending" || progress.occurrence != occurrence) return@withTransaction
         val now = System.currentTimeMillis()
-        val event = TimelineEventEntity(UUID.randomUUID().toString(), cookId, step.dishIndex?.let { plan.dishIds[it] }, PlaybookCodec.eventType(step.action), step.title,
-            step.instructions.ifBlank { null }, at, now, java.time.ZoneId.systemDefault().id, "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now)
+        val event = TimelineEventEntity(UUID.randomUUID().toString(), cookId, step.dishIndex?.let { plan.dishIds[it] }, "note", step.title,
+            step.instructions.ifBlank { null }, at, now, java.time.ZoneId.systemDefault().id, "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
+            noteMetadataJson = CookNoteMetadata("action", step.action).encode())
         database.cookDao().insertTimelineEvent(event)
         storePlan(cookId, CookPlanEngine.satisfy(plan, step, PlanEvent(event.id, step.action, event.dishId, at)))
     }
     /** The existing quick actions satisfy a matching planned occurrence in the same transaction. */
     suspend fun onEvent(event: TimelineEventEntity) {
         val plan = plan(event.cookId) ?: return
-        val action = PlaybookCodec.action(event.eventType)
+        val action = PlaybookCodec.action(event.eventType, event.noteMetadataJson)
+        val scopes = CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty()
         val matches = plan.book.steps.filter { s ->
-            s.action == action && (s.dishIndex?.let { plan.dishIds[it] } == event.dishId || event.dishId == null || s.dishIndex == null && plan.dishIds.size == 1) &&
+            s.action == action && (if (scopes.isNotEmpty()) s.dishIndex?.let { plan.dishIds[it] } in scopes else (s.dishIndex?.let { plan.dishIds[it] } == event.dishId || event.dishId == null || s.dishIndex == null && plan.dishIds.size == 1)) &&
                 (plan.progress[s.id]?.status ?: "pending") == "pending" && event.id !in plan.progress[s.id]?.eventIds.orEmpty()
         }.distinctBy { it.dishIndex }
         if (matches.isEmpty()) return

@@ -22,16 +22,35 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProbeAssignmentEntity::class,
         CompanionRecord::class,
         CompanionPhoto::class,
+        LogReadingLink::class,
+        CookLifecycle::class,
+        CookLogDraft::class,
+        TargetHistory::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
     abstract fun cookDao(): CookDao
     abstract fun recordingDao(): CookRecordingDao
     abstract fun companionDao(): CookCompanionDao
+    abstract fun experienceDao(): CookExperienceDao
 
     companion object {
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE timeline_events ADD COLUMN noteMetadataJson TEXT")
+                database.execSQL("CREATE TABLE IF NOT EXISTS log_reading_links (readingId TEXT NOT NULL PRIMARY KEY, eventId TEXT NOT NULL, FOREIGN KEY(eventId) REFERENCES timeline_events(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(readingId) REFERENCES sensor_readings(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_log_reading_links_eventId ON log_reading_links(eventId)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS cook_lifecycle (cookId TEXT NOT NULL PRIMARY KEY, timingMode TEXT NOT NULL DEFAULT 'legacy_preserved', FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("INSERT INTO cook_lifecycle(cookId, timingMode) SELECT id, 'legacy_preserved' FROM cooks")
+                database.execSQL("CREATE TABLE IF NOT EXISTS cook_log_drafts (id TEXT NOT NULL PRIMARY KEY, cookId TEXT NOT NULL, payload TEXT NOT NULL, updatedAt INTEGER NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_cook_log_drafts_cookId ON cook_log_drafts(cookId)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS target_history (id TEXT NOT NULL PRIMARY KEY, cookId TEXT NOT NULL, dishId TEXT, targetType TEXT NOT NULL, value REAL NOT NULL, unit TEXT NOT NULL, effectiveAt INTEGER NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(dishId) REFERENCES dishes(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_target_history_cookId ON target_history(cookId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_target_history_dishId ON target_history(dishId)")
+            }
+        }
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("CREATE TABLE IF NOT EXISTS companion_records (id TEXT NOT NULL PRIMARY KEY, kind TEXT NOT NULL, cookId TEXT, title TEXT NOT NULL, payload TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")

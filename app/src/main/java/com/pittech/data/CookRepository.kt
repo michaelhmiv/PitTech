@@ -17,6 +17,7 @@ class CookRepository(
     private val photoStorage: PhotoStorage,
 ) {
     private val dao = database.cookDao()
+    val notes by lazy { CookNoteRepository(database, photoStorage, this) }
 
     fun observeCooks(): Flow<List<CookWithDishes>> = dao.observeCooks()
 
@@ -33,7 +34,7 @@ class CookRepository(
             dao.observePhotos(cookId),
             dao.observeReminders(cookId),
         ) { targets, results, photos, reminders -> CookExtras(targets, results, photos, reminders) }
-        return combine(core, extras, database.recordingDao().observeRecording(cookId), dao.observeProbes(cookId), database.recordingDao().observeAssignments(cookId)) { first, second, recording, probes, assignments ->
+        val detail = combine(core, extras, database.recordingDao().observeRecording(cookId), dao.observeProbes(cookId), database.recordingDao().observeAssignments(cookId)) { first, second, recording, probes, assignments ->
             first.cook?.let { relation ->
                 CookDetailData(
                     cook = relation.cook,
@@ -51,6 +52,11 @@ class CookRepository(
                 )
             }
         }
+        val experience = database.experienceDao()
+        val extra = combine(experience.observeLinks(cookId), experience.observeLifecycle(cookId), experience.observeHistory(cookId), experience.observeDrafts(cookId)) { links, lifecycle, history, drafts ->
+            ExperienceSnapshot(links, lifecycle, history, drafts)
+        }
+        return combine(detail, extra) { value, x -> value?.copy(logReadingLinks = x.links, lifecycle = x.lifecycle, targetHistory = x.history, logDrafts = x.drafts) }
     }
 
     fun observeInsights(): Flow<InsightsSnapshot> = combine(combine(
@@ -166,6 +172,8 @@ class CookRepository(
             }
             database.withTransaction {
                 dao.insertCook(cook)
+                database.experienceDao().putLifecycle(CookLifecycle(cookId, "explicit_phases"))
+                if (setpoint != null) database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), cookId, null, "setpoint", setpoint, draft.setpointUnit, now)))
                 if (dishes.isNotEmpty()) dao.insertDishes(dishes)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 dao.insertTimelineEvents(events)
@@ -259,7 +267,7 @@ class CookRepository(
     suspend fun deleteDish(dish: DishEntity) = database.withTransaction {
         CookCompanionRepository(database, photoStorage).detachDish(dish.cookId, dish.id)
         // Retain the deleted dish's physical history without turning it into whole-cook anchors.
-        dao.getTimelineEventsForCook(dish.cookId).filter { it.dishId == dish.id && com.pittech.domain.PlaybookCodec.action(it.eventType) in com.pittech.domain.PlaybookCodec.actions }.forEach {
+        dao.getTimelineEventsForCook(dish.cookId).filter { it.dishId == dish.id && com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) in com.pittech.domain.PlaybookCodec.actions }.forEach {
             dao.updateTimelineEvent(it.copy(eventType = "deleted_dish_${it.eventType}", details = listOfNotNull(it.details, "Recorded for removed dish: ${dish.name}").joinToString("\n")))
         }
         dao.deleteDish(dish)
@@ -339,9 +347,12 @@ class CookRepository(
         return reading
     }
 
-    suspend fun addTarget(cookId: String, dishId: String?, type: String, value: Double, unit: String, explanation: String?) {
+    suspend fun addTarget(cookId: String, dishId: String?, type: String, value: Double, unit: String, explanation: String?) = database.withTransaction {
         require(value.isFinite() && value > 0.0) { "Enter a positive target value." }
         val now = System.currentTimeMillis()
+        require(unit in setOf("°F", "°C"))
+        require(dao.getCook(cookId) != null && (dishId == null || dao.getDish(dishId)?.cookId == cookId))
+        database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), cookId, dishId, type, value, unit, now)))
         dao.insertTarget(
             TargetEntity(
                 id = UUID.randomUUID().toString(), cookId = cookId, dishId = dishId,
@@ -542,7 +553,7 @@ class CookRepository(
     suspend fun completeCook(cookId: String) = database.withTransaction {
         val plan = CookCompanionRepository(database, photoStorage).plan(cookId)
         if (plan != null) {
-            val events = dao.getTimelineEventsForCook(cookId).map { com.pittech.domain.PlanEvent(it.id, com.pittech.domain.PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+            val events = dao.getTimelineEventsForCook(cookId).let { com.pittech.data.notePlanEvents(it) }
             require(plan.book.steps.none { s -> (plan.progress[s.id]?.status ?: "pending") == "pending" && s.stage in setOf("resting", "holding") &&
                 s.dishIndex?.let { com.pittech.domain.CookPlanEngine.stage(events, plan.dishIds[it]) == s.stage } != false }) { "Rest or hold checks are still active. Complete or skip them in View plan before finishing." }
         }
@@ -635,6 +646,9 @@ class CookRepository(
             companionRecords = records,
             companionPhotos = database.companionDao().photos().filter { it.recordId in recordIds },
             assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
+            logReadingLinks = database.experienceDao().allLinks().filter { link -> dao.getTimelineEvent(link.eventId)?.cookId in selectedCookIds },
+            lifecycles = database.experienceDao().allLifecycles().filter { it.cookId in selectedCookIds },
+            targetHistory = database.experienceDao().allHistory().filter { it.cookId in selectedCookIds },
         )
     }
 
@@ -646,6 +660,14 @@ class CookRepository(
         val existingCookIds = dao.getAllCooks().map { it.id }.toSet()
         val newCooks = snapshot.cooks.filterNot { it.id in existingCookIds }
         val newIds = newCooks.map { it.id }.toSet()
+        fun rejectIds(label: String, imported: List<Pair<String, String>>, existing: Set<String>) {
+            require(imported.filter { it.second in newIds }.none { it.first in existing }) { "A $label ID conflicts with another saved cook." }
+        }
+        rejectIds("dish", snapshot.dishes.map { it.id to it.cookId }, dao.getAllDishes().map { it.id }.toSet())
+        rejectIds("event", snapshot.events.map { it.id to it.cookId }, dao.getAllTimelineEvents().map { it.id }.toSet())
+        rejectIds("reading", snapshot.readings.map { it.id to it.cookId }, dao.getAllSensorReadings().map { it.id }.toSet())
+        rejectIds("probe", snapshot.probes.map { it.id to it.cookId }, dao.getAllProbes().map { it.id }.toSet())
+        rejectIds("device", snapshot.devices.map { it.id to it.cookId }, dao.getAllDevices().map { it.id }.toSet())
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
         require(snapshot.photos.none { it.cookId in newIds && it.id in existingPhotoIds }) { "A photo ID conflicts with a photo in another saved cook." }
         val photos = snapshot.photos.filter { it.cookId in newIds && it.id !in existingPhotoIds }
@@ -678,6 +700,9 @@ class CookRepository(
                 dao.insertProbesIgnoringDuplicates(snapshot.probes.filter { it.cookId in newIds })
                 dao.insertReadingsIgnoringDuplicates(snapshot.readings.filter { it.cookId in newIds })
                 dao.insertPhotosIgnoringDuplicates(restoredPhotos)
+                database.experienceDao().linkReadings(snapshot.logReadingLinks.filter { link -> snapshot.events.any { it.id == link.eventId && it.cookId in newIds } })
+                newCooks.forEach { c -> database.experienceDao().putLifecycle(snapshot.lifecycles.firstOrNull { it.cookId == c.id } ?: CookLifecycle(c.id)) }
+                database.experienceDao().putHistory(snapshot.targetHistory.filter { it.cookId in newIds })
                 dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds })
                 database.companionDao().restore(newRecords.map { r -> if (r.kind == "plan") r.copy(payload = org.json.JSONObject(r.payload).put("paused", true).toString()) else if (r.kind == "alert") { val rule = com.pittech.domain.CookAlertEngine.decode(r.payload).first; r.copy(payload = com.pittech.domain.CookAlertEngine.encode(rule.copy(enabled = false))) } else r })
                 database.companionDao().putPhotos(referencePhotos)
@@ -747,6 +772,9 @@ class CookRepository(
         val readings: List<SensorReadingEntity>,
     )
 
+    private data class ExperienceSnapshot(val links: List<LogReadingLink>, val lifecycle: CookLifecycle?,
+        val history: List<TargetHistory>, val drafts: List<CookLogDraft>)
+
     private data class CookExtras(
         val targets: List<TargetEntity>,
         val results: List<CookResultEntity>,
@@ -771,6 +799,9 @@ data class ExportSnapshot(
     val assignments: List<ProbeAssignmentEntity> = emptyList(),
     val companionRecords: List<CompanionRecord> = emptyList(),
     val companionPhotos: List<CompanionPhoto> = emptyList(),
+    val logReadingLinks: List<LogReadingLink> = emptyList(),
+    val lifecycles: List<CookLifecycle> = emptyList(),
+    val targetHistory: List<TargetHistory> = emptyList(),
 )
 
 data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)

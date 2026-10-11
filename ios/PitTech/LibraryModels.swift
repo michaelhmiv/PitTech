@@ -110,9 +110,12 @@ struct PitTechLibrary: Codable {
     var probeAssignments: [JSONValue]
     var companionRecords: [JSONValue]
     var companionPhotos: [JSONValue]
+    var logReadingLinks: [JSONValue]
+    var lifecycles: [JSONValue]
+    var targetHistory: [JSONValue]
 
     init() {
-        schemaVersion = 5
+        schemaVersion = 6
         preferences = ["temperatureUnit": .string("F"), "weightUnit": .string("lb"), "themeMode": .string("system")]
         cooks = []
         dishes = []
@@ -129,11 +132,15 @@ struct PitTechLibrary: Codable {
         probeAssignments = []
         companionRecords = []
         companionPhotos = []
+        logReadingLinks = []
+        lifecycles = []
+        targetHistory = []
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, preferences, cooks, dishes, ingredients, events, readings, targets, results
         case devices, probes, photos, reminders, recordings, probeAssignments, companionRecords, companionPhotos
+        case logReadingLinks, lifecycles, targetHistory
     }
 
     init(from decoder: Decoder) throws {
@@ -155,6 +162,9 @@ struct PitTechLibrary: Codable {
         probeAssignments = try container.decodeIfPresent([JSONValue].self, forKey: .probeAssignments) ?? []
         companionRecords = try container.decodeIfPresent([JSONValue].self, forKey: .companionRecords) ?? []
         companionPhotos = try container.decodeIfPresent([JSONValue].self, forKey: .companionPhotos) ?? []
+        logReadingLinks = try container.decodeIfPresent([JSONValue].self, forKey: .logReadingLinks) ?? []
+        lifecycles = try container.decodeIfPresent([JSONValue].self, forKey: .lifecycles) ?? []
+        targetHistory = try container.decodeIfPresent([JSONValue].self, forKey: .targetHistory) ?? []
     }
 }
 

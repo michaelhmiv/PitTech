@@ -38,6 +38,8 @@ data class CookPlaybook(
 object PlaybookCodec {
     val actions = linkedMapOf("food_on" to "Food on", "spritz" to "Spritz", "wrap" to "Wrap", "check_in" to "Check", "remove" to "Remove", "rest_start" to "Start rest", "hold_start" to "Start hold", "dish_done" to "Ready to serve")
     fun action(eventType: String) = when (eventType) { "meat_on" -> "food_on"; "rest" -> "rest_start"; else -> eventType }
+    fun action(eventType: String, noteMetadataJson: String?): String =
+        CookNoteMetadata.decode(noteMetadataJson)?.action ?: action(eventType)
     fun eventType(action: String) = when (action) { "food_on" -> "meat_on"; "rest_start" -> "rest"; else -> action }
     val triggers = linkedMapOf("manual" to "When ready", "elapsed" to "After food goes on", "after_action" to "After an action", "temperature" to "At a temperature", "clock" to "At a time")
     fun validate(book: CookPlaybook) {
