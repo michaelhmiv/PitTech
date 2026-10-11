@@ -29,7 +29,7 @@ class LiveUpgradeRecordingTest {
         while (!condition()) delay(100L)
     }
 
-    @Test fun prepareRunningCook() = runBlocking(Dispatchers.IO) {
+    @Test fun prepareRunningCook(): Unit = runBlocking(Dispatchers.IO) {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
         File(app.filesDir, "upgrade-recording-fixture.enabled").writeText("enabled")
         app.database.clearAllTables()
@@ -61,7 +61,7 @@ class LiveUpgradeRecordingTest {
         } finally { scenario.close() }
     }
 
-    @Test fun recordingRecoversWithoutOpeningActivity() = runBlocking(Dispatchers.IO) {
+    @Test fun recordingRecoversWithoutOpeningActivity(): Unit = runBlocking(Dispatchers.IO) {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
         val witness = JSONObject(File(app.filesDir, "upgrade-recording-witness.json").readText())
         val id = witness.getString("cookId")
