@@ -142,6 +142,10 @@ fun CookDetailScreen(
 ) {
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     val recordingRunning by viewModel.recordingServiceRunning.collectAsStateWithLifecycle()
+    var noteDraftJson by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
+    var noteEditing by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var notePhotoFirst by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var focusedTimelineId by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var quickEventType by rememberSaveable { mutableStateOf("note") }
     var viewingMarker by remember { mutableStateOf<TimelineEventEntity?>(null) }
     var selectedTab by rememberSaveable(data.cook.id) { mutableStateOf(CookTab.LIVE.name) }
@@ -331,58 +335,20 @@ fun CookDetailScreen(
             dismissButton = { TextButton(onClick = { dishToDelete = null }) { Text("Cancel") } },
         )
     }
-    if (showNewEvent || editEvent != null) {
-        TimelineEventDialog(
-            event = editEvent,
-            dishes = data.dishes,
-            draftKey = logComposerSession,
-            photoEntryMode = photoEntryMode,
-            initialType = quickEventType,
-            photoUri = logPhotoUri,
-            photoCaption = logPhotoCaption,
-            onChoosePhoto = {
-                photoSourceDestination = "log"
-                showPhotoSource = true
-            },
-            onRemovePhoto = {
-                logPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
-                logPhotoUri = null
-                logPhotoCaption = ""
-            },
-            onPhotoCaptionChange = { logPhotoCaption = it },
-            onDismiss = {
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-                logPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
-                logPhotoUri = null
-                logPhotoCaption = ""
-                photoEntryMode = false
-                showNewEvent = false
-                editEvent = null
-            },
-            onSave = { type, title, details, occurred, dishId, timeWasChosen ->
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-                if (editEvent == null) {
-                    val uri = logPhotoUri
-                    val caption = logPhotoCaption.takeIf { it.isNotBlank() }
-                    val entryType = if (photoEntryMode && type == "note") "photo" else type
-                    val entryTitle = if (photoEntryMode && title == "Cook note") "Photo added" else title
-                    val useCaptureTime = entryType == "photo" && !timeWasChosen
-                    viewModel.addCookLogEntry(data.cook.id, dishId, entryType, entryTitle, details, occurred, uri, caption, useCaptureTime, useCurrentTime = !timeWasChosen && entryType != "photo") { eventId, photoAttached ->
-                        if (!photoAttached && uri != null) pendingPhotoRetry = PhotoRetry(eventId, data.cook.id, dishId, uri, caption, useCaptureTime)
-                        else pendingPhotoRetry = null
-                    }
-                    if (uri == null) pendingPhotoRetry = null
-                    logPhotoCaption = ""
-                    logPhotoUri = null
-                    photoEntryMode = false
-                }
-                else viewModel.updateTimelineEvent(editEvent!!.copy(dishId = dishId, eventType = type, title = title, details = details, occurredAtUtcMillis = occurred))
-                showNewEvent = false
-                editEvent = null
-            },
-        )
+    fun openNote(category: String = "general", action: String? = null, photoFirst: Boolean = false) {
+        noteEditing = false
+        notePhotoFirst = photoFirst
+        val dishId = data.dishes.singleOrNull()?.id
+        noteDraftJson = com.pittech.domain.CookNoteDraft(cookId = data.cook.id, dishId = dishId, category = category, action = action,
+            title = action?.let { com.pittech.domain.PlaybookCodec.actions[it] }.orEmpty(),
+            temperatures = if (category == "temperature") listOf(com.pittech.domain.NoteTemperature(unit = preferredTemperatureUnit, dishId = dishId)) else emptyList()).encode()
+    }
+    noteDraftJson?.let { raw ->
+        val draft = com.pittech.domain.CookNoteDraft.decode(raw)
+        CookNoteComposer(draft, data.dishes, preferredTemperatureUnit, viewModel, noteEditing, notePhotoFirst,
+            onChange = { noteDraftJson = it.encode() },
+            onClose = { noteDraftJson = null; notePhotoFirst = false },
+            onSaved = { attached -> noteDraftJson = null; notePhotoFirst = false })
     }
     if (showTemperature || editReading != null) {
         TemperatureEntryDialog(
@@ -591,12 +557,20 @@ fun CookDetailScreen(
                 }
             }
             CookQuickActionsBar(
-                onNote = { quickEventType = "note"; logComposerSession++; photoEntryMode = false; logPhotoUri = null; logPhotoCaption = ""; editEvent = null; showNewEvent = true },
-                onTemperature = { showTemperature = true },
-                onPhoto = { logComposerSession++; photoEntryMode = true; photoSourceDestination = "log"; showPhotoSource = true },
+                onNote = { openNote() },
+                onTemperature = { openNote("temperature") },
+                onPhoto = { openNote("photo", photoFirst = true) },
                 onReminder = { showReminderComposer = true },
-                onQuickEvent = { type -> quickEventType = type; logComposerSession++; photoEntryMode = false; logPhotoUri = null; logPhotoCaption = ""; editEvent = null; showNewEvent = true },
+                onQuickEvent = { type -> openNote("action", com.pittech.domain.PlaybookCodec.action(type)) },
             )
+            if (data.logDrafts.isNotEmpty() && noteDraftJson == null) {
+                TextButton(onClick = {
+                    val saved = data.logDrafts.first()
+                    noteEditing = data.events.any { it.id == saved.id }
+                    notePhotoFirst = false
+                    noteDraftJson = saved.payload
+                }, modifier = Modifier.testTag("cook-resume-note")) { Text("Resume saved note (${data.logDrafts.size})") }
+            }
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
@@ -642,7 +616,7 @@ fun CookDetailScreen(
                 CookTab.TIMELINE -> TimelineTab(
                     data = data,
                     viewModel = viewModel,
-                    onEditEvent = { editEvent = it },
+                    onEditEvent = { event -> coroutineScope.launch { noteEditing = true; notePhotoFirst = false; noteDraftJson = viewModel.loadNote(event.id).encode() } },
                     onEditReading = { editReading = it },
                     onError = error,
                     onPhotoClick = { viewingPhoto = it },
@@ -684,7 +658,7 @@ private fun CookQuickActionsBar(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Add note", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        Text("Log", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
                 FilledTonalButton(
@@ -1314,9 +1288,12 @@ private const val TIMELINE_READING_GROUP_MIN_SIZE = 4
 private fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, newestFirst: Boolean): List<TimelineLine> {
     val photosByEvent = data.photos.filter { it.eventId != null }.groupBy { it.eventId.orEmpty() }
     val rows = mutableListOf<TimelineLine>()
-    if (filter != TimelineFilter.TEMPERATURES) {
+    val linkedByEvent = data.logReadingLinks.groupBy { it.eventId }
+    val linkedIds = data.logReadingLinks.map { it.readingId }.toSet()
+    run {
         data.events
             .filter { it.eventType != "temperature" }
+            .filter { filter != TimelineFilter.TEMPERATURES || !linkedByEvent[it.id].isNullOrEmpty() }
             .filter { filter != TimelineFilter.PHOTOS || it.eventType == "photo" || !photosByEvent[it.id].isNullOrEmpty() }
             .forEach { event -> rows += TimelineLine.Event(event, photosByEvent[event.id].orEmpty()) }
     }
@@ -1331,7 +1308,7 @@ private fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, new
             pendingDeviceReadings.clear()
         }
 
-        val orderedReadings = data.readings.filter { filter == TimelineFilter.TEMPERATURES || it.source != "controller_cloud" }.sortedBy { it.measuredAtUtcMillis }
+        val orderedReadings = data.readings.filter { it.id !in linkedIds }.filter { filter == TimelineFilter.TEMPERATURES || it.source != "controller_cloud" }.sortedBy { it.measuredAtUtcMillis }
         orderedReadings.forEach { reading ->
             if (reading.source == "manual") {
                 flushDeviceReadings()
@@ -1445,7 +1422,9 @@ private fun TimelineEventCard(
     val event = line.event
     val dishName = data.dishes.firstOrNull { it.id == event.dishId }?.name
     var detailsExpanded by rememberSaveable(event.id) { mutableStateOf(false) }
-    val kind = eventKindLabel(event.eventType)
+    val meta = com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)
+    val effectiveType = com.pittech.domain.PlaybookCodec.action(event.eventType, event.noteMetadataJson)
+    val kind = if (meta != null) "NOTE" else eventKindLabel(event.eventType)
     Card(
         modifier = modifier.testTag("timeline-entry-${event.id}"),
         shape = RoundedCornerShape(18.dp),
@@ -1467,9 +1446,9 @@ private fun TimelineEventCard(
                     TimelineEntryMenu(
                         stateKey = event.id,
                         label = event.title,
-                        actionTag = "timeline-event-actions-${event.eventType}",
-                        editTag = "timeline-event-edit-${event.eventType}",
-                        deleteTag = "timeline-event-delete-${event.eventType}",
+                        actionTag = "timeline-event-actions-$effectiveType",
+                        editTag = "timeline-event-edit-$effectiveType",
+                        deleteTag = "timeline-event-delete-$effectiveType",
                         onEdit = onEdit,
                         onDelete = onDelete,
                     )
@@ -1492,7 +1471,17 @@ private fun TimelineEventCard(
                     ) { Text(if (detailsExpanded) "Show less" else "Show more") }
                 }
             }
-            line.photos.firstOrNull()?.let { photo ->
+            val linkedReadingIds = data.logReadingLinks.filter { it.eventId == event.id }.map { it.readingId }.toSet()
+            data.readings.filter { it.id in linkedReadingIds }.forEach { reading ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${reading.probeName}: ${reading.value} ${reading.unit}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    if (event.source == "manual") TimelineEntryMenu(reading.id, reading.probeName,
+                        "temperature-actions-${reading.probeName}", "temperature-edit-${reading.probeName}", "temperature-delete-${reading.probeName}", onEdit, onDelete)
+                }
+            }
+            meta?.action?.let { Text(com.pittech.domain.PlaybookCodec.actions[it] ?: it.replace('_', ' '), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+            meta?.dishIds?.takeIf { it.isNotEmpty() }?.let { ids -> Text(data.dishes.filter { it.id in ids }.joinToString { it.name }, style = MaterialTheme.typography.bodySmall) }
+            line.photos.forEach { photo ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PhotoThumbnail(
                         photo,
@@ -2213,7 +2202,7 @@ private fun TemperatureEntryDialog(
 }
 
 @Composable
-private fun DateTimePickerField(label: String, millis: Long, onChange: (Long) -> Unit, testTag: String) {
+internal fun DateTimePickerField(label: String, millis: Long, onChange: (Long) -> Unit, testTag: String) {
     val context = LocalContext.current
     OutlinedButton(
         onClick = {

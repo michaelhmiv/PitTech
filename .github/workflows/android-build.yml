@@ -125,6 +125,8 @@ jobs:
           path: |
             app/build/ci-emulator/**
             app/schemas/**
+            app/build/test-results/testDebugUnitTest/**
+            app/build/reports/tests/testDebugUnitTest/**
             app/build/reports/androidTests/connected/**
             app/build/outputs/androidTest-results/connected/**
           if-no-files-found: warn

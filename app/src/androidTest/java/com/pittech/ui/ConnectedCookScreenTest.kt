@@ -126,8 +126,8 @@ class ConnectedCookScreenTest {
         compose.waitUntil(10_000) { fake!!.state.value.readingRequestFailed }
         compose.onNodeWithTag("cook-quick-rest").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "rest" } } }
-        val rest = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "rest" } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "rest_start" } } }
+        val rest = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "rest_start" } }
         assertNull(rest.temperatureContextJson)
         assertFalse(app.recordingServiceRunning.value)
         assertNull(fake!!.state.value.nextPollAtMillis)
@@ -135,7 +135,7 @@ class ConnectedCookScreenTest {
         backend.failure = PolarisFailure(PolarisFailureKind.AUTH, apiCode = -10108)
         compose.onNodeWithTag("cook-quick-meat_on").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "meat_on" } } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" } } }
         assertNull(runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording() })
         assertNull(fake!!.state.value.lockedDeviceId)
         assertFalse(fake!!.state.value.authenticated)

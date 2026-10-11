@@ -364,13 +364,31 @@ class CooksViewModel(
         repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, time, photoUri, photoCaption, usePhotoCaptureTime)
     }
 
+    suspend fun loadNote(eventId: String) = repository.notes.load(eventId)
+    suspend fun persistNoteDraft(draft: com.pittech.domain.CookNoteDraft) = repository.notes.persistDraft(draft)
+    suspend fun stageNotePhoto(id: String, uri: String) = repository.notes.stagePhoto(id, uri)
+    fun discardNoteDraft(id: String) = perform { repository.notes.discardDraft(id) }
+    fun saveNote(draft: com.pittech.domain.CookNoteDraft, editing: Boolean, onSaved: (Boolean) -> Unit) = performWithLogResult({ _, attached ->
+        _notice.value = when {
+            !attached -> "Entry saved; its photo could not be attached. Reopen the saved draft to retry."
+            draft.category == "temperature" -> if (editing) "Temperature entry updated." else "Temperature saved."
+            editing -> "Timeline entry updated."
+            else -> "Entry added to the timeline."
+        }
+        onSaved(attached)
+    }) {
+        if (!editing) snapshotForCookLog(draft.cookId)
+        repository.notes.save(draft)
+    }
+    private var deletedNote: com.pittech.data.DeletedCookNote? = null
+
     fun updateTimelineEvent(event: TimelineEventEntity) = perform {
         repository.updateTimelineEvent(event)
         _notice.value = "Timeline entry updated."
     }
 
     fun deleteTimelineEvent(event: TimelineEventEntity) = perform {
-        repository.deleteTimelineEvent(event)
+        deletedNote = repository.notes.delete(event.id)
         _deletedEvent.value = event
         _notice.value = "Entry deleted."
     }
@@ -378,13 +396,14 @@ class CooksViewModel(
     fun undoDeleteTimelineEvent() {
         val event = _deletedEvent.value ?: return
         perform {
-            repository.restoreTimelineEvent(event)
+            deletedNote?.let { repository.notes.restore(it) } ?: repository.restoreTimelineEvent(event)
+            deletedNote = null
             _deletedEvent.value = null
             _notice.value = "Entry restored."
         }
     }
 
-    fun clearDeletedEvent() { _deletedEvent.value = null; deletedReading = null }
+    fun clearDeletedEvent() { _deletedEvent.value = null; deletedReading = null; deletedNote = null }
 
     fun updateSensorReading(reading: SensorReadingEntity) = perform {
         repository.updateSensorReading(reading)

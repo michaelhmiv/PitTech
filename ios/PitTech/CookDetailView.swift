@@ -68,9 +68,9 @@ struct CookDetailView: View {
 
     private func liveContent(_ cook: CookRecord) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionTitle(title: "Live readings", subtitle: "Manual entries and read-only controller samples.")
+            SectionTitle(title: "Temperature readings", subtitle: "Manual entries saved with this cook.")
             if readings.isEmpty {
-                ContentUnavailableView("No readings yet", systemImage: "thermometer.medium", description: Text("Add a manual temperature or connect a read-only grill monitor."))
+                ContentUnavailableView("No readings yet", systemImage: "thermometer.medium", description: Text("Add a manual temperature reading to track this cook."))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             } else {

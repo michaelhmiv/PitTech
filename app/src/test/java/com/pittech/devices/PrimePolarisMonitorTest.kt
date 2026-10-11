@@ -307,7 +307,7 @@ class PrimePolarisMonitorTest {
             assertEquals(0, backend.signInCalls)
             backend.discoveryFailure = null
             retry.complete(Unit)
-            waitFor { monitor.state.value.latest != null }
+            waitFor { monitor.state.value.latest != null && monitor.state.value.consecutiveFailures == 0 }
             assertEquals(2, backend.deviceCalls)
             assertEquals(0, monitor.state.value.consecutiveFailures)
             assertEquals(0, backend.signInCalls)
