@@ -75,7 +75,7 @@ class GuidanceIntegrationTest {
             companion.snooze(cook, "spritz", 0, 9_000_000)
             assertNull(companion.plan(cook)!!.progress.getValue("spritz").snoozedUntil)
             companion.skip(cook, "spritz")
-            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).count { it.eventType == "spritz" })
+            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "spritz" })
             assertEquals("skipped", companion.plan(cook)!!.progress.getValue("spritz").status)
         } finally { db.close() }
     }
