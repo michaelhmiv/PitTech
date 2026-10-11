@@ -17,6 +17,7 @@ class CookPhaseIntegrationTest {
             val start = System.currentTimeMillis() - 60_000
             val prep = repo.startCook(NewCookDraft("Overnight prep", dishes = listOf(DishDraft("Flat", "Beef"))))
             assertTrue(notePlanEvents(db.cookDao().getTimelineEventsForCook(prep)).none { it.action == "food_on" })
+            try { CookCompanionRepository(db, PhotoStorage(context)).stageAction(prep, db.cookDao().getDishesForCook(prep).single().id, "rest_start"); fail("Rest before Food on accepted") } catch (_: IllegalArgumentException) { }
             val active = repo.startCook(NewCookDraft("Already cooking", alreadyCooking = true, foodOnAtUtcMillis = start, dishes = listOf(DishDraft("Ribs", "Pork"))))
             repo.pauseCook(active)
             val detail = repo.observeCookDetail(active).first()!!
