@@ -85,6 +85,7 @@ class ConnectedCookScreenTest {
             val reattached = app.database.recordingDao().getRecording(firstRecording.cookId)!!
             reattached.deviceId != firstRecording.deviceId && app.database.cookDao().getAllSensorReadings().any { it.sourceDeviceId == reattached.deviceId }
         } }
+        logInitialFoodOn()
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } } }
@@ -109,6 +110,7 @@ class ConnectedCookScreenTest {
         assertFalse(app.recordingServiceRunning.value)
         assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().isEmpty() })
         val before = backend.calls.get()
+        logInitialFoodOn()
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } } }
@@ -135,11 +137,20 @@ class ConnectedCookScreenTest {
         backend.failure = PolarisFailure(PolarisFailureKind.AUTH, apiCode = -10108)
         compose.onNodeWithTag("cook-quick-meat_on").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" } } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" } == 2 } }
         assertNull(runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording() })
         assertNull(fake!!.state.value.lockedDeviceId)
         assertFalse(fake!!.state.value.authenticated)
         assertFalse(app.recordingServiceRunning.value)
+    }
+
+    private fun logInitialFoodOn() {
+        dismissCookNotice()
+        compose.onNodeWithTag("cook-quick-meat_on").performClick()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" } == 1 } }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("cook-quick-wrap") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+        dismissCookNotice()
     }
 
     private fun selectSampling(optionTag: String) {
