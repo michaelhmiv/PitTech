@@ -38,7 +38,7 @@ class CookPreparationRepository(private val db: PitTechDatabase) {
     }
     suspend fun summaries(now: Long = System.currentTimeMillis()): List<EquipmentSummary> {
         val records = db.companionDao().all(); val cooks = db.cookDao().getAllCooks(); val dishes = db.cookDao().getAllDishes().groupBy { it.cookId }; val events = db.cookDao().getAllTimelineEvents().groupBy { it.cookId }
-        val hours = cooks.associate { cook -> cook.id to CookPreparation.cookingHours(events[cook.id].orEmpty().map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }, dishes[cook.id].orEmpty().map { it.id }, cook.endedAtUtcMillis ?: now) }
+        val hours = cooks.associate { cook -> cook.id to CookPreparation.cookingHours(events[cook.id].orEmpty().let { com.pittech.data.notePlanEvents(it) }, dishes[cook.id].orEmpty().map { it.id }, cook.endedAtUtcMillis ?: now) }
         return records.filter { it.kind == "equipment" }.map { r ->
             val p = CookPreparation.decodeEquipment(r.payload)
             val matching = cooks.filter { it.smokerName?.equals(p.name, true) == true }

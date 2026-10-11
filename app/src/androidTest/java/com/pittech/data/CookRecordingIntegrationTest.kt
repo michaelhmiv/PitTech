@@ -147,7 +147,7 @@ class CookRecordingIntegrationTest {
         val transfer = PitTechDataTransfer(context, cooks)
         val output = ByteArrayOutputStream(); transfer.writeZip(output)
         val preview = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
-        assertEquals(5, preview.archiveVersion)
+        assertEquals(6, preview.archiveVersion)
         assertEquals(event.temperatureContextJson, preview.snapshot.events.first { it.id == event.id }.temperatureContextJson)
         assertTrue(preview.snapshot.readings.all { it.timestampBasis == "cloud_receipt" })
         assertEquals("", preview.snapshot.recordings.single().controllerKey)
@@ -183,6 +183,8 @@ class CookRecordingIntegrationTest {
         legacyCooks.addManualTemperature(id, null, "Manual probe", "food_probe", 165.0, "°F", base)
         legacy.close()
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            listOf("log_reading_links", "cook_log_drafts", "target_history", "cook_lifecycle").forEach { sql.execSQL("DROP TABLE $it") }
+            sql.execSQL("ALTER TABLE timeline_events DROP COLUMN noteMetadataJson")
             sql.execSQL("DROP TABLE probe_assignments"); sql.execSQL("DROP TABLE cook_recordings")
             sql.execSQL("ALTER TABLE timeline_events DROP COLUMN temperatureContextJson")
             sql.execSQL("ALTER TABLE photos DROP COLUMN temperatureContextJson")
@@ -190,7 +192,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 3
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7).build()
         try {
             assertEquals("Legacy cook", migrated.cookDao().getCook(id)!!.title)
             assertEquals("measurement", migrated.cookDao().getAllSensorReadings().single().timestampBasis)
@@ -265,12 +267,14 @@ class CookRecordingIntegrationTest {
         legacyRecording.ingest(id, CookTelemetryPolicy.deviceKey(device.id), sample(base + 1_000), state(base + 1_000))
         legacy.close()
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
+            listOf("log_reading_links", "cook_log_drafts", "target_history", "cook_lifecycle").forEach { sql.execSQL("DROP TABLE $it") }
+            sql.execSQL("ALTER TABLE timeline_events DROP COLUMN noteMetadataJson")
             sql.execSQL("ALTER TABLE cook_recordings DROP COLUMN samplingMode")
             sql.execSQL("ALTER TABLE cook_recordings DROP COLUMN samplingIntervalMillis")
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 4
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7).build()
         try {
             val saved = migrated.recordingDao().getRecording(id)!!
             assertEquals("periodic", saved.samplingMode)

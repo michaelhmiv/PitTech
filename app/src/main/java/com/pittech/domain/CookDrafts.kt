@@ -41,6 +41,8 @@ data class NewCookDraft(
     val playbookId: String? = null,
     val followPlaybook: Boolean = true,
     val recordGrill: Boolean = false,
+    val alreadyCooking: Boolean = false,
+    val foodOnAtUtcMillis: Long? = null,
     val probe1DishIndex: Int? = null,
     val probe2DishIndex: Int? = null,
     val probe3DishIndex: Int? = null,

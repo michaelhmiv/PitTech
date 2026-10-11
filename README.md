@@ -4,6 +4,8 @@ Android-first cook logging, monitoring, and analysis for serious home smokers.
 
 PitTech is organized around the cook record. A cook brings together multiple dishes, grill and probe readings, notes, photos, and actions in one timeline, then makes the data easy to review and export.
 
+See [Cook logging, preparation and charts](docs/COOK_EXPERIENCE.md) for the current logging model, timing behavior, chart controls and update compatibility.
+
 ## Product decisions
 
 - **Android first.** Use conventional Android navigation and controls, with a later iOS path kept in mind.

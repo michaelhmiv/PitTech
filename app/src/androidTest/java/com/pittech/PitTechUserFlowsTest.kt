@@ -274,6 +274,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-add-photo").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag("cook-add-reminder").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         saveScreenshot("cook-live-dashboard-top")
+        composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
         assertTrue(composeRule.onAllNodesWithText("Starting condition: Refrigerated").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
         composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
@@ -433,9 +435,11 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-filter-events").performClick()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Spritzed lightly"))
         composeRule.onNodeWithText("Spritzed lightly").performScrollTo().assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithText("Pit ambient", substring = true).fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("timeline-filter-photos").performClick()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Bark photo"))
         composeRule.onNodeWithText("Bark photo").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-photo-gallery-$timelinePhotoEventId").performScrollTo().performClick()
         composeRule.onNodeWithText("Photos (3)").assertIsDisplayed()
@@ -447,14 +451,15 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-filter-all").performClick()
         composeRule.onNodeWithTag("timeline-sort").performClick()
         composeRule.onNodeWithTag("timeline-sort-newest").performClick()
-        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Cook started"))
-        composeRule.onNodeWithText("Cook started").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Preparation started"))
+        composeRule.onNodeWithText("Preparation started").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-jump-latest").assertIsDisplayed().performClick()
         saveScreenshot("cook-timeline-dashboard")
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
-        composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
+        composeRule.onNodeWithText("Temperature (°F)").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("chart-x-axis").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         saveScreenshot("cook-live-actions")
         composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
@@ -490,7 +495,7 @@ class PitTechUserFlowsTest {
         val preview = transfer.previewImport(java.io.ByteArrayInputStream(zipBytes.toByteArray()))
         assertTrue(preview.cookCount > 0)
         assertTrue(preview.dishCount > 0)
-        assertEquals(5, preview.archiveVersion)
+        assertEquals(6, preview.archiveVersion)
         assertEquals("°C", preview.preferences?.temperatureUnit)
         assertEquals("kg", preview.preferences?.weightUnit)
         assertEquals("DARK", preview.preferences?.themeMode)
@@ -777,7 +782,7 @@ class PitTechUserFlowsTest {
             }
         }
         val event = runBlocking(Dispatchers.IO) {
-            application.database.cookDao().getTimelineEventsForCook(cook.id).single { it.eventType == "reminder_completed" }
+            application.database.cookDao().getTimelineEventsForCook(cook.id).single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "check_in" }
         }
         assertEquals("Check-in: Check the brisket", event.title)
         assertEquals("Wrapped at 160°F", event.details)
@@ -789,7 +794,7 @@ class PitTechUserFlowsTest {
             application.cookRepository.addReminderCheckInPhoto(event.id, cook.id, checkInPhotoUri.toString(), "Grill check")
         }
         assertEquals(1, runBlocking(Dispatchers.IO) {
-            application.database.cookDao().getTimelineEventsForCook(cook.id).count { it.eventType == "reminder_completed" }
+            application.database.cookDao().getTimelineEventsForCook(cook.id).count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "check_in" }
         })
         assertEquals(event.id, runBlocking(Dispatchers.IO) { application.database.cookDao().getPhotosForCook(cook.id).single().eventId })
 

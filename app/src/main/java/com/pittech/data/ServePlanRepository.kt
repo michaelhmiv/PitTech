@@ -19,15 +19,15 @@ class ServePlanRepository(private val db: PitTechDatabase, private val companion
         val events = db.cookDao().getAllTimelineEvents().groupBy { it.cookId }
         return db.cookDao().getAllDishes().mapNotNull { dish ->
             val cook = cooks[dish.cookId] ?: return@mapNotNull null
-            val scoped = events[dish.cookId].orEmpty().filter { it.dishId == dish.id || it.dishId == null }
-            val on = scoped.filter { it.eventType == "meat_on" }
-            val remove = scoped.filter { it.eventType == "remove" }
+            val scoped = notePlanEvents(events[dish.cookId].orEmpty()).filter { it.dishId == dish.id || it.dishId == null }
+            val on = scoped.filter { it.action == "food_on" }
+            val remove = scoped.filter { it.action == "remove" }
             // Ambiguous/multiple Food on or Remove events are not treated as a clean sample.
-            if (on.size != 1 || remove.size != 1 || remove.single().occurredAtUtcMillis <= on.single().occurredAtUtcMillis) return@mapNotNull null
-            val duration = (remove.single().occurredAtUtcMillis - on.single().occurredAtUtcMillis) / 60_000
+            if (on.size != 1 || remove.size != 1 || remove.single().at <= on.single().at) return@mapNotNull null
+            val duration = (remove.single().at - on.single().at) / 60_000
             if (duration !in 1..100_800) return@mapNotNull null
             DurationEvidence(dish.cut, dish.foodType, cook.smokerName, ServeTimePlanner.weightKg(dish.weightValue, dish.weightUnit ?: "lb"), dish.startingCondition, dish.boneIn,
-                cook.initialSetpointValue?.let { CookPlanEngine.fahrenheit(it, cook.initialSetpointUnit ?: "°F") }, duration, cook.id, scoped.any { it.eventType == "wrap" })
+                cook.initialSetpointValue?.let { CookPlanEngine.fahrenheit(it, cook.initialSetpointUnit ?: "°F") }, duration, cook.id, scoped.any { it.action == "wrap" })
         }
     }
     suspend fun attach(cookId: String, draft: NewCookDraft, orderedDishIds: List<String>? = null) = db.withTransaction {

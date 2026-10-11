@@ -40,16 +40,7 @@ object CookPreparation {
     fun decodeFuel(raw: String): FuelEntry { val o = JSONObject(raw); require(o.getInt("version") == 1); return FuelEntry(o.getString("equipment"), o.getDouble("kg"), if (o.isNull("cookId")) null else o.getString("cookId"), o.getLong("at"), o.optString("type", "added")).also { encodeFuel(it) } }
     /** Union simultaneous dish intervals so one smoker hour is counted once. No setup/rest time. */
     fun cookingHours(events: List<PlanEvent>, dishes: List<String>, endedAt: Long?): Double {
-        val intervals = dishes.mapNotNull { dish ->
-            val scope = events.filter { it.dishId == dish || it.dishId == null }
-            val on = scope.filter { it.action == "food_on" }.minOfOrNull { it.at } ?: return@mapNotNull null
-            val off = scope.filter { it.action in setOf("remove", "rest_start", "hold_start", "dish_done") && it.at >= on }.minOfOrNull { it.at } ?: endedAt ?: return@mapNotNull null
-            if (off <= on) null else on to off
-        }.sortedBy { it.first }
-        if (intervals.isEmpty()) return 0.0
-        var start = intervals.first().first; var end = intervals.first().second; var sum = 0L
-        intervals.drop(1).forEach { (a,b) -> if (a <= end) end = maxOf(end,b) else { sum += end - start; start = a; end = b } }
-        sum += end - start
-        return sum / 3_600_000.0
+        val end = endedAt ?: events.maxOfOrNull { it.at } ?: return 0.0
+        return CookPhases.heatingMillis(CookPhases.all(events, dishes, events.minOfOrNull { it.at } ?: end, end)) / 3_600_000.0
     }
 }

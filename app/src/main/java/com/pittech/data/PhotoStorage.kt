@@ -22,11 +22,15 @@ class PhotoStorage(private val context: Context) {
         nowUtcMillis: Long,
         eventId: String? = null,
         caption: String? = null,
+        stableId: String? = null,
     ): PhotoEntity = withContext(Dispatchers.IO) {
         val uri = Uri.parse(uriString)
-        val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+        val mimeType = context.contentResolver.getType(uri)
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(uri.lastPathSegment?.substringAfterLast('.', ""))
+            ?: "image/jpeg"
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "jpg"
-        val id = UUID.randomUUID().toString()
+        val id = stableId ?: UUID.randomUUID().toString()
+        require(id.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Invalid photo identity." }
         val directory = File(context.filesDir, PHOTO_DIRECTORY).apply { mkdirs() }
         val destination = File(directory, "$id.$extension")
 
@@ -61,6 +65,28 @@ class PhotoStorage(private val context: Context) {
         Unit
     }
 
+    suspend fun stageNotePhoto(draftId: String, uriString: String): com.pittech.domain.NotePhoto = withContext(Dispatchers.IO) {
+        val uri = Uri.parse(uriString)
+        val id = UUID.randomUUID().toString()
+        val directory = File(context.filesDir, "note-drafts/" + UUID.nameUUIDFromBytes(draftId.toByteArray())).apply { mkdirs() }
+        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(context.contentResolver.getType(uri) ?: "image/jpeg") ?: "jpg"
+        val destination = File(directory, "$id.$extension")
+        try {
+            val captured = CameraPhotoFiles.capturedAt(context, uri)
+            (context.contentResolver.openInputStream(uri) ?: error("The photo could not be opened.")).use { source ->
+                destination.outputStream().use { output -> source.copyTo(output) }
+            }
+            val capture = captured ?: captureTime(destination)
+            CameraPhotoFiles.delete(context, uri)
+            com.pittech.domain.NotePhoto(id, Uri.fromFile(destination).toString(), capturedAt = capture)
+        } catch (failure: Throwable) { destination.delete(); throw failure }
+    }
+
+    suspend fun deleteDraftFiles(draftId: String) = withContext(Dispatchers.IO) {
+        File(context.filesDir, "note-drafts/" + UUID.nameUUIDFromBytes(draftId.toByteArray())).deleteRecursively()
+        Unit
+    }
+
     /** EXIF dates without an offset are ambiguous. Never substitute the import time. */
     private fun captureTime(file: File): Long? = runCatching {
         val exif = ExifInterface(file.absolutePath)
@@ -83,6 +109,8 @@ class PhotoStorage(private val context: Context) {
             temporary.delete()
         }
     }
+
+    fun uri(relativePath: String): Uri = Uri.fromFile(File(context.filesDir, relativePath))
 
     suspend fun read(relativePath: String): ByteArray? = withContext(Dispatchers.IO) {
         val file = File(context.filesDir, relativePath)

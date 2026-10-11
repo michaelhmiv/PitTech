@@ -5,21 +5,30 @@ import ZIPFoundation
 @MainActor
 @Observable
 final class CookStore {
-    private(set) var library = PitTechLibrary()
+    var library = PitTechLibrary()
     private(set) var saveError: String?
 
-    init() {
+    var noteDrafts: [CookNoteDraft] = []
+    var deletedNote: DeletedNativeNote?
+    private let directory: URL
+    init(directory: URL? = nil) {
+        self.directory = directory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
         load()
+        noteDrafts = (try? JSONDecoder().decode([CookNoteDraft].self, from: Data(contentsOf: draftsURL))) ?? []
     }
 
     var activeCooks: [CookRecord] { library.cooks.filter(\.isActive).sorted { $0.startedAtUtcMillis > $1.startedAtUtcMillis } }
     var completedCooks: [CookRecord] { library.cooks.filter { !$0.isActive }.sorted { $0.startedAtUtcMillis > $1.startedAtUtcMillis } }
-    var temperatureUnit: String { library.preferences?["temperatureUnit"]?.stringValue ?? "F" }
+    var temperatureUnit: String { (library.preferences?["temperatureUnit"]?.stringValue ?? "F").replacingOccurrences(of: "°", with: "") }
     var weightUnit: String { library.preferences?["weightUnit"]?.stringValue ?? "lb" }
 
-    func startCook(title: String, firstDish: String) {
+    func startCook(title: String, firstDish: String, alreadyCooking: Bool = false, foodOn: Date = .now) {
+        guard !alreadyCooking || foodOn <= .now && foodOn.timeIntervalSince1970 > 0 else { saveError = "Choose the actual Food on time, up to now."; return }
+        let prior = library
         let cook = CookRecord.start(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New cook" : title)
         library.cooks.append(cook)
+        library.lifecycles.append(.object(["cookId": .string(cook.id), "timingMode": .string("explicit_phases")]))
         if !firstDish.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let now = Int64(Date.now.timeIntervalSince1970 * 1_000)
             library.dishes.append(.object([
@@ -31,13 +40,27 @@ final class CookStore {
                 "updatedAtUtcMillis": .number(Double(now))
             ]))
         }
+        if alreadyCooking {
+            do { try saveNote(CookNoteDraft(cookId: cook.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: foodOn.timeIntervalSince1970 * 1_000)) }
+            catch { library = prior; saveError = error.localizedDescription; return }
+        }
         save()
+        if saveError != nil { library = prior }
     }
 
     func addDish(cookId: String, name: String) {
         let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, library.cooks.contains(where: { $0.id == cookId }) else { return }
         let now = Int64(Date.now.timeIntervalSince1970 * 1_000)
+        let prior = library, scopes = dishRecords(cookId).map(\.id)
+        if !scopes.isEmpty && timingMode(cookId) == "explicit_phases" {
+            let actions = library.actions(for: cookId)
+            library.events = library.events.map { row in
+                guard var o = row.objectValue, o["cookId"]?.stringValue == cookId, let id = o["id"]?.stringValue, let action = actions.first(where: { $0.id == id }), action.dishIds.isEmpty, CookPhaseEngine.actions.contains(action.action) else { return row }
+                var metadata = o["noteMetadataJson"]?.stringValue.flatMap { try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) } ?? CookNoteMetadata(category: "action", action: action.action)
+                metadata.dishIds = scopes; o["noteMetadataJson"] = .string(metadata.json); return .object(o)
+            }
+        }
         library.dishes.append(.object([
             "id": .string(UUID().uuidString.lowercased()),
             "cookId": .string(cookId),
@@ -47,6 +70,7 @@ final class CookStore {
             "updatedAtUtcMillis": .number(Double(now))
         ]))
         save()
+        if saveError != nil { library = prior }
     }
 
     func updateCook(_ cookId: String, title: String, notes: String) {
@@ -91,7 +115,7 @@ final class CookStore {
         library.events.append(.object([
             "id": .string(UUID().uuidString.lowercased()),
             "cookId": .string(cookId),
-            "eventType": .string("custom"),
+            "eventType": .string("note"),
             "title": .string(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Cook note" : title),
             "details": .string(details),
             "occurredAtUtcMillis": .number(Double(now)),
@@ -132,10 +156,16 @@ final class CookStore {
     }
 
     func exportArchive() throws -> Data {
-        let jsonData = try JSONEncoder().encode(library)
+        var portable = library
+        portable.schemaVersion = 6
+        portable.readings = portable.readings.map { row in
+            guard var o = row.objectValue, let unit = o["unit"]?.stringValue, ["F", "C"].contains(unit) else { return row }
+            o["unit"] = .string("°" + unit); return .object(o)
+        }
+        let jsonData = try JSONEncoder().encode(portable)
         let manifest: [String: Any] = [
             "format": "PitTech complete cook archive",
-            "archiveVersion": 5,
+            "archiveVersion": 6,
             "exportedAtUtc": ISO8601DateFormatter().string(from: .now),
             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
             "includesPreferences": true,
@@ -196,7 +226,7 @@ final class CookStore {
         }
         let library = try JSONDecoder().decode(PitTechLibrary.self, from: libraryData)
         guard manifest["archiveVersion"] as? Int == library.schemaVersion else { throw PitTechArchiveError.invalidArchive }
-        guard (1...5).contains(library.schemaVersion) else { throw PitTechArchiveError.unsupportedVersion }
+        guard (1...6).contains(library.schemaVersion) else { throw PitTechArchiveError.unsupportedVersion }
         let cookIds = Set(library.cooks.map(\.id))
         guard cookIds.count == library.cooks.count,
               (library.dishes + library.ingredients + library.events + library.readings + library.targets + library.results + library.devices + library.probes + library.photos + library.reminders + library.recordings + library.probeAssignments).allSatisfy({
@@ -205,6 +235,7 @@ final class CookStore {
                         cookIds.contains(cookId) else { return false }
                   return true
               }) else { throw PitTechArchiveError.invalidArchive }
+        try library.validateCookExperience()
         return PitTechImportPreview(cooks: library.cooks.count, dishes: library.dishes.count,
                                     readings: library.readings.count, events: library.events.count,
                                     version: library.schemaVersion)
@@ -222,11 +253,20 @@ final class CookStore {
         let newIds = Set(newCooks.map(\.id))
         guard !newCooks.isEmpty else { return PitTechImportResult(imported: 0, skipped: imported.cooks.count) }
 
+        for pair in [(library.dishes, imported.dishes), (library.events, imported.events), (library.readings, imported.readings), (library.probes, imported.probes), (library.devices, imported.devices), (library.ingredients, imported.ingredients), (library.targets, imported.targets), (library.results, imported.results), (library.reminders, imported.reminders), (library.probeAssignments, imported.probeAssignments), (library.targetHistory, imported.targetHistory)] {
+            let existing = Set(pair.0.compactMap { $0.objectValue?["id"]?.stringValue })
+            guard pair.1.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ row in
+                guard let id = row.objectValue?["id"]?.stringValue else { return false }
+                return !existing.contains(id)
+            }) else { throw PitTechArchiveError.invalidArchive }
+        }
         let existingPhotoIds = Set((library.photos + library.companionPhotos).compactMap { $0.objectValue?["id"]?.stringValue })
         let importedRecords = imported.companionRecords.filter { row in
             guard let object = row.objectValue else { return false }
             return object["cookId"]?.stringValue.map(newIds.contains) ?? true
         }
+        let existingRecordIds = Set(library.companionRecords.compactMap { $0.objectValue?["id"]?.stringValue })
+        guard importedRecords.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ !existingRecordIds.contains($0.objectValue?["id"]?.stringValue ?? "") }) else { throw PitTechArchiveError.invalidArchive }
         let newRecordIds = Set(importedRecords.compactMap { $0.objectValue?["id"]?.stringValue })
         let importedPhotos = imported.photos.filter { belongsToNewCook($0, ids: newIds) }
         let importedReferencePhotos = imported.companionPhotos.filter { row in
@@ -292,7 +332,13 @@ final class CookStore {
         library.companionRecords = mergeUnique(library.companionRecords, importedRecords)
         library.companionPhotos = mergeUnique(library.companionPhotos, importedReferencePhotos)
         if let preferences = imported.preferences { library.preferences = preferences }
-        library.schemaVersion = 5
+        library.logReadingLinks = mergeUnique(library.logReadingLinks, imported.logReadingLinks.filter { row in
+            guard let eventId = row.objectValue?["eventId"]?.stringValue else { return false }
+            return imported.events.contains { $0.objectValue?["id"]?.stringValue == eventId && belongsToNewCook($0, ids: newIds) }
+        }, key: "readingId")
+        library.lifecycles = mergeUnique(library.lifecycles, imported.lifecycles.filter { belongsToNewCook($0, ids: newIds) }, key: "cookId")
+        library.targetHistory = mergeUnique(library.targetHistory, imported.targetHistory.filter { belongsToNewCook($0, ids: newIds) })
+        library.schemaVersion = 6
         save()
         if saveError != nil {
             library = priorLibrary
@@ -306,11 +352,9 @@ final class CookStore {
         saveError = nil
     }
 
-    private var storageURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("pittech.json")
-    }
+    var storageURL: URL { directory.appendingPathComponent("pittech.json") }
 
-    private static let archiveReadme = "PitTech cook archive, schema 5. Cook records are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
+    private static let archiveReadme = "PitTech cook archive, schema 6. Cook records are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
 
     private static func isSafeArchivePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.contains("\\") &&
@@ -338,8 +382,7 @@ final class CookStore {
 
     private func attachmentURL(id: String, archivePath: String) -> URL {
         let name = URL(fileURLWithPath: archivePath).lastPathComponent
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("attachments", isDirectory: true)
+        return directory.appendingPathComponent("attachments", isDirectory: true)
             .appendingPathComponent(name)
     }
 
@@ -347,18 +390,18 @@ final class CookStore {
         guard FileManager.default.fileExists(atPath: storageURL.path) else { return }
         do {
             library = try JSONDecoder().decode(PitTechLibrary.self, from: Data(contentsOf: storageURL))
-            guard (1...5).contains(library.schemaVersion) else {
+            guard (1...6).contains(library.schemaVersion) else {
                 saveError = "This PitTech library version is not supported. Keep the original backup safe."
                 library = PitTechLibrary()
                 return
             }
-            library.schemaVersion = 5
+            library.schemaVersion = 6
         } catch {
             saveError = "PitTech couldn't read its local cook library. Your file has been left untouched."
         }
     }
 
-    private func save() {
+    func save() {
         do {
             let data = try JSONEncoder().encode(library)
             try data.write(to: storageURL, options: .atomic)

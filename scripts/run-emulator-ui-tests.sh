@@ -200,6 +200,60 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/upgrade-validation.txt"
 fi
 
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Validating package replacement while a foreground recorder is running."
+  timeout 20 adb shell pm clear com.pittech.debug
+  timeout 120 adb install -r -d "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
+  timeout 120 adb install -r -d -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.LiveUpgradeRecordingTest#prepareRunningCook' \
+    "$instrumentation_target" | tee "$output_dir/live-upgrade-prepare.txt"
+  grep -q 'OK (1 test)' "$output_dir/live-upgrade-prepare.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/live-upgrade-prepare.txt"
+  # Only the OLD app is opened. Require its foreground service before replacement.
+  timeout 20 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
+  timeout 20 adb shell input keyevent KEYCODE_HOME
+  service_ready=false
+  for attempt in $(seq 1 30); do
+    if adb shell dumpsys activity services com.pittech.debug | grep -q 'isForeground=true'; then
+      service_ready=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$service_ready" == true ]]
+  timeout 120 adb install -r -t "$test_apk"
+  # Deliberately NO force-stop: installing the APK interrupts the old service.
+  timeout 120 adb install -r "$app_apk"
+  # Use a boundary after installation, then wait for another real accepted sample.
+  install_epoch="$(adb shell date +%s | tr -d '\r')"
+  [[ "$install_epoch" =~ ^[0-9]+$ ]]
+  receipt_boundary="$(( (install_epoch + 1) * 1000 ))"
+  adb shell run-as com.pittech.debug sh -c "'echo $receipt_boundary > files/upgrade-install-started.txt'"
+  recovered=false
+  for attempt in $(seq 1 60); do
+    receipt="$(adb shell run-as com.pittech.debug cat files/upgrade-recording-receipt.txt 2>/dev/null | tr -d '\r' || true)"
+    if [[ "$receipt" =~ ^[0-9]+$ ]] && (( receipt > receipt_boundary )) &&
+       adb shell dumpsys activity services com.pittech.debug | grep -q 'isForeground=true'; then
+      recovered=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$recovered" != true ]]; then
+    adb shell dumpsys activity services com.pittech.debug > "$output_dir/live-upgrade-services.txt"
+    adb logcat -d -t 500 > "$output_dir/live-upgrade-logcat.txt"
+    echo "No foreground recorder with an accepted post-update receipt was observed." >&2
+    exit 1
+  fi
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.LiveUpgradeRecordingTest#recordingRecoversWithoutOpeningActivity' \
+    "$instrumentation_target" | tee "$output_dir/live-upgrade-validate.txt"
+  grep -q 'OK (1 test)' "$output_dir/live-upgrade-validate.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/live-upgrade-validate.txt"
+  timeout 20 adb shell am force-stop com.pittech.debug
+fi
+
 cloud_test_output="$output_dir/grillirg-cloud-tests.txt"
 cloud_test_selector='com.pittech.ui.GrillirGCloudMonitorScreenTest,com.pittech.devices.PrimePolarisSessionStoreTest'
 echo "Running GrillirG cloud UI and encrypted-session tests on API $api_level."
@@ -230,13 +284,13 @@ if timeout 10 adb shell run-as com.pittech.debug test -f files/pittech-ui-test/p
 fi
 
 recording_test_output="$output_dir/cook-recording-tests.txt"
-recording_test_selector='com.pittech.data.CookRecordingIntegrationTest,com.pittech.CookRecordingServiceTest,com.pittech.ui.ConnectedCookScreenTest'
+recording_test_selector='com.pittech.data.CookRecordingIntegrationTest,com.pittech.data.CookNoteIntegrationTest,com.pittech.data.CookExperienceMigrationTest,com.pittech.data.CookPhaseIntegrationTest,com.pittech.CookRecordingServiceTest,com.pittech.CookRecordingRecoveryTest,com.pittech.ui.ConnectedCookScreenTest'
 echo "Running connected-cook persistence, migration, background-service, and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-if [[ "$recording_passed_count" -ne 10 ]] || ! grep -q 'OK (10 tests)' "$recording_test_output" ||
+if [[ "$recording_passed_count" -ne 16 ]] || ! grep -q 'OK (16 tests)' "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
   exit 1
@@ -248,9 +302,9 @@ fi
 companion_test_output="$output_dir/companion-tests.txt"
 echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (7 tests)' "$companion_test_output"
+grep -q 'OK (9 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"

@@ -52,7 +52,7 @@ class CookRecordingService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Opening cook recording…"),
                 if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
         } catch (_: Exception) {
-            scope.launch { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Android could not start recording. Open PitTech to resume.") }; stopSelf() }
+            scope.launch { app.database.recordingDao().getActiveRecording()?.let { CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, it.cookId, "Android could not start recording. Open PitTech to resume.") }; stopSelf() }
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_PAUSE) {
@@ -60,6 +60,7 @@ class CookRecordingService : Service() {
             return START_NOT_STICKY
         }
         app.recordingServiceRunning.value = true
+        CookRecordingRecovery.clearNotice(this)
         if (!observing) {
             observing = true
             scope.launch {
@@ -95,26 +96,35 @@ class CookRecordingService : Service() {
                     app.grillMonitor.state.collect { state ->
                         if (state.phase == PolarisPhase.RESTORING || state.phase == PolarisPhase.DISCOVERING) return@collect
                         if (!state.authenticated) {
-                            app.recordingRepository.pause(recording.cookId, if (state.provider == com.pittech.devices.GrillProvider.PIT_BOSS) "Connect your controller in Devices, then resume recording." else "Sign in to " + state.provider.label + " in Devices, then resume recording.")
+                            CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, recording.cookId, if (state.provider == com.pittech.devices.GrillProvider.PIT_BOSS) "Connect your controller in Devices, then resume recording." else "Sign in to " + state.provider.label + " in Devices, then resume recording.")
                             return@collect
                         }
                         val device = state.devices.firstOrNull { CookTelemetryPolicy.deviceKey(it.id) == recording.controllerKey }
                         if (device == null) {
-                            if (state.devices.isNotEmpty() || state.phase == PolarisPhase.READY) app.recordingRepository.pause(recording.cookId, "The attached grill was not found. Check the selected provider in Devices.")
+                            if (state.devices.isNotEmpty() || state.phase == PolarisPhase.READY) CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, recording.cookId, "The attached grill was not found. Check the selected provider in Devices.")
                             return@collect
                         }
                         app.grillMonitor.lockDevice(device.id)
                         if (state.selectedDeviceId != device.id) { app.grillMonitor.selectDevice(device.id); return@collect }
                         app.alertRepository.reportControllerStatus(recording.cookId, state.onlineStatus, state.statusFetchedAtMillis)
                         if (state.readingRequestFailed || state.onlineStatus?.let { it != 0 } == true) app.recordingRepository.markGap(recording.cookId, "Grill offline or cloud readings unavailable.")
-                        state.latest?.let { app.recordingRepository.ingest(recording.cookId, recording.controllerKey, it, state) }
+                        state.latest?.let {
+                            app.recordingRepository.ingest(recording.cookId, recording.controllerKey, it, state)
+                            // Durable proof for the live APK upgrade fixture. Android instrumentation
+                            // replaces the target process, so verify background receipt before starting it.
+                            if (BuildConfig.DEBUG && java.io.File(filesDir, "upgrade-recording-fixture.enabled").exists()) {
+                                app.database.recordingDao().getRecording(recording.cookId)?.lastReceivedAtUtcMillis?.let { received ->
+                                    java.io.File(filesDir, "upgrade-recording-receipt.txt").writeText(received.toString())
+                                }
+                            }
+                        }
                     }
                     }
                 }
             }.invokeOnCompletion { error ->
                 if (error != null && error !is CancellationException) {
                     scope.launch {
-                        try { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Recording interrupted. Open PitTech to resume.") } }
+                        try { app.database.recordingDao().getActiveRecording()?.let { CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, it.cookId, "Recording interrupted. Open PitTech to resume.") } }
                         finally { stopSelf() }
                     }
                 }

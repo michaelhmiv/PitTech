@@ -58,6 +58,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -367,7 +368,7 @@ private fun CooksHome(
         ) {
             Icon(Icons.Filled.Add, contentDescription = null)
             Spacer(Modifier.width(10.dp))
-            Text("Start a cook")
+            Text("Prepare a cook")
         }
 
         Text(
@@ -443,9 +444,11 @@ private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
             Text(cook.cook.title, style = MaterialTheme.typography.titleLarge)
             Text(
                 when (cook.cook.status) {
-                    CookStatus.PAUSED -> "Paused · $time"
+                    CookStatus.PAUSED -> "Recording and guidance paused · $time"
                     CookStatus.COMPLETED -> "Finished · $time"
-                    else -> "In progress · $time"
+                    else -> if (cook.lifecycles.firstOrNull()?.timingMode == "explicit_phases")
+                        com.pittech.domain.CookPhases.summary(com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(cook.events), cook.dishes.map { it.id }, cook.cook.startedAtUtcMillis, System.currentTimeMillis())) + " · $time"
+                    else "Active session · legacy timer · $time"
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -510,6 +513,8 @@ private fun StartCookScreen(
         mutableStateOf(initialDraft?.title ?: defaultCookName)
     }
     var recordGrill by rememberSaveable { mutableStateOf(false) }
+    var alreadyCooking by rememberSaveable { mutableStateOf(false) }
+    var foodOnTime by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
     var probe1 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe2 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
@@ -575,7 +580,7 @@ private fun StartCookScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Start a cook") },
+                title = { Text("Prepare a cook") },
                 navigationIcon = {
                     IconButton(onClick = requestBack, enabled = !saving) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Go back")
@@ -609,6 +614,7 @@ private fun StartCookScreen(
                                     playbookId = initialDraft?.playbookId,
                                     followPlaybook = followPlaybook,
                                     recordGrill = recordGrill && grillState.selectedDevice != null,
+                                    alreadyCooking = alreadyCooking, foodOnAtUtcMillis = if (alreadyCooking) foodOnTime else null,
                                     probe1DishIndex = probe1?.toIntOrNull(),
                                     probe2DishIndex = probe2?.toIntOrNull(),
                                     probe3DishIndex = probe3?.toIntOrNull(),
@@ -620,7 +626,7 @@ private fun StartCookScreen(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("cook-save"),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text(if (saving) "Saving cook…" else "Start cook")
+                        Text(if (saving) "Saving cook…" else if (alreadyCooking) "Save active cook" else "Begin preparation")
                     }
                 }
             }
@@ -648,6 +654,8 @@ private fun StartCookScreen(
                 }
                 dishes.forEachIndexed { index, dish -> OutlinedButton(onClick = { editPreviewDish = index }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Adjust ${dish.name}") } }
             }
+            ChoiceField("Current stage", if (alreadyCooking) "Already cooking" else "Preparing", listOf("Preparing", "Already cooking")) { alreadyCooking = it == "Already cooking" }
+            if (alreadyCooking) DateTimePickerField("Actual Food on", foodOnTime, { foodOnTime = it }, "cook-initial-food-on-time")
             Text("Add the basics now. You can fill in the rest during or after the cook.", style = MaterialTheme.typography.bodyLarge)
             OutlinedTextField(
                 value = title,

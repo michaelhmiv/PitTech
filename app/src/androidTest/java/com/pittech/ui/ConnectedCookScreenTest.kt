@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -85,13 +86,14 @@ class ConnectedCookScreenTest {
             val reattached = app.database.recordingDao().getRecording(firstRecording.cookId)!!
             reattached.deviceId != firstRecording.deviceId && app.database.cookDao().getAllSensorReadings().any { it.sourceDeviceId == reattached.deviceId }
         } }
+        logInitialFoodOn()
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "wrap" } } }
-        val wrapped = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "wrap" } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } } }
+        val wrapped = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } }
         assertTrue(com.pittech.data.TemperatureContext.decode(wrapped.temperatureContextJson).any { it.name == "Chamber" })
         compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
-        compose.onNodeWithTag("event-temperature-context").assertExists()
+        compose.onNode(hasTestTag("event-temperature-context") and hasAnyAncestor(hasTestTag("timeline-entry-${wrapped.id}")), useUnmergedTree = true).assertExists()
     }
     @Test fun loggingOnlyQueriesForANoteSavesFailuresAndSwitchesTheForegroundServiceOff() {
         runBlocking(Dispatchers.IO) { app.database.clearAllTables() }
@@ -109,10 +111,11 @@ class ConnectedCookScreenTest {
         assertFalse(app.recordingServiceRunning.value)
         assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().isEmpty() })
         val before = backend.calls.get()
+        logInitialFoodOn()
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "wrap" } } }
-        val wrap = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "wrap" } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } } }
+        val wrap = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } }
         assertTrue(backend.calls.get() > before)
         assertTrue(com.pittech.data.TemperatureContext.decode(wrap.temperatureContextJson).isNotEmpty())
         assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().all { it.samplingIntervalMillis == 0L } })
@@ -126,8 +129,8 @@ class ConnectedCookScreenTest {
         compose.waitUntil(10_000) { fake!!.state.value.readingRequestFailed }
         compose.onNodeWithTag("cook-quick-rest").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "rest" } } }
-        val rest = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "rest" } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "rest_start" } } }
+        val rest = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "rest_start" } }
         assertNull(rest.temperatureContextJson)
         assertFalse(app.recordingServiceRunning.value)
         assertNull(fake!!.state.value.nextPollAtMillis)
@@ -135,11 +138,20 @@ class ConnectedCookScreenTest {
         backend.failure = PolarisFailure(PolarisFailureKind.AUTH, apiCode = -10108)
         compose.onNodeWithTag("cook-quick-meat_on").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "meat_on" } } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" } == 2 } }
         assertNull(runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording() })
         assertNull(fake!!.state.value.lockedDeviceId)
         assertFalse(fake!!.state.value.authenticated)
         assertFalse(app.recordingServiceRunning.value)
+    }
+
+    private fun logInitialFoodOn() {
+        dismissCookNotice()
+        compose.onNodeWithTag("cook-quick-meat_on").performClick()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "food_on" } == 1 } }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("cook-quick-wrap") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+        dismissCookNotice()
     }
 
     private fun selectSampling(optionTag: String) {

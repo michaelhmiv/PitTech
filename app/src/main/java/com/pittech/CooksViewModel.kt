@@ -51,24 +51,7 @@ class CooksViewModel(
     }
 
     private suspend fun reconcileRecording() {
-        if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
-        val recording = app.database.recordingDao().getActiveRecording()
-        if (recording == null) {
-            app.loggingRecordingActive = false
-            app.grillMonitor.setRecording(false)
-            context.stopService(Intent(context, CookRecordingService::class.java))
-            return
-        }
-        val policy = com.pittech.devices.GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis)
-        app.loggingRecordingActive = policy.mode == com.pittech.devices.GrillSamplingMode.ON_LOG
-        app.grillMonitor.configureSampling(policy)
-        app.grillMonitor.state.value.devices.firstOrNull { com.pittech.devices.CookTelemetryPolicy.deviceKey(it.id) == recording.controllerKey }?.let { app.grillMonitor.lockDevice(it.id) }
-        app.grillMonitor.setRecording(true)
-        if (policy.mode == com.pittech.devices.GrillSamplingMode.ON_LOG) {
-            context.stopService(Intent(context, CookRecordingService::class.java))
-            // The logging owner has no timers or background queries, but keeps the cook binding.
-            app.grillMonitor.setRecording(true)
-        } else if (!app.recordingServiceRunning.value) CookRecordingService.start(context)
+        CookRecordingRecovery.reconcile(context)
     }
 
     /** Log creation may fail independently of the optional grill snapshot. Never prevent saving the log. */
@@ -381,13 +364,40 @@ class CooksViewModel(
         repository.addTimelineEventWithPhoto(cookId, dishId, type, title, details, time, photoUri, photoCaption, usePhotoCaptureTime)
     }
 
+    fun adoptFoodOnTiming(id: String, at: Long?) = perform {
+        repository.adoptFoodOnTiming(id, at)
+        _notice.value = "Timing now uses actual Food on actions."
+    }
+    suspend fun loadNote(eventId: String) = repository.notes.load(eventId)
+    fun flushNoteDraft(draft: com.pittech.domain.CookNoteDraft) { viewModelScope.launch { persistNoteDraft(draft) } }
+    suspend fun persistNoteDraft(draft: com.pittech.domain.CookNoteDraft) {
+        try { repository.notes.persistDraft(draft) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) { _error.value = failure.message ?: "This note draft could not be saved. Try again." }
+    }
+    suspend fun stageNotePhoto(id: String, uri: String) = repository.notes.stagePhoto(id, uri)
+    fun discardNoteDraft(id: String) = perform { repository.notes.discardDraft(id) }
+    fun saveNote(draft: com.pittech.domain.CookNoteDraft, editing: Boolean, onSaved: (Boolean) -> Unit) = performWithLogResult({ _, attached ->
+        _notice.value = when {
+            !attached -> "Entry saved; its photo could not be attached. Reopen the saved draft to retry."
+            draft.category == "temperature" -> if (editing) "Temperature entry updated." else "Temperature saved."
+            editing -> "Timeline entry updated."
+            else -> "Entry added to the timeline."
+        }
+        onSaved(attached)
+    }) {
+        if (!editing) snapshotForCookLog(draft.cookId)
+        repository.notes.save(draft)
+    }
+    private var deletedNote: com.pittech.data.DeletedCookNote? = null
+
     fun updateTimelineEvent(event: TimelineEventEntity) = perform {
         repository.updateTimelineEvent(event)
         _notice.value = "Timeline entry updated."
     }
 
     fun deleteTimelineEvent(event: TimelineEventEntity) = perform {
-        repository.deleteTimelineEvent(event)
+        deletedNote = repository.notes.delete(event.id)
         _deletedEvent.value = event
         _notice.value = "Entry deleted."
     }
@@ -395,13 +405,14 @@ class CooksViewModel(
     fun undoDeleteTimelineEvent() {
         val event = _deletedEvent.value ?: return
         perform {
-            repository.restoreTimelineEvent(event)
+            deletedNote?.let { repository.notes.restore(it) } ?: repository.restoreTimelineEvent(event)
+            deletedNote = null
             _deletedEvent.value = null
             _notice.value = "Entry restored."
         }
     }
 
-    fun clearDeletedEvent() { _deletedEvent.value = null; deletedReading = null }
+    fun clearDeletedEvent() { _deletedEvent.value = null; deletedReading = null; deletedNote = null }
 
     fun updateSensorReading(reading: SensorReadingEntity) = perform {
         repository.updateSensorReading(reading)

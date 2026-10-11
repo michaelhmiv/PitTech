@@ -136,6 +136,7 @@ data class TimelineEventEntity(
     val createdAtUtcMillis: Long,
     val updatedAtUtcMillis: Long,
     val temperatureContextJson: String? = null,
+    val noteMetadataJson: String? = null,
 )
 
 @Entity(
@@ -368,6 +369,8 @@ data class CookWithDishes(
     @Embedded val cook: CookEntity,
     @Relation(parentColumn = "id", entityColumn = "cookId")
     val dishes: List<DishEntity>,
+    @Relation(parentColumn = "id", entityColumn = "cookId") val events: List<TimelineEventEntity> = emptyList(),
+    @Relation(parentColumn = "id", entityColumn = "cookId") val lifecycles: List<CookLifecycle> = emptyList(),
 )
 
 data class CookDetailData(
@@ -383,6 +386,10 @@ data class CookDetailData(
     val recording: CookRecordingEntity? = null,
     val probes: List<ProbeEntity> = emptyList(),
     val assignments: List<ProbeAssignmentEntity> = emptyList(),
+    val logReadingLinks: List<LogReadingLink> = emptyList(),
+    val lifecycle: CookLifecycle? = null,
+    val targetHistory: List<TargetHistory> = emptyList(),
+    val logDrafts: List<CookLogDraft> = emptyList(),
 )
 
 data class InsightsSnapshot(

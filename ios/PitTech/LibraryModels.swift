@@ -110,9 +110,12 @@ struct PitTechLibrary: Codable {
     var probeAssignments: [JSONValue]
     var companionRecords: [JSONValue]
     var companionPhotos: [JSONValue]
+    var logReadingLinks: [JSONValue]
+    var lifecycles: [JSONValue]
+    var targetHistory: [JSONValue]
 
     init() {
-        schemaVersion = 5
+        schemaVersion = 6
         preferences = ["temperatureUnit": .string("F"), "weightUnit": .string("lb"), "themeMode": .string("system")]
         cooks = []
         dishes = []
@@ -129,11 +132,15 @@ struct PitTechLibrary: Codable {
         probeAssignments = []
         companionRecords = []
         companionPhotos = []
+        logReadingLinks = []
+        lifecycles = []
+        targetHistory = []
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, preferences, cooks, dishes, ingredients, events, readings, targets, results
         case devices, probes, photos, reminders, recordings, probeAssignments, companionRecords, companionPhotos
+        case logReadingLinks, lifecycles, targetHistory
     }
 
     init(from decoder: Decoder) throws {
@@ -155,6 +162,9 @@ struct PitTechLibrary: Codable {
         probeAssignments = try container.decodeIfPresent([JSONValue].self, forKey: .probeAssignments) ?? []
         companionRecords = try container.decodeIfPresent([JSONValue].self, forKey: .companionRecords) ?? []
         companionPhotos = try container.decodeIfPresent([JSONValue].self, forKey: .companionPhotos) ?? []
+        logReadingLinks = try container.decodeIfPresent([JSONValue].self, forKey: .logReadingLinks) ?? []
+        lifecycles = try container.decodeIfPresent([JSONValue].self, forKey: .lifecycles) ?? []
+        targetHistory = try container.decodeIfPresent([JSONValue].self, forKey: .targetHistory) ?? []
     }
 }
 
@@ -168,6 +178,13 @@ struct TemperatureSample: Identifiable {
     let measuredAt: Date
     let source: String
     let qualityStatus: String
+    let probeId: String?
+    let dishId: String?
+    let sourceDeviceId: String?
+    let samplingInterval: Double
+    let timestampBasis: String
+    var seriesId: String { [cookId, probeId ?? probeName, sourceDeviceId ?? "", dishId ?? "", measurementType, source].joined(separator: ":") }
+    var fahrenheit: Double { unit == "°C" ? value * 9 / 5 + 32 : value }
 
     init?(json: JSONValue) {
         guard let item = json.objectValue,
@@ -182,10 +199,15 @@ struct TemperatureSample: Identifiable {
         self.probeName = probeName
         self.measurementType = item["measurementType"]?.stringValue ?? "food"
         self.value = value
-        self.unit = unit
+        self.unit = unit.hasPrefix("°") ? unit : "°" + unit
         self.measuredAt = Date(timeIntervalSince1970: measuredAt / 1_000)
         self.source = item["source"]?.stringValue ?? "manual"
         self.qualityStatus = item["qualityStatus"]?.stringValue ?? "valid"
+        self.probeId = item["probeId"]?.stringValue
+        self.dishId = item["dishId"]?.stringValue
+        self.sourceDeviceId = item["sourceDeviceId"]?.stringValue
+        self.samplingInterval = item["samplingIntervalMillis"]?.numberValue ?? 15_000
+        self.timestampBasis = item["timestampBasis"]?.stringValue ?? "manual_entry"
     }
 }
 
@@ -195,6 +217,8 @@ struct TimelineEntry: Identifiable {
     let details: String
     let occurredAt: Date
     let source: String
+    let eventType: String
+    let metadata: CookNoteMetadata?
 
     init?(json: JSONValue) {
         guard let item = json.objectValue,
@@ -206,5 +230,7 @@ struct TimelineEntry: Identifiable {
         self.details = item["details"]?.stringValue ?? ""
         self.occurredAt = Date(timeIntervalSince1970: millis / 1_000)
         self.source = item["source"]?.stringValue ?? "manual"
+        self.eventType = item["eventType"]?.stringValue ?? "note"
+        self.metadata = item["noteMetadataJson"]?.stringValue.flatMap { try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) }
     }
 }

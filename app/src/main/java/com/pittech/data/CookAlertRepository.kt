@@ -34,7 +34,7 @@ class CookAlertRepository(private val db: PitTechDatabase) {
         val now = System.currentTimeMillis()
         val cook = db.cookDao().getCook(cookId) ?: return
         val recording = db.recordingDao().getRecording(cookId)
-        val events = db.cookDao().getTimelineEventsForCook(cookId).map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) }
+        val events = db.cookDao().getTimelineEventsForCook(cookId).let { com.pittech.data.notePlanEvents(it) }
         val readings = db.cookDao().observeSensorReadings(cookId).first()
         val status = db.companionDao().get("monitor-status:$cookId")?.let { JSONObject(it.payload) }
         val offline = status?.takeIf { now - it.getLong("at") in 0..330_000 }?.let { it.getInt("online") != 0 }
@@ -46,11 +46,12 @@ class CookAlertRepository(private val db: PitTechDatabase) {
                 val hasRecording = recording != null && recording.status != CookRecordingEntity.STOPPED
                 val reading = readings.filter { r -> (rule.dishId == null || r.dishId == rule.dishId) &&
                     (rule.probeName.isBlank() || r.probeName == rule.probeName) && when(rule.type) { "target" -> r.measurementType in setOf("food", "food_probe"); "pit_range" -> r.measurementType in setOf("pit", "pit_ambient"); else -> true } &&
+                    (rule.type != "target" || r.measuredAtUtcMillis >= (events.filter { e -> e.action == "food_on" && (e.dishId == null || e.dishId == r.dishId) }.maxOfOrNull { e -> e.at } ?: Long.MAX_VALUE)) &&
                     (r.source != "controller_cloud" || (cloudRunning && r.sourceDeviceId == recording?.deviceId && r.measuredAtUtcMillis >= recording.resumedAtUtcMillis)) }
                     .maxByOrNull { it.measuredAtUtcMillis }
                 val sample = reading?.let { AlertSample(CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.recordedAtUtcMillis, it.qualityStatus == "valid" && (it.source != "controller_cloud" || recording?.gapStartedAtUtcMillis == null),
                     if (it.source == "controller_cloud") com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis) else 330_000, it.timestampBasis != "cloud_receipt") }
-                val stage = rule.dishId?.let { CookPlanEngine.stage(events, it) } ?: db.cookDao().getDishesForCook(cookId).map { CookPlanEngine.stage(events, it.id) }.let { stages -> if (stages.isNotEmpty() && stages.all { it != "cooking" }) stages.first() else "cooking" }
+                val stage = (rule.dishId ?: reading?.dishId)?.let { CookPlanEngine.stage(events, it) } ?: db.cookDao().getDishesForCook(cookId).map { CookPlanEngine.stage(events, it.id) }.let { stages -> if (stages.distinct().size == 1) stages.first() else "mixed" }
                 val result = CookAlertEngine.evaluate(rule, state, sample, recording?.lastReceivedAtUtcMillis ?: recording?.resumedAtUtcMillis, offline, stage, now,
                     cook.status != CookStatus.COMPLETED && if (rule.type in setOf("missing", "offline")) cloudRunning else reading?.source == "manual" || !hasRecording || cloudRunning)
                 val canDeliver = com.pittech.CookAlertNotifications.canNotify(context)

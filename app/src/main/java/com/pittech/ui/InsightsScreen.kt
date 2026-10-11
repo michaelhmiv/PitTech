@@ -51,7 +51,7 @@ fun InsightsScreen(
     val selectedIds = remember { mutableStateListOf<String>() }
     val completed = data.cooks.filter { it.cook.status == CookStatus.COMPLETED }
     val durationValues = completed.mapNotNull { cook ->
-        cook.cook.endedAtUtcMillis?.let { (it - cook.cook.startedAtUtcMillis).coerceAtLeast(0) / 60_000.0 }
+        cook.cook.endedAtUtcMillis?.let { cookHeatingMinutes(cook) }
     }
     val ratings = data.results.filter { it.resultType == "overall_rating" }.mapNotNull { it.numericValue }
     val favoriteIds = data.results.filter { it.resultType == "favorite" && it.numericValue == 1.0 }.map { it.cookId }.toSet()
@@ -117,7 +117,7 @@ fun InsightsScreen(
             if (selected.size >= 2) {
                 SectionCard(title = "Selected comparison") {
                     selected.forEach { item ->
-                        val duration = item.cook.endedAtUtcMillis?.let { (it - item.cook.startedAtUtcMillis) / 60_000.0 }
+                        val duration = item.cook.endedAtUtcMillis?.let { cookHeatingMinutes(item) }
                         val score = data.results.firstOrNull { it.cookId == item.cook.id && it.resultType == "overall_rating" }?.numericValue
                         Text(item.cook.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text("${duration?.let(::formatMinutes) ?: "Duration unavailable"} · rating ${score?.let { "%.1f / 5".format(it) } ?: "not recorded"}", style = MaterialTheme.typography.bodyLarge)
@@ -201,3 +201,7 @@ private fun formatMinutes(minutes: Double): String {
     val remaining = minutes.toInt() % 60
     return if (hours > 0) "${hours}h ${remaining}m" else "${remaining}m"
 }
+
+private fun cookHeatingMinutes(cook: com.pittech.data.CookWithDishes): Double = if (cook.lifecycles.firstOrNull()?.timingMode == "explicit_phases") {
+    com.pittech.domain.CookPhases.heatingMillis(com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(cook.events), cook.dishes.map { it.id }, cook.cook.startedAtUtcMillis, cook.cook.endedAtUtcMillis ?: System.currentTimeMillis())) / 60_000.0
+} else ((cook.cook.endedAtUtcMillis ?: System.currentTimeMillis()) - cook.cook.startedAtUtcMillis).coerceAtLeast(0) / 60_000.0

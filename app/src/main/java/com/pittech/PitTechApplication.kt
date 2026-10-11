@@ -27,6 +27,7 @@ class PitTechApplication : Application() {
             .addMigrations(PitTechDatabase.MIGRATION_3_4)
             .addMigrations(PitTechDatabase.MIGRATION_4_5)
             .addMigrations(PitTechDatabase.MIGRATION_5_6)
+            .addMigrations(PitTechDatabase.MIGRATION_6_7)
             .build()
     }
 
@@ -43,7 +44,13 @@ class PitTechApplication : Application() {
         PitTechDataTransfer(this, cookRepository)
     }
 
-    private val sharedGrillMonitor by lazy { com.pittech.devices.ConnectedGrillMonitor.create(this) }
+    private val sharedGrillMonitor by lazy {
+        val fixture = if (BuildConfig.DEBUG) runCatching {
+            Class.forName("com.pittech.devices.UpgradeRecordingFixture")
+                .getMethod("create", android.content.Context::class.java).invoke(null, this) as? com.pittech.devices.PolarisMonitorEngine
+        }.getOrNull() else null
+        fixture ?: com.pittech.devices.ConnectedGrillMonitor.create(this)
+    }
     internal var grillMonitorForTests: com.pittech.devices.PolarisMonitorEngine? = null
     internal val grillMonitor: com.pittech.devices.PolarisMonitorEngine get() = grillMonitorForTests ?: sharedGrillMonitor
     internal val recordingRepository by lazy { CookRecordingRepository(database) }

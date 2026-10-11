@@ -45,7 +45,7 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     var preciseTimers by remember { mutableStateOf(context.getSharedPreferences("pittech-preferences", 0).getBoolean("precise-cook-timers", false)) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val plan = remember(record?.payload) { record?.let { CookPlanEngine.decode(it.payload) } }
-    val events = remember(data.events) { data.events.map { PlanEvent(it.id, PlaybookCodec.action(it.eventType), it.dishId, it.occurredAtUtcMillis) } }
+    val events = remember(data.events) { data.events.let { com.pittech.data.notePlanEvents(it) } }
     val readings = remember(data.readings) { data.readings.map { PlanReading(it.dishId, CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType, it.probeName) } }
     val evaluated = plan?.let { CookPlanEngine.evaluate(it, events, readings, now) }.orEmpty()
     val next = evaluated.firstOrNull { it.ready } ?: evaluated.filter { it.progress.status == "pending" && it.waitingFor == null }.minByOrNull { it.dueAt ?: Long.MAX_VALUE }

@@ -36,7 +36,7 @@ struct CookListView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     SectionTitle(title: "Cooks", subtitle: "Keep the whole cook in one place.")
                     Button { showingStart = true } label: {
-                        Label("Start a cook", systemImage: "plus.circle.fill")
+                        Label("Prepare a cook", systemImage: "plus.circle.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 54)
                     }
@@ -82,6 +82,7 @@ struct CookListView: View {
 }
 
 struct CookCard: View {
+    @Environment(CookStore.self) private var store
     let cook: CookRecord
     let dishes: [String]
 
@@ -98,7 +99,7 @@ struct CookCard: View {
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 4)
-            if cook.isActive { Text("LIVE").font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent) }
+            if cook.isActive { Text(store.timingMode(cook.id) == "explicit_phases" ? store.phaseSummary(cook.id) : "Active").font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent).lineLimit(2) }
             Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
         }
         .padding(14)
@@ -111,10 +112,17 @@ struct StartCookSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var firstDish = ""
+    @State private var alreadyCooking = false
+    @State private var foodOn = Date.now
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Current stage") {
+                    Toggle("Already cooking", isOn: $alreadyCooking)
+                    if alreadyCooking { DatePicker("Actual Food on", selection: $foodOn, in: ...Date.now) }
+                    else { Text("Preparing until you log Food on.") }
+                }
                 Section("Cook") {
                     TextField("Cook name", text: $title)
                     TextField("First dish (optional)", text: $firstDish)
@@ -124,14 +132,14 @@ struct StartCookSheet: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Start cook")
+            .navigationTitle("Prepare a cook")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
-                        store.startCook(title: title, firstDish: firstDish)
-                        dismiss()
+                        store.startCook(title: title, firstDish: firstDish, alreadyCooking: alreadyCooking, foodOn: foodOn)
+                        if store.saveError == nil { dismiss() }
                     }
                 }
             }
@@ -160,7 +168,7 @@ struct InsightsView: View {
                         return Double(end - cook.startedAtUtcMillis) / 3_600_000
                     }
                     if let average = durations.average {
-                        MetricCard(title: "Average cook time", value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", symbol: "clock")
+                        MetricCard(title: "Average session time", value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", symbol: "clock")
                     }
                     if !store.completedCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
