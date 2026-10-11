@@ -777,7 +777,7 @@ class PitTechUserFlowsTest {
             }
         }
         val event = runBlocking(Dispatchers.IO) {
-            application.database.cookDao().getTimelineEventsForCook(cook.id).single { it.eventType == "reminder_completed" }
+            application.database.cookDao().getTimelineEventsForCook(cook.id).single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "check_in" }
         }
         assertEquals("Check-in: Check the brisket", event.title)
         assertEquals("Wrapped at 160°F", event.details)
@@ -789,7 +789,7 @@ class PitTechUserFlowsTest {
             application.cookRepository.addReminderCheckInPhoto(event.id, cook.id, checkInPhotoUri.toString(), "Grill check")
         }
         assertEquals(1, runBlocking(Dispatchers.IO) {
-            application.database.cookDao().getTimelineEventsForCook(cook.id).count { it.eventType == "reminder_completed" }
+            application.database.cookDao().getTimelineEventsForCook(cook.id).count { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "check_in" }
         })
         assertEquals(event.id, runBlocking(Dispatchers.IO) { application.database.cookDao().getPhotosForCook(cook.id).single().eventId })
 
