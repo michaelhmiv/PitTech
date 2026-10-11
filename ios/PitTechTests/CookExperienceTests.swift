@@ -37,6 +37,8 @@ import UIKit
         try store.undoDeleteNote()
         XCTAssertEqual(store.events(for: cook.id).first?.id, draft.id)
         XCTAssertEqual(store.library.logReadingLinks.count, 1)
+        try store.saveNote(CookNoteDraft(cookId: cook.id, temperatures: [NoteTemperatureDraft(valueText: "167", dishId: dish.id)]))
+        XCTAssertEqual(Set(store.readings(for: cook.id).map(\.probeId)).count, 1)
     }
     func testDraftSurvivesRelaunchAndMissingPhotoRetryDoesNotDuplicateEntry() throws {
         let directory = try folder(), store = CookStore(directory: directory)

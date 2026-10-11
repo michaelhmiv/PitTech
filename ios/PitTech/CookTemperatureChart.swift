@@ -49,7 +49,7 @@ struct CookTemperatureChart: View {
     }
     private var plottedSamples: [TemperatureSample] { comparing ? samples.filter { $0.seriesId == currentChannel } + sourceSamples.filter { $0.seriesId == comparisonChannel } : samples }
     private var gaps: [Date] { (store.events(for: cookId) + store.events(for: comparisonCook)).filter { $0.eventType == "connection_gap" }.map(\.occurredAt) }
-    private var segments: [[TemperatureSample]] { CookChartMath.segments(plottedSamples, gaps: gaps) }
+    private var segments: [[TemperatureSample]] { Dictionary(grouping: plottedSamples, by: \.cookId).flatMap { id, rows in CookChartMath.segments(rows, gaps: store.events(for: id).filter { $0.eventType == "connection_gap" }.map(\.occurredAt)) } }
     private var points: [NativePlotPoint] { segments.filter { !hidden.contains($0[0].seriesId) }.flatMap { rows in CookChartMath.reduced(rows).map { NativePlotPoint(id: $0.id, reading: $0, segmentId: rows[0].id) } } }
     private var fullStart: Double { min((plottedSamples.map { x($0.measuredAt, reference: $0.cookId != cookId) } + events.map { x($0.occurredAt) }).min() ?? 0, x(cook?.startedAt ?? .now)) }
     private var fullEnd: Double { max(fullStart + 1, (plottedSamples.map { x($0.measuredAt, reference: $0.cookId != cookId) } + events.map { x($0.occurredAt) }).max() ?? fullStart + 1) }

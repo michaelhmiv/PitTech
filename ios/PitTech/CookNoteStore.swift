@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -74,7 +75,9 @@ import UniformTypeIdentifiers
         for t in draft.temperatures {
             let old = priorReadings[t.id]
             guard old == nil || owned.contains(t.id) && old?["cookId"]?.stringValue == draft.cookId && old?["source"]?.stringValue == "manual", t.dishId == nil || dishIds.contains(t.dishId!) else { throw CookNoteError.scope }
-            let probeId = old?["probeId"]?.stringValue ?? t.probeId ?? "manual-\(draft.cookId)-\(t.id)"
+            let seed = "\(draft.cookId):manual:\(t.dishId ?? "whole"):\(t.measurementType):\(t.probeName.trimmingCharacters(in: .whitespacesAndNewlines))"
+            let stableProbe = "manual-" + SHA256.hash(data: Data(seed.utf8)).map { String(format: "%02x", $0) }.joined()
+            let probeId = old?["probeId"]?.stringValue ?? t.probeId ?? stableProbe
             if let probe = next.probes.first(where: { $0.objectValue?["id"]?.stringValue == probeId })?.objectValue {
                 guard probe["cookId"]?.stringValue == draft.cookId else { throw CookNoteError.scope }
             } else { next.probes.append(.object(["id": .string(probeId), "cookId": .string(draft.cookId), "name": .string(t.probeName), "measurementType": .string(t.measurementType), "source": .string("manual"), "createdAtUtcMillis": .number(now)])) }
