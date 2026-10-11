@@ -549,7 +549,7 @@ class CookRepository(
         ratings: Map<String, String>,
         notes: String,
         finish: Boolean,
-    ) {
+    ) = database.withTransaction {
         require(CookEntryValidation.isOptionalPositiveNumberValid(finalTemperatureText)) { "Enter a positive final temperature or leave it blank." }
         require(CookEntryValidation.isOptionalPositiveNumberValid(restMinutesText)) { "Enter a positive rest time or leave it blank." }
         val parsedRatings = ratings.mapValues { (_, text) -> CookEntryValidation.optionalPositiveNumber(text) }
@@ -590,12 +590,6 @@ class CookRepository(
     }
 
     suspend fun completeCook(cookId: String) = database.withTransaction {
-        val plan = CookCompanionRepository(database, photoStorage).plan(cookId)
-        if (plan != null) {
-            val events = dao.getTimelineEventsForCook(cookId).let { com.pittech.data.notePlanEvents(it) }
-            require(plan.book.steps.none { s -> (plan.progress[s.id]?.status ?: "pending") == "pending" && s.stage in setOf("resting", "holding") &&
-                s.dishIndex?.let { com.pittech.domain.CookPlanEngine.stage(events, plan.dishIds[it]) == s.stage } != false }) { "Rest or hold checks are still active. Complete or skip them in View plan before finishing." }
-        }
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
         if (cook.status == CookStatus.COMPLETED) return@withTransaction
         val now = System.currentTimeMillis()

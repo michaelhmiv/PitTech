@@ -158,7 +158,8 @@ fun CookDetailScreen(
     var showTemperature by remember { mutableStateOf(false) }
     var showTarget by remember { mutableStateOf(false) }
     var editReading by remember { mutableStateOf<SensorReadingEntity?>(null) }
-    var showResults by remember { mutableStateOf(false) }
+    var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var finishRequested by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
@@ -386,12 +387,16 @@ fun CookDetailScreen(
         ResultsDialog(
             data = data,
             preferredUnit = preferredTemperatureUnit,
-            onDismiss = { showResults = false },
+            finishRequested = finishRequested,
+            busy = busy,
+            saveError = error,
+            onDismiss = { showResults = false; viewModel.clearSaveError() },
             onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change ->
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
-                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change)
-                showResults = false
+                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change) { saved ->
+                    if (saved) showResults = false
+                }
             },
         )
     }
@@ -600,11 +605,17 @@ fun CookDetailScreen(
                     onDeleteTarget = viewModel::deleteTarget,
                     onAddDish = { addDish = true },
                     onEditDish = { editDish = it },
-                    onResults = { showResults = true },
+                    onResults = {
+                        viewModel.clearSaveError()
+                        finishRequested = false
+                        showResults = true
+                    },
                     onExport = { showExportCook = true },
                     onFinish = {
                         focusManager.clearFocus(force = true)
                         keyboardController?.hide()
+                        viewModel.clearSaveError()
+                        finishRequested = true
                         showResults = true
                     },
                     onDelete = { confirmDeleteCook = true },
@@ -1047,7 +1058,7 @@ private fun LiveCookTab(
                 }
                 Text("A recorded food-safety target is not a safety guarantee or cooking recommendation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(onClick = onAddTarget, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add target") }
-                OutlinedButton(onClick = onResults, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = onResults, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("live-record-results")) {
                     Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
                 }
                 if (data.results.isNotEmpty()) {
@@ -2288,6 +2299,9 @@ private fun TargetDialog(
 private fun ResultsDialog(
     data: CookDetailData,
     preferredUnit: String,
+    finishRequested: Boolean,
+    busy: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (String?, String, String, String, Map<String, String>, String, Boolean, String, String) -> Unit,
 ) {
@@ -2312,40 +2326,43 @@ private fun ResultsDialog(
     var keep by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "keep_doing" }?.textValue.orEmpty()) }
     var change by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "change_next_time" }?.textValue.orEmpty()) }
     var showLearning by rememberSaveable { mutableStateOf(false) }
-    var finish by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var finish by rememberSaveable(data.cook.id, finishRequested) { mutableStateOf(false) }
+    val willFinish = finishRequested || finish
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (data.cook.status == CookStatus.ACTIVE) "Record results" else "Edit results", modifier = Modifier.testTag("results-dialog-title")) },
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (finishRequested) "Finish cook" else if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", modifier = Modifier.testTag("results-dialog-title")) },
         text = {
             Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
-                if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" })
-                OutlinedTextField(finalTemp, { finalTemp = it; error = null }, label = { Text("Final temperature (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("result-final-temperature"))
-                SimpleDropdownField("Temperature unit", unit, listOf("°F", "°C"), { unit = it })
-                OutlinedTextField(rest, { rest = it; error = null }, label = { Text("Rest time in minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(rating, { rating = it; error = null }, label = { Text("Overall rating (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = { detailRatings = !detailRatings }) { Text(if (detailRatings) "Hide detailed ratings" else "Rate bark, tenderness, and more") }
+                if (willFinish) Text("Finishing ends this cook, temperature recording, and pending reminders and plan checks.", style = MaterialTheme.typography.bodyMedium)
+                (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
+                if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" }, enabled = !busy)
+                OutlinedTextField(finalTemp, { finalTemp = it; error = null }, enabled = !busy, label = { Text("Final temperature (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("result-final-temperature"))
+                SimpleDropdownField("Temperature unit", unit, listOf("°F", "°C"), { unit = it }, enabled = !busy)
+                OutlinedTextField(rest, { rest = it; error = null }, enabled = !busy, label = { Text("Rest time in minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(rating, { rating = it; error = null }, enabled = !busy, label = { Text("Overall rating (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { detailRatings = !detailRatings }, enabled = !busy) { Text(if (detailRatings) "Hide detailed ratings" else "Rate bark, tenderness, and more") }
                 if (detailRatings) {
-                    OutlinedTextField(bark, { bark = it; error = null }, label = { Text("Bark (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(tenderness, { tenderness = it; error = null }, label = { Text("Tenderness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(juiciness, { juiciness = it; error = null }, label = { Text("Juiciness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(smoke, { smoke = it; error = null }, label = { Text("Smoke level (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(seasoning, { seasoning = it; error = null }, label = { Text("Seasoning (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(bark, { bark = it; error = null }, enabled = !busy, label = { Text("Bark (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(tenderness, { tenderness = it; error = null }, enabled = !busy, label = { Text("Tenderness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(juiciness, { juiciness = it; error = null }, enabled = !busy, label = { Text("Juiciness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(smoke, { smoke = it; error = null }, enabled = !busy, label = { Text("Smoke level (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(seasoning, { seasoning = it; error = null }, enabled = !busy, label = { Text("Seasoning (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
-                OutlinedTextField(notes, { notes = it }, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = { showLearning = !showLearning }) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
+                OutlinedTextField(notes, { notes = it }, enabled = !busy, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { showLearning = !showLearning }, enabled = !busy) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
                 if (showLearning) {
-                    OutlinedTextField(keep, { keep = it }, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(change, { change = it }, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(keep, { keep = it }, enabled = !busy, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(change, { change = it }, enabled = !busy, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
                 }
-                if (data.cook.status != CookStatus.COMPLETED) FilterChip(
+                if (!finishRequested && data.cook.status != CookStatus.COMPLETED) FilterChip(
                     selected = finish,
                     onClick = { finish = !finish },
+                    enabled = !busy,
                     label = { Text(if (finish) "Finish cook when saved" else "Also finish this cook") },
                     modifier = Modifier.testTag("results-finish-toggle"),
                 )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
@@ -2357,11 +2374,11 @@ private fun ResultsDialog(
                 else {
                     dialogFocusManager.clearFocus(force = true)
                     keyboardController?.hide()
-                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, finish, keep, change)
+                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, willFinish, keep, change)
                 }
-            }, modifier = Modifier.testTag("results-save")) { Text("Save results") }
+            }, enabled = !busy, modifier = Modifier.testTag("results-save")) { Text(if (busy) "Saving…" else if (willFinish) "Finish cook" else "Save results") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
     )
 }
 

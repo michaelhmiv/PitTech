@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -462,16 +463,44 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("chart-x-axis").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         saveScreenshot("cook-live-actions")
+        composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithTag("live-record-results").performScrollTo().performClick()
+        waitForText("Record results")
+        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().performTextInput("201")
+        composeRule.onNodeWithTag("results-save").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("results-dialog-title").fetchSemanticsNodes().isEmpty()
+        }
+        runBlocking(Dispatchers.IO) {
+            val saved = application.database.cookDao().observeCooks().first().single().cook
+            assertEquals(CookStatus.ACTIVE, saved.status)
+            assertEquals(null, saved.endedAtUtcMillis)
+            assertEquals(201.0, application.database.cookDao().observeResults(saved.id).first().single { it.resultType == "final_temperature" }.numericValue!!, 0.0)
+        }
         composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("results-dialog-title", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("results-finish-toggle", useUnmergedTree = true).performScrollTo().performClick()
-        waitForText("Finish cook when saved")
+        composeRule.onNodeWithTag("results-dialog-title").assertTextContains("Finish cook")
+        assertTrue(composeRule.onAllNodesWithTag("results-finish-toggle").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("result-final-temperature").performTextInput("0")
+        composeRule.onNodeWithTag("results-save").performClick()
+        composeRule.onNodeWithTag("results-save-error").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().assertTextContains("0").performTextClearance()
+        runBlocking(Dispatchers.IO) {
+            assertEquals(CookStatus.ACTIVE, application.database.cookDao().observeCooks().first().single().cook.status)
+        }
         composeRule.onNodeWithTag("results-save").performClick()
 
         composeRule.waitUntil(timeoutMillis = 10_000) {
             runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook.status == CookStatus.COMPLETED }
+        }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("results-dialog-title").fetchSemanticsNodes().isEmpty()
+        }
+        runBlocking(Dispatchers.IO) {
+            assertTrue(application.database.cookDao().observeCooks().first().single().cook.endedAtUtcMillis != null)
         }
         composeRule.onNodeWithContentDescription("Back to cooks").performClick()
         composeRule.onNodeWithTag("nav-insights").performClick()
