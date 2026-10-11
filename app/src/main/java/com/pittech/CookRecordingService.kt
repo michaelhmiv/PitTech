@@ -52,7 +52,7 @@ class CookRecordingService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Opening cook recording…"),
                 if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
         } catch (_: Exception) {
-            scope.launch { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Android could not start recording. Open PitTech to resume.") }; stopSelf() }
+            scope.launch { app.database.recordingDao().getActiveRecording()?.let { CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, it.cookId, "Android could not start recording. Open PitTech to resume.") }; stopSelf() }
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_PAUSE) {
@@ -60,6 +60,7 @@ class CookRecordingService : Service() {
             return START_NOT_STICKY
         }
         app.recordingServiceRunning.value = true
+        CookRecordingRecovery.clearNotice(this)
         if (!observing) {
             observing = true
             scope.launch {
@@ -95,12 +96,12 @@ class CookRecordingService : Service() {
                     app.grillMonitor.state.collect { state ->
                         if (state.phase == PolarisPhase.RESTORING || state.phase == PolarisPhase.DISCOVERING) return@collect
                         if (!state.authenticated) {
-                            app.recordingRepository.pause(recording.cookId, if (state.provider == com.pittech.devices.GrillProvider.PIT_BOSS) "Connect your controller in Devices, then resume recording." else "Sign in to " + state.provider.label + " in Devices, then resume recording.")
+                            CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, recording.cookId, if (state.provider == com.pittech.devices.GrillProvider.PIT_BOSS) "Connect your controller in Devices, then resume recording." else "Sign in to " + state.provider.label + " in Devices, then resume recording.")
                             return@collect
                         }
                         val device = state.devices.firstOrNull { CookTelemetryPolicy.deviceKey(it.id) == recording.controllerKey }
                         if (device == null) {
-                            if (state.devices.isNotEmpty() || state.phase == PolarisPhase.READY) app.recordingRepository.pause(recording.cookId, "The attached grill was not found. Check the selected provider in Devices.")
+                            if (state.devices.isNotEmpty() || state.phase == PolarisPhase.READY) CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, recording.cookId, "The attached grill was not found. Check the selected provider in Devices.")
                             return@collect
                         }
                         app.grillMonitor.lockDevice(device.id)
@@ -114,7 +115,7 @@ class CookRecordingService : Service() {
             }.invokeOnCompletion { error ->
                 if (error != null && error !is CancellationException) {
                     scope.launch {
-                        try { app.database.recordingDao().getActiveRecording()?.let { app.recordingRepository.pause(it.cookId, "Recording interrupted. Open PitTech to resume.") } }
+                        try { app.database.recordingDao().getActiveRecording()?.let { CookRecordingRecovery.pauseWithNotice(this@CookRecordingService, it.cookId, "Recording interrupted. Open PitTech to resume.") } }
                         finally { stopSelf() }
                     }
                 }

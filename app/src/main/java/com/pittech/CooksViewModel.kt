@@ -51,24 +51,7 @@ class CooksViewModel(
     }
 
     private suspend fun reconcileRecording() {
-        if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
-        val recording = app.database.recordingDao().getActiveRecording()
-        if (recording == null) {
-            app.loggingRecordingActive = false
-            app.grillMonitor.setRecording(false)
-            context.stopService(Intent(context, CookRecordingService::class.java))
-            return
-        }
-        val policy = com.pittech.devices.GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis)
-        app.loggingRecordingActive = policy.mode == com.pittech.devices.GrillSamplingMode.ON_LOG
-        app.grillMonitor.configureSampling(policy)
-        app.grillMonitor.state.value.devices.firstOrNull { com.pittech.devices.CookTelemetryPolicy.deviceKey(it.id) == recording.controllerKey }?.let { app.grillMonitor.lockDevice(it.id) }
-        app.grillMonitor.setRecording(true)
-        if (policy.mode == com.pittech.devices.GrillSamplingMode.ON_LOG) {
-            context.stopService(Intent(context, CookRecordingService::class.java))
-            // The logging owner has no timers or background queries, but keeps the cook binding.
-            app.grillMonitor.setRecording(true)
-        } else if (!app.recordingServiceRunning.value) CookRecordingService.start(context)
+        CookRecordingRecovery.reconcile(context)
     }
 
     /** Log creation may fail independently of the optional grill snapshot. Never prevent saving the log. */

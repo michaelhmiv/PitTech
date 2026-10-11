@@ -73,6 +73,7 @@ jobs:
           PITTECH_PREVIOUS_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git worktree add --detach "$RUNNER_TEMP/pittech-before" "$PITTECH_PREVIOUS_SHA"
+          python3 scripts/prepare-upgrade-fixture.py "$GITHUB_WORKSPACE" "$RUNNER_TEMP/pittech-before"
           gradle -p "$RUNNER_TEMP/pittech-before" assembleDebug assembleDebugAndroidTest
 
       - name: Enable KVM for the emulator

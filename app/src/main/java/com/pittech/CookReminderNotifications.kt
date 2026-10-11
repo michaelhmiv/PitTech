@@ -114,6 +114,9 @@ class CookReminderBootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val app = context.applicationContext as PitTechApplication
+                if (intent?.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+                    CookRecordingRecovery.afterPackageReplacement(context)
+                }
                 app.companionRepository.reconcileAll(context)
                 app.alertRepository.reconcileAll(context)
                 app.database.cookDao().getPendingReminders().forEach { reminder ->

@@ -200,6 +200,42 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/upgrade-validation.txt"
 fi
 
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Validating package replacement while a foreground recorder is running."
+  timeout 20 adb shell pm clear com.pittech.debug
+  timeout 120 adb install -r -d "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
+  timeout 120 adb install -r -d -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.LiveUpgradeRecordingTest#prepareRunningCook' \
+    "$instrumentation_target" | tee "$output_dir/live-upgrade-prepare.txt"
+  grep -q 'OK (1 test)' "$output_dir/live-upgrade-prepare.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/live-upgrade-prepare.txt"
+  # Only the OLD app is opened. Require its foreground service before replacement.
+  timeout 20 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
+  timeout 20 adb shell input keyevent KEYCODE_HOME
+  service_ready=false
+  for attempt in $(seq 1 30); do
+    if adb shell dumpsys activity services com.pittech.debug | grep -q 'isForeground=true'; then
+      service_ready=true
+      break
+    fi
+    sleep 1
+  done
+  [[ "$service_ready" == true ]]
+  install_epoch="$(adb shell date +%s | tr -d '\r')"
+  [[ "$install_epoch" =~ ^[0-9]+$ ]]
+  adb shell run-as com.pittech.debug sh -c "'echo ${install_epoch}000 > files/upgrade-install-started.txt'"
+  # Deliberately NO force-stop: installing the APK interrupts the old service.
+  timeout 120 adb install -r "$app_apk"
+  timeout 120 adb install -r -t "$test_apk"
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.LiveUpgradeRecordingTest#recordingRecoversWithoutOpeningActivity' \
+    "$instrumentation_target" | tee "$output_dir/live-upgrade-validate.txt"
+  grep -q 'OK (1 test)' "$output_dir/live-upgrade-validate.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/live-upgrade-validate.txt"
+  timeout 20 adb shell am force-stop com.pittech.debug
+fi
+
 cloud_test_output="$output_dir/grillirg-cloud-tests.txt"
 cloud_test_selector='com.pittech.ui.GrillirGCloudMonitorScreenTest,com.pittech.devices.PrimePolarisSessionStoreTest'
 echo "Running GrillirG cloud UI and encrypted-session tests on API $api_level."
@@ -230,13 +266,13 @@ if timeout 10 adb shell run-as com.pittech.debug test -f files/pittech-ui-test/p
 fi
 
 recording_test_output="$output_dir/cook-recording-tests.txt"
-recording_test_selector='com.pittech.data.CookRecordingIntegrationTest,com.pittech.CookRecordingServiceTest,com.pittech.ui.ConnectedCookScreenTest'
+recording_test_selector='com.pittech.data.CookRecordingIntegrationTest,com.pittech.CookRecordingServiceTest,com.pittech.CookRecordingRecoveryTest,com.pittech.ui.ConnectedCookScreenTest'
 echo "Running connected-cook persistence, migration, background-service, and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-if [[ "$recording_passed_count" -ne 10 ]] || ! grep -q 'OK (10 tests)' "$recording_test_output" ||
+if [[ "$recording_passed_count" -ne 11 ]] || ! grep -q 'OK (11 tests)' "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
   exit 1
