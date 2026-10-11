@@ -284,12 +284,15 @@ class CookRepository(
     ): TimelineEventEntity = database.withTransaction {
         require(title.isNotBlank()) { "Enter a title for this entry." }
         val now = System.currentTimeMillis()
+        val action = com.pittech.domain.PlaybookCodec.action(eventType).takeIf { it in com.pittech.domain.CookNoteMetadata.actions }
+        val humanNote = eventType in setOf("note", "photo") || action != null
+        val metadata = if (humanNote) com.pittech.domain.CookNoteMetadata(category = if (eventType == "photo") "photo" else if (action != null) "action" else "general", action = action).encode() else null
         val event = TimelineEventEntity(
             id = UUID.randomUUID().toString(), cookId = cookId, dishId = dishId,
-            eventType = eventType, title = title.trim(), details = details?.trim()?.ifBlank { null },
+            eventType = if (humanNote) "note" else eventType, title = title.trim(), details = details?.trim()?.ifBlank { null },
             occurredAtUtcMillis = occurredAtUtcMillis, recordedAtUtcMillis = now,
             timeZoneId = timeZoneId, source = "manual", createdAtUtcMillis = now, updatedAtUtcMillis = now,
-            temperatureContextJson = temperatureContext(cookId, occurredAtUtcMillis, dishId),
+            temperatureContextJson = temperatureContext(cookId, occurredAtUtcMillis, dishId), noteMetadataJson = metadata,
         )
         dao.insertTimelineEvent(event)
         CookCompanionRepository(database, photoStorage).onEvent(event)
@@ -405,7 +408,8 @@ class CookRepository(
         val event = TimelineEventEntity(
                 id = UUID.randomUUID().toString(),
                 cookId = reminder.cookId,
-                eventType = "reminder_completed",
+                eventType = "note",
+                noteMetadataJson = com.pittech.domain.CookNoteMetadata(category = "action", action = "check_in").encode(),
                 title = "Check-in: ${reminder.title}",
                 temperatureContextJson = temperatureContext(reminder.cookId, now, null),
                 details = note?.trim()?.ifBlank { null } ?: "Reminder check-in completed.",
@@ -460,7 +464,7 @@ class CookRepository(
             val photo = copied.copy(temperatureContextJson = copied.capturedAtUtcMillis?.let { temperatureContext(cookId, it, copied.dishId) })
             database.withTransaction {
                 dao.insertPhotos(listOf(photo))
-                if (event.eventType == "photo" && usePhotoCaptureTime) {
+                if ((event.eventType == "photo" || com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)?.category == "photo") && usePhotoCaptureTime) {
                     // Default photo entries follow known capture time. Unknown gallery dates do
                     // not get today's temperatures. A user-selected entry time is preserved.
                     dao.updateTimelineEvent(event.copy(occurredAtUtcMillis = photo.capturedAtUtcMillis ?: event.occurredAtUtcMillis,
@@ -668,11 +672,18 @@ class CookRepository(
         rejectIds("reading", snapshot.readings.map { it.id to it.cookId }, dao.getAllSensorReadings().map { it.id }.toSet())
         rejectIds("probe", snapshot.probes.map { it.id to it.cookId }, dao.getAllProbes().map { it.id }.toSet())
         rejectIds("device", snapshot.devices.map { it.id to it.cookId }, dao.getAllDevices().map { it.id }.toSet())
+        rejectIds("ingredient", snapshot.ingredients.map { it.id to it.cookId }, dao.getAllIngredients().map { it.id }.toSet())
+        rejectIds("target", snapshot.targets.map { it.id to it.cookId }, dao.getAllTargets().map { it.id }.toSet())
+        rejectIds("result", snapshot.results.map { it.id to it.cookId }, dao.getAllResults().map { it.id }.toSet())
+        rejectIds("reminder", snapshot.reminders.map { it.id to it.cookId }, dao.getAllReminders().map { it.id }.toSet())
+        rejectIds("assignment", snapshot.assignments.map { it.id to it.cookId }, database.recordingDao().getAllAssignments().map { it.id }.toSet())
+        rejectIds("target history", snapshot.targetHistory.map { it.id to it.cookId }, database.experienceDao().allHistory().map { it.id }.toSet())
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
         require(snapshot.photos.none { it.cookId in newIds && it.id in existingPhotoIds }) { "A photo ID conflicts with a photo in another saved cook." }
         val photos = snapshot.photos.filter { it.cookId in newIds && it.id !in existingPhotoIds }
         val restoredPhotos = mutableListOf<PhotoEntity>()
         val existingRecordIds = database.companionDao().all().map { it.id }.toSet()
+        require(snapshot.companionRecords.none { it.cookId in newIds && it.id in existingRecordIds }) { "A companion record ID conflicts with another saved cook." }
         val newRecords = snapshot.companionRecords.filter { it.id !in existingRecordIds && (it.cookId == null || it.cookId in newIds) }
         val newRecordIds = newRecords.map { it.id }.toSet()
         val referencePhotos = snapshot.companionPhotos.filter { it.recordId in newRecordIds }
