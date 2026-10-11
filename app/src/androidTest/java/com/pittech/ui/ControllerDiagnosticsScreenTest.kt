@@ -69,14 +69,15 @@ class ControllerDiagnosticsScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Controller diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithText("Find your controller").assertIsDisplayed()
         composeRule.onNodeWithText("Scan for controllers").assertIsDisplayed()
         composeRule.onNodeWithTag("controller-scan").assertHeightIsAtLeast(56.dp).performClick()
         composeRule.onNodeWithTag("controller-candidate").assertIsDisplayed().performClick()
 
         assertTrue(engine.inspectionStarted)
         assertTrue(engine.protocolProbeStarted)
-        composeRule.onNodeWithText("Controller detected").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("controller-technical-details").performClick()
+        composeRule.onNodeWithText("Controller check complete").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Protocol: Mongoose OS RPC over Bluetooth").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Controller features discovered: 3").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Test relay", substring = true).assertCountEquals(0)
@@ -84,6 +85,7 @@ class ControllerDiagnosticsScreenTest {
 
         composeRule.onNodeWithTag("controller-submit-diagnostics").performScrollTo().performClick()
         composeRule.onNodeWithText("Review controller diagnostics").assertIsDisplayed()
+        composeRule.onNodeWithTag("controller-report-preview-toggle").performClick()
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("RPC INVENTORY", substring = true)
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("PBL (device suffix withheld)", substring = true)
         composeRule.onNodeWithTag("controller-report-preview").assertTextContains("sha256=", substring = true)
@@ -92,6 +94,7 @@ class ControllerDiagnosticsScreenTest {
         assertEquals(null, submittedRequest)
 
         composeRule.onNodeWithTag("controller-submit-diagnostics").performScrollTo().performClick()
+        composeRule.onNodeWithTag("controller-report-preview-toggle").performClick()
         composeRule.onNodeWithTag("controller-report-submit").performClick()
         assertEquals(FeedbackKind.DEVICE_DIAGNOSTIC, submittedRequest?.kind)
         val publicDetails = submittedRequest?.diagnosticReport?.details.orEmpty()
@@ -114,7 +117,8 @@ class ControllerDiagnosticsScreenTest {
 
         composeRule.onNodeWithTag("controller-scan").performClick()
         composeRule.onNodeWithTag("controller-candidate").performClick()
-        composeRule.onNodeWithText("Controller inspected").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("controller-technical-details").performClick()
+        composeRule.onNodeWithText("Controller check complete").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Protocol: Unknown").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("PitTech support: Not yet verified by PitTech").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Submit controller for support").performScrollTo().assertIsDisplayed()
@@ -157,7 +161,7 @@ class ControllerDiagnosticsScreenTest {
         assertEquals("PitTech-Setup-Test", engine.submittedNetwork?.ssid)
         assertEquals("local-test-password", engine.submittedPassword)
         composeRule.onNodeWithTag("grillirg-setup-status")
-            .assertTextContains("Waiting for the fake controller result", substring = true)
+            .assertTextContains("Checking whether the controller connected to Wi-Fi", substring = true)
     }
 }
 

@@ -50,6 +50,7 @@ import com.pittech.devices.ControllerProbeDiagnostics
 import com.pittech.devices.ControllerProbeReport
 import com.pittech.devices.ControllerProtocolDetector
 import com.pittech.devices.ControllerSupportRegistry
+import com.pittech.devices.ControllerSupportStatus
 import com.pittech.devices.GrillirGSetupDiagnostics
 import com.pittech.devices.NearbyBluetoothDevice
 import java.text.SimpleDateFormat
@@ -94,7 +95,8 @@ internal fun ControllerDiagnosticsScreen(
     var sessionRevision by remember { mutableStateOf(0) }
 
     var showReportDialog by remember { mutableStateOf(false) }
-    var reportExpanded by remember { mutableStateOf(false) }
+    var technicalDetailsExpanded by remember { mutableStateOf(false) }
+    var reportPreviewExpanded by remember { mutableStateOf(false) }
     var reportSubmitting by remember { mutableStateOf(false) }
     var reportError by remember { mutableStateOf<String?>(null) }
     var reportNotice by remember { mutableStateOf<String?>(null) }
@@ -143,7 +145,7 @@ internal fun ControllerDiagnosticsScreen(
     fun startAutomaticProbe(device: NearbyBluetoothDevice) {
         val address = device.address
         if (address.isNullOrBlank()) {
-            probeStatus = "Android did not expose a Bluetooth address. Grant Bluetooth connection permission and scan again."
+            probeStatus = "PitTech couldn't connect to this controller. Check Bluetooth permission and try again."
             recordSessionEvent("Automatic controller interrogation could not start: Bluetooth address unavailable.")
             return
         }
@@ -154,12 +156,12 @@ internal fun ControllerDiagnosticsScreen(
         gattInspection = null
         probeReport = null
         isProbing = true
-        probeStatus = "Connecting and inventorying GATT services…"
+        probeStatus = "Checking controller compatibility…"
         recordSessionEvent("Automatic interrogation started for the selected controller.")
 
         engine.inspect(
             address = address,
-            onProgress = { message -> probeStatus = message },
+            onProgress = { probeStatus = "Checking controller compatibility…" },
             onFinished = { inspection ->
                 gattInspection = inspection
                 recordSessionEvent(
@@ -168,15 +170,15 @@ internal fun ControllerDiagnosticsScreen(
                         "readable=${inspection.readableCharacteristicCount}, reads=${inspection.reads.size}.",
                 )
 
-                probeStatus = "Checking controller capabilities…"
+                probeStatus = "Checking controller features…"
                 engine.probe(
                     address = address,
                     inspection = inspection,
-                    onProgress = { message -> probeStatus = message },
+                    onProgress = { probeStatus = "Checking controller features…" },
                     onFinished = { report ->
                         probeReport = report
                         isProbing = false
-                        probeStatus = report.outcome
+                        probeStatus = "Compatibility check complete."
                         recordSessionEvent(
                             "Protocol interrogation finished; protocols=" +
                                 report.protocols.joinToString { it.name } +
@@ -205,14 +207,13 @@ internal fun ControllerDiagnosticsScreen(
 
         engine.startScan(
             onDevices = { nearbyDevices = it },
-            onFinished = { summary, message ->
+            onFinished = { summary, _ ->
                 scanSummary = summary
                 isScanning = false
-                scanMessage = message ?: if (nearbyDevices.isEmpty()) {
-                    "No Bluetooth devices were detected."
-                } else {
-                    "Found ${nearbyDevices.size} Bluetooth device(s). Select the controller to interrogate it automatically." +
-                        (summary.error?.let { " Scan detail: $it" } ?: "")
+                scanMessage = when {
+                    summary.error != null -> "Couldn't scan for controllers. Check that Bluetooth is on and PitTech has permission, then try again."
+                    nearbyDevices.isEmpty() -> "No nearby controllers found. Make sure yours is on and nearby, then scan again."
+                    else -> "Found ${nearbyDevices.size} nearby devices. Select yours to check compatibility."
                 }
                 recordSessionEvent(
                     "Bluetooth discovery finished; mode=${summary.scanMode}, " +
@@ -241,7 +242,7 @@ internal fun ControllerDiagnosticsScreen(
                 startAutomaticProbe(device)
             } else {
                 isProbing = false
-                probeStatus = "Bluetooth connection permission is required to interrogate this controller."
+                probeStatus = "Allow Bluetooth access to check this controller."
             }
         } else if (!engine.requiresBluetoothPermissions || results[requiredScanPermission] == true ||
             ContextCompat.checkSelfPermission(context, requiredScanPermission) == PackageManager.PERMISSION_GRANTED
@@ -249,7 +250,7 @@ internal fun ControllerDiagnosticsScreen(
             startScan()
         } else {
             isScanning = false
-            scanMessage = "Bluetooth permission is required to discover nearby controllers."
+            scanMessage = "Allow Bluetooth access to find nearby controllers."
         }
         pendingAction = "SCAN"
     }
@@ -369,19 +370,19 @@ internal fun ControllerDiagnosticsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Controller diagnostics", style = MaterialTheme.typography.headlineSmall)
+        Text("Find your controller", style = MaterialTheme.typography.headlineSmall)
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Inspect a controller", style = MaterialTheme.typography.titleSmall)
+                Text("Check controller compatibility", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "Turn on your controller and keep your phone nearby. PitTech can inspect Bluetooth controllers to determine whether they can be supported.",
+                    "Turn on your grill controller and keep your phone nearby. PitTech will check whether it can be supported.",
                 )
                 Text(
-                    "No grill settings are changed during inspection. Nothing is shared unless you review and submit a support report.",
+                    "This check doesn't start live temperature monitoring or change grill settings. Nothing is shared unless you review and submit a support report.",
                 )
             }
         }
@@ -405,8 +406,17 @@ internal fun ControllerDiagnosticsScreen(
 
         scanMessage?.let { Text(it) }
 
+        if (scanSummary != null || selectedDeviceKey != null) {
+            TextButton(
+                onClick = { technicalDetailsExpanded = !technicalDetailsExpanded },
+                modifier = Modifier.testTag("controller-technical-details"),
+            ) {
+                Text(if (technicalDetailsExpanded) "Hide technical details" else "Show technical details")
+            }
+        }
+
         if (nearbyDevices.isNotEmpty()) {
-            Text("Nearby Bluetooth devices", style = MaterialTheme.typography.titleMedium)
+            Text("Nearby controllers", style = MaterialTheme.typography.titleMedium)
             nearbyDevices.forEachIndexed { index, device ->
                 val selected = device.key == selectedDeviceKey
                 Card(
@@ -427,24 +437,19 @@ internal fun ControllerDiagnosticsScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(device.displayName, style = MaterialTheme.typography.titleSmall)
-                        val discoveryPathLabel = device.discoveryPaths
-                            .sortedBy { it.ordinal }
-                            .joinToString(" + ") { it.displayLabel }
-                        val signalLabel = if (device.rssi == Int.MIN_VALUE) {
-                            "signal not reported"
-                        } else {
-                            "${device.rssi} dBm"
+                        Text(if (selected && isProbing) "Checking compatibility…" else if (selected) "Selected" else "Tap to check compatibility")
+                        if (technicalDetailsExpanded) {
+                            val discoveryPathLabel = device.discoveryPaths
+                                .sortedBy { it.ordinal }
+                                .joinToString(" + ") { it.displayLabel }
+                            val signalLabel = if (device.rssi == Int.MIN_VALUE) "not reported" else "${device.rssi} dBm"
+                            Text(
+                                "Found by $discoveryPathLabel · ${device.observationCount} observations · " +
+                                    "${device.advertisements.size} advertisement variants · signal $signalLabel",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text("Compatibility: ${ControllerSupportRegistry.label(device)}", style = MaterialTheme.typography.bodySmall)
                         }
-                        Text(
-                            "$discoveryPathLabel · ${device.observationCount} BLE observations · " +
-                                "${device.advertisements.size} BLE advertisement variants · $signalLabel",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            ControllerSupportRegistry.label(device),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        if (selected) Text("Selected · automatic interrogation " + if (isProbing) "running" else "ready")
                     }
                 }
             }
@@ -456,7 +461,7 @@ internal fun ControllerDiagnosticsScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Text("Inspecting controller", style = MaterialTheme.typography.titleSmall)
+                    Text("Controller check", style = MaterialTheme.typography.titleSmall)
                     if (isProbing) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             CircularProgressIndicator()
@@ -465,22 +470,19 @@ internal fun ControllerDiagnosticsScreen(
                     } else {
                         Text(probeStatus ?: "Select this controller to begin.")
                     }
-                    Text((if (gattInspection != null) "✓" else "○") + " Bluetooth services and features")
-                    Text((if (probeReport != null) "✓" else "○") + " Controller type detection")
-                    Text((if (probeReport?.rpcMethods?.isNotEmpty() == true) "✓" else "○") + " Controller features discovered")
-                    Text((if (probeReport?.observations?.isNotEmpty() == true) "✓" else "○") + " Read-only capability checks")
-                    Text(
-                        if (probeReport != null) {
-                            "✓ Fingerprint: " + ControllerProtocolDetector.fingerprint(
-                                device,
-                                gattInspection,
-                                probeReport,
-                            )
-                        } else {
-                            "○ Stable controller fingerprint"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    if (technicalDetailsExpanded) {
+                        Text("Bluetooth services: ${gattInspection?.services?.size ?: "not checked"}")
+                        Text("Readable features: ${gattInspection?.readableCharacteristicCount ?: "not checked"}")
+                        Text("Controller type detection: ${if (probeReport == null) "not complete" else "complete"}")
+                        Text(
+                            "Fingerprint: " + if (probeReport != null) {
+                                ControllerProtocolDetector.fingerprint(device, gattInspection, probeReport)
+                            } else {
+                                "not available"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }
@@ -492,16 +494,16 @@ internal fun ControllerDiagnosticsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("GrillirG setup flow identified", style = MaterialTheme.typography.titleSmall)
+                        Text("Wi-Fi setup available", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "PitTech found the iFireTech advertisement and the matching BLE setup characteristics. You can ask the controller for its Wi-Fi list, then explicitly choose whether to send Wi-Fi details.",
+                            "You can ask the controller to find nearby Wi-Fi networks, then choose whether to send your Wi-Fi details.",
                         )
                         OutlinedButton(
                             onClick = { showGrillirGSetup = !showGrillirGSetup },
                             enabled = !isProbing && !device.address.isNullOrBlank(),
                             modifier = Modifier.testTag("grillirg-open-wifi-setup"),
                         ) {
-                            Text(if (showGrillirGSetup) "Hide Wi-Fi setup" else "Set up GrillirG Wi-Fi")
+                            Text(if (showGrillirGSetup) "Hide Wi-Fi setup" else "Set up Wi-Fi")
                         }
                     }
                 }
@@ -521,44 +523,35 @@ internal fun ControllerDiagnosticsScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    val detected = report.protocols.any {
-                        it != com.pittech.devices.ControllerProtocolFamily.UNKNOWN
+                    val supportStatus = selectedDevice?.let {
+                        ControllerSupportRegistry.evaluate(it, gattInspection, probeReport).status
                     }
+                    Text("Controller check complete", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        if (detected) "Controller detected" else "Controller inspected",
-                        style = MaterialTheme.typography.titleMedium,
+                        when (supportStatus) {
+                            ControllerSupportStatus.VERIFIED -> "Compatibility verified by PitTech."
+                            ControllerSupportStatus.LIKELY_MATCH -> "Possible match. Support isn't verified yet."
+                            ControllerSupportStatus.INCOMPATIBLE -> "This controller isn't supported."
+                            else -> "Support hasn't been verified for this controller yet."
+                        },
                     )
-                    val protocolLabel = if (com.pittech.devices.ControllerProtocolFamily.MONGOOSE_RPC in report.protocols) {
-                        "Mongoose OS RPC over Bluetooth"
-                    } else {
-                        report.protocols.joinToString { it.displayName }
-                    }
-                    Text("Protocol: $protocolLabel")
-                    Text("Controller features discovered: ${report.rpcMethods.size}")
-                    if (selectedDevice?.let { isGrillirGSetupCandidate(it, gattInspection) } == true) {
-                        Text("Separate capability: GrillirG BLE Wi-Fi setup detected (experimental).")
-                        if (report.rpcMethods.isEmpty()) {
-                            Text("Cooking and controller-control protocol: not identified; no RPC methods were found.")
+                    if (technicalDetailsExpanded) {
+                        val protocolLabel = if (com.pittech.devices.ControllerProtocolFamily.MONGOOSE_RPC in report.protocols) {
+                            "Mongoose OS RPC over Bluetooth"
+                        } else {
+                            report.protocols.joinToString { it.displayName }
                         }
-                    }
-                    report.transportCapabilities.forEach { capability ->
-                        Text(
-                            "${capability.transport.displayName}: ${capability.state.displayName} · ${capability.details}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Text(
-                        "PitTech support: " + selectedDevice?.let {
+                        Text("Protocol: $protocolLabel")
+                        Text("Controller features discovered: ${report.rpcMethods.size}")
+                        report.transportCapabilities.forEach { capability ->
+                            Text(
+                                "${capability.transport.displayName}: ${capability.state.displayName} · ${capability.details}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Text("PitTech support: " + selectedDevice?.let {
                             ControllerSupportRegistry.label(it, gattInspection, probeReport)
-                        }.orEmpty(),
-                    )
-                    TextButton(
-                        onClick = { reportExpanded = !reportExpanded },
-                        modifier = Modifier.testTag("controller-technical-details"),
-                    ) {
-                        Text(if (reportExpanded) "Hide technical details" else "Show technical details")
-                    }
-                    if (reportExpanded) {
+                        }.orEmpty())
                         Text(
                             report.rpcMethods.joinToString("\n").ifBlank { "No RPC inventory was returned." },
                             fontFamily = FontFamily.Monospace,
@@ -570,7 +563,7 @@ internal fun ControllerDiagnosticsScreen(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                reportExpanded = true
+                                reportPreviewExpanded = false
                                 reportError = null
                                 showReportDialog = true
                             },
@@ -599,15 +592,15 @@ internal fun ControllerDiagnosticsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        "Submitting creates a public GitHub issue. PitTech withholds raw radio payloads, removes the permanent Bluetooth address, and redacts password-like fields and Wi-Fi identities. Review the complete report below before sending.",
+                        "This creates a public GitHub issue. Review the report before sending. Radio payloads and private fields are removed or redacted.",
                     )
                     TextButton(
-                        onClick = { reportExpanded = !reportExpanded },
+                        onClick = { reportPreviewExpanded = !reportPreviewExpanded },
                         modifier = Modifier.testTag("controller-report-preview-toggle"),
                     ) {
-                        Text(if (reportExpanded) "Hide full report" else "Preview full report")
+                        Text(if (reportPreviewExpanded) "Hide full report" else "Preview full report")
                     }
-                    if (reportExpanded) {
+                    if (reportPreviewExpanded) {
                         Card {
                             Text(
                                 reportDetails,
@@ -627,7 +620,7 @@ internal fun ControllerDiagnosticsScreen(
             },
             confirmButton = {
                 TextButton(
-                    enabled = !reportSubmitting,
+                    enabled = !reportSubmitting && reportPreviewExpanded,
                     onClick = ::submitReport,
                     modifier = Modifier.testTag("controller-report-submit"),
                 ) {

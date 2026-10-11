@@ -264,7 +264,7 @@ fun SettingsScreen(
         }
 
         SectionCard("Your data") {
-            Text("Cook records and photos stay on this phone. No account is needed. Save a backup somewhere you control so you can restore it after changing phones or reinstalling PitTech.", style = MaterialTheme.typography.bodyLarge)
+            Text("Your cook records and photos stay in PitTech's private storage on this phone. No account is needed, and you can use your cook log offline. Save a backup somewhere you can find it if you change phones or reinstall PitTech.", style = MaterialTheme.typography.bodyLarge)
             Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.", style = MaterialTheme.typography.bodyMedium)
             Button(onClick = { zip.launch("PitTech_Backup.zip") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Save full backup (ZIP)") }
             OutlinedButton(onClick = { viewModel.createShareArchive() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("share-full-backup")) { Text("Share full backup (ZIP)") }
@@ -306,11 +306,6 @@ fun SettingsScreen(
                     },
                 ) { Text("Delete saved crash report") }
             }
-        }
-
-        SectionCard("Privacy and offline use") {
-            Text("You can start, edit, review, and export cooks without internet access. PitTech has no sign-in screen. Photos are copied into the app's private storage so the cook log can use them offline.", style = MaterialTheme.typography.bodyLarge)
-            Text("A backup file is your portable copy. Keep it in a place you can find again.", style = MaterialTheme.typography.bodyMedium)
         }
 
         SectionCard("Ads and privacy") {

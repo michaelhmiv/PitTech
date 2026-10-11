@@ -13,8 +13,10 @@ The app uses GMA Next-Gen SDK and UMP. UMP refreshes consent information when th
 
 The native placement appears after the fourth completed cook, and only when there are no active cooks. It does not appear on the Start Cook, active-cook, Insights, Devices, or Settings screens. The app displays one native ad per visit to that history view and destroys the loaded ad when the view leaves the composition.
 
-## Test and release behavior
+## Build behavior
 
-All local and CI builds use Google's native test ad unit by default. The Play closed-testing workflow explicitly passes `-PpittechLiveAds=false`, so closed testers will not receive live ads. To build with PitTech's live native unit later, pass `-PpittechLiveAds=true` only after the privacy policy and Play disclosures have been updated and the public store listing, app-ads.txt, and AdMob app-readiness review are complete.
+Local builds and pull-request builds use Google's native test ad unit. The **Build Play App Bundle** workflow also defaults to the test unit. When manually starting that workflow, its optional **use_live_ads** input can select PitTech's live unit for the unsigned artifact. This workflow only builds and stores an artifact; it does not upload or publish to Google Play.
+
+Use the live unit only after the privacy policy and Play disclosures have been updated, the public store listing and `app-ads.txt` are available, and AdMob's app-readiness review is complete. The Play closed-testing workflow always uses the test unit.
 
 The AdMob app is currently unpublished and has not been linked to a public store listing. The native unit may take up to an hour to begin returning ads. UMP consent messages still need to be configured in AdMob's Privacy & messaging area before broad distribution.

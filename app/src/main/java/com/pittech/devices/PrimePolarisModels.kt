@@ -114,7 +114,7 @@ internal data class PolarisMonitorState(
         statusFetchedAtMillis == null -> "Grill connection not reported"
         now - statusFetchedAtMillis > GrillSamplingPolicy.receiptWindow(sampling.sampleIntervalMillis) -> "Grill connection status is old"
         onlineStatus == 0 -> "Grill online"
-        onlineStatus != null -> "Grill offline (status $onlineStatus)"
+        onlineStatus != null -> "Grill offline"
         else -> "Grill connection not reported"
     }
 }
@@ -140,7 +140,7 @@ internal object PolarisMonitorPolicy {
         4 -> "Shutting down"
         5 -> "Controller reports an error"
         null -> "Not reported"
-        else -> "Status ${code.toInt()} (unmapped)"
+        else -> "Status unavailable"
     }
 
     /** Build from typed, allowlisted facts; never include account names, IDs or raw JSON. */

@@ -90,7 +90,13 @@ internal fun CrashRecoveryScreen(
                     .heightIn(min = 56.dp)
                     .testTag("crash-report-copy"),
             ) {
-                Text(if (copied) "Report copied — paste it into our chat" else "Copy diagnostic report")
+                Text(
+                    if (copied) {
+                        "Report copied. Include it in Settings → Report a problem if you'd like to share it."
+                    } else {
+                        "Copy diagnostic report"
+                    },
+                )
             }
 
             TextButton(
