@@ -65,8 +65,16 @@ internal fun ControllerDevicesScreen(modifier: Modifier = Modifier) {
     var bluetooth by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { bluetooth = false }, modifier = Modifier.weight(1f).testTag("devices-cloud")) { Text("Wi-Fi monitor") }
-            OutlinedButton(onClick = { bluetooth = true }, modifier = Modifier.weight(1f).testTag("devices-bluetooth")) { Text("Bluetooth discovery") }
+            if (bluetooth) {
+                OutlinedButton(onClick = { bluetooth = false }, modifier = Modifier.weight(1f).testTag("devices-cloud")) { Text("Wi-Fi") }
+            } else {
+                Button(onClick = { bluetooth = false }, modifier = Modifier.weight(1f).testTag("devices-cloud")) { Text("Wi-Fi") }
+            }
+            if (bluetooth) {
+                Button(onClick = { bluetooth = true }, modifier = Modifier.weight(1f).testTag("devices-bluetooth")) { Text("Bluetooth") }
+            } else {
+                OutlinedButton(onClick = { bluetooth = true }, modifier = Modifier.weight(1f).testTag("devices-bluetooth")) { Text("Bluetooth") }
+            }
         }
         if (bluetooth) ControllerDiagnosticsScreen(modifier = Modifier.weight(1f))
         else GrillirGCloudMonitorScreen(modifier = Modifier.weight(1f))
@@ -105,15 +113,15 @@ internal fun GrillirGCloudMonitorScreen(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Wi-Fi grill monitor", style = MaterialTheme.typography.headlineSmall)
+        Text("Connect a grill", style = MaterialTheme.typography.headlineSmall)
         SimpleDropdownField("Connection", state.provider.label,
             if (state.lockedDeviceId != null) listOf(state.provider.label) else GrillProvider.entries.map { it.label },
             { label -> engine.selectProvider(GrillProvider.entries.first { it.label == label }) }, testTag = "cloud-provider")
-        Text("Read-only temperatures. Pair your grill with Wi-Fi in its supported app first.")
-        if (state.provider != GrillProvider.GRILLIRG) Text("Experimental · hardware confirmation pending", style = MaterialTheme.typography.bodySmall)
+        Text("PitTech can read temperatures but can't change grill settings. Pair your grill in its supported app first.")
+        if (state.provider != GrillProvider.GRILLIRG) Text("Support for this connection type hasn't been confirmed on hardware yet.", style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = { requirementsExpanded = !requirementsExpanded }) { Text(if (requirementsExpanded) "Hide connection requirements" else "Connection requirements") }
         if (requirementsExpanded) Text(state.provider.setup, style = MaterialTheme.typography.bodySmall)
-        Text(state.message, modifier = Modifier.testTag("cloud-message"))
+        Text(monitorMessage(state.message), modifier = Modifier.testTag("cloud-message"))
         if (state.busy || state.phase == PolarisPhase.RESTORING) CircularProgressIndicator()
 
         if (!state.authenticated) {
@@ -122,9 +130,9 @@ internal fun GrillirGCloudMonitorScreen(
                     val emailCode = state.provider.emailCode
                     val pitBoss = state.provider == GrillProvider.PIT_BOSS
                     Text(if (emailCode) "Sign in with an email code" else if (pitBoss) "Connect your controller" else "Sign in to Traeger", style = MaterialTheme.typography.titleMedium)
-                    Text(if (emailCode) "Use the email used in GrillirG. If that app displaces this sign-in, you can use a separate account your grill is shared to."
-                        else if (pitBoss) "Use the complete controller ID, not a grill model or serial number. The optional password is the controller password, not your Pit Boss account password."
-                        else "Use your Traeger email and password. Account passwords are used only for sign-in; saved tokens are encrypted on this phone. Federated sign-in and MFA challenges are not supported.", style = MaterialTheme.typography.bodySmall)
+                    Text(if (emailCode) "Enter the email linked to your GrillirG account. If needed, use an account your grill is shared with."
+                        else if (pitBoss) "Enter the controller ID from the Pit Boss app. The optional password is for the controller, not your Pit Boss account."
+                        else "Sign in with the Traeger account that owns your grill. PitTech encrypts the saved sign-in session on this phone.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
                         value = email, onValueChange = { email = it.take(254) }, label = { Text(if (pitBoss) "Controller ID" else state.provider.label + " account email") },
                         singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = if (pitBoss) KeyboardType.Ascii else KeyboardType.Email),
@@ -168,11 +176,8 @@ internal fun GrillirGCloudMonitorScreen(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(device.name, style = MaterialTheme.typography.titleLarge)
                         Text(state.onlineLabel(now), modifier = Modifier.testTag("cloud-grill-status"))
-                        Text("Backend: " + (state.lastApiSuccessMillis?.let { "last response ${age(now, it)}" } ?: "no response yet"))
-                        Text("Grill status fetched: " + (state.statusFetchedAtMillis?.let { age(now, it) } ?: "not reported"))
-                        Text("Readings fetched: " + (state.latest?.fetchedAtMillis?.let { age(now, it) } ?: "not reported"))
                         if (state.readingsAreOld(now)) Text("Readings are unavailable, older, or may be cached.", color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("cloud-stale"))
-                        state.nextPollAtMillis?.let { Text("Next check in ${((it - now).coerceAtLeast(0) + 999) / 1000}s") }
+                        state.latest?.fetchedAtMillis?.let { Text("Updated ${age(now, it)}") }
                         Button(onClick = engine::refresh, enabled = !state.busy, modifier = Modifier.testTag("cloud-refresh")) { Text("Refresh now") }
                     }
                 }
@@ -191,44 +196,52 @@ internal fun GrillirGCloudMonitorScreen(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Controller status", style = MaterialTheme.typography.titleMedium)
                         Text("Operation: " + PolarisMonitorPolicy.runningLabel(sample?.payload?.values?.get("runningStatus")))
-                        sample?.payload?.values?.get("vendorSystemStatus")?.let { Text("Vendor status code: ${it.toInt()}") }
                         sample?.payload?.values?.get("vendorPowerState")?.let { Text("Controller power: " + switchLabel(it)) }
                         sample?.payload?.values?.get("pelletLevel")?.let { Text("Pellet level: ${it.toInt()}%") }
                         Text("Smoke mode: " + switchLabel(sample?.payload?.values?.get("smokeMode")))
-                        sample?.payload?.values?.get("smokeLevel")?.let { Text("Smoke level: ${it.toInt()}") }
-                        Text("Probe 1 target: " + PolarisMonitorPolicy.temperature(sample, "probeP1Setting"))
-                        Text("Probe 2 target: " + PolarisMonitorPolicy.temperature(sample, "probeP2Setting"))
-                        Text("Alarm entries returned: ${sample?.payload?.alarmCount ?: "not reported"}")
                         if (sample?.payload?.alarmCount?.let { it > 0 } == true) Text("Check the controller or its supported app for alarm details.", color = MaterialTheme.colorScheme.error)
-                        Text("Fetch time is when PitTech received the data. " + (sample?.payload?.reportedAtMillis?.let { "Device report: ${age(now, it)}." } ?: "The backend's device sample age is unknown."), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 ChamberHistory(state.samples)
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Controller information", style = MaterialTheme.typography.titleMedium)
-                        Text("Brand: ${device.brand ?: "not reported"}")
-                        Text("Grill: ${device.grillModel ?: "not reported"}")
-                        Text("Controller: ${device.controllerModel ?: "not reported"}")
-                        Text("Firmware: ${device.firmware ?: "not reported"}")
-                    }
-                }
             }
         }
 
         if (state.exchanges.isNotEmpty()) {
-            TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("cloud-details")) { Text(if (detailsExpanded) "Hide connection details" else "Show connection details") }
-            if (detailsExpanded) Text(PolarisMonitorPolicy.report(state, now), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(
-                onClick = {
-                    reportMessage = null
-                    report = FeedbackDiagnosticReport(
-                        referenceCode = "CLOUD-" + UUID.randomUUID().toString().take(8).uppercase(),
-                        occurredAtUtc = Instant.ofEpochMilli(now).toString(), source = state.provider.label + " cloud monitor",
-                        summary = state.provider.label + " connection and controller observations", details = PolarisMonitorPolicy.report(state, now),
-                    )
-                }, modifier = Modifier.testTag("cloud-review-report"),
-            ) { Text("Review connection report") }
+            TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("cloud-details")) { Text(if (detailsExpanded) "Hide technical details" else "Show technical details") }
+            if (detailsExpanded) {
+                SectionCard("Connection details") {
+                    Text("Backend: " + (state.lastApiSuccessMillis?.let { "last response ${age(now, it)}" } ?: "no response yet"))
+                    Text("Grill status received: " + (state.statusFetchedAtMillis?.let { age(now, it) } ?: "not reported"))
+                    Text("Readings received: " + (state.latest?.fetchedAtMillis?.let { age(now, it) } ?: "not reported"))
+                    state.nextPollAtMillis?.let { Text("Next check in ${((it - now).coerceAtLeast(0) + 999) / 1000}s") }
+                    val selectedDevice = state.selectedDevice
+                    if (selectedDevice != null) {
+                        Text("Brand: ${selectedDevice.brand ?: "not reported"}")
+                        Text("Grill: ${selectedDevice.grillModel ?: "not reported"}")
+                        Text("Controller: ${selectedDevice.controllerModel ?: "not reported"}")
+                        Text("Firmware: ${selectedDevice.firmware ?: "not reported"}")
+                    }
+                    state.latest?.let { sample ->
+                        Text("Vendor status: ${sample.payload.values["vendorSystemStatus"]?.toInt() ?: "not reported"}")
+                        Text("Smoke level: ${sample.payload.values["smokeLevel"]?.toInt() ?: "not reported"}")
+                        Text("Probe 1 target: " + PolarisMonitorPolicy.temperature(sample, "probeP1Setting"))
+                        Text("Probe 2 target: " + PolarisMonitorPolicy.temperature(sample, "probeP2Setting"))
+                        Text("Alarm entries: ${sample.payload.alarmCount ?: "not reported"}")
+                        Text("Fetch time is when PitTech received the data. Device sample age may be unknown.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(PolarisMonitorPolicy.report(state, now), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(
+                        onClick = {
+                            reportMessage = null
+                            report = FeedbackDiagnosticReport(
+                                referenceCode = "CLOUD-" + UUID.randomUUID().toString().take(8).uppercase(),
+                                occurredAtUtc = Instant.ofEpochMilli(now).toString(), source = state.provider.label + " cloud monitor",
+                                summary = state.provider.label + " connection and controller observations", details = PolarisMonitorPolicy.report(state, now),
+                            )
+                        }, modifier = Modifier.testTag("cloud-review-report"),
+                    ) { Text("Review connection report") }
+                }
+            }
         }
         reportMessage?.let { Text(it, modifier = Modifier.testTag("cloud-report-result")) }
     }
@@ -285,7 +298,6 @@ internal fun GrillirGCloudMonitorScreen(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Recent chamber readings", style = MaterialTheme.typography.titleMedium)
-            Text("${points.size} observations retained for this visit", style = MaterialTheme.typography.bodySmall)
             Canvas(Modifier.fillMaxWidth().height(100.dp)) {
                 val values = points.map { it.payload.values.getValue("furnaceTempMeasured") }
                 val minimum = values.minOrNull()!! - 5
@@ -307,4 +319,11 @@ internal fun GrillirGCloudMonitorScreen(
 }
 
 private fun age(now: Long, then: Long) = "${((now - then).coerceAtLeast(0)) / 1000}s ago"
-private fun switchLabel(value: Double?) = when (value?.toInt()) { 0 -> "Off"; 1 -> "On"; null -> "Not reported"; else -> "Status ${value.toInt()} (unmapped)" }
+private fun switchLabel(value: Double?) = when (value?.toInt()) { 0 -> "Off"; 1 -> "On"; null -> "Not reported"; else -> "Not reported" }
+
+private fun monitorMessage(message: String): String = when {
+    Regex("HTTP \\d+").containsMatchIn(message) -> "The grill service couldn't complete the request. Try again shortly."
+    Regex("code -?\\d+").containsMatchIn(message) -> "The provider couldn't complete the request. Check your account details and try again."
+    message.contains("could not interpret", ignoreCase = true) -> "PitTech couldn't read the provider's response. Show technical details if you need help."
+    else -> message
+}

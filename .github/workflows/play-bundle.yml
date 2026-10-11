@@ -4,6 +4,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_live_ads:
+        description: Build the unsigned artifact with PitTech's live AdMob unit after completing the documented readiness steps.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,7 +41,9 @@ jobs:
           gradle-version: '9.6.1'
 
       - name: Build release App Bundle
-        run: gradle bundleRelease -PpittechLiveAds=false
+        env:
+          PITTECH_LIVE_ADS: ${{ github.event_name == 'workflow_dispatch' && inputs.use_live_ads }}
+        run: gradle bundleRelease -PpittechLiveAds=${PITTECH_LIVE_ADS}
 
       - name: Upload unsigned Play App Bundle
         uses: actions/upload-artifact@v7.0.1

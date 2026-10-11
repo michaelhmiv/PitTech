@@ -21,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,15 +58,6 @@ internal fun GrillirGWifiSetupPanel(
     var showSendConfirmation by remember { mutableStateOf(false) }
     var diagnosticsExpanded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(snapshot.stage, snapshot.message, snapshot.diagnostics.attempted) {
-        if (snapshot.diagnostics.attempted &&
-            (snapshot.stage in setOf(GrillirGSetupStage.FAILED, GrillirGSetupStage.COMPLETE) ||
-                snapshot.message.contains("timed out", ignoreCase = true))
-        ) {
-            diagnosticsExpanded = true
-        }
-    }
-
     DisposableEffect(engine) { onDispose { engine.close() } }
 
     val hasBluetoothConnectPermission = remember(context, engine) {
@@ -96,12 +86,12 @@ internal fun GrillirGWifiSetupPanel(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("GrillirG Wi-Fi setup · experimental", style = MaterialTheme.typography.titleMedium)
+                Text("Set up Wi-Fi", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "PitTech will connect directly to the selected iFireTech controller, ask it to scan for Wi-Fi, and display the networks it reports. Scanning sends only the vendor app's connection-check and Wi-Fi-scan commands.",
+                    "PitTech will ask the controller to find nearby Wi-Fi networks. Choose the grill's 2.4 GHz network if it appears.",
                 )
                 Text(
-                    "Wi-Fi details are sent only after you choose a network and confirm. The controller's password format uses the same key bundled in the vendor app; this is compatibility encryption, not end-to-end protection.",
+                    "PitTech asks before sending Wi-Fi details. The controller uses a compatibility format for passwords that may not provide end-to-end protection. Continue only if you're comfortable sending them over Bluetooth.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -139,10 +129,10 @@ internal fun GrillirGWifiSetupPanel(
         if (isWorking) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CircularProgressIndicator()
-                Text(snapshot.message, modifier = Modifier.testTag("grillirg-setup-status"))
+                Text(setupStatus(snapshot), modifier = Modifier.testTag("grillirg-setup-status"))
             }
         } else {
-            Text(snapshot.message, modifier = Modifier.testTag("grillirg-setup-status"))
+            Text(setupStatus(snapshot), modifier = Modifier.testTag("grillirg-setup-status"))
         }
 
         if (snapshot.diagnostics.attempted) {
@@ -155,9 +145,10 @@ internal fun GrillirGWifiSetupPanel(
                         onClick = { diagnosticsExpanded = !diagnosticsExpanded },
                         modifier = Modifier.testTag("grillirg-technical-details-toggle"),
                     ) {
-                        Text(if (diagnosticsExpanded) "Hide technical exchange details" else "Show technical exchange details")
+                        Text(if (diagnosticsExpanded) "Hide setup details" else "Show setup details")
                     }
                     if (diagnosticsExpanded) {
+                        Text("Last status: ${snapshot.message}", style = MaterialTheme.typography.bodySmall)
                         Text(
                             snapshot.diagnostics.reportLines().joinToString("\n"),
                             style = MaterialTheme.typography.bodySmall,
@@ -170,7 +161,7 @@ internal fun GrillirGWifiSetupPanel(
         }
 
         if (snapshot.networks.isNotEmpty()) {
-            Text("Networks reported by the controller", style = MaterialTheme.typography.titleSmall)
+            Text("Available Wi-Fi networks", style = MaterialTheme.typography.titleSmall)
             snapshot.networks.forEach { network ->
                 val isSelected = selectedNetwork?.key == network.key
                 Card(
@@ -196,10 +187,13 @@ internal fun GrillirGWifiSetupPanel(
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Text(network.ssid, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "${wifiSecurityLabel(network.authMode)} · signal ${network.signalIndicator} · RSSI field ${network.rssiRaw} · channel ${network.primaryChannel}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        Text(if (network.isOpen) "Open network" else "Password required", style = MaterialTheme.typography.bodySmall)
+                        if (diagnosticsExpanded) {
+                            Text(
+                                "${wifiSecurityLabel(network.authMode)} · signal indicator ${network.signalIndicator} · RSSI field ${network.rssiRaw} · channel ${network.primaryChannel}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
@@ -225,7 +219,7 @@ internal fun GrillirGWifiSetupPanel(
                 enabled = snapshot.stage == GrillirGSetupStage.NETWORKS_READY && (network.isOpen || password.isNotEmpty()),
                 modifier = Modifier.testTag("grillirg-configure-network"),
             ) {
-                Text("Configure this Wi-Fi network")
+                Text("Connect grill to this network")
             }
         }
     }
@@ -257,6 +251,33 @@ internal fun GrillirGWifiSetupPanel(
                 ) { Text("Cancel") }
             },
         )
+    }
+}
+
+private fun setupStatus(snapshot: GrillirGSetupSnapshot): String = when (snapshot.stage) {
+    GrillirGSetupStage.IDLE -> snapshot.message
+    GrillirGSetupStage.CONNECTING,
+    GrillirGSetupStage.NEGOTIATING_MTU,
+    GrillirGSetupStage.DISCOVERING_SERVICES,
+    GrillirGSetupStage.CHECKING_CONNECTION,
+    GrillirGSetupStage.ENABLING_NOTIFICATIONS,
+    GrillirGSetupStage.REQUESTING_NETWORKS -> "Connecting to your controller and looking for Wi-Fi networks…"
+    GrillirGSetupStage.NETWORKS_READY -> when {
+        snapshot.networks.isEmpty() -> "No Wi-Fi networks found. Try scanning again."
+        snapshot.message.contains("timed out", ignoreCase = true) -> "The scan took longer than expected. Choose a network found so far or scan again."
+        snapshot.message.contains("invalid", ignoreCase = true) -> snapshot.message
+        snapshot.message.contains("encrypt", ignoreCase = true) -> "PitTech couldn't prepare these Wi-Fi details. Check the network and password, then try again."
+        else -> "Found ${snapshot.networks.size} Wi-Fi networks. Choose your grill's 2.4 GHz network."
+    }
+    GrillirGSetupStage.SENDING_CREDENTIALS -> "Sending Wi-Fi details to your controller…"
+    GrillirGSetupStage.WAITING_FOR_WIFI -> "Checking whether the controller connected to Wi-Fi…"
+    GrillirGSetupStage.COMPLETE -> "The controller reports that it connected to Wi-Fi."
+    GrillirGSetupStage.FAILED -> when {
+        snapshot.message.contains("Bluetooth is unavailable", ignoreCase = true) -> "Bluetooth is off or unavailable. Turn it on and try again."
+        snapshot.message.contains("permission", ignoreCase = true) -> "PitTech needs Bluetooth permission to connect."
+        snapshot.wifiStatusCode != null && snapshot.wifiStatusCode !in 1..6 -> "The controller couldn't confirm whether it connected to Wi-Fi."
+        snapshot.message.contains("timed out", ignoreCase = true) || snapshot.message.contains("did not arrive", ignoreCase = true) -> "The controller didn't confirm its Wi-Fi connection. Try again."
+        else -> snapshot.message
     }
 }
 

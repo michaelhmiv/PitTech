@@ -295,6 +295,11 @@ fun PitTechApp(
             MainSection.INSIGHTS -> InsightsScreen(
                 data = insights,
                 onOpenCook = viewModel::openCook,
+                onStartCook = {
+                    viewModel.clearSaveError()
+                    viewModel.consumeSetupPreview()
+                    isStartingCook = true
+                },
                 modifier = Modifier.padding(padding),
             )
             MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
@@ -304,8 +309,8 @@ fun PitTechApp(
                 } else {
                     FeaturePlaceholder(
                         title = "Devices",
-                        message = "Controller diagnostics are available in PitTech's test build.",
-                        note = "You can still log temperatures by hand from any cook.",
+                        message = "Grill connections aren't available yet.",
+                        note = "You can add temperature readings by hand during a cook.",
                         modifier = Modifier.weight(1f),
                     )
                 }

@@ -40,6 +40,7 @@ import java.util.Date
 fun InsightsScreen(
     data: InsightsSnapshot,
     onOpenCook: (String) -> Unit,
+    onStartCook: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -72,88 +73,106 @@ fun InsightsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Learn from your cooks", style = MaterialTheme.typography.headlineMedium)
-        Text("Compare the records you have saved. A comparison describes the cooks; it does not prove what caused a result.", style = MaterialTheme.typography.bodyLarge)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricCard("Completed", completed.size.toString(), Modifier.weight(1f))
-            MetricCard("Avg. time", durationValues.takeIf { it.isNotEmpty() }?.average()?.let(::formatMinutes) ?: "—", Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricCard("Avg. rating", ratings.takeIf { it.isNotEmpty() }?.average()?.let { "%.1f / 5".format(it) } ?: "—", Modifier.weight(1f))
-            MetricCard("Readings", data.readings.size.toString(), Modifier.weight(1f))
-        }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text("Find a cook or dish") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+        Text(
+            if (data.cooks.isEmpty()) "Your cook history and readings will appear here."
+            else "Compare the records you have saved. A comparison describes the cooks; it does not prove what caused a result.",
+            style = MaterialTheme.typography.bodyLarge,
         )
-        Text("Search cut, smoker, weight, rub, method or tags.", style = MaterialTheme.typography.bodySmall)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(favoritesOnly, { favoritesOnly = !favoritesOnly }, label = { Text("Favorites") })
-            FilterChip(highlyRated, { highlyRated = !highlyRated }, label = { Text("Rated 4+") })
-        }
-        ChoiceField("Smoker", smoker, listOf("All smokers") + data.cooks.mapNotNull { it.cook.smokerName }.distinct()) { smoker = it }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("Compare completed cooks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = { comparing = !comparing; selectedIds.clear() }) { Text(if (comparing) "Done" else "Select cooks") }
-        }
 
-        if (selected.size >= 2) {
-            SectionCard(title = "Selected comparison") {
-                selected.forEach { item ->
-                    val duration = item.cook.endedAtUtcMillis?.let { (it - item.cook.startedAtUtcMillis) / 60_000.0 }
-                    val score = data.results.firstOrNull { it.cookId == item.cook.id && it.resultType == "overall_rating" }?.numericValue
-                    Text(item.cook.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("${duration?.let(::formatMinutes) ?: "Duration unavailable"} · rating ${score?.let { "%.1f / 5".format(it) } ?: "not recorded"}", style = MaterialTheme.typography.bodyLarge)
-                    Text(item.dishes.joinToString { it.cut?.takeIf(String::isNotBlank) ?: it.name }.ifBlank { "No dishes recorded" }, style = MaterialTheme.typography.bodyMedium)
-                }
-                val ids = selected.map { it.cook.id }.toSet()
-                val startTimes = selected.associate { it.cook.id to it.cook.startedAtUtcMillis }
-                val names = selected.associate { it.cook.id to it.cook.title }
-                TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes, connectionGaps = data.connectionGaps.filter { it.cookId in ids })
-                Text("Only recorded readings are shown. Empty periods remain empty.", style = MaterialTheme.typography.bodySmall)
+        if (data.cooks.isEmpty()) {
+            SectionCard("No cooks yet") {
+                Text("Start a cook to begin saving dishes, notes, and temperature readings.", style = MaterialTheme.typography.bodyLarge)
+                Button(onClick = onStartCook, modifier = Modifier.fillMaxWidth()) { Text("Start a cook") }
             }
-        }
-
-        if (filtered.isEmpty()) {
-            Text("No cooks match that search.", style = MaterialTheme.typography.bodyLarge)
         } else {
-            filtered.forEach { item ->
-                val rating = data.results.firstOrNull { it.cookId == item.cook.id && it.resultType == "overall_rating" }?.numericValue
-                val selectedForCompare = item.cook.id in selectedIds
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        if (comparing && item.cook.status == CookStatus.COMPLETED) {
-                            if (selectedForCompare) selectedIds.remove(item.cook.id)
-                            else if (selectedIds.size < 4) selectedIds.add(item.cook.id)
-                        } else onOpenCook(item.cook.id)
-                    },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text((if (item.cook.id in favoriteIds) "★ " else "") + item.cook.title, style = MaterialTheme.typography.titleLarge)
-                            Text(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(item.cook.startedAtUtcMillis)), style = MaterialTheme.typography.bodyMedium)
-                            Text(item.dishes.joinToString { it.cut?.takeIf(String::isNotBlank) ?: it.name }.ifBlank { "No dishes recorded" }, style = MaterialTheme.typography.bodyLarge)
-                            Text("${item.cook.status.replaceFirstChar { it.uppercase() }} · ${data.readings.count { it.cookId == item.cook.id }} readings · ${rating?.let { "rating %.1f/5".format(it) } ?: "no rating"}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (comparing && item.cook.status == CookStatus.COMPLETED) {
-                            Spacer(Modifier.width(8.dp))
-                            Checkbox(checked = selectedForCompare, onCheckedChange = {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricCard("Completed", completed.size.toString(), Modifier.weight(1f))
+                MetricCard("Avg. time", durationValues.takeIf { it.isNotEmpty() }?.average()?.let(::formatMinutes) ?: "—", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricCard("Avg. rating", ratings.takeIf { it.isNotEmpty() }?.average()?.let { "%.1f / 5".format(it) } ?: "—", Modifier.weight(1f))
+                MetricCard("Readings", data.readings.size.toString(), Modifier.weight(1f))
+            }
+
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Find a cook or dish") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Search cut, smoker, weight, rub, method or tags.", style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(favoritesOnly, { favoritesOnly = !favoritesOnly }, label = { Text("Favorites") })
+                FilterChip(highlyRated, { highlyRated = !highlyRated }, label = { Text("Rated 4+") })
+            }
+            ChoiceField("Smoker", smoker, listOf("All smokers") + data.cooks.mapNotNull { it.cook.smokerName }.distinct()) { smoker = it }
+            if (completed.size >= 2) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Compare completed cooks", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { comparing = !comparing; selectedIds.clear() }) { Text(if (comparing) "Done" else "Select cooks") }
+                }
+            }
+
+            if (selected.size >= 2) {
+                SectionCard(title = "Selected comparison") {
+                    selected.forEach { item ->
+                        val duration = item.cook.endedAtUtcMillis?.let { (it - item.cook.startedAtUtcMillis) / 60_000.0 }
+                        val score = data.results.firstOrNull { it.cookId == item.cook.id && it.resultType == "overall_rating" }?.numericValue
+                        Text(item.cook.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("${duration?.let(::formatMinutes) ?: "Duration unavailable"} · rating ${score?.let { "%.1f / 5".format(it) } ?: "not recorded"}", style = MaterialTheme.typography.bodyLarge)
+                        Text(item.dishes.joinToString { it.cut?.takeIf(String::isNotBlank) ?: it.name }.ifBlank { "No dishes recorded" }, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    val ids = selected.map { it.cook.id }.toSet()
+                    val startTimes = selected.associate { it.cook.id to it.cook.startedAtUtcMillis }
+                    val names = selected.associate { it.cook.id to it.cook.title }
+                    TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes, connectionGaps = data.connectionGaps.filter { it.cookId in ids })
+                    Text("Only recorded readings are shown. Empty periods remain empty.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            if (filtered.isEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("No cooks or dishes match those filters.", style = MaterialTheme.typography.bodyLarge)
+                    TextButton(onClick = { query = ""; favoritesOnly = false; highlyRated = false; smoker = "All smokers" }) {
+                        Text("Clear filters")
+                    }
+                }
+            } else {
+                filtered.forEach { item ->
+                    val rating = data.results.firstOrNull { it.cookId == item.cook.id && it.resultType == "overall_rating" }?.numericValue
+                    val selectedForCompare = item.cook.id in selectedIds
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            if (comparing && item.cook.status == CookStatus.COMPLETED) {
                                 if (selectedForCompare) selectedIds.remove(item.cook.id)
                                 else if (selectedIds.size < 4) selectedIds.add(item.cook.id)
-                            })
-                        } else {
-                            TextButton(onClick = { onOpenCook(item.cook.id) }) { Text("Open") }
+                            } else onOpenCook(item.cook.id)
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text((if (item.cook.id in favoriteIds) "★ " else "") + item.cook.title, style = MaterialTheme.typography.titleLarge)
+                                Text(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(item.cook.startedAtUtcMillis)), style = MaterialTheme.typography.bodyMedium)
+                                Text(item.dishes.joinToString { it.cut?.takeIf(String::isNotBlank) ?: it.name }.ifBlank { "No dishes recorded" }, style = MaterialTheme.typography.bodyLarge)
+                                Text("${item.cook.status.replaceFirstChar { it.uppercase() }} · ${data.readings.count { it.cookId == item.cook.id }} readings · ${rating?.let { "rating %.1f/5".format(it) } ?: "no rating"}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (comparing && item.cook.status == CookStatus.COMPLETED) {
+                                Spacer(Modifier.width(8.dp))
+                                Checkbox(checked = selectedForCompare, onCheckedChange = {
+                                    if (selectedForCompare) selectedIds.remove(item.cook.id)
+                                    else if (selectedIds.size < 4) selectedIds.add(item.cook.id)
+                                })
+                            } else {
+                                TextButton(onClick = { onOpenCook(item.cook.id) }) { Text("Open") }
+                            }
                         }
                     }
                 }
             }
+            if (comparing) Text("Choose two to four completed cooks to compare.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (comparing) Text("Choose two to four completed cooks to compare.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

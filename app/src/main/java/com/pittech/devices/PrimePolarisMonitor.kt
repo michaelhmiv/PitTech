@@ -173,7 +173,7 @@ internal class PrimePolarisMonitor(
             latest = if (changed) null else state.value.latest, samples = if (changed) emptyList() else state.value.samples,
             onlineStatus = if (changed) null else state.value.onlineStatus,
             statusFetchedAtMillis = if (changed) null else state.value.statusFetchedAtMillis,
-            message = if (devices.isEmpty()) "No grills were returned. Check the selected provider account in Devices and finish pairing in its supported app." else "Select a grill to monitor.",
+            message = if (devices.isEmpty()) "No grills were found. Check your account and finish pairing in the grill's app, then try again." else "Select a grill to monitor.",
         )
         saveSession()
         startPolling()
