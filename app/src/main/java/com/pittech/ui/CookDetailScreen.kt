@@ -1129,14 +1129,15 @@ private fun TimelineTab(
     val rows = buildTimelineLines(data, selectedFilter, newestFirst)
     val days = rows.groupBy { timelineDayKey(it.time) }
     val latestIndex = rows.size + days.size
-    LaunchedEffect(focusEventId, selectedFilterName, newestFirst, rows) {
+    LaunchedEffect(selectedFilterName, newestFirst) { if (focusEventId == null) listState.scrollToItem(0) }
+    LaunchedEffect(focusEventId, selectedFilterName, newestFirst) {
         if (focusEventId != null) {
             selectedFilterName = TimelineFilter.ALL.name
             var position = 1
             var target: Int? = null
             days.values.forEach { group -> position++; group.forEach { row -> if (row is TimelineLine.Event && row.event.id == focusEventId) target = position; position++ } }
             target?.let { listState.scrollToItem(it) }
-        } else listState.scrollToItem(0)
+        }
     }
     val showJumpToLatest by remember(listState, newestFirst, latestIndex) {
         derivedStateOf {

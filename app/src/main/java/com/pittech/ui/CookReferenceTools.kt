@@ -70,8 +70,8 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
             ChoiceField("Previous cook", candidates.indexOfFirst { it.cook.id == sourceCookId }.takeIf { it >= 0 }?.let { cookLabels[it] } ?: "Choose cook", cookLabels) { label -> sourceCookId = candidates[cookLabels.indexOf(label)].cook.id }
             val history = source
             if (history != null) {
-                val sourceLabels = history.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
-                ChoiceField("Reference dish", history.dishes.indexOfFirst { it.id == sourceDishId }.takeIf { it >= 0 }?.let { sourceLabels[it] } ?: "Choose dish", sourceLabels) { label -> sourceDishId = history.dishes[sourceLabels.indexOf(label)].id }
+                val sourceDishLabels = history.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
+                ChoiceField("Reference dish", history.dishes.indexOfFirst { it.id == sourceDishId }.takeIf { it >= 0 }?.let { sourceDishLabels[it] } ?: "Choose dish", sourceDishLabels) { label -> sourceDishId = history.dishes[sourceDishLabels.indexOf(label)].id }
                 val currentChannels = data.readings.filter { it.dishId == dishId || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
                 val sourceChannels = history.readings.filter { it.dishId == sourceDishId || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
                 fun channelLabels(channels: Map<String, List<com.pittech.data.SensorReadingEntity>>) = channels.entries.associate { (id, rows) -> id to (rows.last().probeName + " · " + rows.last().measurementType.replace('_', ' ') + " · " + (id.hashCode() and Int.MAX_VALUE).toString(16).takeLast(4)) }

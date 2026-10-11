@@ -369,8 +369,12 @@ class CooksViewModel(
         _notice.value = "Timing now uses actual Food on actions."
     }
     suspend fun loadNote(eventId: String) = repository.notes.load(eventId)
-    fun flushNoteDraft(draft: com.pittech.domain.CookNoteDraft) { viewModelScope.launch { repository.notes.persistDraft(draft) } }
-    suspend fun persistNoteDraft(draft: com.pittech.domain.CookNoteDraft) = repository.notes.persistDraft(draft)
+    fun flushNoteDraft(draft: com.pittech.domain.CookNoteDraft) { viewModelScope.launch { persistNoteDraft(draft) } }
+    suspend fun persistNoteDraft(draft: com.pittech.domain.CookNoteDraft) {
+        try { repository.notes.persistDraft(draft) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) { _error.value = failure.message ?: "This note draft could not be saved. Try again." }
+    }
     suspend fun stageNotePhoto(id: String, uri: String) = repository.notes.stagePhoto(id, uri)
     fun discardNoteDraft(id: String) = perform { repository.notes.discardDraft(id) }
     fun saveNote(draft: com.pittech.domain.CookNoteDraft, editing: Boolean, onSaved: (Boolean) -> Unit) = performWithLogResult({ _, attached ->

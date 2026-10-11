@@ -17,6 +17,7 @@ internal object CookChartMath {
     fun slopePerMinute(segment: List<SensorReadingEntity>, unit: String): Double? {
         val sorted = segment.filter { it.qualityStatus == "valid" && it.value.isFinite() }.sortedBy { it.measuredAtUtcMillis }
         if (sorted.size < 3 || sorted.last().measuredAtUtcMillis - sorted.first().measuredAtUtcMillis < 600_000) return null
+        if (sorted.any { it.source == "manual" } && (sorted.last().measuredAtUtcMillis - sorted.first().measuredAtUtcMillis > 1_800_000 || sorted.zipWithNext().any { (a, b) -> b.measuredAtUtcMillis - a.measuredAtUtcMillis > 600_000 })) return null
         val start = sorted.first().measuredAtUtcMillis
         val xs = sorted.map { (it.measuredAtUtcMillis - start) / 60_000.0 }
         val ys = sorted.map { val f = CookPlanEngine.fahrenheit(it.value, it.unit); if (unit == "°C") (f - 32) * 5 / 9 else f }

@@ -41,9 +41,10 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
     var staging by remember { mutableStateOf(false) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val latestDraft by rememberUpdatedState(draft)
+    val latestBusy by rememberUpdatedState(busy)
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE && !busy) viewModel.flushNoteDraft(latestDraft)
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE && !latestBusy) viewModel.flushNoteDraft(latestDraft)
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
