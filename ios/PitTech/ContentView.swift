@@ -9,8 +9,6 @@ struct ContentView: View {
                 .tabItem { Label("Cooks", systemImage: "flame") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
-            DevicesView()
-                .tabItem { Label("Devices", systemImage: "dot.radiowaves.left.and.right") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
@@ -122,7 +120,7 @@ struct StartCookSheet: View {
                     TextField("First dish (optional)", text: $firstDish)
                 }
                 Section {
-                    Text("You can start with manual logging and add grill readings later.")
+                    Text("You can start with manual logging and add temperature readings later.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -199,125 +197,6 @@ struct MetricCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(.white, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-struct DevicesView: View {
-    @Environment(GrillirGMonitor.self) private var monitor
-    @State private var email = ""
-    @State private var verificationCode = ""
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Label("Read-only grill monitoring", systemImage: "eye")
-                        .font(.headline)
-                    Text("PitTech displays status and temperature readings. It does not send ignition, temperature, auger, or other controller-setting commands.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-                Section("GrillirG") {
-                    if monitor.isSignedIn {
-                        if monitor.devices.isEmpty {
-                            Text("No grills found on this account.").foregroundStyle(.secondary)
-                        } else {
-                            Picker("Grill", selection: Binding(
-                                get: { monitor.selectedDeviceId ?? "" },
-                                set: { value in Task { await monitor.selectDevice(value) } }
-                            )) {
-                                ForEach(monitor.devices) { device in
-                                    Text(device.name).tag(device.id)
-                                }
-                            }
-                            if let device = monitor.selectedDevice {
-                                Text([device.brand, device.model, device.firmware.map { "Firmware \($0)" }].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            if let snapshot = monitor.snapshot {
-                                LabeledContent("Connection", value: connectionLabel(snapshot))
-                                LabeledContent("Controller", value: runningLabel(snapshot))
-                                temperatureRow("Grill", keys: ["furnaceTempMeasured"], snapshot: snapshot)
-                                temperatureRow("Probe 1", keys: ["probeP1Measured"], snapshot: snapshot)
-                                temperatureRow("Probe 2", keys: ["probeP2Measured"], snapshot: snapshot)
-                                Text("Received from GrillirG \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened)) · \(snapshot.isStale ? "May be out of date" : "Current")")
-                                    .font(.caption).foregroundStyle(snapshot.isStale ? .orange : .secondary)
-                            } else {
-                                Text("Refresh to read the selected grill's latest status and temperatures.")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Button {
-                                Task { await monitor.refresh() }
-                            } label: {
-                                if monitor.isBusy { ProgressView("Checking GrillirG…") }
-                                else { Label("Refresh readings", systemImage: "arrow.clockwise") }
-                            }
-                            .disabled(monitor.isBusy || monitor.selectedDeviceId == nil)
-                        }
-                        Button("Sign out of GrillirG", role: .destructive) { monitor.signOut() }
-                    } else {
-                        Text("Sign in to read the grills linked to your GrillirG account. PitTech sends your email and one-time code to GrillirG and stores the returned session in this device's Keychain.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        TextField("GrillirG email", text: $email).textInputAutocapitalization(.never).keyboardType(.emailAddress).autocorrectionDisabled()
-                        Button("Send sign-in code") { Task { await monitor.requestCode(email: email) } }
-                            .disabled(monitor.isBusy || email.isEmpty)
-                        SecureField("Six-digit code", text: $verificationCode).keyboardType(.numberPad)
-                        Button("Sign in") { Task { await monitor.signIn(email: email, code: verificationCode) } }
-                            .disabled(monitor.isBusy || verificationCode.count != 6)
-                    }
-                    if let notice = monitor.notice {
-                        Text(notice).font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                Section("Experimental providers") {
-                    ProviderRow(name: "Pit Boss / Louisiana", subtitle: "Read-only cloud monitoring · experimental on Android", experimental: true)
-                    ProviderRow(name: "Traeger WiFIRE", subtitle: "Read-only cloud monitoring · experimental on Android", experimental: true)
-                    Text("These two experimental providers are not connected in the current iOS build.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle("Devices")
-            .task { await monitor.restore() }
-        }
-    }
-
-    @ViewBuilder private func temperatureRow(_ title: String, keys: [String], snapshot: GrillirGSnapshot) -> some View {
-        let value = keys.compactMap { snapshot.readings[$0] ?? snapshot.status[$0] }.first
-        LabeledContent(title, value: value.map { "\($0.formatted()) \(snapshot.temperatureUnit)" } ?? "Not reported")
-    }
-
-    private func connectionLabel(_ snapshot: GrillirGSnapshot) -> String {
-        let value = snapshot.status["onlineStatus"]
-        if value == 0 { return "Online" }
-        if value == 1 { return "Offline" }
-        return "Not reported"
-    }
-
-    private func runningLabel(_ snapshot: GrillirGSnapshot) -> String {
-        let value = snapshot.readings["runningStatus"] ?? snapshot.status["runningStatus"]
-        if value == 1 { return "Starting" }
-        if value == 2 { return "Cooking" }
-        if value == 3 { return "Off" }
-        if value == 4 { return "Shutting down" }
-        if value == 5 { return "Controller reports an error" }
-        return "Not reported"
-    }
-}
-
-struct ProviderRow: View {
-    let name: String
-    let subtitle: String
-    let experimental: Bool
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.body.weight(.semibold))
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if experimental { Text("EXPERIMENTAL").font(.caption2.weight(.bold)).foregroundStyle(.secondary) }
-        }
-        .padding(.vertical, 4)
     }
 }
 
