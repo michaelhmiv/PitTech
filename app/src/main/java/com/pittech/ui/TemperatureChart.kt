@@ -69,7 +69,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     val minX = if (followLatest) fullMax - span else (windowStart ?: fullMin).coerceIn(fullMin, fullMax - span)
     val maxX = minX + span
     val applicableTargets = targets.filter { selectedDish == null || it.dishId == null || it.dishId == selectedDish }
-    val applicableHistory = targetHistory.filter { selectedDish == null || it.dishId == null || it.dishId == selectedDish }
+    val applicableHistory = targetHistory.filter { !it.targetType.startsWith("removed_dish_") && (selectedDish == null || it.dishId == null || it.dishId == selectedDish) }
     val values = points.filter { x(it.cookId, it.measuredAtUtcMillis) in minX..maxX }.map { y(it.value, it.unit) } + applicableTargets.map { y(it.value, it.unit) } + applicableHistory.map { y(it.value, it.unit) }
     val yTicks = CookChartMath.ticks((values.minOrNull() ?: 0.0) - 5, (values.maxOrNull() ?: if (unit == "°F") 300.0 else 150.0) + 5)
     val minY = yTicks.first(); val maxY = yTicks.last()

@@ -17,6 +17,7 @@ class CookChartMathTest {
         assertEquals(.8, CookChartMath.slopePerMinute(values, "°F")!!, .00001)
         assertEquals(.8 * 5 / 9, CookChartMath.slopePerMinute(values, "°C")!!, .00001)
         assertNull(CookChartMath.slopePerMinute(values.take(2), "°F"))
+        assertNull(CookChartMath.slopePerMinute(listOf(r("a", 100.0, 0), r("b", 110.0, 1_800_000), r("c", 120.0, 3_600_000)), "°F"))
     }
     @Test fun identicalNamesStaySeparateAndRenamingKeepsIdentity() {
         val first = r("a", 160.0, 0)

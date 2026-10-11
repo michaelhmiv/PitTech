@@ -36,7 +36,7 @@ struct CookListView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     SectionTitle(title: "Cooks", subtitle: "Keep the whole cook in one place.")
                     Button { showingStart = true } label: {
-                        Label("Start a cook", systemImage: "plus.circle.fill")
+                        Label("Prepare a cook", systemImage: "plus.circle.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 54)
                     }
@@ -111,10 +111,17 @@ struct StartCookSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var firstDish = ""
+    @State private var alreadyCooking = false
+    @State private var foodOn = Date.now
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Current stage") {
+                    Toggle("Already cooking", isOn: $alreadyCooking)
+                    if alreadyCooking { DatePicker("Actual Food on", selection: $foodOn, in: ...Date.now) }
+                    else { Text("Preparing until you log Food on.") }
+                }
                 Section("Cook") {
                     TextField("Cook name", text: $title)
                     TextField("First dish (optional)", text: $firstDish)
@@ -124,14 +131,14 @@ struct StartCookSheet: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Start cook")
+            .navigationTitle("Prepare a cook")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
-                        store.startCook(title: title, firstDish: firstDish)
-                        dismiss()
+                        store.startCook(title: title, firstDish: firstDish, alreadyCooking: alreadyCooking, foodOn: foodOn)
+                        if store.saveError == nil { dismiss() }
                     }
                 }
             }
