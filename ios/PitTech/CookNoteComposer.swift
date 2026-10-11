@@ -39,7 +39,7 @@ struct CookNoteComposer: View {
                     Section("Temperature") {
                         TextField("Probe or location", text: $t.probeName)
                         TextField("Temperature", text: $t.valueText).keyboardType(.numbersAndPunctuation)
-                        Picker("Measurement", selection: $t.measurementType) { Text("Food").tag("food"); Text("Pit").tag("pit") }
+                        Picker("Measurement", selection: Binding(get: { ["pit", "pit_ambient"].contains(t.measurementType) ? "pit" : "food" }, set: { t.measurementType = $0 })) { Text("Food").tag("food"); Text("Pit").tag("pit") }
                         Picker("Unit", selection: $t.unit) { Text("°F").tag("°F"); Text("°C").tag("°C") }
                         Picker("Temperature for", selection: Binding(get: { t.dishId ?? "" }, set: { t.dishId = $0.isEmpty ? nil : $0 })) {
                             Text("Whole cook").tag("")

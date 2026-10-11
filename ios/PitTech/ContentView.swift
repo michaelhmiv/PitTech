@@ -82,6 +82,7 @@ struct CookListView: View {
 }
 
 struct CookCard: View {
+    @Environment(CookStore.self) private var store
     let cook: CookRecord
     let dishes: [String]
 
@@ -98,7 +99,7 @@ struct CookCard: View {
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 4)
-            if cook.isActive { Text("LIVE").font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent) }
+            if cook.isActive { Text(store.timingMode(cook.id) == "explicit_phases" ? store.phaseSummary(cook.id) : "Active").font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent).lineLimit(2) }
             Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
         }
         .padding(14)

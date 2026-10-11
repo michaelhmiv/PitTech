@@ -100,11 +100,13 @@ import UIKit
         store.startCook(title: "Reference", firstDish: "Prior ribs")
         let sourceId = try XCTUnwrap(store.library.cooks.last?.id), sourceDish = try XCTUnwrap(store.dishRecords(sourceId).first?.id), currentDish = try XCTUnwrap(store.dishRecords(id).first?.id)
         try store.saveReference(id, reference: NativeCookReference(dishId: currentDish, sourceCookId: sourceId, sourceDishId: sourceDish))
+        store.library.readings = store.library.readings.map { row in guard var o = row.objectValue else { return row }; o["unit"] = .string("F"); return .object(o) }
         let archive = try store.exportArchive()
         XCTAssertEqual(try CookStore.previewArchive(archive).version, 6)
         let destination = CookStore(directory: try folder()); XCTAssertEqual(try destination.importArchive(archive).imported, 2)
         XCTAssertEqual(destination.library.events, store.library.events)
         XCTAssertEqual(destination.library.logReadingLinks, store.library.logReadingLinks)
+        XCTAssertEqual(destination.library.readings.first?.objectValue?["unit"]?.stringValue, "°F")
         XCTAssertEqual(destination.timingMode(id), "explicit_phases")
         XCTAssertEqual(destination.prepChecklist(id)?.items[0].done, true)
         XCTAssertEqual(destination.savedReference(id, dishId: currentDish)?.sourceDishId, sourceDish)
