@@ -23,7 +23,7 @@ struct CookDetailView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
                             Text(cook.title).font(.largeTitle.bold())
-                            Text(cook.isActive ? store.phaseSummary(cookId) : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
+                            Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
                             HStack { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
                             shortcutBar
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
@@ -80,14 +80,14 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
-                Text(store.phaseSummary(cookId)).font(.title2.bold())
+                Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())
                 if store.timingMode(cookId) == "legacy_preserved" {
                     Text("Legacy timer · original session start retained").font(.caption)
                     Text("Elapsed \(duration(max(0, context.date.timeIntervalSince(cook.startedAt)) * 1_000))")
                     Button("Use actual Food on timing") { foodOnTime = cook.startedAt; adopting = true }
                 }
                 if cook.isActive { CookPrepChecklist(cookId: cookId) }
-                ForEach(store.phases(cookId, now: context.date)) { phase in
+                if store.timingMode(cookId) == "explicit_phases" { ForEach(store.phases(cookId, now: context.date)) { phase in
                     VStack(alignment: .leading, spacing: 5) {
                         Text("\(phase.name) · \(CookPhaseEngine.label(phase.phase))").font(.headline)
                         Text("Cooking \(duration(phase.cooking)) · Rest \(duration(phase.rest)) · Hold \(duration(phase.hold))").font(.subheadline.monospacedDigit())
@@ -98,6 +98,7 @@ struct CookDetailView: View {
                             Text(row.objectValue?["name"]?.stringValue ?? "Preparation item").font(.caption)
                         }
                     }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                }
                 }
                 if cook.isActive { Button("Log preheat started") { open(category: "action", action: "preheat_start") }; Text("Preheat can overlap prep. Cooking starts at actual Food on.").font(.caption).foregroundStyle(.secondary) }
                 if let notes = cook.notes, !notes.isEmpty { Text(notes).font(.subheadline) }

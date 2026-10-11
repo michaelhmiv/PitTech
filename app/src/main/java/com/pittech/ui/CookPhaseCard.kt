@@ -21,12 +21,12 @@ import kotlinx.coroutines.delay
     var adoptionTime by rememberSaveable(data.cook.id) { mutableLongStateOf(data.cook.startedAtUtcMillis) }
     Card(Modifier.fillMaxWidth().testTag("cook-phase-card")) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (data.cook.status == CookStatus.COMPLETED) "Finished" else CookPhases.summary(phases), style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("cook-physical-phase"))
+            Text(if (data.cook.status == CookStatus.COMPLETED) "Finished" else if (legacy) "Active · legacy timing" else CookPhases.summary(phases), style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("cook-physical-phase"))
             if (legacy) {
                 Text("Legacy timer · saved start and pause history retained.", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { showAdopt = true }, modifier = Modifier.testTag("cook-adopt-food-on")) { Text("Use actual Food on timing") }
             }
-            phases.forEach { phase ->
+            if (!legacy) phases.forEach { phase ->
                 val name = data.dishes.firstOrNull { it.id == phase.dishId }?.name ?: "Whole cook"
                 Text("$name · ${CookPhases.label(phase.phase)}", style = MaterialTheme.typography.titleMedium)
                 Text("Cooking ${duration(phase.cookingMillis)} · Rest ${duration(phase.restMillis)} · Hold ${duration(phase.holdMillis)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("dish-clocks-${phase.dishId ?: "whole"}"))

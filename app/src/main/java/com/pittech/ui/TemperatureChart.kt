@@ -34,7 +34,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     markers: List<TimelineEventEntity> = emptyList(), onMarker: ((TimelineEventEntity) -> Unit)? = null, chartHeight: Dp = 260.dp,
     connectionGaps: List<TimelineEventEntity> = emptyList(), displayUnit: String? = null,
     targets: List<TargetEntity> = emptyList(), targetHistory: List<TargetHistory> = emptyList(),
-    photos: List<PhotoEntity> = emptyList(), interactive: Boolean = true) {
+    photos: List<PhotoEntity> = emptyList(), interactive: Boolean = true, timingMode: String = "legacy_preserved") {
     val valid = readings.filter { it.qualityStatus == "valid" && it.value.isFinite() && it.unit in setOf("°F", "°C") }
     val unit = displayUnit?.takeIf { it in setOf("°F", "°C") } ?: valid.firstOrNull()?.unit ?: "°F"
     var clockMode by rememberSaveable { mutableStateOf(false) }
@@ -116,7 +116,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
             if (cookNames.size <= 1) {
                 val cookId = markers.firstOrNull()?.cookId ?: valid.firstOrNull()?.cookId
                 if (cookId != null) {
-                    val phases = CookPhases.all(plans, selectedDish?.let { listOf(it) } ?: dishNames.keys.toList(), cookStartTimes[cookId] ?: firstTime, markers.firstOrNull { it.eventType == "cook_finished" }?.occurredAtUtcMillis ?: valid.maxOfOrNull { it.measuredAtUtcMillis } ?: System.currentTimeMillis())
+                    val phases = if (timingMode != "explicit_phases") emptyList() else CookPhases.all(plans, selectedDish?.let { listOf(it) } ?: dishNames.keys.toList(), cookStartTimes[cookId] ?: firstTime, markers.firstOrNull { it.eventType == "cook_finished" }?.occurredAtUtcMillis ?: valid.maxOfOrNull { it.measuredAtUtcMillis } ?: System.currentTimeMillis())
                     phases.forEachIndexed { lane, p -> p.intervals.forEach { interval ->
                         val a = x(cookId, interval.start).coerceIn(minX, maxX); val b = x(cookId, interval.end).coerceIn(minX, maxX)
                         if (b > a) drawRect(color(interval.phase).copy(alpha = 0.13f), Offset(px(a), top + lane * (bottom - top) / phases.size.coerceAtLeast(1)), androidx.compose.ui.geometry.Size(px(b) - px(a), (bottom - top) / phases.size.coerceAtLeast(1)))

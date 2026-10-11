@@ -168,7 +168,7 @@ struct InsightsView: View {
                         return Double(end - cook.startedAtUtcMillis) / 3_600_000
                     }
                     if let average = durations.average {
-                        MetricCard(title: "Average cook time", value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", symbol: "clock")
+                        MetricCard(title: "Average session time", value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", symbol: "clock")
                     }
                     if !store.completedCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
