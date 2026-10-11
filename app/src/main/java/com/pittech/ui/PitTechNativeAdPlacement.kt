@@ -14,8 +14,10 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -98,18 +101,23 @@ internal fun PitTechNativeAdPlacement(adsEnabled: Boolean) {
         actionTextColor = MaterialTheme.colorScheme.onPrimary.toArgb(),
     )
     Card(
-        modifier = Modifier.fillMaxWidth().testTag("cook-history-native-ad"),
+        modifier = Modifier.fillMaxWidth().testTag("cook-list-native-ad"),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 "Ad",
+                modifier = Modifier
+                    .defaultMinSize(minWidth = 20.dp, minHeight = 18.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
             )
             AndroidView(
                 modifier = Modifier.fillMaxWidth(),
@@ -155,7 +163,7 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
     }
     val headline = TextView(context).apply {
         setTextColor(style.headlineColor)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
         setTypeface(typeface, Typeface.BOLD)
         maxLines = 2
         setPadding(0, 0, context.dp(40), 0)
@@ -168,7 +176,7 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
     val media = MediaView(context)
     val body = TextView(context).apply {
         setTextColor(style.headlineColor)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
         setPadding(0, context.dp(8), 0, context.dp(8))
     }
     val callToAction = TextView(context).apply {

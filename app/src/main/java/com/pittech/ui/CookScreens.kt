@@ -76,7 +76,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
 import com.pittech.CooksViewModel
-import com.pittech.ads.shouldShowCookHistoryNativeAd
+import com.pittech.ads.shouldShowCookListNativeAd
 import com.pittech.R
 import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookStatus
@@ -351,11 +351,7 @@ private fun CooksHome(
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
-    val showHistoryAd = shouldShowCookHistoryNativeAd(
-        adsEnabled = adsEnabled,
-        activeCookCount = activeCooks.size,
-        completedCookCount = finishedCooks.size,
-    )
+    val showCookListAd = shouldShowCookListNativeAd(adsEnabled)
 
     Column(
         modifier = modifier
@@ -386,20 +382,26 @@ private fun CooksHome(
 
         if (activeCooks.isNotEmpty()) {
             SectionHeading("Active cook")
+            if (showCookListAd) {
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+            }
             activeCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
         }
 
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Recent cooks")
-            finishedCooks.forEachIndexed { index, cook ->
+            if (showCookListAd && activeCooks.isEmpty()) {
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+            }
+            finishedCooks.forEach { cook ->
                 CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) })
-                if (showHistoryAd && index == 3) {
-                    PitTechNativeAdPlacement(adsEnabled = true)
-                }
             }
         }
 
         if (cooks.isEmpty()) {
+            if (showCookListAd) {
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+            }
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),

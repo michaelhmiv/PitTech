@@ -1,24 +1,69 @@
-name: Play closed testing
+name: Play release
 
 on:
-  # API edit commits can submit pending Play Console declarations; keep this upload owner-triggered.
   workflow_dispatch:
+    inputs:
+      release_track:
+        description: Upload to Alpha closed testing or start a staged production rollout.
+        required: true
+        type: choice
+        options:
+          - alpha
+          - production
+        default: alpha
+      confirm_production_readiness:
+        description: Confirm Play production access, required store disclosures, and UMP setup are complete.
+        required: true
+        type: boolean
+        default: false
+      rollout_fraction:
+        description: Portion of users in the initial production rollout.
+        required: true
+        type: choice
+        options:
+          - "0.05"
+          - "0.10"
+          - "0.25"
+          - "0.50"
+        default: "0.10"
 
 concurrency:
-  group: pittech-play-closed-testing
+  group: pittech-play-release
   queue: max
 
 permissions:
   contents: read
 
 jobs:
-  publish-alpha:
-    name: Build and publish Alpha closed-test bundle
+  publish-play-release:
+    name: Build and publish Play release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Check out main
         uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Require explicit production-readiness confirmation
+        env:
+          RELEASE_TRACK: ${{ inputs.release_track }}
+          CONFIRM_PRODUCTION_READINESS: ${{ inputs.confirm_production_readiness }}
+          ROLLOUT_FRACTION: ${{ inputs.rollout_fraction }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_TRACK" != "alpha" && "$RELEASE_TRACK" != "production" ]]; then
+            echo "::error::Choose the Alpha or production Play track."
+            exit 1
+          fi
+          if [[ "$RELEASE_TRACK" == "production" && "$CONFIRM_PRODUCTION_READINESS" != "true" ]]; then
+            echo "::error::Production publishing requires confirmation that Play production access and required Play disclosures are complete."
+            exit 1
+          fi
+          if [[ "$RELEASE_TRACK" == "production" && "$ROLLOUT_FRACTION" != "0.05" && "$ROLLOUT_FRACTION" != "0.10" && "$ROLLOUT_FRACTION" != "0.25" && "$ROLLOUT_FRACTION" != "0.50" ]]; then
+            echo "::error::Choose a supported staged-rollout fraction."
+            exit 1
+          fi
 
       - name: Verify signing and Google service-account secrets are configured
         env:
@@ -75,12 +120,16 @@ jobs:
 
       # These KSP variants export Room schemas to the same directory, so keep them in separate Gradle invocations.
       - name: Run unit tests
-        run: gradle --no-daemon testDebugUnitTest -PpittechLiveAds=false
+        env:
+          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' }}
+        run: gradle --no-daemon testDebugUnitTest -PpittechLiveAds=${PITTECH_LIVE_ADS}
 
-      - name: Build release bundle
+      - name: Build release bundle with the track's ad unit
+        env:
+          PITTECH_LIVE_ADS: ${{ inputs.release_track == 'production' }}
         run: >-
           gradle --no-daemon bundleRelease
-          -PpittechLiveAds=false
+          -PpittechLiveAds=${PITTECH_LIVE_ADS}
           -PpittechVersionCode=${{ steps.version.outputs.code }}
           -PpittechVersionName=${{ steps.version.outputs.name }}
 
@@ -125,20 +174,33 @@ jobs:
           GCP_PROJECT_ID: ${{ steps.google-auth.outputs.project_id }}
 
       - name: Publish to Play Alpha closed testing
+        if: inputs.release_track == 'alpha'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJson: ${{ steps.google-auth.outputs.credentials_file_path }}
           packageName: com.pittech
           releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
-          releaseName: main-${{ github.run_number }}
+          releaseName: alpha-${{ github.run_number }}
           tracks: alpha
           # Alpha already has an active release; make this update available to enrolled testers.
           status: completed
 
+      - name: Publish staged production rollout
+        if: inputs.release_track == 'production'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJson: ${{ steps.google-auth.outputs.credentials_file_path }}
+          packageName: com.pittech
+          releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
+          releaseName: production-${{ github.run_number }}
+          tracks: production
+          status: inProgress
+          userFraction: ${{ inputs.rollout_fraction }}
+
       - name: Keep a copy of the uploaded bundle
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: pittech-play-alpha-${{ steps.version.outputs.name }}
+          name: pittech-play-${{ inputs.release_track }}-${{ steps.version.outputs.name }}
           path: app/build/outputs/bundle/release/app-release-signed.aab
           if-no-files-found: error
           retention-days: 14
