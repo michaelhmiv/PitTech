@@ -258,6 +258,17 @@ class CookRepository(
         try {
             draft.photoUris.forEach { uri -> importedPhotos += photoStorage.copyIntoLibrary(uri, cookId, id, now) }
             database.withTransaction {
+                val existingDishes = dao.getDishesForCook(cookId).map { it.id }
+                if (existingDishes.isNotEmpty() && database.experienceDao().lifecycle(cookId)?.timingMode == "explicit_phases") {
+                    dao.getTimelineEventsForCook(cookId).forEach { event ->
+                        val metadata = com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)
+                        val action = com.pittech.domain.PlaybookCodec.action(event.eventType, event.noteMetadataJson)
+                        if (event.dishId == null && metadata?.dishIds.isNullOrEmpty() && action in com.pittech.domain.CookPhases.phaseActions) {
+                            val scoped = (metadata ?: com.pittech.domain.CookNoteMetadata("action", action)).copy(dishIds = existingDishes)
+                            dao.updateTimelineEvent(event.copy(noteMetadataJson = scoped.encode()))
+                        }
+                    }
+                }
                 dao.insertDish(dish)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)

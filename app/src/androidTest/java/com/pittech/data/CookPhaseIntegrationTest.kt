@@ -27,6 +27,9 @@ class CookPhaseIntegrationTest {
             repo.adoptFoodOnTiming(active, null)
             assertEquals("explicit_phases", db.experienceDao().lifecycle(active)!!.timingMode)
             assertEquals(1, notePlanEvents(db.cookDao().getTimelineEventsForCook(active)).count { it.action == "food_on" })
+            val added = repo.addDish(active, DishDraft("Chicken", "Poultry"))
+            val current = repo.observeCookDetail(active).first()!!
+            assertEquals("prep", CookPhases.all(notePlanEvents(current.events), current.dishes.map { it.id }, current.cook.startedAtUtcMillis, System.currentTimeMillis()).first { it.dishId == added }.phase)
             val removedDish = detail.dishes.single()
             repo.notes.save(CookNoteDraft(cookId = active, dishId = removedDish.id, action = "wrap", category = "action", title = "Wrap", occurredAt = start + 1_000))
             repo.deleteDish(removedDish)
