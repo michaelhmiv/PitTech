@@ -87,8 +87,8 @@ class ConnectedCookScreenTest {
         } }
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "wrap" } } }
-        val wrapped = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "wrap" } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } } }
+        val wrapped = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } }
         assertTrue(com.pittech.data.TemperatureContext.decode(wrapped.temperatureContextJson).any { it.name == "Chamber" })
         compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("event-temperature-context").assertExists()
@@ -111,8 +111,8 @@ class ConnectedCookScreenTest {
         val before = backend.calls.get()
         compose.onNodeWithTag("cook-quick-wrap").performClick()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "wrap" } } }
-        val wrap = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "wrap" } }
+        compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } } }
+        val wrap = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" } }
         assertTrue(backend.calls.get() > before)
         assertTrue(com.pittech.data.TemperatureContext.decode(wrap.temperatureContextJson).isNotEmpty())
         assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().all { it.samplingIntervalMillis == 0L } })
