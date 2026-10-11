@@ -67,7 +67,10 @@ class LiveUpgradeRecordingTest {
         val id = witness.getString("cookId")
         val installedAfter = File(app.filesDir, "upgrade-install-started.txt").readText().trim().toLong()
         // No ActivityScenario or Compose rule: only the package receiver may recover the service.
-        await { app.recordingServiceRunning.value && (app.database.recordingDao().getRecording(id)?.lastReceivedAtUtcMillis ?: 0) > installedAfter }
+        // The shell already proved foreground service + accepted receipt without an activity.
+        // Starting Android instrumentation recreates the target process; read the durable DB proof.
+        assertTrue(File(app.filesDir, "upgrade-recording-receipt.txt").readText().trim().toLong() > installedAfter)
+        await { (app.database.recordingDao().getRecording(id)?.lastReceivedAtUtcMillis ?: 0) > installedAfter }
         val cook = app.database.cookDao().getCook(id)!!
         val recording = app.database.recordingDao().getRecording(id)!!
         assertEquals(witness.getLong("startedAt"), cook.startedAtUtcMillis)
