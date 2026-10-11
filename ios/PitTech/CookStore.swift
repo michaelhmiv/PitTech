@@ -52,6 +52,15 @@ final class CookStore {
         let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, library.cooks.contains(where: { $0.id == cookId }) else { return }
         let now = Int64(Date.now.timeIntervalSince1970 * 1_000)
+        let prior = library, scopes = dishRecords(cookId).map(\.id)
+        if !scopes.isEmpty && timingMode(cookId) == "explicit_phases" {
+            let actions = library.actions(for: cookId)
+            library.events = library.events.map { row in
+                guard var o = row.objectValue, o["cookId"]?.stringValue == cookId, let id = o["id"]?.stringValue, let action = actions.first(where: { $0.id == id }), action.dishIds.isEmpty, CookPhaseEngine.actions.contains(action.action) else { return row }
+                var metadata = o["noteMetadataJson"]?.stringValue.flatMap { try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) } ?? CookNoteMetadata(category: "action", action: action.action)
+                metadata.dishIds = scopes; o["noteMetadataJson"] = .string(metadata.json); return .object(o)
+            }
+        }
         library.dishes.append(.object([
             "id": .string(UUID().uuidString.lowercased()),
             "cookId": .string(cookId),
@@ -61,6 +70,7 @@ final class CookStore {
             "updatedAtUtcMillis": .number(Double(now))
         ]))
         save()
+        if saveError != nil { library = prior }
     }
 
     func updateCook(_ cookId: String, title: String, notes: String) {

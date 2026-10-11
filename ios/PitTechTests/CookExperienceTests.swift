@@ -81,10 +81,8 @@ import UIKit
     }
     func testDifferentDishesHaveIndependentPhasesAndLegacyTimingRequiresAdoption() throws {
         let store = CookStore(directory: try folder())
-        store.startCook(title: "Two dishes", firstDish: "Ribs"); let id = try XCTUnwrap(store.activeCooks.first?.id)
+        store.startCook(title: "Two dishes", firstDish: "Ribs", alreadyCooking: true, foodOn: Date.now.addingTimeInterval(-60)); let id = try XCTUnwrap(store.activeCooks.first?.id)
         store.addDish(cookId: id, name: "Chicken")
-        let first = try XCTUnwrap(store.dishRecords(id).first)
-        try store.saveNote(CookNoteDraft(cookId: id, dishId: first.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: Date.now.addingTimeInterval(-60).timeIntervalSince1970 * 1_000))
         XCTAssertEqual(Set(store.phases(id).map(\.phase)), ["prep", "cooking"])
         let original = try XCTUnwrap(store.activeCooks.first?.startedAtUtcMillis)
         store.library.lifecycles = []; store.save()
