@@ -458,7 +458,8 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
-        composeRule.onNodeWithText("Temperature over time · °F").assertIsDisplayed()
+        composeRule.onNodeWithText("Temperature (°F)").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("chart-x-axis").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
         saveScreenshot("cook-live-actions")
         composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
