@@ -114,4 +114,17 @@ class CookFeedPresentationTest {
         assertEquals("prep", phases["potatoes"])
         assertEquals(listOf(wrap, removed), data.events)
     }
+    @Test fun phaseTimerTracksTheCurrentHoldAfterFoodReturnsToTheGrill() {
+        val cook = CookEntity("cook", "Mixed phases", CookStatus.ACTIVE, 0, "UTC", createdAtUtcMillis = 0, updatedAtUtcMillis = 0)
+        val food = DishEntity("butt", cook.id, "Pork butt", "Pork", null, createdAtUtcMillis = 0, updatedAtUtcMillis = 0)
+        val actions = listOf("food_on", "remove", "rest_start", "hold_start", "food_on", "remove", "rest_start", "hold_start")
+        val events = actions.mapIndexed { index, action -> event(type = action).copy(id = "action-" + index, occurredAtUtcMillis = (index + 1) * 10L) }
+        val data = CookDetailData(cook, listOf(food), emptyList(), events, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(),
+            lifecycle = CookLifecycle(cook.id, "explicit_phases"))
+        val phase = FoodLivePresentation.phases(data, 100).single()
+        assertEquals("holding", phase.phase)
+        assertEquals(30L, phase.holdMillis)
+        assertEquals(20L, FoodLivePresentation.phaseElapsed(phase))
+    }
+
 }

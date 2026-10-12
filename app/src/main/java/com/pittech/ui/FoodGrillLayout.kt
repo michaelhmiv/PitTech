@@ -72,7 +72,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                                 Text(dish.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             }
                             if (phase != null) {
-                                val duration = when (phase.phase) { "resting" -> phase.restMillis; "holding" -> phase.holdMillis; else -> phase.cookingMillis }
+                                val duration = FoodLivePresentation.phaseElapsed(phase)
                                 Text((if (legacy && phase.phase == "prep") "Status not recorded" else (if (legacy) "Last recorded: " else "") + CookPhases.label(phase.phase)) +
                                     (if (!legacy && duration > 0) " · " + foodDuration(duration) else ""), style = MaterialTheme.typography.bodySmall)
                             }

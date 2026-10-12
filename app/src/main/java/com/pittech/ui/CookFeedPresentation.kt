@@ -4,6 +4,7 @@ import com.pittech.data.*
 import com.pittech.domain.CookNoteMetadata
 import com.pittech.domain.PlaybookCodec
 import com.pittech.domain.CookPhases
+import com.pittech.domain.DishPhase
 import com.pittech.devices.GrillSamplingPolicy
 
 internal enum class TimelineFilter(val label: String) {
@@ -58,6 +59,10 @@ internal object FoodLivePresentation {
         notePlanEvents(data.events).let { events ->
             if (data.lifecycle?.timingMode == "explicit_phases") events else events.filter { it.dishId != null }
         }, data.dishes.map { it.id }, data.cook.startedAtUtcMillis, end)
+
+    fun phaseElapsed(phase: DishPhase): Long = if (phase.phase in setOf("prep", "done")) 0 else
+        phase.intervals.lastOrNull()?.takeIf { it.phase == phase.phase }
+            ?.let { (it.end - it.start).coerceAtLeast(0) } ?: 0
 
     fun temperatures(foodId: String, probes: List<ProbeEntity>, assignments: List<ProbeAssignmentEntity>,
         readings: List<SensorReadingEntity>, recording: CookRecordingEntity?, now: Long): List<FoodTemperature> {
