@@ -76,7 +76,7 @@ class MealRecipeUserFlowsTest {
         compose.onNodeWithTag("live-finish-cook").performScrollTo().performClick()
         compose.onNodeWithTag("finish-cook-save").performClick()
         waitFor("dish-save-recipe-${mac.id}")
-        compose.onNodeWithTag("dish-save-recipe-${mac.id}").performScrollTo().performClick()
+        compose.onNode(hasTestTag("dish-save-recipe-${mac.id}") and hasAnyAncestor(hasTestTag("meal-completion-choices"))).performScrollTo().performClick()
         compose.onNodeWithTag("recipe-name").performTextClearance(); compose.onNodeWithTag("recipe-name").performTextInput("Mac variation")
         compose.onNodeWithTag("recipe-save").performClick()
         compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().size == 4 } }

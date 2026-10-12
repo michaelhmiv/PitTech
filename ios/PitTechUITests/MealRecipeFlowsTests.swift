@@ -14,12 +14,23 @@ final class MealRecipeFlowsTests: XCTestCase {
         app.tabBars.buttons["Saved Recipes"].tap()
         for name in ["Chicken", "Mac and cheese", "Pork"] {
             let toggle = app.buttons["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
+            XCTAssertEqual(toggle.value as? String, "Selected")
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()
         let foods = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"))
-        XCTAssertTrue(foods.firstMatch.waitForExistence(timeout: 15)); XCTAssertEqual(foods.count, 3)
+        XCTAssertTrue(foods.firstMatch.waitForExistence(timeout: 15))
+        // Scroll views expose visible cards to accessibility, so collect stable identities across the viewport.
+        var seenFoods = Set<String>()
+        for _ in 0..<6 {
+            seenFoods.formUnion(foods.allElementsBoundByIndex.map(\.identifier))
+            if seenFoods.count == 3 { break }
+            app.swipeUp()
+        }
+        XCTAssertEqual(seenFoods.count, 3)
         capture("Native composed meal")
-        let reminders = app.buttons["Reminders"].firstMatch; reveal(reminders, app: app); reminders.tap()
+        let reminders = app.buttons["Reminders"].firstMatch
+        for _ in 0..<6 { if reminders.exists && reminders.isHittable { break }; app.swipeDown() }
+        reveal(reminders, app: app); reminders.tap()
         let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Chicken · last time")).firstMatch
         reveal(suggestion, app: app); suggestion.tap()
         app.buttons["reminder-rule-save"].tap()

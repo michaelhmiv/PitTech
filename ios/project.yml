@@ -55,7 +55,11 @@ targets:
   PitTechTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [PitTechTests]
+    sources:
+      - path: PitTechTests
+        excludes: ["Fixtures/**"]
+      - path: PitTechTests/Fixtures/android-meal-v9.zip
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

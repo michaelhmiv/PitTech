@@ -114,7 +114,7 @@ jobs:
           retention-days: 14
 
       - name: Capture App Store screenshots from the Simulator app
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           mkdir -p build/app-store-screenshots

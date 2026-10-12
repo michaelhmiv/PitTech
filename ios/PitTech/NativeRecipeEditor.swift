@@ -158,7 +158,7 @@ struct NativeRecipeEditor: View {
     private func setRow(_ index: Int, key: String, value: JSONValue, targets: Bool) { var rows = targets ? snapshot.targets : snapshot.instructions, row = rows[index].objectValue ?? [:]; row[key] = value; rows[index] = .object(row); if targets { snapshot.targets = rows } else { snapshot.instructions = rows } }
     private func setBinding(_ id: String, assets: Bool) -> Binding<Bool> { Binding(get: { assets ? keptAssets.contains(id) : keptPhotos.contains(id) }, set: { selected in if assets { if selected { keptAssets.insert(id) } else { keptAssets.remove(id) } } else { if selected { keptPhotos.insert(id) } else { keptPhotos.remove(id) } } }) }
     private func captionBinding(_ id: String, original: String) -> Binding<String> { Binding(get: { captions[id] ?? original }, set: { captions[id] = $0 }) }
-    @ViewBuilder private func recipePhoto(_ o: [String: JSONValue]) -> some View { if let path = o["archivePath"]?.stringValue, let image = UIImage(contentsOfFile: store.photoURL(path).path) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).accessibilityLabel("Recipe reference photo") } }
+    @ViewBuilder private func recipePhoto(_ o: [String: JSONValue]) -> some View { if let path = o["archivePath"]?.stringValue, let image = store.photoPreview(path) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).accessibilityLabel("Recipe reference photo") } }
     private func save() {
         guard !saving else { return }; saving = true
         do {
