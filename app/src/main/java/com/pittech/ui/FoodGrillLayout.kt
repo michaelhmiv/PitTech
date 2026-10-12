@@ -176,4 +176,8 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
 }
 
 private fun foodClock(at: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at))
-private fun foodDuration(duration: Long): String = (duration / 3_600_000).toString() + "h " + ((duration / 60_000) % 60) + "m"
+private fun foodDuration(duration: Long): String {
+    val hours = duration / 3_600_000
+    val minutes = (duration / 60_000) % 60
+    return if (hours > 0) hours.toString() + "h " + minutes + "m" else minutes.toString() + "m"
+}

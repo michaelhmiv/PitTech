@@ -37,6 +37,13 @@ internal object CookFeedPresentation {
             TimelineFilter.GRILL -> event.source == "controller_cloud" || isSetpoint(event)
             TimelineFilter.ALL -> true
         }
+    fun readingName(reading: SensorReadingEntity, dishes: List<DishEntity>, scopes: List<String>): String {
+        val food = dishes.firstOrNull { it.id == reading.dishId }?.name
+        if (reading.probeName.equals("Food", true) || reading.probeName.equals("Food probe", true))
+            return food ?: if (reading.measurementType.startsWith("pit")) "Pit" else reading.probeName
+        return if (food != null && scopes.singleOrNull() != reading.dishId) food + " · " + reading.probeName else reading.probeName
+    }
+
     fun title(event: TimelineEventEntity): String {
         if (isSetpoint(event)) return event.title.replace("Grill setpoint changed to", "Grill set to")
         val action = PlaybookCodec.action(event.eventType, event.noteMetadataJson)

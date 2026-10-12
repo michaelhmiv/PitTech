@@ -127,4 +127,13 @@ class CookFeedPresentationTest {
         assertEquals(20L, FoodLivePresentation.phaseElapsed(phase))
     }
 
+    @Test fun temperaturesInMultiFoodNotesIdentifyTheirFoodAndKeepCustomProbeNames() {
+        val food = DishEntity("steaks", "cook", "Shoulder steaks", "Pork", null, createdAtUtcMillis = 0, updatedAtUtcMillis = 0)
+        val reading = sample("spot", food.id, null, 100, source = "manual").copy(probeName = "Food")
+        assertEquals("Shoulder steaks", CookFeedPresentation.readingName(reading, listOf(food), listOf("steaks", "potatoes")))
+        val handheld = reading.copy(probeName = "Handheld")
+        assertEquals("Shoulder steaks · Handheld", CookFeedPresentation.readingName(handheld, listOf(food), emptyList()))
+        assertEquals("Handheld", CookFeedPresentation.readingName(handheld, listOf(food), listOf(food.id)))
+    }
+
 }

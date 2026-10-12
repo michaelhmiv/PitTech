@@ -23,6 +23,7 @@ class FoodFirstCookScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app get() = compose.activity.application as PitTechApplication
     private fun screenshot(name: String) {
+        compose.waitForIdle()
         val file = File(app.filesDir, "pittech-ui-test/" + name + ".png").apply { parentFile!!.mkdirs() }
         InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().apply {
             file.outputStream().use { compress(Bitmap.CompressFormat.PNG, 100, it) }; recycle()

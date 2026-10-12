@@ -1010,8 +1010,11 @@ private fun TimelineTab(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
                 var open by remember { mutableStateOf(false) }
-                OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("timeline-filter-menu")) {
-                    Text(selectedFilter.label, modifier = Modifier.weight(1f)); Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                Column {
+                    Text("Entries", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
+                    OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("timeline-filter-menu")) {
+                        Text(selectedFilter.label, modifier = Modifier.weight(1f)); Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                    }
                 }
                 DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     TimelineFilter.entries.forEach { filter ->
@@ -1301,7 +1304,7 @@ private fun TimelineEventCard(
             val linkedIds = data.logReadingLinks.filter { it.eventId == event.id }.map { it.readingId }.toSet()
             data.readings.filter { it.id in linkedIds }.forEach { reading ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(reading.probeName + ": " + reading.value + " " + reading.unit, modifier = Modifier.weight(1f))
+                    Text(CookFeedPresentation.readingName(reading, data.dishes, scopes) + ": " + reading.value + " " + reading.unit, modifier = Modifier.weight(1f))
                     if (event.source == "manual") TimelineEntryMenu(reading.id, reading.probeName,
                         "temperature-actions-" + reading.probeName, "temperature-edit-" + reading.probeName, "temperature-delete-" + reading.probeName,
                         onEdit, onDelete)
