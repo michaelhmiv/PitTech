@@ -15,6 +15,9 @@ import com.pittech.devices.PolarisPayload
 import com.pittech.devices.PolarisSample
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
+import com.pittech.domain.CookPlaybook
+import com.pittech.domain.CookPlanEngine
+import com.pittech.domain.PlaybookStep
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -51,14 +54,39 @@ class CookRecordingIntegrationTest {
     private suspend fun ingest(id: String, time: Long, setpoint: Double = 250.0) = recording.ingest(id, CookTelemetryPolicy.deviceKey(device.id), sample(time, setpoint), state(time))
 
     @Test fun bindingDeduplicationAndFinishPreventMisattributionAndLateWrites() = runBlocking {
-        val id = cook()
+        val companion = CookCompanionRepository(db, PhotoStorage(context))
+        val book = CookPlaybook("Finish with pending checks",
+            NewCookDraft("Connected test", dishes = listOf(DishDraft("Roast", "Beef"), DishDraft("Loin", "Pork"))),
+            listOf(PlaybookStep(id = "rest-check", dishIndex = 0, stage = "resting"),
+                PlaybookStep(id = "hold-check", dishIndex = 1, stage = "holding")))
+        val playbook = companion.save(book)
+        val id = cooks.startCook(book.draft.copy(playbookId = playbook))
+        val dishes = db.cookDao().getDishesForCook(id)
+        dishes.forEach { dish ->
+            cooks.addTimelineEvent(id, dish.id, "meat_on", "Food on", null, base - 5_000)
+            cooks.addTimelineEvent(id, dish.id, "rest", "Start rest", null, base - 4_000)
+        }
+        cooks.addTimelineEvent(id, dishes[1].id, "hold_start", "Start hold", null, base - 3_000)
+        val events = notePlanEvents(db.cookDao().getTimelineEventsForCook(id))
+        assertEquals("resting", CookPlanEngine.stage(events, dishes[0].id))
+        assertEquals("holding", CookPlanEngine.stage(events, dishes[1].id))
+        val pendingPlan = companion.plan(id)!!
+        assertEquals("pending", pendingPlan.progress["rest-check"]?.status ?: "pending")
+        assertEquals("pending", pendingPlan.progress["hold-check"]?.status ?: "pending")
         recording.attach(id, device, "°F", now = base)
         recording.ingest(id, CookTelemetryPolicy.deviceKey("wrong"), sample(base + 1_000), state(base + 1_000))
         assertTrue(db.cookDao().getAllSensorReadings().isEmpty())
         ingest(id, base + 1_000); ingest(id, base + 1_000)
         assertEquals(4, db.cookDao().getAllSensorReadings().size)
         assertEquals("unavailable", db.cookDao().getAllSensorReadings().single { it.probeName == "Probe 2" }.qualityStatus)
+        cooks.saveCookResults(id, null, "", "°F", "", emptyMap(), "", finish = true)
+        val finished = db.cookDao().getCook(id)!!
+        assertEquals(CookStatus.COMPLETED, finished.status)
+        assertNotNull(finished.endedAtUtcMillis)
+        assertEquals(pendingPlan.progress, companion.plan(id)!!.progress)
         cooks.completeCook(id)
+        assertEquals(finished.endedAtUtcMillis, db.cookDao().getCook(id)!!.endedAtUtcMillis)
+        assertEquals(1, db.cookDao().getTimelineEventsForCook(id).count { it.eventType == "cook_finished" })
         ingest(id, System.currentTimeMillis() + 15_000)
         assertEquals(4, db.cookDao().getAllSensorReadings().size)
         assertEquals(CookRecordingEntity.STOPPED, db.recordingDao().getRecording(id)!!.status)

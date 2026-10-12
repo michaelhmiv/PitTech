@@ -1091,6 +1091,7 @@ internal fun SimpleDropdownField(
     onSelect: (String) -> Unit,
     testTag: String? = null,
     modifier: Modifier = Modifier.fillMaxWidth(),
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(modifier) {
@@ -1098,6 +1099,7 @@ internal fun SimpleDropdownField(
         Box {
             OutlinedButton(
                 onClick = { expanded = true },
+                enabled = enabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
@@ -1106,7 +1108,7 @@ internal fun SimpleDropdownField(
                 Text(value, modifier = Modifier.weight(1f))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose $label")
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option) },
