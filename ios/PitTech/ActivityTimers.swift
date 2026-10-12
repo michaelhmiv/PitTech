@@ -24,7 +24,7 @@ extension CookStore {
         guard library.cooks.contains(where: { $0.id == cookId && $0.isActive }), !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CookNoteError.invalid }
         let prior = library
         library.activityTimers.append(.object(["id": .string(UUID().uuidString.lowercased()), "cookId": .string(cookId), "dishId": dishId.map(JSONValue.string) ?? .null,
-            "title": .string(title), "method": method.map(JSONValue.string) ?? .null, "startedAtUtcMillis": .number(Date.now.timeIntervalSince1970 * 1000),
+            "title": .string(title), "method": method.map(JSONValue.string) ?? .null, "startedAtUtcMillis": .number(Double(Int64(Date.now.timeIntervalSince1970 * 1000))),
             "noteId": .string(UUID().uuidString.lowercased()), "status": .string("running"), "desiredDurationMillis": target.map(JSONValue.number) ?? .null]))
         do { try library.validateActivityTimers(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) } }
         catch { library = prior; throw error }
@@ -33,7 +33,7 @@ extension CookStore {
         guard let index = library.activityTimers.firstIndex(where: { $0.objectValue?["id"]?.stringValue == id }), var o = library.activityTimers[index].objectValue,
               ["running", "stopped"].contains(o["status"]?.stringValue ?? ""), let start = o["startedAtUtcMillis"]?.numberValue,
               let cookId = o["cookId"]?.stringValue, let noteId = o["noteId"]?.stringValue else { throw CookNoteError.invalid }
-        let end = o["stoppedAtUtcMillis"]?.numberValue ?? at
+        let end = Double(Int64(o["stoppedAtUtcMillis"]?.numberValue ?? at))
         guard end >= start else { throw CookNoteError.invalid }
         let prior = library
         o["stoppedAtUtcMillis"] = .number(end); o["status"] = .string("stopped")
