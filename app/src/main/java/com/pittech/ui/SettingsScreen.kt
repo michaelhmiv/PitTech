@@ -63,6 +63,7 @@ fun SettingsScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     var savedCrashReport by remember(context) { mutableStateOf(CrashDiagnostics.savedReport(context)) }
+    var backupDetails by remember { mutableStateOf(false) }
     var feedbackKindName by rememberSaveable { mutableStateOf<String?>(null) }
     var feedbackTitle by rememberSaveable { mutableStateOf("") }
     var feedbackDescription by rememberSaveable { mutableStateOf("") }
@@ -265,10 +266,11 @@ fun SettingsScreen(
 
         SectionCard("Your data") {
             Text("Your cook records and photos stay in PitTech's private storage on this phone. No account is needed, and you can use your cook log offline. Save a backup somewhere you can find it if you change phones or reinstall PitTech.", style = MaterialTheme.typography.bodyLarge)
-            Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.", style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { backupDetails = !backupDetails }) { Text(if (backupDetails) "Hide backup details" else "Backup details") }
+            if (backupDetails) Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.", style = MaterialTheme.typography.bodyMedium)
             Button(onClick = { zip.launch("PitTech_Backup.zip") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Save full backup (ZIP)") }
             OutlinedButton(onClick = { viewModel.createShareArchive() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("share-full-backup")) { Text("Share full backup (ZIP)") }
-            Text("Share opens Android's app chooser. The ZIP is sent only after you choose an app; available destinations depend on what is installed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (backupDetails) Text("Share opens Android's app chooser. The ZIP is sent only after you choose an app; available destinations depend on what is installed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { xlsx.launch("PitTech_Cook_Log.xlsx") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export Excel workbook") }
             OutlinedButton(onClick = { csv.launch("PitTech_Readings.csv") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export temperature readings (CSV)") }
             OutlinedButton(onClick = { restore.launch(arrayOf("application/zip", "application/x-zip-compressed")) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Restore from ZIP backup") }

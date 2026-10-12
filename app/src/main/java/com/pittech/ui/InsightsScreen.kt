@@ -25,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,7 +77,7 @@ fun InsightsScreen(
         Text("Learn from your cooks", style = MaterialTheme.typography.headlineMedium)
         Text(
             if (data.cooks.isEmpty()) "Your cook history and readings will appear here."
-            else "Compare the records you have saved. A comparison describes the cooks; it does not prove what caused a result.",
+            else "Find a cook, revisit the results, or compare what you tried.",
             style = MaterialTheme.typography.bodyLarge,
         )
 
@@ -85,15 +87,7 @@ fun InsightsScreen(
                 Button(onClick = onStartCook, modifier = Modifier.fillMaxWidth()) { Text("Start a cook") }
             }
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricCard("Completed", completed.size.toString(), Modifier.weight(1f))
-                MetricCard("Avg. time", durationValues.takeIf { it.isNotEmpty() }?.average()?.let(::formatMinutes) ?: "—", Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricCard("Avg. rating", ratings.takeIf { it.isNotEmpty() }?.average()?.let { "%.1f / 5".format(it) } ?: "—", Modifier.weight(1f))
-                MetricCard("Readings", data.readings.size.toString(), Modifier.weight(1f))
-            }
-
+            var showStatistics by rememberSaveable { mutableStateOf(false) }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -156,7 +150,10 @@ fun InsightsScreen(
                                 Text((if (item.cook.id in favoriteIds) "★ " else "") + item.cook.title, style = MaterialTheme.typography.titleLarge)
                                 Text(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(item.cook.startedAtUtcMillis)), style = MaterialTheme.typography.bodyMedium)
                                 Text(item.dishes.joinToString { it.cut?.takeIf(String::isNotBlank) ?: it.name }.ifBlank { "No dishes recorded" }, style = MaterialTheme.typography.bodyLarge)
-                                Text("${item.cook.status.replaceFirstChar { it.uppercase() }} · ${data.readings.count { it.cookId == item.cook.id }} readings · ${rating?.let { "rating %.1f/5".format(it) } ?: "no rating"}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(item.cook.status.replaceFirstChar { it.uppercase() } + (rating?.let { " · " + "%.1f/5".format(it) } ?: ""), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                data.results.firstOrNull { it.cookId == item.cook.id && !it.textValue.isNullOrBlank() }?.textValue?.let {
+                                    Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                                }
                             }
                             if (comparing && item.cook.status == CookStatus.COMPLETED) {
                                 Spacer(Modifier.width(8.dp))
@@ -172,6 +169,19 @@ fun InsightsScreen(
                 }
             }
             if (comparing) Text("Choose two to four completed cooks to compare.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { showStatistics = !showStatistics }, modifier = Modifier.testTag("insights-statistics")) { Text(if (showStatistics) "Hide statistics" else "Cook statistics") }
+            if (showStatistics) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricCard("Completed", completed.size.toString(), Modifier.weight(1f))
+                MetricCard("Avg. time", durationValues.takeIf { it.isNotEmpty() }?.average()?.let(::formatMinutes) ?: "—", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricCard("Avg. rating", ratings.takeIf { it.isNotEmpty() }?.average()?.let { "%.1f / 5".format(it) } ?: "—", Modifier.weight(1f))
+                MetricCard("Readings", data.readings.size.toString(), Modifier.weight(1f))
+            }
+
+            }
+
         }
     }
 }

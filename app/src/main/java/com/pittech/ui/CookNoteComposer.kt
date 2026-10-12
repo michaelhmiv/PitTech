@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.DishEntity
@@ -36,9 +37,10 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
     var localError by remember { mutableStateOf<String?>(null) }
-    var showDetails by rememberSaveable(draft.id) { mutableStateOf(editing) }
+    var showDetails by rememberSaveable(draft.id) { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable(draft.id) { mutableStateOf(photoFirst) }
     var staging by remember { mutableStateOf(false) }
+    var captionIds by rememberSaveable(draft.id) { mutableStateOf(emptyList<String>()) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val latestDraft by rememberUpdatedState(draft)
     val latestBusy by rememberUpdatedState(busy)
@@ -70,42 +72,69 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
     val camera = rememberCameraPhotoCapture(onPhotoCaptured = { stage(listOf(it)) })
     fun keepDraft() { scope.launch { viewModel.persistNoteDraft(draft); onClose() } }
     AlertDialog(
+        modifier = Modifier.systemBarsPadding().imePadding(),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         onDismissRequest = { if (!busy && !staging) keepDraft() },
         title = { Text(if (editing && draft.category == "temperature") "Edit temperature" else if (editing) "Edit timeline entry" else "Add to cook log") },
         text = {
             Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (showDetails) OutlinedTextField(draft.title, { onChange(draft.copy(title = it)) }, label = { Text("Entry title") }, modifier = Modifier.fillMaxWidth().testTag("timeline-entry-title"))
-                OutlinedTextField(draft.description, { onChange(draft.copy(description = it)) }, label = { Text("Notes or details") }, minLines = 2,
+                val choices = foodChoices(dishes)
+                val scopeLabel = if (draft.dishIds.isNotEmpty()) draft.dishIds.size.toString() + " foods" else
+                    choices.firstOrNull { it.first == draft.dishId }?.second ?: "Whole cook"
+                SimpleDropdownField("For", scopeLabel, listOf("Whole cook") + choices.map { it.second } + listOf("Select multiple foods…"), { label ->
+                    if (label == "Select multiple foods…") showDetails = true
+                    else {
+                        val food = choices.firstOrNull { it.second == label }?.first
+                        val followScope = draft.dishIds.isEmpty()
+                        onChange(draft.copy(dishId = food, dishIds = emptyList(), temperatures = draft.temperatures.map {
+                            if (followScope && it.dishId == draft.dishId && it.measurementType.startsWith("food")) it.copy(dishId = food) else it
+                        }))
+                    }
+                }, testTag = "note-food-scope")
+                OutlinedTextField(draft.description, { onChange(draft.copy(description = it)) }, label = { Text("Observation") }, minLines = 2,
                     modifier = Modifier.fillMaxWidth().testTag("timeline-entry-details"))
                 draft.temperatures.forEachIndexed { index, t ->
                     fun change(next: NoteTemperature) { onChange(draft.copy(temperatures = draft.temperatures.map { if (it.id == t.id) next else it })) }
-                    HorizontalDivider()
-                    Text("Temperature ${index + 1}", style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(t.probeName, { change(t.copy(probeName = it)) }, label = { Text("Probe or location") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-probe" else "temperature-probe-${t.id}"))
-                    OutlinedTextField(t.valueText, { change(t.copy(valueText = it)) }, label = { Text("Temperature") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-value" else "temperature-value-${t.id}"))
-                    SimpleDropdownField("Measurement", if (t.measurementType.startsWith("pit")) "Pit" else "Food", listOf("Food", "Pit"), { change(t.copy(measurementType = if (it == "Pit") "pit" else "food")) })
-                    SimpleDropdownField("Unit", t.unit, listOf("°F", "°C"), { change(t.copy(unit = it)) })
-                    SimpleDropdownField("Temperature for", dishes.firstOrNull { it.id == t.dishId }?.name ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { name -> change(t.copy(dishId = dishes.firstOrNull { it.name == name }?.id)) })
-                    DateTimePickerField("Measured at", t.measuredAt, { change(t.copy(measuredAt = it)) }, "temperature-time-${t.id}")
+                    OutlinedTextField(t.valueText, { change(t.copy(valueText = it)) }, label = { Text("Temperature (" + t.unit + ")") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-value" else "temperature-value-" + t.id))
+                    if (showDetails) {
+                        OutlinedTextField(t.probeName, { change(t.copy(probeName = it)) }, label = { Text("Probe or location") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-probe" else "temperature-probe-" + t.id))
+                        SimpleDropdownField("Measurement", if (t.measurementType.startsWith("pit")) "Pit" else "Food", listOf("Food", "Pit"), { label ->
+                            change(t.copy(measurementType = if (label == "Pit") "pit" else "food", dishId = if (label == "Pit") null else draft.dishId))
+                        })
+                        SimpleDropdownField("Unit", t.unit, listOf("°F", "°C"), { change(t.copy(unit = it)) })
+                        SimpleDropdownField("Temperature for", choices.firstOrNull { it.first == t.dishId }?.second ?: "Whole cook",
+                            listOf("Whole cook") + choices.map { it.second }, { label -> change(t.copy(dishId = choices.firstOrNull { it.second == label }?.first)) })
+                        DateTimePickerField("Measured at", t.measuredAt, { change(t.copy(measuredAt = it)) }, "temperature-time-" + t.id)
+                    }
                     TextButton(onClick = { onChange(draft.copy(temperatures = draft.temperatures.filterNot { it.id == t.id })) }) { Text("Remove temperature") }
                 }
-                OutlinedButton(onClick = { onChange(draft.copy(temperatures = draft.temperatures + NoteTemperature(unit = preferredUnit, measuredAt = draft.occurredAt, dishId = draft.dishId))) }, modifier = Modifier.fillMaxWidth().testTag("note-add-temperature")) { Text("Add temperature") }
-                OutlinedButton(onClick = { showPhotoSource = true }, enabled = !staging, modifier = Modifier.fillMaxWidth().testTag("note-add-photo")) { Text("Attach photos") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showPhotoSource = true }, enabled = !staging, modifier = Modifier.weight(1f).testTag("note-add-photo")) { Text("+ Photo") }
+                    OutlinedButton(onClick = { onChange(draft.copy(temperatures = draft.temperatures + NoteTemperature(unit = preferredUnit, measuredAt = draft.occurredAt, dishId = draft.dishId))) },
+                        modifier = Modifier.weight(1f).testTag("note-add-temperature")) { Text("+ Temp") }
+                }
                 draft.photos.forEachIndexed { index, photo ->
                     NotePhotoPreview(photo)
-                    OutlinedTextField(photo.caption, { caption -> onChange(draft.copy(photos = draft.photos.map { if (it.id == photo.id) it.copy(caption = caption) else it })) },
-                        label = { Text("Photo caption") }, modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "timeline-photo-caption" else "timeline-photo-caption-${photo.id}"))
-                    TextButton(onClick = { onChange(draft.copy(photos = draft.photos.filterNot { it.id == photo.id })) }) { Text("Remove photo") }
+                    if (photo.caption.isNotBlank() || photo.id in captionIds || showDetails)
+                        OutlinedTextField(photo.caption, { caption -> onChange(draft.copy(photos = draft.photos.map { if (it.id == photo.id) it.copy(caption = caption) else it })) },
+                            label = { Text("Photo caption") }, modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "timeline-photo-caption" else "timeline-photo-caption-" + photo.id))
+                    Row {
+                        if (photo.caption.isBlank() && photo.id !in captionIds && !showDetails)
+                            TextButton(onClick = { captionIds = captionIds + photo.id }, modifier = Modifier.testTag("note-caption-" + photo.id)) { Text("Add caption") }
+                        TextButton(onClick = { onChange(draft.copy(photos = draft.photos.filterNot { it.id == photo.id })) }) { Text("Remove photo") }
+                    }
                 }
                 if (staging) LinearProgressIndicator(Modifier.fillMaxWidth())
-                TextButton(onClick = { showDetails = !showDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) { Text(if (showDetails) "Hide entry details" else "Add date, dish, or action") }
+                TextButton(onClick = { showDetails = !showDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) { Text(if (showDetails) "Hide details" else "More details") }
                 if (showDetails) {
-                    val actions = linkedMapOf("None" to null) + PlaybookCodec.actions.entries.associate { it.value to it.key } + mapOf("Preheat" to "preheat_start", "Season" to "season", "Trim" to "trim", "Marinate" to "marinate", "Add fuel" to "add_fuel")
-                    SimpleDropdownField("Action", actions.entries.firstOrNull { it.value == draft.action }?.key ?: "None", actions.keys.toList(), { label -> onChange(draft.copy(action = actions[label], category = if (actions[label] != null) "action" else draft.category)) }, testTag = "timeline-entry-type")
-                    Text("For", style = MaterialTheme.typography.labelLarge)
-                    FilterChip(selected = draft.dishId == null && draft.dishIds.isEmpty(), onClick = { onChange(draft.copy(dishId = null, dishIds = emptyList())) }, label = { Text("Whole cook") })
+                    OutlinedTextField(draft.title, { onChange(draft.copy(title = it)) }, label = { Text("Entry title") }, modifier = Modifier.fillMaxWidth().testTag("timeline-entry-title"))
+                    val actions = linkedMapOf("None" to null) + PlaybookCodec.actions.entries.associate { it.value to it.key } +
+                        mapOf("Preheat" to "preheat_start", "Season" to "season", "Trim" to "trim", "Marinate" to "marinate", "Add fuel" to "add_fuel")
+                    SimpleDropdownField("Action", actions.entries.firstOrNull { it.value == draft.action }?.key ?: "None", actions.keys.toList(),
+                        { label -> onChange(draft.copy(action = actions[label], category = if (actions[label] != null) "action" else draft.category)) }, testTag = "timeline-entry-type")
+                    Text("Foods in this note", style = MaterialTheme.typography.labelLarge)
                     dishes.forEach { dish ->
                         val selected = dish.id == draft.dishId || dish.id in draft.dishIds
                         FilterChip(selected, onClick = {

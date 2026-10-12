@@ -353,6 +353,7 @@ private fun CooksHome(
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
     val showCookListAd = shouldShowCookListNativeAd(adsEnabled)
+    var showPlanning by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -361,6 +362,14 @@ private fun CooksHome(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (activeCooks.isNotEmpty()) {
+            SectionHeading("Active cook")
+            if (showCookListAd) {
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+            }
+            activeCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
+        }
+
         Button(
             onClick = onStartCook,
             modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp).testTag("start-cook"),
@@ -371,7 +380,7 @@ private fun CooksHome(
             Text("Prepare a cook")
         }
 
-        Text(
+        if (cooks.isEmpty()) Text(
             "Your cook records stay on this phone. No account is needed.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -379,15 +388,8 @@ private fun CooksHome(
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
 
-        playbooks()
-
-        if (activeCooks.isNotEmpty()) {
-            SectionHeading("Active cook")
-            if (showCookListAd) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
-            }
-            activeCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
-        }
+        TextButton(onClick = { showPlanning = !showPlanning }, modifier = Modifier.testTag("home-planning-toggle")) { Text(if (showPlanning) "Hide planning" else "Planning and playbooks") }
+        if (showPlanning) playbooks()
 
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Recent cooks")
@@ -519,7 +521,7 @@ private fun StartCookScreen(
     var probe2 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe4 by rememberSaveable { mutableStateOf<String?>(null) }
-    var smoker by rememberSaveable { mutableStateOf(initialDraft?.smokerName.orEmpty()) }
+    var smoker by rememberSaveable { mutableStateOf(initialDraft?.smokerName ?: grillState.selectedDevice?.name.orEmpty()) }
     val prepApp = LocalContext.current.applicationContext as com.pittech.PitTechApplication
     var maintenanceNote by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(smoker, equipmentProfiles) {
@@ -800,7 +802,7 @@ internal fun DishEditorDialog(
     onSave: (DishDraft) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
-    var foodType by rememberSaveable { mutableStateOf(initial?.foodType ?: "Pork") }
+    var foodType by rememberSaveable { mutableStateOf(initial?.foodType ?: "Other") }
     var cut by rememberSaveable { mutableStateOf(initial?.cut.orEmpty()) }
     var weight by rememberSaveable { mutableStateOf(initial?.weightText.orEmpty()) }
     var weightUnit by rememberSaveable { mutableStateOf(initial?.weightUnit ?: preferredWeightUnit) }
@@ -819,7 +821,7 @@ internal fun DishEditorDialog(
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val requestDismiss = {
-        val hasInput = name.isNotBlank() || foodType != "Pork" || cut.isNotBlank() || weight.isNotBlank() ||
+        val hasInput = name.isNotBlank() || foodType != "Other" || cut.isNotBlank() || weight.isNotBlank() ||
             startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() ||
             preparationItems.any { it.name.isNotBlank() || it.amountText.isNotBlank() } || photoUris.isNotEmpty()
         if (hasInput) confirmDiscard = true else onDismiss()
@@ -852,6 +854,11 @@ internal fun DishEditorDialog(
                     supportingText = { if (nameError) Text("Enter a dish name or cut.") },
                     modifier = Modifier.fillMaxWidth().testTag("dish-name"),
                 )
+                TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("dish-details-toggle")) {
+                    Text(if (detailsExpanded) "Hide food details" else "More food details")
+                }
+
+                if (detailsExpanded) {
                 SimpleDropdownField(
                     label = "Food type",
                     value = foodType,
@@ -888,11 +895,7 @@ internal fun DishEditorDialog(
                     )
                 }
 
-                TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("dish-details-toggle")) {
-                    Text(if (detailsExpanded) "Hide preparation details" else "Add preparation details")
-                }
 
-                if (detailsExpanded) {
                     Text("Starting condition", style = MaterialTheme.typography.titleMedium)
                     SimpleDropdownField(
                         label = "Optional",
@@ -929,6 +932,18 @@ internal fun DishEditorDialog(
                     PrepComboTools(preparationItems) { preparationItems = it }
                     preparationItems.forEachIndexed { index, item ->
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = item.name,
+                                onValueChange = { value ->
+                                    preparationItems = preparationItems.mapIndexed { i, current -> if (i == index) current.copy(name = value) else current }
+                                },
+                                label = { Text("Ingredient or preparation") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("preparation-name-$index"),
+                            )
+                            var itemDetails by rememberSaveable(index) { mutableStateOf(false) }
+                            TextButton(onClick = { itemDetails = !itemDetails }, modifier = Modifier.testTag("preparation-item-details-" + index)) { Text(if (itemDetails) "Hide item details" else "Item details") }
+                            if (itemDetails) {
                             SimpleDropdownField(
                                 label = "Type",
                                 value = item.stage.replace('_', ' ').replaceFirstChar { it.titlecase() },
@@ -939,15 +954,6 @@ internal fun DishEditorDialog(
                                     }
                                 },
                                 testTag = "preparation-type-$index",
-                            )
-                            OutlinedTextField(
-                                value = item.name,
-                                onValueChange = { value ->
-                                    preparationItems = preparationItems.mapIndexed { i, current -> if (i == index) current.copy(name = value) else current }
-                                },
-                                label = { Text("Ingredient or preparation") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth().testTag("preparation-name-$index"),
                             )
                             OutlinedTextField(
                                 value = item.brand,
@@ -986,6 +992,7 @@ internal fun DishEditorDialog(
                                     testTag = "preparation-unit-$index",
                                     modifier = Modifier.width(106.dp),
                                 )
+                            }
                             }
                         }
                     }

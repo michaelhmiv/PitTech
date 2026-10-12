@@ -95,6 +95,46 @@ class CookRecordingIntegrationTest {
         try { recording.attach(id, device, "°F", now = base); fail("Finished cooks cannot record") } catch (_: IllegalArgumentException) { }
     }
 
+    @Test fun ingredientsCanBeAddedDuringACookAndEditedWithoutLosingTheirIdentity() = runBlocking {
+        val id = cook()
+        val dishes = db.cookDao().getDishesForCook(id)
+        val original = IngredientEntity("synthetic-butter", id, dishes[0].id, "seasoning", "Butter", createdAtUtcMillis = base)
+        cooks.saveIngredient(original)
+        cooks.saveIngredient(original.copy(name = "Salted butter", amountValue = 2.0, amountUnit = "tbsp", appliedAtUtcMillis = base + 1_000, notes = "Added while wrapping", createdAtUtcMillis = base + 2_000))
+        val saved = db.cookDao().getIngredientsForCook(id).single()
+        assertEquals(original.id, saved.id)
+        assertEquals(base, saved.createdAtUtcMillis)
+        assertEquals(base + 1_000, saved.appliedAtUtcMillis)
+        assertEquals("Added while wrapping", saved.notes)
+        try { cooks.saveIngredient(saved.copy(dishId = dishes[1].id)); fail("An existing ingredient cannot change ownership") } catch (_: IllegalArgumentException) { }
+        try { cooks.saveIngredient(saved.copy(amountValue = -1.0)); fail("Invalid amounts must be rejected") } catch (_: IllegalArgumentException) { }
+        assertEquals(saved, db.cookDao().getIngredientsForCook(id).single())
+    }
+
+    @Test fun backdatedProbeMoveReattributesOnlyItsControllerIntervalAndKeepsEntryTime() = runBlocking {
+        val id = cook()
+        val dishes = db.cookDao().getDishesForCook(id)
+        recording.attach(id, device, "°F", mapOf("probe1" to dishes[0].id), now = base)
+        ingest(id, base + 1_000)
+        ingest(id, base + 16_000)
+        val probe = db.cookDao().getProbesForCook(id).single { it.name == "Probe 1" }
+        cooks.addManualTemperature(id, dishes[0].id, "Handheld", "food", 155.0, "°F", base + 17_000)
+        val originalIds = db.cookDao().getAllSensorReadings().map { it.id }.toSet()
+        recording.assignProbe(probe.id, id, dishes[1].id, now = base + 25_000, movedAt = base + 15_000)
+        val rows = db.cookDao().getAllSensorReadings()
+        assertEquals(originalIds, rows.map { it.id }.toSet())
+        assertEquals(dishes[0].id, rows.single { it.probeId == probe.id && it.measuredAtUtcMillis == base + 1_000 }.dishId)
+        assertEquals(dishes[1].id, rows.single { it.probeId == probe.id && it.measuredAtUtcMillis == base + 16_000 }.dishId)
+        assertEquals(dishes[0].id, rows.single { it.source == "manual" }.dishId)
+        val changed = db.cookDao().getTimelineEventsForCook(id).last { it.eventType == "probe_assigned" && it.dishId == dishes[1].id }
+        assertEquals(base + 15_000, changed.occurredAtUtcMillis)
+        assertEquals(base + 25_000, changed.recordedAtUtcMillis)
+        assertEquals(dishes[0].id, db.recordingDao().assignmentAt(probe.id, base + 14_999)!!.dishId)
+        assertEquals(dishes[1].id, db.recordingDao().assignmentAt(probe.id, base + 15_000)!!.dishId)
+        try { recording.assignProbe(probe.id, id, dishes[0].id, now = base + 26_000, movedAt = base + 14_000); fail("Overlapping history must be rejected") } catch (_: IllegalArgumentException) {}
+        assertEquals(dishes[1].id, db.recordingDao().currentAssignment(probe.id)!!.dishId)
+    }
+
     @Test fun assignmentsAndSnapshotsPreserveEarlierDishHistoryAndPhotoCaptureContext() = runBlocking {
         val id = cook()
         val dishes = db.cookDao().getDishesForCook(id)

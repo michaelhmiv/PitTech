@@ -129,7 +129,10 @@ class CooksViewModel(
 
     fun pauseGrillRecording(cookId: String) = perform { app.recordingRepository.pause(cookId); reconcileRecording() }
     fun stopGrillRecording(cookId: String) = perform { app.recordingRepository.stop(cookId); reconcileRecording() }
-    fun assignGrillProbe(cookId: String, probeId: String, dishId: String?) = perform { app.recordingRepository.assignProbe(probeId, cookId, dishId) }
+    fun assignGrillProbe(cookId: String, probeId: String, dishId: String?, movedAt: Long? = null, onFinished: ((Boolean) -> Unit)? = null) = perform({
+        val now = System.currentTimeMillis()
+        app.recordingRepository.assignProbe(probeId, cookId, dishId, now, movedAt ?: now)
+    }, onFinished)
     init {
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
     }
@@ -328,6 +331,11 @@ class CooksViewModel(
         repository.addDish(cookId, draft)
         _notice.value = "Dish added."
     }
+
+    fun saveIngredient(ingredient: com.pittech.data.IngredientEntity, onFinished: (Boolean) -> Unit) = perform({
+        repository.saveIngredient(ingredient)
+        _notice.value = "Ingredient saved."
+    }, onFinished)
 
     fun updateDish(dish: DishEntity) = perform {
         repository.updateDishDetails(dish)

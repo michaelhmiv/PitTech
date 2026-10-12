@@ -284,6 +284,19 @@ class CookRepository(
         return id
     }
 
+    suspend fun saveIngredient(ingredient: IngredientEntity) = database.withTransaction {
+        require(dao.getDish(ingredient.dishId)?.cookId == ingredient.cookId) { "This food is not part of this cook." }
+        require(ingredient.name.isNotBlank()) { "Enter an ingredient name." }
+        require(ingredient.amountValue == null || (ingredient.amountValue.isFinite() && ingredient.amountValue > 0)) {
+            "Enter a positive amount or leave it blank."
+        }
+        val existing = dao.getAllIngredients().firstOrNull { it.id == ingredient.id }
+        require(existing == null || (existing.cookId == ingredient.cookId && existing.dishId == ingredient.dishId)) {
+            "This ingredient belongs to another food."
+        }
+        dao.saveIngredient(ingredient.copy(name = ingredient.name.trim(), createdAtUtcMillis = existing?.createdAtUtcMillis ?: ingredient.createdAtUtcMillis))
+    }
+
     suspend fun updateDishDetails(dish: DishEntity) {
         require(dish.name.isNotBlank()) { "Enter a dish name." }
         require(dish.weightValue == null || (dish.weightValue > 0.0 && dish.weightValue.isFinite())) { "Enter a positive weight or leave it blank." }
