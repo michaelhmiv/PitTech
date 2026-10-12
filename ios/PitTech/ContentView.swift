@@ -100,7 +100,7 @@ struct CookCard: View {
                 .font(.title2)
                 .foregroundStyle(cook.isActive ? PitTechStyle.accent : PitTechStyle.sage)
                 .frame(width: 42, height: 42)
-                .background(.white, in: RoundedRectangle(cornerRadius: 13))
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13))
             VStack(alignment: .leading, spacing: 4) {
                 Text(cook.title).font(.headline).foregroundStyle(.primary)
                 Text(dishes.isEmpty ? cook.startedAt.formatted(date: .abbreviated, time: .shortened) : dishes.joined(separator: " · "))
@@ -111,7 +111,7 @@ struct CookCard: View {
             Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
         }
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -213,7 +213,7 @@ struct MetricCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 

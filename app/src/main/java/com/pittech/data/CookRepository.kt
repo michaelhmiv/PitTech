@@ -862,7 +862,7 @@ class CookRepository(
         dao.getAllTargets().filter { it.dishId == dishId }.forEach { dao.deleteTarget(it) }
         snapshot.targets.forEach { t ->
             database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), dish.cookId, dishId, t.type, t.value, t.unit, now)))
-            dao.insertTarget(TargetEntity(UUID.randomUUID().toString(), dish.cookId, dishId, t.type, t.value, t.unit, "dish", t.explanation, now))
+            dao.insertTarget(TargetEntity(id = UUID.randomUUID().toString(), cookId = dish.cookId, dishId = dishId, targetType = t.type, value = t.value, unit = t.unit, scope = "dish", explanation = t.explanation, createdAtUtcMillis = now))
         }
         val prior = database.companionDao().get("recipe-attempt:$dishId")
         database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
