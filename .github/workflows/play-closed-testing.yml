@@ -65,6 +65,11 @@ jobs:
             exit 1
           fi
 
+      - name: Validate reviewed store update notes
+        run: |
+          python3 scripts/release_notes.py validate
+          python3 -m unittest discover -s scripts/tests -p "test_release_notes.py"
+
       - name: Verify signing and Google service-account secrets are configured
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -180,6 +185,7 @@ jobs:
           serviceAccountJson: ${{ steps.google-auth.outputs.credentials_file_path }}
           packageName: com.pittech
           releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
+          whatsNewDirectory: distribution/play/whatsnew
           releaseName: alpha-${{ github.run_number }}
           tracks: alpha
           # Alpha already has an active release; make this update available to enrolled testers.
@@ -192,6 +198,7 @@ jobs:
           serviceAccountJson: ${{ steps.google-auth.outputs.credentials_file_path }}
           packageName: com.pittech
           releaseFiles: app/build/outputs/bundle/release/app-release-signed.aab
+          whatsNewDirectory: distribution/play/whatsnew
           releaseName: production-${{ github.run_number }}
           tracks: production
           status: inProgress
