@@ -10,7 +10,7 @@ object RecipeExtraction {
         val dish = data.dishes.firstOrNull { it.id == dishId } ?: error("This dish is unavailable.")
         require(contextIds.all { id -> data.events.any { it.id == id } }) { "Choose context from this meal." }
         fun owns(e: TimelineEventEntity): Boolean = e.dishId == dishId || dishId in CookNoteMetadata.decode(e.noteMetadataJson)?.dishIds.orEmpty()
-        val owned = data.events.filter { owns(it) || it.id in contextIds }.sortedBy { it.occurredAtUtcMillis }
+        val owned = data.events.filter { owns(it) || it.id in contextIds || it.dishId == null && CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.isNullOrEmpty() && PlaybookCodec.action(it.eventType, it.noteMetadataJson) in CookPhases.phaseActions }.sortedBy { it.occurredAtUtcMillis }
         // A whole-meal Food on is explicitly an action for every original dish, not a guessed start.
         val anchorEvent = data.events.sortedBy { it.occurredAtUtcMillis }.firstOrNull { e ->
             PlaybookCodec.action(e.eventType, e.noteMetadataJson) == "food_on" &&
@@ -23,7 +23,7 @@ object RecipeExtraction {
         } + owned.flatMap { CookNoteMetadata.decode(it.noteMetadataJson)?.ingredients.orEmpty() }
         val setup = DishDraft(dish.name, dish.foodType, dish.cut.orEmpty(), dish.weightValue?.toString().orEmpty(), dish.weightUnit ?: "lb",
             dish.startingCondition, dish.boneIn, dish.placement.orEmpty(), dish.gradeOrSource.orEmpty(), dish.thicknessNotes.orEmpty(), dish.prepNotes.orEmpty(), ingredients)
-        fun relevant(reading: SensorReadingEntity) = reading.dishId == dishId || reading.measurementType in setOf("pit", "pit_ambient", "setpoint")
+        fun relevant(reading: SensorReadingEntity) = reading.dishId == dishId || reading.dishId == null && reading.measurementType in setOf("pit", "pit_ambient", "setpoint")
         fun scopedContext(event: TimelineEventEntity): String? = TemperatureContext.encode(TemperatureContext.decode(event.temperatureContextJson).filter { value ->
             val matches = data.readings.filter { it.probeName == value.name && it.value == value.value && it.unit == value.unit && it.measuredAtUtcMillis == value.observedAtUtcMillis && it.source == value.source }
             if (matches.isNotEmpty()) matches.all(::relevant) else event.dishId == dishId

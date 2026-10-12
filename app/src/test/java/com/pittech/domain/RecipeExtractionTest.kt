@@ -29,6 +29,16 @@ class RecipeExtractionTest {
         assertEquals(extracted.snapshot, RecipeSnapshotCodec.decode(RecipeSnapshotCodec.encode(extracted.snapshot)))
         assertTrue(RecipeExtraction.fromMeal(data, "mac", setOf("global")).snapshot.observations.any { it.sourceEventId == "global" })
     }
+    @Test fun sharedPhysicalActionsRemainFactsButAnotherDishsPitChannelDoesNot() {
+        val cook = CookEntity("meal", "Meal", "completed", 1000, "UTC", createdAtUtcMillis = 1000, updatedAtUtcMillis = 20000)
+        val dishes = listOf("mac", "pork").map { DishEntity(it, "meal", it, "Other", null, createdAtUtcMillis = 1000, updatedAtUtcMillis = 1000) }
+        val actions = listOf("food_on", "wrap", "remove").mapIndexed { i, action -> event(action, null, 10000L + i * 1000, action, CookNoteMetadata(action = action)) }
+        val reading = SensorReadingEntity("private-pit", "meal", "pork", probeName = "Pit", measurementType = "pit", value = 225.0, unit = "°F", measuredAtUtcMillis = 11000, timeZoneId = "UTC", source = "manual", recordedAtUtcMillis = 11000)
+        val data = CookDetailData(cook, dishes, emptyList(), actions, listOf(reading), emptyList(), emptyList(), emptyList(), emptyList(), logReadingLinks = listOf(LogReadingLink(reading.id, "wrap")))
+        val result = RecipeExtraction.fromMeal(data, "mac").snapshot
+        assertEquals(listOf("food_on", "wrap", "remove"), result.observations.map { it.action })
+        assertTrue(result.observations.flatMap { it.recordedTemperatures }.isEmpty())
+    }
     @Test fun anIncompleteAttemptRetainsUnreplacedIngredientsAndInstructions() {
         val original = RecipeSnapshot("Mac", DishDraft("Mac", "Pasta", prepNotes = "Salt pasta water", preparationItems = listOf(IngredientDraft("Gouda", amountText = "4.00", amountUnit = "oz"))),
             instructions = listOf(RecipeInstruction("boil", "Boil", durationMillis = 480000), RecipeInstruction("sauce", "Make sauce")))

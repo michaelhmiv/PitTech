@@ -25,7 +25,8 @@ enum RecipeError: LocalizedError, Equatable {
         let events = library.events.filter { $0.objectValue?["cookId"]?.stringValue == cookId }
         func metadata(_ row: JSONValue) -> CookNoteMetadata? { row.objectValue?["noteMetadataJson"]?.stringValue.flatMap { try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) } }
         func owns(_ row: JSONValue) -> Bool { row.objectValue?["dishId"]?.stringValue == dishId || metadata(row)?.dishIds.contains(dishId) == true }
-        let owned = events.filter { owns($0) || contextIds.contains($0.objectValue?["id"]?.stringValue ?? "") }
+        let sharedActions = Set(library.actions(for: cookId).filter { $0.dishIds.isEmpty && ["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done"].contains($0.action) }.map(\.id))
+        let owned = events.filter { owns($0) || contextIds.contains($0.objectValue?["id"]?.stringValue ?? "") || sharedActions.contains($0.objectValue?["id"]?.stringValue ?? "") }
         let anchor = library.actions(for: cookId).filter { $0.action == "food_on" && ($0.dishIds.isEmpty || $0.dishIds.contains(dishId)) }.map { Double(Int64($0.at)) }.min()
         var ingredients = library.ingredients.filter { $0.objectValue?["dishId"]?.stringValue == dishId }.map { row -> JSONValue in
             let o = row.objectValue ?? [:]
@@ -48,7 +49,7 @@ enum RecipeError: LocalizedError, Equatable {
             let temperatures = library.readings.compactMap { sample -> JSONValue? in
                 guard let r = sample.objectValue, let readingId = r["id"]?.stringValue, linkedIds.contains(readingId), r["qualityStatus"]?.stringValue == "valid",
                       let value = r["value"]?.numberValue, value.isFinite,
-                      r["dishId"]?.stringValue == dishId || ["pit", "pit_ambient", "setpoint"].contains(r["measurementType"]?.stringValue ?? "") || r["dishId"]?.stringValue == nil && contextIds.contains(id),
+                      r["dishId"]?.stringValue == dishId || r["dishId"]?.stringValue == nil && ["pit", "pit_ambient", "setpoint"].contains(r["measurementType"]?.stringValue ?? "") || r["dishId"]?.stringValue == nil && contextIds.contains(id),
                       let time = r["measuredAtUtcMillis"]?.numberValue else { return nil }
                 let unit = r["unit"]?.stringValue ?? "°F"
                 return .object(["sourceReadingId": .string(readingId), "probeId": r["probeId"] ?? .null, "probeName": r["probeName"] ?? .string("Food"),
@@ -61,7 +62,7 @@ enum RecipeError: LocalizedError, Equatable {
                     guard let c = value.objectValue else { return false }
                     let matches = library.readings.compactMap(\.objectValue).filter { $0["probeName"] == c["name"] && $0["value"] == c["value"] && $0["unit"] == c["unit"] && $0["measuredAtUtcMillis"] == c["observedAtUtcMillis"] && $0["source"] == c["source"] }
                     if matches.isEmpty { return o["dishId"]?.stringValue == dishId }
-                    return matches.allSatisfy { $0["dishId"]?.stringValue == dishId || ["pit", "pit_ambient", "setpoint"].contains($0["measurementType"]?.stringValue ?? "") }
+                    return matches.allSatisfy { $0["dishId"]?.stringValue == dishId || $0["dishId"]?.stringValue == nil && ["pit", "pit_ambient", "setpoint"].contains($0["measurementType"]?.stringValue ?? "") }
                 }
                 if !kept.isEmpty { scopedContext = .string(try recipeJSON(kept)) }
             }
