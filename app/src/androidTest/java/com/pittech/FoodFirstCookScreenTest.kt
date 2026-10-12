@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.net.Uri
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.platform.app.InstrumentationRegistry
@@ -70,6 +71,7 @@ class FoodFirstCookScreenTest {
             listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
                 MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action,
                     saveBounds.exactCenterX(), saveBounds.exactCenterY(), 0).apply {
+                    source = InputDevice.SOURCE_TOUCHSCREEN
                     try { assertTrue(automation.injectInputEvent(this, true)) } finally { recycle() }
                 }
             }
