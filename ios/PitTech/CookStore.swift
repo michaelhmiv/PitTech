@@ -108,7 +108,7 @@ final class CookStore {
             "source": .string("manual"),
             "qualityStatus": .string("valid"),
             "recordedAtUtcMillis": .number(Double(now)),
-            "timestampBasis": .string("manual_entry")
+            "timestampBasis": .string("measurement")
         ]))
         save()
     }
@@ -162,8 +162,10 @@ final class CookStore {
         var portable = library
         portable.schemaVersion = PitTechLibrary.archiveVersion
         portable.readings = portable.readings.map { row in
-            guard var o = row.objectValue, let unit = o["unit"]?.stringValue, ["F", "C"].contains(unit) else { return row }
-            o["unit"] = .string("°" + unit); return .object(o)
+            guard var o = row.objectValue else { return row }
+            if let unit = o["unit"]?.stringValue, ["F", "C"].contains(unit) { o["unit"] = .string("°" + unit) }
+            if o["timestampBasis"]?.stringValue == "manual_entry" { o["timestampBasis"] = .string("measurement") }
+            return .object(o)
         }
         let jsonData = try JSONEncoder().encode(portable)
         let manifest: [String: Any] = [
