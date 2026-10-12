@@ -3,11 +3,9 @@ package com.pittech
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.Uri
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
-import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.espresso.Espresso.onView
@@ -28,6 +26,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class FoodFirstCookScreenTest {
@@ -51,51 +50,44 @@ class FoodFirstCookScreenTest {
     }
     private fun saveEntryWithKeyboardOpen() {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val previousFlags = automation.serviceInfo.flags
-        automation.serviceInfo = automation.serviceInfo.apply {
-            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-        }
+        var saveBounds = Rect()
+        var diagnostic = "Waiting for the keyboard and Save entry."
         try {
-            var saveBounds = Rect()
-            var diagnostic = "Waiting for the keyboard and Save entry."
-            try {
-                compose.waitUntil(10_000) {
-                    var keyboardTop: Int? = null
-                    // The input-method accessibility window can include transparent space above
-                    // its keys. Measure the actual occlusion from the dialog's window insets.
-                    onView(isRoot()).inRoot(isDialog()).check { view, failure ->
-                        if (failure != null) throw failure
-                        val root = requireNotNull(view)
-                        val insets = ViewCompat.getRootWindowInsets(root)
-                        if (insets?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
-                            val location = IntArray(2).also { root.getLocationOnScreen(it) }
-                            keyboardTop = location[1] + root.height - insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                        }
+            compose.waitUntil(10_000) {
+                var keyboardTop: Int? = null
+                val dialogOrigin = IntArray(2)
+                // Measure the actual keyboard occlusion, rather than its accessibility window,
+                // which can include transparent space above the keys.
+                onView(isRoot()).inRoot(isDialog()).check { view, failure ->
+                    if (failure != null) throw failure
+                    val root = requireNotNull(view)
+                    root.getLocationOnScreen(dialogOrigin)
+                    val insets = ViewCompat.getRootWindowInsets(root)
+                    if (insets?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
+                        keyboardTop = dialogOrigin[1] + root.height - insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
                     }
-                    val save = automation.windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
-                        .flatMap { it.root?.findAccessibilityNodeInfosByText("Save entry").orEmpty() }
-                        .firstOrNull { it.text?.toString() == "Save entry" && it.isVisibleToUser && it.isEnabled }
-                    saveBounds = Rect().also { save?.getBoundsInScreen(it) }
-                    diagnostic = "Save bounds: $saveBounds; keyboard top: $keyboardTop"
-                    keyboardTop != null && !saveBounds.isEmpty && saveBounds.bottom <= keyboardTop!!
                 }
-            } catch (failure: Throwable) {
-                throw AssertionError("Save entry must remain above the open keyboard. $diagnostic", failure)
-            } finally {
-                screenshot("food-first-note")
+                val bounds = compose.onNodeWithTag("temperature-save").fetchSemanticsNode().boundsInWindow
+                saveBounds = Rect((bounds.left + dialogOrigin[0]).roundToInt(), (bounds.top + dialogOrigin[1]).roundToInt(),
+                    (bounds.right + dialogOrigin[0]).roundToInt(), (bounds.bottom + dialogOrigin[1]).roundToInt())
+                diagnostic = "Save bounds: $saveBounds; keyboard top: $keyboardTop"
+                keyboardTop != null && !saveBounds.isEmpty && saveBounds.bottom <= keyboardTop!!
             }
-            // Compose's performClick can reach a node covered by another window. Inject a real
-            // screen tap so this also proves the keyboard does not intercept the save button.
-            val downAt = SystemClock.uptimeMillis()
-            listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
-                MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action,
-                    saveBounds.exactCenterX(), saveBounds.exactCenterY(), 0).apply {
-                    source = InputDevice.SOURCE_TOUCHSCREEN
-                    try { assertTrue(automation.injectInputEvent(this, true)) } finally { recycle() }
-                }
-            }
+        } catch (failure: Throwable) {
+            throw AssertionError("Save entry must remain above the open keyboard. $diagnostic", failure)
         } finally {
-            automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
+            screenshot("food-first-note")
+        }
+        compose.onNodeWithTag("temperature-save").assertIsDisplayed().assertIsEnabled()
+        // Compose's performClick can reach a node covered by another window. Inject a real
+        // screen tap so this also proves the keyboard does not intercept the save button.
+        val downAt = SystemClock.uptimeMillis()
+        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
+            MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action,
+                saveBounds.exactCenterX(), saveBounds.exactCenterY(), 0).apply {
+                source = InputDevice.SOURCE_TOUCHSCREEN
+                try { assertTrue(automation.injectInputEvent(this, true)) } finally { recycle() }
+            }
         }
     }
 
