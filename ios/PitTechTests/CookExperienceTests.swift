@@ -102,7 +102,7 @@ import UIKit
         try store.saveReference(id, reference: NativeCookReference(dishId: currentDish, sourceCookId: sourceId, sourceDishId: sourceDish))
         store.library.readings = store.library.readings.map { row in guard var o = row.objectValue else { return row }; o["unit"] = .string("F"); return .object(o) }
         let archive = try store.exportArchive()
-        XCTAssertEqual(try CookStore.previewArchive(archive).version, 6)
+        XCTAssertEqual(try CookStore.previewArchive(archive).version, PitTechLibrary.archiveVersion)
         let destination = CookStore(directory: try folder()); XCTAssertEqual(try destination.importArchive(archive).imported, 2)
         XCTAssertEqual(destination.library.events, store.library.events)
         XCTAssertEqual(destination.library.logReadingLinks, store.library.logReadingLinks)

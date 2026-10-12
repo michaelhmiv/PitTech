@@ -157,7 +157,7 @@ final class CookStore {
 
     func exportArchive() throws -> Data {
         var portable = library
-        portable.schemaVersion = 7
+        portable.schemaVersion = PitTechLibrary.archiveVersion
         portable.readings = portable.readings.map { row in
             guard var o = row.objectValue, let unit = o["unit"]?.stringValue, ["F", "C"].contains(unit) else { return row }
             o["unit"] = .string("°" + unit); return .object(o)
@@ -165,7 +165,7 @@ final class CookStore {
         let jsonData = try JSONEncoder().encode(portable)
         let manifest: [String: Any] = [
             "format": "PitTech complete cook archive",
-            "archiveVersion": 7,
+            "archiveVersion": PitTechLibrary.archiveVersion,
             "exportedAtUtc": ISO8601DateFormatter().string(from: .now),
             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
             "includesPreferences": true,
@@ -226,7 +226,7 @@ final class CookStore {
         }
         let library = try JSONDecoder().decode(PitTechLibrary.self, from: libraryData)
         guard manifest["archiveVersion"] as? Int == library.schemaVersion else { throw PitTechArchiveError.invalidArchive }
-        guard (1...7).contains(library.schemaVersion) else { throw PitTechArchiveError.unsupportedVersion }
+        guard (1...PitTechLibrary.archiveVersion).contains(library.schemaVersion) else { throw PitTechArchiveError.unsupportedVersion }
         let cookIds = Set(library.cooks.map(\.id))
         guard cookIds.count == library.cooks.count,
               (library.dishes + library.ingredients + library.events + library.readings + library.targets + library.results + library.devices + library.probes + library.photos + library.reminders + library.recordings + library.probeAssignments).allSatisfy({
@@ -349,7 +349,7 @@ final class CookStore {
         library.dishRecipeSources = mergeUnique(library.dishRecipeSources, imported.dishRecipeSources.filter { row in
             imported.dishes.contains { $0.objectValue?["id"] == row.objectValue?["dishId"] && belongsToNewCook($0, ids: newIds) }
         }, key: "dishId")
-        library.schemaVersion = 7
+        library.schemaVersion = PitTechLibrary.archiveVersion
         save()
         if saveError != nil {
             library = priorLibrary
@@ -373,6 +373,7 @@ final class CookStore {
     }
 
     nonisolated static func isExpectedAttachment(path: String, id: String) -> Bool {
+        id.range(of: "^[A-Za-z0-9_-]{1,80}$", options: .regularExpression) != nil &&
         path.range(of: "^attachments/\(NSRegularExpression.escapedPattern(for: id))\\.[A-Za-z0-9]{1,8}$", options: .regularExpression) != nil
     }
 
@@ -401,12 +402,12 @@ final class CookStore {
         guard FileManager.default.fileExists(atPath: storageURL.path) else { return }
         do {
             library = try JSONDecoder().decode(PitTechLibrary.self, from: Data(contentsOf: storageURL))
-            guard (1...7).contains(library.schemaVersion) else {
+            guard (1...PitTechLibrary.archiveVersion).contains(library.schemaVersion) else {
                 saveError = "This PitTech library version is not supported. Keep the original backup safe."
                 library = PitTechLibrary()
                 return
             }
-            library.schemaVersion = 7
+            library.schemaVersion = PitTechLibrary.archiveVersion
         } catch {
             saveError = "PitTech couldn't read its local cook library. Your file has been left untouched."
         }

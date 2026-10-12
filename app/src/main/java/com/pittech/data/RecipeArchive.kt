@@ -47,7 +47,7 @@ object RecipeArchive {
             s.dishes.firstOrNull { it.id == revision.sourceDishId }?.let { require(it.cookId == revision.sourceCookId) { "Recipe source belongs to a different meal." } }
         }
         require(s.dishRecipeSources.all { source -> s.dishes.any { it.id == source.dishId } && revisions[source.recipeRevisionId]?.recipeId == source.recipeId }) { "Invalid dish recipe source." }
-        require(s.recipeAssets.all { asset -> asset.recipeRevisionId in revisions && asset.relativeFilePath.matches(Regex("photos/${Regex.escape(asset.id)}\\.[A-Za-z0-9]{1,8}")) && asset.mimeType.startsWith("image/") }) { "Invalid recipe media ownership." }
+        require(s.recipeAssets.all { asset -> asset.recipeRevisionId in revisions && asset.id.matches(Regex("[A-Za-z0-9_-]{1,80}")) && asset.relativeFilePath.matches(Regex("photos/${Regex.escape(asset.id)}\\.[A-Za-z0-9]{1,8}")) && asset.mimeType.startsWith("image/") }) { "Invalid recipe media ownership." }
         s.mealPresets.forEach { preset ->
             require(preset.name.isNotBlank())
             val items = JSONArray(preset.itemsJson); require(items.length() <= 30)

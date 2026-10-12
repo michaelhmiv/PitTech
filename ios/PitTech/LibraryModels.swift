@@ -93,6 +93,7 @@ indirect enum JSONValue: Codable, Equatable {
 }
 
 struct PitTechLibrary: Codable {
+    static let archiveVersion = 7
     var schemaVersion: Int
     var preferences: [String: JSONValue]?
     var cooks: [CookRecord]
@@ -121,7 +122,7 @@ struct PitTechLibrary: Codable {
 
 
     init() {
-        schemaVersion = 7
+        schemaVersion = Self.archiveVersion
         preferences = ["temperatureUnit": .string("F"), "weightUnit": .string("lb"), "themeMode": .string("system")]
         cooks = []
         dishes = []
