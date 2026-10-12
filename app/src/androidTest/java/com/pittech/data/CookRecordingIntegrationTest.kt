@@ -95,6 +95,22 @@ class CookRecordingIntegrationTest {
         try { recording.attach(id, device, "°F", now = base); fail("Finished cooks cannot record") } catch (_: IllegalArgumentException) { }
     }
 
+    @Test fun ingredientsCanBeAddedDuringACookAndEditedWithoutLosingTheirIdentity() = runBlocking {
+        val id = cook()
+        val dishes = db.cookDao().getDishesForCook(id)
+        val original = IngredientEntity("synthetic-butter", id, dishes[0].id, "seasoning", "Butter", createdAtUtcMillis = base)
+        cooks.saveIngredient(original)
+        cooks.saveIngredient(original.copy(name = "Salted butter", amountValue = 2.0, amountUnit = "tbsp", appliedAtUtcMillis = base + 1_000, notes = "Added while wrapping", createdAtUtcMillis = base + 2_000))
+        val saved = db.cookDao().getIngredientsForCook(id).single()
+        assertEquals(original.id, saved.id)
+        assertEquals(base, saved.createdAtUtcMillis)
+        assertEquals(base + 1_000, saved.appliedAtUtcMillis)
+        assertEquals("Added while wrapping", saved.notes)
+        try { cooks.saveIngredient(saved.copy(dishId = dishes[1].id)); fail("An existing ingredient cannot change ownership") } catch (_: IllegalArgumentException) { }
+        try { cooks.saveIngredient(saved.copy(amountValue = -1.0)); fail("Invalid amounts must be rejected") } catch (_: IllegalArgumentException) { }
+        assertEquals(saved, db.cookDao().getIngredientsForCook(id).single())
+    }
+
     @Test fun backdatedProbeMoveReattributesOnlyItsControllerIntervalAndKeepsEntryTime() = runBlocking {
         val id = cook()
         val dishes = db.cookDao().getDishesForCook(id)

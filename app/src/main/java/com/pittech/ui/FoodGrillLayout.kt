@@ -142,7 +142,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
 
 @Composable internal fun ProbeMoveDialog(data: CookDetailData, foodId: String?, viewModel: CooksViewModel, onClose: () -> Unit) {
     val probes = data.probes.filter { it.measurementType == "food_probe" && (data.recording == null || it.deviceId == data.recording.deviceId) }
-    var probeId by rememberSaveable(data.cook.id, foodId) { mutableStateOf(probes.firstOrNull()?.id) }
+    var probeId by rememberSaveable(data.cook.id, foodId) { mutableStateOf((probes.firstOrNull { it.assignedDishId == foodId } ?: probes.firstOrNull())?.id) }
     var dishId by rememberSaveable(data.cook.id, foodId) { mutableStateOf(foodId) }
     var changeTime by rememberSaveable { mutableStateOf(false) }
     var movedAt by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }

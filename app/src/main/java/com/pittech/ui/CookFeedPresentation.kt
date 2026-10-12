@@ -17,7 +17,7 @@ internal fun foodChoices(dishes: List<DishEntity>): List<Pair<String, String>> =
 /** Content filters describe the contents of a combined note, rather than splitting it. */
 internal object CookFeedPresentation {
     fun isSetpoint(event: TimelineEventEntity) = event.eventType in setOf("setpoint_changed", "setpoint_recorded")
-    fun isStory(event: TimelineEventEntity) = event.source == "manual" || isSetpoint(event)
+    fun isStory(event: TimelineEventEntity) = event.source == "manual" || isSetpoint(event) || event.eventType == "probe_assigned"
     fun matchesFood(event: TimelineEventEntity, foodId: String?): Boolean {
         if (foodId == null) return true
         val scopes = CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty()
@@ -28,7 +28,7 @@ internal object CookFeedPresentation {
         when (filter) {
             TimelineFilter.STORY -> isStory(event)
             TimelineFilter.NOTES -> event.source == "manual" && (event.eventType == "note" || !event.details.isNullOrBlank())
-            TimelineFilter.EVENTS -> event.eventType in setOf("cook_started", "cook_finished", "reminder_completed") ||
+            TimelineFilter.EVENTS -> event.eventType in setOf("cook_started", "cook_finished", "reminder_completed", "probe_assigned") ||
                 PlaybookCodec.action(event.eventType, event.noteMetadataJson) in CookNoteMetadata.actions
             TimelineFilter.PHOTOS -> hasPhotos || event.eventType == "photo"
             TimelineFilter.TEMPERATURES -> hasReadings
