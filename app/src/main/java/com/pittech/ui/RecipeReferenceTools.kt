@@ -10,7 +10,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.pittech.CooksViewModel
 import com.pittech.data.*
 import com.pittech.domain.*
@@ -71,7 +70,7 @@ import java.time.format.DateTimeFormatter
                     } }
                 }
                 assets.forEach { asset ->
-                    AsyncImage(model = viewModel.recipes.photoUri(asset.relativeFilePath), contentDescription = asset.caption.ifBlank { "Previous cook photo" }, modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp))
+                    RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath))
                     if (asset.caption.isNotBlank()) Text(asset.caption)
                 }
                 val original = cooks.firstOrNull { it.cook.id == revision.sourceCookId }

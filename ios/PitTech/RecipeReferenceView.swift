@@ -72,7 +72,8 @@ private struct HistoricalObservationView: View {
             if let metadata = o["noteMetadataJson"]?.stringValue.flatMap({ try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) }) {
                 if let method = metadata.method { Text("Method · " + (CookingMethod.labels[method] ?? method)) }
                 if let duration = metadata.durationMillis { Text("Recorded duration · \(duration / 60_000) min") }
-                ForEach(metadata.ingredients.indices, id: \.self) { index in let ingredient = metadata.ingredients[index]; Text("\(ingredient.name) · \(ingredient.amount) \(ingredient.unit)") }
+                let ingredients = metadata.ingredients ?? []
+                ForEach(ingredients.indices, id: \.self) { index in let ingredient = ingredients[index]; Text("\(ingredient.name) · \(ingredient.amount) \(ingredient.unit)") }
             }
             let readings = o["recordedTemperatures"]?.arrayValue ?? []
             ForEach(readings.indices, id: \.self) { index in let r = readings[index].objectValue ?? [:]
