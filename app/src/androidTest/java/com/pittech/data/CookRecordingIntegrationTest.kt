@@ -258,6 +258,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE photos DROP COLUMN temperatureContextJson")
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN timestampBasis")
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
+            sql.execSQL("ALTER TABLE ingredients DROP COLUMN amountText")
             sql.version = 3
         }
         val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8, PitTechDatabase.MIGRATION_8_9).build()
@@ -340,6 +341,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE cook_recordings DROP COLUMN samplingMode")
             sql.execSQL("ALTER TABLE cook_recordings DROP COLUMN samplingIntervalMillis")
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
+            sql.execSQL("ALTER TABLE ingredients DROP COLUMN amountText")
             sql.version = 4
         }
         val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8, PitTechDatabase.MIGRATION_8_9).build()
