@@ -20,7 +20,7 @@ struct CookRecord: Codable, Identifiable, Equatable {
     var weatherNotes: String?
     var windNotes: String?
 
-    var isActive: Bool { status == "active" }
+    var isActive: Bool { status == "active" || status == "paused" }
     var startedAt: Date { Date(timeIntervalSince1970: Double(startedAtUtcMillis) / 1_000) }
 
     static func start(title: String, now: Date = .now) -> CookRecord {
@@ -93,7 +93,7 @@ indirect enum JSONValue: Codable, Equatable {
 }
 
 struct PitTechLibrary: Codable {
-    static let archiveVersion = 8
+    static let archiveVersion = 9
     var schemaVersion: Int
     var preferences: [String: JSONValue]?
     var cooks: [CookRecord]
@@ -120,6 +120,8 @@ struct PitTechLibrary: Codable {
     var dishRecipeSources: [JSONValue]
     var mealPresets: [JSONValue]
     var activityTimers: [JSONValue]
+    var reminderRules: [JSONValue]
+    var reminderOccurrences: [JSONValue]
 
 
     init() {
@@ -149,6 +151,8 @@ struct PitTechLibrary: Codable {
         dishRecipeSources = []
         mealPresets = []
         activityTimers = []
+        reminderRules = []
+        reminderOccurrences = []
 
     }
 
@@ -156,7 +160,7 @@ struct PitTechLibrary: Codable {
         case schemaVersion, preferences, cooks, dishes, ingredients, events, readings, targets, results
         case devices, probes, photos, reminders, recordings, probeAssignments, companionRecords, companionPhotos
         case logReadingLinks, lifecycles, targetHistory
-        case recipes, recipeRevisions, recipeAssets, dishRecipeSources, mealPresets, activityTimers
+        case recipes, recipeRevisions, recipeAssets, dishRecipeSources, mealPresets, activityTimers, reminderRules, reminderOccurrences
     }
 
     init(from decoder: Decoder) throws {
@@ -187,6 +191,8 @@ struct PitTechLibrary: Codable {
         dishRecipeSources = try container.decodeIfPresent([JSONValue].self, forKey: .dishRecipeSources) ?? []
         mealPresets = try container.decodeIfPresent([JSONValue].self, forKey: .mealPresets) ?? []
         activityTimers = try container.decodeIfPresent([JSONValue].self, forKey: .activityTimers) ?? []
+        reminderRules = try container.decodeIfPresent([JSONValue].self, forKey: .reminderRules) ?? []
+        reminderOccurrences = try container.decodeIfPresent([JSONValue].self, forKey: .reminderOccurrences) ?? []
 
     }
 }

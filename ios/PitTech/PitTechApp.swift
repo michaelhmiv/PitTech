@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct PitTechApp: App {
@@ -11,6 +12,9 @@ struct PitTechApp: App {
                 .environment(AdsConsentManager.shared)
                 .tint(PitTechStyle.accent)
                 .task {
+                    UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
+                    await store.refreshReminderDeliveryHistory()
+                    store.save()
                     AdsConsentManager.shared.gatherConsent()
                 }
         }

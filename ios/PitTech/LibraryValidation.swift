@@ -6,6 +6,7 @@ extension PitTechLibrary {
         try validateRecipes()
         try validateRecipeAttempts()
         try validateActivityTimers()
+        try validateReminderRules()
         let cooksById = Set(cooks.map(\.id))
         func index(_ rows: [JSONValue], key: String = "id") throws -> [String: [String: JSONValue]] {
             var result: [String: [String: JSONValue]] = [:]

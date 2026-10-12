@@ -33,7 +33,7 @@ class ActivityTimerMigrationTest {
             old.execSQL("INSERT INTO recipe_revisions(id,recipeId,revisionNumber,snapshotSchemaVersion,snapshotJson,createdAtUtcMillis,changeNotes) VALUES('revision','recipe',1,1,?,42,'')", arrayOf(snapshot))
             old.version = 8
         } finally { old.close() }
-        val room = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_8_9).build()
+        val room = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_8_9, PitTechDatabase.MIGRATION_9_10).build()
         try {
             assertEquals(42L, room.cookDao().getCook("meal")!!.startedAtUtcMillis)
             assertEquals("ingredient", room.cookDao().getAllIngredients().single().id)

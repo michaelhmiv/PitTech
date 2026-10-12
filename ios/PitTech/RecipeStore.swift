@@ -44,7 +44,7 @@ enum RecipeError: LocalizedError, Equatable {
         for row in selectedEvents {
             guard let o = row.objectValue, let id = o["id"]?.stringValue, let rawAt = o["occurredAtUtcMillis"]?.numberValue else { continue }
             let at = Double(Int64(rawAt))
-            let m = metadata(row), action = library.actions(for: cookId).first { $0.id == id }?.action
+            let m = metadata(row), action = library.actions(for: cookId).first { $0.id == id && CookNoteMetadata.actions.contains($0.action) }?.action
             let linkedIds = Set(library.logReadingLinks.filter { $0.objectValue?["eventId"]?.stringValue == id }.compactMap { $0.objectValue?["readingId"]?.stringValue })
             let temperatures = library.readings.compactMap { sample -> JSONValue? in
                 guard let r = sample.objectValue, let readingId = r["id"]?.stringValue, linkedIds.contains(readingId), r["qualityStatus"]?.stringValue == "valid",

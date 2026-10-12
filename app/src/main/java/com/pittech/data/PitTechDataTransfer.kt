@@ -159,7 +159,7 @@ class PitTechDataTransfer(
             .put("reminders", snapshot.reminders.size))
 
     private fun snapshotJson(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
-        .apply { RecipeArchive.write(this, snapshot); ActivityTimerArchive.write(this, snapshot) }
+        .apply { RecipeArchive.write(this, snapshot); ActivityTimerArchive.write(this, snapshot); ReminderArchive.write(this, snapshot) }
         .put("schemaVersion", ARCHIVE_VERSION)
         .putNullable("preferences", preferences?.let {
             JSONObject()
@@ -371,7 +371,7 @@ class PitTechDataTransfer(
     }
 
     companion object {
-        const val ARCHIVE_VERSION = 8
+        const val ARCHIVE_VERSION = 9
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
@@ -697,7 +697,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
         it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && it.value.isFinite() && it.unit in setOf("°F", "°C")
     })
     require(events.all { event -> com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty().all { dishesById[it]?.cookId == event.cookId } })
-    return ActivityTimerArchive.read(root, RecipeArchive.read(root, ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history), attachment))
+    return ReminderArchive.read(root, ActivityTimerArchive.read(root, RecipeArchive.read(root, ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history), attachment)))
 }
 
 private fun validatedContext(o: JSONObject): String? = o.stringOrNull("temperatureContextJson")?.also {

@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
+        ReminderRule::class, ReminderOccurrence::class,
         ActivityTimer::class,
         SavedRecipe::class, RecipeRevision::class, DishRecipeSource::class, RecipeAsset::class, MealPreset::class,
         CookEntity::class,
@@ -29,10 +30,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CookLogDraft::class,
         TargetHistory::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
+    abstract fun reminderDao(): ReminderDao
     abstract fun activityTimerDao(): ActivityTimerDao
     abstract fun recipeDao(): RecipeDao
     abstract fun cookDao(): CookDao
@@ -41,6 +43,16 @@ abstract class PitTechDatabase : RoomDatabase() {
     abstract fun experienceDao(): CookExperienceDao
 
     companion object {
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS reminder_rules (id TEXT NOT NULL PRIMARY KEY, cookId TEXT NOT NULL, dishId TEXT, title TEXT NOT NULL, kind TEXT NOT NULL, triggerConfig TEXT NOT NULL, sourceRecipeRevisionId TEXT, sourceMilestoneId TEXT, enabled INTEGER NOT NULL, status TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL, schemaVersion INTEGER NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(dishId) REFERENCES dishes(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_reminder_rules_cookId ON reminder_rules(cookId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_reminder_rules_dishId ON reminder_rules(dishId)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS reminder_occurrences (id TEXT NOT NULL PRIMARY KEY, ruleId TEXT NOT NULL, sequence INTEGER NOT NULL, status TEXT NOT NULL, dueAtUtcMillis INTEGER, deliveredAtUtcMillis INTEGER, acknowledgedAtUtcMillis INTEGER, snoozedUntilUtcMillis INTEGER, badSinceUtcMillis INTEGER, lastSampleAtUtcMillis INTEGER, active INTEGER NOT NULL, actionEventId TEXT, FOREIGN KEY(ruleId) REFERENCES reminder_rules(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_reminder_occurrences_ruleId_sequence ON reminder_occurrences(ruleId, sequence)")
+            }
+        }
+
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE ingredients ADD COLUMN amountText TEXT")

@@ -15,8 +15,8 @@ class PitTechApplication : Application() {
         super.onCreate()
         CrashDiagnostics.install(this)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
-            kotlinx.coroutines.flow.combine(database.companionDao().observeAll(), database.cookDao().observeAllTimelineEvents(), database.cookDao().observeAllSensorReadings()) { _, _, _ -> Unit }
-                .collect { companionRepository.reconcileAll(this@PitTechApplication); alertRepository.reconcileAll(this@PitTechApplication) }
+            kotlinx.coroutines.flow.combine(database.companionDao().observeAll(), database.cookDao().observeAllTimelineEvents(), database.cookDao().observeAllSensorReadings(), database.reminderDao().observeRules()) { _, _, _, _ -> Unit }
+                .collect { companionRepository.reconcileAll(this@PitTechApplication); alertRepository.reconcileAll(this@PitTechApplication); reminderRepository.reconcileAll(this@PitTechApplication) }
         }
     }
 
@@ -30,6 +30,7 @@ class PitTechApplication : Application() {
             .addMigrations(PitTechDatabase.MIGRATION_6_7)
             .addMigrations(PitTechDatabase.MIGRATION_7_8)
             .addMigrations(PitTechDatabase.MIGRATION_8_9)
+            .addMigrations(PitTechDatabase.MIGRATION_9_10)
             .build()
     }
 
@@ -39,6 +40,7 @@ class PitTechApplication : Application() {
 
     val preparationRepository by lazy { com.pittech.data.CookPreparationRepository(database) }
     val servePlanRepository by lazy { com.pittech.data.ServePlanRepository(database, companionRepository) }
+    val reminderRepository by lazy { com.pittech.data.ReminderRepository(database) }
     val alertRepository by lazy { com.pittech.data.CookAlertRepository(database) }
     val companionRepository by lazy { com.pittech.data.CookCompanionRepository(database, PhotoStorage(this)) }
 

@@ -14,6 +14,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(.light)
         .background(PitTechStyle.canvas)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in store.notificationCookId = notification.object as? String }
+        .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
         .alert("Couldn't save", isPresented: Binding(
             get: { store.saveError != nil },
             set: { if !$0 { store.clearSaveError() } }

@@ -36,7 +36,7 @@ struct RecipeReferenceView: View {
                         Text("Heating interval \(index + 1) · \(RecipeReferenceTimeline.time(interval.startedAt)) → \(interval.endedAt.map { RecipeReferenceTimeline.time($0) } ?? "end not recorded")")
                     }
                     Toggle("Major actions only", isOn: $actionsOnly)
-                    let events = RecipeReferenceTimeline.events(snapshot).filter { !actionsOnly || $0.objectValue?["action"]?.stringValue != nil }
+                    let events = RecipeReferenceTimeline.events(snapshot).filter { !actionsOnly || CookNoteMetadata.actions.contains($0.objectValue?["action"]?.stringValue ?? "") }
                     if events.isEmpty { Text("No saved observations in this filter.") }
                     ForEach(events.indices, id: \.self) { index in HistoricalObservationView(event: events[index]) }
                     RecipeAssetGallery(revisionId: revisionId)
@@ -45,7 +45,7 @@ struct RecipeReferenceView: View {
                     } else { Text("Original meal unavailable. Saved observations and photos remain; its full temperature curve cannot be compared.").font(.caption) }
                 }
                 Section("This cook · actual actions") {
-                    let actions = store.library.actions(for: cookId).filter { $0.dishIds.isEmpty || $0.dishIds.contains(dishId) }
+                    let actions = store.library.actions(for: cookId).filter { CookNoteMetadata.actions.contains($0.action) && ($0.dishIds.isEmpty || $0.dishIds.contains(dishId)) }
                     let anchor = actions.filter { $0.action == "food_on" }.map(\.at).min()
                     if actions.isEmpty { Text("No actions recorded for this dish yet.") }
                     ForEach(actions, id: \.id) { action in Text("\(CookStore.actionLabel(action.action)) · \(RecipeReferenceTimeline.relative(anchor.map { action.at - $0 }))") }
