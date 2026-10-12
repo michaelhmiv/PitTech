@@ -38,7 +38,7 @@ struct SavedRecipesView: View {
             guard let o = row.objectValue, let revision = o["currentRevisionId"]?.stringValue else { return false }
             let isArchived = o["archivedAtUtcMillis"]?.numberValue != nil
             let snapshot = snapshots[revision]
-            return isArchived == archived && (o["name"]?.stringValue ?? "").localizedCaseInsensitiveContains(query) &&
+            return isArchived == archived && (query.isEmpty || (o["name"]?.stringValue ?? "").localizedCaseInsensitiveContains(query)) &&
                 (!favorites || o["favorite"]?.boolValue == true) && (category == "All categories" || snapshot?.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue?["foodType"]?.stringValue == category) &&
                 (tag == "All tags" || snapshot?.tags.contains(tag) == true)
         }

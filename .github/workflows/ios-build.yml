@@ -89,7 +89,7 @@ jobs:
       - name: Export native UI screenshots and retain test diagnostics
         if: always()
         run: |
-          if [[ -d build/ios-tests.xcresult ]]; then
+          if [[ -f build/ios-tests.xcresult/Info.plist ]]; then
             mkdir -p build/native-ui-evidence
             xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
           fi

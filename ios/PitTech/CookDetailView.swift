@@ -26,7 +26,7 @@ struct CookDetailView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             Text(cook.title).font(.largeTitle.bold())
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
-                            HStack { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
+                            MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
                             shortcutBar
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
@@ -80,14 +80,14 @@ struct CookDetailView: View {
     }
     private var shortcutBar: some View {
         VStack(alignment: .leading) {
-            HStack {
+            MealActionRow {
                 Button { open() } label: { Label("Log", systemImage: "note.text") }
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer") }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera") }
             }.buttonStyle(.bordered)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in
-                    Button(CookStore.actionLabel(action)) { open(category: "action", action: action) }.buttonStyle(.bordered)
+                    Button(CookStore.actionLabel(action)) { open(category: "action", action: action) }.buttonStyle(.bordered).fixedSize()
                 } }
             }
         }
@@ -131,6 +131,16 @@ struct CookDetailView: View {
         }
     }
     private func duration(_ millis: Double) -> String { "\(Int(millis / 3_600_000))h \(Int(millis / 60_000) % 60)m" }
+}
+
+struct MealActionRow<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var textSize
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    var body: some View {
+        let layout = textSize >= .xxxLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        layout { content }
+    }
 }
 
 private struct CookNoteCard: View {

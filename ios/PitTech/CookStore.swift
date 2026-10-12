@@ -167,6 +167,9 @@ final class CookStore {
     func exportArchive() throws -> Data {
         var portable = library
         portable.schemaVersion = PitTechLibrary.archiveVersion
+        if let unit = portable.preferences?["temperatureUnit"]?.stringValue, ["F", "C"].contains(unit) {
+            portable.preferences?["temperatureUnit"] = .string("°" + unit)
+        }
         portable.readings = portable.readings.map { row in
             guard var o = row.objectValue else { return row }
             if let unit = o["unit"]?.stringValue, ["F", "C"].contains(unit) { o["unit"] = .string("°" + unit) }
@@ -179,7 +182,7 @@ final class CookStore {
             "archiveVersion": PitTechLibrary.archiveVersion,
             "exportedAtUtc": ISO8601DateFormatter().string(from: .now),
             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
-            "includesPreferences": true,
+            "includesPreferences": portable.preferences != nil,
             "counts": ["cooks": library.cooks.count, "dishes": library.dishes.count,
                        "timelineEvents": library.events.count, "readings": library.readings.count]
         ]

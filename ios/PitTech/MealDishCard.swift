@@ -42,7 +42,7 @@ struct MealDishCard: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("food-card-" + dish.id)
             if expanded {
-                HStack { Button("Note") { onLog("general", nil) }; Button("Temp") { onLog("temperature", nil) }; Button("Photo") { onLog("photo", nil) } }.buttonStyle(.bordered)
+                MealActionRow { Button("Note") { onLog("general", nil) }; Button("Temp") { onLog("temperature", nil) }; Button("Photo") { onLog("photo", nil) } }.buttonStyle(.bordered)
                 MealRemindersLink(cookId: cookId, dishId: dish.id)
                 if store.recipeSource(dish.id) != nil { NavigationLink("Previous cook") { RecipeReferenceView(cookId: cookId, dishId: dish.id) } }
                 DisclosureGroup("Preparation and actions") {

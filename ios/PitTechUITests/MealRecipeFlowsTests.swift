@@ -2,9 +2,11 @@ import XCTest
 
 final class MealRecipeFlowsTests: XCTestCase {
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        XCTAssertTrue(element.waitForExistence(timeout: 15))
-        for _ in 0..<8 { if element.isHittable { return }; app.swipeUp() }
-        XCTAssertTrue(element.isHittable)
+        for _ in 0..<12 {
+            if element.waitForExistence(timeout: 1) && element.isHittable { return }
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.exists && element.isHittable)
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
     func testSavedRecipesComposeHistoricalCheckAndFinishWithoutForcedSaving() {

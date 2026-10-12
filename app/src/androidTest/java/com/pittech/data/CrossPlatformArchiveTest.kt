@@ -38,6 +38,7 @@ class CrossPlatformArchiveTest {
             val repo = CookRepository(db, PhotoStorage(context)); val transfer = PitTechDataTransfer(context, repo)
             val nativeBytes = instrumentation.context.assets.open("cross-platform/native-meal-v8.zip").use { it.readBytes() }
             val preview = transfer.previewImport(ByteArrayInputStream(nativeBytes)); assertEquals(8, preview.archiveVersion)
+            assertEquals("°F", preview.preferences!!.temperatureUnit)
             repo.importSnapshot(preview.snapshot, preview.attachments)
             assertEquals(3, db.recipeDao().recipes().size); assertEquals(3, db.recipeDao().sources().size)
             val meal = db.cookDao().getAllCooks().first { it.status != CookStatus.COMPLETED }
