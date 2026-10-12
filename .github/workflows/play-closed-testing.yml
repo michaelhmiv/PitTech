@@ -33,6 +33,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   publish-play-release:
@@ -62,6 +63,22 @@ jobs:
           fi
           if [[ "$RELEASE_TRACK" == "production" && "$ROLLOUT_FRACTION" != "0.05" && "$ROLLOUT_FRACTION" != "0.10" && "$ROLLOUT_FRACTION" != "0.25" && "$ROLLOUT_FRACTION" != "0.50" ]]; then
             echo "::error::Choose a supported staged-rollout fraction."
+            exit 1
+          fi
+
+      - name: Require successful Android checks for the exact main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Only main may publish Android release artifacts."
+            exit 1
+          fi
+          tested_sha=$(git rev-parse HEAD)
+          runs=$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/android-build.yml/runs?head_sha=$tested_sha&event=push&per_page=30")
+          if ! jq -e '.workflow_runs | any(.status == "completed" and .conclusion == "success")' <<< "$runs" >/dev/null; then
+            echo "::error::Required Android checks have not passed on $tested_sha. Publish only a tested main commit."
             exit 1
           fi
 
