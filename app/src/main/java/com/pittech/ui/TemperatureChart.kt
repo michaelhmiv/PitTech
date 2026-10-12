@@ -181,6 +181,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
             }
         }
         if (interactive && hidden.isNotEmpty()) TextButton({ hidden = emptySet() }) { Text("Show all channels") }
+        applicableTargets.forEach { target -> Text("${cookNames[target.cookId].orEmpty()} target · ${target.targetType.replace('_', ' ')}: ${String.format(Locale.US, "%.1f", y(target.value, target.unit))} $unit", style = MaterialTheme.typography.bodySmall) }
         if (applicableTargets.isNotEmpty()) Text("Dashed: current/reference targets. Solid: target or setpoint history from its recorded effective time.", style = MaterialTheme.typography.bodySmall)
         selectedMarkers.filter { x(it.cookId, it.occurredAtUtcMillis) in minX..maxX && (selectedCluster.isEmpty() || it.id in selectedCluster) }.forEach { event ->
             if (onMarker != null) TextButton({ onMarker(event) }, modifier = Modifier.testTag("chart-marker-${event.id}")) { Text("${formatX(x(event.cookId, event.occurredAtUtcMillis))} · ${event.title}" + if (photos.any { it.eventId == event.id }) " · photo" else "") }

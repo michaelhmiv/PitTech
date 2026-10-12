@@ -46,11 +46,14 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
     val app = LocalContext.current.applicationContext as PitTechApplication
     var show by remember { mutableStateOf(false) }
     var dishId by remember(data.cook.id) { mutableStateOf(data.dishes.firstOrNull()?.id.orEmpty()) }
+    val recipeSources by viewModel.recipes.observeSources().collectAsStateWithLifecycle(emptyList())
+    val recipeRevisions by viewModel.recipes.observeRevisions().collectAsStateWithLifecycle(emptyList())
+    val recipeSource = recipeSources.firstOrNull { it.dishId == dishId }?.let { src -> recipeRevisions.firstOrNull { it.id == src.recipeRevisionId } }
     val saved = records.firstOrNull { it.kind == "reference" && it.cookId == data.cook.id && CookReferenceCodec.decode(it.payload).dishId == dishId }?.let { CookReferenceCodec.decode(it.payload) }
-    var sourceCookId by remember(saved?.sourceCookId, dishId) { mutableStateOf(saved?.sourceCookId ?: records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }?.let { CookPlanEngine.decode(it.payload).book.sourceCookId }.orEmpty()) }
+    var sourceCookId by remember(saved?.sourceCookId, recipeSource?.sourceCookId, dishId) { mutableStateOf(saved?.sourceCookId ?: recipeSource?.sourceCookId ?: records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }?.let { CookPlanEngine.decode(it.payload).book.sourceCookId }.orEmpty()) }
     var source by remember { mutableStateOf<CookDetailData?>(null) }
     LaunchedEffect(sourceCookId) { source = null; if (sourceCookId.isNotBlank()) app.cookRepository.observeCookDetail(sourceCookId).collectLatest { source = it } }
-    var sourceDishId by remember(saved?.sourceDishId, sourceCookId) { mutableStateOf(saved?.sourceDishId.orEmpty()) }
+    var sourceDishId by remember(saved?.sourceDishId, recipeSource?.sourceDishId, sourceCookId) { mutableStateOf(saved?.sourceDishId ?: recipeSource?.sourceDishId.orEmpty()) }
     var anchor by remember(saved?.anchor) { mutableStateOf(saved?.anchor ?: "food_on") }
     var currentProbe by remember(saved?.currentProbe, dishId) { mutableStateOf(saved?.currentProbe ?: data.readings.firstOrNull { it.dishId == dishId && it.measurementType == "food_probe" }?.probeName.orEmpty()) }
     var currentSeriesId by remember(saved?.currentSeriesId, dishId) { mutableStateOf(saved?.currentSeriesId) }
@@ -72,8 +75,8 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
             if (history != null) {
                 val sourceDishLabels = history.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
                 ChoiceField("Reference dish", history.dishes.indexOfFirst { it.id == sourceDishId }.takeIf { it >= 0 }?.let { sourceDishLabels[it] } ?: "Choose dish", sourceDishLabels) { label -> sourceDishId = history.dishes[sourceDishLabels.indexOf(label)].id }
-                val currentChannels = data.readings.filter { it.dishId == dishId || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
-                val sourceChannels = history.readings.filter { it.dishId == sourceDishId || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
+                val currentChannels = data.readings.filter { it.dishId == dishId || it.dishId == null && it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
+                val sourceChannels = history.readings.filter { it.dishId == sourceDishId || it.dishId == null && it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.groupBy { TemperaturePlot.identity(it) }
                 fun channelLabels(channels: Map<String, List<com.pittech.data.SensorReadingEntity>>) = channels.entries.associate { (id, rows) -> id to (rows.last().probeName + " · " + rows.last().measurementType.replace('_', ' ') + " · " + (id.hashCode() and Int.MAX_VALUE).toString(16).takeLast(4)) }
                 val currentLabels = channelLabels(currentChannels); val sourceLabels = channelLabels(sourceChannels)
                 val currentKey = currentSeriesId?.takeIf { it in currentChannels } ?: currentChannels.filterValues { it.last().probeName == currentProbe }.keys.singleOrNull()
@@ -91,7 +94,13 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
                 else {
                     val currentReadings = currentChannels.getValue(currentKey)
                     val referenceReadings = sourceChannels.getValue(sourceKey)
-                    TemperatureChart(currentReadings + referenceReadings, cookNames = mapOf(data.cook.id to "Current", history.cook.id to "Reference"), cookStartTimes = mapOf(data.cook.id to currentAnchor, history.cook.id to sourceAnchor), displayUnit = displayUnit, connectionGaps = data.events.filter { it.eventType == "connection_gap" } + history.events.filter { it.eventType == "connection_gap" })
+                    fun scoped(events: List<TimelineEventEntity>, id: String) = events.filter { it.dishId == id || id in CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.orEmpty() || it.dishId == null && CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.isNullOrEmpty() && PlaybookCodec.action(it.eventType, it.noteMetadataJson) in CookPhases.phaseActions }
+                    TemperatureChart(currentReadings + referenceReadings, cookNames = mapOf(data.cook.id to "This cook", history.cook.id to "Previous cook"), cookStartTimes = mapOf(data.cook.id to currentAnchor, history.cook.id to sourceAnchor), displayUnit = displayUnit,
+                        markers = scoped(data.events, dishId) + scoped(history.events, sourceDishId), onMarker = { event -> show = false; viewModel.openCook(event.cookId) },
+                        targets = data.targets.filter { it.dishId == dishId } + history.targets.filter { it.dishId == sourceDishId },
+                        targetHistory = data.targetHistory.filter { it.dishId == dishId } + history.targetHistory.filter { it.dishId == sourceDishId },
+                        photos = data.photos.filter { it.dishId == dishId } + history.photos.filter { it.dishId == sourceDishId },
+                        connectionGaps = data.events.filter { it.eventType == "connection_gap" } + history.events.filter { it.eventType == "connection_gap" })
                     Text("Minutes since ${PlaybookCodec.actions[anchor]} · units normalized · gaps remain empty")
                     PlaybookCodec.actions.keys.forEach { action ->
                         val current = currentEvents.firstOrNull { (it.dishId == dishId || it.dishId == null) && it.action == action }
