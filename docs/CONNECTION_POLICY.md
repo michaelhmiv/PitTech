@@ -12,13 +12,15 @@ Third-party Home Assistant integrations may themselves expose hardware controls.
 
 ## Supported integration strategies
 
-**Direct manufacturer path:** Build only against an official SDK, API or manufacturer-documented service **with an authorization basis suitable for public PitTech distribution**. Publishing an endpoint or releasing a GitHub example does not automatically authorize a commercial app. Before a source is enabled in the public app, review its applicable terms, credentials, model compatibility, rate limits, privacy impact, and platform requirements.
+**Direct manufacturer path:** All four planned public SDK/API connectors are approved for development and testing with a user's own device or account. Their documented interface and user authorization form the technical basis of the integration. A published endpoint does not override restrictions in the service terms; before releasing a public build, document the relevant applicable license/terms, credentials, model compatibility, rates and privacy controls. Written permission may be useful for ambiguous terms but is not categorically required.
 
 Initial direct candidates:
 - Combustion Inc.: official Android BLE SDK, MIT-licensed.
 - FireBoard: documented cloud REST API; commercial usage to be clarified.
 - Flame Boss: documented MQTT broker access; current terms and operations to be verified.
 - MEATER: public cloud REST API; beta-service limitations and commercial terms to be verified.
+
+**Local-only data handling:** users authorize connections to their own devices/services. PitTech stores selected temperatures and cook history on their phone rather than collecting that telemetry on PitTech servers; credentials are protected locally. No automatic cloud upload or PitTech telemetry relay is included. The absence of PitTech server logging does not mean the app does not create local cook records or that a provider's service terms cease to apply.
 
 **User-operated Home Assistant path:** PitTech connects through Home Assistant's documented REST/WebSocket APIs to **the user's existing, self-hosted Home Assistant installation**. Users independently choose, install and maintain their Home Assistant integrations and grant PitTech access to selected temperature sensors. PitTech does not host Home Assistant installations, bundle manufacturer-specific Home Assistant integrations, distribute unofficial manufacturer cloud clients, or ask for users' manufacturer account credentials through this bridge.
 
@@ -35,7 +37,7 @@ The older Android code includes an experimental read-only Prime Polaris/GrillirG
 
 ## Standard Beta and release gates
 
-A connection may be marked Beta only when it is available in the public artifact, has a documented compatibility/test matrix, uses observation-only operations, handles stale and missing data, protects credentials, respects rates and background limits, and satisfies the relevant authorization review.
+A connection may be marked Beta only when it is included in the public artifact, has a documented compatibility/test matrix, uses observation-only operations, handles stale/missing data, protects credentials, respects rate/background limits, and has a truthful, source-backed review of the applicable API/SDK terms. Do not demand a signed partnership when the existing published terms are sufficient; do not ignore material restrictions.
 
 Unsupported and experimental code may be retained in isolated development builds but must never be treated as approved public support solely because a product is open source.
 

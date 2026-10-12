@@ -1,15 +1,19 @@
 # PitTech universal temperature monitoring: engineering roadmap
 
-**Status:** planning specification. No new manufacturer integration is implemented by this document. PR 0 is limited to release readiness, documentation and disabling the old Wi-Fi configuration path.
+**Status:** all five planned connectors are approved for engineering and testing. None is implemented by this roadmap; PR 0 covers release-readiness foundations only.
 
 ## Final product decision
 
 Use **two complementary, optional paths**:
 
-1. **Direct manufacturer Beta connections** when a manufacturer offers a documented interface and the terms/authorization permit PitTech to distribute a commercial third-party client. Priority candidates: Combustion, FireBoard, Flame Boss, and MEATER. These are **not all cleared** today.
+1. **Direct manufacturer Beta connections** using the published SDK/API routes. Combustion, FireBoard, Flame Boss and MEATER are all approved for development and testing with user-owned hardware/accounts. Review applicable service terms and evidence before enabling each in a public build; this is not a blocker to implementing or testing the adapters.
 2. **Home Assistant Beta** for users who already operate their own Home Assistant installations. It is a full-featured, brand-neutral bridge for user-selected temperature sensors exposed by their HA instance. It is not a universal replacement for direct connections and does not require users of direct integrations to install HA.
 
 All five planned integrations present the same device onboarding, read-only label, normalized channels, monitoring state and cook-history behavior. PitTech does not bundle or host third-party Home Assistant integrations or a Home Assistant server.
+
+**Local-first data:** users authorize their own manufacturer accounts/devices or self-hosted Home Assistant instances. PitTech connects directly from the phone, securely stores relevant access credentials on-device and locally records selected temperatures in the user's private cook history. There is no PitTech-hosted telemetry collector or account proxy, and records are not automatically uploaded to a PitTech server. Saying no data is logged at all would be inaccurate: on-device cook logging is the product's core function.
+
+**Permission distinction:** local-only storage, opt-in access and read-only monitoring materially reduce data handling, but do not override applicable third-party terms. Development and testing are approved for all five; public shipping requires a source-backed terms/API evidence check, not necessarily a signed partnership.
 
 **GrillirG decision:** do not develop or publish a direct Prime Polaris/GrillirG integration. The existing experimental adapter does not become the sixth planned connector. Preserve past GrillirG-derived cooking history and isolate legacy proprietary integration code from public release artifacts. A user may independently connect GrillirG to their own Home Assistant installation, and PitTech may read the selected resulting temperature sensors through the standard Home Assistant API.
 
@@ -37,7 +41,7 @@ Define a **read-only** connector interface with capabilities for authentication,
 | **5** | Flame Boss | Manufacturer-documented MQTT | Subscription to permitted real-time temperature topics; stable probe identities | Verify broker/ACL behavior and third-party commercial distribution terms |
 | **6** | MEATER | Public cloud REST | Current cloud-visible internal and ambient probe values | Review public beta API terms, commercial-use scope and cloud availability requirements |
 
-An officially published API is only a **technical** prerequisite. Ship each adapter individually after permissions/terms and model-specific validation are complete. If rights are uncertain, keep the adapter out of production until resolved. Do not present any of these as automatically approved.
+Proceed with all four direct connector implementations and tests. For public release, document the publisher's official API/SDK, applicable then-current terms, user authorization path, read-only operations, model compatibility, and rate limits. Written approval is not categorically required if the published license/terms already grant the necessary rights. A material restriction must be resolved before shipping that particular adapter; do not imply historic or superseded documentation proves current permission.
 
 ## Home Assistant Beta: full-featured universal bridge (PR 3)
 
@@ -79,7 +83,7 @@ Connection state never blocks manual cook completion, logging or export.
 | **7** | Shared lifecycle/reconnection/rate budgets, background capture, bounded offline history synchronization and power behavior |
 | **8** | Hardware/HA compatibility testing, public release packaging isolation, privacy/security review, per-adapter authorization gates, Beta UX and reviewed changelog |
 
-PRs 2–6 may be worked on separately once PR 1 is stable. Order release according to readiness; all five need not ship simultaneously.
+All five connector PRs (2–6) are approved to begin after PR 1 stabilizes. They may be developed in parallel against the shared contract, but they ship independently after device tests, source-specific release evidence, security review and platform validation. The iOS implementation must be independently verified; current iOS does not yet expose a Devices integration.
 
 ## Explicit exclusions
 
@@ -97,4 +101,6 @@ PRs 2–6 may be worked on separately once PR 1 is stable. Order release accordi
 3. A new release retains legacy GrillirG cook data even though its direct adapter is absent from the public build.
 4. CI tests block any mutation operation entering public connectors and validate all source decoders, rate limits, retries, stale states and migrations.
 5. Public artifacts exclude legacy proprietary client/provisioning code at the binary/source-set level; a hidden screen or flag is not sufficient.
-6. Manufacturer permissions, source limitations and supported hardware are documented for each public connection.
+6. The official source API/SDK, applicable terms, limits and supported hardware are documented for each public connector without misrepresenting authorization.
+7. No PitTech-hosted credential proxy, cloud telemetry collector or automatic temperature upload is introduced.
+8. The exact iOS or Android binary is tested separately and reviewed with accurate app-store disclosures.
