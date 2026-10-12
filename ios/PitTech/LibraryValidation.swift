@@ -3,6 +3,7 @@ import Foundation
 extension PitTechLibrary {
     /// Validate portable relationships before files are copied or the saved library changes.
     func validateCookExperience() throws {
+        try validateRecipes()
         let cooksById = Set(cooks.map(\.id))
         func index(_ rows: [JSONValue], key: String = "id") throws -> [String: [String: JSONValue]] {
             var result: [String: [String: JSONValue]] = [:]

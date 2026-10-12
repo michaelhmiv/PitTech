@@ -91,6 +91,15 @@ jobs:
           PITTECH_FONT_SCALE: ${{ matrix.font_scale }}
         run: bash scripts/run-emulator-ui-tests.sh
 
+      - name: Upload exported Room schemas
+        if: matrix.api == 36 && matrix.font_scale == '1.15'
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-room-schemas
+          path: app/schemas/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v7.0.1
         with:

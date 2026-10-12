@@ -68,7 +68,7 @@ class CookNoteIntegrationTest {
         repo.notes.save(draft); repo.notes.persistDraft(CookNoteDraft(cookId = id, description = "Unfinished"))
         val bytes = ByteArrayOutputStream(); val transfer = PitTechDataTransfer(context, repo); transfer.writeZip(bytes)
         val preview = transfer.previewImport(ByteArrayInputStream(bytes.toByteArray()))
-        assertEquals(6, preview.archiveVersion)
+        assertEquals(PitTechDataTransfer.ARCHIVE_VERSION, preview.archiveVersion)
         assertEquals(draft.metadata.encode(), preview.snapshot.events.first { it.id == draft.id }.noteMetadataJson)
         assertEquals("explicit_phases", preview.snapshot.lifecycles.single().timingMode)
         val other = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()

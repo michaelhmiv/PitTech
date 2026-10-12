@@ -31,7 +31,7 @@ class CookExperienceMigrationTest {
         } finally { old.close() }
         // Room's real open path runs the migration and validates every generated table,
         // index and foreign key against the current database implementation.
-        val room = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_6_7).build()
+        val room = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8).build()
         try {
             val db = room.openHelper.writableDatabase
             db.query("SELECT startedAtUtcMillis,status FROM cooks WHERE id='legacy'").use { it.moveToFirst(); assertEquals(42L, it.getLong(0)); assertEquals("active", it.getString(1)) }

@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
+        SavedRecipe::class, RecipeRevision::class, DishRecipeSource::class, RecipeAsset::class, MealPreset::class,
         CookEntity::class,
         DishEntity::class,
         IngredientEntity::class,
@@ -27,16 +28,30 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CookLogDraft::class,
         TargetHistory::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
+    abstract fun recipeDao(): RecipeDao
     abstract fun cookDao(): CookDao
     abstract fun recordingDao(): CookRecordingDao
     abstract fun companionDao(): CookCompanionDao
     abstract fun experienceDao(): CookExperienceDao
 
     companion object {
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS saved_recipes (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, tagsJson TEXT NOT NULL, currentRevisionId TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL, archivedAtUtcMillis INTEGER, favorite INTEGER NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS recipe_revisions (id TEXT NOT NULL PRIMARY KEY, recipeId TEXT NOT NULL, parentRevisionId TEXT, revisionNumber INTEGER NOT NULL, sourceCookId TEXT, sourceDishId TEXT, snapshotSchemaVersion INTEGER NOT NULL, snapshotJson TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, changeNotes TEXT NOT NULL, FOREIGN KEY(recipeId) REFERENCES saved_recipes(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_revisions_recipeId ON recipe_revisions(recipeId)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_recipe_revisions_recipeId_revisionNumber ON recipe_revisions(recipeId, revisionNumber)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS dish_recipe_sources (dishId TEXT NOT NULL PRIMARY KEY, recipeId TEXT NOT NULL, recipeRevisionId TEXT NOT NULL, appliedAtUtcMillis INTEGER NOT NULL, FOREIGN KEY(dishId) REFERENCES dishes(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS recipe_assets (id TEXT NOT NULL PRIMARY KEY, recipeRevisionId TEXT NOT NULL, relativeFilePath TEXT NOT NULL, mimeType TEXT NOT NULL, caption TEXT NOT NULL, sourcePhotoId TEXT, createdAtUtcMillis INTEGER NOT NULL, FOREIGN KEY(recipeRevisionId) REFERENCES recipe_revisions(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_assets_recipeRevisionId ON recipe_assets(recipeRevisionId)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS meal_presets (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, itemsJson TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL)")
+            }
+        }
+
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE timeline_events ADD COLUMN noteMetadataJson TEXT")
