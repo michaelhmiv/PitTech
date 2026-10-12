@@ -11,13 +11,16 @@ object RecipeSnapshotCodec {
         require(s.instructions.map { it.id }.distinct().size == s.instructions.size && s.observations.map { it.sourceEventId }.distinct().size == s.observations.size) { "Recipe entries need unique identities." }
         require(s.instructions.all { it.title.isNotBlank() && (it.durationMillis == null || it.durationMillis >= 0) }) { "Use a title and a positive duration for instructions." }
         require(s.observations.all { it.occurredAtUtcMillis > 0 && it.offsetMillis == s.smokingAnchorUtcMillis?.let { anchor -> it.occurredAtUtcMillis - anchor } }) { "Historical offsets must use the recorded smoking anchor." }
+        require(s.observations.all { e -> e.recordedTemperatures.size <= 100 && e.recordedTemperatures.all { it.value.isFinite() && it.unit in setOf("°F", "°C") && it.measuredAtUtcMillis > 0 } }) { "Invalid recorded recipe measurements." }
         require(s.preferredPitTemperatureF == null || s.preferredPitTemperatureF.isFinite())
         require(s.rating == null || s.rating.isFinite())
         // Existing draft validation provides bounded ingredients and valid numeric quantities.
         PlaybookCodec.validate(CookPlaybook(s.name, NewCookDraft(title = s.name, dishes = listOf(s.dish)), emptyList(), s.targets))
         require(s.targets.all { it.dishIndex == 0 }) { "Recipe targets must belong to this dish." }
+        require(CookEntryValidation.isOptionalPositiveNumberValid(s.dish.weightText) && s.dish.preparationItems.size <= 100) { "Use a positive weight and bounded ingredient list." }
         s.dish.preparationItems.forEach { ingredient ->
-            require(ingredient.amountText.isBlank() || ingredient.amountText.toDoubleOrNull()?.let { it.isFinite() && it >= 0 } == true) { "Use a non-negative ingredient amount." }
+            require(ingredient.name.isNotBlank()) { "Give each ingredient a name." }
+            require(ingredient.amountText.isBlank() || ingredient.amountText.toDoubleOrNull()?.let { it.isFinite() && it > 0 } == true) { "Use a positive ingredient amount." }
         }
     }
     fun encode(s: RecipeSnapshot): String {
@@ -25,7 +28,7 @@ object RecipeSnapshotCodec {
         return JSONObject().put("version", s.schemaVersion).put("name", s.name).put("description", s.description)
             .put("tags", JSONArray(s.tags)).put("draft", PlaybookCodec.draftJson(NewCookDraft(title = s.name, dishes = listOf(s.dish))))
             .put("instructions", JSONArray(s.instructions.map { i -> JSONObject().put("id", i.id).put("title", i.title).put("details", i.details).put("method", i.method).put("offsetMillis", i.offsetMillis).put("durationMillis", i.durationMillis).put("sourceEventId", i.sourceEventId) }))
-            .put("observations", JSONArray(s.observations.map { e -> JSONObject().put("sourceEventId", e.sourceEventId).put("occurredAtUtcMillis", e.occurredAtUtcMillis).put("timeZoneId", e.timeZoneId).put("title", e.title).put("details", e.details).put("action", e.action).put("offsetMillis", e.offsetMillis).put("temperatureContextJson", e.temperatureContextJson) }))
+            .put("observations", JSONArray(s.observations.map { e -> JSONObject().put("sourceEventId", e.sourceEventId).put("occurredAtUtcMillis", e.occurredAtUtcMillis).put("timeZoneId", e.timeZoneId).put("title", e.title).put("details", e.details).put("action", e.action).put("offsetMillis", e.offsetMillis).put("temperatureContextJson", e.temperatureContextJson).put("noteMetadataJson", e.noteMetadataJson).put("sourceCookId", e.sourceCookId).put("sourceDishId", e.sourceDishId).put("recordedTemperatures", JSONArray(e.recordedTemperatures.map { t -> JSONObject().put("sourceReadingId", t.sourceReadingId).put("probeId", t.probeId).put("probeName", t.probeName).put("measurementType", t.measurementType).put("value", t.value).put("unit", t.unit).put("measuredAtUtcMillis", t.measuredAtUtcMillis).put("timeZoneId", t.timeZoneId).put("sourceDishId", t.sourceDishId) })) }))
             .put("targets", JSONArray(s.targets.map { t -> JSONObject().put("dish", t.dishIndex).put("type", t.type).put("value", t.value).put("unit", t.unit).put("explanation", t.explanation) }))
             .put("resultNotes", s.resultNotes).put("rating", s.rating).put("smokingAnchorUtcMillis", s.smokingAnchorUtcMillis)
             .put("preferredPitTemperatureF", s.preferredPitTemperatureF).put("servings", s.servings).toString()
@@ -37,7 +40,8 @@ object RecipeSnapshotCodec {
         return RecipeSnapshot(o.getString("name"), draft.dishes.single(), o.optString("description"),
             o.optJSONArray("tags")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
             PlaybookCodec.objects(o, "instructions").map { i -> RecipeInstruction(i.getString("id"), i.getString("title"), i.optString("details"), i.nullText("method"), i.nullLong("offsetMillis"), i.nullLong("durationMillis"), i.nullText("sourceEventId")) },
-            PlaybookCodec.objects(o, "observations").map { e -> RecipeObservation(e.getString("sourceEventId"), e.getLong("occurredAtUtcMillis"), e.getString("timeZoneId"), e.getString("title"), e.optString("details"), e.nullText("action"), e.nullLong("offsetMillis"), e.nullText("temperatureContextJson")) },
+            PlaybookCodec.objects(o, "observations").map { e -> RecipeObservation(e.getString("sourceEventId"), e.getLong("occurredAtUtcMillis"), e.getString("timeZoneId"), e.getString("title"), e.optString("details"), e.nullText("action"), e.nullLong("offsetMillis"), e.nullText("temperatureContextJson"), e.nullText("noteMetadataJson"), e.nullText("sourceCookId"), e.nullText("sourceDishId"),
+                PlaybookCodec.objects(e, "recordedTemperatures").map { t -> RecipeMeasurement(t.getString("sourceReadingId"), t.nullText("probeId"), t.getString("probeName"), t.getString("measurementType"), t.getDouble("value"), t.getString("unit"), t.getLong("measuredAtUtcMillis"), t.getString("timeZoneId"), t.nullText("sourceDishId")) }) },
             PlaybookCodec.objects(o, "targets").map { t -> PlaybookTarget(t.getInt("dish"), t.getString("type"), t.getDouble("value"), t.getString("unit"), t.nullText("explanation")) },
             o.optString("resultNotes"), o.nullDouble("rating"), o.nullLong("smokingAnchorUtcMillis"), o.nullDouble("preferredPitTemperatureF"), o.optString("servings"), o.getInt("version")).also(::validate)
     }

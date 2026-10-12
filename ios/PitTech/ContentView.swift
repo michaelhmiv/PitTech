@@ -42,6 +42,8 @@ struct CookListView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
+                    NavigationLink { SavedRecipesView() } label: { Label("Saved Recipes", systemImage: "book") }.buttonStyle(.bordered)
+
                     if !store.activeCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("ACTIVE").font(.caption.weight(.bold)).foregroundStyle(.secondary)

@@ -48,11 +48,18 @@ object RecipeArchive {
         }
         require(s.dishRecipeSources.all { source -> s.dishes.any { it.id == source.dishId } && revisions[source.recipeRevisionId]?.recipeId == source.recipeId }) { "Invalid dish recipe source." }
         require(s.recipeAssets.all { asset -> asset.recipeRevisionId in revisions && asset.id.matches(Regex("[A-Za-z0-9_-]{1,80}")) && asset.relativeFilePath.matches(Regex("photos/${Regex.escape(asset.id)}\\.[A-Za-z0-9]{1,8}")) && asset.mimeType.startsWith("image/") }) { "Invalid recipe media ownership." }
+        s.companionRecords.filter { it.kind == "recipe_attempt" }.forEach { record ->
+            val o = JSONObject(record.payload); val dishId = o.getString("dishId")
+            require(s.dishes.any { it.id == dishId && it.cookId == record.cookId } &&
+                s.dishRecipeSources.any { it.dishId == dishId && it.recipeRevisionId == o.getString("revisionId") }) { "Invalid recipe attempt ownership." }
+            RecipeAttemptCodec.snapshot(record.payload)
+        }
         s.mealPresets.forEach { preset ->
             require(preset.name.isNotBlank())
-            val items = JSONArray(preset.itemsJson); require(items.length() <= 30)
+            val items = com.pittech.domain.MealPresetCodec.items(preset.itemsJson); com.pittech.domain.MealPresetCodec.setup(preset.itemsJson); require(items.length() <= 30)
             for (i in 0 until items.length()) {
                 val item = items.getJSONObject(i)
+                if (!item.isNull("setupSnapshotJson")) RecipeSnapshotCodec.decode(item.getString("setupSnapshotJson"))
                 if (!item.isNull("recipeRevisionId")) require(item.getString("recipeRevisionId") in revisions) { "A meal preset references an unavailable recipe." }
                 else RecipeSnapshotCodec.decode(item.getString("snapshotJson"))
             }

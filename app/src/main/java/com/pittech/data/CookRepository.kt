@@ -696,6 +696,11 @@ class CookRepository(
             it.cookId == null && (it.id in bookIds || it.kind == "equipment" && smokers.any { name -> com.pittech.domain.CookPreparation.decodeEquipment(it.payload).name.equals(name, true) })
         }
         val recordIds = records.map { it.id }.toSet()
+        val recipeSources = database.recipeDao().sources().filter { source -> dao.getDish(source.dishId)?.cookId in selectedCookIds }
+        val recipeIds = recipeSources.map { it.recipeId }.toSet()
+        val savedRecipes = database.recipeDao().recipes().filter { cookId == null || it.id in recipeIds }
+        val revisionRows = database.recipeDao().revisions().filter { revision -> savedRecipes.any { it.id == revision.recipeId } }
+        val revisionIds = revisionRows.map { it.id }.toSet()
         return ExportSnapshot(
             cooks = allCooks.filter { it.id in selectedCookIds },
             dishes = dao.getAllDishes().filter { it.cookId in selectedCookIds },
@@ -711,11 +716,11 @@ class CookRepository(
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
             activityTimers = database.activityTimerDao().all().filter { it.cookId in selectedCookIds },
-            recipes = database.recipeDao().recipes(),
-            recipeRevisions = database.recipeDao().revisions(),
-            recipeAssets = database.recipeDao().assets(),
-            dishRecipeSources = database.recipeDao().sources().filter { source -> dao.getDish(source.dishId)?.cookId in selectedCookIds },
-            mealPresets = database.recipeDao().presets(),
+            recipes = savedRecipes,
+            recipeRevisions = revisionRows,
+            recipeAssets = database.recipeDao().assets().filter { it.recipeRevisionId in revisionIds },
+            dishRecipeSources = recipeSources,
+            mealPresets = if (cookId == null) database.recipeDao().presets() else emptyList(),
             companionRecords = records,
             companionPhotos = database.companionDao().photos().filter { it.recordId in recordIds },
             assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
@@ -804,6 +809,91 @@ class CookRepository(
             throw failure
         }
         return ImportSummary(newCooks.size, snapshot.cooks.size - newCooks.size, restoredPhotos.size)
+    }
+
+    suspend fun startRecipeMeal(title: String, revisionIds: List<String>, newDishes: List<DishDraft> = emptyList()): String = database.withTransaction {
+        val selected = revisionIds.map { id -> recipes.revision(id) ?: error("This recipe version is unavailable.") }
+        val setups = selected.map { com.pittech.domain.RecipeSnapshotCodec.decode(it.snapshotJson).dish } + newDishes
+        val cookId = startCook(NewCookDraft(title.trim().ifBlank { "New meal" }, dishes = setups))
+        val dishes = dao.getDishesForCook(cookId)
+        selected.forEachIndexed { index, revision -> attachRecipe(dishes[index].id, revision) }
+        cookId
+    }
+
+    suspend fun addRecipeToMeal(cookId: String, revisionId: String): String = database.withTransaction {
+        require(dao.getCook(cookId)?.status in setOf(CookStatus.ACTIVE, CookStatus.PAUSED)) { "Add recipes to an active meal." }
+        val revision = recipes.revision(revisionId) ?: error("This recipe version is unavailable.")
+        val dishId = addDish(cookId, com.pittech.domain.RecipeSnapshotCodec.decode(revision.snapshotJson).dish)
+        attachRecipe(dishId, revision)
+        dishId
+    }
+
+    private suspend fun attachRecipe(dishId: String, revision: RecipeRevision) {
+        val dish = dao.getDish(dishId) ?: error("This dish is unavailable.")
+        val snapshot = com.pittech.domain.RecipeSnapshotCodec.decode(revision.snapshotJson)
+        recipes.link(dishId, revision.recipeId, revision.id)
+        val now = System.currentTimeMillis()
+        database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
+            RecipeAttemptCodec.encode(dishId, revision.id, snapshot), now, now))
+        snapshot.targets.forEach { target -> dao.insertTarget(TargetEntity(UUID.randomUUID().toString(), dish.cookId, dishId,
+            target.type, target.value, target.unit, "dish", target.explanation, "recipe:${revision.id}", now)) }
+    }
+
+    suspend fun recipeAttempt(dishId: String): com.pittech.domain.RecipeSnapshot? = database.companionDao().get("recipe-attempt:$dishId")?.let { RecipeAttemptCodec.snapshot(it.payload) }
+
+    suspend fun updateRecipeAttempt(dishId: String, snapshot: com.pittech.domain.RecipeSnapshot) = database.withTransaction {
+        com.pittech.domain.RecipeSnapshotCodec.validate(snapshot)
+        val source = recipes.source(dishId) ?: error("This dish has no saved recipe source.")
+        val dish = dao.getDish(dishId) ?: error("This dish is unavailable.")
+        val now = System.currentTimeMillis()
+        dao.updateDish(snapshot.dish.toEntity(dish.cookId, dishId, now).copy(createdAtUtcMillis = dish.createdAtUtcMillis))
+        dao.deleteIngredientsForDish(dishId)
+        snapshot.dish.preparationItems.filter { it.name.isNotBlank() }.forEach { item -> dao.saveIngredient(IngredientEntity(
+            UUID.randomUUID().toString(), dish.cookId, dishId, item.stage, item.name, item.brand.ifBlank { null },
+            CookEntryValidation.optionalPositiveNumber(item.amountText), item.amountUnit.takeIf { item.amountText.isNotBlank() },
+            createdAtUtcMillis = now, amountText = item.amountText.trim().ifBlank { null })) }
+        dao.getAllTargets().filter { it.dishId == dishId }.forEach { dao.deleteTarget(it) }
+        snapshot.targets.forEach { t -> addTarget(dish.cookId, dishId, t.type, t.value, t.unit, t.explanation) }
+        val prior = database.companionDao().get("recipe-attempt:$dishId")
+        database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
+            RecipeAttemptCodec.encode(dishId, source.recipeRevisionId, snapshot), prior?.createdAtUtcMillis ?: now, now))
+    }
+
+    suspend fun saveMealPreset(cookId: String, name: String): String = database.withTransaction {
+        require(name.isNotBlank()) { "Name this meal combination." }
+        val detail = observeCookDetail(cookId).first() ?: error("This meal is unavailable.")
+        val items = org.json.JSONArray()
+        detail.dishes.forEach { dish ->
+            val source = recipes.source(dish.id)
+            if (source != null) {
+                val working = recipeAttempt(dish.id) ?: com.pittech.domain.RecipeSnapshotCodec.decode(recipes.revision(source.recipeRevisionId)!!.snapshotJson)
+                val actual = RecipeExtraction.fromMeal(detail, dish.id).snapshot
+                items.put(org.json.JSONObject().put("recipeRevisionId", source.recipeRevisionId).put("setupSnapshotJson", com.pittech.domain.RecipeSnapshotCodec.encode(working.copy(dish = actual.dish, targets = actual.targets))))
+            }
+            else {
+                val snapshot = RecipeExtraction.fromMeal(detail, dish.id).snapshot.copy(instructions = emptyList(), observations = emptyList(),
+                    smokingAnchorUtcMillis = null, resultNotes = "", rating = null)
+                items.put(org.json.JSONObject().put("snapshotJson", com.pittech.domain.RecipeSnapshotCodec.encode(snapshot)))
+            }
+        }
+        val now = System.currentTimeMillis(); val id = UUID.randomUUID().toString()
+        val setup = NewCookDraft(title = name, smokerName = detail.cook.smokerName.orEmpty(), setpointText = detail.cook.initialSetpointValue?.toString().orEmpty(), setpointUnit = detail.cook.initialSetpointUnit ?: "°F",
+            notes = detail.cook.notes.orEmpty(), fuelType = detail.cook.fuelType.orEmpty(), woodOrPelletBlend = detail.cook.woodOrPelletBlend.orEmpty())
+        database.recipeDao().putPreset(MealPreset(id, name.trim(), com.pittech.domain.MealPresetCodec.encode(items, setup), now, now))
+        id
+    }
+
+    suspend fun startMealPreset(id: String): String = database.withTransaction {
+        val preset = database.recipeDao().presets().firstOrNull { it.id == id } ?: error("This meal combination is unavailable.")
+        val items = com.pittech.domain.MealPresetCodec.items(preset.itemsJson)
+        val selected = (0 until items.length()).map { index -> val item = items.getJSONObject(index)
+            if (item.isNull("recipeRevisionId")) null else recipes.revision(item.getString("recipeRevisionId")) ?: error("A saved version in this meal is unavailable.") }
+        val snapshots = (0 until items.length()).map { index -> val item = items.getJSONObject(index); com.pittech.domain.RecipeSnapshotCodec.decode(
+            if (!item.isNull("setupSnapshotJson")) item.getString("setupSnapshotJson") else selected[index]?.snapshotJson ?: item.getString("snapshotJson")) }
+        val cookId = startCook(com.pittech.domain.MealPresetCodec.setup(preset.itemsJson).copy(title = preset.name, dishes = snapshots.map { it.dish }))
+        val created = dao.getDishesForCook(cookId)
+        selected.forEachIndexed { index, revision -> if (revision != null) { attachRecipe(created[index].id, revision); updateRecipeAttempt(created[index].id, snapshots[index]) } }
+        cookId
     }
 
     suspend fun readPhoto(relativePath: String): ByteArray? = photoStorage.read(relativePath)

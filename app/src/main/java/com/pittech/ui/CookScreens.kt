@@ -280,7 +280,7 @@ fun PitTechApp(
         when (section) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
-                playbooks = { UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
+                playbooks = { SavedRecipesLibrary(viewModel); UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
                 adsEnabled = adsEnabled,
                 error = saveError,
                 notice = notice,

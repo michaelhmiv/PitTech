@@ -1,0 +1,58 @@
+package com.pittech.data
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.pittech.domain.*
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.Test
+import org.junit.Assert.*
+
+class RecipeCompositionIntegrationTest {
+    @Test fun mixedMealsOwnTheirSetupAndHistoryWhileRecipesAndOlderVersionsStayIndependent(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val repo = CookRepository(db, PhotoStorage(context))
+            val saved = mutableListOf<SavedRecipe>(); val originalIds = mutableListOf<String>()
+            for (name in listOf("Chicken", "Mac", "Pork")) {
+                val id = repo.startCook(NewCookDraft(name, dishes = listOf(DishDraft(name, "Other", preparationItems = listOf(IngredientDraft("Salt", amountText = "1.00", amountUnit = "tsp"))))))
+                originalIds += id
+                val dish = db.cookDao().getDishesForCook(id).single()
+                repo.notes.save(CookNoteDraft(cookId = id, dishId = dish.id, description = "$name private note"))
+                repo.completeCook(id)
+                saved += repo.recipes.save(RecipeExtraction.fromMeal(repo.observeCookDetail(id).first()!!, dish.id).snapshot, sourceCookId = id, sourceDishId = dish.id)
+            }
+            val before = repo.exportSnapshot()
+            val meal = repo.startRecipeMeal("Today", saved.map { it.currentRevisionId }, listOf(DishDraft("Potatoes", "Vegetables")))
+            val dishes = db.cookDao().getDishesForCook(meal)
+            assertEquals(4, dishes.size)
+            assertEquals(saved.map { it.currentRevisionId }, dishes.take(3).map { repo.recipes.source(it.id)!!.recipeRevisionId })
+            assertTrue(db.cookDao().getTimelineEventsForCook(meal).none { it.eventType == "note" })
+            assertTrue(db.recordingDao().getAllRecordings().isEmpty())
+            assertTrue(db.companionDao().forCook(meal).none { it.kind == "plan" })
+            val working = repo.recipeAttempt(dishes[1].id)!!
+            repo.updateRecipeAttempt(dishes[1].id, working.copy(dish = working.dish.copy(preparationItems = listOf(IngredientDraft("Jalapeños", amountText = "2", amountUnit = "count")))))
+            assertEquals("Salt", RecipeSnapshotCodec.decode(repo.recipes.revision(saved[1].currentRevisionId)!!.snapshotJson).dish.preparationItems.single().name)
+            assertEquals("Jalapeños", db.cookDao().getIngredientsForCook(meal).single { it.dishId == dishes[1].id }.name)
+            assertEquals(before.events.filter { it.cookId in originalIds }, repo.exportSnapshot().events.filter { it.cookId in originalIds })
+            val preset = repo.saveMealPreset(meal, "Favorites")
+            assertEquals(3, db.recipeDao().recipes().size)
+            val repeated = repo.startMealPreset(preset)
+            assertEquals(4, db.cookDao().getDishesForCook(repeated).size)
+            assertEquals("Jalapeños", db.cookDao().getIngredientsForCook(repeated).single { it.dishId == db.cookDao().getDishesForCook(repeated)[1].id }.name)
+            val updated = repo.recipes.save(working.copy(description = "New preference"), saved[1].id, saved[1].currentRevisionId)
+            assertNotEquals(saved[1].currentRevisionId, updated.currentRevisionId)
+            val older = repo.startRecipeMeal("Older version", listOf(saved[1].currentRevisionId))
+            assertEquals(saved[1].currentRevisionId, repo.recipes.source(db.cookDao().getDishesForCook(older).single().id)!!.recipeRevisionId)
+            repo.recipes.archive(saved[1].id)
+            assertNotNull(db.cookDao().getCook(meal))
+            assertNotNull(repo.recipes.revision(saved[1].currentRevisionId))
+            val snapshot = repo.exportSnapshot()
+            RecipeArchive.validate(snapshot)
+            val other = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+            try { val restored = CookRepository(other, PhotoStorage(context)); restored.importSnapshot(snapshot, emptyMap()); assertEquals(db.recipeDao().sources().size, other.recipeDao().sources().size); assertEquals(3, other.recipeDao().recipes().size) } finally { other.close() }
+        } finally { db.close() }
+    }
+}

@@ -10,6 +10,10 @@ data class RecipeObservation(
     val action: String?,
     val offsetMillis: Long?,
     val temperatureContextJson: String?,
+    val noteMetadataJson: String? = null,
+    val sourceCookId: String? = null,
+    val sourceDishId: String? = null,
+    val recordedTemperatures: List<RecipeMeasurement> = emptyList(),
 )
 
 data class RecipeInstruction(val id: String, val title: String, val details: String = "",
@@ -31,3 +35,6 @@ data class RecipeSnapshot(
     val servings: String = "",
     val schemaVersion: Int = 1,
 )
+
+data class RecipeMeasurement(val sourceReadingId: String, val probeId: String?, val probeName: String, val measurementType: String,
+    val value: Double, val unit: String, val measuredAtUtcMillis: Long, val timeZoneId: String, val sourceDishId: String?)

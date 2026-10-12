@@ -56,6 +56,9 @@ interface RecipeDao {
     @Query("SELECT * FROM saved_recipes WHERE id = :id") suspend fun recipe(id: String): SavedRecipe?
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRecipe(recipe: SavedRecipe)
     @Update suspend fun updateRecipe(recipe: SavedRecipe)
+    @Query("SELECT * FROM recipe_revisions") fun observeRevisions(): Flow<List<RecipeRevision>>
+    @Query("SELECT * FROM dish_recipe_sources") fun observeSources(): Flow<List<DishRecipeSource>>
+    @Query("SELECT * FROM meal_presets") fun observePresets(): Flow<List<MealPreset>>
     @Query("SELECT * FROM recipe_revisions") suspend fun revisions(): List<RecipeRevision>
     @Query("SELECT * FROM recipe_revisions WHERE id = :id") suspend fun revision(id: String): RecipeRevision?
     @Query("SELECT * FROM recipe_revisions WHERE recipeId = :recipeId ORDER BY revisionNumber DESC") suspend fun history(recipeId: String): List<RecipeRevision>
