@@ -69,6 +69,7 @@ class ConnectedCookScreenTest {
         compose.waitUntil(20_000) {
             runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().isNotEmpty() }
         }
+        dismissCookNotice()
         compose.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
         compose.onNodeWithTag("cook-grill-live").assertExists()
         compose.onNodeWithTag("cook-reading-chamber").assertExists()
