@@ -21,6 +21,10 @@ import java.time.format.DateTimeFormatter
 private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: String? = null, val title: String = "", val trigger: ReminderTrigger? = null, val revisionId: String? = null, val milestoneId: String? = null)
 
 @Composable internal fun UnifiedReminderTools(data: CookDetailData, viewModel: CooksViewModel, initialDishId: String? = null) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val permission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        viewModel.refreshReminderRules()
+    }
     val allRules by viewModel.reminders.observeRules().collectAsStateWithLifecycle(emptyList())
     val occurrences by viewModel.reminders.observeOccurrences().collectAsStateWithLifecycle(emptyList())
     val sources by viewModel.recipes.observeSources().collectAsStateWithLifecycle(emptyList())
@@ -38,6 +42,10 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
         Column(Modifier.heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Reminders", style = MaterialTheme.typography.titleLarge)
             Text("Set a check for this meal or one dish. Dismiss, skip and snooze leave the cooking timeline unchanged.")
+            if (!com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) {
+                Text("Notifications are disabled. Your reminders remain visible here.")
+                TextButton({ context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Notification settings") }
+            }
             if (data.cook.status != CookStatus.COMPLETED) Button({ editor = ReminderEdit(dishId = initialDishId) }, Modifier.testTag("reminder-rule-add")) { Text("Add reminder") }
             rules.forEach { rule ->
                 val receipt = occurrences.firstOrNull { it.ruleId == rule.id && it.sequence == 0 }
@@ -66,7 +74,7 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
                     val revision = revisions.firstOrNull { it.id == source?.recipeRevisionId }
                     val snapshot = revision?.let { RecipeSnapshotCodec.decode(it.snapshotJson) }
                     snapshot?.observations?.filter { it.action in CookPhases.phaseActions && it.action != "food_on" && it.offsetMillis != null }?.forEach { observation ->
-                        TextButton({ editor = ReminderEdit(dishId = dish.id, title = "Last time: ${observation.title}. Check ${dish.name}.", trigger = ReminderTrigger.Historical("food_on", observation.offsetMillis!!), revisionId = revision?.id, milestoneId = observation.sourceEventId) }) { Text("${dish.name} · last time ${observation.title} at ${RecipeReferenceTimeline.relativeLabel(observation.offsetMillis)} · enable…") }
+                        TextButton({ editor = ReminderEdit(dishId = dish.id, title = "Last time: ${observation.title}. Check ${dish.name}.", trigger = ReminderTrigger.Historical("food_on", observation.offsetMillis!!), revisionId = revision?.id, milestoneId = observation.sourceEventId) }, modifier = Modifier.testTag("historical-reminder-${dish.id}-${observation.sourceEventId}")) { Text("${dish.name} · last time ${observation.title} at ${RecipeReferenceTimeline.relativeLabel(observation.offsetMillis)} · enable…") }
                     }
                 }
             }
@@ -75,7 +83,9 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
         }
     }
     editor?.let { request -> ReminderRuleEditor(data, request, busy, error, { editor = null }, { title, dishId, trigger -> act {
-        viewModel.saveReminderRule(data.cook.id, dishId, title, trigger, request.rule?.id, request.revisionId ?: request.rule?.sourceRecipeRevisionId, request.milestoneId ?: request.rule?.sourceMilestoneId); editor = null
+        viewModel.saveReminderRule(data.cook.id, dishId, title, trigger, request.rule?.id, request.revisionId ?: request.rule?.sourceRecipeRevisionId, request.milestoneId ?: request.rule?.sourceMilestoneId)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        editor = null
     } }) }
     confirm?.let { rule ->
         var action by remember(rule.id) { mutableStateOf("wrap") }

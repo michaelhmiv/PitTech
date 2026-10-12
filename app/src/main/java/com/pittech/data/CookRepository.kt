@@ -789,7 +789,7 @@ class CookRepository(
                 dao.insertDishesIgnoringDuplicates(snapshot.dishes.filter { it.cookId in newIds })
                 recipes.restore(recipeRestore, snapshot.dishRecipeSources.filter { source -> snapshot.dishes.any { it.id == source.dishId && it.cookId in newIds } })
                 snapshot.reminderRules.filter { it.cookId in newIds }.forEach { database.reminderDao().putRule(it.copy(enabled = false, status = "inactive")) }
-                snapshot.reminderOccurrences.filter { o -> snapshot.reminderRules.any { it.id == o.ruleId && it.cookId in newIds } }.forEach { database.reminderDao().putOccurrence(if (it.sequence == 0) it.copy(status = "inactive", active = false, badSinceUtcMillis = null, snoozedUntilUtcMillis = null) else it) }
+                snapshot.reminderOccurrences.filter { o -> snapshot.reminderRules.any { it.id == o.ruleId && it.cookId in newIds } }.forEach { database.reminderDao().putOccurrence(if (it.sequence == 0) it.copy(status = "inactive", active = false, badSinceUtcMillis = null, snoozedUntilUtcMillis = null) else if (it.status in setOf("queued", "scheduled")) it.copy(status = "cancelled") else it) }
                 snapshot.activityTimers.filter { it.cookId in newIds }.forEach { database.activityTimerDao().insert(it.copy(status = "inactive")) }
                 dao.insertIngredientsIgnoringDuplicates(snapshot.ingredients.filter { it.cookId in newIds })
                 dao.insertEventsIgnoringDuplicates(snapshot.events.filter { it.cookId in newIds })

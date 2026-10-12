@@ -48,6 +48,7 @@ class CooksViewModel(
     internal suspend fun recipeAttempt(dishId: String) = repository.recipeAttempt(dishId)
     internal suspend fun saveMealPreset(cookId: String, name: String) = repository.saveMealPreset(cookId, name)
     internal suspend fun startMealPreset(id: String) = repository.startMealPreset(id).also { openCook(it) }
+    internal fun refreshReminderRules() { viewModelScope.launch { app.reminderRepository.reconcileAll(context) } }
     internal val reminders get() = app.reminderRepository
     internal suspend fun saveReminderRule(cookId: String, dishId: String?, title: String, trigger: com.pittech.domain.ReminderTrigger, id: String? = null, revisionId: String? = null, milestoneId: String? = null) = app.reminderRepository.save(cookId, dishId, title, trigger, id ?: java.util.UUID.randomUUID().toString(), revisionId, milestoneId).also { app.reminderRepository.reconcile(context, cookId) }
     internal suspend fun changeReminderRule(id: String, action: String) { app.reminderRepository.change(context, id, action); app.reminderRepository.reconcileAll(context) }

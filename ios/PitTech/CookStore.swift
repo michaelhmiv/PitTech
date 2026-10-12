@@ -12,6 +12,7 @@ final class CookStore {
     var deletedNote: DeletedNativeNote?
     var reminderMessage: String?
     var notificationCookId: String?
+    @ObservationIgnored var reminderScheduleTask: Task<Void, Never>?
     private let directory: URL
     init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -260,8 +261,11 @@ final class CookStore {
         let newIds = Set(newCooks.map(\.id))
         try imported.validateRecipes()
         try library.rejectRecipeConflicts(imported)
+        let newRuleIds = Set(imported.reminderRules.filter { belongsToNewCook($0, ids: newIds) }.compactMap { $0.objectValue?["id"]?.stringValue })
+        let oldOccurrenceIds = Set(library.reminderOccurrences.compactMap { $0.objectValue?["id"]?.stringValue })
+        guard imported.reminderOccurrences.filter({ newRuleIds.contains($0.objectValue?["ruleId"]?.stringValue ?? "") }).allSatisfy({ !oldOccurrenceIds.contains($0.objectValue?["id"]?.stringValue ?? "") }) else { throw PitTechArchiveError.invalidArchive }
 
-        for pair in [(library.dishes, imported.dishes), (library.events, imported.events), (library.readings, imported.readings), (library.probes, imported.probes), (library.devices, imported.devices), (library.ingredients, imported.ingredients), (library.targets, imported.targets), (library.results, imported.results), (library.reminders, imported.reminders), (library.probeAssignments, imported.probeAssignments), (library.targetHistory, imported.targetHistory)] {
+        for pair in [(library.dishes, imported.dishes), (library.events, imported.events), (library.readings, imported.readings), (library.probes, imported.probes), (library.devices, imported.devices), (library.ingredients, imported.ingredients), (library.targets, imported.targets), (library.results, imported.results), (library.reminders, imported.reminders), (library.reminderRules, imported.reminderRules), (library.probeAssignments, imported.probeAssignments), (library.targetHistory, imported.targetHistory)] {
             let existing = Set(pair.0.compactMap { $0.objectValue?["id"]?.stringValue })
             guard pair.1.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ row in
                 guard let id = row.objectValue?["id"]?.stringValue else { return false }
@@ -364,7 +368,7 @@ final class CookStore {
         })
         let ruleIds = Set(imported.reminderRules.filter { belongsToNewCook($0, ids: newIds) }.compactMap { $0.objectValue?["id"]?.stringValue })
         library.reminderOccurrences = mergeUnique(library.reminderOccurrences, imported.reminderOccurrences.filter { ruleIds.contains($0.objectValue?["ruleId"]?.stringValue ?? "") }.map { row in
-            guard var o = row.objectValue, o["sequence"]?.numberValue == 0 else { return row }; o["status"] = .string("inactive"); o["active"] = .bool(false); o["badSinceUtcMillis"] = .null; o["snoozedUntilUtcMillis"] = .null; return .object(o)
+            guard var o = row.objectValue else { return row }; if o["sequence"]?.numberValue != 0 { if ["queued", "scheduled"].contains(o["status"]?.stringValue ?? "") { o["status"] = .string("cancelled") }; return .object(o) }; o["status"] = .string("inactive"); o["active"] = .bool(false); o["badSinceUtcMillis"] = .null; o["snoozedUntilUtcMillis"] = .null; return .object(o)
         })
         library.schemaVersion = PitTechLibrary.archiveVersion
         save()

@@ -91,7 +91,7 @@ extension PitTechLibrary {
             let ids = library.reminderOccurrences.compactMap(\.objectValue).filter { $0["ruleId"]?.stringValue == id && ($0["sequence"]?.numberValue ?? 0) > 0 }.compactMap { $0["id"]?.stringValue }.map { "meal-reminder:" + $0 }
             library.reminderRules.remove(at: index); library.reminderOccurrences.removeAll { $0.objectValue?["ruleId"]?.stringValue == id }; save()
             if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids); UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+            submitReminderSchedules(NativeReminderReconciliation(cancellations: ids))
             return
         default: throw CookNoteError.invalid
         }
@@ -145,11 +145,14 @@ extension PitTechLibrary {
         return result
     }
     func submitReminderSchedules(_ reconciliation: NativeReminderReconciliation) {
-        Task {
+        let previousTask = reminderScheduleTask
+        reminderScheduleTask = Task {
+            await previousTask?.value
             let center = UNUserNotificationCenter.current()
             center.removePendingNotificationRequests(withIdentifiers: reconciliation.cancellations)
             center.removeDeliveredNotifications(withIdentifiers: reconciliation.cancellations)
             for schedule in reconciliation.schedules {
+                guard library.reminderRules.contains(where: { $0.objectValue?["cookId"]?.stringValue == schedule.cookId && $0.objectValue?["enabled"]?.boolValue == true && library.reminderOccurrences.contains(where: { $0.objectValue?["id"]?.stringValue == schedule.occurrenceId && $0.objectValue?["dueAtUtcMillis"]?.numberValue == schedule.due }) }) else { continue }
                 let content = UNMutableNotificationContent(); content.title = schedule.title
                 content.body = schedule.historical ? "Last time this milestone happened around this point. Check your food." : "Check your food. Dismissing this reminder does not record an action."
                 content.sound = .default; content.userInfo = ["cookId": schedule.cookId, "occurrenceId": schedule.occurrenceId]
