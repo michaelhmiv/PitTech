@@ -85,6 +85,7 @@ class CookRecordingService : Service() {
                             val last = current.lastReceivedAtUtcMillis ?: current.resumedAtUtcMillis
                             if (System.currentTimeMillis() - last > GrillSamplingPolicy.receiptWindow(current.samplingIntervalMillis)) app.recordingRepository.markGap(recording.cookId, "Waiting for cloud readings. Missing periods are not filled in.")
                             app.alertRepository.reconcile(this@CookRecordingService, recording.cookId)
+                            app.reminderRepository.reconcile(this@CookRecordingService, recording.cookId)
                             val values = app.database.cookDao().observeSensorReadings(recording.cookId).first().filter { it.qualityStatus == "valid" && it.measurementType != "setpoint" }.groupBy { it.probeName }.mapNotNull { (_, rows) -> rows.maxByOrNull { it.measuredAtUtcMillis } }.joinToString { "${it.probeName} ${it.value.toInt()} ${it.unit}" }
                             val age = (System.currentTimeMillis() - last).coerceAtLeast(0) / 60_000
                             val plan = app.companionRepository.plan(recording.cookId)

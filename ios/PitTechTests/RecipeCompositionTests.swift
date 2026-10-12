@@ -28,6 +28,7 @@ final class RecipeCompositionTests: XCTestCase {
         XCTAssertEqual(try store.recipeAttempt(dish)?.description, "Try more Gouda")
         try store.saveMealPreset(meal, name: "Favorites")
         XCTAssertEqual(store.library.recipes.count, 3)
+        try store.saveReminderRule(cookId: meal, dishId: dish, title: "Last time wrapped · check the bark", config: ["version": .number(1), "type": .string("historical"), "anchorAction": .string("food_on"), "offsetMillis": .number(12000000)], id: "portable-history", revisionId: revisions[1], milestoneId: "original-wrap")
         let bytes = try store.exportArchive()
         let destination = CookStore(directory: directory.appendingPathComponent("restored"))
         _ = try destination.importArchive(bytes)

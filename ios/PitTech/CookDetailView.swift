@@ -80,6 +80,7 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
+                MealRemindersLink(cookId: cookId)
                 RecipeReferenceLinks(cookId: cookId)
                 MealRecipeActions(cookId: cookId)
                 MealActivityTimers(cookId: cookId)

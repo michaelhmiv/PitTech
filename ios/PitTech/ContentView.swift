@@ -14,6 +14,11 @@ struct ContentView: View {
         }
         .preferredColorScheme(.light)
         .background(PitTechStyle.canvas)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {
+            if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
+            if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
+        } }
+        .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
         .alert("Couldn't save", isPresented: Binding(
             get: { store.saveError != nil },
             set: { if !$0 { store.clearSaveError() } }

@@ -119,6 +119,7 @@ class CookReminderBootReceiver : BroadcastReceiver() {
                 }
                 app.companionRepository.reconcileAll(context)
                 app.alertRepository.reconcileAll(context)
+                app.reminderRepository.reconcileAll(context)
                 app.database.cookDao().getPendingReminders().forEach { reminder ->
                     CookReminderNotifications.schedule(context, reminder)
                 }

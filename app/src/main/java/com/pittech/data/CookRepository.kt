@@ -716,6 +716,8 @@ class CookRepository(
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
             activityTimers = database.activityTimerDao().all().filter { it.cookId in selectedCookIds },
+            reminderRules = database.reminderDao().rules().filter { it.cookId in selectedCookIds },
+            reminderOccurrences = database.reminderDao().occurrences().filter { occurrence -> database.reminderDao().rule(occurrence.ruleId)?.cookId in selectedCookIds },
             recipes = savedRecipes,
             recipeRevisions = revisionRows,
             recipeAssets = database.recipeDao().assets().filter { it.recipeRevisionId in revisionIds },
@@ -731,6 +733,7 @@ class CookRepository(
     }
 
     suspend fun importSnapshot(snapshot: ExportSnapshot, attachmentData: Map<String, ByteArray>): ImportSummary {
+        ReminderArchive.validate(snapshot)
         require(snapshot.photos.map { it.id }.distinct().size == snapshot.photos.size) { "The backup contains duplicate photo IDs." }
         require((snapshot.photos.map { it.id } + snapshot.companionPhotos.map { it.id }).all { attachmentData[it]?.isNotEmpty() == true }) {
             "The backup is incomplete: one or more photo attachments are missing."
@@ -755,6 +758,8 @@ class CookRepository(
         rejectIds("reminder", snapshot.reminders.map { it.id to it.cookId }, dao.getAllReminders().map { it.id }.toSet())
         rejectIds("assignment", snapshot.assignments.map { it.id to it.cookId }, database.recordingDao().getAllAssignments().map { it.id }.toSet())
         rejectIds("target history", snapshot.targetHistory.map { it.id to it.cookId }, database.experienceDao().allHistory().map { it.id }.toSet())
+        rejectIds("reminder rule", snapshot.reminderRules.map { it.id to it.cookId }, database.reminderDao().rules().map { it.id }.toSet())
+        rejectIds("reminder occurrence", snapshot.reminderOccurrences.map { it.id to snapshot.reminderRules.first { r -> r.id == it.ruleId }.cookId }, database.reminderDao().occurrences().map { it.id }.toSet())
         rejectIds("activity timer", snapshot.activityTimers.map { it.id to it.cookId }, database.activityTimerDao().all().map { it.id }.toSet())
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
         require(snapshot.photos.none { it.cookId in newIds && it.id in existingPhotoIds }) { "A photo ID conflicts with a photo in another saved cook." }
@@ -783,6 +788,8 @@ class CookRepository(
                 dao.insertCooksIgnoringDuplicates(newCooks)
                 dao.insertDishesIgnoringDuplicates(snapshot.dishes.filter { it.cookId in newIds })
                 recipes.restore(recipeRestore, snapshot.dishRecipeSources.filter { source -> snapshot.dishes.any { it.id == source.dishId && it.cookId in newIds } })
+                snapshot.reminderRules.filter { it.cookId in newIds }.forEach { database.reminderDao().putRule(it.copy(enabled = false, status = "inactive")) }
+                snapshot.reminderOccurrences.filter { o -> snapshot.reminderRules.any { it.id == o.ruleId && it.cookId in newIds } }.forEach { database.reminderDao().putOccurrence(if (it.sequence == 0) it.copy(status = "inactive", active = false, badSinceUtcMillis = null, snoozedUntilUtcMillis = null) else if (it.status in setOf("queued", "scheduled")) it.copy(status = "cancelled") else it) }
                 snapshot.activityTimers.filter { it.cookId in newIds }.forEach { database.activityTimerDao().insert(it.copy(status = "inactive")) }
                 dao.insertIngredientsIgnoringDuplicates(snapshot.ingredients.filter { it.cookId in newIds })
                 dao.insertEventsIgnoringDuplicates(snapshot.events.filter { it.cookId in newIds })
@@ -986,6 +993,8 @@ data class ExportSnapshot(
     val dishRecipeSources: List<DishRecipeSource> = emptyList(),
     val mealPresets: List<MealPreset> = emptyList(),
     val activityTimers: List<ActivityTimer> = emptyList(),
+    val reminderRules: List<ReminderRule> = emptyList(),
+    val reminderOccurrences: List<ReminderOccurrence> = emptyList(),
 )
 
 data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)
