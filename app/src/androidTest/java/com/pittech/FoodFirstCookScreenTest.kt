@@ -2,7 +2,7 @@ package com.pittech
 
 import android.graphics.Bitmap
 import android.net.Uri
-import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -24,7 +24,7 @@ class FoodFirstCookScreenTest {
     private val app get() = compose.activity.application as PitTechApplication
     private fun screenshot(name: String) {
         val file = File(app.filesDir, "pittech-ui-test/" + name + ".png").apply { parentFile!!.mkdirs() }
-        compose.onRoot().captureToImage().asAndroidBitmap().apply {
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().apply {
             file.outputStream().use { compress(Bitmap.CompressFormat.PNG, 100, it) }; recycle()
         }
     }
@@ -102,7 +102,7 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithTag("food-temperature-" + potatoes.id + "-manual", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithTag("food-temperature-" + butt.id + "-manual", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("food-temperature-" + steaks.id + "-manual", useUnmergedTree = true).assertExists()
-        compose.onNodeWithTag("food-probe-assignment-" + steaks.id, useUnmergedTree = true).assertTextContains("Probe 2")
+        compose.onNodeWithTag("food-probe-assignment-" + steaks.id, useUnmergedTree = true).assertTextContains("Assigned: Probe 2")
         compose.onNodeWithTag("food-temperature-" + potatoes.id).performScrollTo().performClick()
         compose.onNodeWithTag("note-food-scope").assertTextContains("Potatoes")
         assertTrue(compose.onAllNodesWithTag("temperature-probe").fetchSemanticsNodes().isEmpty())

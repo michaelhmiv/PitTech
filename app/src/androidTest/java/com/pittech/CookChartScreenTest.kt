@@ -22,6 +22,10 @@ class CookChartScreenTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Chart note cook").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Chart note cook").performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-tab-charts", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("timeline-filter-menu").performClick()
+        compose.onNodeWithTag("timeline-filter-photos").performClick()
+        compose.onNodeWithText("No matching entries").assertIsDisplayed()
         compose.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).assertIsDisplayed().performClick()
         compose.onNodeWithTag("chart-y-axis").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("chart-x-axis").performScrollTo().assertIsDisplayed()
@@ -30,5 +34,10 @@ class CookChartScreenTest {
         compose.onNodeWithTag("chart-marker-${note.id}").performScrollTo().performClick()
         compose.onNodeWithText("Open timeline").performClick()
         compose.onNodeWithTag("timeline-entry-${note.id}").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-filter-menu").assertTextContains("Everything")
+        compose.onNodeWithTag("timeline-filter-menu").performClick()
+        compose.onNodeWithTag("timeline-filter-photos").performClick()
+        compose.onNodeWithText("No matching entries").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-entry-${note.id}").assertDoesNotExist()
     }
 }
