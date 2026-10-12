@@ -23,7 +23,8 @@ PitTech's long-term goal is **read-only temperature monitoring**: automatically 
 
 - Connections are optional. Manual cooking logs work without a device or internet connection.
 - Experimental controller diagnostics are limited to development/test builds. Public Android builds do not currently advertise validated connected-grill support.
-- Future integrations—including the existing experimental GrillirG connection, Combustion, Home Assistant, FireBoard, Flame Boss and MEATER—are **planned**, not available or verified today. Any released integration will be clearly labeled **Beta** until compatibility is established.
+- **GrillirG** already has a read-only cloud monitor in Android development/test builds. We plan to preserve and migrate it into the same universal connection framework; public availability still requires compatibility and service-terms review.
+- **Combustion, Home Assistant, FireBoard, Flame Boss and MEATER** are planned integrations, not available or verified yet. Public connections will be clearly labeled **Beta** until compatibility and reliability are established.
 - **PitTech is not a grill controller.** It must not ignite, shut down, change setpoints, configure Wi-Fi or firmware, or otherwise manipulate cooking equipment. Always use the manufacturer's controls and safety guidance.
 
 See [Connection principles](docs/CONNECTION_POLICY.md) and the [unified telemetry implementation roadmap](docs/UNIVERSAL_TELEMETRY_ROADMAP.md) for the read-only contract, GrillirG preservation requirements, and release gates.
