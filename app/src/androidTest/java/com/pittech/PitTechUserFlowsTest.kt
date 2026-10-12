@@ -1,5 +1,7 @@
 package com.pittech
 
+import com.pittech.data.PitTechDataTransfer
+
 import android.Manifest
 import android.os.Build
 import android.content.ClipboardManager

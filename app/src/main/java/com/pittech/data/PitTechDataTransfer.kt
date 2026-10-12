@@ -370,7 +370,7 @@ class PitTechDataTransfer(
         val resultCount: Int get() = snapshot.results.size
     }
 
-    private companion object {
+    companion object {
         const val ARCHIVE_VERSION = 7
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024

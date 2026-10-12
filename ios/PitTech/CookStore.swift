@@ -372,7 +372,7 @@ final class CookStore {
         !path.split(separator: "/").contains(where: { $0 == ".." || $0 == "." })
     }
 
-    static func isExpectedAttachment(path: String, id: String) -> Bool {
+    nonisolated static func isExpectedAttachment(path: String, id: String) -> Bool {
         path.range(of: "^attachments/\(NSRegularExpression.escapedPattern(for: id))\\.[A-Za-z0-9]{1,8}$", options: .regularExpression) != nil
     }
 
