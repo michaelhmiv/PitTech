@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.DishEntity
@@ -71,6 +72,8 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
     val camera = rememberCameraPhotoCapture(onPhotoCaptured = { stage(listOf(it)) })
     fun keepDraft() { scope.launch { viewModel.persistNoteDraft(draft); onClose() } }
     AlertDialog(
+        modifier = Modifier.systemBarsPadding().imePadding(),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         onDismissRequest = { if (!busy && !staging) keepDraft() },
         title = { Text(if (editing && draft.category == "temperature") "Edit temperature" else if (editing) "Edit timeline entry" else "Add to cook log") },
         text = {

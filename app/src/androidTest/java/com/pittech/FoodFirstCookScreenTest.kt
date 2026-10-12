@@ -1,7 +1,12 @@
 package com.pittech
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.net.Uri
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -37,6 +42,40 @@ class FoodFirstCookScreenTest {
         val dismiss = compose.onAllNodesWithContentDescription("Dismiss")
         if (dismiss.fetchSemanticsNodes().isNotEmpty()) dismiss[0].performClick()
         compose.waitUntil(5_000) { dismiss.fetchSemanticsNodes().isEmpty() }
+    }
+    private fun saveEntryWithKeyboardOpen() {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val previousFlags = automation.serviceInfo.flags
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
+        try {
+            var saveBounds = Rect()
+            compose.waitUntil(10_000) {
+                val windows = automation.windows
+                val keyboard = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+                    ?: return@waitUntil false
+                val keyboardBounds = Rect().also { keyboard.getBoundsInScreen(it) }
+                val save = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                    .flatMap { it.root?.findAccessibilityNodeInfosByText("Save entry").orEmpty() }
+                    .firstOrNull { it.text?.toString() == "Save entry" && it.isVisibleToUser && it.isEnabled }
+                    ?: return@waitUntil false
+                saveBounds = Rect().also { save.getBoundsInScreen(it) }
+                !saveBounds.isEmpty && saveBounds.bottom <= keyboardBounds.top
+            }
+            screenshot("food-first-note")
+            // Compose's performClick can reach a node covered by another window. Inject a real
+            // screen tap so this also proves the keyboard does not intercept the save button.
+            val downAt = SystemClock.uptimeMillis()
+            listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
+                MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action,
+                    saveBounds.exactCenterX(), saveBounds.exactCenterY(), 0).apply {
+                    try { assertTrue(automation.injectInputEvent(this, true)) } finally { recycle() }
+                }
+            }
+        } finally {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = previousFlags }
+        }
     }
 
     @Test fun threeFoodsKeepIndependentHistoryAndQuickEntryFiltersSurviveReopening() {
@@ -108,9 +147,8 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithTag("note-food-scope").assertTextContains("Potatoes")
         assertTrue(compose.onAllNodesWithTag("temperature-probe").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag("temperature-value").performTextInput("180")
-        compose.onNodeWithTag("timeline-entry-details").performTextInput("Tender at the center")
-        screenshot("food-first-note")
-        compose.onNodeWithTag("temperature-save").performClick()
+        compose.onNodeWithTag("timeline-entry-details").performClick().performTextInput("Tender at the center")
+        saveEntryWithKeyboardOpen()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().any { it.dishId == potatoes.id && it.source == "manual" && it.value == 180.0 } } }
         dismissNotice()
         compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
