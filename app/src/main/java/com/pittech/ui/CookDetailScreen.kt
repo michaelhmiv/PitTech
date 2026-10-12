@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -563,6 +564,17 @@ fun CookDetailScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = {
+            Box(Modifier.navigationBarsPadding()) {
+                CookQuickActionsBar(
+                    onNote = { openNote() },
+                    onTemperature = { openNote("temperature") },
+                    onPhoto = { openNote("photo", photoFirst = true) },
+                    onReminder = { showReminderComposer = true },
+                    onQuickEvent = { type -> openNote("action", com.pittech.domain.PlaybookCodec.action(type)) },
+                )
+            }
+        },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -666,13 +678,7 @@ fun CookDetailScreen(
                 CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
             }
             }
-            CookQuickActionsBar(
-                onNote = { openNote() },
-                onTemperature = { openNote("temperature") },
-                onPhoto = { openNote("photo", photoFirst = true) },
-                onReminder = { showReminderComposer = true },
-                onQuickEvent = { type -> openNote("action", com.pittech.domain.PlaybookCodec.action(type)) },
-            )
+
         }
     }
 }
