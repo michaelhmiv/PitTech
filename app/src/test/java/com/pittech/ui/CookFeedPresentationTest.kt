@@ -51,6 +51,8 @@ class CookFeedPresentationTest {
         val unavailable = sample("unplugged", "steaks", "p2", 200, 0.0, "unavailable")
         val result = FoodLivePresentation.temperatures("steaks", listOf(probe("p2")), emptyList(), listOf(old, unavailable), recording, 300).single()
         assertFalse(result.live); assertEquals(old, result.reading)
+        assertEquals("Unavailable", timelineTemperatureValue(unavailable))
+        assertEquals("186.0 °F", timelineTemperatureValue(old))
         assertFalse(FoodLivePresentation.temperatures("steaks", listOf(probe("p2")), emptyList(), listOf(old), recording.copy(status = CookRecordingEntity.STOPPED), 300).single().live)
     }
 
@@ -98,5 +100,18 @@ class CookFeedPresentationTest {
         assertTrue(story.none { it is TimelineLine.Reading || it is TimelineLine.ReadingGroup })
         assertEquals(1, data.events.size)
         assertNull(standalone.eventId)
+    }
+
+    @Test fun ambiguousLegacyWholeCookActionsDoNotInventAPhaseForEveryFood() {
+        val cook = CookEntity("cook", "Legacy mixed grill", CookStatus.ACTIVE, 0, "UTC", createdAtUtcMillis = 0, updatedAtUtcMillis = 0)
+        val foods = listOf("butt", "steaks", "potatoes").map { DishEntity(it, cook.id, it, "Other", null, createdAtUtcMillis = 0, updatedAtUtcMillis = 0) }
+        val wrap = event(type = "wrap", food = null)
+        val removed = event(type = "remove", food = "butt").copy(id = "removed", occurredAtUtcMillis = 200)
+        val data = CookDetailData(cook, foods, emptyList(), listOf(wrap, removed), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        val phases = FoodLivePresentation.phases(data, 300).associate { it.dishId to it.phase }
+        assertEquals("removed", phases["butt"])
+        assertEquals("prep", phases["steaks"])
+        assertEquals("prep", phases["potatoes"])
+        assertEquals(listOf(wrap, removed), data.events)
     }
 }

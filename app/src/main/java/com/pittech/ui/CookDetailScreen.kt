@@ -557,7 +557,7 @@ fun CookDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Column { Text(data.cook.title, maxLines = 1); Text(statusLabel(data.cook.status), style = MaterialTheme.typography.bodyMedium) } },
+                title = { Column { Text(data.cook.title, maxLines = 1); Text(statusLabel(data.cook.status), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-cook-status")) } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back to cooks") } },
                 actions = { IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") } },
             )
@@ -785,8 +785,7 @@ private fun LiveCookTab(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(statusLabel(data.cook.status), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f).testTag("live-cook-status"))
-            Text(formatCookDuration(elapsed), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("live-cook-elapsed"))
+            Text("Elapsed " + formatCookDuration(elapsed), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("live-cook-elapsed"))
         }
         if (pit != null || setpoint != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -1250,10 +1249,11 @@ private fun TimelineEntryRow(
                 modifier = Modifier.weight(1f),
                 reading = row.reading,
                 cookStartedAt = data.cook.startedAtUtcMillis,
+                foodName = data.dishes.firstOrNull { it.id == row.reading.dishId }?.name,
                 onEdit = { onEditReading(row.reading) },
                 onDelete = { onDeleteReading(row.reading) },
             )
-            is TimelineLine.ReadingGroup -> TemperatureReadingGroupCard(Modifier.weight(1f), row)
+            is TimelineLine.ReadingGroup -> TemperatureReadingGroupCard(Modifier.weight(1f), row, data.dishes.associate { it.id to it.name })
             is TimelineLine.Photo -> StandalonePhotoTimelineCard(Modifier.weight(1f), row.photo, data, onPhotoClick)
         }
     }
@@ -1271,7 +1271,7 @@ private fun TimelineEventCard(
     val scopes = (listOfNotNull(event.dishId) + meta?.dishIds.orEmpty()).distinct()
     val foodLabel = data.dishes.filter { it.id in scopes }.joinToString { it.name }.ifBlank { "Whole cook" }
     val title = CookFeedPresentation.title(event)
-    val compact = line.photos.isEmpty() && (event.source == "controller_cloud" || CookFeedPresentation.isSetpoint(event))
+    val compact = line.photos.isEmpty() && (event.source != "manual" || CookFeedPresentation.isSetpoint(event))
     var expanded by rememberSaveable(event.id) { mutableStateOf(false) }
     val content: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth().padding(if (compact) 4.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1339,14 +1339,19 @@ private fun TimelineEventCard(
     }
 }
 
+internal fun timelineTemperatureValue(reading: SensorReadingEntity): String =
+    if (FoodLivePresentation.accepted(reading)) formatReadingValue(reading.value) + " " + reading.unit else "Unavailable"
+
 @Composable
 private fun TemperatureTimelineCard(
     modifier: Modifier,
     reading: SensorReadingEntity,
     cookStartedAt: Long,
+    foodName: String? = null,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    var expanded by rememberSaveable(reading.id) { mutableStateOf(false) }
     Card(
         modifier = modifier.testTag("timeline-entry-${reading.id}"),
         shape = RoundedCornerShape(18.dp),
@@ -1355,10 +1360,12 @@ private fun TemperatureTimelineCard(
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TimelineKindChip("TEMPERATURE")
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text(formatTimeOfDay(reading.measuredAtUtcMillis), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                    Text(formatSinceCookStart(reading.measuredAtUtcMillis, cookStartedAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(reading.probeName + ": " + timelineTemperatureValue(reading), style = MaterialTheme.typography.titleMedium)
+                    Text(formatTimeOfDay(reading.measuredAtUtcMillis) + (foodName?.let { " · " + it } ?: ""), style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("timeline-reading-details-" + reading.id)) {
+                    Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (expanded) "Hide reading details" else "Reading details")
                 }
                 if (reading.source == "manual") {
                     TimelineEntryMenu(
@@ -1372,17 +1379,20 @@ private fun TemperatureTimelineCard(
                     )
                 }
             }
-            Text("${reading.probeName}: ${formatReadingValue(reading.value)} ${reading.unit}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("${reading.measurementType.replace('_', ' ')} · ${reading.source.replaceFirstChar { it.uppercase() }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (expanded) {
+                Text(formatTimestamp(reading.measuredAtUtcMillis) + " · " + formatSinceCookStart(reading.measuredAtUtcMillis, cookStartedAt), style = MaterialTheme.typography.bodySmall)
+                Text(reading.measurementType.replace('_', ' ') + " · " + reading.source + " · " + reading.qualityStatus, style = MaterialTheme.typography.bodySmall)
+                Text("Recorded " + formatTimestamp(reading.recordedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
 
 @Composable
-private fun TemperatureReadingGroupCard(modifier: Modifier, line: TimelineLine.ReadingGroup) {
+private fun TemperatureReadingGroupCard(modifier: Modifier, line: TimelineLine.ReadingGroup, foodNames: Map<String, String>) {
     var expanded by rememberSaveable(line.stableKey) { mutableStateOf(false) }
     val readings = line.readings.sortedBy { it.measuredAtUtcMillis }
-    val probeSummaries = readings.groupBy { it.probeName to it.unit }.values
+    val probeSummaries = readings.groupBy { TemperaturePlot.identity(it) to it.unit }.values
     Card(
         modifier = modifier.testTag("timeline-entry-${line.stableKey}"),
         shape = RoundedCornerShape(18.dp),
@@ -1395,21 +1405,21 @@ private fun TemperatureReadingGroupCard(modifier: Modifier, line: TimelineLine.R
                 Text("${readings.size} readings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             }
             Text(
-                "${formatTimeOfDay(readings.first().measuredAtUtcMillis)}–${formatTimeOfDay(readings.last().measuredAtUtcMillis)} · ${readings.first().source.replaceFirstChar { it.uppercase() }}",
+                "${formatTimeOfDay(readings.first().measuredAtUtcMillis)}–${formatTimeOfDay(readings.last().measuredAtUtcMillis)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             probeSummaries.forEach { samples ->
                 val ordered = samples.sortedBy { it.measuredAtUtcMillis }
-                Text(
-                    "${samples.first().probeName}: ${formatReadingValue(samples.minOf { it.value })}–${formatReadingValue(samples.maxOf { it.value })} ${samples.first().unit} · latest ${formatReadingValue(ordered.last().value)} ${ordered.last().unit}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                )
+                val valid = ordered.filter(FoodLivePresentation::accepted)
+                val range = if (valid.isEmpty()) "Unavailable" else
+                    formatReadingValue(valid.minOf { it.value }) + "–" + formatReadingValue(valid.maxOf { it.value }) + " " + valid.first().unit
+                Text(samples.first().probeName + (foodNames[samples.first().dishId]?.let { " · " + it } ?: "") + ": " + range +
+                    " · latest " + timelineTemperatureValue(ordered.last()), style = MaterialTheme.typography.bodyMedium)
             }
             TextButton(
                 onClick = { expanded = !expanded },
-                modifier = Modifier.heightIn(min = 44.dp).testTag("timeline-group-expand-${line.readings.first().id}"),
+                modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-group-expand-${line.readings.first().id}"),
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
             ) {
                 Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
@@ -1418,9 +1428,10 @@ private fun TemperatureReadingGroupCard(modifier: Modifier, line: TimelineLine.R
             }
             if (expanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("timeline-group-readings-${line.readings.first().id}")) {
+                    Text(readings.first().source, style = MaterialTheme.typography.bodySmall)
                     readings.forEach { reading ->
                         Text(
-                            "${formatTimeOfDay(reading.measuredAtUtcMillis)} · ${reading.probeName}: ${formatReadingValue(reading.value)} ${reading.unit}",
+                            "${formatTimeOfDay(reading.measuredAtUtcMillis)} · ${reading.probeName}: ${timelineTemperatureValue(reading)}",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }

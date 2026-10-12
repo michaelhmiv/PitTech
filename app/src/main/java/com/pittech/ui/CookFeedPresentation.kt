@@ -3,6 +3,7 @@ package com.pittech.ui
 import com.pittech.data.*
 import com.pittech.domain.CookNoteMetadata
 import com.pittech.domain.PlaybookCodec
+import com.pittech.domain.CookPhases
 import com.pittech.devices.GrillSamplingPolicy
 
 internal enum class TimelineFilter(val label: String) {
@@ -53,6 +54,11 @@ internal data class FoodTemperature(val reading: SensorReadingEntity?, val probe
 
 /** The latest sample's quality and current assignment take precedence over an old valid value. */
 internal object FoodLivePresentation {
+    fun phases(data: CookDetailData, end: Long) = CookPhases.all(
+        notePlanEvents(data.events).let { events ->
+            if (data.lifecycle?.timingMode == "explicit_phases") events else events.filter { it.dishId != null }
+        }, data.dishes.map { it.id }, data.cook.startedAtUtcMillis, end)
+
     fun temperatures(foodId: String, probes: List<ProbeEntity>, assignments: List<ProbeAssignmentEntity>,
         readings: List<SensorReadingEntity>, recording: CookRecordingEntity?, now: Long): List<FoodTemperature> {
         val active = probes.filter { probe ->
@@ -80,7 +86,7 @@ internal object FoodLivePresentation {
             .maxByOrNull { it.measuredAtUtcMillis }
         return if (manual != null && values.none { it.live } &&
             manual.measuredAtUtcMillis > (values.mapNotNull { it.reading?.measuredAtUtcMillis }.maxOrNull() ?: Long.MIN_VALUE))
-            listOf(FoodTemperature(manual)) + values else values
+            listOf(FoodTemperature(manual)) + values.filter { it.waiting || it.reading == null } else values
     }
     fun accepted(reading: SensorReadingEntity) = reading.qualityStatus == "valid" && reading.value.isFinite() &&
         reading.unit in setOf("°F", "°C")

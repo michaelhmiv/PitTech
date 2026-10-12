@@ -50,6 +50,10 @@ class FoodFirstCookScreenTest {
             val foods = app.database.cookDao().getDishesForCook(id)
             butt = foods.first { it.name == "Pork butt" }; steaks = foods.first { it.name == "Shoulder steaks" }
             val now = System.currentTimeMillis()
+            app.database.cookDao().getCook(id)!!.let { app.database.cookDao().updateCook(it.copy(startedAtUtcMillis = now - 8 * 3_600_000)) }
+            app.database.cookDao().getTimelineEventsForCook(id).filter { it.eventType == "cook_started" }.forEach {
+                app.database.cookDao().updateTimelineEvent(it.copy(occurredAtUtcMillis = now - 8 * 3_600_000))
+            }
             app.cookRepository.addTimelineEvent(id, butt.id, "meat_on", "Butt on", null, now - 8 * 3_600_000)
             app.cookRepository.addTimelineEvent(id, butt.id, "remove", "Off grill and venting", null, now - 3 * 3_600_000)
             val potatoId = app.cookRepository.addDish(id, DishDraft("Potatoes", "Vegetables"))
@@ -95,10 +99,10 @@ class FoodFirstCookScreenTest {
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getProbesForCook(cookId).any { it.name == "Probe 1" && it.assignedDishId == potatoes.id } } }
         dismissNotice()
         compose.onNodeWithText("Probe 1 · waiting for a reading").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("food-temperature-" + potatoes.id + "-manual").assertDoesNotExist()
-        compose.onNodeWithTag("food-temperature-" + butt.id + "-manual").assertExists()
-        compose.onNodeWithTag("food-temperature-" + steaks.id + "-" + runBlocking(Dispatchers.IO) {
-            app.database.cookDao().getProbesForCook(cookId).single { it.name == "Probe 2" }.id }).assertExists()
+        compose.onNodeWithTag("food-temperature-" + potatoes.id + "-manual", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("food-temperature-" + butt.id + "-manual", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("food-temperature-" + steaks.id + "-manual", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("food-probe-assignment-" + steaks.id, useUnmergedTree = true).assertTextContains("Probe 2")
         compose.onNodeWithTag("food-temperature-" + potatoes.id).performScrollTo().performClick()
         compose.onNodeWithTag("note-food-scope").assertTextContains("Potatoes")
         assertTrue(compose.onAllNodesWithTag("temperature-probe").fetchSemanticsNodes().isEmpty())

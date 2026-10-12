@@ -32,15 +32,15 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(data.cook.id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
     val end = data.cook.endedAtUtcMillis ?: now
-    val phases = CookPhases.all(notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, end)
+    val phases = FoodLivePresentation.phases(data, end)
     val phaseByFood = phases.associateBy { it.dishId }
     val legacy = data.lifecycle?.timingMode != "explicit_phases"
     val groups = listOf(
         (if (legacy) "Foods in this cook" else "On the grill") to data.dishes.filter {
-            phaseByFood[it.id]?.phase in setOf("cooking", "wrapped") || (legacy && phaseByFood[it.id]?.phase == "prep")
+            legacy || phaseByFood[it.id]?.phase in setOf("cooking", "wrapped")
         },
         "Preparing" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase == "prep" },
-        "Off the grill" to data.dishes.filter { phaseByFood[it.id]?.phase in setOf("removed", "resting", "holding", "done") },
+        "Off the grill" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase in setOf("removed", "resting", "holding", "done") },
     )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Grill layout", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -73,9 +73,14 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                             }
                             if (phase != null) {
                                 val duration = when (phase.phase) { "resting" -> phase.restMillis; "holding" -> phase.holdMillis; else -> phase.cookingMillis }
-                                Text((if (legacy && phase.phase == "prep") "Status not recorded" else CookPhases.label(phase.phase)) +
+                                Text((if (legacy && phase.phase == "prep") "Status not recorded" else (if (legacy) "Last recorded: " else "") + CookPhases.label(phase.phase)) +
                                     (if (!legacy && duration > 0) " · " + foodDuration(duration) else ""), style = MaterialTheme.typography.bodySmall)
                             }
+                            val displayedProbes = temperatures.mapNotNull { it.probe?.id }.toSet()
+                            val assigned = data.probes.filter { it.assignedDishId == dish.id && it.measurementType == "food_probe" &&
+                                (data.recording == null || it.deviceId == data.recording.deviceId) && it.id !in displayedProbes }
+                            if (assigned.isNotEmpty()) Text("Assigned: " + assigned.joinToString { it.name },
+                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("food-probe-assignment-" + dish.id))
                             temperatures.forEach { value ->
                                 val reading = value.reading
                                 if (reading != null) {
@@ -83,7 +88,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                                     Text((if (value.live) "" else "Last check · ") + String.format(Locale.getDefault(), "%.0f", number) + " " + displayUnit,
                                         style = if (value.live) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
                                         modifier = Modifier.testTag("food-temperature-" + dish.id + "-" + (value.probe?.id ?: "manual")))
-                                    Text((value.probe?.name?.let { it + " · " } ?: "") + (if (value.live) "Received " else "") + foodClock(reading.measuredAtUtcMillis),
+                                    Text(((value.probe?.name ?: if (reading.source == "manual") "Manual" else reading.probeName) + " · ") + (if (value.live) "Received " else "") + foodClock(reading.measuredAtUtcMillis),
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else Text(when {
                                     value.waiting -> (value.probe?.name ?: "Probe") + " · waiting for a reading"
@@ -91,12 +96,12 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                                     else -> "No probe"
                                 }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            last?.let { Text(CookFeedPresentation.title(it) + " · " + foodClock(it.occurredAtUtcMillis),
+                            last?.let { Text((PlaybookCodec.actions[PlaybookCodec.action(it.eventType, it.noteMetadataJson)] ?: CookFeedPresentation.title(it)) + " · " + foodClock(it.occurredAtUtcMillis),
                                 style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                     if (selectedFood == dish.id) {
-                        FoodActions(dish, phase?.phase ?: "prep", data.cook.status != CookStatus.COMPLETED,
+                        FoodActions(dish, if (legacy && phase?.phase == "prep") "unknown" else phase?.phase ?: "prep", data.cook.status != CookStatus.COMPLETED,
                             onLog, onEdit, onIngredients, onProbe, data.probes.any { it.measurementType == "food_probe" })
                     }
                 }
@@ -117,6 +122,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
         }
         if (active) {
             val actions = when (phase) {
+                "unknown" -> listOf("food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done")
                 "cooking", "wrapped" -> listOf("spritz", "wrap", "remove", "rest_start")
                 "removed" -> listOf("rest_start", "hold_start", "dish_done", "food_on")
                 "resting" -> listOf("hold_start", "dish_done", "food_on")
