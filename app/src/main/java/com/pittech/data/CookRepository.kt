@@ -17,6 +17,7 @@ class CookRepository(
     private val photoStorage: PhotoStorage,
 ) {
     private val dao = database.cookDao()
+    val recipes by lazy { RecipeRepository(database, photoStorage) }
     val notes by lazy { CookNoteRepository(database, photoStorage, this) }
 
     fun observeCooks(): Flow<List<CookWithDishes>> = dao.observeCooks()
@@ -705,6 +706,11 @@ class CookRepository(
             reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
+            recipes = database.recipeDao().recipes(),
+            recipeRevisions = database.recipeDao().revisions(),
+            recipeAssets = database.recipeDao().assets(),
+            dishRecipeSources = database.recipeDao().sources().filter { source -> dao.getDish(source.dishId)?.cookId in selectedCookIds },
+            mealPresets = database.recipeDao().presets(),
             companionRecords = records,
             companionPhotos = database.companionDao().photos().filter { it.recordId in recordIds },
             assignments = database.recordingDao().getAllAssignments().filter { it.cookId in selectedCookIds },
@@ -719,6 +725,8 @@ class CookRepository(
         require((snapshot.photos.map { it.id } + snapshot.companionPhotos.map { it.id }).all { attachmentData[it]?.isNotEmpty() == true }) {
             "The backup is incomplete: one or more photo attachments are missing."
         }
+        RecipeArchive.validate(snapshot)
+        val recipeRestore = recipes.prepareRestore(snapshot)
         val existingCookIds = dao.getAllCooks().map { it.id }.toSet()
         val newCooks = snapshot.cooks.filterNot { it.id in existingCookIds }
         val newIds = newCooks.map { it.id }.toSet()
@@ -749,6 +757,7 @@ class CookRepository(
         require(referencePhotos.none { it.id in savedPhotoIds } && photos.none { p -> database.companionDao().photos().any { it.id == p.id } }) { "An attachment ID conflicts with an existing photo. Restore into a separate backup first." }
         val writtenReferencePhotos = mutableListOf<CompanionPhoto>()
         try {
+            recipes.writeRestoreAssets(recipeRestore, attachmentData)
             photos.forEach { photo ->
                 val bytes = attachmentData.getValue(photo.id)
                 photoStorage.writeImported(photo.relativePath, bytes)
@@ -761,6 +770,7 @@ class CookRepository(
             database.withTransaction {
                 dao.insertCooksIgnoringDuplicates(newCooks)
                 dao.insertDishesIgnoringDuplicates(snapshot.dishes.filter { it.cookId in newIds })
+                recipes.restore(recipeRestore, snapshot.dishRecipeSources.filter { source -> snapshot.dishes.any { it.id == source.dishId && it.cookId in newIds } })
                 dao.insertIngredientsIgnoringDuplicates(snapshot.ingredients.filter { it.cookId in newIds })
                 dao.insertEventsIgnoringDuplicates(snapshot.events.filter { it.cookId in newIds })
                 dao.insertTargetsIgnoringDuplicates(snapshot.targets.filter { it.cookId in newIds })
@@ -780,6 +790,7 @@ class CookRepository(
                 database.recordingDao().insertAssignments(snapshot.assignments.filter { it.cookId in newIds })
             }
         } catch (failure: Throwable) {
+            recipes.cleanupRestore(recipeRestore)
             restoredPhotos.forEach { photo -> photoStorage.delete(photo.relativePath) }
             writtenReferencePhotos.forEach { photoStorage.delete(it.relativePath) }
             throw failure
@@ -871,6 +882,11 @@ data class ExportSnapshot(
     val logReadingLinks: List<LogReadingLink> = emptyList(),
     val lifecycles: List<CookLifecycle> = emptyList(),
     val targetHistory: List<TargetHistory> = emptyList(),
+    val recipes: List<SavedRecipe> = emptyList(),
+    val recipeRevisions: List<RecipeRevision> = emptyList(),
+    val recipeAssets: List<RecipeAsset> = emptyList(),
+    val dishRecipeSources: List<DishRecipeSource> = emptyList(),
+    val mealPresets: List<MealPreset> = emptyList(),
 )
 
 data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)

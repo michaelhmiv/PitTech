@@ -520,7 +520,7 @@ class PitTechUserFlowsTest {
         val preview = transfer.previewImport(java.io.ByteArrayInputStream(zipBytes.toByteArray()))
         assertTrue(preview.cookCount > 0)
         assertTrue(preview.dishCount > 0)
-        assertEquals(6, preview.archiveVersion)
+        assertEquals(PitTechDataTransfer.ARCHIVE_VERSION, preview.archiveVersion)
         assertEquals("°C", preview.preferences?.temperatureUnit)
         assertEquals("kg", preview.preferences?.weightUnit)
         assertEquals("DARK", preview.preferences?.themeMode)

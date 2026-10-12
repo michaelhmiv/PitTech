@@ -36,6 +36,9 @@ class PitTechDataTransfer(
             putText(zip, "README.txt", README)
             putText(zip, "data/pittech.json", snapshotJson(snapshot, preferences).toString())
             csvTables(snapshot).forEach { (name, content) -> putText(zip, "csv/$name", content) }
+            snapshot.recipeAssets.forEach { asset ->
+                putBytes(zip, RecipeArchive.attachmentPath(asset), repository.readPhoto(asset.relativeFilePath) ?: error("A recipe photo is unavailable."))
+            }
             snapshot.companionPhotos.forEach { photo ->
                 val bytes = repository.readPhoto(photo.relativePath) ?: error("A playbook reference photo could not be read for backup.")
                 putBytes(zip, "attachments/${photo.id}.${photo.relativePath.substringAfterLast('.')}", bytes)
@@ -156,6 +159,7 @@ class PitTechDataTransfer(
             .put("reminders", snapshot.reminders.size))
 
     private fun snapshotJson(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
+        .apply { RecipeArchive.write(this, snapshot) }
         .put("schemaVersion", ARCHIVE_VERSION)
         .putNullable("preferences", preferences?.let {
             JSONObject()
@@ -367,7 +371,7 @@ class PitTechDataTransfer(
     }
 
     private companion object {
-        const val ARCHIVE_VERSION = 6
+        const val ARCHIVE_VERSION = 7
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
@@ -692,7 +696,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
         it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && it.value.isFinite() && it.unit in setOf("°F", "°C")
     })
     require(events.all { event -> com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty().all { dishesById[it]?.cookId == event.cookId } })
-    return ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history)
+    return RecipeArchive.read(root, ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history), attachment)
 }
 
 private fun validatedContext(o: JSONObject): String? = o.stringOrNull("temperatureContextJson")?.also {

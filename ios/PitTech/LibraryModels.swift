@@ -113,9 +113,15 @@ struct PitTechLibrary: Codable {
     var logReadingLinks: [JSONValue]
     var lifecycles: [JSONValue]
     var targetHistory: [JSONValue]
+    var recipes: [JSONValue]
+    var recipeRevisions: [JSONValue]
+    var recipeAssets: [JSONValue]
+    var dishRecipeSources: [JSONValue]
+    var mealPresets: [JSONValue]
+
 
     init() {
-        schemaVersion = 6
+        schemaVersion = 7
         preferences = ["temperatureUnit": .string("F"), "weightUnit": .string("lb"), "themeMode": .string("system")]
         cooks = []
         dishes = []
@@ -135,12 +141,19 @@ struct PitTechLibrary: Codable {
         logReadingLinks = []
         lifecycles = []
         targetHistory = []
+        recipes = []
+        recipeRevisions = []
+        recipeAssets = []
+        dishRecipeSources = []
+        mealPresets = []
+
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, preferences, cooks, dishes, ingredients, events, readings, targets, results
         case devices, probes, photos, reminders, recordings, probeAssignments, companionRecords, companionPhotos
         case logReadingLinks, lifecycles, targetHistory
+        case recipes, recipeRevisions, recipeAssets, dishRecipeSources, mealPresets
     }
 
     init(from decoder: Decoder) throws {
@@ -165,6 +178,12 @@ struct PitTechLibrary: Codable {
         logReadingLinks = try container.decodeIfPresent([JSONValue].self, forKey: .logReadingLinks) ?? []
         lifecycles = try container.decodeIfPresent([JSONValue].self, forKey: .lifecycles) ?? []
         targetHistory = try container.decodeIfPresent([JSONValue].self, forKey: .targetHistory) ?? []
+        recipes = try container.decodeIfPresent([JSONValue].self, forKey: .recipes) ?? []
+        recipeRevisions = try container.decodeIfPresent([JSONValue].self, forKey: .recipeRevisions) ?? []
+        recipeAssets = try container.decodeIfPresent([JSONValue].self, forKey: .recipeAssets) ?? []
+        dishRecipeSources = try container.decodeIfPresent([JSONValue].self, forKey: .dishRecipeSources) ?? []
+        mealPresets = try container.decodeIfPresent([JSONValue].self, forKey: .mealPresets) ?? []
+
     }
 }
 
