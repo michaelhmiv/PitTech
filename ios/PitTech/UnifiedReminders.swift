@@ -73,6 +73,9 @@ extension PitTechLibrary {
         if let previous, previous["cookId"]?.stringValue != cookId { throw CookNoteError.scope }
         library.reminderRules.removeAll { $0.objectValue?["id"]?.stringValue == id }
         library.reminderRules.append(.object(["id": .string(id), "cookId": .string(cookId), "dishId": dishId.map(JSONValue.string) ?? .null, "title": .string(title), "kind": config["type"]!, "triggerConfig": .string(raw), "sourceRecipeRevisionId": revisionId.map(JSONValue.string) ?? previous?["sourceRecipeRevisionId"] ?? .null, "sourceMilestoneId": milestoneId.map(JSONValue.string) ?? previous?["sourceMilestoneId"] ?? .null, "enabled": .bool(true), "status": .string("pending"), "schemaVersion": .number(1), "createdAtUtcMillis": previous?["createdAtUtcMillis"] ?? .number(now), "updatedAtUtcMillis": .number(now)]))
+        if previous != nil { library.reminderOccurrences = library.reminderOccurrences.map { row in
+            guard var o = row.objectValue, o["ruleId"]?.stringValue == id, (o["sequence"]?.numberValue ?? 0) > 0, ["queued", "scheduled", "delivered"].contains(o["status"]?.stringValue ?? "") else { return row }; o["status"] = .string("cancelled"); return .object(o)
+        } }
         putOccurrence(["id": .string("state:" + id), "ruleId": .string(id), "sequence": .number(0), "status": .string("pending"), "active": .bool(false)])
         do { try library.validateReminderRules(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) } } catch { library = prior; throw error }
     }
@@ -160,6 +163,11 @@ extension PitTechLibrary {
                 do { try await center.add(UNNotificationRequest(identifier: schedule.id, content: content, trigger: trigger)) } catch { reminderMessage = "Reminder saved. Notifications are unavailable; enable them in Settings." }
             }
         }
+    }
+    func recordReminderDelivery(_ id: String, at: Double) {
+        guard let index = library.reminderOccurrences.firstIndex(where: { $0.objectValue?["id"]?.stringValue == id }), var row = library.reminderOccurrences[index].objectValue, ["scheduled", "queued"].contains(row["status"]?.stringValue ?? ""), let ruleId = row["ruleId"]?.stringValue, var state = reminderState(ruleId) else { return }
+        let timestamp = Double(Int64(at)); row["status"] = .string("delivered"); row["deliveredAtUtcMillis"] = .number(timestamp); library.reminderOccurrences[index] = .object(row)
+        state["deliveredAtUtcMillis"] = .number(timestamp); state["snoozedUntilUtcMillis"] = .null; putOccurrence(state); save()
     }
     func refreshReminderDeliveryHistory() async {
         let delivered = await UNUserNotificationCenter.current().deliveredNotifications()

@@ -54,7 +54,7 @@ class CookGuidanceReceiver : BroadcastReceiver() {
                 val occurrence = intent.getIntExtra("occurrence", 0)
                 if (step.startsWith("reminder:")) {
                     val app = context.applicationContext as PitTechApplication
-                    if (intent.action?.startsWith("reminder_") == true) app.reminderRepository.change(context, step.removePrefix("reminder:"), intent.action!!.removePrefix("reminder_"))
+                    if (intent.action?.startsWith("reminder_") == true) app.reminderRepository.change(context, step.removePrefix("reminder:"), intent.action!!.removePrefix("reminder_"), expectedSequence = occurrence)
                     app.reminderRepository.reconcile(context, cook)
                     return@launch
                 }

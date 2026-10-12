@@ -12,6 +12,26 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class ReminderIntegrationTest {
+    @Test fun immediateManualThresholdDeliversOnceAndOldOccurrenceActionsAreIgnored(): Unit = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        if (android.os.Build.VERSION.SDK_INT >= 33) instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val cooks = CookRepository(db, PhotoStorage(context)); val cook = cooks.startCook(NewCookDraft("Threshold meal", dishes = listOf(DishDraft("Mac", "Pasta"))))
+            val dish = db.cookDao().getDishesForCook(cook).single().id; val now = System.currentTimeMillis()
+            val reading = cooks.addManualTemperature(cook, dish, "Food", "food_probe", 170.0, "°F", now)
+            val reminders = ReminderRepository(db); val trigger = ReminderTrigger.Probe(reading.channelIdentity(), reading.probeId, reading.measurementType, "above", 165.0)
+            val id = reminders.save(cook, dish, "Check the food", trigger)
+            reminders.reconcile(context, cook); reminders.reconcile(context, cook)
+            val receipt = db.reminderDao().history(id).single { it.sequence > 0 }
+            assertEquals("delivered", receipt.status)
+            reminders.change(context, id, "complete", expectedSequence = receipt.sequence + 1); assertTrue(db.reminderDao().rule(id)!!.enabled)
+            reminders.change(context, id, "complete", expectedSequence = receipt.sequence); assertFalse(db.reminderDao().rule(id)!!.enabled)
+            reminders.save(cook, dish, "A new decision", ReminderTrigger.Duration(System.currentTimeMillis(), 600000), id = id)
+            assertTrue(db.reminderDao().history(id).none { it.sequence > 0 && it.status == "queued" })
+            reminders.change(context, id, "remove")
+        } finally { db.close() }
+    }
     @Test fun rulesAndReceiptsSurviveReopenRestoreInactiveAndRecordOneExplicitAction(): Unit = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "reminders-${UUID.randomUUID()}.db"

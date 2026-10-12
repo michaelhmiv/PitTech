@@ -12,6 +12,7 @@ class ReminderRepository(private val db: PitTechDatabase) {
     private val dao = db.reminderDao()
     fun observeRules() = dao.observeRules()
     fun observeOccurrences() = dao.observeOccurrences()
+    suspend fun cancelDisplayed(context: Context, id: String) { dao.rule(id)?.let { com.pittech.UnifiedReminderNotifications.cancel(context, it) } }
     suspend fun save(cookId: String, dishId: String?, title: String, trigger: ReminderTrigger,
         id: String = UUID.randomUUID().toString(), sourceRevision: String? = null, sourceMilestone: String? = null): String = db.withTransaction {
         require(db.cookDao().getCook(cookId)?.status in setOf(CookStatus.ACTIVE, CookStatus.PAUSED)) { "Choose an active meal." }
@@ -22,13 +23,16 @@ class ReminderRepository(private val db: PitTechDatabase) {
         require(previous == null || previous.cookId == cookId) { "Reminder belongs to another meal." }
         val now = System.currentTimeMillis()
         dao.putRule(ReminderRule(id, cookId, dishId, title.trim(), ReminderTriggerCodec.kind(trigger), config, sourceRevision, sourceMilestone, true, "pending", previous?.createdAtUtcMillis ?: now, now))
+        if (previous != null) dao.history(id).filter { it.sequence > 0 && it.status in setOf("queued", "scheduled", "delivered") }.forEach { dao.putOccurrence(it.copy(status = "cancelled")) }
         // Editing the configuration creates a new decision without erasing earlier delivery receipts.
         dao.putOccurrence(ReminderOccurrence("state:$id", id, 0, "pending"))
         id
     }
-    suspend fun change(context: Context, id: String, action: String) = db.withTransaction {
+    suspend fun change(context: Context, id: String, action: String, expectedSequence: Int? = null) = db.withTransaction {
         val rule = dao.rule(id) ?: return@withTransaction
-        val rows = dao.history(id); val state = rows.firstOrNull { it.sequence == 0 } ?: ReminderOccurrence("state:$id", id, 0, "pending")
+        val rows = dao.history(id)
+        if (expectedSequence != null && rows.firstOrNull { it.sequence > 0 }?.sequence != expectedSequence) return@withTransaction
+        val state = rows.firstOrNull { it.sequence == 0 } ?: ReminderOccurrence("state:$id", id, 0, "pending")
         val now = System.currentTimeMillis()
         when (action) {
             "snooze" -> {
@@ -93,7 +97,7 @@ class ReminderRepository(private val db: PitTechDatabase) {
                     }
                 }
                 val result = ReminderEngine.evaluate(trigger, previous, events, rule.dishId, now, sample)
-                val awaitingAcknowledgment = rows.any { it.sequence > 0 && it.status in setOf("queued", "delivered") } && old.snoozedUntilUtcMillis == null
+                val awaitingAcknowledgment = rows.firstOrNull { it.sequence > 0 }?.status in setOf("queued", "delivered") && old.snoozedUntilUtcMillis == null
                 val status = if (result.ready || awaitingAcknowledgment) "due" else if (result.dueAt != null) "scheduled" else "waiting"
                 if (rule.status != status) dao.putRule(rule.copy(status = status, updatedAtUtcMillis = now))
                 val state = old.copy(status = status, dueAtUtcMillis = result.dueAt, active = result.state.active, badSinceUtcMillis = result.state.badSince, lastSampleAtUtcMillis = result.state.lastSampleAt)
