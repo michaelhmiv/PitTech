@@ -31,7 +31,8 @@ class PreparationScreenTest {
         compose.onNodeWithText("Close").performClick()
         compose.onNodeWithTag("nav-cooks").performClick()
         compose.onNodeWithText("Prep sample").performClick()
-        compose.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-more-tools-toggle", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("live-more-tools-toggle", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithTag("prep-checklist-open").performScrollTo().performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithText("House rub · 2.0 tbsp").fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(isToggleable()).onFirst().performClick()
