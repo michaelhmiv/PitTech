@@ -8,6 +8,11 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityWindowInfo
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -52,19 +57,33 @@ class FoodFirstCookScreenTest {
         }
         try {
             var saveBounds = Rect()
-            compose.waitUntil(10_000) {
-                val windows = automation.windows
-                val keyboard = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-                    ?: return@waitUntil false
-                val keyboardBounds = Rect().also { keyboard.getBoundsInScreen(it) }
-                val save = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
-                    .flatMap { it.root?.findAccessibilityNodeInfosByText("Save entry").orEmpty() }
-                    .firstOrNull { it.text?.toString() == "Save entry" && it.isVisibleToUser && it.isEnabled }
-                    ?: return@waitUntil false
-                saveBounds = Rect().also { save.getBoundsInScreen(it) }
-                !saveBounds.isEmpty && saveBounds.bottom <= keyboardBounds.top
+            var diagnostic = "Waiting for the keyboard and Save entry."
+            try {
+                compose.waitUntil(10_000) {
+                    var keyboardTop: Int? = null
+                    // The input-method accessibility window can include transparent space above
+                    // its keys. Measure the actual occlusion from the dialog's window insets.
+                    onView(isRoot()).inRoot(isDialog()).check { view, failure ->
+                        if (failure != null) throw failure
+                        val root = requireNotNull(view)
+                        val insets = ViewCompat.getRootWindowInsets(root)
+                        if (insets?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
+                            val location = IntArray(2).also { root.getLocationOnScreen(it) }
+                            keyboardTop = location[1] + root.height - insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                        }
+                    }
+                    val save = automation.windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                        .flatMap { it.root?.findAccessibilityNodeInfosByText("Save entry").orEmpty() }
+                        .firstOrNull { it.text?.toString() == "Save entry" && it.isVisibleToUser && it.isEnabled }
+                    saveBounds = Rect().also { save?.getBoundsInScreen(it) }
+                    diagnostic = "Save bounds: $saveBounds; keyboard top: $keyboardTop"
+                    keyboardTop != null && !saveBounds.isEmpty && saveBounds.bottom <= keyboardTop!!
+                }
+            } catch (failure: Throwable) {
+                throw AssertionError("Save entry must remain above the open keyboard. $diagnostic", failure)
+            } finally {
+                screenshot("food-first-note")
             }
-            screenshot("food-first-note")
             // Compose's performClick can reach a node covered by another window. Inject a real
             // screen tap so this also proves the keyboard does not intercept the save button.
             val downAt = SystemClock.uptimeMillis()
