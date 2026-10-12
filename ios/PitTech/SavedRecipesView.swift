@@ -61,8 +61,12 @@ struct SavedRecipesView: View {
                         NavigationLink(o["name"]?.stringValue ?? "Recipe") { SavedRecipeDetailView(recipeId: id) }
                         Button {
                             if selected.contains(revision) { selected.removeAll { $0 == revision } } else { selected.append(revision) }
-                        } label: { Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.square.fill" : "square") }
-                            .buttonStyle(.plain).frame(minHeight: 44).disabled(archived)
+                        } label: {
+                            Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.square.fill" : "square")
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                            .buttonStyle(.plain).disabled(archived)
                             .accessibilityLabel("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal")
                             .accessibilityValue(selected.contains(revision) ? "Selected" : "Not selected")
                             .accessibilityIdentifier("recipe-select-" + id)

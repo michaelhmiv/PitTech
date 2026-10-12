@@ -14,7 +14,8 @@ final class MealRecipeFlowsTests: XCTestCase {
         app.tabBars.buttons["Saved Recipes"].tap()
         for name in ["Chicken", "Mac and cheese", "Pork"] {
             let toggle = app.buttons["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
-            XCTAssertEqual(toggle.value as? String, "Selected")
+            expectation(for: NSPredicate(format: "value == %@", "Selected"), evaluatedWith: toggle)
+            waitForExpectations(timeout: 5)
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()
         let foods = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"))
