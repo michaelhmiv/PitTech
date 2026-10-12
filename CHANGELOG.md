@@ -8,7 +8,8 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ### Added
 - A public-facing project overview, contribution and security-reporting guidance, and a documented release-note process.
-- The project source-code license and third-party notice references.
+- The Apache-2.0 source-code license, separately reserved branding asset guidance, and third-party notice references.
+- A six-source implementation roadmap retaining GrillirG alongside the five planned connectors.
 
 ### Changed
 - Clarified the product direction: observational, read-only temperature monitoring only; no grill or Wi-Fi configuration.

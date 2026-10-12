@@ -1,7 +1,12 @@
 PitTech
 Copyright 2026 PitTech contributors
 
-Licensed under the Apache License, Version 2.0. See LICENSE.
+Source code and documentation, except otherwise identified works, are licensed
+under the Apache License, Version 2.0. See LICENSE.
+
+The PitTech wordmark, logos and listed brand artwork are not licensed for
+reuse under Apache-2.0. See BRANDING.md for the exact reserved asset paths.
+This does not restrict use of the source code, nor imply registered trademark status.
 
 Third-party software and protocol-reference attributions are documented in
 THIRD_PARTY_NOTICES.md and third_party/README.md; their original license terms

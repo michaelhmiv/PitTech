@@ -23,10 +23,10 @@ PitTech's long-term goal is **read-only temperature monitoring**: automatically 
 
 - Connections are optional. Manual cooking logs work without a device or internet connection.
 - Experimental controller diagnostics are limited to development/test builds. Public Android builds do not currently advertise validated connected-grill support.
-- Future integrations—including Combustion, Home Assistant, FireBoard, Flame Boss and MEATER—are **planned**, not available or verified today. Any released integration will be clearly labeled **Beta** until compatibility is established.
+- Future integrations—including the existing experimental GrillirG connection, Combustion, Home Assistant, FireBoard, Flame Boss and MEATER—are **planned**, not available or verified today. Any released integration will be clearly labeled **Beta** until compatibility is established.
 - **PitTech is not a grill controller.** It must not ignite, shut down, change setpoints, configure Wi-Fi or firmware, or otherwise manipulate cooking equipment. Always use the manufacturer's controls and safety guidance.
 
-See [Connection principles](docs/CONNECTION_POLICY.md) for the read-only contract and release requirements.
+See [Connection principles](docs/CONNECTION_POLICY.md) and the [unified telemetry implementation roadmap](docs/UNIVERSAL_TELEMETRY_ROADMAP.md) for the read-only contract, GrillirG preservation requirements, and release gates.
 
 ## Platforms and availability
 
@@ -57,7 +57,7 @@ Run the Android emulator/instrumentation checks with `scripts/run-emulator-ui-te
 - [Product and cook-experience documentation](docs/COOK_EXPERIENCE.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-PitTech source code is offered under the [Apache License, Version 2.0](LICENSE). Third-party materials retain their own notices and terms. See `NOTICE` and `third_party/`.
+PitTech source code is offered under the [Apache License, Version 2.0](LICENSE). The PitTech name, logo, and enumerated branding artwork are reserved separately; see [Branding and asset rights](BRANDING.md). Third-party materials retain their own notices and terms. See `NOTICE` and `third_party/`.
 
 ## Support
 

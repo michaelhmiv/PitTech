@@ -31,4 +31,4 @@ Do not submit manufacturer credentials, reverse-engineered secrets, private keys
 
 ## License
 
-By contributing code or documentation, you agree to submit it under the project's [Apache-2.0 license](LICENSE), and confirm you have the rights needed to contribute it. Original third-party work retains its own licensing requirements.
+By contributing code or documentation, you agree to submit it under the project's [Apache-2.0 license](LICENSE), and confirm you have the rights needed to contribute it. Original third-party work retains its own licensing requirements. Changes to reserved logos, icons, or branding assets are reviewed separately; see [BRANDING.md](BRANDING.md).
