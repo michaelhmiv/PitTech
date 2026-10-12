@@ -330,7 +330,7 @@ else
     "test05_crashReportIsVisibleAndCopyable"
     "test06_cameraPhotoUriAcceptsCameraOutput"
     "test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore"
-    "test07b_preparationDurationStaysInOneOptionalNote"
+    "test04b_preparationDurationStaysInOneOptionalNote"
     "test08_zipShareIntentUsesReadOnlyContentUri"
   )
 fi
