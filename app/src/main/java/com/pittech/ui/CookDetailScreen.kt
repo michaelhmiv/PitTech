@@ -164,9 +164,12 @@ fun CookDetailScreen(
     var showTarget by remember { mutableStateOf(false) }
     var editReading by remember { mutableStateOf<SensorReadingEntity?>(null) }
     var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    val reminderRules by viewModel.reminders.observeRules().collectAsStateWithLifecycle(emptyList())
+    val reminderOccurrences by viewModel.reminders.observeOccurrences().collectAsStateWithLifecycle(emptyList())
     var selectedFood by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var showProbeMove by remember { mutableStateOf(false) }
     var showFinishConfirm by remember { mutableStateOf(false) }
+    var showCompletionChoices by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var finishRequested by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
@@ -346,17 +349,28 @@ fun CookDetailScreen(
     }
     ingredientDish?.let { dish -> FoodIngredientsDialog(data, dish, viewModel) { ingredientDish = null; viewModel.clearSaveError() } }
     if (showProbeMove) ProbeMoveDialog(data, selectedFood, viewModel) { showProbeMove = false; viewModel.clearSaveError() }
-    LaunchedEffect(data.cook.status) { if (data.cook.status == CookStatus.COMPLETED) showFinishConfirm = false }
+    LaunchedEffect(data.cook.status) { if (data.cook.status == CookStatus.COMPLETED) { if (showFinishConfirm) showCompletionChoices = true; showFinishConfirm = false } }
     if (showFinishConfirm) AlertDialog(
         onDismissRequest = { if (!busy) showFinishConfirm = false },
         title = { Text("Finish cook", modifier = Modifier.testTag("finish-cook-dialog")) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("End this cook and stop temperature recording? You can add results and photos afterward.")
+            Text("End this meal and stop temperature recording? You can add notes, results and photos afterward.")
+            val unfinished = FoodLivePresentation.phases(data, System.currentTimeMillis()).filter { it.phase != "done" }.mapNotNull { phase -> data.dishes.firstOrNull { it.id == phase.dishId }?.name }
+            if (unfinished.isNotEmpty()) Text("No completion action recorded for ${unfinished.joinToString()}. You can still finish; their physical actions will stay as recorded.")
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { TextButton(onClick = { viewModel.clearSaveError(); viewModel.completeCook(data.cook.id) },
             enabled = !busy, modifier = Modifier.testTag("finish-cook-save")) { Text(if (busy) "Finishing…" else "Finish cook") } },
         dismissButton = { TextButton(onClick = { showFinishConfirm = false }, enabled = !busy) { Text("Cancel") } })
+    if (showCompletionChoices) ModalBottomSheet(onDismissRequest = { showCompletionChoices = false }) {
+        Column(Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Meal finished", style = MaterialTheme.typography.titleLarge)
+            TextButton({ selectedTab = CookTab.TIMELINE.name; showCompletionChoices = false }, modifier = Modifier.testTag("meal-view-summary")) { Text("View meal summary") }
+            MealRecipeActions(data, viewModel, initiallyExpanded = true)
+            TextButton({ showCompletionChoices = false }, modifier = Modifier.testTag("leave-without-saving")) { Text("Leave without saving") }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
     fun openNote(category: String = "general", action: String? = null, photoFirst: Boolean = false, foodId: String? = selectedFood?.takeIf { id -> data.dishes.any { it.id == id } } ?: data.dishes.singleOrNull()?.id) {
         noteEditing = false
         notePhotoFirst = photoFirst
@@ -605,12 +619,13 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    foodLayout = { UnifiedReminderTools(data, viewModel); RecipeReferenceTools(data, viewModel); MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
+                    foodLayout = { UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
                         onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
                         onAdd = { addDish = true }, onEdit = { editDish = it },
                         onIngredients = { ingredientDish = it },
-                        onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }) },
+                        onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }, reminders = reminderRules, occurrences = reminderOccurrences,
+                        selectedTools = { dish -> UnifiedReminderTools(data, viewModel, dish.id); RecipeReferenceTools(data, viewModel, dish.id) }) },
                     displayUnit = preferredTemperatureUnit,
                     configuredTools = { CookPlaybookTools(data, viewModel, configuredOnly = true); CookAlertTools(data, viewModel, configuredOnly = true) },
                     playbookTools = {

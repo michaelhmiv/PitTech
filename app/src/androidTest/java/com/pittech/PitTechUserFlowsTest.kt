@@ -501,6 +501,8 @@ class PitTechUserFlowsTest {
         runBlocking(Dispatchers.IO) {
             assertTrue(application.database.cookDao().observeCooks().first().single().cook.endedAtUtcMillis != null)
         }
+        composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("leave-without-saving").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("leave-without-saving").performScrollTo().performClick()
         composeRule.onNodeWithContentDescription("Back to cooks").performClick()
         composeRule.onNodeWithTag("nav-insights").performClick()
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()

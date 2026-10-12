@@ -310,9 +310,9 @@ grep -q 'OK (8 tests)' "$recipe_test_output"
 companion_test_output="$output_dir/companion-tests.txt"
 echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (10 tests)' "$companion_test_output"
+grep -q 'OK (11 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -404,6 +404,10 @@ pull_app_screenshot prep-checklist
 pull_app_screenshot food-first-live
 pull_app_screenshot food-first-timeline
 pull_app_screenshot food-first-note
+if (( api_level == 36 )); then
+  pull_app_screenshot recipe-composed-live
+  pull_app_screenshot meal-finished-recipe-choice
+fi
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."

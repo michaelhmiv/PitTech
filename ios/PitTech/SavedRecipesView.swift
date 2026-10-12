@@ -59,7 +59,7 @@ struct SavedRecipesView: View {
                 if let o = store.recipe(id), let revision = o["currentRevisionId"]?.stringValue {
                     Section {
                         NavigationLink(o["name"]?.stringValue ?? "Recipe") { SavedRecipeDetailView(recipeId: id) }
-                        Toggle("Add to meal", isOn: Binding(get: { selected.contains(revision) }, set: { if $0 { selected.append(revision) } else { selected.removeAll { $0 == revision } } })).disabled(archived)
+                        Toggle("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", isOn: Binding(get: { selected.contains(revision) }, set: { if $0 { selected.append(revision) } else { selected.removeAll { $0 == revision } } })).disabled(archived)
                         Text("Preferred version \(Int(store.recipeRevision(revision)?["revisionNumber"]?.numberValue ?? 1))").font(.caption)
                         Button(archived ? "Restore recipe" : o["favorite"]?.boolValue == true ? "Remove favorite" : "Favorite") { act { try store.setRecipeFlag(id, favorite: archived ? nil : !(o["favorite"]?.boolValue ?? false), archived: archived ? false : nil) } }
                     }
@@ -70,7 +70,7 @@ struct SavedRecipesView: View {
                     let temperatures = Set(selected.compactMap { snapshots[$0]?.preferredPitTemperatureF })
                     if temperatures.count > 1 { Text("These recipes use different smoker settings. Choose the setting for this meal when ready.") }
                     TextField("Meal name (optional)", text: $title)
-                    Button("Start meal with \(selected.count) recipes") { act { destination = try store.startRecipeMeal(title: title, revisionIds: selected); selected = [] } }
+                    Button("Start meal with \(selected.count) recipes") { act { destination = try store.startRecipeMeal(title: title, revisionIds: selected); selected = [] } }.accessibilityIdentifier("recipe-start-meal")
                     if !store.activeCooks.isEmpty {
                         Picker("Existing meal", selection: $existingMeal) { Text("Choose a meal").tag(""); ForEach(store.activeCooks) { Text($0.title).tag($0.id) } }
                         Button("Add selected recipes") { act { for revision in selected { try store.addRecipeToMeal(cookId: existingMeal, revisionId: revision) }; destination = existingMeal; selected = [] } }.disabled(existingMeal.isEmpty)

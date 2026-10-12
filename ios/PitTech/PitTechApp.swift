@@ -11,11 +11,16 @@ struct PitTechApp: App {
                 .environment(store)
                 .environment(AdsConsentManager.shared)
                 .tint(PitTechStyle.accent)
+                .modifier(ScreenshotTextSize())
                 .task {
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()
                     store.save()
+                    #if DEBUG
+                    if !CommandLine.arguments.contains("--ui-test-reset") && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { AdsConsentManager.shared.gatherConsent() }
+                    #else
                     AdsConsentManager.shared.gatherConsent()
+                    #endif
                 }
         }
     }

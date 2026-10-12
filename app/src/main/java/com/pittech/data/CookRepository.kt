@@ -860,7 +860,10 @@ class CookRepository(
             CookEntryValidation.optionalPositiveNumber(item.amountText), item.amountUnit.takeIf { item.amountText.isNotBlank() },
             createdAtUtcMillis = now, amountText = item.amountText.trim().ifBlank { null })) }
         dao.getAllTargets().filter { it.dishId == dishId }.forEach { dao.deleteTarget(it) }
-        snapshot.targets.forEach { t -> addTarget(dish.cookId, dishId, t.type, t.value, t.unit, t.explanation) }
+        snapshot.targets.forEach { t ->
+            database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), dish.cookId, dishId, t.type, t.value, t.unit, now)))
+            dao.insertTarget(TargetEntity(UUID.randomUUID().toString(), dish.cookId, dishId, t.type, t.value, t.unit, "dish", t.explanation, now))
+        }
         val prior = database.companionDao().get("recipe-attempt:$dishId")
         database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
             RecipeAttemptCodec.encode(dishId, source.recipeRevisionId, snapshot), prior?.createdAtUtcMillis ?: now, now))

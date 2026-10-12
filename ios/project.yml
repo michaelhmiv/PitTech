@@ -50,7 +50,7 @@ targets:
         PITTECH_NATIVE_AD_UNIT_ID: "ca-app-pub-3940256099942544/3986624511"
         CODE_SIGN_STYLE: Automatic
     scheme:
-      testTargets: [PitTechTests]
+      testTargets: [PitTechTests, PitTechUITests]
       gatherCoverageData: false
   PitTechTests:
     type: bundle.unit-test
@@ -64,3 +64,16 @@ targets:
         INFOPLIST_FILE: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         PRODUCT_BUNDLE_IDENTIFIER: com.pittech.tests
+
+  PitTechUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [PitTechUITests]
+    dependencies:
+      - target: PitTech
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        PRODUCT_BUNDLE_IDENTIFIER: com.pittech.uitests

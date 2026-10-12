@@ -19,6 +19,9 @@ final class CookStore {
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
         load()
         noteDrafts = (try? JSONDecoder().decode([CookNoteDraft].self, from: Data(contentsOf: draftsURL))) ?? []
+        #if DEBUG
+        if directory == nil { prepareUIFlowFixture() }
+        #endif
     }
 
     var activeCooks: [CookRecord] { library.cooks.filter(\.isActive).sorted { $0.startedAtUtcMillis > $1.startedAtUtcMillis } }

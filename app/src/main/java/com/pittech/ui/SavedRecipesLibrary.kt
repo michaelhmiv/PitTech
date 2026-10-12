@@ -20,12 +20,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val sourcePhotos: List<PhotoEntity> = emptyList(), val selectedPhotoIds: Set<String> = emptySet(),
     val context: List<TimelineEventEntity> = emptyList(), val attemptDishId: String? = null)
 
-@Composable internal fun SavedRecipesLibrary(viewModel: CooksViewModel) {
+@Composable internal fun SavedRecipesLibrary(viewModel: CooksViewModel, standalone: Boolean = false) {
     val recipes by remember { viewModel.recipes.observeRecipes() }.collectAsStateWithLifecycle(emptyList())
     val revisions by remember { viewModel.recipes.observeRevisions() }.collectAsStateWithLifecycle(emptyList())
     val presets by remember { viewModel.recipes.observePresets() }.collectAsStateWithLifecycle(emptyList())
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(standalone) { mutableStateOf(standalone) }
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All categories") }
     var tag by remember { mutableStateOf("All tags") }
@@ -41,7 +41,8 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val scope = rememberCoroutineScope()
     fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
     val snapshots = remember(revisions) { revisions.associate { it.id to RecipeSnapshotCodec.decode(it.snapshotJson) } }
-    TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}") }
+    if (standalone) Text("Saved Recipes", style = MaterialTheme.typography.headlineMedium)
+    else TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}") }
     if (expanded) {
         OutlinedTextField(query, { query = it }, label = { Text("Find a recipe") }, modifier = Modifier.fillMaxWidth().testTag("recipe-search"))
         SimpleDropdownField("Category", category, listOf("All categories") + snapshots.values.map { it.dish.foodType }.distinct().sorted(), { category = it })
@@ -53,7 +54,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         if (shown.isEmpty()) Text(if (recipes.isEmpty()) "Save selected dishes from a finished meal here. Your meal history stays available." else "No recipes match these filters.")
         shown.forEach { recipe ->
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row { Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived)
+                Row { Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
                     TextButton(onClick = { detail = recipe }, modifier = Modifier.weight(1f).testTag("recipe-open-" + recipe.id)) { Text(recipe.name) } }
                 Text("Preferred version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: ""} · ${snapshots[recipe.currentRevisionId]?.dish?.foodType.orEmpty()}", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { act { if (archived) viewModel.recipes.unarchive(recipe.id) else viewModel.recipes.setFavorite(recipe.id, !recipe.favorite) } }) { Text(if (archived) "Restore recipe" else if (recipe.favorite) "Remove favorite" else "Favorite") }
@@ -62,7 +63,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         if (selected.isNotEmpty()) {
             val temperatures = selected.mapNotNull { snapshots[it]?.preferredPitTemperatureF }.distinct()
             if (temperatures.size > 1) Text("These recipes use different smoker settings. Choose the setting for this meal when ready.")
-            OutlinedTextField(mealTitle, { mealTitle = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(mealTitle, { mealTitle = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-meal-title"))
             Button(onClick = { act { viewModel.startRecipeMeal(mealTitle, selected.toList()); selected = emptySet() } }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
             val active = cooks.filter { it.cook.status != CookStatus.COMPLETED }
             if (active.isNotEmpty()) {
@@ -75,7 +76,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     detail?.let { recipe ->
-        RecipeDetailsDialog(recipe, revisions.filter { it.recipeId == recipe.id }, snapshots, cooks.map { it.cook.id }.toSet(), busy,
+        RecipeDetailsDialog(viewModel, recipe, revisions.filter { it.recipeId == recipe.id }, snapshots, cooks.map { it.cook.id }.toSet(), busy,
             onClose = { detail = null }, onUse = { id -> act { viewModel.startRecipeMeal(recipe.name, listOf(id)); detail = null } },
             onEdit = { revision -> act { editor = RecipeEditorRequest(snapshots.getValue(revision.id), recipe.id, recipe.currentRevisionId, revision.id, revision.sourceCookId, revision.sourceDishId, viewModel.recipes.assets(revision.id)); detail = null } },
             onDuplicate = { name -> act { viewModel.recipes.duplicate(recipe.id, name); detail = null } },
@@ -84,17 +85,20 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     editor?.let { request -> RecipeEditorDialog(request, viewModel, busy, error, onClose = { editor = null }, onSave = { edit -> act { saveRecipeEdit(request, edit, viewModel); editor = null } }) }
 }
 
-@Composable private fun RecipeDetailsDialog(recipe: SavedRecipe, history: List<RecipeRevision>, snapshots: Map<String, RecipeSnapshot>, cookIds: Set<String>, busy: Boolean,
+@Composable private fun RecipeDetailsDialog(viewModel: CooksViewModel, recipe: SavedRecipe, history: List<RecipeRevision>, snapshots: Map<String, RecipeSnapshot>, cookIds: Set<String>, busy: Boolean,
     onClose: () -> Unit, onUse: (String) -> Unit, onEdit: (RecipeRevision) -> Unit, onDuplicate: (String) -> Unit, onArchive: () -> Unit) {
     var selected by remember(recipe.id) { mutableStateOf(recipe.currentRevisionId) }
     var duplicateName by remember(recipe.id) { mutableStateOf(recipe.name + " copy") }
     val revision = history.firstOrNull { it.id == selected }; val snapshot = snapshots[selected]
+    var assets by remember(selected) { mutableStateOf(emptyList<RecipeAsset>()) }
+    LaunchedEffect(selected) { assets = viewModel.recipes.assets(selected) }
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(recipe.name) }, text = {
         Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { "Version ${it.revisionNumber}" }.orEmpty(), history.sortedByDescending { it.revisionNumber }.map { "Version ${it.revisionNumber}" }, { label -> selected = history.first { "Version ${it.revisionNumber}" == label }.id })
             Text(if (selected == recipe.currentRevisionId) "Preferred version" else "Previous version")
             if (revision?.sourceCookId != null) Text(if (revision.sourceCookId in cookIds) "Saved from your meal history." else "Source meal is unavailable. Saved instructions and reference photos remain available.")
             snapshot?.let { s -> Text(s.description); Text(s.dish.prepNotes); s.dish.preparationItems.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }; s.instructions.forEach { Text(it.title + it.details.takeIf { x -> x.isNotBlank() }?.let { x -> " · $x" }.orEmpty()) }; if (s.resultNotes.isNotBlank()) Text(s.resultNotes) }
+            assets.forEach { asset -> RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath)); if (asset.caption.isNotBlank()) Text(asset.caption) }
             revision?.let { r -> TextButton(onClick = { onEdit(r) }, enabled = !busy) { Text("Edit as a new version") } }
             OutlinedTextField(duplicateName, { duplicateName = it }, label = { Text("Variation name") }, modifier = Modifier.fillMaxWidth())
             TextButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank()) { Text("Duplicate recipe") }
@@ -103,9 +107,9 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     }, confirmButton = { TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Close") } })
 }
 
-@Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel) {
+@Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false) {
     var editor by remember(data.cook.id) { mutableStateOf<RecipeEditorRequest?>(null) }
-    var expanded by remember(data.cook.id) { mutableStateOf(false) }
+    var expanded by remember(data.cook.id, initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     var preset by remember(data.cook.id) { mutableStateOf(false) }
     var presetName by remember(data.cook.id) { mutableStateOf(data.cook.title) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -119,19 +123,19 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             val source = sources.firstOrNull { it.dishId == dish.id }
             Text(dish.name, style = MaterialTheme.typography.titleSmall)
             if (data.cook.status == CookStatus.COMPLETED) {
-                OutlinedButton(onClick = { act { val draft = RecipeExtraction.fromMeal(data, dish.id); editor = RecipeEditorRequest(draft.snapshot, sourceCookId = data.cook.id, sourceDishId = dish.id, sourcePhotos = data.photos, selectedPhotoIds = draft.photoIds, context = draft.contextEvents) } }, enabled = !busy, modifier = Modifier.testTag("dish-save-recipe-" + dish.id)) { Text("Save as new recipe") }
+                OutlinedButton(onClick = { act { val draft = viewModel.recipeExtraction(data.cook.id, dish.id); editor = RecipeEditorRequest(draft.snapshot, sourceCookId = data.cook.id, sourceDishId = dish.id, sourcePhotos = data.photos, selectedPhotoIds = draft.photoIds, context = draft.contextEvents) } }, enabled = !busy, modifier = Modifier.testTag("dish-save-recipe-" + dish.id)) { Text("Save as new recipe") }
                 if (source != null) TextButton(onClick = { act {
                     val recipe = viewModel.recipes.get(source.recipeId) ?: error("This saved recipe is unavailable.")
                     val revision = viewModel.recipes.revision(recipe.currentRevisionId) ?: error("This version is unavailable.")
-                    val draft = RecipeExtraction.fromMeal(data, dish.id)
+                    val draft = viewModel.recipeExtraction(data.cook.id, dish.id)
                     editor = RecipeEditorRequest(RecipeExtraction.mergeAttempt(RecipeSnapshotCodec.decode(revision.snapshotJson), draft.snapshot), recipe.id, revision.id, revision.id, data.cook.id, dish.id,
                         viewModel.recipes.assets(revision.id), data.photos, draft.photoIds, draft.contextEvents)
                 } }, enabled = !busy) { Text("Review update to saved recipe") }
             } else if (source != null) TextButton(onClick = { act {
                 val working = viewModel.recipeAttempt(dish.id) ?: RecipeSnapshotCodec.decode(viewModel.recipes.revision(source.recipeRevisionId)!!.snapshotJson)
-                val actual = RecipeExtraction.fromMeal(data, dish.id).snapshot
+                val actual = viewModel.recipeExtraction(data.cook.id, dish.id).snapshot
                 editor = RecipeEditorRequest(working.copy(dish = actual.dish, targets = actual.targets), attemptDishId = dish.id)
-            } }, enabled = !busy) { Text("Adjust for this meal") }
+            } }, enabled = !busy, modifier = Modifier.testTag("recipe-adjust-${dish.id}")) { Text("Adjust for this meal") }
         }
         if (expanded && data.cook.status == CookStatus.COMPLETED) TextButton(onClick = { preset = true }) { Text("Save meal combination") }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -141,7 +145,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     editor?.let { request -> RecipeEditorDialog(request, viewModel, busy, error, onClose = { editor = null }, onSave = { edit -> act {
         if (request.attemptDishId != null) viewModel.updateRecipeAttempt(request.attemptDishId, edit.snapshot)
         else {
-            val selected = RecipeExtraction.fromMeal(data, request.sourceDishId!!, edit.contextIds)
+            val selected = viewModel.recipeExtraction(data.cook.id, request.sourceDishId!!, edit.contextIds)
             val additions = selected.snapshot.observations.filter { it.sourceEventId in edit.contextIds }
             val instructions = selected.snapshot.instructions.filter { it.sourceEventId in edit.contextIds && edit.snapshot.instructions.none { original -> original.sourceEventId == it.sourceEventId } }
             val prepared = edit.copy(snapshot = edit.snapshot.copy(observations = (edit.snapshot.observations + additions).distinctBy { it.sourceEventId }.sortedBy { it.occurredAtUtcMillis }, instructions = edit.snapshot.instructions + instructions))

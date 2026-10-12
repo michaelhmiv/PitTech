@@ -6,13 +6,14 @@ struct ContentView: View {
     var body: some View {
         TabView {
             CookListView()
-                .tabItem { Label("Cooks", systemImage: "flame") }
+                .tabItem { Label("Meals", systemImage: "flame") }
+            NavigationStack { SavedRecipesView() }.tabItem { Label("Saved Recipes", systemImage: "book") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
-        .preferredColorScheme(.light)
+        .preferredColorScheme(store.appearance)
         .background(PitTechStyle.canvas)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {
             if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
@@ -34,20 +35,20 @@ struct CookListView: View {
     @Environment(CookStore.self) private var store
     @Environment(AdsConsentManager.self) private var adsConsent
     @State private var showingStart = false
+    @State private var mealPath: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $mealPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    SectionTitle(title: "Cooks", subtitle: "Keep the whole cook in one place.")
+                    SectionTitle(title: "Meals", subtitle: "Keep each meal in one place.")
                     Button { showingStart = true } label: {
-                        Label("Prepare a cook", systemImage: "plus.circle.fill")
+                        Label("Start meal", systemImage: "plus.circle.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 54)
                     }
                     .buttonStyle(.borderedProminent)
 
-                    NavigationLink { SavedRecipesView() } label: { Label("Saved Recipes", systemImage: "book") }.buttonStyle(.bordered)
 
                     if !store.activeCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
@@ -60,7 +61,7 @@ struct CookListView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("RECENT COOKS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                         if store.completedCooks.isEmpty {
                             if store.activeCooks.isEmpty && store.completedCooks.count >= 4 && adsConsent.canRequestAds {
                                 NativeAdCard()
@@ -83,7 +84,7 @@ struct CookListView: View {
             }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
-            .sheet(isPresented: $showingStart) { StartCookSheet() }
+            .sheet(isPresented: $showingStart) { StartCookSheet(onStarted: { mealPath.append($0) }) }
         }
     }
 }
@@ -115,6 +116,7 @@ struct CookCard: View {
 }
 
 struct StartCookSheet: View {
+    var onStarted: (String) -> Void = { _ in }
     @Environment(CookStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
@@ -131,23 +133,23 @@ struct StartCookSheet: View {
                     else { Text("Preparing until you log Food on.") }
                 }
                 Section("Cook") {
-                    TextField("Cook name", text: $title)
-                    TextField("First dish (optional)", text: $firstDish)
+                    TextField("Meal name (optional)", text: $title).accessibilityIdentifier("meal-title")
+                    TextField("First dish (optional)", text: $firstDish).accessibilityIdentifier("meal-first-dish")
                 }
                 Section {
                     Text("You can start with manual logging and add temperature readings later.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Prepare a cook")
+            .navigationTitle("Start meal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
                         store.startCook(title: title, firstDish: firstDish, alreadyCooking: alreadyCooking, foodOn: foodOn)
-                        if store.saveError == nil { dismiss() }
-                    }
+                        if store.saveError == nil { if let id = store.activeCooks.first?.id { onStarted(id) }; dismiss() }
+                    }.accessibilityIdentifier("start-meal-save")
                 }
             }
         }
@@ -243,6 +245,11 @@ struct SettingsView: View {
                     )) {
                         Text("Pounds").tag("lb")
                         Text("Kilograms").tag("kg")
+                    }
+                }
+                Section("Appearance") {
+                    Picker("Appearance", selection: Binding(get: { store.library.preferences?["themeMode"]?.stringValue ?? "SYSTEM" }, set: { store.setPreference("themeMode", value: $0) })) {
+                        Text("System").tag("SYSTEM"); Text("Light").tag("LIGHT"); Text("Dark").tag("DARK")
                     }
                 }
                 Section("Your data") {
