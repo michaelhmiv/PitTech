@@ -1,37 +1,44 @@
 # PitTech connection policy
 
-This document defines the intended contract for every future temperature connector. A provider name or **Beta** label is not proof of device compatibility, vendor endorsement, or permission to access a proprietary service.
+All PitTech temperature connections are optional, labeled **Beta** until explicitly graduated, and **strictly observational**. A manufacturer name or documented endpoint does not establish that every device is compatible or that commercial third-party use is authorized.
 
-## Observation only
+## Allowed operations and prohibited operations
 
-Permitted capabilities: discover a user-authorized source, authenticate, subscribe to readings, request current measurements, read documented historical samples, and disconnect.
+Approved operations: discover a user-authorized device or Home Assistant instance, authenticate to a documented interface, read or subscribe to sensor measurements, retrieve documented history, and disconnect.
 
-Prohibited capabilities: ignition, shutdown, setpoint changes, fan/auger/motor controls, Wi-Fi provisioning, controller configuration, factory resets, firmware updates, or arbitrary RPC/HTTP/MQTT commands.
+**Never** expose operations to ignite, shut down, change temperature setpoints, change grill operating modes, alter fan/auger/motor settings, write Wi-Fi credentials, reset controllers, or modify firmware. Read-only does not mean no outbound packets: authenticated REST reads, MQTT/WebSocket subscriptions and Bluetooth notifications can require sending protocol messages. They must be validated, narrowly scoped and allowlisted.
 
-**Read-only refers to hardware state, not transport packet direction.** Authentication, WebSocket or MQTT subscriptions, Bluetooth notification setup, and documented observational RPCs may require outbound messages. Their effects must be reviewed, bounded and allowlisted.
+Third-party Home Assistant integrations may themselves expose hardware controls. PitTech must only read selected sensors and must not call Home Assistant device-control services, even if the account would technically permit it.
 
-No generic extension configuration may grant itself hardware-control privileges. Production connectors must expose observation-specific interfaces, not broad generic command dispatchers.
+## Supported integration strategies
 
-## Beta and release states
+**Direct manufacturer path:** Build only against an official SDK, API or manufacturer-documented service **with an authorization basis suitable for public PitTech distribution**. Publishing an endpoint or releasing a GitHub example does not automatically authorize a commercial app. Before a source is enabled in the public app, review its applicable terms, credentials, model compatibility, rate limits, privacy impact, and platform requirements.
 
-- **Development-only:** not marketed or exposed as public support; experimentation may still require consent and safe operating procedures.
-- **Beta connection:** publicly available for a defined supported integration, clearly marked Beta and read-only, with documented limitations and recovery behavior.
-- **Verified model:** a specific hardware/firmware combination was physically tested; this is model-specific and does not remove the Beta label unless the project explicitly graduates it.
+Initial direct candidates:
+- Combustion Inc.: official Android BLE SDK, MIT-licensed.
+- FireBoard: documented cloud REST API; commercial usage to be clarified.
+- Flame Boss: documented MQTT broker access; current terms and operations to be verified.
+- MEATER: public cloud REST API; beta-service limitations and commercial terms to be verified.
 
-Before releasing a new integration: review the vendor's terms and API authorization, implement read-only allowlists, test actual supported equipment, validate authentication and secret storage, test unit conversion and freshness gaps, verify rate limits, check background power effects, and confirm app-store disclosure.
+**User-operated Home Assistant path:** PitTech connects through Home Assistant's documented REST/WebSocket APIs to **the user's existing, self-hosted Home Assistant installation**. Users independently choose, install and maintain their Home Assistant integrations and grant PitTech access to selected temperature sensors. PitTech does not host Home Assistant installations, bundle manufacturer-specific Home Assistant integrations, distribute unofficial manufacturer cloud clients, or ask for users' manufacturer account credentials through this bridge.
 
-## Existing experimental connection and planned connectors
+A Home Assistant instance is needed, not just the mobile companion app. Community integrations may use unofficial manufacturer interfaces, and the user should consider their vendors' terms and the security risks of running third-party code. **Using Home Assistant is not a guarantee that every underlying connection is permitted or safe.** PitTech's own Home Assistant client remains observational.
 
-**GrillirG / Prime Polaris:** PitTech already has a working experimental development/test cloud monitor with email-code login, device selection, read-only status requests, current temperature sampling, and cook recording. **Preserve the connector and users' stored cooking history** while migrating it to the shared telemetry API. Its diagnostic BLE Wi-Fi configuration action has been disabled; the new adapter must not reintroduce hardware changes. GrillirG is a sixth first-class integration in the [implementation roadmap](UNIVERSAL_TELEMETRY_ROADMAP.md).
+## Existing experimental GrillirG implementation
 
-**New candidates:** Combustion Inc. (Bluetooth SDK), Home Assistant (REST/WebSocket), FireBoard (cloud REST), Flame Boss (cloud MQTT), and MEATER (cloud REST) remain engineering candidates. All six must share the same Beta labeling and observation-only interface.
+The older Android code includes an experimental read-only Prime Polaris/GrillirG monitor. **No new direct GrillirG adapter will be built or shipped as a public integration.** Its existing cook records and probe assignments must remain readable after migration.
 
-**Release rights are a separate gate.** The [GrillirG Control user agreement](https://www.prime-polaris.com/grillirg-terms.html) prohibits reverse engineering of its app. The applicability to PitTech's independent cloud client and authorization to distribute it need legal/terms review. Keeping a connector in development does not itself mean the manufacturer has authorized public use. A lack of cease-and-desist notice is not affirmative permission. **Do not delete the implementation merely because the review is unresolved**: maintain it for development and preservation of existing user data while deciding distribution eligibility.
+- The separate GrillirG Wi-Fi provisioning path was disabled in PR 0 because it changed equipment configuration.
+- Before public telemetry release, exclude all unapproved proprietary controller client implementations and mutating/provisioning components from **production build artifacts**, not merely from navigation screens.
+- Historical telemetry should remain readable independently of the presence of a connected-provider implementation.
+- User-installed Home Assistant integrations can expose corresponding temperatures as ordinary sensor entities, with the caveats above. PitTech does not install or operate the upstream component.
 
-**None should be advertised as production-supported merely by appearing in project documentation.**
+## Standard Beta and release gates
 
-Some APIs are documented but commercial third-party use or hardware compatibility remains unresolved. Such connectors stay out of production until those issues are resolved.
+A connection may be marked Beta only when it is available in the public artifact, has a documented compatibility/test matrix, uses observation-only operations, handles stale and missing data, protects credentials, respects rates and background limits, and satisfies the relevant authorization review.
 
-## User safety
+Unsupported and experimental code may be retained in isolated development builds but must never be treated as approved public support solely because a product is open source.
 
-Never depend on PitTech telemetry for food safety, safe grill operation, or unattended operation of heating equipment. Always use the manufacturer's controls, alarms, and guidance.
+## Safety
+
+PitTech is a cooking journal and monitor, not a grill safety controller. Manufacturer controls and safety guidance remain authoritative. Missing measurements must be represented as stale or unavailable, not silently replaced by old values.

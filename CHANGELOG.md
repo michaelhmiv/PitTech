@@ -9,7 +9,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ### Added
 - A public-facing project overview, contribution and security-reporting guidance, and a documented release-note process.
 - The Apache-2.0 source-code license, separately reserved branding asset guidance, and third-party notice references.
-- A six-source implementation roadmap retaining GrillirG alongside the five planned connectors.
+- A five-integration roadmap: authorized manufacturer APIs alongside an optional user-operated Home Assistant bridge; legacy GrillirG cook histories remain supported without a public direct connector.
 
 ### Changed
 - Clarified the product direction: observational, read-only temperature monitoring only; no grill or Wi-Fi configuration.
