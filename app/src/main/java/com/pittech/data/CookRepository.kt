@@ -17,6 +17,7 @@ class CookRepository(
     private val photoStorage: PhotoStorage,
 ) {
     private val dao = database.cookDao()
+    val activities by lazy { ActivityTimerRepository(database) }
     val recipes by lazy { RecipeRepository(database, photoStorage) }
     val notes by lazy { CookNoteRepository(database, photoStorage, this) }
 
@@ -124,6 +125,7 @@ class CookRepository(
                         name = ingredient.name.trim(),
                         brand = ingredient.brand.trim().ifBlank { null },
                         amountValue = CookEntryValidation.optionalPositiveNumber(ingredient.amountText),
+                        amountText = ingredient.amountText.trim().ifBlank { null },
                         amountUnit = ingredient.amountUnit.takeIf { ingredient.amountText.isNotBlank() },
                         createdAtUtcMillis = now,
                     )
@@ -255,6 +257,7 @@ class CookRepository(
                 id = UUID.randomUUID().toString(), cookId = cookId, dishId = id, stage = item.stage,
                 name = item.name.trim(), brand = item.brand.trim().ifBlank { null },
                 amountValue = CookEntryValidation.optionalPositiveNumber(item.amountText),
+                amountText = item.amountText.trim().ifBlank { null },
                 amountUnit = item.amountUnit.takeIf { item.amountText.isNotBlank() },
                 createdAtUtcMillis = now,
             )
@@ -609,6 +612,7 @@ class CookRepository(
         val now = System.currentTimeMillis()
         dao.updateCook(cook.copy(status = CookStatus.COMPLETED, endedAtUtcMillis = now, updatedAtUtcMillis = now))
         addTimelineEvent(cookId, null, "cook_finished", "Cook finished", null, now)
+        activities.cancelForCook(cookId)
         CookRecordingRepository(database).stop(cookId, now)
     }
 
@@ -664,7 +668,7 @@ class CookRepository(
                 preparationItems = ingredients.filter { it.dishId == dish.id }.map { item ->
                     com.pittech.domain.IngredientDraft(
                         name = item.name, stage = item.stage, brand = item.brand.orEmpty(),
-                        amountText = item.amountValue?.toString().orEmpty(), amountUnit = item.amountUnit ?: "tbsp",
+                        amountText = item.amountText ?: item.amountValue?.toString().orEmpty(), amountUnit = item.amountUnit ?: "tbsp",
                     )
                 },
             )
@@ -706,6 +710,7 @@ class CookRepository(
             reminders = dao.getAllReminders().filter { it.cookId in selectedCookIds },
             recordings = database.recordingDao().getAllRecordings().filter { it.cookId in selectedCookIds }
                 .map { it.copy(controllerKey = "", status = CookRecordingEntity.STOPPED, message = "Restored history · attach a grill to record again.") },
+            activityTimers = database.activityTimerDao().all().filter { it.cookId in selectedCookIds },
             recipes = database.recipeDao().recipes(),
             recipeRevisions = database.recipeDao().revisions(),
             recipeAssets = database.recipeDao().assets(),
@@ -726,6 +731,7 @@ class CookRepository(
             "The backup is incomplete: one or more photo attachments are missing."
         }
         RecipeArchive.validate(snapshot)
+        ActivityTimerArchive.validate(snapshot)
         val recipeRestore = recipes.prepareRestore(snapshot)
         val existingCookIds = dao.getAllCooks().map { it.id }.toSet()
         val newCooks = snapshot.cooks.filterNot { it.id in existingCookIds }
@@ -744,6 +750,7 @@ class CookRepository(
         rejectIds("reminder", snapshot.reminders.map { it.id to it.cookId }, dao.getAllReminders().map { it.id }.toSet())
         rejectIds("assignment", snapshot.assignments.map { it.id to it.cookId }, database.recordingDao().getAllAssignments().map { it.id }.toSet())
         rejectIds("target history", snapshot.targetHistory.map { it.id to it.cookId }, database.experienceDao().allHistory().map { it.id }.toSet())
+        rejectIds("activity timer", snapshot.activityTimers.map { it.id to it.cookId }, database.activityTimerDao().all().map { it.id }.toSet())
         val existingPhotoIds = dao.getAllPhotos().map { it.id }.toSet()
         require(snapshot.photos.none { it.cookId in newIds && it.id in existingPhotoIds }) { "A photo ID conflicts with a photo in another saved cook." }
         val photos = snapshot.photos.filter { it.cookId in newIds && it.id !in existingPhotoIds }
@@ -771,6 +778,7 @@ class CookRepository(
                 dao.insertCooksIgnoringDuplicates(newCooks)
                 dao.insertDishesIgnoringDuplicates(snapshot.dishes.filter { it.cookId in newIds })
                 recipes.restore(recipeRestore, snapshot.dishRecipeSources.filter { source -> snapshot.dishes.any { it.id == source.dishId && it.cookId in newIds } })
+                snapshot.activityTimers.filter { it.cookId in newIds }.forEach { database.activityTimerDao().insert(it.copy(status = "inactive")) }
                 dao.insertIngredientsIgnoringDuplicates(snapshot.ingredients.filter { it.cookId in newIds })
                 dao.insertEventsIgnoringDuplicates(snapshot.events.filter { it.cookId in newIds })
                 dao.insertTargetsIgnoringDuplicates(snapshot.targets.filter { it.cookId in newIds })
@@ -887,6 +895,7 @@ data class ExportSnapshot(
     val recipeAssets: List<RecipeAsset> = emptyList(),
     val dishRecipeSources: List<DishRecipeSource> = emptyList(),
     val mealPresets: List<MealPreset> = emptyList(),
+    val activityTimers: List<ActivityTimer> = emptyList(),
 )
 
 data class CookLogSaveResult(val event: TimelineEventEntity, val photoAttached: Boolean)

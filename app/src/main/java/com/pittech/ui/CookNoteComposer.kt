@@ -51,7 +51,8 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val valid = runCatching { draft.validate() }.isSuccess
+    var durationText by rememberSaveable(draft.id) { mutableStateOf(draft.durationMillis?.let { (it / 60_000.0).toString() }.orEmpty()) }
+    val valid = runCatching { draft.validate() }.isSuccess && (durationText.isBlank() || durationText.toDoubleOrNull()?.let { it.isFinite() && it >= 0 && it <= 43200 } == true)
     LaunchedEffect(draft, busy) {
         if (!busy) { delay(300); viewModel.persistNoteDraft(draft) }
     }
@@ -129,6 +130,17 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                 if (staging) LinearProgressIndicator(Modifier.fillMaxWidth())
                 TextButton(onClick = { showDetails = !showDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) { Text(if (showDetails) "Hide details" else "More details") }
                 if (showDetails) {
+                    SimpleDropdownField("Cooking method", CookingMethods.labels[draft.method] ?: "Not set", listOf("Not set") + CookingMethods.labels.values,
+                        { label -> onChange(draft.copy(method = CookingMethods.labels.entries.firstOrNull { it.value == label }?.key)) }, testTag = "note-method")
+                    if (draft.startedAtUtcMillis != null && draft.endedAtUtcMillis != null) {
+                        Text("Measured duration: ${draft.durationMillis?.div(60_000.0)} minutes")
+                    } else OutlinedTextField(durationText, { raw ->
+                        durationText = raw
+                        val duration = raw.toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..43200.0 }?.let { (it * 60_000).toLong() }
+                        onChange(draft.copy(durationMillis = duration))
+                    }, label = { Text("Duration in minutes (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().testTag("note-duration"))
+                    IngredientFields(draft.ingredients) { onChange(draft.copy(ingredients = it)) }
                     OutlinedTextField(draft.title, { onChange(draft.copy(title = it)) }, label = { Text("Entry title") }, modifier = Modifier.fillMaxWidth().testTag("timeline-entry-title"))
                     val actions = linkedMapOf("None" to null) + PlaybookCodec.actions.entries.associate { it.value to it.key } +
                         mapOf("Preheat" to "preheat_start", "Season" to "season", "Trim" to "trim", "Marinate" to "marinate", "Add fuel" to "add_fuel")

@@ -21,7 +21,7 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
             notes = data.cook.notes.orEmpty(),
             setpointText = data.cook.initialSetpointValue?.toString().orEmpty(), setpointUnit = data.cook.initialSetpointUnit ?: "°F",
             fuelType = data.cook.fuelType.orEmpty(), woodOrPelletBlend = data.cook.woodOrPelletBlend.orEmpty(),
-            dishes = data.dishes.map { d -> DishDraft(d.name, d.foodType, d.cut.orEmpty(), d.weightValue?.toString().orEmpty(), d.weightUnit ?: "lb", d.startingCondition, d.boneIn, d.placement.orEmpty(), d.gradeOrSource.orEmpty(), d.thicknessNotes.orEmpty(), d.prepNotes.orEmpty(), ingredients.filter { it.dishId == d.id }.map { IngredientDraft(it.name, it.stage, it.brand.orEmpty(), it.amountValue?.toString().orEmpty(), it.amountUnit ?: "tbsp") }) })
+            dishes = data.dishes.map { d -> DishDraft(d.name, d.foodType, d.cut.orEmpty(), d.weightValue?.toString().orEmpty(), d.weightUnit ?: "lb", d.startingCondition, d.boneIn, d.placement.orEmpty(), d.gradeOrSource.orEmpty(), d.thicknessNotes.orEmpty(), d.prepNotes.orEmpty(), ingredients.filter { it.dishId == d.id }.map { IngredientDraft(it.name, it.stage, it.brand.orEmpty(), it.amountText ?: it.amountValue?.toString().orEmpty(), it.amountUnit ?: "tbsp") }) })
         val events = database.cookDao().getTimelineEventsForCook(cookId).sortedBy { it.occurredAtUtcMillis }
         val steps = events.filter { PlaybookCodec.action(it.eventType, it.noteMetadataJson) in PlaybookCodec.actions }.map { e ->
             val index = e.dishId?.let { id -> data.dishes.indexOfFirst { it.id == id }.takeIf { it >= 0 } }

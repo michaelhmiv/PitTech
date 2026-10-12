@@ -29,6 +29,7 @@ class PitTechApplication : Application() {
             .addMigrations(PitTechDatabase.MIGRATION_5_6)
             .addMigrations(PitTechDatabase.MIGRATION_6_7)
             .addMigrations(PitTechDatabase.MIGRATION_7_8)
+            .addMigrations(PitTechDatabase.MIGRATION_8_9)
             .build()
     }
 

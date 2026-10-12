@@ -91,7 +91,7 @@ import UniformTypeIdentifiers
             if let probe = next.probes.first(where: { $0.objectValue?["id"]?.stringValue == probeId })?.objectValue {
                 guard probe["cookId"]?.stringValue == draft.cookId else { throw CookNoteError.scope }
             } else { next.probes.append(.object(["id": .string(probeId), "cookId": .string(draft.cookId), "name": .string(t.probeName), "measurementType": .string(t.measurementType), "source": .string("manual"), "createdAtUtcMillis": .number(now)])) }
-            next.readings.append(.object(["id": .string(t.id), "cookId": .string(draft.cookId), "dishId": t.dishId.map(JSONValue.string) ?? .null, "probeId": .string(probeId), "probeName": .string(t.probeName), "measurementType": .string(t.measurementType), "value": .number(Double(t.valueText)!), "unit": .string(t.unit), "measuredAtUtcMillis": .number(t.measuredAt), "recordedAtUtcMillis": old?["recordedAtUtcMillis"] ?? .number(now), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("manual"), "qualityStatus": .string("valid"), "timestampBasis": .string("manual_entry"), "samplingIntervalMillis": .number(0)]))
+            next.readings.append(.object(["id": .string(t.id), "cookId": .string(draft.cookId), "dishId": t.dishId.map(JSONValue.string) ?? .null, "probeId": .string(probeId), "probeName": .string(t.probeName), "measurementType": .string(t.measurementType), "value": .number(Double(t.valueText)!), "unit": .string(t.unit), "measuredAtUtcMillis": .number(t.measuredAt), "recordedAtUtcMillis": old?["recordedAtUtcMillis"] ?? .number(now), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("manual"), "qualityStatus": .string("valid"), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(0)]))
             next.logReadingLinks.append(.object(["readingId": .string(t.id), "eventId": .string(draft.id)]))
         }
         next.photos = next.photos.map { row in guard var o = row.objectValue, o["eventId"]?.stringValue == draft.id, !draft.photos.contains(where: { $0.id == o["id"]?.stringValue }) else { return row }; o["eventId"] = .null; return .object(o) }
@@ -102,6 +102,9 @@ import UniformTypeIdentifiers
             photo["eventId"] = .string(draft.id); photo["caption"] = .string(p.caption); photo["dishId"] = draft.dishId.map(JSONValue.string) ?? .null
             photo["capturedAtUtcMillis"] = p.capturedAt.map(JSONValue.number) ?? .null
             next.photos.removeAll { $0.objectValue?["id"]?.stringValue == p.id }; next.photos.append(.object(photo))
+        }
+        next.activityTimers = next.activityTimers.map { row in
+            guard var o = row.objectValue, o["noteId"]?.stringValue == draft.id, o["cookId"]?.stringValue == draft.cookId, o["status"]?.stringValue == "stopped" else { return row }; o["status"] = .string("logged"); return .object(o)
         }
         try next.validateCookExperience()
         let prior = library; library = next; save()

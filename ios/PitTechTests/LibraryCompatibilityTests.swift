@@ -23,7 +23,7 @@ final class LibraryCompatibilityTests: XCTestCase {
         XCTAssertThrowsError(try library.validateCookExperience())
     }
     func testUnsupportedNoteMetadataIsRejected() {
-        XCTAssertFalse(CookNoteMetadata(version: 2).isValid)
+        XCTAssertFalse(CookNoteMetadata(version: 3).isValid)
         XCTAssertFalse(CookNoteMetadata(action: "unknown").isValid)
         XCTAssertFalse(CookNoteMetadata(dishIds: ["a", "a"]).isValid)
     }

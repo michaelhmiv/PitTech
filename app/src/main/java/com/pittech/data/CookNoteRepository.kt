@@ -59,6 +59,7 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
                 com.pittech.domain.CookPhases.validate(notePlanEvents(proposed), dao.getDishesForCook(draft.cookId).map { it.id })
             }
             if (previous == null) dao.insertTimelineEvent(note) else dao.updateTimelineEvent(note)
+            database.activityTimerDao().markLogged(note.id, note.cookId)
             val owned = experience.readingsForLog(note.id)
             owned.filter { it.id !in draft.temperatures.map { t -> t.id } }.forEach { dao.deleteSensorReading(it) }
             experience.unlink(note.id)
@@ -93,7 +94,8 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
         return CookNoteDraft(event.id, event.cookId, event.dishId, meta.category, meta.action, meta.dishIds,
             event.title, event.details.orEmpty(), event.occurredAtUtcMillis,
             experience.readingsForLog(event.id).map { r -> com.pittech.domain.NoteTemperature(r.id, r.probeName, r.measurementType, r.value.toString(), r.unit, r.measuredAtUtcMillis, r.dishId, r.probeId) },
-            dao.getPhotosForCook(event.cookId).filter { it.eventId == event.id }.map { p -> NotePhoto(p.id, storage.uri(p.relativePath).toString(), p.caption.orEmpty(), p.capturedAtUtcMillis) })
+            dao.getPhotosForCook(event.cookId).filter { it.eventId == event.id }.map { p -> NotePhoto(p.id, storage.uri(p.relativePath).toString(), p.caption.orEmpty(), p.capturedAtUtcMillis) },
+            meta.method, meta.durationMillis, meta.startedAtUtcMillis, meta.endedAtUtcMillis, meta.ingredients)
     }
 
     suspend fun delete(eventId: String): DeletedCookNote = database.withTransaction {

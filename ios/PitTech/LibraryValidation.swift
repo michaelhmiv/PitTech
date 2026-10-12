@@ -4,6 +4,7 @@ extension PitTechLibrary {
     /// Validate portable relationships before files are copied or the saved library changes.
     func validateCookExperience() throws {
         try validateRecipes()
+        try validateActivityTimers()
         let cooksById = Set(cooks.map(\.id))
         func index(_ rows: [JSONValue], key: String = "id") throws -> [String: [String: JSONValue]] {
             var result: [String: [String: JSONValue]] = [:]
@@ -46,7 +47,34 @@ struct CookNoteMetadata: Codable, Equatable {
     var category = "general"
     var action: String?
     var dishIds: [String] = []
+    var method: String?
+    var durationMillis: Double?
+    var startedAtUtcMillis: Double?
+    var endedAtUtcMillis: Double?
+    var ingredients: [NoteIngredient]? = nil
     static let actions = ["food_on", "spritz", "wrap", "check_in", "remove", "rest_start", "hold_start", "dish_done", "preheat_start", "season", "trim", "marinate", "add_fuel"]
-    var isValid: Bool { version == 1 && ["general", "temperature", "photo", "action"].contains(category) && (action == nil || Self.actions.contains(action!)) && Set(dishIds).count == dishIds.count }
-    var json: String { String(data: (try? JSONEncoder().encode(self)) ?? Data(), encoding: .utf8) ?? "" }
+    var isValid: Bool {
+        guard [1, 2].contains(version), ["general", "temperature", "photo", "action"].contains(category), action == nil || Self.actions.contains(action!), Set(dishIds).count == dishIds.count,
+              method == nil || CookingMethod.labels[method!] != nil, durationMillis == nil || durationMillis!.isFinite && (0...2_592_000_000).contains(durationMillis!),
+              startedAtUtcMillis == nil || startedAtUtcMillis!.isFinite && startedAtUtcMillis! > 0, endedAtUtcMillis == nil || endedAtUtcMillis!.isFinite && endedAtUtcMillis! > 0,
+              (ingredients ?? []).count <= 100, (ingredients ?? []).allSatisfy({ !$0.name.isEmpty && ($0.amount.isEmpty || Double($0.amount).map { $0.isFinite && $0 > 0 } == true) }) else { return false }
+        if let start = startedAtUtcMillis, let end = endedAtUtcMillis, end < start || durationMillis != nil && durationMillis != end - start { return false }
+        return true
+    }
+    var json: String {
+        var copy = self
+        copy.version = method != nil || durationMillis != nil || startedAtUtcMillis != nil || endedAtUtcMillis != nil || !(ingredients ?? []).isEmpty ? 2 : 1
+        return String(data: (try? JSONEncoder().encode(copy)) ?? Data(), encoding: .utf8) ?? ""
+    }
+}
+struct NoteIngredient: Codable, Equatable {
+    var name = ""
+    var stage = "main_ingredient"
+    var brand = ""
+    var amount = ""
+    var unit = "count"
+}
+enum CookingMethod {
+    static let labels = ["prep": "Preparation", "stovetop": "Stovetop", "smoker": "Smoker", "oven": "Oven", "grill": "Grill", "resting": "Resting", "holding": "Holding", "other": "Other"]
+    static let order = ["prep", "stovetop", "smoker", "oven", "grill", "resting", "holding", "other"]
 }
