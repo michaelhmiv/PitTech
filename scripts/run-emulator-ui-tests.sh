@@ -47,6 +47,7 @@ collect_evidence_and_stop() {
     done
   fi
   timeout 20 adb exec-out screencap -p > "$output_dir/final-emulator-screen.png" 2>/dev/null
+  python3 scripts/emit-ui-review-images.py "$output_dir/recipe-composed-live.png" "$output_dir/meal-finished-recipe-choice.png"
   if [[ -n "$emulator_pid" ]]; then
     adb emu kill >/dev/null 2>&1
     wait "$emulator_pid" >/dev/null 2>&1

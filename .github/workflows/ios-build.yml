@@ -161,6 +161,10 @@ jobs:
             xcrun simctl shutdown "$device_id"
           done < "$RUNNER_TEMP/pittech-simulators.txt"
 
+      - name: Emit visual review snapshots
+        if: always()
+        run: python3 scripts/emit-ui-review-images.py build/app-store-screenshots build/native-ui-evidence
+
       - name: Upload Simulator app
         uses: actions/upload-artifact@v6
         with:

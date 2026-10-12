@@ -3,7 +3,11 @@ import XCTest
 final class MealRecipeFlowsTests: XCTestCase {
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<12 {
-            if element.waitForExistence(timeout: 1) && element.isHittable { return }
+            if element.waitForExistence(timeout: 1) && element.isHittable {
+                let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
+                let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
+                if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
+            }
             app.swipeUp()
         }
         XCTAssertTrue(element.exists && element.isHittable)
