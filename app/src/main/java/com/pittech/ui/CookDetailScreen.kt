@@ -605,7 +605,7 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    foodLayout = { MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
+                    foodLayout = { RecipeReferenceTools(data, viewModel); MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
                         onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
                         onAdd = { addDish = true }, onEdit = { editDish = it },

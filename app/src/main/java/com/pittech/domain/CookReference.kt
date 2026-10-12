@@ -15,3 +15,24 @@ object CookReferenceCodec {
     /** No interpolation or invented slope: each value remains a recorded sample. */
     fun align(samples: List<CurveSample>, anchor: Long): List<AlignedSample> = samples.filter { it.valid && it.value.isFinite() && it.unit in setOf("°F", "°C") && it.at >= anchor }.sortedBy { it.at }.map { AlignedSample((it.at - anchor) / 60_000.0, CookPlanEngine.fahrenheit(it.value, it.unit)) }
 }
+
+data class HistoricalHeatingInterval(val startedAt: Long, val endedAt: Long?)
+
+/** A projection of frozen observations. Editing instructions never changes historical facts. */
+object RecipeReferenceTimeline {
+    fun events(snapshot: RecipeSnapshot) = snapshot.observations.sortedWith(compareBy<RecipeObservation> { it.occurredAtUtcMillis }.thenBy { it.sourceEventId })
+    fun heating(snapshot: RecipeSnapshot): List<HistoricalHeatingInterval> {
+        val intervals = mutableListOf<HistoricalHeatingInterval>()
+        var start: Long? = null
+        events(snapshot).forEach { event -> when (event.action) {
+            "food_on" -> if (start == null) start = event.occurredAtUtcMillis
+            "remove", "rest_start", "hold_start", "dish_done" -> start?.let { intervals += HistoricalHeatingInterval(it, event.occurredAtUtcMillis); start = null }
+        } }
+        start?.let { intervals += HistoricalHeatingInterval(it, null) }
+        return intervals
+    }
+    fun relativeLabel(offset: Long?): String = offset?.let {
+        val minutes = kotlin.math.abs(it) / 60_000
+        "${if (it < 0) "−" else "+"}${minutes / 60}h ${minutes % 60}m"
+    } ?: "No recorded Food on anchor"
+}

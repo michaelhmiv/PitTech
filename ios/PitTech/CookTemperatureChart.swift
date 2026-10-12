@@ -27,7 +27,19 @@ struct CookTemperatureChart: View {
     private var sourceSamples: [TemperatureSample] { store.readings(for: comparisonCook) }
     private var channels: [String] { Array(Set(samples.filter { eligible($0, dish: currentDish) }.map(\.seriesId))).sorted() }
     private var sourceChannels: [String] { Array(Set(sourceSamples.filter { eligible($0, dish: sourceDish) }.map(\.seriesId))).sorted() }
-    private var events: [TimelineEntry] { store.events(for: cookId) }
+    private func scopedEvents(_ id: String, dish: String) -> [TimelineEntry] {
+        store.library.events.filter { row in
+            guard let o = row.objectValue, o["cookId"]?.stringValue == id else { return false }
+            if dish.isEmpty { return true }
+            let metadata = o["noteMetadataJson"]?.stringValue.flatMap { try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) }
+            return o["dishId"]?.stringValue == dish || metadata?.dishIds.contains(dish) == true || o["dishId"]?.stringValue == nil && metadata?.dishIds.isEmpty != false && ["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done"].contains(metadata?.action ?? o["eventType"]?.stringValue ?? "")
+        }.compactMap(TimelineEntry.init(json:))
+    }
+    private var events: [TimelineEntry] { comparing ? scopedEvents(cookId, dish: currentDish) + scopedEvents(comparisonCook, dish: sourceDish) : store.events(for: cookId) }
+    private func previous(_ event: TimelineEntry) -> Bool { store.library.events.contains { $0.objectValue?["id"]?.stringValue == event.id && $0.objectValue?["cookId"]?.stringValue == comparisonCook } }
+    private func markerX(_ event: TimelineEntry) -> Double { x(event.occurredAt, reference: comparing && previous(event)) }
+    @State private var showingOriginal = false
+    private func openMarker(_ event: TimelineEntry) { if comparing && previous(event) { showingOriginal = true } else { onMarker(event) } }
     private var unit: String { store.temperatureUnit }
     private var comparing: Bool { !comparisonCook.isEmpty && !currentChannel.isEmpty && !comparisonChannel.isEmpty && comparisonAnchor != nil && currentAnchor != nil && compatibleChannels }
     private var compatibleChannels: Bool {
@@ -55,8 +67,8 @@ struct CookTemperatureChart: View {
     private var gaps: [Date] { (store.events(for: cookId) + store.events(for: comparisonCook)).filter { $0.eventType == "connection_gap" }.map(\.occurredAt) }
     private var segments: [[TemperatureSample]] { Dictionary(grouping: plottedSamples, by: \.cookId).flatMap { id, rows in CookChartMath.segments(rows, gaps: store.events(for: id).filter { $0.eventType == "connection_gap" }.map(\.occurredAt)) } }
     private var points: [NativePlotPoint] { segments.filter { !hidden.contains($0[0].seriesId) }.flatMap { rows in CookChartMath.reduced(rows).map { NativePlotPoint(id: $0.id, reading: $0, segmentId: rows[0].id) } } }
-    private var fullStart: Double { min((plottedSamples.map { x($0.measuredAt, reference: $0.cookId != cookId) } + events.map { x($0.occurredAt) }).min() ?? 0, x(cook?.startedAt ?? .now)) }
-    private var fullEnd: Double { max(fullStart + 1, (plottedSamples.map { x($0.measuredAt, reference: $0.cookId != cookId) } + events.map { x($0.occurredAt) }).max() ?? fullStart + 1) }
+    private var fullStart: Double { min((plottedSamples.map { x($0.measuredAt, reference: $0.cookId != cookId) } + events.map { markerX($0) }).min() ?? 0, x(cook?.startedAt ?? .now)) }
+    private var fullEnd: Double { max(fullStart + 1, (plottedSamples.map { x($0.measuredAt, reference: $0.cookId != cookId) } + events.map { markerX($0) }).max() ?? fullStart + 1) }
     private var span: Double { min(max(1, window), fullEnd - fullStart) }
     private var visibleStart: Double { min(max(fullStart, scrollStart), fullEnd - span) }
     private var yRange: ClosedRange<Double> {
@@ -74,18 +86,23 @@ struct CookTemperatureChart: View {
             }
         }
     }
-    private var clusters: [[TimelineEntry]] { CookChartMath.clusters(markers, x: { x($0.occurredAt) }, start: visibleStart, span: span) }
+    private var clusters: [[TimelineEntry]] { CookChartMath.clusters(markers, x: { markerX($0) }, start: visibleStart, span: span) }
     private var targets: [TargetLine] {
-        let rows = store.library.targets.filter { $0.objectValue?["cookId"]?.stringValue == cookId }
+        func eligibleTarget(_ row: JSONValue) -> Bool {
+            guard let o = row.objectValue, let id = o["cookId"]?.stringValue else { return false }
+            if !comparing { return id == cookId }
+            return id == cookId && (o["dishId"]?.stringValue == currentDish || o["dishId"]?.stringValue == nil) || id == comparisonCook && (o["dishId"]?.stringValue == sourceDish || o["dishId"]?.stringValue == nil)
+        }
+        let rows = store.library.targets.filter(eligibleTarget)
         var lines = rows.compactMap { row -> TargetLine? in
             guard let o = row.objectValue, let id = o["id"]?.stringValue, let value = o["value"]?.numberValue, let rawUnit = o["unit"]?.stringValue, value.isFinite else { return nil }
-            return TargetLine(id: id, start: fullStart, end: fullEnd, value: normalized(value, rawUnit), label: o["targetType"]?.stringValue ?? "Target", historical: false)
+            return TargetLine(id: id, start: fullStart, end: fullEnd, value: normalized(value, rawUnit), label: (o["cookId"]?.stringValue == comparisonCook ? "Previous cook · " : "This cook · ") + (o["targetType"]?.stringValue ?? "Target"), historical: false)
         }
-        let history = store.library.targetHistory.filter { $0.objectValue?["cookId"]?.stringValue == cookId && $0.objectValue?["targetType"]?.stringValue?.hasPrefix("removed_dish_") != true }
+        let history = store.library.targetHistory.filter { eligibleTarget($0) && $0.objectValue?["targetType"]?.stringValue?.hasPrefix("removed_dish_") != true }
         for row in history {
             guard let o = row.objectValue, let id = o["id"]?.stringValue, let value = o["value"]?.numberValue, let rawUnit = o["unit"]?.stringValue, let at = o["effectiveAt"]?.numberValue else { continue }
-            let next = history.compactMap { other -> Double? in guard let v = other.objectValue, v["dishId"] == o["dishId"], v["targetType"] == o["targetType"], let time = v["effectiveAt"]?.numberValue, time > at else { return nil }; return time }.min()
-            lines.append(TargetLine(id: id, start: x(Date(timeIntervalSince1970: at / 1_000)), end: next.map { x(Date(timeIntervalSince1970: $0 / 1_000)) } ?? fullEnd, value: normalized(value, rawUnit), label: o["targetType"]?.stringValue ?? "Target history", historical: true))
+            let next = history.compactMap { other -> Double? in guard let v = other.objectValue, v["cookId"] == o["cookId"], v["dishId"] == o["dishId"], v["targetType"] == o["targetType"], let time = v["effectiveAt"]?.numberValue, time > at else { return nil }; return time }.min()
+            lines.append(TargetLine(id: id, start: x(Date(timeIntervalSince1970: at / 1_000), reference: o["cookId"]?.stringValue == comparisonCook), end: next.map { x(Date(timeIntervalSince1970: $0 / 1_000), reference: o["cookId"]?.stringValue == comparisonCook) } ?? fullEnd, value: normalized(value, rawUnit), label: (o["cookId"]?.stringValue == comparisonCook ? "Previous cook · " : "This cook · ") + (o["targetType"]?.stringValue ?? "Target history"), historical: true))
         }
         return lines
     }
@@ -110,11 +127,13 @@ struct CookTemperatureChart: View {
             ForEach(clusters.indices, id: \.self) { index in
                 let group = clusters[index]
                 if group.count > 1 { Text("\(group.count) entries near \(group[0].occurredAt.formatted(date: .abbreviated, time: .shortened))").font(.caption.bold()) }
-                ForEach(group) { event in Button { onMarker(event) } label: { Label("\(event.occurredAt.formatted(date: .omitted, time: .shortened)) · \(event.title)", systemImage: "note.text") }.accessibilityIdentifier("chart-marker-" + event.id) }
+                ForEach(group) { event in Button { openMarker(event) } label: { Label("\(event.occurredAt.formatted(date: .omitted, time: .shortened)) · \(event.title)", systemImage: "note.text") }.accessibilityIdentifier("chart-marker-" + event.id) }
             }
+            ForEach(targets) { target in Text("\(target.label): \(target.value) °\(unit)").font(.caption) }
             if !targets.isEmpty { Text("Dashed lines show current/reference targets. Solid lines show recorded target history from its effective time.").font(.caption).foregroundStyle(.secondary) }
             comparisonControls
-        }.onAppear { currentDish = store.dishRecords(cookId).first?.id ?? ""; restoreReference(); reset() }
+        }.sheet(isPresented: $showingOriginal) { NavigationStack { CookDetailView(cookId: comparisonCook) } }
+        .onAppear { currentDish = store.dishRecords(cookId).first?.id ?? ""; restoreReference(); reset() }
         .onChange(of: plottedSamples.last?.id) { _, _ in if follow { scrollStart = fullEnd - span } }
         .onChange(of: clockMode) { _, _ in reset() }
         .onChange(of: comparisonCook) { _, _ in if !sourceChannels.contains(comparisonChannel) { comparisonChannel = "" }; if !store.dishRecords(comparisonCook).contains(where: { $0.id == sourceDish }) { sourceDish = store.dishRecords(comparisonCook).first?.id ?? "" }; reset() }
@@ -148,8 +167,8 @@ struct CookTemperatureChart: View {
             }
             ForEach(clusters.indices, id: \.self) { index in
                 let group = clusters[index]
-                RuleMark(x: .value("Note time", x(group[0].occurredAt))).foregroundStyle(.purple.opacity(0.6)).lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
-                    .annotation(position: .top) { Button(group.count > 1 ? "\(group.count) notes" : group[0].title) { onMarker(group[0]) }.font(.caption2).lineLimit(1) }
+                RuleMark(x: .value("Note time", markerX(group[0]))).foregroundStyle(.purple.opacity(0.6)).lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                    .annotation(position: .top) { Button(group.count > 1 ? "\(group.count) notes" : group[0].title) { openMarker(group[0]) }.font(.caption2).lineLimit(1) }
             }
         }.chartXScale(domain: fullStart...fullEnd).chartYScale(domain: yRange)
             .chartXAxis { AxisMarks(values: .automatic(desiredCount: 5)) { value in AxisGridLine(); AxisTick(); AxisValueLabel { if let number = value.as(Double.self) { Text(clockMode && !comparing ? Date(timeIntervalSince1970: number * 60).formatted(date: .abbreviated, time: .shortened) : number.formatted(.number.precision(.fractionLength(0...1)))) } } } }
@@ -214,9 +233,12 @@ struct CookTemperatureChart: View {
             }
         }
     }
-    private func eligible(_ sample: TemperatureSample, dish: String) -> Bool { dish.isEmpty || sample.dishId == dish || ["pit", "pit_ambient", "ambient_temperature", "setpoint"].contains(sample.measurementType) }
+    private func eligible(_ sample: TemperatureSample, dish: String) -> Bool { dish.isEmpty || sample.dishId == dish || sample.dishId == nil && ["pit", "pit_ambient", "ambient_temperature", "setpoint"].contains(sample.measurementType) }
     private func restoreReference() {
-        guard let ref = store.savedReference(cookId, dishId: currentDish) else { return }
+        guard let ref = store.savedReference(cookId, dishId: currentDish) ?? store.recipeSource(currentDish).flatMap({ source -> NativeCookReference? in
+            guard let revision = source["recipeRevisionId"]?.stringValue.flatMap(store.recipeRevision), let original = revision["sourceCookId"]?.stringValue, let dish = revision["sourceDishId"]?.stringValue else { return nil }
+            return NativeCookReference(dishId: currentDish, sourceCookId: original, sourceDishId: dish)
+        }) else { return }
         comparisonCook = ref.sourceCookId; sourceDish = ref.sourceDishId; alignment = ref.anchor
         let current = samples.filter { eligible($0, dish: currentDish) }, source = store.readings(for: ref.sourceCookId).filter { eligible($0, dish: sourceDish) }
         func key(_ preferred: String?, _ name: String, _ rows: [TemperatureSample]) -> String {
@@ -224,6 +246,8 @@ struct CookTemperatureChart: View {
             let ids = Set(rows.filter { $0.probeName == name }.map(\.seriesId)); return ids.count == 1 ? ids.first! : ""
         }
         currentChannel = key(ref.currentSeriesId, ref.currentProbe, current); comparisonChannel = key(ref.sourceSeriesId, ref.sourceProbe, source)
+        if ref.currentSeriesId == nil && ref.currentProbe.isEmpty { currentChannel = current.first { $0.dishId == currentDish }?.seriesId ?? "" }
+        if ref.sourceSeriesId == nil && ref.sourceProbe.isEmpty { comparisonChannel = source.first { $0.dishId == sourceDish }?.seriesId ?? "" }
     }
     private func reset() { hidden = []; selected = nil; follow = true; window = max(1, fullEnd - fullStart); scrollStart = fullStart }
 }
