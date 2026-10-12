@@ -80,6 +80,7 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
+                MealRecipeActions(cookId: cookId)
                 MealActivityTimers(cookId: cookId)
                 Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())
                 if store.timingMode(cookId) == "legacy_preserved" {

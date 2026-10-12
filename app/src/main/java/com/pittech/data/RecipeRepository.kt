@@ -7,6 +7,11 @@ import java.util.UUID
 
 class RecipeRepository(private val database: PitTechDatabase, private val photoStorage: PhotoStorage) {
     private val dao = database.recipeDao()
+    fun observeRevisions() = dao.observeRevisions()
+    fun observeSources() = dao.observeSources()
+    fun observePresets() = dao.observePresets()
+    suspend fun presets() = dao.presets()
+    fun photoUri(path: String) = photoStorage.uri(path).toString()
     fun observeRecipes() = dao.observeRecipes()
     suspend fun get(id: String) = dao.recipe(id)
     suspend fun revision(id: String) = dao.revision(id)
@@ -17,7 +22,8 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
     /** expectedRevisionId prevents a stale editor from overwriting a newer preferred version. */
     suspend fun save(snapshot: RecipeSnapshot, recipeId: String? = null, expectedRevisionId: String? = null,
         sourceCookId: String? = null, sourceDishId: String? = null, changeNotes: String = "",
-        photoIds: Set<String> = emptySet(), retainAssetsFromRevisionId: String? = expectedRevisionId): SavedRecipe {
+        photoIds: Set<String> = emptySet(), retainAssetsFromRevisionId: String? = expectedRevisionId,
+        keptAssetIds: Set<String>? = null, assetCaptions: Map<String, String> = emptyMap(), addedPhotoUris: List<String> = emptyList()): SavedRecipe {
         val payload = RecipeSnapshotCodec.encode(snapshot)
         val now = System.currentTimeMillis()
         val id = recipeId ?: UUID.randomUUID().toString()
@@ -34,10 +40,14 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
                 copies += RecipeAsset(assetId, revisionId, destination, mime, caption, sourcePhoto, now)
                 photoStorage.writeImported(destination, photoStorage.read(path) ?: error("A reference photo is unavailable."))
             }
-            sourcePhotos.filter { it.id in photoIds }.forEach { copy(it.relativePath, it.mimeType, it.caption.orEmpty(), it.id) }
+            sourcePhotos.filter { it.id in photoIds }.forEach { copy(it.relativePath, it.mimeType, assetCaptions[it.id] ?: it.caption.orEmpty(), it.id) }
             retainAssetsFromRevisionId?.let { key ->
                 require(dao.revision(key) != null) { "The source recipe revision is unavailable." }
-                dao.assetsFor(key).filter { it.sourcePhotoId !in photoIds }.forEach { copy(it.relativeFilePath, it.mimeType, it.caption, it.sourcePhotoId) }
+                dao.assetsFor(key).filter { it.sourcePhotoId !in photoIds && (keptAssetIds == null || it.id in keptAssetIds) }.forEach { copy(it.relativeFilePath, it.mimeType, assetCaptions[it.id] ?: it.caption, it.sourcePhotoId) }
+            }
+            addedPhotoUris.forEach { uri ->
+                val photo = photoStorage.copyIntoLibrary(uri, id, null, now)
+                copies += RecipeAsset(photo.id, revisionId, photo.relativePath, photo.mimeType, assetCaptions[uri].orEmpty(), null, now)
             }
             return database.withTransaction {
                 val previous = recipeId?.let { dao.recipe(it) ?: error("This recipe is unavailable.") }
@@ -58,12 +68,13 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
     suspend fun duplicate(recipeId: String, name: String): SavedRecipe {
         val recipe = dao.recipe(recipeId) ?: error("This recipe is unavailable.")
         val revision = dao.revision(recipe.currentRevisionId) ?: error("This version is unavailable.")
-        return save(RecipeSnapshotCodec.decode(revision.snapshotJson).copy(name = name), sourceCookId = revision.sourceCookId,
+        return save(RecipeSnapshotCodec.decode(revision.snapshotJson).let { it.copy(name = name, dish = it.dish.copy(name = name)) }, sourceCookId = revision.sourceCookId,
             sourceDishId = revision.sourceDishId, retainAssetsFromRevisionId = revision.id)
     }
     suspend fun archive(id: String) = database.withTransaction {
         dao.recipe(id)?.let { dao.updateRecipe(it.copy(archivedAtUtcMillis = System.currentTimeMillis(), updatedAtUtcMillis = System.currentTimeMillis())) }
     }
+    suspend fun unarchive(id: String) = database.withTransaction { dao.recipe(id)?.let { dao.updateRecipe(it.copy(archivedAtUtcMillis = null, updatedAtUtcMillis = System.currentTimeMillis())) } }
     suspend fun setFavorite(id: String, favorite: Boolean) = database.withTransaction {
         dao.recipe(id)?.let { dao.updateRecipe(it.copy(favorite = favorite, updatedAtUtcMillis = System.currentTimeMillis())) }
     }

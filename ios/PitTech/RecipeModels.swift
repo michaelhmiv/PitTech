@@ -26,7 +26,16 @@ struct RecipeSnapshot: Codable {
         guard version == 1, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               name.count <= 200, tags.count <= 100, instructions.count <= 500, observations.count <= 5000,
               case .array(let dishes)? = draft.objectValue?["dishes"], dishes.count == 1,
-              let dishName = dishes[0].objectValue?["name"]?.stringValue, !dishName.isEmpty else { throw PitTechArchiveError.invalidArchive }
+              let dishName = dishes[0].objectValue?["name"]?.stringValue, !dishName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PitTechArchiveError.invalidArchive }
+        let setup = dishes[0].objectValue ?? [:]
+        let weight = setup["weight"]?.stringValue ?? ""
+        guard weight.isEmpty || Double(weight).map({ $0.isFinite && $0 > 0 }) == true else { throw PitTechArchiveError.invalidArchive }
+        let ingredients = setup["ingredients"]?.arrayValue ?? []
+        guard ingredients.count <= 100, ingredients.allSatisfy({ row in
+            guard let o = row.objectValue, let name = o["name"]?.stringValue, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            let amount = o["amount"]?.stringValue ?? ""
+            return amount.isEmpty || Double(amount).map { $0.isFinite && $0 > 0 } == true
+        }) else { throw PitTechArchiveError.invalidArchive }
         var seen = Set<String>()
         for row in observations {
             guard let o = row.objectValue, let id = o["sourceEventId"]?.stringValue, seen.insert(id).inserted,
@@ -34,13 +43,19 @@ struct RecipeSnapshot: Codable {
             let expected = smokingAnchorUtcMillis.map { at - Double($0) }
             guard o["offsetMillis"]?.numberValue == expected else { throw PitTechArchiveError.invalidArchive }
         }
+        for row in observations {
+            let temperatures = row.objectValue?["recordedTemperatures"]?.arrayValue ?? []
+            guard temperatures.count <= 100, temperatures.allSatisfy({ value in let o = value.objectValue ?? [:]
+                return o["sourceReadingId"]?.stringValue != nil && o["value"]?.numberValue?.isFinite == true && ["°F", "°C"].contains(o["unit"]?.stringValue ?? "") && (o["measuredAtUtcMillis"]?.numberValue ?? 0) > 0
+            }) else { throw PitTechArchiveError.invalidArchive }
+        }
         seen = []
         for row in instructions {
             guard let o = row.objectValue, let id = o["id"]?.stringValue, seen.insert(id).inserted,
-                  let title = o["title"]?.stringValue, !title.isEmpty,
+                  let title = o["title"]?.stringValue, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   (o["durationMillis"]?.numberValue ?? 0) >= 0 else { throw PitTechArchiveError.invalidArchive }
         }
-        guard targets.allSatisfy({ $0.objectValue?["dish"]?.numberValue == 0 && $0.objectValue?["value"]?.numberValue?.isFinite == true }),
+        guard targets.allSatisfy({ $0.objectValue?["dish"]?.numberValue == 0 && $0.objectValue?["value"]?.numberValue?.isFinite == true && ["°F", "°C"].contains($0.objectValue?["unit"]?.stringValue ?? "") }),
               rating?.isFinite != false, preferredPitTemperatureF?.isFinite != false else { throw PitTechArchiveError.invalidArchive }
     }
 }
@@ -93,8 +108,9 @@ extension PitTechLibrary {
         for row in mealPresets {
             guard let o = row.objectValue, let name = o["name"]?.stringValue, !name.isEmpty,
                   let raw = o["itemsJson"]?.stringValue, let bytes = raw.data(using: .utf8),
-                  case .array(let items) = try JSONDecoder().decode(JSONValue.self, from: bytes), items.count <= 30 else { throw PitTechArchiveError.invalidArchive }
+                  let items = try? MealPresetPayload.decode(raw).items, items.count <= 30 else { throw PitTechArchiveError.invalidArchive }
             for item in items {
+                if let raw = item.objectValue?["setupSnapshotJson"]?.stringValue { _ = try RecipeSnapshot.decode(raw) }
                 if let revision = item.objectValue?["recipeRevisionId"]?.stringValue {
                     guard revisionIndex[revision] != nil else { throw PitTechArchiveError.invalidArchive }
                 } else {

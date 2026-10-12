@@ -123,7 +123,7 @@ class CookCompanionRepository(private val database: PitTechDatabase, private val
                 else { val goal = ServeTimePlanner.decode(record.payload); dao.put(record.copy(payload = ServeTimePlanner.encode(goal.copy(book = book, schedules = goal.schedules.filterNot { it.dishIndex == index }.map { it.copy(dishIndex = if (it.dishIndex > index) it.dishIndex - 1 else it.dishIndex) })))) }
             }
         }
-        dao.forCook(cookId).filter { r -> r.kind == "alert" && CookAlertEngine.decode(r.payload).first.dishId == dishId || r.kind == "reference" && CookReferenceCodec.decode(r.payload).dishId == dishId }.forEach { dao.delete(it.id) }
+        dao.forCook(cookId).filter { r -> r.kind == "alert" && CookAlertEngine.decode(r.payload).first.dishId == dishId || r.kind == "reference" && CookReferenceCodec.decode(r.payload).dishId == dishId || r.kind == "recipe_attempt" && org.json.JSONObject(r.payload).getString("dishId") == dishId }.forEach { dao.delete(it.id) }
     }
     suspend fun stageAction(cookId: String, dishId: String, action: String) = database.withTransaction {
         require(action in setOf("food_on", "rest_start", "hold_start", "dish_done")) { "Choose a dish stage." }

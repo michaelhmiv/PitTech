@@ -302,9 +302,9 @@ fi
 recipe_test_output="$output_dir/recipe-preparation-tests.txt"
 echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest' \
+  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (4 tests)' "$recipe_test_output"
+grep -q 'OK (5 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 
 companion_test_output="$output_dir/companion-tests.txt"

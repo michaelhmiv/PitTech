@@ -502,6 +502,9 @@ interface CookDao {
     @Update
     suspend fun updateCook(cook: CookEntity)
 
+    @Query("DELETE FROM ingredients WHERE dishId = :dishId")
+    suspend fun deleteIngredientsForDish(dishId: String)
+
     @Update
     suspend fun updateDish(dish: DishEntity)
 

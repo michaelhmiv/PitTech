@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -39,6 +40,14 @@ class CooksViewModel(
     private val dataTransfer: PitTechDataTransfer,
     private val context: Context,
 ) : ViewModel() {
+    internal val recipes get() = repository.recipes
+    internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()) = com.pittech.data.RecipeExtraction.fromMeal(repository.observeCookDetail(cookId).first() ?: error("Meal unavailable."), dishId, contextIds)
+    internal suspend fun startRecipeMeal(title: String, revisions: List<String>) = repository.startRecipeMeal(title, revisions).also { openCook(it) }
+    internal suspend fun addRecipeToMeal(cookId: String, revisionId: String) = repository.addRecipeToMeal(cookId, revisionId)
+    internal suspend fun updateRecipeAttempt(dishId: String, snapshot: com.pittech.domain.RecipeSnapshot) = repository.updateRecipeAttempt(dishId, snapshot)
+    internal suspend fun recipeAttempt(dishId: String) = repository.recipeAttempt(dishId)
+    internal suspend fun saveMealPreset(cookId: String, name: String) = repository.saveMealPreset(cookId, name)
+    internal suspend fun startMealPreset(id: String) = repository.startMealPreset(id).also { openCook(it) }
     internal val activities get() = repository.activities
     private val app get() = context.applicationContext as PitTechApplication
     internal val grillState get() = app.grillMonitor.state
