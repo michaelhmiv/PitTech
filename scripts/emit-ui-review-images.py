@@ -26,5 +26,10 @@ for name, path in sorted(images.items()):
     data = path.read_bytes()
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         continue
-    print("PITTECH_REVIEW_IMAGE|" + name.replace("|", "/") + "|" + base64.b64encode(data).decode("ascii"))
+    encoded = base64.b64encode(data).decode("ascii")
+    label = name.replace("|", "/")
+    print("PITTECH_REVIEW_IMAGE_BEGIN|" + label)
+    for offset in range(0, len(encoded), 32768):
+        print("PITTECH_REVIEW_IMAGE_PART|" + encoded[offset:offset + 32768])
+    print("PITTECH_REVIEW_IMAGE_END|" + label)
 print("::endgroup::")
