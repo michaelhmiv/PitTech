@@ -91,24 +91,38 @@ struct CookListView: View {
 
 struct CookCard: View {
     @Environment(CookStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var textSize
     let cook: CookRecord
     let dishes: [String]
 
+    private var statusText: String {
+        store.timingMode(cook.id) == "explicit_phases" ? store.phaseSummary(cook.id) : "Active"
+    }
+
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(alignment: textSize.isAccessibilitySize ? .top : .center, spacing: 14) {
             Image(systemName: cook.isActive ? "flame.fill" : "checkmark.circle.fill")
-                .font(.title2)
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(cook.isActive ? PitTechStyle.accent : PitTechStyle.sage)
                 .frame(width: 42, height: 42)
                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(cook.title).font(.headline).foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(dishes.isEmpty ? cook.startedAt.formatted(date: .abbreviated, time: .shortened) : dishes.joined(separator: " · "))
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .lineLimit(textSize.isAccessibilitySize ? nil : 2)
+                if cook.isActive && textSize.isAccessibilitySize {
+                    Text(statusText).font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent)
+                }
             }
-            Spacer(minLength: 4)
-            if cook.isActive { Text(store.timingMode(cook.id) == "explicit_phases" ? store.phaseSummary(cook.id) : "Active").font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent).lineLimit(2) }
-            Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if cook.isActive && !textSize.isAccessibilitySize {
+                Text(statusText).font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent).lineLimit(2)
+            }
+            Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(14)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
@@ -132,7 +146,7 @@ struct StartCookSheet: View {
                     if alreadyCooking { DatePicker("Actual Food on", selection: $foodOn, in: ...Date.now) }
                     else { Text("Preparing until you log Food on.") }
                 }
-                Section("Cook") {
+                Section("Meal") {
                     TextField("Meal name (optional)", text: $title).accessibilityIdentifier("meal-title")
                     TextField("First dish (optional)", text: $firstDish).accessibilityIdentifier("meal-first-dish")
                 }

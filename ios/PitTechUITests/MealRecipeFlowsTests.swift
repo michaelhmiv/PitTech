@@ -32,6 +32,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.swipeUp()
         }
         XCTAssertEqual(seenFoods.count, 3)
+        reveal(foods.firstMatch, app: app)
         capture("Native composed meal")
         let reminders = app.buttons["Reminders"].firstMatch
         for _ in 0..<6 { if reminders.exists && reminders.isHittable { break }; app.swipeDown() }

@@ -32,7 +32,7 @@ final class CookStore {
     func startCook(title: String, firstDish: String, alreadyCooking: Bool = false, foodOn: Date = .now) {
         guard !alreadyCooking || foodOn <= .now && foodOn.timeIntervalSince1970 > 0 else { saveError = "Choose the actual Food on time, up to now."; return }
         let prior = library
-        let cook = CookRecord.start(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New cook" : title)
+        let cook = CookRecord.start(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New meal" : title)
         library.cooks.append(cook)
         library.lifecycles.append(.object(["cookId": .string(cook.id), "timingMode": .string("explicit_phases")]))
         if !firstDish.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

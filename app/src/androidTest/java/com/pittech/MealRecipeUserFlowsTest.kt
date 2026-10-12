@@ -71,6 +71,11 @@ class MealRecipeUserFlowsTest {
         compose.onNodeWithTag("recipe-save").performClick()
         compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.cookRepository.recipeAttempt(mac.id)?.description == "Try more Gouda" } }
         assertTrue(runBlocking(Dispatchers.IO) { app.database.recipeDao().revisions().all { RecipeSnapshotCodec.decode(it.snapshotJson).description.isEmpty() } })
+        compose.waitUntil(20000) { compose.onAllNodesWithTag("recipe-save").fetchSemanticsNodes().isEmpty() }
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithTag("meal-recipe-actions").performScrollTo().performClick()
+        compose.onNodeWithTag("live-cook-elapsed").performScrollTo()
+        compose.waitForIdle()
         shot("recipe-composed-live")
         runBlocking(Dispatchers.IO) { app.cookRepository.pauseCook(meal.id) }
         compose.onNodeWithTag("live-finish-cook").performScrollTo().performClick()
@@ -84,6 +89,10 @@ class MealRecipeUserFlowsTest {
         assertEquals("Try more Gouda", RecipeSnapshotCodec.decode(variation.snapshotJson).description)
         assertEquals(meal.id, variation.sourceCookId)
         assertTrue(runBlocking(Dispatchers.IO) { notePlanEvents(app.database.cookDao().getTimelineEventsForCook(meal.id)).none { it.action in CookPhases.phaseActions } })
+        compose.waitUntil(20000) { compose.onAllNodesWithTag("recipe-save").fetchSemanticsNodes().isEmpty() }
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithTag("meal-view-summary").performScrollTo()
+        compose.waitForIdle()
         shot("meal-finished-recipe-choice")
         compose.onNodeWithTag("leave-without-saving").performScrollTo().performClick()
         assertEquals(CookStatus.COMPLETED, runBlocking(Dispatchers.IO) { app.database.cookDao().getCook(meal.id)!!.status })
