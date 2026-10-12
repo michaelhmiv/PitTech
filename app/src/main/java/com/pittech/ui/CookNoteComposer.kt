@@ -36,6 +36,8 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
     val scope = rememberCoroutineScope()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var localError by remember { mutableStateOf<String?>(null) }
     var showDetails by rememberSaveable(draft.id) { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable(draft.id) { mutableStateOf(photoFirst) }
@@ -128,7 +130,7 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                     }
                 }
                 if (staging) LinearProgressIndicator(Modifier.fillMaxWidth())
-                TextButton(onClick = { showDetails = !showDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) { Text(if (showDetails) "Hide details" else "More details") }
+                TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide(); showDetails = !showDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) { Text(if (showDetails) "Hide details" else "More details") }
                 if (showDetails) {
                     SimpleDropdownField("Cooking method", CookingMethods.labels[draft.method] ?: "Not set", listOf("Not set") + CookingMethods.labels.values,
                         { label -> onChange(draft.copy(method = CookingMethods.labels.entries.firstOrNull { it.value == label }?.key)) }, testTag = "note-method")
