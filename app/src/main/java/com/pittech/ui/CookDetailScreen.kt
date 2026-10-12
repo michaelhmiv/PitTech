@@ -86,6 +86,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -121,6 +122,7 @@ import com.pittech.domain.CookEntryValidation
 import com.pittech.domain.DishDraft
 import com.pittech.domain.IngredientDraft
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -152,6 +154,7 @@ fun CookDetailScreen(
     var editCook by remember { mutableStateOf(false) }
     var addDish by remember { mutableStateOf(false) }
     var editDish by remember { mutableStateOf<DishEntity?>(null) }
+    var ingredientDish by remember { mutableStateOf<DishEntity?>(null) }
     var dishToDelete by remember { mutableStateOf<DishEntity?>(null) }
     var editEvent by remember { mutableStateOf<TimelineEventEntity?>(null) }
     var showNewEvent by remember { mutableStateOf(false) }
@@ -159,6 +162,9 @@ fun CookDetailScreen(
     var showTarget by remember { mutableStateOf(false) }
     var editReading by remember { mutableStateOf<SensorReadingEntity?>(null) }
     var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var selectedFood by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
+    var showProbeMove by remember { mutableStateOf(false) }
+    var showFinishConfirm by remember { mutableStateOf(false) }
     var finishRequested by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
@@ -336,10 +342,23 @@ fun CookDetailScreen(
             dismissButton = { TextButton(onClick = { dishToDelete = null }) { Text("Cancel") } },
         )
     }
-    fun openNote(category: String = "general", action: String? = null, photoFirst: Boolean = false) {
+    ingredientDish?.let { dish -> FoodIngredientsDialog(data, dish, viewModel) { ingredientDish = null; viewModel.clearSaveError() } }
+    if (showProbeMove) ProbeMoveDialog(data, selectedFood, viewModel) { showProbeMove = false; viewModel.clearSaveError() }
+    LaunchedEffect(data.cook.status) { if (data.cook.status == CookStatus.COMPLETED) showFinishConfirm = false }
+    if (showFinishConfirm) AlertDialog(
+        onDismissRequest = { if (!busy) showFinishConfirm = false },
+        title = { Text("Finish cook", modifier = Modifier.testTag("finish-cook-dialog")) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("End this cook and stop temperature recording? You can add results and photos afterward.")
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } },
+        confirmButton = { TextButton(onClick = { viewModel.clearSaveError(); viewModel.completeCook(data.cook.id) },
+            enabled = !busy, modifier = Modifier.testTag("finish-cook-save")) { Text(if (busy) "Finishing…" else "Finish cook") } },
+        dismissButton = { TextButton(onClick = { showFinishConfirm = false }, enabled = !busy) { Text("Cancel") } })
+    fun openNote(category: String = "general", action: String? = null, photoFirst: Boolean = false, foodId: String? = selectedFood?.takeIf { id -> data.dishes.any { it.id == id } } ?: data.dishes.singleOrNull()?.id) {
         noteEditing = false
         notePhotoFirst = photoFirst
-        val dishId = data.dishes.singleOrNull()?.id
+        val dishId = foodId
         noteDraftJson = com.pittech.domain.CookNoteDraft(cookId = data.cook.id, dishId = dishId, category = category, action = action,
             title = action?.let { com.pittech.domain.PlaybookCodec.actions[it] }.orEmpty(),
             temperatures = if (category == "temperature") listOf(com.pittech.domain.NoteTemperature(unit = preferredTemperatureUnit, dishId = dishId)) else emptyList()).encode()
@@ -561,13 +580,6 @@ fun CookDetailScreen(
                     )
                 }
             }
-            CookQuickActionsBar(
-                onNote = { openNote() },
-                onTemperature = { openNote("temperature") },
-                onPhoto = { openNote("photo", photoFirst = true) },
-                onReminder = { showReminderComposer = true },
-                onQuickEvent = { type -> openNote("action", com.pittech.domain.PlaybookCodec.action(type)) },
-            )
             if (data.logDrafts.isNotEmpty() && noteDraftJson == null) {
                 TextButton(onClick = {
                     val saved = data.logDrafts.first()
@@ -576,16 +588,25 @@ fun CookDetailScreen(
                     noteDraftJson = saved.payload
                 }, modifier = Modifier.testTag("cook-resume-note")) { Text("Resume saved note (${data.logDrafts.size})") }
             }
+            Box(Modifier.weight(1f)) {
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
+                    foodLayout = { FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
+                        onSelect = { selectedFood = it },
+                        onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
+                        onAdd = { addDish = true }, onEdit = { editDish = it },
+                        onIngredients = { ingredientDish = it },
+                        onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }) },
+                    displayUnit = preferredTemperatureUnit,
+                    configuredTools = { CookPlaybookTools(data, viewModel, configuredOnly = true); CookAlertTools(data, viewModel, configuredOnly = true) },
                     playbookTools = {
                         CookPhaseCard(data,
                             onFoodOn = { dish -> openNote("action", "food_on"); noteDraftJson = noteDraftJson?.let { com.pittech.domain.CookNoteDraft.decode(it).copy(dishId = dish).encode() } },
                             onPreheat = { openNote("action", "preheat_start") },
                             onAdopt = { viewModel.adoptFoodOnTiming(data.cook.id, it) })
                         if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).any { it.phase == "prep" }) CookChecklistTools(data, viewModel)
-                        CookPlaybookTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = true) },
+                        CookPlaybookTools(data, viewModel, configuredOnly = false) },
                     preparationTools = { if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).none { it.phase == "prep" }) CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = false) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
@@ -615,8 +636,7 @@ fun CookDetailScreen(
                         focusManager.clearFocus(force = true)
                         keyboardController?.hide()
                         viewModel.clearSaveError()
-                        finishRequested = true
-                        showResults = true
+                        showFinishConfirm = true
                     },
                     onDelete = { confirmDeleteCook = true },
                     onCopySetup = { viewModel.previewCookAgain(data.cook.id) },
@@ -633,15 +653,25 @@ fun CookDetailScreen(
                 CookTab.TIMELINE -> TimelineTab(
                     data = data,
                     focusEventId = focusedTimelineId,
+                    onFocusHandled = { focusedTimelineId = null },
                     viewModel = viewModel,
                     onEditEvent = { event -> coroutineScope.launch { noteEditing = true; notePhotoFirst = false; noteDraftJson = viewModel.loadNote(event.id).encode() } },
                     onEditReading = { editReading = it },
                     onError = error,
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
+                    onFoodFilter = { selectedFood = it },
                 )
                 CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
             }
+            }
+            CookQuickActionsBar(
+                onNote = { openNote() },
+                onTemperature = { openNote("temperature") },
+                onPhoto = { openNote("photo", photoFirst = true) },
+                onReminder = { showReminderComposer = true },
+                onQuickEvent = { type -> openNote("action", com.pittech.domain.PlaybookCodec.action(type)) },
+            )
         }
     }
 }
@@ -661,12 +691,6 @@ private fun CookQuickActionsBar(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Quick actions", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("meat_on" to "Food on", "spritz" to "Spritz", "wrap" to "Wrap", "remove" to "Remove", "rest" to "Rest").forEach { (type, label) ->
-                    OutlinedButton(onClick = { onQuickEvent(type) }, modifier = Modifier.testTag("cook-quick-$type"), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp)) { Text(label, style = MaterialTheme.typography.labelSmall) }
-                }
-            }
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onNote,
@@ -723,6 +747,9 @@ private fun CookQuickActionsBar(
 @Composable
 private fun LiveCookTab(
     data: CookDetailData,
+    foodLayout: @Composable () -> Unit,
+    configuredTools: @Composable () -> Unit,
+    displayUnit: String,
     grillPanel: @Composable () -> Unit,
     playbookTools: @Composable () -> Unit,
     preparationTools: @Composable () -> Unit,
@@ -744,339 +771,109 @@ private fun LiveCookTab(
     onShowPhotoGallery: () -> Unit,
     onViewTimeline: () -> Unit,
 ) {
-    val elapsed = calculateElapsed(data).coerceAtLeast(0)
-    val hours = elapsed / 3_600_000
-    val minutes = (elapsed / 60_000) % 60
-    var showCookDetails by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var showPrepDetails by rememberSaveable(data.cook.id) { mutableStateOf(data.lifecycle?.timingMode == "explicit_phases" && com.pittech.data.notePlanEvents(data.events).none { it.action == "food_on" }) }
-    var showAllReminders by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var showAllDishes by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var showMoreTools by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    val configuration = LocalConfiguration.current
-    val useCompactDashboardGrid = configuration.screenWidthDp >= 390 && configuration.fontScale <= 1.3f
-
-    val pendingReminders = data.reminders
-        .filter { it.status == CookReminderEntity.STATUS_PENDING }
-        .sortedBy { it.dueAtUtcMillis }
-    val latestTemperatures = data.readings.filter { data.recording == null || it.source == "manual" }.filter { it.qualityStatus == "valid" }
-        .groupBy { it.probeName }
-        .values
-        .mapNotNull { readings -> readings.maxByOrNull { it.measuredAtUtcMillis } }
-        .sortedByDescending { it.measuredAtUtcMillis }
-    val latestActivity = buildList<TimelineLine> {
-        data.events.filter { it.eventType != "temperature" }.forEach { add(TimelineLine.Event(it)) }
-        data.readings.forEach { add(TimelineLine.Reading(it)) }
-    }.maxByOrNull { it.time }
+    var showPrep by rememberSaveable(data.cook.id) { mutableStateOf(false) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(data.cook.id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
+    val elapsed = calculateElapsed(data).coerceAtLeast(0)
+    val recent = data.events.filter(CookFeedPresentation::isStory).maxByOrNull { it.occurredAtUtcMillis }
     val latestPhoto = data.photos.maxByOrNull { it.capturedAtUtcMillis ?: it.addedAtUtcMillis }
-    val isActive = data.cook.status == CookStatus.ACTIVE
-    val isPaused = data.cook.status == CookStatus.PAUSED
-    val statusContainer = when (data.cook.status) {
-        CookStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
-        CookStatus.COMPLETED -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val statusContent = when (data.cook.status) {
-        CookStatus.PAUSED -> MaterialTheme.colorScheme.onTertiary
-        CookStatus.COMPLETED -> MaterialTheme.colorScheme.onSecondary
-        else -> MaterialTheme.colorScheme.onPrimary
-    }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        grillPanel()
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(if (data.lifecycle?.timingMode == "explicit_phases") "Time on heat" else "Cook at a glance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${hours}h ${minutes}m", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("live-cook-elapsed"))
-                    }
-                    Surface(color = statusContainer, contentColor = statusContent, shape = CircleShape) {
-                        Text(
-                            (if (data.cook.status == CookStatus.COMPLETED) "Finished" else if (data.lifecycle?.timingMode == "explicit_phases") com.pittech.domain.CookPhases.summary(com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis())) else statusLabel(data.cook.status)).uppercase(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp).testTag("live-cook-status"),
-                        )
-                    }
-                }
-                Text("Started ${formatTimestamp(data.cook.startedAtUtcMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(
-                    onClick = { showCookDetails = !showCookDetails },
-                    modifier = Modifier.heightIn(min = 40.dp).testTag("live-cook-details-toggle"),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                ) { Text(if (showCookDetails) "Hide cook details" else "Show cook details") }
-                if (showCookDetails) {
-                    data.cook.smokerName?.let { Text("Smoker: $it", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.initialSetpointValue?.let { Text("Starting setpoint: $it ${data.cook.initialSetpointUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.fuelType?.let { Text("Fuel: $it", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: $it", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: $it ${data.cook.outdoorTemperatureUnit.orEmpty()}", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.weatherNotes?.let { Text("Weather: $it", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.windNotes?.let { Text("Wind: $it", style = MaterialTheme.typography.bodyLarge) }
-                    data.cook.notes?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-                }
-                if (data.cook.status != CookStatus.COMPLETED) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = onTogglePause,
-                            enabled = !busy,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                        ) { Text(if (isPaused) "Resume recording" else "Pause recording", maxLines = 2) }
-                        if (isActive) {
-                            Button(
-                                onClick = onFinish,
-                                enabled = !busy,
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("live-finish-cook"),
-                            ) { Text("Finish cook", maxLines = 1) }
-                        }
+    val pending = data.reminders.filter { it.status == CookReminderEntity.STATUS_PENDING }.sortedBy { it.dueAtUtcMillis }
+    val pit = data.readings.filter { it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.maxByOrNull { it.measuredAtUtcMillis }
+    val setpoint = data.readings.filter { it.measurementType == "setpoint" }.maxByOrNull { it.measuredAtUtcMillis }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(statusLabel(data.cook.status), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f).testTag("live-cook-status"))
+            Text(formatCookDuration(elapsed), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("live-cook-elapsed"))
+        }
+        if (pit != null || setpoint != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                listOf("Pit" to pit, "Setpoint" to setpoint).forEach { (label, reading) ->
+                    Column(Modifier.weight(1f)) {
+                        Text(label, style = MaterialTheme.typography.labelLarge)
+                        Text(if (reading != null && FoodLivePresentation.accepted(reading))
+                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)) + " " + displayUnit
+                            else "—", style = MaterialTheme.typography.headlineSmall)
+                        reading?.let { Text((if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
+                            formatTimeOfDay(it.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                 }
             }
         }
-
-        playbookTools()
-        DashboardSectionPair(
-            compact = useCompactDashboardGrid,
-            testTag = "live-overview-grid",
-            first = { modifier -> DashboardSectionCard(if (useCompactDashboardGrid) "Temps" else "Latest temperatures", modifier = modifier) {
-            if (latestTemperatures.isEmpty()) {
-                Text(
-                    if (useCompactDashboardGrid) "No readings yet." else "No readings yet. Use Temperature in Quick actions to record one.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.testTag("live-no-readings"),
-                )
-            } else {
-                latestTemperatures.take(2).forEach { reading ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text(reading.probeName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                            Text(formatTimestamp(reading.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text("${reading.value} ${reading.unit}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-                }
-                if (latestTemperatures.size > 2) {
-                    TextButton(onClick = onViewTimeline, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text("View all ${latestTemperatures.size} probes")
-                    }
-                }
-            }
-            } },
-            second = { modifier -> DashboardSectionCard("Dishes (${data.dishes.size})", modifier = modifier) {
-            if (data.dishes.isEmpty()) Text("Add a dish to keep its preparation and results with this cook.", style = MaterialTheme.typography.bodyMedium)
-            val visibleDishes = if (useCompactDashboardGrid && !showAllDishes) data.dishes.take(2) else data.dishes
-            visibleDishes.forEach { dish ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(dish.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                            Text(
-                                buildList {
-                                    add(dish.foodType)
-                                    dish.cut?.let(::add)
-                                    dish.weightValue?.let { add("$it ${dish.weightUnit.orEmpty()}") }
-                                }.joinToString(" · "),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 2,
-                            )
-                        }
-                        TextButton(onClick = { onEditDish(dish) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Edit") }
-                    }
-                    dish.placement?.let { Text("Placement: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    val ingredients = data.ingredients.filter { it.dishId == dish.id }
-                    val hasPrepDetails = ingredients.isNotEmpty() || dish.prepNotes != null || dish.startingCondition != null || dish.gradeOrSource != null
-                    if (hasPrepDetails) {
-                        TextButton(
-                            onClick = { showPrepDetails = !showPrepDetails },
-                            modifier = Modifier.heightIn(min = 40.dp).testTag("live-prep-toggle"),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        ) { Text(if (showPrepDetails) "Hide preparation" else "Show preparation") }
-                    }
-                    if (showPrepDetails) {
-                        dish.startingCondition?.let { Text("Starting condition: $it", style = MaterialTheme.typography.bodyMedium) }
-                        dish.gradeOrSource?.let { Text("Grade or source: $it", style = MaterialTheme.typography.bodyMedium) }
-                        ingredients.forEach { item ->
-                            Text(
-                                "${item.stage.replace('_', ' ').replaceFirstChar { it.titlecase() }}: ${item.name}" +
-                                    (item.brand?.let { " · $it" } ?: "") +
-                                    (item.amountValue?.let { " · $it ${item.amountUnit.orEmpty()}" } ?: ""),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                        dish.prepNotes?.let { Text("Preparation notes: $it", style = MaterialTheme.typography.bodyMedium) }
-                    }
-                }
-            }
-            if (useCompactDashboardGrid && data.dishes.size > 2) {
-                TextButton(
-                    onClick = { showAllDishes = !showAllDishes },
-                    modifier = Modifier.heightIn(min = 40.dp).testTag("live-dishes-toggle"),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                ) { Text(if (showAllDishes) "Show fewer dishes" else "Show all ${data.dishes.size} dishes") }
-            }
-            OutlinedButton(
-                onClick = onAddDish,
-                enabled = !busy,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Add dish")
-            }
-            } },
-        )
-
-        DashboardSectionPair(
-            compact = useCompactDashboardGrid,
-            testTag = "live-context-grid",
-            first = if (pendingReminders.isNotEmpty()) ({ modifier -> DashboardSectionCard(if (pendingReminders.size == 1) "Next reminder" else "Next reminder · ${pendingReminders.size} pending", modifier = modifier) {
-                val visibleReminders = if (showAllReminders) pendingReminders else pendingReminders.take(1)
-                visibleReminders.forEach { reminder ->
-                    if (useCompactDashboardGrid) {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            Text(formatTimestamp(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
-                                TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
-                            }
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                                Text(reminder.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                                Text(formatTimestamp(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = { onLogReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Log now") }
-                            TextButton(onClick = { onCancelReminder(reminder) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Cancel") }
-                        }
-                    }
-                }
-                if (pendingReminders.size > 1) {
-                    TextButton(
-                        onClick = { showAllReminders = !showAllReminders },
-                        modifier = Modifier.heightIn(min = 40.dp).testTag("live-reminders-toggle"),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) { Text(if (showAllReminders) "Show next reminder only" else "Show ${pendingReminders.size - 1} more reminders") }
-                }
-            } }) else null,
-            second = latestPhoto?.let { photo -> ({ modifier -> DashboardSectionCard("Recent photo", modifier = modifier) {
-                if (useCompactDashboardGrid) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PhotoThumbnail(
-                            photo,
-                            modifier = Modifier.size(72.dp).testTag("live-recent-photo"),
-                            onClick = { onPhotoClick(photo) },
-                        )
-                        Text(
-                            photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                        )
-                        Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                        TextButton(
-                            onClick = onShowPhotoGallery,
-                            modifier = Modifier.heightIn(min = 40.dp).testTag("live-photo-gallery-open"),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        ) { Text("All photos (${data.photos.size})") }
-                    }
-                } else {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PhotoThumbnail(
-                            photo,
-                            modifier = Modifier.size(96.dp).testTag("live-recent-photo"),
-                            onClick = { onPhotoClick(photo) },
-                        )
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
-                            )
-                            Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            TextButton(
-                                onClick = onShowPhotoGallery,
-                                modifier = Modifier.heightIn(min = 40.dp).testTag("live-photo-gallery-open"),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            ) { Text("All photos (${data.photos.size})") }
-                        }
-                    }
-                }
-            } }) },
-        )
-
-        DashboardSectionCard("Latest activity") {
-            when (val activity = latestActivity) {
-                null -> Text("Your notes and temperature checks will appear here.", style = MaterialTheme.typography.bodyMedium)
-                is TimelineLine.Event -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
-                    Text(activity.event.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    activity.event.details?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 2) }
-                    Text(formatTimestamp(activity.event.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                is TimelineLine.Reading -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
-                    Text("${activity.reading.probeName}: ${activity.reading.value} ${activity.reading.unit}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(formatTimestamp(activity.reading.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                is TimelineLine.ReadingGroup -> Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.testTag("live-latest-activity")) {
-                    Text("${activity.readings.size} recent temperature readings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(formatTimestamp(activity.time), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            TextButton(onClick = onViewTimeline, modifier = Modifier.heightIn(min = 40.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text("Open full timeline") }
+        foodLayout()
+        configuredTools()
+        onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        pending.forEach { reminder ->
+            Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Text(reminder.title); Text(formatTimeOfDay(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall) }
+                TextButton(onClick = { onLogReminder(reminder) }) { Text("Log now") }
+                TextButton(onClick = { onCancelReminder(reminder) }) { Text("Cancel") }
+            } }
         }
-
-        DashboardSectionCard("More cook tools") {
-            Text("Targets, results, export, and cook management", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(
-                onClick = { showMoreTools = !showMoreTools },
-                modifier = Modifier.heightIn(min = 40.dp).testTag("live-more-tools-toggle"),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            ) { Text(if (showMoreTools) "Hide cook tools" else "Show cook tools") }
-            if (showMoreTools) {
-                preparationTools()
-                if (data.targets.isEmpty()) Text("No targets saved.", style = MaterialTheme.typography.bodyMedium)
-                data.targets.forEach { target ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(target.targetType.replace('_', ' ').replaceFirstChar { it.titlecase() }, style = MaterialTheme.typography.titleSmall)
-                            Text("${target.value} ${target.unit}" + (target.explanation?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodyMedium)
-                        }
-                        TextButton(onClick = { onDeleteTarget(target) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Delete") }
-                    }
+        if (recent != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Recent activity", style = MaterialTheme.typography.labelLarge)
+                Text(CookFeedPresentation.title(recent), maxLines = 2)
+                Text(formatTimeOfDay(recent.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = onViewTimeline) { Text("Timeline") }
+        }
+        latestPhoto?.let { photo ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PhotoThumbnail(photo, Modifier.size(72.dp).testTag("live-recent-photo"), onClick = { onPhotoClick(photo) })
+                Column(Modifier.weight(1f)) {
+                    photo.caption?.takeIf { it.isNotBlank() }?.let { Text(it, maxLines = 2) }
+                    TextButton(onClick = onShowPhotoGallery, modifier = Modifier.testTag("live-photo-gallery-open")) { Text("All photos (" + data.photos.size + ")") }
                 }
-                Text("A recorded food-safety target is not a safety guarantee or cooking recommendation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = onAddTarget, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add target") }
-                OutlinedButton(onClick = onResults, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("live-record-results")) {
-                    Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
-                }
-                if (data.results.isNotEmpty()) {
-                    data.results.forEach { result ->
-                        val label = result.resultType.replace('_', ' ').replaceFirstChar { it.titlecase() }
-                        val value = result.numericValue?.let { "$it ${result.unit.orEmpty()}" } ?: result.textValue.orEmpty()
-                        Text("$label: $value", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onExport, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Export") }
-                    OutlinedButton(onClick = onCopySetup, enabled = !busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Reuse setup") }
-                }
-                TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.heightIn(min = 44.dp)) { Text("Delete cook") }
-                Text("Reusing a setup starts a fresh cook log.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        onError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
+        TextButton(onClick = { showMoreTools = !showMoreTools }, modifier = Modifier.testTag("live-more-tools-toggle")) {
+            Text(if (showMoreTools) "Hide cook tools" else "Cook tools")
+        }
+        if (showMoreTools) {
+            grillPanel()
+            playbookTools()
+            preparationTools()
+            Text("Started " + formatTimestamp(data.cook.startedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+            data.cook.smokerName?.let { Text("Smoker: " + it) }
+            data.cook.notes?.let { Text(it) }
+            data.cook.fuelType?.let { Text("Fuel: " + it) }
+            data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: " + it) }
+            data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: " + it + " " + data.cook.outdoorTemperatureUnit.orEmpty()) }
+            data.cook.weatherNotes?.let { Text("Weather: " + it) }
+            data.cook.windNotes?.let { Text("Wind: " + it) }
+            TextButton(onClick = { showPrep = !showPrep }, modifier = Modifier.testTag("live-prep-toggle")) { Text(if (showPrep) "Hide preparation" else "Preparation details") }
+            if (showPrep) data.dishes.forEach { dish ->
+                Text(dish.name, style = MaterialTheme.typography.titleMedium)
+                dish.startingCondition?.let { Text("Starting condition: " + it) }
+                dish.prepNotes?.let { Text(it) }
+                data.ingredients.filter { it.dishId == dish.id }.forEach { item ->
+                    Text(item.name + (item.brand?.let { " · " + it } ?: "") +
+                        (item.amountValue?.let { " · " + it + " " + item.amountUnit.orEmpty() } ?: ""))
+                }
+            }
+            data.targets.forEach { target ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onDeleteTarget(target) }) { Text("Delete") }
+                }
+            }
+            OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Add target") }
+            OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("live-record-results")) {
+                Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export") }
+                OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reuse setup") }
+            }
+            if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy) {
+                Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
+            }
+            TextButton(onClick = onDelete, enabled = !busy) { Text("Delete cook") }
+        }
     }
 }
 
@@ -1130,24 +927,40 @@ private fun TimelineTab(
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
     onShowPhotoGallery: () -> Unit,
     focusEventId: String? = null,
+    onFoodFilter: (String?) -> Unit = {},
+    onFocusHandled: () -> Unit = {},
 ) {
-    var selectedFilterName by rememberSaveable(data.cook.id) { mutableStateOf(TimelineFilter.ALL.name) }
+    val context = LocalContext.current
+    val filterPreferences = remember(context) { context.getSharedPreferences("pittech-feed", 0) }
+    var selectedFoodFilter by rememberSaveable(data.cook.id) { mutableStateOf(filterPreferences.getString(data.cook.id + ":food", null)) }
+    val foodFilter = selectedFoodFilter?.takeIf { id -> data.dishes.any { it.id == id } }
+    var selectedFilterName by rememberSaveable(data.cook.id) { mutableStateOf(filterPreferences.getString(data.cook.id + ":type", null)?.takeIf { name -> TimelineFilter.entries.any { it.name == name } } ?: TimelineFilter.STORY.name) }
     var newestFirst by rememberSaveable(data.cook.id) { mutableStateOf(true) }
     var showSortMenu by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     val selectedFilter = TimelineFilter.valueOf(selectedFilterName)
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val rows = buildTimelineLines(data, selectedFilter, newestFirst)
+    val rows = buildTimelineLines(data, selectedFilter, newestFirst, foodFilter)
     val days = rows.groupBy { timelineDayKey(it.time) }
     val latestIndex = rows.size + days.size
-    LaunchedEffect(selectedFilterName, newestFirst) { if (focusEventId == null) listState.scrollToItem(0) }
-    LaunchedEffect(focusEventId, selectedFilterName, newestFirst) {
-        if (focusEventId != null) {
+    LaunchedEffect(selectedFilterName, foodFilter) {
+        filterPreferences.edit().putString(data.cook.id + ":type", selectedFilterName).putString(data.cook.id + ":food", foodFilter).apply()
+        onFoodFilter(foodFilter)
+    }
+    LaunchedEffect(data.dishes.map { it.id }) { if (selectedFoodFilter != null && foodFilter == null) selectedFoodFilter = null }
+    LaunchedEffect(selectedFilterName, foodFilter, newestFirst) { if (focusEventId == null) listState.scrollToItem(0) }
+    LaunchedEffect(focusEventId) {
+        if (focusEventId != null && rows.none { it is TimelineLine.Event && it.event.id == focusEventId }) {
             selectedFilterName = TimelineFilter.ALL.name
+            selectedFoodFilter = null
+        }
+    }
+    LaunchedEffect(focusEventId, rows.map { it.stableKey }) {
+        if (focusEventId != null) {
             var position = 1
             var target: Int? = null
             days.values.forEach { group -> position++; group.forEach { row -> if (row is TimelineLine.Event && row.event.id == focusEventId) target = position; position++ } }
-            target?.let { listState.scrollToItem(it) }
+            target?.let { listState.scrollToItem(it); onFocusHandled() }
         }
     }
     val showJumpToLatest by remember(listState, newestFirst, latestIndex) {
@@ -1161,6 +974,9 @@ private fun TimelineTab(
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             Text("Cook timeline", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = onShowPhotoGallery, modifier = Modifier.testTag("timeline-gallery")) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = "Cook photos")
+            }
             Box {
                 TextButton(
                     onClick = { showSortMenu = true },
@@ -1185,35 +1001,34 @@ private fun TimelineTab(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TimelineFilter.entries.forEach { filter ->
-                FilterChip(
-                    selected = selectedFilter == filter,
-                    onClick = { selectedFilterName = filter.name },
-                    label = { Text(filter.label) },
-                    modifier = Modifier.testTag("timeline-filter-${filter.name.lowercase(Locale.ROOT)}"),
-                )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) {
+                var open by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("timeline-filter-menu")) {
+                    Text(selectedFilter.label, modifier = Modifier.weight(1f)); Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    TimelineFilter.entries.forEach { filter ->
+                        DropdownMenuItem(text = { Text(filter.label) }, onClick = { selectedFilterName = filter.name; open = false },
+                            modifier = Modifier.testTag("timeline-filter-" + filter.name.lowercase(Locale.ROOT)))
+                    }
+                }
             }
+            val choices = foodChoices(data.dishes)
+            SimpleDropdownField("Food", choices.firstOrNull { it.first == foodFilter }?.second ?: "All foods",
+                listOf("All foods") + choices.map { it.second }, { name -> selectedFoodFilter = choices.firstOrNull { it.second == name }?.first },
+                modifier = Modifier.weight(1f), testTag = "timeline-food-filter")
         }
 
         if (rows.isEmpty()) {
-            val emptyTitle = when (selectedFilter) {
-                TimelineFilter.ALL -> "No cook history yet"
-                TimelineFilter.EVENTS -> "No events yet"
-                TimelineFilter.TEMPERATURES -> "No temperature checks yet"
-                TimelineFilter.PHOTOS -> "No photos yet"
-            }
+            val emptyTitle = if (selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL) "No cook history yet" else "No matching entries"
             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.Center) {
                 Text(emptyTitle, style = MaterialTheme.typography.titleLarge)
                 Text(
                     if (selectedFilter == TimelineFilter.ALL) {
                         "Notes, temperature checks, and photos will show up here as the cook progresses."
                     } else {
-                        "Choose another filter or use the quick actions above to add an entry."
+                        "Choose another filter or add an entry."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                 )
@@ -1277,14 +1092,7 @@ private fun TimelineTab(
     }
 }
 
-private enum class TimelineFilter(val label: String) {
-    ALL("All"),
-    EVENTS("Events"),
-    TEMPERATURES("Temps"),
-    PHOTOS("Photos"),
-}
-
-private sealed class TimelineLine {
+internal sealed class TimelineLine {
     abstract val time: Long
     abstract val stableKey: String
 
@@ -1294,6 +1102,11 @@ private sealed class TimelineLine {
     ) : TimelineLine() {
         override val time: Long = event.occurredAtUtcMillis
         override val stableKey: String = "event:${event.id}"
+    }
+
+    data class Photo(val photo: com.pittech.data.PhotoEntity) : TimelineLine() {
+        override val time: Long = photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis
+        override val stableKey: String = "photo:" + photo.id
     }
 
     data class Reading(val reading: SensorReadingEntity) : TimelineLine() {
@@ -1311,19 +1124,25 @@ private const val TIMELINE_READING_GROUP_GAP_MILLIS = 5 * 60_000L
 private const val TIMELINE_READING_GROUP_SPAN_MILLIS = 15 * 60_000L
 private const val TIMELINE_READING_GROUP_MIN_SIZE = 4
 
-private fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, newestFirst: Boolean): List<TimelineLine> {
+internal fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, newestFirst: Boolean, foodId: String? = null): List<TimelineLine> {
     val photosByEvent = data.photos.filter { it.eventId != null }.groupBy { it.eventId.orEmpty() }
     val rows = mutableListOf<TimelineLine>()
     val linkedByEvent = data.logReadingLinks.groupBy { it.eventId }
     val linkedIds = data.logReadingLinks.map { it.readingId }.toSet()
-    run {
-        data.events
-            .filter { it.eventType != "temperature" }
-            .filter { filter != TimelineFilter.TEMPERATURES || !linkedByEvent[it.id].isNullOrEmpty() }
-            .filter { filter != TimelineFilter.PHOTOS || it.eventType == "photo" || !photosByEvent[it.id].isNullOrEmpty() }
-            .forEach { event -> rows += TimelineLine.Event(event, photosByEvent[event.id].orEmpty()) }
+    val readingsById = data.readings.associateBy { it.id }
+    data.events.filter { it.eventType != "temperature" }.forEach { event ->
+        val photos = photosByEvent[event.id].orEmpty()
+        val links = linkedByEvent[event.id].orEmpty()
+        val foodMatches = CookFeedPresentation.matchesFood(event, foodId) || foodId != null &&
+            (photos.any { it.dishId == foodId } || links.any { readingsById[it.readingId]?.dishId == foodId })
+        if (foodMatches && CookFeedPresentation.matches(event, filter, photos.isNotEmpty(), links.isNotEmpty()))
+            rows += TimelineLine.Event(event, photos)
     }
-    if (filter == TimelineFilter.ALL || filter == TimelineFilter.TEMPERATURES) {
+    if (filter in setOf(TimelineFilter.STORY, TimelineFilter.ALL, TimelineFilter.PHOTOS)) {
+        data.photos.filter { it.eventId == null && (foodId == null || it.dishId == null || it.dishId == foodId) }
+            .forEach { rows += TimelineLine.Photo(it) }
+    }
+    if (filter in setOf(TimelineFilter.STORY, TimelineFilter.ALL, TimelineFilter.TEMPERATURES)) {
         val pendingDeviceReadings = mutableListOf<SensorReadingEntity>()
         fun flushDeviceReadings() {
             if (pendingDeviceReadings.size >= TIMELINE_READING_GROUP_MIN_SIZE) {
@@ -1334,7 +1153,9 @@ private fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, new
             pendingDeviceReadings.clear()
         }
 
-        val orderedReadings = data.readings.filter { it.id !in linkedIds }.filter { filter == TimelineFilter.TEMPERATURES || it.source != "controller_cloud" }.sortedBy { it.measuredAtUtcMillis }
+        val orderedReadings = data.readings.filter { it.id !in linkedIds }
+            .filter { foodId == null || it.dishId == foodId || it.dishId == null }
+            .filter { filter != TimelineFilter.STORY || it.source == "manual" }.sortedBy { it.measuredAtUtcMillis }
         orderedReadings.forEach { reading ->
             if (reading.source == "manual") {
                 flushDeviceReadings()
@@ -1391,6 +1212,7 @@ private fun TimelineEntryRow(
 ) {
     val kind = when (row) {
         is TimelineLine.Event -> eventKindLabel(row.event.eventType)
+        is TimelineLine.Photo -> "PHOTO"
         is TimelineLine.Reading, is TimelineLine.ReadingGroup -> "TEMPERATURE"
     }
     val markerColor = when (kind) {
@@ -1431,102 +1253,88 @@ private fun TimelineEntryRow(
                 onDelete = { onDeleteReading(row.reading) },
             )
             is TimelineLine.ReadingGroup -> TemperatureReadingGroupCard(Modifier.weight(1f), row)
+            is TimelineLine.Photo -> StandalonePhotoTimelineCard(Modifier.weight(1f), row.photo, data, onPhotoClick)
         }
     }
 }
 
 @Composable
 private fun TimelineEventCard(
-    modifier: Modifier,
-    line: TimelineLine.Event,
-    data: CookDetailData,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
-    onShowPhotoGallery: () -> Unit,
+    modifier: Modifier, line: TimelineLine.Event, data: CookDetailData,
+    onEdit: () -> Unit, onDelete: () -> Unit,
+    onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit, onShowPhotoGallery: () -> Unit,
 ) {
     val event = line.event
-    val dishName = data.dishes.firstOrNull { it.id == event.dishId }?.name
-    var detailsExpanded by rememberSaveable(event.id) { mutableStateOf(false) }
     val meta = com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)
     val effectiveType = com.pittech.domain.PlaybookCodec.action(event.eventType, event.noteMetadataJson)
-    val kind = if (meta != null) "NOTE" else eventKindLabel(event.eventType)
-    Card(
-        modifier = modifier.testTag("timeline-entry-${event.id}"),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TimelineKindChip(kind)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text(formatTimeOfDay(event.occurredAtUtcMillis), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "${formatSinceCookStart(event.occurredAtUtcMillis, data.cook.startedAtUtcMillis)} · ${event.source.replaceFirstChar { it.uppercase() }}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+    val scopes = (listOfNotNull(event.dishId) + meta?.dishIds.orEmpty()).distinct()
+    val foodLabel = data.dishes.filter { it.id in scopes }.joinToString { it.name }.ifBlank { "Whole cook" }
+    val title = CookFeedPresentation.title(event)
+    val compact = line.photos.isEmpty() && (event.source == "controller_cloud" || CookFeedPresentation.isSetpoint(event))
+    var expanded by rememberSaveable(event.id) { mutableStateOf(false) }
+    val content: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(if (compact) 4.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
+                        maxLines = if (expanded) Int.MAX_VALUE else 4)
+                    Text(formatTimeOfDay(event.occurredAtUtcMillis) + (if (!compact) " · " + foodLabel else ""),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (event.source == "manual") {
-                    TimelineEntryMenu(
-                        stateKey = event.id,
-                        label = event.title,
-                        actionTag = "timeline-event-actions-$effectiveType",
-                        editTag = "timeline-event-edit-$effectiveType",
-                        deleteTag = "timeline-event-delete-$effectiveType",
-                        onEdit = onEdit,
-                        onDelete = onDelete,
-                    )
+                if (event.source == "manual") TimelineEntryMenu(event.id, event.title,
+                    "timeline-event-actions-" + effectiveType, "timeline-event-edit-" + effectiveType, "timeline-event-delete-" + effectiveType,
+                    onEdit, onDelete)
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("timeline-details-toggle-" + event.id)) {
+                    Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (expanded) "Hide entry details" else "Show entry details")
                 }
             }
-            Text(event.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            val temperatureContext = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
-            if (temperatureContext.isNotBlank()) {
-                Text(temperatureContext, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("event-temperature-context"))
-                Text(contextTimeLabel(event.temperatureContextJson), style = MaterialTheme.typography.labelSmall)
+            if (!compact && event.source == "manual" && !event.details.isNullOrBlank() && event.details != title) {
+                Text(event.details!!, style = MaterialTheme.typography.bodyMedium, maxLines = if (expanded) Int.MAX_VALUE else 4)
             }
-            dishName?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
-            event.details?.takeIf { it.isNotBlank() }?.let { details ->
-                Text(details, style = MaterialTheme.typography.bodyMedium, maxLines = if (detailsExpanded) Int.MAX_VALUE else 2)
-                if (details.length > 120) {
-                    TextButton(
-                        onClick = { detailsExpanded = !detailsExpanded },
-                        modifier = Modifier.heightIn(min = 40.dp).testTag("timeline-details-toggle-${event.id}"),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                    ) { Text(if (detailsExpanded) "Show less" else "Show more") }
-                }
-            }
-            val linkedReadingIds = data.logReadingLinks.filter { it.eventId == event.id }.map { it.readingId }.toSet()
-            data.readings.filter { it.id in linkedReadingIds }.forEach { reading ->
+            val linkedIds = data.logReadingLinks.filter { it.eventId == event.id }.map { it.readingId }.toSet()
+            data.readings.filter { it.id in linkedIds }.forEach { reading ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${reading.probeName}: ${reading.value} ${reading.unit}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text(reading.probeName + ": " + reading.value + " " + reading.unit, modifier = Modifier.weight(1f))
                     if (event.source == "manual") TimelineEntryMenu(reading.id, reading.probeName,
-                        "temperature-actions-${reading.probeName}", "temperature-edit-${reading.probeName}", "temperature-delete-${reading.probeName}", onEdit, onDelete)
+                        "temperature-actions-" + reading.probeName, "temperature-edit-" + reading.probeName, "temperature-delete-" + reading.probeName,
+                        onEdit, onDelete)
                 }
             }
-            meta?.action?.let { Text(com.pittech.domain.PlaybookCodec.actions[it] ?: it.replace('_', ' '), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
-            meta?.dishIds?.takeIf { it.isNotEmpty() }?.let { ids -> Text(data.dishes.filter { it.id in ids }.joinToString { it.name }, style = MaterialTheme.typography.bodySmall) }
             line.photos.forEach { photo ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PhotoThumbnail(
-                        photo,
-                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).testTag("timeline-photo-${photo.id}"),
-                        onClick = { onPhotoClick(photo) },
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                        if (data.photos.size > 1) {
-                            TextButton(
-                                onClick = onShowPhotoGallery,
-                                modifier = Modifier.heightIn(min = 40.dp).testTag("timeline-photo-gallery-${event.id}"),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                            ) { Text("View all photos (${data.photos.size})") }
-                        }
-                    }
+                PhotoThumbnail(photo, Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)).testTag("timeline-photo-" + photo.id),
+                    onClick = { onPhotoClick(photo) })
+                photo.caption?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            }
+            if (expanded) {
+                HorizontalDivider()
+                Text(formatTimestamp(event.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+                Text(formatSinceCookStart(event.occurredAtUtcMillis, data.cook.startedAtUtcMillis) + " · " +
+                    (if (event.source == "controller_cloud") "Grill" else "Manual entry"), style = MaterialTheme.typography.bodySmall)
+                if (event.recordedAtUtcMillis != event.occurredAtUtcMillis)
+                    Text("Entered " + formatTimestamp(event.recordedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+                val context = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
+                if (context.isNotBlank()) {
+                    Text(context, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("event-temperature-context"))
+                    Text(contextTimeLabel(event.temperatureContextJson), style = MaterialTheme.typography.bodySmall)
                 }
+                if (compact) event.details?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                line.photos.forEach { Text(it.originalFileName, style = MaterialTheme.typography.bodySmall) }
             }
         }
+    }
+    if (compact) Surface(modifier.testTag("timeline-entry-" + event.id)) { content() }
+    else Card(modifier.testTag("timeline-entry-" + event.id), shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) { content() }
+}
+
+@Composable private fun StandalonePhotoTimelineCard(modifier: Modifier, photo: com.pittech.data.PhotoEntity,
+    data: CookDetailData, onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit) {
+    Column(modifier.testTag("timeline-standalone-photo-" + photo.id), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text((data.dishes.firstOrNull { it.id == photo.dishId }?.name ?: "Cook") + " · " +
+            formatTimeOfDay(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+        PhotoThumbnail(photo, Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)).testTag("timeline-photo-" + photo.id),
+            onClick = { onPhotoClick(photo) })
+        photo.caption?.takeIf { it.isNotBlank() }?.let { Text(it) }
     }
 }
 
@@ -2046,12 +1854,15 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
     var gradeOrSource by rememberSaveable(dish.id) { mutableStateOf(dish.gradeOrSource.orEmpty()) }
     var thicknessNotes by rememberSaveable(dish.id) { mutableStateOf(dish.thicknessNotes.orEmpty()) }
     var notes by rememberSaveable(dish.id) { mutableStateOf(dish.prepNotes.orEmpty()) }
+    var moreDetails by rememberSaveable(dish.id) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit ${dish.name}") },
         text = {
             Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Dish name") }, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { moreDetails = !moreDetails }, modifier = Modifier.testTag("food-details-toggle")) { Text(if (moreDetails) "Hide food details" else "More food details") }
+                if (moreDetails) {
                 SimpleDropdownField("Food type", foodType, listOf("Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Other"), { foodType = it })
                 OutlinedTextField(cut, { cut = it }, label = { Text("Cut") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2067,6 +1878,7 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
                 OutlinedTextField(gradeOrSource, { gradeOrSource = it }, label = { Text("Grade, brand, or source") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(thicknessNotes, { thicknessNotes = it }, label = { Text("Size or thickness notes") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(notes, { notes = it }, label = { Text("Preparation notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                }
             }
         },
         confirmButton = {

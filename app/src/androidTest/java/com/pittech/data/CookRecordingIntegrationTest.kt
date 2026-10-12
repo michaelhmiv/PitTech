@@ -95,6 +95,30 @@ class CookRecordingIntegrationTest {
         try { recording.attach(id, device, "°F", now = base); fail("Finished cooks cannot record") } catch (_: IllegalArgumentException) { }
     }
 
+    @Test fun backdatedProbeMoveReattributesOnlyItsControllerIntervalAndKeepsEntryTime() = runBlocking {
+        val id = cook()
+        val dishes = db.cookDao().getDishesForCook(id)
+        recording.attach(id, device, "°F", mapOf("probe1" to dishes[0].id), now = base)
+        ingest(id, base + 1_000)
+        ingest(id, base + 16_000)
+        val probe = db.cookDao().getProbesForCook(id).single { it.name == "Probe 1" }
+        cooks.addManualTemperature(id, dishes[0].id, "Handheld", "food", 155.0, "°F", base + 17_000)
+        val originalIds = db.cookDao().getAllSensorReadings().map { it.id }.toSet()
+        recording.assignProbe(probe.id, id, dishes[1].id, now = base + 25_000, movedAt = base + 15_000)
+        val rows = db.cookDao().getAllSensorReadings()
+        assertEquals(originalIds, rows.map { it.id }.toSet())
+        assertEquals(dishes[0].id, rows.single { it.probeId == probe.id && it.measuredAtUtcMillis == base + 1_000 }.dishId)
+        assertEquals(dishes[1].id, rows.single { it.probeId == probe.id && it.measuredAtUtcMillis == base + 16_000 }.dishId)
+        assertEquals(dishes[0].id, rows.single { it.source == "manual" }.dishId)
+        val changed = db.cookDao().getTimelineEventsForCook(id).last { it.eventType == "probe_assigned" && it.dishId == dishes[1].id }
+        assertEquals(base + 15_000, changed.occurredAtUtcMillis)
+        assertEquals(base + 25_000, changed.recordedAtUtcMillis)
+        assertEquals(dishes[0].id, db.recordingDao().assignmentAt(probe.id, base + 14_999)!!.dishId)
+        assertEquals(dishes[1].id, db.recordingDao().assignmentAt(probe.id, base + 15_000)!!.dishId)
+        try { recording.assignProbe(probe.id, id, dishes[0].id, now = base + 26_000, movedAt = base + 14_000); fail("Overlapping history must be rejected") } catch (_: IllegalArgumentException) {}
+        assertEquals(dishes[1].id, db.recordingDao().currentAssignment(probe.id)!!.dishId)
+    }
+
     @Test fun assignmentsAndSnapshotsPreserveEarlierDishHistoryAndPhotoCaptureContext() = runBlocking {
         val id = cook()
         val dishes = db.cookDao().getDishesForCook(id)

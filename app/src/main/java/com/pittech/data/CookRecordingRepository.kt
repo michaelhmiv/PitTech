@@ -57,19 +57,23 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         event(cookId, "recording_schedule_changed", "Temperature collection: ${policy.label}", now)
     }
 
-    suspend fun assignProbe(probeId: String, cookId: String, dishId: String?, now: Long = System.currentTimeMillis()) = database.withTransaction {
+    suspend fun assignProbe(probeId: String, cookId: String, dishId: String?, now: Long = System.currentTimeMillis(), movedAt: Long = now) = database.withTransaction {
         val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
         require(cook.status != CookStatus.COMPLETED) { "This cook is finished." }
         val probe = dao.getProbesForCook(cookId).firstOrNull { it.id == probeId && it.measurementType == "food_probe" }
             ?: error("This probe is not part of this cook.")
         require(dishId == null || dao.getDish(dishId)?.cookId == cookId) { "This dish is not part of this cook." }
         val current = recordings.currentAssignment(probeId)
+        require(movedAt <= now && movedAt >= (current?.startedAtUtcMillis ?: probe.createdAtUtcMillis)) {
+            "Choose a move time after the previous assignment and no later than now."
+        }
         if (current != null && current.dishId == dishId) return@withTransaction
-        current?.let { recordings.updateAssignment(it.copy(endedAtUtcMillis = now)) }
-        recordings.insertAssignment(ProbeAssignmentEntity(UUID.randomUUID().toString(), cookId, probeId, dishId, now))
+        current?.let { recordings.updateAssignment(it.copy(endedAtUtcMillis = movedAt)) }
+        recordings.insertAssignment(ProbeAssignmentEntity(UUID.randomUUID().toString(), cookId, probeId, dishId, movedAt))
+        dao.reassignControllerReadings(cookId, probeId, dishId, movedAt, now)
         dao.updateProbe(probe.copy(assignedDishId = dishId))
         val name = dishId?.let { dao.getDish(it)?.name } ?: "Unassigned"
-        event(cookId, "probe_assigned", "${probe.name} → $name", now, dishId)
+        event(cookId, "probe_assigned", "${probe.name} → $name", movedAt, dishId, recordedAt = now)
     }
 
     suspend fun pause(cookId: String, message: String = "Temperature recording paused.", now: Long = System.currentTimeMillis()) = database.withTransaction {
@@ -153,8 +157,8 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
             gapStartedAtUtcMillis = null, message = "Collection: ${GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis).label}. Readings show cloud receipt time."))
     }
 
-    private suspend fun event(cookId: String, type: String, title: String, time: Long, dishId: String? = null, details: String? = null, context: String? = null) {
-        dao.insertTimelineEvent(TimelineEventEntity(UUID.randomUUID().toString(), cookId, dishId, type, title, details, time, time,
-            ZoneId.systemDefault().id, "controller_cloud", createdAtUtcMillis = time, updatedAtUtcMillis = time, temperatureContextJson = context))
+    private suspend fun event(cookId: String, type: String, title: String, time: Long, dishId: String? = null, details: String? = null, context: String? = null, recordedAt: Long = time) {
+        dao.insertTimelineEvent(TimelineEventEntity(UUID.randomUUID().toString(), cookId, dishId, type, title, details, time, recordedAt,
+            ZoneId.systemDefault().id, "controller_cloud", createdAtUtcMillis = recordedAt, updatedAtUtcMillis = recordedAt, temperatureContextJson = context))
     }
 }

@@ -139,6 +139,7 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("cook-add-dish").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("dish-name").assertIsDisplayed().performTextInput("Brisket")
+        composeRule.onNodeWithTag("dish-details-toggle").performClick()
         composeRule.onNodeWithTag("dish-food-type").performClick()
         composeRule.onNodeWithText("Beef").performClick()
         composeRule.onNodeWithTag("dish-cut").performTextInput("Whole packer")
@@ -148,11 +149,11 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("dish-weight").performTextClearance()
         composeRule.onNodeWithTag("dish-weight").performTextInput("12.5")
-        composeRule.onNodeWithTag("dish-details-toggle").performClick()
         composeRule.onNodeWithTag("dish-starting-condition").performScrollTo().performClick()
         composeRule.onNodeWithText("Refrigerated").performClick()
         composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
+        composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
         composeRule.onNodeWithTag("preparation-notes").performScrollTo().performTextInput("Light, even coating.")
         composeRule.onNodeWithTag("dish-add-photos").performScrollTo().performClick()
@@ -177,11 +178,11 @@ class PitTechUserFlowsTest {
         }
         composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithText("Saturday brisket").fetchSemanticsNodes().isNotEmpty() &&
-                composeRule.onAllNodesWithText("Whole packer", substring = true).fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithText("Brisket").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("cook-tab-live").assertIsDisplayed()
-        composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
-        composeRule.onNodeWithText("Whole packer", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-add").assertIsDisplayed()
+        composeRule.onNodeWithText("Brisket").performScrollTo().assertIsDisplayed()
         saveScreenshot("cook-saved")
 
         val application = targetContext.applicationContext as PitTechApplication
@@ -264,24 +265,18 @@ class PitTechUserFlowsTest {
         }
         composeRule.onNodeWithTag("live-cook-status").assertIsDisplayed()
         composeRule.onNodeWithTag("live-cook-elapsed").assertIsDisplayed()
-        val configuration = targetContext.resources.configuration
-        if (configuration.screenWidthDp >= 390 && configuration.fontScale <= 1.3f) {
-            composeRule.onNodeWithTag("live-overview-grid").assertExists()
-        } else {
-            assertTrue(composeRule.onAllNodesWithTag("live-overview-grid").fetchSemanticsNodes().isEmpty())
-        }
+        composeRule.onNodeWithTag("food-card-" + runBlocking(Dispatchers.IO) { dao.getDishesForCook(cookId).first().id }).assertExists()
         composeRule.onNodeWithTag("timeline-add").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag("timeline-add-temperature").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag("timeline-add-photo").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag("cook-add-reminder").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
         saveScreenshot("cook-live-dashboard-top")
+        assertTrue(composeRule.onAllNodesWithText("Starting condition: Refrigerated").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
         composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
         assertTrue(composeRule.onAllNodesWithText("Starting condition: Refrigerated").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
-        composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("live-prep-toggle").performScrollTo().performClick()
-        composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
         composeRule.onNodeWithText("Export").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Add target").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
@@ -377,6 +372,7 @@ class PitTechUserFlowsTest {
         waitForTextsToDisappear("Entry added to the timeline.")
         composeRule.onNodeWithTag("timeline-event-actions-spritz").performScrollTo().performClick()
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performClick()
+        composeRule.onNodeWithTag("timeline-entry-more-details").performClick()
         captureCurrentScreen("timeline-edit-dialog")
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("timeline-entry-title").fetchSemanticsNodes().isNotEmpty()
@@ -397,6 +393,7 @@ class PitTechUserFlowsTest {
         waitForTextsToDisappear("Entry restored.")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
+        composeRule.onNodeWithTag("timeline-entry-more-details").performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
         composeRule.onNodeWithTag("temperature-probe").performTextInput("Brisket probe")
         composeRule.onNodeWithTag("temperature-value").performTextInput("155")
@@ -420,6 +417,7 @@ class PitTechUserFlowsTest {
         waitForText("Brisket probe: 156.0 °F")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
+        composeRule.onNodeWithTag("timeline-entry-more-details").performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
         composeRule.onNodeWithTag("temperature-probe").performTextInput("Smoker ambient")
         composeRule.onNodeWithTag("temperature-value").performTextInput("250")
@@ -428,6 +426,7 @@ class PitTechUserFlowsTest {
         waitForAnyText("Temperature saved.")
         waitForTextsToDisappear("Temperature saved.")
 
+        composeRule.onNodeWithTag("timeline-filter-menu").performClick()
         composeRule.onNodeWithTag("timeline-filter-temperatures").performClick()
         saveScreenshot("timeline-after-temperature-filter")
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
@@ -435,20 +434,23 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-filter-menu").performClick()
         composeRule.onNodeWithTag("timeline-filter-events").performClick()
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Spritzed lightly"))
         composeRule.onNodeWithText("Spritzed lightly").performScrollTo().assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithText("Pit ambient", substring = true).fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("timeline-filter-menu").performClick()
         composeRule.onNodeWithTag("timeline-filter-photos").performClick()
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Bark photo"))
         composeRule.onNodeWithText("Bark photo").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("timeline-photo-gallery-$timelinePhotoEventId").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-gallery").performClick()
         composeRule.onNodeWithText("Photos (3)").assertIsDisplayed()
         composeRule.onNodeWithTag("photo-gallery-close").performClick()
         assertTrue(composeRule.onAllNodesWithText("Spritzed lightly").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("timeline-sort").performClick()
         composeRule.onNodeWithTag("timeline-sort-oldest").performClick()
         composeRule.onNodeWithTag("timeline-sort").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-filter-menu").performClick()
         composeRule.onNodeWithTag("timeline-filter-all").performClick()
         composeRule.onNodeWithTag("timeline-sort").performClick()
         composeRule.onNodeWithTag("timeline-sort-newest").performClick()
@@ -458,7 +460,7 @@ class PitTechUserFlowsTest {
         saveScreenshot("cook-timeline-dashboard")
 
         composeRule.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
+        composeRule.onNodeWithTag("timeline-add").assertIsDisplayed()
         composeRule.onNodeWithText("Temperature (°F)").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("chart-x-axis").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
@@ -466,7 +468,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
         composeRule.onNodeWithTag("live-record-results").performScrollTo().performClick()
         waitForText("Record results")
-        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().performTextInput("201")
+        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().performTextInput("0")
+        composeRule.onNodeWithTag("results-save").performClick()
+        composeRule.onNodeWithTag("results-save-error").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().assertTextContains("0").performTextClearance()
+        runBlocking(Dispatchers.IO) { assertEquals(CookStatus.ACTIVE, application.database.cookDao().getCook(cookId)!!.status) }
+        composeRule.onNodeWithTag("result-final-temperature").performTextInput("201")
         composeRule.onNodeWithTag("results-save").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("results-dialog-title").fetchSemanticsNodes().isEmpty()
@@ -478,26 +485,15 @@ class PitTechUserFlowsTest {
             assertEquals(201.0, application.database.cookDao().observeResults(saved.id).first().single { it.resultType == "final_temperature" }.numericValue!!, 0.0)
         }
         composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithTag("results-dialog-title", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithTag("results-dialog-title").assertTextContains("Finish cook")
-        assertTrue(composeRule.onAllNodesWithTag("results-finish-toggle").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().performTextClearance()
-        composeRule.onNodeWithTag("result-final-temperature").performTextInput("0")
-        composeRule.onNodeWithTag("results-save").performClick()
-        composeRule.onNodeWithTag("results-save-error").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("result-final-temperature").performScrollTo().assertTextContains("0").performTextClearance()
-        runBlocking(Dispatchers.IO) {
-            assertEquals(CookStatus.ACTIVE, application.database.cookDao().observeCooks().first().single().cook.status)
-        }
-        composeRule.onNodeWithTag("results-save").performClick()
+        composeRule.onNodeWithTag("finish-cook-dialog").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithTag("result-final-temperature").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithTag("finish-cook-save").performClick()
 
         composeRule.waitUntil(timeoutMillis = 10_000) {
             runBlocking(Dispatchers.IO) { application.database.cookDao().observeCooks().first().single().cook.status == CookStatus.COMPLETED }
         }
         composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithTag("results-dialog-title").fetchSemanticsNodes().isEmpty()
+            composeRule.onAllNodesWithTag("finish-cook-dialog").fetchSemanticsNodes().isEmpty()
         }
         runBlocking(Dispatchers.IO) {
             assertTrue(application.database.cookDao().observeCooks().first().single().cook.endedAtUtcMillis != null)

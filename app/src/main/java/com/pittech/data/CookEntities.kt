@@ -13,6 +13,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
@@ -428,6 +429,9 @@ interface CookDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertIngredients(ingredients: List<IngredientEntity>)
 
+    @Upsert
+    suspend fun saveIngredient(ingredient: IngredientEntity)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertTimelineEvents(events: List<TimelineEventEntity>)
 
@@ -508,6 +512,9 @@ interface CookDao {
 
     @Update
     suspend fun updateSensorReading(reading: SensorReadingEntity)
+
+    @Query("UPDATE sensor_readings SET dishId = :dishId WHERE cookId = :cookId AND probeId = :probeId AND source = 'controller_cloud' AND measuredAtUtcMillis >= :from AND measuredAtUtcMillis <= :through")
+    suspend fun reassignControllerReadings(cookId: String, probeId: String, dishId: String?, from: Long, through: Long)
 
     @Delete
     suspend fun deleteTimelineEvent(event: TimelineEventEntity)

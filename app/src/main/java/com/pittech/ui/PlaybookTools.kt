@@ -55,9 +55,10 @@ internal fun PlaybookLibrary(viewModel: CooksViewModel) {
 }
 
 @Composable
-internal fun CookPlaybookTools(data: CookDetailData, viewModel: CooksViewModel) {
+internal fun CookPlaybookTools(data: CookDetailData, viewModel: CooksViewModel, configuredOnly: Boolean? = null) {
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     val plan = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
+    if (configuredOnly == true && (plan == null || data.cook.status == CookStatus.COMPLETED) || configuredOnly == false && plan != null && data.cook.status != CookStatus.COMPLETED) return
     if (data.cook.status == CookStatus.COMPLETED) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -28,4 +28,6 @@ One PR against `main`, developed on `feature/food-first-cook-experience`. Androi
 
 ## Delivery record
 
-Update this document with the final PR, verification evidence, any material limitations, and merge result as the work completes.
+Implementation and validation are tracked in [PR #59](https://github.com/michaelhmiv/PitTech/pull/59). The [PR checks](https://github.com/michaelhmiv/PitTech/pull/59/checks) contain JVM reports, emulator logs/screenshots at both required font scales, packaging, and prior-version upgrade evidence. The PR description records the final tested commit and merge verification.
+
+The redesign is native Android. No physical grill commands or private cook photographs are added to the repository; synthetic fixtures cover multi-food timing, probe movement, combined notes, and setup photos. Hardware behavior continues through the existing read-only recording integration.
