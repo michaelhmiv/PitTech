@@ -1,5 +1,5 @@
 name: Controller support
-description: Report a controller discovery, connection, reading, or control issue.
+description: Report a controller discovery, connection, or temperature-reading issue.
 title: "[Controller support]: "
 body:
   - type: markdown
@@ -65,7 +65,7 @@ body:
         - I can see it, but pairing in device settings fails
         - It is visible, but PitTech cannot connect over BLE
         - PitTech connects, but service discovery or reads fail
-        - Reads work, but values or controls are missing or incorrect
+        - Reads work, but values are missing or incorrect
         - I have not checked / I am not sure
     validations:
       required: true
