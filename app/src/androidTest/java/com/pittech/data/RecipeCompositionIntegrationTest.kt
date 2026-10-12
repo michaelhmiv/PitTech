@@ -33,7 +33,7 @@ class RecipeCompositionIntegrationTest {
             assertTrue(db.recordingDao().getAllRecordings().isEmpty())
             assertTrue(db.companionDao().forCook(meal).none { it.kind == "plan" })
             val working = repo.recipeAttempt(dishes[1].id)!!
-            repo.updateRecipeAttempt(dishes[1].id, working.copy(dish = working.dish.copy(preparationItems = listOf(IngredientDraft("Jalapeños", amountText = "2", amountUnit = "count"))), targets = listOf(PlaybookTarget(0, "personal_finish", 0.0, "°C"))))
+            repo.updateRecipeAttempt(dishes[1].id, working.copy(dish = working.dish.copy(preparationItems = listOf(IngredientDraft("Jalapeños", amountText = "2", amountUnit = "count"))), targets = listOf(PlaybookTarget(0, "personal_finish", 0.0, "°C", "Personal cold target"))))
             assertEquals("Salt", RecipeSnapshotCodec.decode(repo.recipes.revision(saved[1].currentRevisionId)!!.snapshotJson).dish.preparationItems.single().name)
             assertEquals("Jalapeños", db.cookDao().getIngredientsForCook(meal).single { it.dishId == dishes[1].id }.name)
             assertEquals(before.events.filter { it.cookId in originalIds }, repo.exportSnapshot().events.filter { it.cookId in originalIds })

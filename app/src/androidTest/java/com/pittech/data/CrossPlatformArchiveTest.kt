@@ -53,7 +53,7 @@ class CrossPlatformArchiveTest {
             repo.addTimelineEvent(meal.id, mac.id, "meat_on", "Food on", null, at + 300000)
             repo.addTimelineEvent(meal.id, mac.id, "wrap", "Wrapped", "Recorded bark check", at + 500000)
             val draft = RecipeExtraction.fromMeal(repo.observeCookDetail(meal.id).first()!!, mac.id)
-            val saved = repo.recipes.save(draft.snapshot.copy(name = "Android mac variation", targets = listOf(PlaybookTarget(0, "personal_finish", 0.0, "°C"))), sourceCookId = meal.id, sourceDishId = mac.id, photoIds = draft.photoIds)
+            val saved = repo.recipes.save(draft.snapshot.copy(name = "Android mac variation", targets = listOf(PlaybookTarget(0, "personal_finish", 0.0, "°C", "Portable zero-Celsius target"))), sourceCookId = meal.id, sourceDishId = mac.id, photoIds = draft.photoIds)
             val originals = db.recipeDao().recipes().filter { it.id != saved.id }
             val next = repo.startRecipeMeal("Portable new meal", listOf(originals.first().currentRevisionId, saved.currentRevisionId, originals.last().currentRevisionId))
             val currentMac = db.cookDao().getDishesForCook(next).first { db.recipeDao().source(it.id)?.recipeId == saved.id }
