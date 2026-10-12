@@ -21,7 +21,8 @@ class CookChartScreenTest {
         }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Chart note cook").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Chart note cook").performClick()
-        compose.onNodeWithTag("cook-tab-charts").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-tab-charts", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-tab-charts", useUnmergedTree = true).assertIsDisplayed().performClick()
         compose.onNodeWithTag("chart-y-axis").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("chart-x-axis").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("chart-zoom-in").performScrollTo().performClick()

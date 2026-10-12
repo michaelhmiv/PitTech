@@ -29,7 +29,8 @@ class CookNoteScreenTest {
         assertEquals("note", original.eventType)
         assertEquals("temperature", CookNoteMetadata.decode(original.noteMetadataJson)!!.category)
         assertEquals(1, runBlocking(Dispatchers.IO) { app.database.experienceDao().readingsForLog(original.id).size })
-        compose.onNodeWithTag("cook-tab-timeline").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).assertIsDisplayed().performClick()
         compose.onNodeWithTag("timeline-entry-${original.id}").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("timeline-event-actions-note").performScrollTo().performClick()
         compose.onNodeWithTag("timeline-event-edit-note").performClick()
