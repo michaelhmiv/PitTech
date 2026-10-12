@@ -738,7 +738,7 @@ class PitTechUserFlowsTest {
     }
 
     @Test
-    fun test07b_preparationDurationStaysInOneOptionalNote() {
+    fun test04b_preparationDurationStaysInOneOptionalNote() {
         clearLocalData()
         composeRule.onNodeWithTag("start-cook").performClick()
         composeRule.onNodeWithTag("cook-save").performClick()
