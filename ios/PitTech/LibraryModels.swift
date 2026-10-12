@@ -93,7 +93,7 @@ indirect enum JSONValue: Codable, Equatable {
 }
 
 struct PitTechLibrary: Codable {
-    static let archiveVersion = 7
+    static let archiveVersion = 8
     var schemaVersion: Int
     var preferences: [String: JSONValue]?
     var cooks: [CookRecord]
@@ -119,6 +119,7 @@ struct PitTechLibrary: Codable {
     var recipeAssets: [JSONValue]
     var dishRecipeSources: [JSONValue]
     var mealPresets: [JSONValue]
+    var activityTimers: [JSONValue]
 
 
     init() {
@@ -147,6 +148,7 @@ struct PitTechLibrary: Codable {
         recipeAssets = []
         dishRecipeSources = []
         mealPresets = []
+        activityTimers = []
 
     }
 
@@ -154,7 +156,7 @@ struct PitTechLibrary: Codable {
         case schemaVersion, preferences, cooks, dishes, ingredients, events, readings, targets, results
         case devices, probes, photos, reminders, recordings, probeAssignments, companionRecords, companionPhotos
         case logReadingLinks, lifecycles, targetHistory
-        case recipes, recipeRevisions, recipeAssets, dishRecipeSources, mealPresets
+        case recipes, recipeRevisions, recipeAssets, dishRecipeSources, mealPresets, activityTimers
     }
 
     init(from decoder: Decoder) throws {
@@ -184,6 +186,7 @@ struct PitTechLibrary: Codable {
         recipeAssets = try container.decodeIfPresent([JSONValue].self, forKey: .recipeAssets) ?? []
         dishRecipeSources = try container.decodeIfPresent([JSONValue].self, forKey: .dishRecipeSources) ?? []
         mealPresets = try container.decodeIfPresent([JSONValue].self, forKey: .mealPresets) ?? []
+        activityTimers = try container.decodeIfPresent([JSONValue].self, forKey: .activityTimers) ?? []
 
     }
 }

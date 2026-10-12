@@ -159,7 +159,7 @@ class PitTechDataTransfer(
             .put("reminders", snapshot.reminders.size))
 
     private fun snapshotJson(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
-        .apply { RecipeArchive.write(this, snapshot) }
+        .apply { RecipeArchive.write(this, snapshot); ActivityTimerArchive.write(this, snapshot) }
         .put("schemaVersion", ARCHIVE_VERSION)
         .putNullable("preferences", preferences?.let {
             JSONObject()
@@ -371,7 +371,7 @@ class PitTechDataTransfer(
     }
 
     companion object {
-        const val ARCHIVE_VERSION = 7
+        const val ARCHIVE_VERSION = 8
         const val MIN_SUPPORTED_ARCHIVE_VERSION = 1
         const val MAX_ARCHIVE_ENTRY_BYTES = 45 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 300L * 1024L * 1024L
@@ -434,7 +434,7 @@ private fun DishEntity.toJson() = JSONObject()
 
 private fun IngredientEntity.toJson() = JSONObject()
     .put("id", id).put("cookId", cookId).put("dishId", dishId).put("stage", stage).put("name", name)
-    .putNullable("brand", brand).putNullable("amountValue", amountValue).putNullable("amountUnit", amountUnit)
+    .putNullable("amountText", amountText).putNullable("brand", brand).putNullable("amountValue", amountValue).putNullable("amountUnit", amountUnit)
     .putNullable("appliedAtUtcMillis", appliedAtUtcMillis).putNullable("notes", notes).put("createdAtUtcMillis", createdAtUtcMillis)
 
 private fun TimelineEventEntity.toJson() = JSONObject()
@@ -529,7 +529,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
         IngredientEntity(
             id=o.string("id"), cookId=o.string("cookId"), dishId=o.string("dishId"), stage=o.string("stage"), name=o.string("name"),
             brand=o.stringOrNull("brand"), amountValue=o.doubleOrNull("amountValue"), amountUnit=o.stringOrNull("amountUnit"),
-            appliedAtUtcMillis=o.longOrNull("appliedAtUtcMillis"), notes=o.stringOrNull("notes"), createdAtUtcMillis=o.long("createdAtUtcMillis"),
+            appliedAtUtcMillis=o.longOrNull("appliedAtUtcMillis"), notes=o.stringOrNull("notes"), createdAtUtcMillis=o.long("createdAtUtcMillis"), amountText=o.stringOrNull("amountText"),
         )
     }
     val events = root.arrayObjects("events").map { o ->
@@ -656,7 +656,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     ) { "The backup contains duplicate record IDs." }
     require(
         dishes.all { it.cookId in cookIds } &&
-            ingredients.all { it.cookId in cookIds && dishesById[it.dishId]?.cookId == it.cookId } &&
+            ingredients.all { it.cookId in cookIds && dishesById[it.dishId]?.cookId == it.cookId && (it.amountValue == null || it.amountValue.isFinite() && it.amountValue > 0) && (it.amountText == null || it.amountText.toDoubleOrNull() == it.amountValue) } &&
             events.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
             readings.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
             targets.all { it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) } &&
@@ -696,7 +696,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
         it.cookId in cookIds && (it.dishId == null || dishesById[it.dishId]?.cookId == it.cookId) && it.value.isFinite() && it.unit in setOf("°F", "°C")
     })
     require(events.all { event -> com.pittech.domain.CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty().all { dishesById[it]?.cookId == event.cookId } })
-    return RecipeArchive.read(root, ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history), attachment)
+    return ActivityTimerArchive.read(root, RecipeArchive.read(root, ExportSnapshot(cooks, dishes, ingredients, events, readings, targets, results, devices, probes, photos, reminders, recordings, assignments, companionRecords, companionPhotos, links, lifecycles, history), attachment))
 }
 
 private fun validatedContext(o: JSONObject): String? = o.stringOrNull("temperatureContextJson")?.also {

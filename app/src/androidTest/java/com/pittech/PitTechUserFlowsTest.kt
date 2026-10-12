@@ -737,6 +737,30 @@ class PitTechUserFlowsTest {
     }
 
     @Test
+    fun test07b_preparationDurationStaysInOneOptionalNote() {
+        clearLocalData()
+        composeRule.onNodeWithTag("start-cook").performClick()
+        composeRule.onNodeWithTag("cook-save").performClick()
+        composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("timeline-add").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("timeline-add").performClick()
+        composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Boiled macaroni slightly underdone")
+        composeRule.onNodeWithTag("timeline-entry-more-details").performScrollTo().performClick()
+        composeRule.onNodeWithTag("note-method").performScrollTo().performClick()
+        composeRule.onNodeWithText("Stovetop").performClick()
+        composeRule.onNodeWithTag("note-duration").performScrollTo().performTextInput("8")
+        saveScreenshot("meal-preparation-note")
+        composeRule.onNodeWithTag("timeline-entry-save").performClick()
+        val app = targetContext.applicationContext as PitTechApplication
+        composeRule.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().any { it.eventType == "note" } } }
+        val note = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllTimelineEvents().single { it.eventType == "note" } }
+        val metadata = com.pittech.domain.CookNoteMetadata.decode(note.noteMetadataJson)!!
+        assertEquals("stovetop", metadata.method)
+        assertEquals(480000L, metadata.durationMillis)
+        assertTrue(metadata.ingredients.isEmpty())
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllIngredients().isEmpty() })
+    }
+
+    @Test
     fun test08_zipShareIntentUsesReadOnlyContentUri() {
         val exportDir = File(targetContext.cacheDir, "exports").apply { mkdirs() }
         val archive = File(exportDir, "share-test.zip").apply { writeBytes(byteArrayOf(4, 8, 12, 16)) }

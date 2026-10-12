@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
+        ActivityTimer::class,
         SavedRecipe::class, RecipeRevision::class, DishRecipeSource::class, RecipeAsset::class, MealPreset::class,
         CookEntity::class,
         DishEntity::class,
@@ -28,10 +29,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CookLogDraft::class,
         TargetHistory::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
+    abstract fun activityTimerDao(): ActivityTimerDao
     abstract fun recipeDao(): RecipeDao
     abstract fun cookDao(): CookDao
     abstract fun recordingDao(): CookRecordingDao
@@ -39,6 +41,16 @@ abstract class PitTechDatabase : RoomDatabase() {
     abstract fun experienceDao(): CookExperienceDao
 
     companion object {
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE ingredients ADD COLUMN amountText TEXT")
+                database.execSQL("CREATE TABLE IF NOT EXISTS activity_timers (id TEXT NOT NULL PRIMARY KEY, cookId TEXT NOT NULL, dishId TEXT, title TEXT NOT NULL, method TEXT, startedAtUtcMillis INTEGER NOT NULL, stoppedAtUtcMillis INTEGER, desiredDurationMillis INTEGER, noteId TEXT NOT NULL, status TEXT NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(dishId) REFERENCES dishes(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_activity_timers_cookId ON activity_timers(cookId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_activity_timers_dishId ON activity_timers(dishId)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_activity_timers_noteId ON activity_timers(noteId)")
+            }
+        }
+
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("CREATE TABLE IF NOT EXISTS saved_recipes (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, tagsJson TEXT NOT NULL, currentRevisionId TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL, archivedAtUtcMillis INTEGER, favorite INTEGER NOT NULL)")

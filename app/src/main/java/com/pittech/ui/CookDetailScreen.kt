@@ -614,6 +614,7 @@ fun CookDetailScreen(
                     displayUnit = preferredTemperatureUnit,
                     configuredTools = { CookPlaybookTools(data, viewModel, configuredOnly = true); CookAlertTools(data, viewModel, configuredOnly = true) },
                     playbookTools = {
+                        MealActivityTimers(data.cook.id, data.dishes, data.cook.status != CookStatus.COMPLETED, viewModel)
                         CookPhaseCard(data,
                             onFoodOn = { dish -> openNote("action", "food_on"); noteDraftJson = noteDraftJson?.let { com.pittech.domain.CookNoteDraft.decode(it).copy(dishId = dish).encode() } },
                             onPreheat = { openNote("action", "preheat_start") },

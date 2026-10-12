@@ -19,7 +19,7 @@ class CookNoteTest {
     }
     @Test fun unsupportedVersionsActionsAndDuplicateScopesAreRejected() {
         val metadata = CookNoteMetadata("action", "food_on", listOf("a"))
-        assertThrows(IllegalArgumentException::class.java) { CookNoteMetadata.decode(metadata.encode().replace("\"version\":1", "\"version\":2")) }
+        assertThrows(IllegalArgumentException::class.java) { CookNoteMetadata.decode(metadata.encode().replace("\"version\":1", "\"version\":3")) }
         assertThrows(IllegalArgumentException::class.java) { CookNoteDraft(cookId = "c", action = "unknown").validate() }
         assertThrows(IllegalArgumentException::class.java) { CookNoteDraft(cookId = "c", action = "food_on", dishIds = listOf("a", "a")).validate() }
         assertThrows(IllegalArgumentException::class.java) { CookNoteDraft(cookId = "c", temperatures = listOf(NoteTemperature(valueText = "NaN"))).validate() }

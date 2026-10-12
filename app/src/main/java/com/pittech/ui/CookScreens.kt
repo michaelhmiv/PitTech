@@ -862,10 +862,11 @@ internal fun DishEditorDialog(
                 SimpleDropdownField(
                     label = "Food type",
                     value = foodType,
-                    options = listOf("Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Other"),
+                    options = listOf("Meat", "Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Pasta", "Sides", "Dairy", "Baked dishes", "Desserts", "Other"),
                     onSelect = { foodType = it },
                     testTag = "dish-food-type",
                 )
+                if (foodType in listOf("Meat", "Beef", "Pork", "Poultry", "Seafood", "Wild game")) {
                 OutlinedTextField(
                     value = cut,
                     onValueChange = { cut = it },
@@ -874,6 +875,7 @@ internal fun DishEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("dish-cut"),
                 )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = weight,
@@ -904,6 +906,7 @@ internal fun DishEditorDialog(
                         onSelect = { startingCondition = it.takeUnless { value -> value == "Not set" } },
                         testTag = "dish-starting-condition",
                     )
+                    if (foodType in listOf("Meat", "Beef", "Pork", "Poultry", "Wild game")) {
                     Text("Bone-in or boneless", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
@@ -919,13 +922,14 @@ internal fun DishEditorDialog(
                             modifier = Modifier.testTag("dish-boneless"),
                         )
                     }
+                    }
                     OutlinedTextField(placement, { placement = it }, label = { Text("Smoker position (optional)") }, placeholder = { Text("Upper rack, left side") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("dish-placement"))
                     OutlinedTextField(gradeOrSource, { gradeOrSource = it }, label = { Text("Grade, brand, or source (optional)") }, modifier = Modifier.fillMaxWidth().testTag("dish-source"))
                     OutlinedTextField(thicknessNotes, { thicknessNotes = it }, label = { Text("Size or thickness notes (optional)") }, modifier = Modifier.fillMaxWidth().testTag("dish-thickness"))
 
                     Text("Preparation and ingredients", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Add the rub, binder, brine, marinade, or other details you want to remember.",
+                        "Record ingredients, sauces, seasonings, or preparation details when useful.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -947,7 +951,7 @@ internal fun DishEditorDialog(
                             SimpleDropdownField(
                                 label = "Type",
                                 value = item.stage.replace('_', ' ').replaceFirstChar { it.titlecase() },
-                                options = listOf("Seasoning", "Binder", "Brine", "Marinade", "Injection", "Spritz", "Wrap addition", "Glaze", "Other"),
+                                options = listOf("Main ingredient", "Seasoning", "Sauce", "Marinade", "Binder", "Brine", "Glaze", "Topping", "Injection", "Spritz", "Wrap addition", "Other"),
                                 onSelect = { value ->
                                     preparationItems = preparationItems.mapIndexed { i, current ->
                                         if (i == index) current.copy(stage = value.lowercase().replace(' ', '_')) else current
@@ -985,7 +989,7 @@ internal fun DishEditorDialog(
                                 SimpleDropdownField(
                                     label = "Unit",
                                     value = item.amountUnit,
-                                    options = listOf("tsp", "tbsp", "cup", "g", "oz"),
+                                    options = listOf("cup", "tbsp", "tsp", "fl oz", "ml", "L", "g", "oz", "lb", "kg", "count"),
                                     onSelect = { value ->
                                         preparationItems = preparationItems.mapIndexed { i, current -> if (i == index) current.copy(amountUnit = value) else current }
                                     },

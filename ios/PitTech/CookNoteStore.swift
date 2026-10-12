@@ -103,6 +103,9 @@ import UniformTypeIdentifiers
             photo["capturedAtUtcMillis"] = p.capturedAt.map(JSONValue.number) ?? .null
             next.photos.removeAll { $0.objectValue?["id"]?.stringValue == p.id }; next.photos.append(.object(photo))
         }
+        next.activityTimers = next.activityTimers.map { row in
+            guard var o = row.objectValue, o["noteId"]?.stringValue == draft.id, o["cookId"]?.stringValue == draft.cookId, o["status"]?.stringValue == "stopped" else { return row }; o["status"] = .string("logged"); return .object(o)
+        }
         try next.validateCookExperience()
         let prior = library; library = next; save()
         if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }

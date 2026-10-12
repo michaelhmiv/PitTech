@@ -84,11 +84,14 @@ final class CookStore {
 
     func finishCook(_ cookId: String) {
         guard let index = library.cooks.firstIndex(where: { $0.id == cookId }) else { return }
+        let prior = library
+        library.activityTimers = library.activityTimers.map { row in guard var o = row.objectValue, o["cookId"]?.stringValue == cookId, o["status"]?.stringValue == "running" else { return row }; o["status"] = .string("cancelled"); return .object(o) }
         let now = Int64(Date.now.timeIntervalSince1970 * 1_000)
         library.cooks[index].status = "completed"
         library.cooks[index].endedAtUtcMillis = now
         library.cooks[index].updatedAtUtcMillis = now
         save()
+        if saveError != nil { library = prior }
     }
 
     func addReading(cookId: String, probeName: String, value: Double, unit: String, measurementType: String) {
@@ -349,6 +352,9 @@ final class CookStore {
         library.dishRecipeSources = mergeUnique(library.dishRecipeSources, imported.dishRecipeSources.filter { row in
             imported.dishes.contains { $0.objectValue?["id"] == row.objectValue?["dishId"] && belongsToNewCook($0, ids: newIds) }
         }, key: "dishId")
+        library.activityTimers = mergeUnique(library.activityTimers, imported.activityTimers.filter { belongsToNewCook($0, ids: newIds) }.map { row in
+            guard var o = row.objectValue else { return row }; o["status"] = .string("inactive"); return .object(o)
+        })
         library.schemaVersion = PitTechLibrary.archiveVersion
         save()
         if saveError != nil {
@@ -365,7 +371,7 @@ final class CookStore {
 
     var storageURL: URL { directory.appendingPathComponent("pittech.json") }
 
-    private static let archiveReadme = "PitTech cook archive, schema 7. Cook records are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
+    private static let archiveReadme = "PitTech cook archive, schema 8. Cook records are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
 
     private static func isSafeArchivePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.contains("\\") &&

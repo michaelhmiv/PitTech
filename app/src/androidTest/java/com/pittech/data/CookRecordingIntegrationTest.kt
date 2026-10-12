@@ -260,7 +260,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 3
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_3_4, PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8, PitTechDatabase.MIGRATION_8_9).build()
         try {
             assertEquals("Legacy cook", migrated.cookDao().getCook(id)!!.title)
             assertEquals("measurement", migrated.cookDao().getAllSensorReadings().single().timestampBasis)
@@ -342,7 +342,7 @@ class CookRecordingIntegrationTest {
             sql.execSQL("ALTER TABLE sensor_readings DROP COLUMN samplingIntervalMillis")
             sql.version = 4
         }
-        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8).build()
+        val migrated = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_4_5, PitTechDatabase.MIGRATION_5_6, PitTechDatabase.MIGRATION_6_7, PitTechDatabase.MIGRATION_7_8, PitTechDatabase.MIGRATION_8_9).build()
         try {
             val saved = migrated.recordingDao().getRecording(id)!!
             assertEquals("periodic", saved.samplingMode)

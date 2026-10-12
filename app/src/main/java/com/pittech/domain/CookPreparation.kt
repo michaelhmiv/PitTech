@@ -11,7 +11,7 @@ data class EquipmentProfile(val name: String, val fuelType: String = "", val hop
 data class FuelEntry(val equipmentName: String, val kilograms: Double, val cookId: String?, val at: Long, val type: String = "added")
 
 object CookPreparation {
-    private val compatibleUnits = setOf("g", "kg", "oz", "lb", "ml", "L", "tsp", "tbsp", "cup")
+    private val compatibleUnits = setOf("g", "kg", "oz", "lb", "ml", "L", "tsp", "tbsp", "cup", "fl oz", "count")
     fun encodeCombo(combo: PrepCombo): String {
         require(combo.name.isNotBlank() && combo.items.isNotEmpty() && combo.items.all { it.name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(it.amountText) }) { "Name the combo and add valid ingredients." }
         require(combo.yieldAmount == null || combo.yieldAmount.isFinite() && combo.yieldAmount > 0 && !combo.yieldUnit.isNullOrBlank()) { "Enter a positive recipe yield and its unit." }
@@ -39,8 +39,8 @@ object CookPreparation {
     fun encodeFuel(entry: FuelEntry): String { require((entry.type != "used" || !entry.cookId.isNullOrBlank()) && entry.at >= 0 && entry.type in setOf("added", "used") && entry.equipmentName.isNotBlank() && entry.kilograms.isFinite() && entry.kilograms > 0); return JSONObject().put("version", 1).put("equipment", entry.equipmentName).put("kg", entry.kilograms).put("cookId", entry.cookId).put("at", entry.at).put("type", entry.type).toString() }
     fun decodeFuel(raw: String): FuelEntry { val o = JSONObject(raw); require(o.getInt("version") == 1); return FuelEntry(o.getString("equipment"), o.getDouble("kg"), if (o.isNull("cookId")) null else o.getString("cookId"), o.getLong("at"), o.optString("type", "added")).also { encodeFuel(it) } }
     /** Union simultaneous dish intervals so one smoker hour is counted once. No setup/rest time. */
-    fun cookingHours(events: List<PlanEvent>, dishes: List<String>, endedAt: Long?): Double {
+    fun cookingHours(events: List<PlanEvent>, dishes: List<String>, endedAt: Long?, methods: List<MethodEvent> = emptyList()): Double {
         val end = endedAt ?: events.maxOfOrNull { it.at } ?: return 0.0
-        return CookPhases.heatingMillis(CookPhases.all(events, dishes, events.minOfOrNull { it.at } ?: end, end)) / 3_600_000.0
+        return CookingMethods.smokerMillis(CookPhases.all(events, dishes, events.minOfOrNull { it.at } ?: end, end), methods) / 3_600_000.0
     }
 }

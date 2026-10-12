@@ -44,7 +44,7 @@ class RecipeIntegrationTest {
         val saved = repo.recipes.save(snapshot)
         val output = ByteArrayOutputStream(); val transfer = PitTechDataTransfer(context, repo); transfer.writeZip(output)
         val preview = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
-        assertEquals(7, preview.archiveVersion)
+        assertEquals(PitTechDataTransfer.ARCHIVE_VERSION, preview.archiveVersion)
         val other = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
         try {
             val restored = CookRepository(other, PhotoStorage(context))

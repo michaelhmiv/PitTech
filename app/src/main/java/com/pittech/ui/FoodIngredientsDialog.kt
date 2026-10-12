@@ -26,7 +26,7 @@ import java.util.UUID
     var name by rememberSaveable(selectedId) { mutableStateOf(selected?.name.orEmpty()) }
     var stage by rememberSaveable(selectedId) { mutableStateOf(selected?.stage ?: "seasoning") }
     var brand by rememberSaveable(selectedId) { mutableStateOf(selected?.brand.orEmpty()) }
-    var amount by rememberSaveable(selectedId) { mutableStateOf(selected?.amountValue?.toString().orEmpty()) }
+    var amount by rememberSaveable(selectedId) { mutableStateOf(selected?.amountText ?: selected?.amountValue?.toString().orEmpty()) }
     var unit by rememberSaveable(selectedId) { mutableStateOf(selected?.amountUnit ?: "tbsp") }
     var notes by rememberSaveable(selectedId) { mutableStateOf(selected?.notes.orEmpty()) }
     var appliedAt by rememberSaveable(selectedId) { mutableLongStateOf(selected?.appliedAtUtcMillis ?: System.currentTimeMillis()) }
@@ -43,13 +43,13 @@ import java.util.UUID
             OutlinedTextField(name, { name = it }, label = { Text("Ingredient") }, modifier = Modifier.fillMaxWidth().testTag("food-ingredient-name"))
             TextButton(onClick = { details = !details }, modifier = Modifier.testTag("food-ingredient-details")) { Text(if (details) "Less detail" else "More detail") }
             if (details) {
-                SimpleDropdownField("Type", stage, listOf("seasoning", "binder", "marinade", "injection", "sauce", "other"), { stage = it })
+                SimpleDropdownField("Type", stage, listOf("main_ingredient", "seasoning", "sauce", "marinade", "binder", "brine", "glaze", "topping", "injection", "other"), { stage = it })
                 OutlinedTextField(brand, { brand = it }, label = { Text("Brand") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(amount, { amount = it }, label = { Text("Amount (optional)") },
                         isError = !CookEntryValidation.isOptionalPositiveNumberValid(amount),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).testTag("food-ingredient-amount"))
-                    SimpleDropdownField("Unit", unit, listOf("tbsp", "tsp", "g", "oz", "cup", "ml", "other"), { unit = it }, modifier = Modifier.width(100.dp))
+                    SimpleDropdownField("Unit", unit, listOf("cup", "tbsp", "tsp", "fl oz", "ml", "L", "g", "oz", "lb", "kg", "count", "other"), { unit = it }, modifier = Modifier.width(100.dp))
                 }
                 OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = { includeTime = !includeTime }) { Text(if (includeTime) "Remove applied time" else "Set applied time") }
@@ -60,7 +60,7 @@ import java.util.UUID
         confirmButton = { TextButton(onClick = {
             val ingredient = (selected ?: IngredientEntity(UUID.randomUUID().toString(), data.cook.id, dish.id,
                 stage, name, createdAtUtcMillis = System.currentTimeMillis())).copy(name = name, stage = stage,
-                brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount),
+                brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount), amountText = amount.trim().ifBlank { null },
                 amountUnit = unit.takeIf { amount.isNotBlank() }, notes = notes.trim().ifBlank { null },
                 appliedAtUtcMillis = appliedAt.takeIf { includeTime })
             viewModel.saveIngredient(ingredient) { saved -> if (saved) onClose() }

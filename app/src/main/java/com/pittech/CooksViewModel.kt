@@ -39,6 +39,7 @@ class CooksViewModel(
     private val dataTransfer: PitTechDataTransfer,
     private val context: Context,
 ) : ViewModel() {
+    internal val activities get() = repository.activities
     private val app get() = context.applicationContext as PitTechApplication
     internal val grillState get() = app.grillMonitor.state
     internal val recordingServiceRunning get() = app.recordingServiceRunning

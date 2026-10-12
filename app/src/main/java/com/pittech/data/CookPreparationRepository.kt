@@ -25,7 +25,7 @@ class CookPreparationRepository(private val db: PitTechDatabase) {
     suspend fun createChecklist(cookId: String) = db.withTransaction {
         if (db.companionDao().get("checklist:$cookId") != null) return@withTransaction
         val cook = db.cookDao().getCook(cookId) ?: error("Cook not found.")
-        val ingredients = db.cookDao().getIngredientsForCook(cookId).map { IngredientDraft(it.name, it.stage, it.brand.orEmpty(), it.amountValue?.toString().orEmpty(), it.amountUnit.orEmpty()) }
+        val ingredients = db.cookDao().getIngredientsForCook(cookId).map { IngredientDraft(it.name, it.stage, it.brand.orEmpty(), it.amountText ?: it.amountValue?.toString().orEmpty(), it.amountUnit.orEmpty()) }
         val dishes = db.cookDao().getDishesForCook(cookId)
         val items = CookPreparation.ingredientChecklist(ingredients) + listOf(ChecklistItem(text = "Fuel${cook.fuelType?.let { " · $it" }.orEmpty()}${cook.woodOrPelletBlend?.let { " · $it" }.orEmpty()}"), ChecklistItem(text = "Thermometer"), ChecklistItem(text = "Heat-resistant gloves"), ChecklistItem(text = "Wrapping material (if using)")) +
             dishes.mapNotNull { d -> d.prepNotes?.takeIf { it.isNotBlank() }?.let { ChecklistItem(text = "${d.name}: $it", category = "prep") } }
@@ -38,7 +38,7 @@ class CookPreparationRepository(private val db: PitTechDatabase) {
     }
     suspend fun summaries(now: Long = System.currentTimeMillis()): List<EquipmentSummary> {
         val records = db.companionDao().all(); val cooks = db.cookDao().getAllCooks(); val dishes = db.cookDao().getAllDishes().groupBy { it.cookId }; val events = db.cookDao().getAllTimelineEvents().groupBy { it.cookId }
-        val hours = cooks.associate { cook -> cook.id to CookPreparation.cookingHours(events[cook.id].orEmpty().let { com.pittech.data.notePlanEvents(it) }, dishes[cook.id].orEmpty().map { it.id }, cook.endedAtUtcMillis ?: now) }
+        val hours = cooks.associate { cook -> cook.id to CookPreparation.cookingHours(events[cook.id].orEmpty().let { com.pittech.data.notePlanEvents(it) }, dishes[cook.id].orEmpty().map { it.id }, cook.endedAtUtcMillis ?: now, methodEvents(events[cook.id].orEmpty())) }
         return records.filter { it.kind == "equipment" }.map { r ->
             val p = CookPreparation.decodeEquipment(r.payload)
             val matching = cooks.filter { it.smokerName?.equals(p.name, true) == true }

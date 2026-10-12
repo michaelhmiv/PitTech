@@ -102,6 +102,7 @@ data class IngredientEntity(
     val appliedAtUtcMillis: Long? = null,
     val notes: String? = null,
     val createdAtUtcMillis: Long,
+    val amountText: String? = null,
 )
 
 @Entity(

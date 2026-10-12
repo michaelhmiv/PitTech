@@ -12,6 +12,7 @@ struct CookNoteComposer: View {
     @State private var error: String?
     @State private var busy = false
     @State private var closed = false
+    @State private var durationText = ""
     var body: some View {
         NavigationStack {
             Form {
@@ -22,6 +23,33 @@ struct CookNoteComposer: View {
                     Picker("Action", selection: Binding(get: { draft.metadata.action ?? "" }, set: { draft.metadata.action = $0.isEmpty ? nil : $0 })) {
                         Text("None").tag("")
                         ForEach(CookNoteMetadata.actions, id: \.self) { action in Text(CookStore.actionLabel(action)).tag(action) }
+                    }
+                }
+                Section {
+                    DisclosureGroup("Method, duration & ingredients") {
+                        Picker("Cooking method", selection: Binding(get: { draft.metadata.method ?? "" }, set: { draft.metadata.method = $0.isEmpty ? nil : $0; draft.metadata.version = 2 })) {
+                            Text("Not set").tag("")
+                            ForEach(CookingMethod.order, id: \.self) { Text(CookingMethod.labels[$0]!).tag($0) }
+                        }
+                        if let duration = draft.metadata.durationMillis, draft.metadata.startedAtUtcMillis != nil && draft.metadata.endedAtUtcMillis != nil {
+                            Text("Measured duration: \(duration / 60000, specifier: "%.2f") minutes")
+                        } else {
+                            TextField("Duration in minutes (optional)", text: $durationText).keyboardType(.decimalPad)
+                                .onChange(of: durationText) { _, raw in draft.metadata.durationMillis = Double(raw).map { $0 * 60000 }; draft.metadata.version = 2 }
+                        }
+                        ForEach((draft.metadata.ingredients ?? []).indices, id: \.self) { index in
+                            TextField("Ingredient", text: ingredientBinding(index, \.name))
+                            TextField("Amount (optional)", text: ingredientBinding(index, \.amount)).keyboardType(.decimalPad)
+                            Picker("Unit", selection: ingredientBinding(index, \.unit)) {
+                                ForEach(["cup", "tbsp", "tsp", "fl oz", "ml", "L", "g", "oz", "lb", "kg", "count"], id: \.self) { Text($0).tag($0) }
+                            }
+                            Picker("Type", selection: ingredientBinding(index, \.stage)) {
+                                ForEach(["main_ingredient", "seasoning", "sauce", "marinade", "binder", "brine", "glaze", "topping", "other"], id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ").capitalized).tag($0) }
+                            }
+                            TextField("Brand (optional)", text: ingredientBinding(index, \.brand))
+                            Button("Remove ingredient") { draft.metadata.ingredients?.remove(at: index) }
+                        }
+                        Button("+ Ingredient") { draft.metadata.ingredients = (draft.metadata.ingredients ?? []) + [NoteIngredient()]; draft.metadata.version = 2 }
                     }
                 }
                 Section("For") {
@@ -71,11 +99,11 @@ struct CookNoteComposer: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Keep draft") { if persist() { closed = true; dismiss() } }.disabled(busy) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { do { busy = true; try store.saveNote(draft); closed = true; dismiss() } catch { self.error = error.localizedDescription }; busy = false }
-                        .disabled(busy || (try? draft.validate()) == nil)
+                        .disabled(busy || (try? draft.validate()) == nil || !durationText.isEmpty && Double(durationText).map { $0.isFinite && $0 >= 0 && $0 <= 43200 } != true)
                 }
                 ToolbarItem(placement: .bottomBar) { Button("Discard draft", role: .destructive) { do { try store.discardDraft(draft.id); closed = true; dismiss() } catch { self.error = error.localizedDescription } }.disabled(busy) }
             }
-            .onAppear { persist() }
+            .onAppear { durationText = draft.metadata.durationMillis.map { String($0 / 60000) } ?? ""; persist() }
             .onChange(of: draft) { _, _ in persist() }
             .onChange(of: scenePhase) { _, _ in persist() }
             .onChange(of: pickerItems) { _, items in
@@ -94,6 +122,9 @@ struct CookNoteComposer: View {
             } }
         }
         .interactiveDismissDisabled(busy)
+    }
+    private func ingredientBinding(_ index: Int, _ key: WritableKeyPath<NoteIngredient, String>) -> Binding<String> {
+        Binding(get: { draft.metadata.ingredients?[index][keyPath: key] ?? "" }, set: { draft.metadata.ingredients?[index][keyPath: key] = $0; draft.metadata.version = 2 })
     }
     @discardableResult private func persist() -> Bool { guard !closed else { return true }; do { try store.persistDraft(draft); return true } catch { self.error = error.localizedDescription; return false } }
     private func dateBinding(_ milliseconds: Binding<Double>) -> Binding<Date> {
