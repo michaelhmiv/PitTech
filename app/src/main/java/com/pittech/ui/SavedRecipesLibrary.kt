@@ -108,6 +108,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
 }
 
 @Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false) {
+    if (data.dishes.isEmpty()) return
     var editor by remember(data.cook.id) { mutableStateOf<RecipeEditorRequest?>(null) }
     var expanded by remember(data.cook.id, initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     var preset by remember(data.cook.id) { mutableStateOf(false) }

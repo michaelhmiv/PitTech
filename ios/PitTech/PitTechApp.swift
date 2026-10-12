@@ -17,7 +17,7 @@ struct PitTechApp: App {
                     await store.refreshReminderDeliveryHistory()
                     store.save()
                     #if DEBUG
-                    if !CommandLine.arguments.contains("--ui-test-reset") && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { AdsConsentManager.shared.gatherConsent() }
+                    if !CommandLine.arguments.contains("--ui-test-reset") && !CommandLine.arguments.contains("--screenshot-no-ads") && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil { AdsConsentManager.shared.gatherConsent() }
                     #else
                     AdsConsentManager.shared.gatherConsent()
                     #endif

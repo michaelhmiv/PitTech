@@ -59,7 +59,13 @@ struct SavedRecipesView: View {
                 if let o = store.recipe(id), let revision = o["currentRevisionId"]?.stringValue {
                     Section {
                         NavigationLink(o["name"]?.stringValue ?? "Recipe") { SavedRecipeDetailView(recipeId: id) }
-                        Toggle("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", isOn: Binding(get: { selected.contains(revision) }, set: { if $0 { selected.append(revision) } else { selected.removeAll { $0 == revision } } })).disabled(archived)
+                        Button {
+                            if selected.contains(revision) { selected.removeAll { $0 == revision } } else { selected.append(revision) }
+                        } label: { Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.square.fill" : "square") }
+                            .buttonStyle(.plain).frame(minHeight: 44).disabled(archived)
+                            .accessibilityLabel("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal")
+                            .accessibilityValue(selected.contains(revision) ? "Selected" : "Not selected")
+                            .accessibilityIdentifier("recipe-select-" + id)
                         Text("Preferred version \(Int(store.recipeRevision(revision)?["revisionNumber"]?.numberValue ?? 1))").font(.caption)
                         Button(archived ? "Restore recipe" : o["favorite"]?.boolValue == true ? "Remove favorite" : "Favorite") { act { try store.setRecipeFlag(id, favorite: archived ? nil : !(o["favorite"]?.boolValue ?? false), archived: archived ? false : nil) } }
                     }
@@ -138,7 +144,7 @@ struct RecipeAssetGallery: View {
     var body: some View {
         ForEach(store.recipeAssets(revisionId).compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
             if let o = store.recipeAssets(revisionId).first(where: { $0.objectValue?["id"]?.stringValue == id })?.objectValue,
-               let path = o["archivePath"]?.stringValue, let image = UIImage(contentsOfFile: store.photoURL(path).path) {
+               let path = o["archivePath"]?.stringValue, let image = store.photoPreview(path) {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220).accessibilityLabel(o["caption"]?.stringValue ?? "Recipe reference photo")
                 Text(o["caption"]?.stringValue ?? "")
             }

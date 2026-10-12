@@ -30,7 +30,7 @@ struct MealDishCard: View {
             Button { expanded.toggle() } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(dish.name).font(.headline)
-                    Text(phase.map { CookPhaseEngine.label($0.phase) } ?? "Status not recorded").font(.subheadline)
+                    Text((store.library.cooks.first { $0.id == cookId }?.isActive == false ? "Last recorded: " : "") + (phase.map { CookPhaseEngine.label($0.phase) } ?? "Status not recorded")).font(.subheadline)
                     if let method { Text("Method · " + (CookingMethod.labels[method] ?? method)).font(.caption) }
                     if let phase, phase.cooking > 0 { Text("Cooking \(Int(phase.cooking / 3_600_000))h \(Int(phase.cooking / 60_000) % 60)m").font(.caption.monospacedDigit()) }
                     if let reading {

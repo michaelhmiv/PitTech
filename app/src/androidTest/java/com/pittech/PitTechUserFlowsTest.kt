@@ -748,7 +748,8 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("timeline-add").performClick()
         composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Boiled macaroni slightly underdone")
         composeRule.onNodeWithTag("timeline-entry-more-details", useUnmergedTree = true).performScrollTo().performClick()
-        composeRule.onNodeWithTag("note-method").performScrollTo().performClick()
+        composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("note-method", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("note-method", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.onNodeWithText("Stovetop").performClick()
         composeRule.onNodeWithTag("note-duration").performScrollTo().performTextInput("8")
         saveScreenshot("meal-preparation-note")

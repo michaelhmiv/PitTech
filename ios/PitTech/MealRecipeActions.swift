@@ -11,7 +11,7 @@ struct MealRecipeActions: View {
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var dishes: [NoteDishRecord] { store.dishRecords(cookId) }
     var body: some View {
-        if cook?.isActive == false || dishes.contains(where: { store.recipeSource($0.id) != nil }) {
+        if !dishes.isEmpty && (cook?.isActive == false || dishes.contains(where: { store.recipeSource($0.id) != nil })) {
             DisclosureGroup(cook?.isActive == false ? "Save selected dishes as recipes" : "Recipes in this meal", isExpanded: $expanded) {
                 ForEach(dishes) { dish in
                     Text(dish.name).font(.headline)

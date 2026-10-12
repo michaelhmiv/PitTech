@@ -7,7 +7,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.UiDevice
 import com.pittech.data.*
 import com.pittech.domain.*
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +64,7 @@ class MealRecipeUserFlowsTest {
         compose.onNodeWithTag("reminder-rule-save").performClick()
         compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().size == 1 } }
         assertEquals("waiting", runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().single().status })
-        UiDevice.getInstance(instrumentation).pressBack()
+        androidx.test.espresso.Espresso.pressBack()
         waitFor("meal-recipe-actions"); compose.onNodeWithTag("meal-recipe-actions").performScrollTo().performClick()
         waitFor("recipe-adjust-${mac.id}"); compose.onNodeWithTag("recipe-adjust-${mac.id}").performScrollTo().performClick()
         compose.onNodeWithTag("recipe-description").performScrollTo().performTextInput("Try more Gouda")

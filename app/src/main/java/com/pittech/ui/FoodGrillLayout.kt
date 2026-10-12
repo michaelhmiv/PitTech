@@ -73,7 +73,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                             }
                             if (phase != null) {
                                 val duration = FoodLivePresentation.phaseElapsed(phase)
-                                Text((if (legacy && phase.phase == "prep") "Status not recorded" else (if (legacy) "Last recorded: " else "") + CookPhases.label(phase.phase)) +
+                                Text((if (legacy && phase.phase == "prep") "Status not recorded" else (if (legacy || data.cook.status == CookStatus.COMPLETED) "Last recorded: " else "") + CookPhases.label(phase.phase)) +
                                     (if (!legacy && duration > 0) " · " + foodDuration(duration) else ""), style = MaterialTheme.typography.bodySmall)
                             }
                             val displayedProbes = temperatures.mapNotNull { it.probe?.id }.toSet()

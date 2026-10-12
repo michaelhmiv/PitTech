@@ -338,7 +338,7 @@ final class CookStore {
         library.results = mergeUnique(library.results, imported.results.filter { belongsToNewCook($0, ids: newIds) })
         library.devices = mergeUnique(library.devices, imported.devices.filter { belongsToNewCook($0, ids: newIds) })
         library.probes = mergeUnique(library.probes, imported.probes.filter { belongsToNewCook($0, ids: newIds) })
-        library.reminders = mergeUnique(library.reminders, imported.reminders.filter { belongsToNewCook($0, ids: newIds) })
+        library.reminders = mergeUnique(library.reminders, imported.reminders.filter { belongsToNewCook($0, ids: newIds) }.map { row in guard var o = row.objectValue, o["status"]?.stringValue == "pending" else { return row }; o["status"] = .string("cancelled"); return .object(o) })
         library.recordings = mergeUnique(library.recordings, imported.recordings.filter { belongsToNewCook($0, ids: newIds) }.map { item in
             guard case .object(var object) = item else { return item }
             object["status"] = .string("stopped")

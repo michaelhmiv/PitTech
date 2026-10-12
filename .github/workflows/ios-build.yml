@@ -86,6 +86,25 @@ jobs:
           PYFIXTURE
           xcrun simctl shutdown all || true
 
+      - name: Export native UI screenshots and retain test diagnostics
+        if: always()
+        run: |
+          if [[ -d build/ios-tests.xcresult ]]; then
+            mkdir -p build/native-ui-evidence
+            xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
+          fi
+
+      - name: Upload native UI and compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-test-evidence-${{ github.run_number }}
+          path: |
+            build/ios-tests.xcresult
+            build/native-ui-evidence/**
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload native portable recipe fixture
         uses: actions/upload-artifact@v6
         with:
@@ -126,9 +145,19 @@ jobs:
             cp ios/screenshot-fixtures/pittech.json "$app_container/Documents/pittech.json"
             xcrun simctl ui "$device_id" appearance light
             xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-            xcrun simctl launch "$device_id" com.pittech
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
             sleep 4
             xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}.png"
+            xcrun simctl terminate "$device_id" com.pittech
+            xcrun simctl ui "$device_id" appearance dark
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
+            sleep 2
+            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-dark.png"
+            xcrun simctl terminate "$device_id" com.pittech
+            xcrun simctl ui "$device_id" appearance light
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads --screenshot-large-text
+            sleep 2
+            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-large-text.png"
             xcrun simctl shutdown "$device_id"
           done < "$RUNNER_TEMP/pittech-simulators.txt"
 

@@ -11,7 +11,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset"]; app.launch()
         app.tabBars.buttons["Saved Recipes"].tap()
         for name in ["Chicken", "Mac and cheese", "Pork"] {
-            let toggle = app.switches["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
+            let toggle = app.buttons["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()
         let foods = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"))
@@ -22,7 +22,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(suggestion, app: app); suggestion.tap()
         app.buttons["reminder-rule-save"].tap()
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Allow"]
-        if allow.waitForExistence(timeout: 3) { allow.tap() }
+        if allow.waitForExistence(timeout: 10) { allow.tap() }
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "waiting")).firstMatch.waitForExistence(timeout: 15))
         capture("Native explicit historical reminder")
         app.navigationBars["Reminders"].buttons.element(boundBy: 0).tap()

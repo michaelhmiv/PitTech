@@ -353,7 +353,7 @@ fun CookDetailScreen(
     LaunchedEffect(data.cook.status) { if (data.cook.status == CookStatus.COMPLETED) { if (showFinishConfirm) showCompletionChoices = true; showFinishConfirm = false } }
     if (showFinishConfirm) AlertDialog(
         onDismissRequest = { if (!busy) showFinishConfirm = false },
-        title = { Text("Finish cook", modifier = Modifier.testTag("finish-cook-dialog")) },
+        title = { Text("Finish meal", modifier = Modifier.testTag("finish-cook-dialog")) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("End this meal and stop temperature recording? You can add notes, results and photos afterward.")
             val unfinished = FoodLivePresentation.phases(data, System.currentTimeMillis()).filter { it.phase != "done" }.mapNotNull { phase -> data.dishes.firstOrNull { it.id == phase.dishId }?.name }

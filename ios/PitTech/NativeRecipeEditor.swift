@@ -31,6 +31,13 @@ struct NativeRecipeEditor: View {
     private var assets: [JSONValue] { request.assetRevisionId.map(store.recipeAssets) ?? [] }
     private var sourcePhotos: [JSONValue] { store.library.photos.filter { $0.objectValue?["cookId"]?.stringValue == request.sourceCookId } }
     private var valid: Bool { (try? snapshot.validate()) != nil && numericText.values.allSatisfy { $0.isEmpty || Double($0)?.isFinite == true } }
+    private var categories: [String] {
+        let known = ["Meat", "Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Pasta", "Sides", "Dairy", "Baked dishes", "Desserts", "Other"]
+        let current = dish["foodType"]?.stringValue ?? "Other"
+        return known.contains(where: { $0.caseInsensitiveCompare(current) == .orderedSame }) ? known : known + [current]
+    }
+    private var categoryBinding: Binding<String> { Binding(get: { let value = dish["foodType"]?.stringValue ?? "Other"; return categories.first { $0.caseInsensitiveCompare(value) == .orderedSame } ?? value }, set: { setDish("foodType", .string($0)) }) }
+    private var isMeat: Bool { ["meat", "beef", "pork", "poultry", "seafood", "wild game"].contains((dish["foodType"]?.stringValue ?? "").lowercased()) }
     var body: some View {
         NavigationStack {
             Form {
@@ -44,15 +51,15 @@ struct NativeRecipeEditor: View {
                 Section {
                     DisclosureGroup("Dish, ingredients & preparation") {
                         TextField("Dish name", text: dishBinding("name"))
-                        Picker("Category", selection: dishBinding("foodType")) { ForEach(["Meat", "Beef", "Pork", "Poultry", "Seafood", "Wild game", "Vegetables", "Pasta", "Sides", "Dairy", "Baked dishes", "Desserts", "Other"], id: \.self) { Text($0).tag($0) } }
+                        Picker("Category", selection: categoryBinding) { ForEach(categories, id: \.self) { Text($0).tag($0) } }
                         TextField("Weight (optional)", text: dishBinding("weight")).keyboardType(.decimalPad)
                         Picker("Weight unit", selection: dishBinding("weightUnit")) { ForEach(["lb", "oz", "kg", "g"], id: \.self) { Text($0).tag($0) } }
-                        TextField("Cut (optional)", text: dishBinding("cut"))
+                        if isMeat { TextField("Cut (optional)", text: dishBinding("cut")) }
                         TextField("Source or grade (optional)", text: dishBinding("grade"))
                         TextField("Thickness (optional)", text: dishBinding("thickness"))
                         TextField("Placement (optional)", text: dishBinding("placement"))
                         TextField("Starting condition (optional)", text: dishBinding("startingCondition"))
-                        Picker("Bone-in", selection: Binding(get: { dish["boneIn"]?.boolValue.map { $0 ? "yes" : "no" } ?? "" }, set: { setDish("boneIn", $0.isEmpty ? .null : .bool($0 == "yes")) })) { Text("Not set").tag(""); Text("Yes").tag("yes"); Text("No").tag("no") }
+                        if isMeat { Picker("Bone-in", selection: Binding(get: { dish["boneIn"]?.boolValue.map { $0 ? "yes" : "no" } ?? "" }, set: { setDish("boneIn", $0.isEmpty ? .null : .bool($0 == "yes")) })) { Text("Not set").tag(""); Text("Yes").tag("yes"); Text("No").tag("no") } }
                         TextField("Preparation notes", text: dishBinding("prep"), axis: .vertical)
                         ForEach(ingredients.indices, id: \.self) { index in
                             TextField("Ingredient", text: ingredientBinding(index, "name"))
