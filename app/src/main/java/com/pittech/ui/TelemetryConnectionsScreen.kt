@@ -95,7 +95,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                         Box {
                             OutlinedButton(onClick = { intervals = true }) { Text("Every " + GrillSamplingPolicy.intervalLabel(profile.intervalMillis)) }
                             DropdownMenu(expanded = intervals, onDismissRequest = { intervals = false }) {
-                                listOf(15_000L, 30_000L, 60_000L, 300_000L).forEach { interval ->
+                                listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L).forEach { interval ->
                                     DropdownMenuItem(text = { Text(GrillSamplingPolicy.intervalLabel(interval)) }, onClick = { runtime.update(profile.copy(intervalMillis = interval)); intervals = false })
                                 }
                             }
@@ -193,7 +193,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                                 }
                             }
                         } else Text("Observed target · read-only")
-                        if (kind == TelemetryKind.FOOD) ProbeDishSelector("Assign to food", mapping[channel.id] ?: dishes.singleOrNull()?.id, dishes.map { it.id to it.name }, "telemetry-food-" + channel.id) { mapping = mapping + (channel.id to it) }
+                        if (kind == TelemetryKind.FOOD) ProbeDishSelector("Assign to food", if (mapping.containsKey(channel.id)) mapping[channel.id] else dishes.singleOrNull()?.id, dishes.map { it.id to it.name }, "telemetry-food-" + channel.id) { mapping = mapping + (channel.id to it) }
                     }
                 }
             }
