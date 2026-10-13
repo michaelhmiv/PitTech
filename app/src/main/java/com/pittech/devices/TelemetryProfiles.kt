@@ -14,7 +14,7 @@ internal data class TelemetryProfile(
     val sources: List<TelemetrySource> = emptyList(),
     val cookId: String? = null, val monitoring: Boolean = false,
     val background: Boolean = false, val selectedDeviceIds: Set<String> = emptySet(),
-    val onLogOnly: Boolean = false, val intervalMillis: Long = 60_000L,
+    val onLogOnly: Boolean = false, val intervalMillis: Long = 60_000L, val generation: Long = 0L,
 ) {
     init {
         TelemetryConnectorRegistry.requirePlanned(provider)
@@ -51,7 +51,7 @@ internal class TelemetryProfileStore(context: Context) {
             .put("label", p.label).put("endpoint", p.endpoint).put("deviceHint", p.deviceHint)
             .put("cookId", p.cookId ?: JSONObject.NULL).put("monitoring", p.monitoring)
             .put("background", p.background).put("selectedDevices", JSONArray(p.selectedDeviceIds.toList()))
-            .put("onLogOnly", p.onLogOnly).put("intervalMillis", p.intervalMillis)
+            .put("generation", p.generation).put("onLogOnly", p.onLogOnly).put("intervalMillis", p.intervalMillis)
             .put("sources", JSONArray(p.sources.map { s ->
                 JSONObject().put("deviceId", s.deviceId).put("label", s.label).put("scope", s.identityScope)
                     .put("manufacturer", s.manufacturer ?: JSONObject.NULL).put("model", s.model ?: JSONObject.NULL)
@@ -74,13 +74,14 @@ internal class TelemetryProfileStore(context: Context) {
             return TelemetryProfile(j.getString("id"), provider, j.getString("label"),
                 j.optString("endpoint"), j.optString("deviceHint"), sources,
                 j.optString("cookId").takeUnless { j.isNull("cookId") }, j.optBoolean("monitoring"),
-                j.optBoolean("background"), (j.optJSONArray("selectedDevices") ?: JSONArray()).let { (0 until it.length()).map { i -> it.getString(i) }.toSet() }, j.optBoolean("onLogOnly"), j.optLong("intervalMillis", 60_000L))
+                j.optBoolean("background"), (j.optJSONArray("selectedDevices") ?: JSONArray()).let { (0 until it.length()).map { i -> it.getString(i) }.toSet() }, j.optBoolean("onLogOnly"), j.optLong("intervalMillis", 60_000L), j.optLong("generation", 0L))
         }
     }
 }
 
 /** Each provider branch supplies its own factory. Missing adapters stay unavailable. */
 internal interface TelemetryConnectorFactory {
+    suspend fun revoke(context: Context, profile: TelemetryProfile) { TelemetryTokenStore(context).clear(profile.provider, profile.id) }
     suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector
     suspend fun restore(context: Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector
 }
