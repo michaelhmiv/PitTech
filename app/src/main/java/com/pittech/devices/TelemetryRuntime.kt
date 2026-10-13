@@ -151,7 +151,13 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         if (foreground.value && backgroundRequested.value) runCatching { backgroundStarter(context) }
     }
     fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { update(it.copy(monitoring = false)) } }
-    suspend fun close() { scope.cancel(); connectors.values.forEach { it.disconnect() }; connectors.clear() }
+    suspend fun close() = withContext(NonCancellable) {
+        // Cancellation is asynchronous: wait for Room observers and collection jobs
+        // before a caller closes the database or replaces this runtime.
+        scope.coroutineContext[Job]?.cancelAndJoin()
+        connectors.values.forEach { it.disconnect() }
+        connectors.clear()
+    }
     suspend fun onLog(cookId: String, force: Boolean = false) = supervisorScope {
         store.profiles.value.filter { it.cookId == cookId && it.monitoring && (it.onLogOnly || force) }.forEach { profile ->
             launch {
