@@ -1,22 +1,23 @@
 # PitTech telemetry engineering report — 2026-10-13
 
-The user authorized completion and merging on 2026-10-13. PRs #68–#72 have now merged
-into main through GitHub; no app has been distributed. Public telemetry enablement remains
-off. PR #75 remains a verification branch and will not be merged; its test fixes are on #74.
-Final merge results and exact CI evidence will be recorded after verification.
+The user authorized completion and merging on 2026-10-13. The feature merge set is
+#68–#74, #76 and #87; the linked PRs retain the actual GitHub merge records. PR #75 remains
+unmerged verification, with its test fixes owned by #74. Public telemetry enablement is off,
+and no Firebase, Play, TestFlight or App Store distribution was initiated. Required Android
+API 36, native iOS and public packaging results are recorded below with exact code snapshots.
 
 The original `latestObservation` compilation failure is repaired in the foundation and
 shared recorder. The five Android Beta connections now share persistent setup, source
 selection, food/channel mapping, cook recording, source health, graphs and probe reminders.
-Native iOS counterparts are separately documented in draft #87. Packaging isolation has
+Native iOS counterparts are separately documented in #87. Packaging isolation has
 passed an actual APK/AAB/dependency audit. This is development evidence; no connector is
 declared production-ready or endorsed by a manufacturer.
 
 ## Scope and branch reconciliation
 
-The feature branches incorporate current `main` at
-`713ec8c77d50a85046c3f35a1ce95983ce531573`, including the adaptive meal/recipe work and
-the subsequent iOS asset-catalog fix. The Room schema remains version 10. No destructive
+The feature branches preserve the pre-telemetry main snapshot
+`713ec8c77d50a85046c3f35a1ce95983ce531573`, including adaptive meals/recipes (#67) and
+the iOS asset-catalog fix (#86). The Room schema remains version 10. No destructive
 migration or replacement cook database was introduced. Existing manual logging, photos,
 recipe composition, source assignments and cross-platform archives remain part of the
 regression suites.
@@ -33,11 +34,11 @@ complete application experience.
 | [#70](https://github.com/michaelhmiv/PitTech/pull/70) | User-owned HA origin validation, OAuth/refresh/revoke or advanced token, automatic temperature discovery, REST/Recorder history, authenticated multiplexed WebSocket, persistent mappings | Implemented software path. Actual server authorization, local/remote access, Recorder configuration and real sensor behavior are unverified. |
 | [#71](https://github.com/michaelhmiv/PitTech/pull/71) | FireBoard login, channels and units, account-wide throttling, configured numeric session history, unique-label mapping and canonical history/live deduplication | Implemented software path. Account/model/session schemas, physical temperatures and intended service permissions are unverified. Duplicate chart labels are omitted rather than guessed. |
 | [#72](https://github.com/michaelhmiv/PitTech/pull/72) | Manufacturer login, hostname-verified TLS MQTT, bounded initial subscription/snapshot, reconnect, public cook topic, channel/sentinel parsing | Conditional transport implemented. Still blocked on manufacturer-confirmed TLS host/port, account/device topic ACL and service permission evidence. No default endpoint was invented. Private topics/history are unsupported. |
-| [#73](https://github.com/michaelhmiv/PitTech/pull/73) | Official SDK v3.5.4, Bluetooth onboarding, saved identity, raw/instant/derived Celsius readings, MeatNet routing, bounded radio/service leases and persisted session/sequence log anchors | Remaining Android software capability work is implemented and entering CI. Transfers are limited to 20,000 records and completed before recovery advances. Physical compatibility, repeater behavior and battery tests remain open. |
+| [#73](https://github.com/michaelhmiv/PitTech/pull/73) | Official SDK v3.5.4, Bluetooth onboarding, saved identity, raw/instant/derived Celsius readings, MeatNet routing, bounded radio/service leases and persisted session/sequence log anchors | Android software capability work passed the recorded JVM, emulator and artifact checks. Transfers are limited to 20,000 records and completed before recovery advances. Physical compatibility, repeater behavior and battery tests remain open. |
 | [#74](https://github.com/michaelhmiv/PitTech/pull/74) | Unified Devices Beta UI, source/food mappings, live channel health, on-log sampling, independent observation jobs, opt-in foreground recorder, bounded retries/history, lifecycle/removal and persistent restart state | Implemented and verified Beta runtime. The required API 36 matrix passed at both font scales. One missing on-log sensor is isolated from other sensors on the same connection. Physical background/battery/vendor restrictions remain open. |
 | [#75](https://github.com/michaelhmiv/PitTech/pull/75) | Combined Android compile, JVM, required API 36 font scales, process-death, upgrade and UI matrix | Required API 36 verification completed; never merge. API 37 retains its documented system-crash advisory result. Real providers remain unverified. |
 | [#76](https://github.com/michaelhmiv/PitTech/pull/76) | Legacy client source-set isolation, source/compiled-artifact/dependency gates, notices, privacy draft and dated release evidence | Packaging implementation verified on the audited code snapshot below. Public Beta enablement remains off while provider/hardware/terms gates are open. |
-| [#87](https://github.com/michaelhmiv/PitTech/pull/87) | Native five-provider Beta adapters, HA OAuth/WS, official Combustion SDK 1.0.0 raw and derived readings, local recording/mappings/archives, on-log/source isolation and foreground reminders | Native software is separate from Android. The previous complete Simulator workflow passed; the raw-sensor update is entering CI. iOS collection remains foreground-only. The pinned SDK exposes neither bounded log-request nor scanner-stop controls; native BLE history/repeater mode stays unavailable pending that SDK capability and hardware validation. |
+| [#87](https://github.com/michaelhmiv/PitTech/pull/87) | Native five-provider Beta adapters, HA OAuth/WS, official Combustion SDK 1.0.0 raw and derived readings, local recording/mappings/archives, on-log/source isolation and foreground reminders | Native software is separate from Android. The complete Simulator workflow including the raw-sensor update passed. iOS collection remains foreground-only. The pinned SDK exposes neither bounded log-request nor scanner-stop controls; native BLE history/repeater mode stays unavailable pending that SDK capability and hardware validation. |
 
 ## Recording and connection behavior
 
@@ -45,7 +46,8 @@ The phone connects directly to the selected manufacturer, user-operated Home Ass
 or Bluetooth probe. Home Assistant is optional. No manufacturer community integration is
 bundled, and no PitTech account, telemetry relay or centralized credential store is required.
 The existing Railway privacy site identifies the HA OAuth client; the phone intercepts the
-exact callback. No Railway deployment or infrastructure change was made.
+exact callback. The existing Railway privacy and feedback services track main and may rebuild automatically
+on merges. No new service, database, telemetry relay or infrastructure configuration was created.
 
 Credentials are stored using Android Keystore AES-GCM in no-backup AtomicFiles or device-only
 iOS Keychain after first unlock. Passwords remain transient login input. Connection removal
@@ -105,8 +107,8 @@ instant-read values use the official ProbeScanner's newly received, non-replayed
 
 Nine Android Combustion JVM cases replace four passive-scanner cases, one normalization case
 was added, and two instrumented no-backup anchor persistence/corruption cases are included in
-the complete telemetry group. The previous 211-test result below remains a verified baseline;
-new test totals will be recorded from CI, not inferred. Native adds two raw/derived/stale
+the complete telemetry group. The final release artifact contains 217 JVM tests with zero
+failures/errors/skips, and the regular instrumented telemetry group contains 23 passing cases. Native adds two raw/derived/stale
 sensor cases and keeps BLE history/repeater mode disabled: SDK 1.0.0 automatically requests
 missing logs when connected, without a public bounded-request API or scanner-stop control.
 See the pinned SDK [Probe source](https://github.com/combustion-inc/combustion-ios-ble/blob/1.0.0/Sources/CombustionBLE/Devices/Probe.swift)
@@ -121,21 +123,39 @@ is introduced. The privacy draft is part of the reviewed source change.
 Foundation `e0ef50da` passed both required API 36 jobs and unsigned AAB before merging:
 [38467172844](https://github.com/michaelhmiv/PitTech/actions/runs/38467172844),
 [38467172982](https://github.com/michaelhmiv/PitTech/actions/runs/38467172982).
-Current snapshots: Combustion `7f13c610`, runtime/test ownership `f447223f`, integration
-`8768afac`. The final code tree `aa0e398e` has passed unsigned AAB and public source/APK/AAB/
-dependency audit: [38469539519](https://github.com/michaelhmiv/PitTech/actions/runs/38469539519),
-[38469539498](https://github.com/michaelhmiv/PitTech/actions/runs/38469539498). Full Android
-and native UI jobs are still running at this checkpoint. Native has been restacked to
-`d4e21a55` with the same native files; original native history is preserved on
-`feature/telemetry-native-pre-merge-20261013`. #76 is being restacked without #75 history.
-An advisory release run exposed a real Room shutdown race in the runtime fixture: cancellation
-returned before its observer jobs had completed. Runtime close now joins the root job before
-clients/database teardown; the existing restart/removal/credential tests exercise that repair.
-A publication helper initially attached newly merged main history to an older scoped tree;
-those draft trees were restored, merged provider paths are now checked before publication, and
-only explicitly merged parents are attached. Local synchronization preserves committed
-checkpoints and the working/index state. The five completed main merges were unaffected.
-Final merge results and the required CI outcomes will replace this pending status.
+The merged SDK head is `d7c7de1164942c271d195c7373e46479e5b488d7`. Its source is identical
+to the SDK verified in the final release snapshot below. Native head
+`fe0c175561800610f47d6704e6af43d25eeb11d8` passed its complete Simulator workflow; its
+native application/test/workflow files are identical to the final release snapshot.
+
+Runtime close now joins the cancelled root job before client/database teardown. An actual
+API 37 run exposed the prior Room observer race, independently of the emulator system crash.
+Foreground requests now share an atomic pending start and recheck current visibility and
+service ownership on Main; repeated UI/automatic requests cannot queue duplicate starts or
+replay a visible-state event after the UI is hidden. The new regression is part of the
+23-case telemetry group.
+
+The process-death setup requires a cold launch after instrumentation has exited, actual
+foreground-service state and a completed Home transition. A recovery-branch run on
+`1c4476e5` still encountered Android's denied sticky-service restart after the deliberate
+kill ([38478523164](https://github.com/michaelhmiv/PitTech/actions/runs/38478523164)).
+That failure is retained. The runner was strengthened to establish a new committed Room
+reading while hidden before killing the process; a reading from the visible launch is not
+sufficient. This changes test setup only, with the changed-PID, restored-reading,
+foreground-service and hidden-UI assertions retained. Subsequent feature commits retain
+exactly the verified Android/iOS application and test-case sources from `f7a322be`; only
+the runner's additional background barrier and this evidence documentation change.
+
+Native/release branches were restacked onto owning feature history to keep the unmerged #75
+head out of the feature merge ancestry. Original histories remain on
+`feature/telemetry-native-pre-merge-20261013` and
+`feature/telemetry-release-pre-merge-20261013`. A local merge of main plus #74/#87/#76
+reproduces the complete release tree; no meal/recipe or iOS asset fix is reverted.
+A publication helper had temporarily attached main history to an older scoped draft tree;
+those draft trees were restored before further merging. Publication now checks merged
+provider/foundation paths and accepts only parents already merged into the local tree.
+Local synchronization retains committed checkpoints and working/index files. Main's
+completed provider merges were unaffected.
 
 ## Test evidence
 
@@ -145,20 +165,26 @@ logs, screenshots, process/service evidence and native xcresult diagnostics for 
 
 | Check | Verified result and exact evidence |
 |---|---|
-| Original Android compiler/AAB blocker | Fixed. Debug, instrumented, Release and Dev compilation succeeded after the recorder/DAO reconciliation. |
-| Android JVM tests | **211 passed, 0 failures/errors**, from the passing API 36 font 1.5 artifact XML on combined `67ad1a03a64274487c182fb9fe6887ea8628c813`, [38461410874](https://github.com/michaelhmiv/PitTech/actions/runs/38461410874). Includes 54 telemetry/provider policy and transport tests. |
-| Current combined unsigned AAB | Combined `67ad1a03a64274487c182fb9fe6887ea8628c813`: **passed**, [38461411065](https://github.com/michaelhmiv/PitTech/actions/runs/38461411065). Compilation only; no Play upload. |
-| API 36 fonts 1.15 / 1.5 | **Both full required jobs passed** on `67ad1a03`, [38461410874](https://github.com/michaelhmiv/PitTech/actions/runs/38461410874): normal [115517227706](https://github.com/michaelhmiv/PitTech/actions/runs/38461410874/job/115517227706), large [115517227856](https://github.com/michaelhmiv/PitTech/actions/runs/38461410874/job/115517227856). Includes telemetry, real process death, upgrade/migration, archives, recipes, reminders, main UI, screenshots and internal regression groups. The prior contradictory 18/19 summary guard was repaired without removing tests. |
-| Telemetry instrumented coverage | **20 passed at both API 36 font scales**: Room recording/archives/roles (8), encrypted token lifecycle (3), bounded/interrupted/saturated recovery (3), runtime restore/removal/source isolation (4), foreground-service lifecycle (1), unified onboarding UI (1). Two additional staged tests also passed; shell artifacts show changed process ID, a committed post-restart reading and foreground service with no resumed PitTech activity. |
-| Process-death test repair | Captures a changed PID, a new committed Room watermark, a live foreground service and no resumed PitTech activity before the validation runner attaches. The debug fixture publishes only a committed Room watermark, after emission/throttling; a received but uncommitted frame cannot satisfy the shell. The runner itself replaces the target process, so its assertions inspect persisted post-restart Room data. Setup now cold-starts after instrumentation exits to avoid launching the process that the runner is still killing. No service was exported and no shell service bypass was added. |
-| API 37 advisory | Latest combined [115517227531](https://github.com/michaelhmiv/PitTech/actions/runs/38461410874/job/115517227531) retains **INSTRUMENTATION_ABORTED: System has crashed**. The prior full saved diagnostic [115490706180](https://github.com/michaelhmiv/PitTech/actions/runs/38453663012/job/115490706180) identifies `mapper.ranchu` asserting `!rcEnc->featureInfo()->hasReadColorBufferDma`, then `system_server` SIGABRT in `TaskSnapshotPer`. Earlier preview runs also crashed graphics/RegionSampling. Advisory failure remains explicit; it is not counted as an app-test pass. |
-| Public Android isolation | Source, actual unsigned APK/AAB DEX and resolved dependencies **passed** on synchronized release `3c712f003ca61241b27dde030d7fd966e0472cb5`, [38462767577](https://github.com/michaelhmiv/PitTech/actions/runs/38462767577). Its unsigned AAB also **passed**, [38462767864](https://github.com/michaelhmiv/PitTech/actions/runs/38462767864). Subsequent report-only commits do not change the verified application/test code. |
-| Release branch API 36 | Both full required jobs also **passed** on audited release `3c712f00`, [38462767538](https://github.com/michaelhmiv/PitTech/actions/runs/38462767538): normal [115521910160](https://github.com/michaelhmiv/PitTech/actions/runs/38462767538/job/115521910160), large [115521910207](https://github.com/michaelhmiv/PitTech/actions/runs/38462767538/job/115521910207). API 37 retains the system-crash advisory failure. |
-| Audit regression tests | **14 passed** locally: read-only policy, release-note validation, source/dependency/compiled isolation, legacy endpoint detection and developer-vs-production cleartext. `bash -n` and `git diff --check` also pass. |
-| Native verified baseline | `e653f0fb13689b281978bb9a81f5f30b2b1b070d`: **30 unit tests (11 telemetry) + 2 UI tests passed**, Debug/unsigned public Simulator builds and binary/notices audit passed, iPhone/iPad screenshot steps passed; [38436937104](https://github.com/michaelhmiv/PitTech/actions/runs/38436937104). |
-| Native subsequent regression | `c5ee8484cbc405be6a7521675df472aa51bb1652`: 30/31 unit tests and 2/2 UI passed, with the new sensor-isolation test failing on credential save in the unsigned Simulator. Local ad-hoc Simulator identity/entitlement and a real Keychain replacement/removal test were added; no distribution certificate is used. |
-| Current native rerun | `a0507915a8b512a3e6c65ab848530e22679cb888`: **complete Simulator workflow passed**, [38453820728](https://github.com/michaelhmiv/PitTech/actions/runs/38453820728): Debug build, local ad-hoc signing, unsigned public build/binary/notices audit, native compatibility/UI tests, portable recipe fixture and iPhone/iPad screenshots. The passing test target includes 13 native telemetry cases, including real Simulator Keychain save/replace/removal and missing-sensor isolation, plus three UI flows. Beta connection/HA screenshots were visually reviewed; Android Beta and HA screenshots were also reviewed from the passing large-font artifact. The App Store Connect upload job was **skipped**. |
-| Physical accounts/hardware | **Not performed.** No supplied vendor account, confirmed Flame Boss TLS endpoint, accessible real HA installation or supported thermometer hardware was available. Emulator fixtures do not establish these results. |
+| Compiler and schema | Debug, instrumented, Release and Dev builds pass; the missing persisted watermark method is repaired. Room remains v10 with no destructive migration. |
+| Final Android JVM tests | **217 passed, 0 failures/errors/skips**, parsed from 48 XML reports in the API 36 font 1.5 artifact on `f7a322befd4ed5aa25efccc3b80ac1e2c8a763f1`, [38478609566](https://github.com/michaelhmiv/PitTech/actions/runs/38478609566), artifact [11856873455](https://github.com/michaelhmiv/PitTech/actions/runs/38478609566/artifacts/11856873455), SHA-256 `a0a5908598671ffcda0cd632600deb31cca7cc2279650dfb70f80e8f3b7f3c97`. Includes nine bounded/fresh SDK adapter cases. |
+| Final required API 36 matrix | **Both complete required font-scale jobs passed** on `f7a322be`: [font 1.15 / 115575391823](https://github.com/michaelhmiv/PitTech/actions/runs/38478609566/job/115575391823), [font 1.5 / 115575391513](https://github.com/michaelhmiv/PitTech/actions/runs/38478609566/job/115575391513). Includes telemetry, real process death, active-cook upgrade, archives, meals/recipes, reminders, main UI, screenshots and retained internal regressions. |
+| Final instrumented telemetry | **23 regular cases + two separately staged process-death cases passed** at both required font scales. Regular coverage includes Room/archives/roles (8), encrypted token lifecycle (3), persisted Combustion anchors (2), bounded recovery (3), runtime/removal/source isolation/coalesced starts (5), foreground-service lifecycle (1) and unified connection UI (1). |
+| Real process-death evidence | Large-font artifact: PID **3127 → 3592**, committed Room receipt **1791931487401 → 1791931494531**, foreground service and no resumed PitTech activity, then `OK (1 test)` in persisted validation. The runner replaces its target process, so the restored receipt is established before instrumentation reattaches. A force-stop is used only to cold-start after setup; the tested death is an actual `run-as kill -9`. No exported service or shell bypass is added. |
+| Integration verification | `d053f8a718e06eb72db6c533c53e61129fa2ef33` is tree-identical to recovery `1c4476e5`: **both required API 36 font jobs passed**, [38478564607](https://github.com/michaelhmiv/PitTech/actions/runs/38478564607), and unsigned AAB [38478564610](https://github.com/michaelhmiv/PitTech/actions/runs/38478564610) passed. #75 is retained unmerged. |
+| Final public Android audit | Public source, actual unsigned APK/AAB DEX and resolved release dependencies **passed** on `f7a322be`, [38478609278](https://github.com/michaelhmiv/PitTech/actions/runs/38478609278). Thirty-four legacy transport/diagnostic files are confined to internal Debug/Dev source sets. |
+| Final unsigned AAB | `f7a322be`: **passed**, [38478609190](https://github.com/michaelhmiv/PitTech/actions/runs/38478609190). Build only; no Play upload. |
+| API 37 advisory | Final release [115575391819](https://github.com/michaelhmiv/PitTech/actions/runs/38478609566/job/115575391819) retains **INSTRUMENTATION_ABORTED: System has crashed**, after the new foreground-start regression passes. Prior retained system logs identify `mapper.ranchu` and `system_server` graphics/TaskSnapshot crashes. This is an advisory failure, not an app-test pass. |
+| Final native iOS | `fe0c1755`: **complete Simulator workflow passed**, [38473221518](https://github.com/michaelhmiv/PitTech/actions/runs/38473221518). Identical native sources also passed on final release `f7a322be`, [38478609227](https://github.com/michaelhmiv/PitTech/actions/runs/38478609227). Debug and local ad-hoc Simulator builds, unsigned public binary/notices audit, compatibility tests, 15 native telemetry cases, three UI flows, portable recipe fixture and iPhone/iPad screenshot steps are included. App Store Connect upload was **skipped**. |
+| Visual review | Android Devices Beta and HA UI reviewed from passing large-font artifacts. Native Beta and HA screenshots reviewed from native evidence artifact [11854225594](https://github.com/michaelhmiv/PitTech/actions/runs/38473221518/artifacts/11854225594); manifest has three UI cases/eight images with no failure associations. Root Dynamic Type screenshots do not establish physical maximum system-font or modal-font behavior. |
+| Historical baseline | Combined `67ad1a03` had **211 JVM /20 regular telemetry cases** plus two staged cases and both full required API 36 fonts, [38461410874](https://github.com/michaelhmiv/PitTech/actions/runs/38461410874). Earlier native `a0507915` passed the complete Simulator workflow with 13 telemetry cases/three UI flows, [38453820728](https://github.com/michaelhmiv/PitTech/actions/runs/38453820728). These remain baseline evidence; they are not substituted for current results. |
+| Local tooling | **14 audit/policy regression cases passed**: read-only policy, release-note validation, source/dependency/compiled isolation, legacy endpoint detection and production cleartext. `bash -n` and `git diff --check` pass. |
+| Physical accounts/hardware | **Not performed.** No supplied vendor account, confirmed Flame Boss TLS endpoint, accessible real HA installation or supported thermometer hardware was available. Fixtures do not establish these results. |
+
+Canceled superseded runs are diagnostic history and are not counted as passing checks. The
+recovery-branch denied restart above and prior native Keychain failure are likewise retained;
+local Simulator identity/entitlement and real Keychain save/replace/removal coverage repaired
+the native setup. The final passing workflow uses local ad-hoc signing, with no distribution
+certificate.
 
 Earlier actual failures were repaired on their owning branches: missing Room watermark,
 HA URL exception mismatch, manifest namespace, AGP 9 Kotlin internal source registration,
@@ -184,8 +210,8 @@ Full Combustion MIT notices are included. Native notices also retain NordicDFU B
 Swift Collections Apache/runtime-exception terms. Source licenses and service permissions
 are separate. The dated [release evidence](APP_REVIEW_CONNECTION_EVIDENCE.md) records the
 official manufacturer documentation and current terms; API publication alone is not treated
-as unrestricted commercial permission. The privacy-site changes are a branch draft and
-have not been deployed to Railway.
+as unrestricted commercial permission. The privacy-site disclosure is included in the source merge. Existing Railway services
+can rebuild main automatically; no new infrastructure is required.
 
 Before public enablement, validate the new Combustion Android capability work on hardware; obtain
 the secure Flame Boss broker/port/ACL evidence; run real HA/OAuth/Recorder and cloud-account

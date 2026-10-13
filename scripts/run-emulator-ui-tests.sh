@@ -286,6 +286,19 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 if grep -qE 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-before-activities.txt"; then exit 1; fi
+# Establish ongoing background collection before killing it. A foreground service
+# can be promoted while the Activity's Home/stop transition is still being handled;
+# the receipt captured above only proves collection during the visible launch.
+background_receipt=""
+for _ in $(seq 1 60); do
+  background_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$background_receipt" =~ ^[0-9]+$ && "$background_receipt" -gt "$previous_receipt" ]]; then break; fi
+  sleep 1
+done
+[[ "$background_receipt" =~ ^[0-9]+$ && "$background_receipt" -gt "$previous_receipt" ]]
+previous_receipt="$background_receipt"
+timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-before-services.txt"
+grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"
 old_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug | tr -d '\r')"
 [[ "$old_telemetry_pid" =~ ^[0-9]+$ ]]
 timeout 10 adb shell run-as com.pittech.debug kill -9 "$old_telemetry_pid"

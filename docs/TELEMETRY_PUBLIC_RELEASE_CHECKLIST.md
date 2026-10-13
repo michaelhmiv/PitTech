@@ -5,7 +5,7 @@ physical device support or permission for an advertised commercial integration.
 
 | Source | Implemented Android Beta | Remaining validation or capability gap |
 |---|---|---|
-| Combustion | Official SDK v3.5.4, permissions/saved serial, raw/instant/derived measurements, MeatNet, bounded SDK service leases and persisted sequence-anchored logs | Required CI of the completed path, followed by physical probe/repeater, timing and battery tests. Sessions above 20,000 records cannot be transferred through the bounded public API path. |
+| Combustion | Official SDK v3.5.4, permissions/saved serial, raw/instant/derived measurements, MeatNet, bounded SDK service leases and persisted sequence-anchored logs | Automated checks passed as recorded in the engineering report; physical probe/repeater, timing and battery tests remain. Sessions above 20,000 records cannot be transferred through the bounded public API path. |
 | Home Assistant | Per-server configuration, OAuth/refresh/revoke or advanced token, REST discovery/snapshot/history, multiplexed WebSocket, durable bounded recovery | Real user-operated local/remote installation; Recorder enabled; authorization callback and account revocation under actual server configuration. |
 | FireBoard | Encrypted login/token, device/channel discovery, shared account budget and 429 cooldown, explicit session chart history with unique channel labels | Actual account/model schemas, C/F readings and session mapping. Duplicate labels cannot be safely mapped and are omitted. |
 | Flame Boss | Manufacturer login, authenticated hostname-verified TLS MQTT, subscription-only public cook topic, reconnect and bounded snapshot | Manufacturer-confirmed TLS host/port and topic ACL; real account/device. No guessed default broker; private topics and historical data are unsupported. |
@@ -40,7 +40,9 @@ and vendor-specific background behavior need physical testing.
 iOS counterparts are reviewed separately in PR #87. The current iOS public configuration
 has no connected-device UI. Native Beta monitoring is foreground-only; no entitlement is used
 to imply continuous cloud polling while suspended. Home Assistant requires HTTPS on iOS.
-The Simulator cannot verify Bluetooth, MQTT vendor permissions or background hardware behavior.
+The pinned iOS SDK lacks a bounded log-request API and scanner-stop control, so native BLE
+history/repeater mode remains unavailable. The Simulator cannot verify Bluetooth, MQTT vendor
+permissions or background hardware behavior.
 
 ## Release evidence
 

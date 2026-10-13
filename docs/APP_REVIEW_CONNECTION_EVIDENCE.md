@@ -46,12 +46,15 @@ iOS HA supports HTTPS only, including user-operated LAN servers with a trusted c
 
 ## Actual iOS binary distinction
 
-Draft PR #87 supplies native REST/HA authorization and WebSocket, Flame Boss TLS MQTT, and
+PR #87 supplies native REST/HA authorization and WebSocket, Flame Boss TLS MQTT, and
 Combustion official iOS SDK adapters, local recording, mappings and archive compatibility.
 The Devices UI and collection hooks are Debug-only. Public Release currently advertises no
 connected-device support. Android work does not establish iOS support or hardware results.
-The native iOS SDK adapter can read derived core/surface/ambient. It does not implement
-anchored probe-log recovery; specific repeater and background BLE behavior remain unvalidated. Cloud collection is explicitly foreground-only;
+The native iOS SDK adapter reads eight raw sensors plus instant/core/surface/ambient values.
+It does not implement anchored probe-log recovery: the pinned SDK automatically transfers
+missing logs but exposes neither a bounded log-request API nor scanner-stop control. Native
+BLE history/repeater mode remains unavailable, and physical behavior is unvalidated. Cloud
+collection is explicitly foreground-only;
 there is no persistent background polling entitlement. Manufacturer MQTT is limited to the
 configured public cook topic and has no PUBLISH method.
 
