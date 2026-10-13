@@ -57,8 +57,8 @@ android {
         compose = true
         buildConfig = true
     }
-    sourceSets.getByName("debug").java.srcDir("src/internal/java")
-    sourceSets.getByName("dev").java.srcDir("src/internal/java")
+    sourceSets.getByName("debug").kotlin.srcDir("src/internal/java")
+    sourceSets.getByName("dev").kotlin.srcDir("src/internal/java")
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 
     compileOptions {
