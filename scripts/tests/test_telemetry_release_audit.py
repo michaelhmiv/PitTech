@@ -16,6 +16,9 @@ class PublicTelemetryAuditTests(TestCase):
         docs.mkdir(exist_ok=True)
         (docs / "APP_REVIEW_CONNECTION_EVIDENCE.md").write_text(" ".join(
             x.replace("_", " ") for x in APPROVED))
+        manifest = root / "app/src/main/AndroidManifest.xml"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text('<manifest><application /></manifest>')
         return root
 
     def test_approved_registry_and_isolated_sources_pass(self):
@@ -28,6 +31,17 @@ class PublicTelemetryAuditTests(TestCase):
             path = root / "app/src/main/java/com/pittech/devices/PrimePolarisApi.kt"
             path.write_text("class PrimePolarisApi")
             self.assertTrue(any("PrimePolarisApi.kt" in e for e in audit(root)))
+
+    def test_developer_http_allowed_but_production_http_is_blocked(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = self.fixture(folder)
+            dev = root / "app/src/dev/AndroidManifest.xml"
+            dev.parent.mkdir(parents=True)
+            dev.write_text('<application usesCleartextTraffic="true" />')
+            self.assertEqual([], audit(root))
+            public = root / "app/src/main/AndroidManifest.xml"
+            public.write_text('<application android:usesCleartextTraffic="true" />')
+            self.assertTrue(any("Cleartext network traffic" in e for e in audit(root)))
 
     def test_unknown_direct_grillirG_registration_blocks_release(self):
         with tempfile.TemporaryDirectory() as folder:

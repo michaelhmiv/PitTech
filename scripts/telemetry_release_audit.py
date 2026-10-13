@@ -32,6 +32,13 @@ def audit(root: Path) -> list[str]:
     for path in LEGACY_FILES:
         if (base / path).is_file():
             issues.append("Legacy proprietary client in common public source: " + path)
+    # Developer/local Home Assistant HTTP may be enabled only in non-production variants.
+    for variant in ("main", "release"):
+        manifest = root / "app/src" / variant / "AndroidManifest.xml"
+        if variant == "main" and not manifest.exists():
+            issues.append("Missing public AndroidManifest.xml")
+        elif manifest.exists() and 'usesCleartextTraffic="true"' in manifest.read_text():
+            issues.append("Cleartext network traffic is enabled in public Android variant: " + variant)
     evidence = root / "docs/APP_REVIEW_CONNECTION_EVIDENCE.md"
     if not evidence.is_file():
         issues.append("Missing App Review evidence index")
