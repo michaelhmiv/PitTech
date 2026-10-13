@@ -67,6 +67,13 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
                     }
                 } }
             }
+            if (data.reminders.isNotEmpty()) {
+                Text("Earlier timers", style = MaterialTheme.typography.titleMedium)
+                data.reminders.forEach { timer ->
+                    Text("${timer.title} · ${timer.status} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(timer.dueAtUtcMillis))}")
+                    if (data.cook.status != CookStatus.COMPLETED && timer.status != CookReminderEntity.STATUS_PENDING) TextButton({ editor = ReminderEdit(title = timer.title, trigger = ReminderTrigger.Clock(System.currentTimeMillis() + 600_000)) }) { Text("Reuse as reminder…") }
+                }
+            }
             if (data.cook.status != CookStatus.COMPLETED) {
                 Text("Previous cook suggestions", style = MaterialTheme.typography.titleMedium)
                 data.dishes.filter { initialDishId == null || it.id == initialDishId }.forEach { dish ->
