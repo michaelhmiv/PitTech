@@ -17,6 +17,10 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
     fun deviceKey(cookId: String, source: TelemetrySource) =
         "telemetry:" + TelemetryNormalizer.localKey(cookId, source.connectorId, source.deviceId)
 
+    /** Room watermark survives app restarts; historical vendor credentials are never stored here. */
+    suspend fun latestObservation(cookId: String, source: TelemetrySource): Long? =
+        cooks.latestObservation(cookId, deviceKey(cookId, source))
+
     fun channelKey(cookId: String, source: TelemetrySource, channelId: String) =
         deviceKey(cookId, source) + ":" + TelemetryNormalizer.localKey(channelId)
 

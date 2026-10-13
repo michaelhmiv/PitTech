@@ -12,3 +12,8 @@ Third-party software and protocol-reference attributions are documented in
 THIRD_PARTY_NOTICES.md and third_party/README.md; their original license terms
 remain applicable. PitTech is not affiliated with, sponsored by, or endorsed by
 the grill and thermometer brands discussed in project documentation.
+
+Combustion Inc. Android BLE SDK (v3.5.4)
+Copyright (c) 2022 Combustion Inc.
+MIT License — https://github.com/combustion-inc/combustion-android-ble/blob/v3.5.4/LICENSE
+See the upstream license for its full copyright permission and disclaimer.

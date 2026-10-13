@@ -404,6 +404,9 @@ data class InsightsSnapshot(
 
 @Dao
 interface CookDao {
+    @Query("SELECT MAX(measuredAtUtcMillis) FROM sensor_readings WHERE cookId = :cookId AND sourceDeviceId = :deviceId")
+    suspend fun latestObservation(cookId: String, deviceId: String): Long?
+
     @Query("SELECT * FROM timeline_events WHERE source = 'controller_cloud' AND eventType = 'connection_gap' ORDER BY occurredAtUtcMillis")
     fun observeConnectionGaps(): Flow<List<TimelineEventEntity>>
     @Query("SELECT * FROM probes WHERE cookId = :cookId ORDER BY name ASC")
