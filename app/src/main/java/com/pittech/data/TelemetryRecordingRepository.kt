@@ -15,7 +15,8 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
     private val assignments = db.recordingDao()
 
     fun deviceKey(cookId: String, source: TelemetrySource) =
-        "telemetry:" + TelemetryNormalizer.localKey(cookId, source.connectorId, source.deviceId)
+        "telemetry:" + if (source.identityScope.isEmpty()) TelemetryNormalizer.localKey(cookId, source.connectorId, source.deviceId)
+        else TelemetryNormalizer.localKey(cookId, source.connectorId, source.deviceId, source.identityScope)
 
     fun channelKey(cookId: String, source: TelemetrySource, channelId: String) =
         deviceKey(cookId, source) + ":" + TelemetryNormalizer.localKey(channelId)
@@ -146,7 +147,8 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
                     assignments.assignmentAt(probe.id, value.measuredAtMillis)?.dishId else null
                 SensorReadingEntity(
                     id = "telemetry:" + TelemetryNormalizer.localKey(
-                        cookId, source.connectorId, source.deviceId, channel.id, value.eventKey),
+                        *if (source.identityScope.isEmpty()) arrayOf(cookId, source.connectorId, source.deviceId, channel.id, value.eventKey)
+                        else arrayOf(cookId, source.connectorId, source.deviceId, source.identityScope, channel.id, value.eventKey)),
                     cookId = cookId, dishId = dish, probeId = probe.id,
                     probeName = probe.name, measurementType = kind.storageType,
                     value = value.fahrenheit, unit = "°F",
@@ -154,7 +156,7 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
                     timeZoneId = ZoneId.systemDefault().id, source = "telemetry:" + source.connectorId,
                     sourceDeviceId = id, qualityStatus = "valid",
                     recordedAtUtcMillis = value.receivedAtMillis,
-                    timestampBasis = value.timestampBasis, samplingIntervalMillis = 0L,
+                    timestampBasis = value.timestampBasis, samplingIntervalMillis = 60_000L,
                 )
             }
             cooks.insertReadingsIgnoringDuplicates(candidate).count { it != -1L }

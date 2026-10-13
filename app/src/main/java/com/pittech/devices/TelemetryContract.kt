@@ -13,6 +13,7 @@ internal interface ReadOnlyTelemetryConnector {
     suspend fun discover(): List<TelemetrySource>
     suspend fun snapshot(deviceId: String): List<TelemetryObservation>
     fun observe(deviceId: String): Flow<List<TelemetryObservation>>
+    fun observe(deviceId: String, intervalMillis: Long): Flow<List<TelemetryObservation>> = observe(deviceId)
     suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation>
     suspend fun disconnect()
 }
@@ -31,6 +32,7 @@ internal data class TelemetrySource(
     val manufacturer: String? = null,
     val model: String? = null,
     val channels: List<TelemetryChannel>,
+    val identityScope: String = "",
 ) {
     init {
         require(connectorId.matches(Regex("[a-z][a-z0-9_-]{1,39}")))

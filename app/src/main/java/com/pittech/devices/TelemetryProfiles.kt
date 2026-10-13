@@ -13,12 +13,13 @@ internal data class TelemetryProfile(
     val endpoint: String = "", val deviceHint: String = "",
     val sources: List<TelemetrySource> = emptyList(),
     val cookId: String? = null, val monitoring: Boolean = false,
+    val background: Boolean = false, val selectedDeviceIds: Set<String> = emptySet(),
     val onLogOnly: Boolean = false, val intervalMillis: Long = 60_000L,
 ) {
     init {
         TelemetryConnectorRegistry.requirePlanned(provider)
         require(id.matches(Regex("[a-zA-Z0-9_-]{1,80}")) && label.isNotBlank())
-        require(intervalMillis in listOf(15_000L, 30_000L, 60_000L, 300_000L))
+        require(intervalMillis in listOf(15_000L, 30_000L, 60_000L, 120_000L, 300_000L))
         require(sources.all { it.connectorId == provider })
     }
 }
@@ -49,9 +50,10 @@ internal class TelemetryProfileStore(context: Context) {
         fun encode(p: TelemetryProfile) = JSONObject().put("id", p.id).put("provider", p.provider)
             .put("label", p.label).put("endpoint", p.endpoint).put("deviceHint", p.deviceHint)
             .put("cookId", p.cookId ?: JSONObject.NULL).put("monitoring", p.monitoring)
+            .put("background", p.background).put("selectedDevices", JSONArray(p.selectedDeviceIds.toList()))
             .put("onLogOnly", p.onLogOnly).put("intervalMillis", p.intervalMillis)
             .put("sources", JSONArray(p.sources.map { s ->
-                JSONObject().put("deviceId", s.deviceId).put("label", s.label)
+                JSONObject().put("deviceId", s.deviceId).put("label", s.label).put("scope", s.identityScope)
                     .put("manufacturer", s.manufacturer ?: JSONObject.NULL).put("model", s.model ?: JSONObject.NULL)
                     .put("channels", JSONArray(s.channels.map { c ->
                         JSONObject().put("id", c.id).put("name", c.name).put("kind", c.kind.name)
@@ -67,12 +69,12 @@ internal class TelemetryProfileStore(context: Context) {
                     s.optString("model").takeUnless { s.isNull("model") },
                     (0 until cs.length()).map { c -> cs.getJSONObject(c).let {
                         TelemetryChannel(it.getString("id"), it.getString("name"), TelemetryKind.valueOf(it.getString("kind")))
-                    } })
+                    } }, identityScope = s.optString("scope"))
             }
             return TelemetryProfile(j.getString("id"), provider, j.getString("label"),
                 j.optString("endpoint"), j.optString("deviceHint"), sources,
                 j.optString("cookId").takeUnless { j.isNull("cookId") }, j.optBoolean("monitoring"),
-                j.optBoolean("onLogOnly"), j.optLong("intervalMillis", 60_000L))
+                j.optBoolean("background"), (j.optJSONArray("selectedDevices") ?: JSONArray()).let { (0 until it.length()).map { i -> it.getString(i) }.toSet() }, j.optBoolean("onLogOnly"), j.optLong("intervalMillis", 60_000L))
         }
     }
 }
