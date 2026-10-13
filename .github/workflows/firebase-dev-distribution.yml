@@ -1,13 +1,9 @@
 name: Firebase Dev distribution
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirm_distribution:
-        description: Explicitly authorize distributing the tested main build to Firebase testers.
-        required: true
-        type: boolean
-        default: false
+  workflow_run:
+    workflows: ["Android checks"]
+    types: [completed]
 
 concurrency:
   group: pittech-firebase-dev
@@ -15,32 +11,25 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   distribute:
     name: Build and distribute PitTech Dev
-    # A merge authorizes code integration, not app distribution.
-    if: github.event_name == 'workflow_dispatch' && inputs.confirm_distribution && github.ref == 'refs/heads/main'
+    # Several stacked merges can finish checks out of order. Distribute only
+    # the current main commit, rather than an earlier partial feature set.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Check out the tested main commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
-
-      - name: Require successful Android checks for this exact main commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          runs=$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/android-build.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=30")
-          tested_run=$(jq -er '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success" and .head_sha == env.GITHUB_SHA)] | first' <<< "$runs")
-          test_number=$(jq -er '.run_number' <<< "$tested_run")
-          test_attempt=$(jq -er '.run_attempt' <<< "$tested_run")
-          echo "PITTECH_TESTED_RUN_NUMBER=$test_number" >> "$GITHUB_ENV"
-          echo "PITTECH_TESTED_RUN_ATTEMPT=$test_attempt" >> "$GITHUB_ENV"
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Verify signing and Google service-account secrets are configured
         env:
@@ -85,8 +74,8 @@ jobs:
       - name: Derive unique Dev version
         id: version
         env:
-          SOURCE_RUN_NUMBER: ${{ env.PITTECH_TESTED_RUN_NUMBER }}
-          SOURCE_RUN_ATTEMPT: ${{ env.PITTECH_TESTED_RUN_ATTEMPT }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
           version_code=$(( SOURCE_RUN_NUMBER * 1000 + SOURCE_RUN_ATTEMPT ))
@@ -142,7 +131,7 @@ jobs:
 
       - name: Create change notes for Firebase testers
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           VERSION_NAME: ${{ steps.version.outputs.name }}
           REPO_NAME: ${{ github.repository }}
         run: >-
@@ -156,8 +145,8 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.google-auth.outputs.credentials_file_path }}
           PITTECH_DEV_APK: ${{ runner.temp }}/pittech-dev.apk
-          SOURCE_RUN_NUMBER: ${{ env.PITTECH_TESTED_RUN_NUMBER }}
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           firebase appdistribution:distribute "$PITTECH_DEV_APK" \
