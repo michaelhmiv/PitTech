@@ -28,7 +28,7 @@ import java.util.Locale
 @Composable
 internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displayUnit: String,
     onSelect: (String?) -> Unit, onLog: (String, String, String?) -> Unit,
-    onAdd: () -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit) {
+    onAdd: () -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, reminders: List<ReminderRule> = emptyList(), occurrences: List<ReminderOccurrence> = emptyList(), selectedTools: @Composable (DishEntity) -> Unit = {}) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(data.cook.id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
     val end = data.cook.endedAtUtcMillis ?: now
@@ -36,14 +36,14 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
     val phaseByFood = phases.associateBy { it.dishId }
     val legacy = data.lifecycle?.timingMode != "explicit_phases"
     val groups = listOf(
-        (if (legacy) "Foods in this cook" else "On the grill") to data.dishes.filter {
+        (if (legacy) "Foods in this cook" else "Heating") to data.dishes.filter {
             legacy || phaseByFood[it.id]?.phase in setOf("cooking", "wrapped")
         },
         "Preparing" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase == "prep" },
-        "Off the grill" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase in setOf("removed", "resting", "holding", "done") },
+        "Resting and finished" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase in setOf("removed", "resting", "holding", "done") },
     )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Grill layout", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        Text("Foods in this meal", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         TextButton(onClick = onAdd, modifier = Modifier.testTag("live-add-dish")) { Text("+ Add food") }
     }
     if (data.dishes.isEmpty()) Text("Add the food you want to track.", style = MaterialTheme.typography.bodyMedium)
@@ -52,7 +52,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(Modifier.fillMaxWidth().drawBehind {
-                if (label == "On the grill" || label == "Foods in this cook") {
+                if (label == "Heating" || label == "Foods in this cook") {
                     var y = 12.dp.toPx()
                     while (y < size.height) { drawLine(grate, Offset(0f, y), Offset(size.width, y), 1.dp.toPx()); y += 24.dp.toPx() }
                 }
@@ -73,7 +73,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                             }
                             if (phase != null) {
                                 val duration = FoodLivePresentation.phaseElapsed(phase)
-                                Text((if (legacy && phase.phase == "prep") "Status not recorded" else (if (legacy) "Last recorded: " else "") + CookPhases.label(phase.phase)) +
+                                Text((if (legacy && phase.phase == "prep") "Status not recorded" else (if (legacy || data.cook.status == CookStatus.COMPLETED) "Last recorded: " else "") + CookPhases.label(phase.phase)) +
                                     (if (!legacy && duration > 0) " · " + foodDuration(duration) else ""), style = MaterialTheme.typography.bodySmall)
                             }
                             val displayedProbes = temperatures.mapNotNull { it.probe?.id }.toSet()
@@ -96,6 +96,10 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                                     else -> "No probe"
                                 }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            val method = methodEvents(data.events).filter { it.dishId == dish.id || it.dishId == null }.maxByOrNull { it.at }?.method
+                            method?.let { Text("Method · ${CookingMethods.labels[it] ?: it}", style = MaterialTheme.typography.bodySmall) }
+                            val nextReminder = reminders.filter { it.dishId == dish.id && it.enabled && it.status !in setOf("completed", "cancelled", "inactive") }.minByOrNull { rule -> occurrences.firstOrNull { it.ruleId == rule.id && it.sequence == 0 }?.dueAtUtcMillis ?: Long.MAX_VALUE }
+                            nextReminder?.let { Text("Reminder · ${it.title} · ${it.status}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("food-next-reminder-${dish.id}")) }
                             last?.let { Text((PlaybookCodec.actions[PlaybookCodec.action(it.eventType, it.noteMetadataJson)] ?: CookFeedPresentation.title(it)) + " · " + foodClock(it.occurredAtUtcMillis),
                                 style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                         }
@@ -103,6 +107,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                     if (selectedFood == dish.id) {
                         FoodActions(dish, if (legacy && phase?.phase == "prep") "unknown" else phase?.phase ?: "prep", data.cook.status != CookStatus.COMPLETED,
                             onLog, onEdit, onIngredients, onProbe, data.probes.any { it.measurementType == "food_probe" })
+                        selectedTools(dish)
                     }
                 }
             }

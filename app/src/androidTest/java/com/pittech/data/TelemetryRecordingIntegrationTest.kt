@@ -70,4 +70,105 @@ class TelemetryRecordingIntegrationTest {
         assertEquals(0, telemetry.ingest(cook, src, listOf(value.copy(channelId = "not-selected"))))
         assertEquals(0, telemetry.ingest(cook, src, listOf(value.copy(quality = TelemetryQuality.UNAVAILABLE))))
     }
+
+    @Test fun mixedSourcesRoundTripThroughNormalCookArchiveWithoutCredentials(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Export mixed probes",
+            dishes = listOf(DishDraft("Ribs", "Pork"))))
+        val dish = db.cookDao().getDishesForCook(cook).single()
+        val started = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        val ha = source("home_assistant", "sensor.private-backyard-identity")
+        val fb = source("fireboard", "account-private-fireboard-identity")
+        telemetry.attach(cook, ha, mapOf("meat" to dish.id), started + 1L)
+        telemetry.attach(cook, fb, mapOf("meat" to dish.id), started + 1L)
+        telemetry.ingest(cook, ha, listOf(TelemetryObservation(
+            "meat", 93.0, "°C", started + 2L, started + 3L, eventId = "ha-record"
+        )))
+        telemetry.ingest(cook, fb, listOf(TelemetryObservation(
+            "meat", 201.0, "°F", started + 4L, started + 5L, eventId = "fb-record"
+        )))
+        val archive = repo.exportSnapshot(cook)
+        assertEquals(2, archive.devices.size)
+        assertEquals(2, archive.readings.size)
+        assertEquals(2, archive.assignments.size)
+        assertTrue(archive.devices.none { it.id.contains("private") })
+        assertTrue(archive.readings.none { it.id.contains("private") })
+        val restoredDb = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext<Context>(), PitTechDatabase::class.java
+        ).build()
+        try {
+            val restored = CookRepository(restoredDb, PhotoStorage(ApplicationProvider.getApplicationContext()))
+            restored.importSnapshot(archive, emptyMap())
+            restored.importSnapshot(archive, emptyMap())
+            val restoredRows = restoredDb.cookDao().getAllSensorReadings()
+            assertEquals(2, restoredRows.size)
+            assertEquals(2, restoredDb.cookDao().getAllDevices().size)
+            assertEquals(2, restoredDb.recordingDao().getAllAssignments().size)
+            assertEquals(archive.readings.map { it.id }.toSet(), restoredRows.map { it.id }.toSet())
+            assertEquals(setOf(dish.id), restoredRows.mapNotNull { it.dishId }.toSet())
+        } finally {
+            restoredDb.close()
+        }
+    }
+
+    @Test fun changingSensorRoleDoesNotRelabelPreviousFoodReadings(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Role switch",
+            dishes = listOf(DishDraft("Brisket", "Beef"))))
+        val dish = db.cookDao().getDishesForCook(cook).single()
+        val start = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        val food = source("home_assistant", "patio")
+        telemetry.attach(cook, food, mapOf("meat" to dish.id), start + 1)
+        telemetry.ingest(cook, food, listOf(TelemetryObservation(
+            "meat", 180.0, "°F", start + 2, start + 2
+        )))
+        val chamber = food.copy(channels = food.channels.map {
+            if (it.id == "meat") it.copy(name = "Chamber", kind = TelemetryKind.CHAMBER) else it
+        })
+        telemetry.attach(cook, chamber, now = start + 3)
+        telemetry.ingest(cook, chamber, listOf(TelemetryObservation(
+            "meat", 250.0, "°F", start + 4, start + 4
+        )))
+        val readings = db.cookDao().getAllSensorReadings().sortedBy { it.measuredAtUtcMillis }
+        assertEquals(2, readings.size)
+        assertEquals(dish.id, readings[0].dishId)
+        assertEquals("food_probe", readings[0].measurementType)
+        assertNull(readings[1].dishId)
+        assertEquals("pit_ambient", readings[1].measurementType)
+        val current = db.cookDao().getProbesForCook(cook).first { it.id == telemetry.channelKey(cook, chamber, "meat") }
+        assertEquals("pit_ambient", current.measurementType)
+        assertNull(current.assignedDishId)
+        assertEquals(start + 3, db.recordingDao().getAllAssignments().single().endedAtUtcMillis)
+    }
+    @Test fun detachAndCookCompletionRejectLaterReadingsWithoutDeletingHistory(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Lifecycle", dishes = listOf(DishDraft("Ribs", "Pork"))))
+        val src = source("meater", "probe")
+        val start = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        telemetry.attach(cook, src, now = start + 1)
+        val sample = TelemetryObservation("meat", 180.0, "°F", start + 2, start + 2)
+        assertEquals(1, telemetry.ingest(cook, src, listOf(sample)))
+        assertEquals(0, telemetry.ingest(cook, src, listOf(sample)))
+        assertEquals(start + 2, telemetry.latestObservation(cook, src))
+        // The never-seen chamber cannot be skipped during offline recovery.
+        assertEquals(start + 1, telemetry.recoveryStart(cook, src))
+        telemetry.detach(cook, src, start + 3)
+        assertFalse(telemetry.isAttached(cook, src))
+        assertEquals(0, telemetry.ingest(cook, src, listOf(sample.copy(observedAtMillis = start + 4, receivedAtMillis = start + 4))))
+        assertEquals(1, db.cookDao().getAllSensorReadings().size)
+        assertTrue(db.recordingDao().getAllAssignments().all { it.endedAtUtcMillis == start + 3 })
+        telemetry.attach(cook, src, now = start + 5)
+        assertTrue(telemetry.isAttached(cook, src))
+    }
+
+    @Test fun delayedHistoryRetainsTheRoleAtTheOriginalMeasurementTime(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Role history", dishes = listOf(DishDraft("Brisket", "Beef"))))
+        val dish = db.cookDao().getDishesForCook(cook).single()
+        val start = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        val food = source("home_assistant", "probe")
+        telemetry.attach(cook, food, mapOf("meat" to dish.id), start + 1)
+        val chamber = food.copy(channels = food.channels.map { if (it.id == "meat") it.copy(kind = TelemetryKind.CHAMBER) else it })
+        telemetry.attach(cook, chamber, now = start + 5)
+        telemetry.ingest(cook, chamber, listOf(TelemetryObservation("meat", 180.0, "°F", start + 2, start + 10, fromHistory = true)))
+        assertEquals("food_probe", db.cookDao().getAllSensorReadings().single().measurementType)
+        assertEquals(dish.id, db.cookDao().getAllSensorReadings().single().dishId)
+    }
+
 }

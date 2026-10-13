@@ -41,7 +41,11 @@ class CooksViewModel(
     private val context: Context,
 ) : ViewModel() {
     internal val recipes get() = repository.recipes
-    internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()) = com.pittech.data.RecipeExtraction.fromMeal(repository.observeCookDetail(cookId).first() ?: error("Meal unavailable."), dishId, contextIds)
+    internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()): com.pittech.data.RecipeExtractionDraft {
+        val recorded = com.pittech.data.RecipeExtraction.fromMeal(repository.observeCookDetail(cookId).first() ?: error("Meal unavailable."), dishId, contextIds)
+        val working = repository.recipeAttempt(dishId)
+        return if (working == null) recorded else recorded.copy(snapshot = com.pittech.data.RecipeExtraction.mergeAttempt(working, recorded.snapshot))
+    }
     internal suspend fun startRecipeMeal(title: String, revisions: List<String>) = repository.startRecipeMeal(title, revisions).also { openCook(it) }
     internal suspend fun addRecipeToMeal(cookId: String, revisionId: String) = repository.addRecipeToMeal(cookId, revisionId)
     internal suspend fun updateRecipeAttempt(dishId: String, snapshot: com.pittech.domain.RecipeSnapshot) = repository.updateRecipeAttempt(dishId, snapshot)

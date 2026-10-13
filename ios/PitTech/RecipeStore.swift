@@ -121,8 +121,11 @@ enum RecipeError: LocalizedError, Equatable {
             var header = previous ?? ["id": .string(id), "createdAtUtcMillis": .number(now), "favorite": .bool(false)]
             header["name"] = .string(snapshot.name); header["description"] = .string(snapshot.description); header["tagsJson"] = .string(try recipeJSON(snapshot.tags))
             header["currentRevisionId"] = .string(revisionId); header["updatedAtUtcMillis"] = .number(now)
-            let revision: JSONValue = .object(["id": .string(revisionId), "recipeId": .string(id), "parentRevisionId": priorRevision?["id"] ?? .null,
-                "revisionNumber": .number((priorRevision?["revisionNumber"]?.numberValue ?? 0) + 1), "sourceCookId": sourceCookId.map(JSONValue.string) ?? priorRevision?["sourceCookId"] ?? .null,
+            let selectedParent = (assetRevisionId ?? expectedRevisionId).flatMap(recipeRevision).flatMap { $0["recipeId"]?.stringValue == id ? $0 : nil }
+            let parent = previous == nil ? nil : selectedParent ?? priorRevision
+            let revisionNumber = (library.recipeRevisions.compactMap(\.objectValue).filter { $0["recipeId"]?.stringValue == id }.compactMap { $0["revisionNumber"]?.numberValue }.max() ?? 0) + 1
+            let revision: JSONValue = .object(["id": .string(revisionId), "recipeId": .string(id), "parentRevisionId": parent?["id"] ?? .null,
+                "revisionNumber": .number(revisionNumber), "sourceCookId": sourceCookId.map(JSONValue.string) ?? priorRevision?["sourceCookId"] ?? .null,
                 "sourceDishId": sourceDishId.map(JSONValue.string) ?? priorRevision?["sourceDishId"] ?? .null, "snapshotSchemaVersion": .number(1), "snapshotJson": .string(try recipeJSON(snapshot)),
                 "createdAtUtcMillis": .number(now), "changeNotes": .string("")])
             library.recipes.removeAll { $0.objectValue?["id"]?.stringValue == id }; library.recipes.append(.object(header))
