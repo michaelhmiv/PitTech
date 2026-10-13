@@ -158,10 +158,16 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
                 try {
                     val session = connector(profile)
                     profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { source ->
-                        val batch = session.snapshot(source.deviceId)
-                        publishBatch(profile, source, batch)
-                        recorder.ingest(cookId, source, batch, if (profile.onLogOnly) 0L else maxOf(profile.intervalMillis, session.minimumIntervalMillis))
-                        status(profile.id + ":" + source.deviceId, if (batch.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
+                        try {
+                            val batch = session.snapshot(source.deviceId)
+                            publishBatch(profile, source, batch)
+                            recorder.ingest(cookId, source, batch, if (profile.onLogOnly) 0L else maxOf(profile.intervalMillis, session.minimumIntervalMillis))
+                            status(profile.id + ":" + source.deviceId, if (batch.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) {
+                            publishBatch(profile, source, emptyList())
+                            status(profile.id + ":" + source.deviceId, "Unavailable or stale")
+                        }
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { status(profile.id, "A reading was unavailable. Your note is saved.") }
