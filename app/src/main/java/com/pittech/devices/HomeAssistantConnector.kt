@@ -35,7 +35,7 @@ internal class HomeAssistantEndpoint(raw: String) {
             "Use HTTPS for Home Assistant outside your local network"
         }
         base = raw.trim().trimEnd('/')
-        websocket = base.replaceFirst(Regex("^https?://")) { if (uri.scheme == "https") "wss://" else "ws://" } + "/api/websocket"
+        websocket = (if (uri.scheme == "https") "wss://" else "ws://") + base.substringAfter("://") + "/api/websocket"
     }
 
     fun readPath(path: String): String {
