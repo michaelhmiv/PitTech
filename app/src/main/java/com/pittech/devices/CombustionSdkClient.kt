@@ -5,6 +5,8 @@ import inc.combustion.framework.service.DeviceConnectionState
 import inc.combustion.framework.service.DeviceDiscoveryEvent
 import inc.combustion.framework.service.DeviceManager
 import inc.combustion.framework.service.Probe
+import inc.combustion.framework.service.ProbeScanner
+import inc.combustion.framework.service.LoggedProbeDataPoint
 import inc.combustion.framework.service.ProbeUploadState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -95,29 +98,56 @@ internal class OfficialCombustionReadOnlyClient(private val application: Applica
                     detected.add(event.serialNumber)
             }
         }
-        detected.mapNotNull { serial -> manager.probe(serial)?.let { frame(it, System.currentTimeMillis()) } }
+        // DeviceScanner replays cached advertisements. Discovery establishes identity,
+        // not a fresh reading; the first snapshot must obtain current telemetry.
+        detected.mapNotNull { serial -> manager.probe(serial)?.let {
+            CombustionFrame(serial, System.currentTimeMillis(), quality = TelemetryQuality.STALE,
+                viaRepeater = (it.hopCount ?: 0u) > 0u)
+        } }
     }
 
-    private suspend fun awaitStatus(manager: DeviceManager, serial: String): CombustionFrame? {
+    private suspend fun awaitStatus(manager: DeviceManager, serial: String): CombustionFrame? = coroutineScope {
+        val samplingScope = this
         var latest: CombustionFrame? = null
-        var lastProbe: Probe? = null
-        var requestedConnection = false
-        withTimeoutOrNull(8_000L) {
-            while (currentCoroutineContext().isActive) {
-                val probe = manager.probe(serial)
-                if (probe != null) {
-                    if (!requestedConnection) { manager.connect(serial); requestedConnection = true }
-                    if (probe != lastProbe) {
-                        latest = frame(probe, System.currentTimeMillis())
-                        lastProbe = probe
-                    }
-                    if (latest?.connectedStatus == true && latest?.quality == TelemetryQuality.VALID &&
-                        latest?.session != null && latest?.sequence != null) return@withTimeoutOrNull
-                }
-                delay(50L)
+        val instant = java.util.concurrent.atomic.AtomicReference<CombustionFrame?>(null)
+        var scanner: Job? = null
+        val began = System.currentTimeMillis()
+        // ProbeScanner has no replay buffer: its instant-read frames are newly received.
+        val listener = launch(start = CoroutineStart.UNDISPATCHED) {
+            ProbeScanner.scanResults.collect { result ->
+                val value = result.instantReadTemperature
+                if (result.serialNumber == serial && value?.isFinite() == true)
+                    instant.set(CombustionFrame(serial, System.currentTimeMillis(), instant = value))
             }
         }
-        return latest
+        var requestedConnection = false
+        try {
+            withTimeoutOrNull(8_000L) {
+                while (currentCoroutineContext().isActive) {
+                    val probe = manager.probe(serial)
+                    if (probe != null) {
+                        if (!requestedConnection) { manager.connect(serial); requestedConnection = true }
+                        // These log points are generated from connected Normal Mode status,
+                        // not replayed advertising data. SDK timestamp fallbacks are ignored.
+                        val point = manager.exportLogsForProbe(serial)?.lastOrNull {
+                            it.sessionId == probe.sessionInfo?.sessionID && it.sequenceNumber == probe.maxSequence
+                        }
+                        latest = point?.let { confirmedFrame(probe, it, System.currentTimeMillis()) }
+                        if (latest != null) return@withTimeoutOrNull
+                    }
+                    instant.get()?.let { latest = it; return@withTimeoutOrNull }
+                    if (scanner == null && System.currentTimeMillis() - began >= 2_000L) scanner = samplingScope.launch {
+                        try { ProbeScanner.scan() }
+                        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (_: Exception) { /* Revoked permission leaves this source unavailable. */ }
+                    }
+                    delay(50L)
+                }
+            }
+            latest
+        } finally {
+            withContext(NonCancellable) { scanner?.cancelAndJoin(); listener.cancelAndJoin() }
+        }
     }
 
     override suspend fun snapshot(serial: String): CombustionFrame? = window(serial) { awaitStatus(it, serial) }
@@ -168,12 +198,21 @@ internal class OfficialCombustionReadOnlyClient(private val application: Applica
             return CombustionFrame(probe.baseDevice.serialNumber, receivedAtMillis,
                 probe.temperaturesCelsius?.values.orEmpty(), probe.instantReadCelsius,
                 probe.coreTemperatureCelsius, probe.surfaceTemperatureCelsius, probe.ambientTemperatureCelsius,
-                quality = if (unavailable || probe.statusNotificationsStale && probe.hasReceivedStatus)
+                quality = if (!connected || unavailable || probe.statusNotificationsStale && probe.hasReceivedStatus)
                     TelemetryQuality.STALE else TelemetryQuality.VALID,
                 connectedStatus = connected, session = if (connected) probe.sessionInfo?.sessionID?.toLong() else null,
                 sequence = if (connected) probe.maxSequence?.toLong() else null,
                 samplePeriodMillis = if (connected) probe.sessionInfo?.samplePeriod?.toLong() else null,
                 viaRepeater = (probe.hopCount ?: 0u) > 0u)
+        }
+
+        fun confirmedFrame(probe: Probe, point: LoggedProbeDataPoint, receipt: Long): CombustionFrame? {
+            val metadata = frame(probe, receipt)
+            if (!metadata.connectedStatus || metadata.quality != TelemetryQuality.VALID || point.temperatures.values.size != 8 ||
+                point.sessionId.toLong() != metadata.session || point.sequenceNumber.toLong() != metadata.sequence) return null
+            return metadata.copy(temperatures = point.temperatures.values, instant = null,
+                core = point.virtualCoreTemperature, surface = point.virtualSurfaceTemperature,
+                ambient = point.virtualAmbientTemperature)
         }
     }
 }

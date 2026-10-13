@@ -70,7 +70,7 @@ internal class CombustionBleConnector(
 
     override suspend fun snapshot(deviceId: String): List<TelemetryObservation> = mutex.withLock {
         if (closed) return@withLock emptyList()
-        val cached = seen[deviceId]?.takeIf { clock() - it.receivedAtMillis in 0..15_000L }
+        val cached = seen[deviceId]?.takeIf { it.quality == TelemetryQuality.VALID && clock() - it.receivedAtMillis in 0..15_000L }
         val status = cached ?: client.snapshot(deviceId)?.also { seen[deviceId] = it }
         status?.let { decode(it, anchor(it)) }.orEmpty()
     }
@@ -104,7 +104,7 @@ internal class CombustionBleConnector(
                     surface = record.surface, ambient = record.ambient, connectedStatus = true,
                     session = record.session, sequence = record.sequence, samplePeriodMillis = anchor.periodMillis),
                     anchor, fromHistory = true, measuredOverride = measured)
-            }.flatten().toList()
+            }.flatten().take(MAX_LOG_RECORDS).toList()
     }
 
     private fun anchor(status: CombustionFrame): CombustionTimeAnchor? {
