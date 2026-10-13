@@ -81,6 +81,7 @@ internal class TelemetryProfileStore(context: Context) {
 
 /** Each provider branch supplies its own factory. Missing adapters stay unavailable. */
 internal interface TelemetryConnectorFactory {
+    suspend fun revoke(context: Context, profile: TelemetryProfile) { TelemetryTokenStore(context).clear(profile.provider, profile.id) }
     suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector
     suspend fun restore(context: Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector
 }

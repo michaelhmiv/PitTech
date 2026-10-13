@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -27,6 +28,8 @@ internal class CombustionBleConnector(
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "combustion"
     private var scanner: Job? = null
+    private var observers = 0
+    @Synchronized private fun stopIfIdle() { if (observers == 0) { scanner?.cancel(); scanner = null } }
     private val seen = ConcurrentHashMap<String, List<TelemetryObservation>>()
 
     @Synchronized private fun scanIfNeeded() {
@@ -47,21 +50,31 @@ internal class CombustionBleConnector(
                 result.serialNumber?.takeIf { it.isNotBlank() }?.let { detected.add(it); seen[it] = decode(result, clock()) }
             }
         }
+        stopIfIdle()
         return detected.map(::source)
     }
 
-    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> =
-        seen[deviceId].orEmpty().map { if (clock() - it.receivedAtMillis > 60_000L) it.copy(quality = TelemetryQuality.STALE) else it }
+    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
+        seen[deviceId]?.takeIf { samples -> samples.any { clock() - it.receivedAtMillis in 0..15_000L } }?.let { return it }
+        scanIfNeeded()
+        return try {
+            withTimeoutOrNull(8_000L) {
+                ProbeScanner.scanResults.first { it.serialNumber == deviceId }.let { decode(it, clock()) }
+                    .also { seen[deviceId] = it }
+            }.orEmpty()
+        } finally { stopIfIdle() }
+    }
 
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = flow {
         require(deviceId.isNotBlank())
+        synchronized(this@CombustionBleConnector) { observers++ }
         scanIfNeeded()
-        ProbeScanner.scanResults.filter { it.serialNumber == deviceId }.collect { result ->
+        try { ProbeScanner.scanResults.filter { it.serialNumber == deviceId }.collect { result ->
             val received = clock()
             val sample = decode(result, received)
             seen[deviceId] = sample
             emit(sample)
-        }
+        } } finally { synchronized(this@CombustionBleConnector) { observers-- }; stopIfIdle() }
     }
 
     override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation> {
