@@ -84,7 +84,10 @@ internal class HomeAssistantFactory : TelemetryConnectorFactory {
     override suspend fun revoke(context: Context, profile: TelemetryProfile) { HomeAssistantSession(context, profile).revoke() }
     override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector {
         HomeAssistantEndpoint(profile.endpoint)
-        if (secret.isNotBlank()) TelemetryTokenStore(context).save(profile.provider, profile.id, secret)
+        if (secret.isNotBlank()) {
+            HomeAssistantConnector(profile.endpoint, secret).discover()
+            TelemetryTokenStore(context).save(profile.provider, profile.id, secret)
+        }
         return restore(context, profile)
     }
     override suspend fun restore(context: Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector {
