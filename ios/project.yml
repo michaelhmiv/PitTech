@@ -28,10 +28,7 @@ targets:
     platform: iOS
     sources:
       - path: PitTech
-        excludes:
-          - "**/*.xcassets/**"
     resources:
-      - path: PitTech/Assets.xcassets
       - path: PitTech/PrivacyInfo.xcprivacy
     dependencies:
       - package: GoogleMobileAds
