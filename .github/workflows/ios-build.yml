@@ -69,15 +69,12 @@ jobs:
           ENTITLEMENTS_REQUIRED=YES
           build
 
-      - name: Verify local Simulator Keychain entitlement
+      - name: Verify local Simulator ad-hoc signing
         run: |
-          codesign -d --entitlements :- build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app > build/ios-simulator-entitlements.plist
-          python3 - <<'PYENTITLEMENTS'
-          import plistlib
-          with open("build/ios-simulator-entitlements.plist", "rb") as source:
-              entitlements = plistlib.load(source)
-          assert entitlements.get("application-identifier", "").endswith(".com.pittech"), "Simulator tests require a local app identity for Keychain access"
-          PYENTITLEMENTS
+          # Xcode embeds Simulator entitlements in a Mach-O section, not the
+          # device signature's entitlement blob. The real Keychain tests below
+          # verify access, device-only accessibility, replacement and deletion.
+          codesign --verify --verbose build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
 
       - name: Build and inspect unsigned public Simulator configuration
         run: |

@@ -258,6 +258,10 @@ fi
 echo "Preparing durable telemetry for a real process-death test."
 timeout 3m adb shell am instrument -w -r -e class 'com.pittech.TelemetryProcessDeathTest#preparePersistedBackgroundCook' "$instrumentation_target" | tee "$output_dir/telemetry-process-prepare.txt"
 grep -q 'OK (1 test)' "$output_dir/telemetry-process-prepare.txt"
+# Instrumentation completion asynchronously kills its target process. Cold-start the
+# prepared app once so the launch cannot race that kill; the tested kill below is
+# run-as kill -9 and is deliberately never a force-stop.
+timeout 20 adb shell am force-stop com.pittech.debug
 timeout 30 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
 previous_receipt=""
 for _ in $(seq 1 60); do
@@ -284,8 +288,7 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]
-# Wait for the Room transaction after the fixture emits its receipt.
-sleep 1
+# The fixture receipt is the persisted Room watermark, not an uncommitted frame.
 timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-services.txt"
 grep -q 'isForeground=true' "$output_dir/telemetry-process-services.txt"
 printf 'Previous PID: %s\nRestored PID: %s\nPrevious receipt: %s\n' "$old_telemetry_pid" "$new_telemetry_pid" "$previous_receipt" > "$output_dir/telemetry-process-restart.txt"
@@ -302,7 +305,7 @@ telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
-if ! grep -q 'OK (19 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+if ! grep -q 'OK (20 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
   echo "Telemetry instrumentation tests did not all pass." >&2
   exit 1
 fi

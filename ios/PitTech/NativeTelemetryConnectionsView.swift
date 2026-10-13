@@ -65,7 +65,7 @@ struct NativeTelemetryConnectionsView: View {
                     if provider == .fireboard { TextField("Optional numeric session ID for history", text: $deviceHint).keyboardType(.numberPad) }
                     Text("Leave the account field empty to use a provider access token.").font(.caption)
                 case .combustion:
-                    Text("Keep the thermometer nearby. Connecting asks iOS for Bluetooth permission and uses Combustion's official SDK. Historical probe-log recovery and background hardware behavior need validation.")
+                    Text("Keep the thermometer nearby. Connecting asks iOS for Bluetooth permission and uses Combustion's official SDK. This Beta records live temperatures; readings missed while disconnected cannot be recovered. Repeater and background hardware behavior have not been verified.")
                 case .flame_boss:
                     Text("Requires a manufacturer-confirmed TLS broker and a public cook. Private topics are not validated.")
                     TextField("mqtts://manufacturer-host:port", text: $endpoint).textInputAutocapitalization(.never).autocorrectionDisabled()
