@@ -35,10 +35,13 @@ class FlameBossTelemetryConnectorTest {
         assertEquals(1, connector.discover().size)
         assertEquals(TelemetryKind.CHAMBER, connector.discover().single().channels.first().kind)
         assertEquals(TelemetryKind.FOOD, connector.discover().single().channels[1].kind)
+        // An on-log-only connection must obtain its first sample without a live collector.
+        assertEquals(5, connector.snapshot(device).size)
         assertEquals(1, connector.observe(device).toList().size)
         assertEquals(5, connector.snapshot(device).size)
         assertTrue(connector.history(device, 0, 1000).isEmpty())
         connector.disconnect()
         assertTrue(connector.snapshot(device).isEmpty())
+        assertTrue(connector.observe(device).toList().isEmpty())
     }
 }

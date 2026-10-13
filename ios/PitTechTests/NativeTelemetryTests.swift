@@ -64,4 +64,52 @@ final class NativeTelemetryTests: XCTestCase {
         do { _ = try await NativeTelemetryCloudCache.shared.read(key: key, interval: 30_000, now: 2000) { calls += 1; return Data() }; XCTFail() } catch {}
         XCTAssertEqual(calls, 1)
     }
+    func testHaOAuthCallbackRequiresExactOriginAndState() throws {
+        let request = try NativeHAAuthRequest(server: "https://HOME.example.com:443/", state: "nonce")
+        XCTAssertEqual(request.origin.absoluteString, "https://home.example.com")
+        XCTAssertEqual(try request.code(URL(string: NativeHASession.callback + "?code=valid&state=nonce")!), "valid")
+        XCTAssertThrowsError(try request.code(URL(string: NativeHASession.callback + "?code=valid&state=other")!))
+        XCTAssertNil(try request.code(URL(string: "https://pittech-privacy-production.up.railway.app.evil.example/ha/auth_callback?code=valid&state=nonce")!))
+        XCTAssertFalse(request.allows(URL(string: "https://home.example.com.evil.example/auth/authorize")!))
+    }
+    func testMqttGuardAndManufacturerFrameDoNotAcceptBooleanTemperatures() throws {
+        XCTAssertThrowsError(try NativeFlameBossBroker("mqtt://myflameboss.com:1883"))
+        XCTAssertThrowsError(try NativeFlameBossBroker("mqtts://myflameboss.com.evil.example:8883"))
+        XCTAssertEqual(try NativeFlameBossCodec.subscribe("8838").first, 0x82)
+        let frame: [String: Any] = ["name": "temps", "sec": 1621028684, "temps": [298, 249, -32767, true], "set_temp": 1056]
+        let readings = NativeFlameBossCodec.observations(frame, receipt: 1621028685000)
+        XCTAssertEqual(readings[0].value, 29.8)
+        XCTAssertEqual(readings[1].value, 24.9)
+        XCTAssertNil(readings[2].normalized); XCTAssertNil(readings[3].normalized)
+        XCTAssertEqual(readings.last?.value, 105.6)
+        XCTAssertNil(NativeTelemetryEndpoint.number(true))
+    }
+    @MainActor func testFireBoardHistoryMapsUniqueLabelsAndSharesLiveEventIdentity() {
+        let at = NativeTelemetryEndpoint.millis("2026-10-12T20:00:00Z")!
+        let channels = [NativeTelemetryChannel(id: "channel2", name: "Brisket", kind: .food)]
+        let chart: [[String: Any]] = [["device": "device", "label": "Brisket", "degreetype": 2, "x": [at / 1000], "y": [201.0]]]
+        let readings = NativeTelemetryCloudConnector.fireBoardHistory(chart, device: "device", channels: channels, from: at - 1000, until: at + 1000, receipt: at + 2000)
+        XCTAssertEqual(readings.first?.channel, "channel2")
+        XCTAssertEqual(readings.first?.eventId, String(Int64(at)))
+        XCTAssertTrue(readings.first?.history == true)
+        XCTAssertTrue(NativeTelemetryCloudConnector.fireBoardHistory(chart, device: "other", channels: channels, from: at - 1000, until: at + 1000, receipt: at + 2000).isEmpty)
+        XCTAssertTrue(NativeTelemetryCloudConnector.fireBoardHistory(chart, device: "device", channels: channels + [.init(id: "channel3", name: "Brisket", kind: .food)], from: at - 1000, until: at + 1000, receipt: at + 2000).isEmpty)
+    }
+    @MainActor func testExplicitPauseRejectsHistoricalSamplesAndKeepsRecoveryCursor() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); store.startCook(title: "Pause", firstDish: "Brisket")
+        let cook = store.library.cooks[0].id, start = Double(store.library.cooks[0].startedAtUtcMillis)
+        let source = NativeTelemetrySource(provider: .home_assistant, id: "sensor.probe", label: "Probe", channels: [.init(id: "temperature", name: "Food", kind: .food)])
+        try store.attachTelemetry(source, cookId: cook, assignments: [:], at: start)
+        try store.setTelemetryMonitoring(source, cookId: cook, enabled: false, at: start + 10)
+        try store.setTelemetryMonitoring(source, cookId: cook, enabled: true, at: start + 30)
+        let readings = [5.0, 20, 40].map { NativeTelemetryObservation(channel: "temperature", value: 180, unit: "°F", observedAt: start + $0, receivedAt: start + 50, eventId: String($0), history: true) }
+        XCTAssertEqual(try store.ingestTelemetry(source, cookId: cook, observations: readings), 2)
+        XCTAssertFalse(store.events(for: cook).contains { $0.title == "Temperature monitoring" })
+        try store.saveTelemetryRecovery(source, cook: cook, from: start + 10, until: start + 100)
+        let restored = CookStore(directory: folder)
+        XCTAssertEqual(restored.pendingTelemetryRecovery(source, cook: cook)?.lowerBound, start + 10)
+    }
+
 }

@@ -14,6 +14,8 @@ class CombustionBleConnectorTest {
         assertEquals(8, observations.size)
         assertEquals("combustion", source.connectorId)
         assertEquals(9, source.channels.size)
+        assertEquals(TelemetryKind.AMBIENT, source.channels[7].kind)
+        assertEquals(TelemetryKind.OTHER, source.channels[1].kind)
         assertEquals("sensor0", observations.first().channelId)
         assertEquals(50.0, observations.first().value!!, .0001)
         assertEquals("receipt", TelemetryNormalizer.normalize(observations.first())!!.timestampBasis)

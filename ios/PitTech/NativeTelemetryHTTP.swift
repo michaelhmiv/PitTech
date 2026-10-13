@@ -1,14 +1,28 @@
 import Foundation
+import CoreFoundation
 
 final class NativeTelemetryRedirectGuard: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 enum NativeTelemetryEndpoint {
     static func homeAssistant(_ raw: String) throws -> URL {
-        guard let parts = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)), parts.scheme == "https", parts.host?.isEmpty == false,
-              parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil, parts.path.isEmpty || parts.path == "/", parts.port == nil || (1...65535).contains(parts.port!), let url = parts.url else { throw NativeTelemetryError.configuration }
-        return URL(string: url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")))!
+        guard var parts = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)), parts.scheme?.lowercased() == "https", parts.host?.isEmpty == false,
+              parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil, parts.path.isEmpty || parts.path == "/", parts.port == nil || (1...65535).contains(parts.port!) else { throw NativeTelemetryError.configuration }
+        parts.scheme = "https"; parts.host = parts.host?.lowercased(); parts.path = ""
+        if parts.port == 443 { parts.port = nil }
+        guard let url = parts.url else { throw NativeTelemetryError.configuration }; return url
     }
+    static func number(_ raw: Any?) -> Double? {
+        guard let n = raw as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { return nil }
+        return n.doubleValue
+    }
+    static func retryAfter(_ raw: String?, now: Double) -> Double {
+        if let raw, let seconds = Double(raw), seconds.isFinite { return now + min(86_400, max(1, seconds)) * 1000 }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss z"
+        if let raw, let date = formatter.date(from: raw) { return now + min(86_400_000, max(1000, date.timeIntervalSince1970 * 1000 - now)) }
+        return now + 300_000
+    }
+
     static func millis(_ value: String?) -> Double? {
         guard let value else { return nil }
         let fractional = ISO8601DateFormatter(); fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -31,14 +45,29 @@ enum NativeTelemetryEndpoint {
         switch provider {
         case .meater: url = URL(string: "https://public-api.cloud.meater.com/v1/login")!; payload = ["email": user, "password": password]
         case .fireboard: url = URL(string: "https://fireboard.io/api/rest-auth/login/")!; payload = ["username": user, "password": password]
+        case .flame_boss: url = URL(string: "https://myflameboss.com/api/v4/sessions")!; payload = ["session[login]": user, "session[password]": password]
         default: throw NativeTelemetryError.configuration
         }
         var request = URLRequest(url: url); request.httpMethod = "POST"; request.httpBody = try JSONEncoder().encode(payload)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.setValue("PitTech/0.1 (read-only)", forHTTPHeaderField: "User-Agent")
+        if provider == .flame_boss {
+            var parts = URLComponents(); parts.queryItems = payload.map { URLQueryItem(name: $0.key, value: $0.value) }
+            request.httpBody = Data((parts.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B").utf8)
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        }
         let data = try await send(request)
+        if provider == .flame_boss { return data.base64EncodedString() }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let token = provider == .meater ? (json?["data"] as? [String: Any])?["token"] as? String : json?["key"] as? String
         guard let token, !token.isEmpty else { throw NativeTelemetryError.authorization }; return token
+    }
+    func form(_ url: URL, fields: [String: String]) async throws -> Data {
+        guard url.scheme == "https", url.user == nil, url.password == nil else { throw NativeTelemetryError.configuration }
+        var parts = URLComponents(); parts.queryItems = fields.map { URLQueryItem(name: $0.key, value: $0.value) }
+        var request = URLRequest(url: url); request.httpMethod = "POST"
+        request.httpBody = Data((parts.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B").utf8)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        return try await send(request)
     }
     private func send(_ request: URLRequest) async throws -> Data {
         let (data, raw) = try await session.data(for: request)
@@ -48,8 +77,7 @@ enum NativeTelemetryEndpoint {
         case 401, 403: throw NativeTelemetryError.authorization
         case 429:
             let now = Date.now.timeIntervalSince1970 * 1000
-            let pause = Double(response.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 300
-            throw NativeTelemetryError.rateLimit(now + min(86_400, max(1, pause)) * 1000)
+            throw NativeTelemetryError.rateLimit(NativeTelemetryEndpoint.retryAfter(response.value(forHTTPHeaderField: "Retry-After"), now: now))
         case 300...499: throw NativeTelemetryError.configuration
         default: throw NativeTelemetryError.network
         }
@@ -61,26 +89,29 @@ enum NativeTelemetryEndpoint {
     private var cache: [String: (Double, Data)] = [:]
     private var next: [String: Double] = [:]
     private var running: [String: Task<Data, Error>] = [:]
-    func read(key: String, interval: Double, now: Double = Date.now.timeIntervalSince1970 * 1000, load: @escaping @MainActor () async throws -> Data) async throws -> Data {
+    func read(key: String, interval: Double, budgetKey: String? = nil, minimumSpacing: Double? = nil, now: Double = Date.now.timeIntervalSince1970 * 1000, load: @escaping @MainActor () async throws -> Data) async throws -> Data {
         if let result = cache[key], now - result.0 >= 0 && now - result.0 < interval { return result.1 }
         if let task = running[key] { return try await task.value }
-        if let due = next[key], now < due { throw NativeTelemetryError.rateLimit(due) }
-        next[key] = now + interval // Charge unsuccessful requests as well.
+        let budget = budgetKey ?? key
+        if let due = next[budget], now < due { throw NativeTelemetryError.rateLimit(due) }
+        next[budget] = now + (minimumSpacing ?? interval) // Charge unsuccessful requests as well.
         let task = Task { try await load() }; running[key] = task
         defer { running[key] = nil }
         do { let value = try await task.value; cache[key] = (now, value); return value }
-        catch { if case NativeTelemetryError.rateLimit(let due) = error { next[key] = max(next[key] ?? 0, due) }; throw error }
+        catch { if case NativeTelemetryError.rateLimit(let due) = error { next[budget] = max(next[budget] ?? 0, due) }; throw error }
     }
     func clearSamples(_ key: String) { cache[key] = nil }
 }
 
 @MainActor final class NativeTelemetryCloudConnector: NativeReadOnlyTelemetry {
-    let profile: NativeTelemetryProfile
+    private(set) var profile: NativeTelemetryProfile
+    func configure(_ profile: NativeTelemetryProfile) { self.profile = profile }
     private var token: String
     private let http = NativeTelemetryHTTP()
     private let account: String
     init(profile: NativeTelemetryProfile, token: String) { self.profile = profile; self.token = token; self.account = NativeTelemetryIdentity.key(profile.provider.rawValue, token) }
     var minimumInterval: Double { profile.provider == .home_assistant ? 15_000 : 30_000 }
+    var supportsHistory: Bool { profile.provider == .fireboard && profile.deviceHint.range(of: "^[0-9]{1,18}$", options: .regularExpression) != nil }
     private func data() async throws -> [[String: Any]] {
         let provider = profile.provider
         let url: URL, prefix: String
@@ -125,23 +156,31 @@ enum NativeTelemetryEndpoint {
     static func observations(provider: NativeTelemetryProvider, item: [String: Any], receipt: Double, historical: Bool = false) -> [NativeTelemetryObservation] {
         switch provider {
         case .meater:
-            let at = (item["updated_at"] as? Double).map { $0 * 1000 }; let temps = item["temperature"] as? [String: Any] ?? [:]
-            let target = ((item["cook"] as? [String: Any])?["temperature"] as? [String: Any])?["target"] as? Double
-            return [("internal", temps["internal"] as? Double), ("ambient", temps["ambient"] as? Double), ("target", target)].map { channel, value in .init(channel: channel, value: value, unit: "°C", observedAt: at, receivedAt: receipt, available: at != nil && receipt - at! <= 180_000, eventId: at.map { String(Int64($0)) }) }
+            let at = NativeTelemetryEndpoint.number(item["updated_at"]).flatMap { $0 > 0 && $0 < Double(Int64.max) / 1000 ? $0 * 1000 : nil }; let temps = item["temperature"] as? [String: Any] ?? [:]
+            let target = NativeTelemetryEndpoint.number(((item["cook"] as? [String: Any])?["temperature"] as? [String: Any])?["target"])
+            return [("internal", NativeTelemetryEndpoint.number(temps["internal"])), ("ambient", NativeTelemetryEndpoint.number(temps["ambient"])), ("target", target)].map { channel, value in .init(channel: channel, value: value, unit: "°C", observedAt: at, receivedAt: receipt, available: at != nil && receipt - at! <= 180_000, eventId: at.map { String(Int64($0)) }) }
         case .fireboard:
             return (item["latest_temps"] as? [[String: Any]] ?? []).compactMap { temp in
                 guard let port = temp["channel"] as? Int, port > 0, let type = temp["degreetype"] as? Int, [1, 2].contains(type) else { return nil }
                 let at = NativeTelemetryEndpoint.millis(temp["created"] as? String)
-                return .init(channel: "channel\(port)", value: temp["temp"] as? Double, unit: type == 1 ? "°C" : "°F", observedAt: at, receivedAt: receipt, available: at != nil && receipt - at! <= 60_000, eventId: temp["created"] as? String)
+                return .init(channel: "channel\(port)", value: NativeTelemetryEndpoint.number(temp["temp"]), unit: type == 1 ? "°C" : "°F", observedAt: at, receivedAt: receipt, available: at != nil && receipt - at! <= 60_000, eventId: at.map { String(Int64($0)) })
             }
         case .home_assistant:
             guard let attrs = item["attributes"] as? [String: Any], let unit = attrs["unit_of_measurement"] as? String else { return [] }
-            let value = (item["state"] as? String).flatMap(Double.init), at = NativeTelemetryEndpoint.millis(item["last_updated"] as? String) ?? NativeTelemetryEndpoint.millis(item["last_changed"] as? String)
-            return [.init(channel: "temperature", value: value, unit: unit, observedAt: at, receivedAt: receipt, available: value?.isFinite == true, eventId: item["last_updated"] as? String, history: historical)]
+            let value = (item["state"] as? String).flatMap(Double.init), at = NativeTelemetryEndpoint.millis(item["last_reported"] as? String) ?? NativeTelemetryEndpoint.millis(item["last_updated"] as? String) ?? NativeTelemetryEndpoint.millis(item["last_changed"] as? String)
+            return [.init(channel: "temperature", value: value, unit: unit, observedAt: at, receivedAt: receipt, available: value?.isFinite == true, eventId: at.map { String(Int64($0)) }, history: historical)]
         default: return []
         }
     }
     func history(_ device: String, from: Double, until: Double) async throws -> [NativeTelemetryObservation] {
+        if profile.provider == .fireboard {
+            guard supportsHistory, from > 0, until >= from else { return [] }
+            let url = URL(string: "https://fireboard.io/api/v1/sessions/" + profile.deviceHint + "/chart.json")!
+            let bytes = try await NativeTelemetryCloudCache.shared.read(key: account + ":chart:" + profile.deviceHint, interval: 60_000, budgetKey: account, minimumSpacing: 30_000) { [self] in try await http.read(url, token: token, prefix: "Token") }
+            let chart = try JSONSerialization.jsonObject(with: bytes) as? [[String: Any]] ?? []
+            let channels = profile.sources.first { $0.id == device }?.channels ?? []
+            return Self.fireBoardHistory(chart, device: device, channels: channels, from: from, until: until, receipt: Date.now.timeIntervalSince1970 * 1000)
+        }
         guard profile.provider == .home_assistant, from > 0, until >= from, until - from <= 21_600_000, device.range(of: "^sensor\\.[a-z0-9_]+$", options: .regularExpression) != nil else { return [] }
         let formatter = ISO8601DateFormatter()
         let base = try NativeTelemetryEndpoint.homeAssistant(profile.endpoint)
@@ -150,6 +189,22 @@ enum NativeTelemetryEndpoint {
         let response = try await http.read(parts.url!, token: token, prefix: "Bearer")
         let batches = try JSONSerialization.jsonObject(with: response) as? [[[String: Any]]] ?? []
         return batches.flatMap { $0 }.filter { $0["entity_id"] as? String == device }.flatMap { Self.observations(provider: .home_assistant, item: $0, receipt: Date.now.timeIntervalSince1970 * 1000, historical: true) }.filter { $0.observedAt.map { from <= $0 && $0 <= until } == true }.prefix(20_000).map { $0 }
+    }
+    static func fireBoardHistory(_ chart: [[String: Any]], device: String, channels: [NativeTelemetryChannel], from: Double, until: Double, receipt: Double) -> [NativeTelemetryObservation] {
+        let grouped = Dictionary(grouping: channels, by: \.name)
+        var result: [NativeTelemetryObservation] = []
+        for series in chart.prefix(100) {
+            guard series["device"] as? String == device, let label = series["label"] as? String, let mapped = grouped[label], mapped.count == 1,
+                  let type = NativeTelemetryEndpoint.number(series["degreetype"]), [1.0, 2.0].contains(type), let x = series["x"] as? [Any], let y = series["y"] as? [Any], x.count == y.count else { continue }
+            for (rawTime, rawValue) in zip(x, y).prefix(100_000) {
+                guard let time = NativeTelemetryEndpoint.number(rawTime), time > 0, time < Double(Int64.max) / 1000, let value = NativeTelemetryEndpoint.number(rawValue) else { continue }
+                let at = time < 100_000_000_000 ? time * 1000 : time
+                guard from <= at, at <= until else { continue }
+                result.append(.init(channel: mapped[0].id, value: value, unit: type == 1 ? "°C" : "°F", observedAt: at, receivedAt: receipt, eventId: String(Int64(at)), history: true))
+                if result.count == 20_000 { return result }
+            }
+        }
+        return result
     }
     func disconnect() { token = ""; NativeTelemetryCloudCache.shared.clearSamples(account); http.disconnect() }
 }

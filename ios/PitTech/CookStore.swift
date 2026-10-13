@@ -144,7 +144,7 @@ final class CookStore {
 
     func events(for cookId: String) -> [TimelineEntry] {
         library.events
-            .filter { $0.objectValue?["cookId"]?.stringValue == cookId }
+            .filter { $0.objectValue?["cookId"]?.stringValue == cookId && !($0.objectValue?["eventType"]?.stringValue ?? "").hasPrefix("telemetry_") }
             .compactMap(TimelineEntry.init(json:))
             .sorted { $0.occurredAt > $1.occurredAt }
     }

@@ -9,9 +9,9 @@ enum NativeTelemetryProvider: String, Codable, CaseIterable, Identifiable {
     var label: String { switch self { case .combustion: "Combustion"; case .home_assistant: "Home Assistant"; case .fireboard: "FireBoard"; case .flame_boss: "Flame Boss"; case .meater: "MEATER" } }
 }
 enum NativeTelemetryKind: String, Codable, CaseIterable {
-    case food = "FOOD", chamber = "CHAMBER", ambient = "AMBIENT", setpoint = "SETPOINT"
-    var storageType: String { switch self { case .food: "food_probe"; case .chamber, .ambient: "pit_ambient"; case .setpoint: "setpoint" } }
-    var label: String { switch self { case .food: "Food probe"; case .chamber: "Grill chamber"; case .ambient: "Ambient"; case .setpoint: "Observed target" } }
+    case food = "FOOD", chamber = "CHAMBER", ambient = "AMBIENT", setpoint = "SETPOINT", other = "OTHER"
+    var storageType: String { switch self { case .food: "food_probe"; case .chamber, .ambient: "pit_ambient"; case .setpoint: "setpoint"; case .other: "sensor_temperature" } }
+    var label: String { switch self { case .food: "Food probe"; case .chamber: "Grill chamber"; case .ambient: "Ambient"; case .setpoint: "Observed target"; case .other: "Other temperature" } }
 }
 struct NativeTelemetryChannel: Codable, Identifiable, Equatable { var id: String; var name: String; var kind: NativeTelemetryKind }
 struct NativeTelemetrySource: Codable, Identifiable, Equatable {
@@ -23,7 +23,7 @@ struct NativeTelemetryObservation: Equatable {
     var normalized: (value: Double, at: Double, basis: String, key: String)? {
         guard available, let value, value.isFinite, receivedAt.isFinite, receivedAt > 0, !history || observedAt != nil else { return nil }
         let at = observedAt ?? receivedAt
-        guard at.isFinite, at > 0, at <= receivedAt + 300_000 else { return nil }
+        guard at.isFinite, at > 0, at < Double(Int64.max) - 1024, at <= receivedAt + 300_000 else { return nil }
         let f: Double
         switch unit.lowercased() { case "°f", "f", "fahrenheit": f = value; case "°c", "c", "celsius": f = value * 9 / 5 + 32; default: return nil }
         guard f.isFinite, (-100...1000).contains(f) else { return nil }
@@ -33,6 +33,8 @@ struct NativeTelemetryObservation: Equatable {
 }
 @MainActor protocol NativeReadOnlyTelemetry: AnyObject {
     var minimumInterval: Double { get }
+    var supportsHistory: Bool { get }
+    func revoke() async throws
     func discover() async throws -> [NativeTelemetrySource]
     func snapshot(_ device: String) async throws -> [NativeTelemetryObservation]
     func history(_ device: String, from: Double, until: Double) async throws -> [NativeTelemetryObservation]
@@ -40,6 +42,8 @@ struct NativeTelemetryObservation: Equatable {
 }
 extension NativeReadOnlyTelemetry {
     var minimumInterval: Double { 30_000 }
+    var supportsHistory: Bool { false }
+    func revoke() async throws {}
     func history(_ device: String, from: Double, until: Double) async throws -> [NativeTelemetryObservation] { [] }
 }
 struct NativeTelemetryProfile: Codable, Identifiable, Equatable {
@@ -92,11 +96,12 @@ struct NativeTelemetryTokenVault {
         let prior = library; let device = NativeTelemetryIdentity.device(cookId, source)
         if let index = library.devices.firstIndex(where: { $0.objectValue?["id"]?.stringValue == device }), var o = library.devices[index].objectValue { o["role"] = .string("telemetry"); library.devices[index] = .object(o) }
         else { library.devices.append(.object(["id": .string(device), "cookId": .string(cookId), "brand": .string(source.provider.label), "deviceName": .string(source.label), "role": .string("telemetry"), "createdAtUtcMillis": .number(at)])) }
+        telemetryLifecycle(source, cookId: cookId, state: "active", at: at)
         for channel in source.channels {
             let probe = NativeTelemetryIdentity.probe(cookId, source, channel.id)
             let index = library.probes.firstIndex { $0.objectValue?["id"]?.stringValue == probe }
             var object = index.flatMap { library.probes[$0].objectValue } ?? ["id": .string(probe), "cookId": .string(cookId), "deviceId": .string(device), "createdAtUtcMillis": .number(at)]
-            object["name"] = .string(channel.name); object["source"] = .string("telemetry:" + source.provider.rawValue); object["measurementType"] = .string(channel.kind.storageType)
+            object["name"] = .string(source.channels.count == 1 ? source.label : source.label + " · " + channel.name); object["source"] = .string("telemetry:" + source.provider.rawValue); object["measurementType"] = .string(channel.kind.storageType)
             let food = channel.kind == .food ? assignments[channel.id] ?? nil : nil
             object["assignedDishId"] = food.map(JSONValue.string) ?? .null
             library.probeAssignments = library.probeAssignments.map { row in
@@ -108,13 +113,17 @@ struct NativeTelemetryTokenVault {
         }
         save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
     }
-    @discardableResult func ingestTelemetry(_ source: NativeTelemetrySource, cookId: String, observations: [NativeTelemetryObservation]) throws -> Int {
+    @discardableResult func ingestTelemetry(_ source: NativeTelemetrySource, cookId: String, observations: [NativeTelemetryObservation], samplingInterval: Double = 60_000) throws -> Int {
         guard let cook = library.cooks.first(where: { $0.id == cookId }), cook.status == "active" else { return 0 }
         let device = NativeTelemetryIdentity.device(cookId, source)
         guard library.devices.contains(where: { $0.objectValue?["id"]?.stringValue == device && $0.objectValue?["role"]?.stringValue == "telemetry" }) else { return 0 }
         let prior = library; var inserted = 0; var existing = Set(library.readings.compactMap { $0.objectValue?["id"]?.stringValue })
         for raw in observations {
             guard let channel = source.channels.first(where: { $0.id == raw.channel }), let n = raw.normalized, n.at >= Double(cook.startedAtUtcMillis) else { continue }
+            let status = library.events.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && ($0["occurredAtUtcMillis"]?.numberValue ?? .infinity) <= n.at }
+            let local = status.filter { $0["eventType"]?.stringValue == "telemetry_lifecycle" && $0["sourceDeviceId"]?.stringValue == device }.max { ($0["occurredAtUtcMillis"]?.numberValue ?? 0) < ($1["occurredAtUtcMillis"]?.numberValue ?? 0) }
+            let meal = status.filter { ["cook_paused", "cook_resumed"].contains($0["eventType"]?.stringValue ?? "") }.max { ($0["occurredAtUtcMillis"]?.numberValue ?? 0) < ($1["occurredAtUtcMillis"]?.numberValue ?? 0) }
+            guard local == nil || local?["details"]?.stringValue == "active", meal?["eventType"]?.stringValue != "cook_paused" else { continue }
             let probe = NativeTelemetryIdentity.probe(cookId, source, channel.id)
             let roles = library.events.compactMap(\.objectValue).filter { $0["eventType"]?.stringValue == "telemetry_mapping" && $0["sourceDeviceId"]?.stringValue == probe && ($0["occurredAtUtcMillis"]?.numberValue ?? .infinity) <= n.at }
             let kind = roles.max { ($0["occurredAtUtcMillis"]?.numberValue ?? 0) < ($1["occurredAtUtcMillis"]?.numberValue ?? 0) }?["details"]?.stringValue.flatMap(NativeTelemetryKind.init(rawValue:)) ?? channel.kind
@@ -122,7 +131,7 @@ struct NativeTelemetryTokenVault {
             let parts = [cookId, source.provider.rawValue, source.id] + (source.scope.isEmpty ? [] : [source.scope]) + [channel.id, n.key]
             let id = "telemetry:" + NativeTelemetryIdentity.key(parts)
             guard existing.insert(id).inserted else { continue }
-            library.readings.append(.object(["id": .string(id), "cookId": .string(cookId), "dishId": kind == .food ? assignment?["dishId"] ?? .null : .null, "probeId": .string(probe), "probeName": .string(channel.name), "measurementType": .string(kind.storageType), "value": .number(n.value), "unit": .string("°F"), "measuredAtUtcMillis": .number(n.at), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("telemetry:" + source.provider.rawValue), "sourceDeviceId": .string(device), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(raw.receivedAt), "timestampBasis": .string(n.basis), "samplingIntervalMillis": .number(60_000)])); inserted += 1
+            library.readings.append(.object(["id": .string(id), "cookId": .string(cookId), "dishId": kind == .food ? assignment?["dishId"] ?? .null : .null, "probeId": .string(probe), "probeName": .string(source.channels.count == 1 ? source.label : source.label + " · " + channel.name), "measurementType": .string(kind.storageType), "value": .number(n.value), "unit": .string("°F"), "measuredAtUtcMillis": .number(n.at), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("telemetry:" + source.provider.rawValue), "sourceDeviceId": .string(device), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(raw.receivedAt), "timestampBasis": .string(n.basis), "samplingIntervalMillis": .number(raw.history ? 0 : samplingInterval)])); inserted += 1
         }
         if inserted > 0 { save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) } }
         return inserted
@@ -130,9 +139,35 @@ struct NativeTelemetryTokenVault {
     func detachTelemetry(_ source: NativeTelemetrySource, cookId: String) throws {
         let prior = library, device = NativeTelemetryIdentity.device(cookId, source), at = Date.now.timeIntervalSince1970 * 1000
         library.devices = library.devices.map { row in guard var o = row.objectValue, o["id"]?.stringValue == device else { return row }; o["role"] = .string("telemetry_detached"); return .object(o) }
+        telemetryLifecycle(source, cookId: cookId, state: "detached", at: at)
         let probes = Set(library.probes.compactMap(\.objectValue).filter { $0["deviceId"]?.stringValue == device }.compactMap { $0["id"]?.stringValue })
         library.probeAssignments = library.probeAssignments.map { row in guard var o = row.objectValue, let probe = o["probeId"]?.stringValue, probes.contains(probe), o["endedAtUtcMillis"]?.numberValue == nil else { return row }; o["endedAtUtcMillis"] = .number(at); return .object(o) }
         library.probes = library.probes.map { row in guard var o = row.objectValue, let probe = o["id"]?.stringValue, probes.contains(probe) else { return row }; o["assignedDishId"] = .null; return .object(o) }
         save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
     }
+    func setTelemetryMonitoring(_ source: NativeTelemetrySource, cookId: String, enabled: Bool, at: Double = Date.now.timeIntervalSince1970 * 1000) throws {
+        let device = NativeTelemetryIdentity.device(cookId, source), prior = library
+        library.devices = library.devices.map { row in guard var o = row.objectValue, o["id"]?.stringValue == device, o["role"]?.stringValue != "telemetry_detached" else { return row }; o["role"] = .string(enabled ? "telemetry" : "telemetry_paused"); return .object(o) }
+        telemetryLifecycle(source, cookId: cookId, state: enabled ? "active" : "paused", at: at)
+        save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
+    }
+    private func telemetryLifecycle(_ source: NativeTelemetrySource, cookId: String, state: String, at: Double) {
+        library.events.append(.object(["id": .string(UUID().uuidString.lowercased()), "cookId": .string(cookId), "eventType": .string("telemetry_lifecycle"), "title": .string("Temperature monitoring"), "details": .string(state), "occurredAtUtcMillis": .number(at), "recordedAtUtcMillis": .number(at), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("telemetry:" + source.provider.rawValue), "sourceDeviceId": .string(NativeTelemetryIdentity.device(cookId, source)), "createdAtUtcMillis": .number(at), "updatedAtUtcMillis": .number(at)]))
+    }
+    func pendingTelemetryRecovery(_ source: NativeTelemetrySource, cook: String) -> ClosedRange<Double>? {
+        let device = NativeTelemetryIdentity.device(cook, source)
+        guard let row = library.events.compactMap(\.objectValue).first(where: { $0["cookId"]?.stringValue == cook && $0["eventType"]?.stringValue == "telemetry_recovery" && $0["sourceDeviceId"]?.stringValue == device }),
+              let details = row["details"]?.stringValue, let bytes = details.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any], json["complete"] as? Bool != true,
+              let from = NativeTelemetryEndpoint.number(json["from"]), let until = NativeTelemetryEndpoint.number(json["until"]), from > 0, until >= from else { return nil }
+        return from...until
+    }
+    func saveTelemetryRecovery(_ source: NativeTelemetrySource, cook: String, from: Double, until: Double, complete: Bool = false) throws {
+        let id = "telemetry-recovery:" + NativeTelemetryIdentity.key(cook, NativeTelemetryIdentity.device(cook, source)), now = Date.now.timeIntervalSince1970 * 1000
+        let bytes = try JSONSerialization.data(withJSONObject: ["from": from, "until": until, "complete": complete]), prior = library
+        var row = library.events.first { $0.objectValue?["id"]?.stringValue == id }?.objectValue ?? ["id": .string(id), "cookId": .string(cook), "eventType": .string("telemetry_recovery"), "title": .string("Temperature history synchronization"), "occurredAtUtcMillis": .number(now), "recordedAtUtcMillis": .number(now), "createdAtUtcMillis": .number(now), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("telemetry:" + source.provider.rawValue), "sourceDeviceId": .string(NativeTelemetryIdentity.device(cook, source))]
+        row["details"] = .string(String(decoding: bytes, as: UTF8.self)); row["updatedAtUtcMillis"] = .number(now)
+        library.events.removeAll { $0.objectValue?["id"]?.stringValue == id }; library.events.append(.object(row)); save()
+        if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
+    }
+
 }

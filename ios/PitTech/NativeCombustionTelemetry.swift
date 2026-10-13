@@ -13,6 +13,7 @@ import CombustionBLE
         }
     }
     func snapshot(_ device: String) async throws -> [NativeTelemetryObservation] {
+        if !active { DeviceManager.shared.initBluetooth(); active = true }
         guard let probe = DeviceManager.shared.getProbes().first(where: { $0.serialNumberString == device }) else { return [] }
         let receipt = Date.now.timeIntervalSince1970 * 1000
         let values = probe.virtualTemperatures

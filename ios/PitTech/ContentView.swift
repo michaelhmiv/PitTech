@@ -28,6 +28,11 @@ struct ContentView: View {
             telemetry.foreground(phase == .active, store: store)
             #endif
         }
+        .onChange(of: store.library.cooks.map { $0.id + ":" + $0.status }) { _, _ in
+            #if DEBUG
+            telemetry.foreground(scenePhase == .active, store: store)
+            #endif
+        }
         .preferredColorScheme(store.appearance)
         .background(PitTechStyle.canvas)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {

@@ -156,6 +156,8 @@ class TelemetryRecordingIntegrationTest {
         assertTrue(db.recordingDao().getAllAssignments().all { it.endedAtUtcMillis == start + 3 })
         telemetry.attach(cook, src, now = start + 5)
         assertTrue(telemetry.isAttached(cook, src))
+        db.cookDao().finishCook(cook, start + 6)
+        assertEquals(0, telemetry.ingest(cook, src, listOf(sample.copy(observedAtMillis = start + 7, receivedAtMillis = start + 7))))
     }
 
     @Test fun delayedHistoryRetainsTheRoleAtTheOriginalMeasurementTime(): Unit = runBlocking {
@@ -169,6 +171,18 @@ class TelemetryRecordingIntegrationTest {
         telemetry.ingest(cook, chamber, listOf(TelemetryObservation("meat", 180.0, "°F", start + 2, start + 10, fromHistory = true)))
         assertEquals("food_probe", db.cookDao().getAllSensorReadings().single().measurementType)
         assertEquals(dish.id, db.cookDao().getAllSensorReadings().single().dishId)
+    }
+
+    @Test fun explicitMonitoringPauseNeverBackfillsUnrequestedReadings(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Pause", dishes = listOf(DishDraft("Ribs", "Pork"))))
+        val src = source("home_assistant", "sensor.probe")
+        val start = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        telemetry.attach(cook, src, now = start + 1)
+        telemetry.setMonitoring(cook, src, false, start + 3)
+        telemetry.setMonitoring(cook, src, true, start + 6)
+        val rows = listOf(2L, 4L, 7L).map { TelemetryObservation("meat", 180.0, "°F", start + it, start + 10, fromHistory = true) }
+        assertEquals(2, telemetry.ingest(cook, src, rows))
+        assertEquals(setOf(start + 2, start + 7), db.cookDao().getAllSensorReadings().map { it.measuredAtUtcMillis }.toSet())
     }
 
 }

@@ -8,9 +8,11 @@ import com.pittech.data.TelemetryRecordingRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Application-owned runtime; foreground service and visible UI share exactly one set of collection jobs. */
-internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
+internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
     val store = TelemetryProfileStore(context)
     val states = MutableStateFlow<Map<String, String>>(emptyMap())
     val foreground = MutableStateFlow(false)
@@ -18,6 +20,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connectors = ConcurrentHashMap<String, ReadOnlyTelemetryConnector>()
     private val recorder = TelemetryRecordingRepository(db)
+    private val updateMutex = Mutex()
     private val activeCooks = db.cookDao().observeCooks().map { cooks -> cooks.filter { it.cook.status == CookStatus.ACTIVE }.map { it.cook.id }.toSet() }.distinctUntilChanged()
     val backgroundSessions = combine(store.profiles, activeCooks) { profiles, active ->
         profiles.any { it.monitoring && it.background && !it.onLogOnly && it.cookId in active && it.selectedDeviceIds.isNotEmpty() }
@@ -48,7 +51,11 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         try {
             val connected = connector(profile)
             val bindings = profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.map { TelemetryBinding(it, connected) }
-            val coordinator = TelemetryCollectionCoordinator(recorder, onState = { source, message -> status(profile.id + ":" + source.deviceId, message) })
+            val coordinator = TelemetryCollectionCoordinator(recorder, clock = clock, onState = { source, message ->
+                status(profile.id + ":" + source.deviceId, message)
+                if (message == "Sign in again") store.profiles.value.firstOrNull { it.id == profile.id && it.generation == profile.generation }
+                    ?.let { update(it.copy(monitoring = false)) }
+            })
             coordinator.launch(scope = CoroutineScope(currentCoroutineContext()), cookId = cook, bindings = bindings,
                 intervalMillis = profile.intervalMillis).join()
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -59,11 +66,11 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         val session = if (user.isBlank() && secret.isBlank()) factory.restore(context, profile) else factory.connect(context, profile, user, secret)
         val discovered = session.discover().map { source ->
             val saved = profile.sources.firstOrNull { it.deviceId == source.deviceId }
-            source.copy(identityScope = if (profile.provider == "home_assistant") profile.endpoint.trimEnd('/') else source.identityScope,
+            source.copy(identityScope = source.identityScope,
                 channels = source.channels.map { ch -> saved?.channels?.firstOrNull { it.id == ch.id }?.let { ch.copy(kind = it.kind) } ?: ch })
         }
         connectors.put(profile.id, session)?.disconnect()
-        val saved = profile.copy(sources = discovered)
+        val saved = profile.copy(sources = discovered, generation = (store.profiles.value.firstOrNull { it.id == profile.id }?.generation ?: profile.generation) + 1)
         store.save(saved); status(profile.id, "Connected · read-only")
         return saved
     }
@@ -77,7 +84,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
             selectedDeviceIds = (if (old.cookId == cookId) old.selectedDeviceIds else emptySet()) + source.deviceId, monitoring = true)
         store.save(updated)
         val initial = connector(updated).snapshot(source.deviceId)
-        recorder.ingest(cookId, source, initial)
+        recorder.ingest(cookId, source, initial, if (updated.onLogOnly) 0L else maxOf(updated.intervalMillis, connector(updated).minimumIntervalMillis))
         status(profile.id + ":" + source.deviceId, if (initial.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
     }
     suspend fun detachSource(profile: TelemetryProfile, source: TelemetrySource) {
@@ -88,23 +95,33 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         store.remove(profile.id)
         connectors.remove(profile.id)?.disconnect()
         profile.cookId?.let { cook -> profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { recorder.detach(cook, it) } }
-        TelemetryTokenStore(context).clear(profile.provider, profile.id)
+        try { factories(profile.provider)?.revoke(context, profile) } catch (_: Exception) { status(profile.id, "Local connection removed. Revoke the original token in your provider profile if the server was unavailable.") } finally { TelemetryTokenStore(context).clear(profile.provider, profile.id) }
         status(profile.id, "Disconnected")
     }
     fun update(profile: TelemetryProfile) {
-        store.save(profile)
-        if (profile.monitoring && profile.background && !profile.onLogOnly) {
-            try { CookRecordingService.startTelemetry(context) }
-            catch (_: Exception) {
-                store.save(profile.copy(background = false))
-                status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
+        scope.launch {
+            updateMutex.withLock {
+                val old = store.profiles.value.firstOrNull { it.id == profile.id } ?: return@withLock
+                if (old.generation != profile.generation) return@withLock
+                // Commit the lifecycle marker before emitting a profile that restarts collection.
+                if (old.monitoring != profile.monitoring) profile.cookId?.let { cook ->
+                    profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { recorder.setMonitoring(cook, it, profile.monitoring) }
+                }
+                store.save(profile)
+                if (profile.monitoring && profile.background && !profile.onLogOnly) {
+                    try { CookRecordingService.startTelemetry(context) }
+                    catch (_: Exception) {
+                        store.save(profile.copy(background = false))
+                        status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
+                    }
+                }
             }
         }
     }
     fun requestBackgroundFromVisibleApp() {
         if (foreground.value && backgroundRequested.value) runCatching { CookRecordingService.startTelemetry(context) }
     }
-    fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { store.save(it.copy(monitoring = false)) } }
+    fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { update(it.copy(monitoring = false)) } }
     suspend fun close() { scope.cancel(); connectors.values.forEach { it.disconnect() }; connectors.clear() }
     suspend fun onLog(cookId: String, force: Boolean = false) = supervisorScope {
         store.profiles.value.filter { it.cookId == cookId && it.monitoring && (it.onLogOnly || force) }.forEach { profile ->
@@ -113,7 +130,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
                     val session = connector(profile)
                     profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { source ->
                         val batch = session.snapshot(source.deviceId)
-                        recorder.ingest(cookId, source, batch)
+                        recorder.ingest(cookId, source, batch, if (profile.onLogOnly) 0L else maxOf(profile.intervalMillis, session.minimumIntervalMillis))
                         status(profile.id + ":" + source.deviceId, if (batch.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
