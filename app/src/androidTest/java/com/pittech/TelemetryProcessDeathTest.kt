@@ -17,6 +17,7 @@ class TelemetryProcessDeathTest {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
         app.stopService(Intent(app, CookRecordingService::class.java)); app.database.clearAllTables()
         InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(app.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        File(app.noBackupFilesDir, "telemetry-process-ci.receipt").delete()
         val marker = File(app.noBackupFilesDir, "telemetry-process-ci.marker"); marker.writeText("Explicit synthetic CI telemetry")
         val cook = app.cookRepository.startCook(NewCookDraft("CI synthetic telemetry restart"))
         val source = TelemetrySource("meater", "ci-synthetic-probe", "CI synthetic probe", channels = listOf(TelemetryChannel("internal", "Food", TelemetryKind.FOOD)))
