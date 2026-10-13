@@ -1,124 +1,161 @@
 package com.pittech.devices
 
-import inc.combustion.framework.service.ProbeScanResult
-import inc.combustion.framework.service.ProbeScanner
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/** Only temperature discovery/status/log reads are exposed by the SDK facade. */
+internal interface CombustionReadOnlyClient {
+    suspend fun discover(): List<CombustionFrame>
+    suspend fun snapshot(serial: String): CombustionFrame?
+    suspend fun logs(serial: String): CombustionLogBatch
+    suspend fun close()
+}
+
+internal data class CombustionFrame(
+    val serial: String,
+    val receivedAtMillis: Long,
+    val temperatures: List<Double> = emptyList(),
+    val instant: Double? = null,
+    val core: Double? = null,
+    val surface: Double? = null,
+    val ambient: Double? = null,
+    val quality: TelemetryQuality = TelemetryQuality.VALID,
+    val connectedStatus: Boolean = false,
+    val session: Long? = null,
+    val sequence: Long? = null,
+    val samplePeriodMillis: Long? = null,
+    val viaRepeater: Boolean = false,
+)
+
+internal data class CombustionLogRecord(
+    val session: Long,
+    val sequence: Long,
+    val temperatures: List<Double>,
+    val core: Double?,
+    val surface: Double?,
+    val ambient: Double?,
+)
+internal data class CombustionLogBatch(val status: CombustionFrame?, val records: List<CombustionLogRecord>)
 
 /**
- * Optional passive scanner using Combustion's official MIT Android BLE SDK.
- * No engine/fan, DFU, write, probe configuration or proprietary protocol methods.
- * Caller must obtain BLUETOOTH_SCAN permission and enabled Bluetooth first.
+ * Official SDK status includes derived measurements and MeatNet routes. Radio/service leases
+ * are bounded and released between samples. Device configuration, prediction, fan and DFU
+ * APIs are deliberately absent from CombustionReadOnlyClient.
  */
 internal class CombustionBleConnector(
+    private val client: CombustionReadOnlyClient,
+    private val anchors: CombustionAnchorStore = MemoryCombustionAnchorStore(),
     private val clock: () -> Long = System::currentTimeMillis,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    private val advertisements: Flow<ProbeScanResult> = ProbeScanner.scanResults,
-    private val scan: suspend () -> Unit = { ProbeScanner.scan() },
-    private val scanWindowMillis: Long = 8_000L,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "combustion"
-    private var scanner: Job? = null
+    override val minimumIntervalMillis = 30_000L
+    override val supportsHistory = true
     @Volatile private var closed = false
-    private var observers = 0
-    @Synchronized private fun stopIfIdle() { if (observers == 0) { scanner?.cancel(); scanner = null } }
-    private val seen = ConcurrentHashMap<String, List<TelemetryObservation>>()
+    private val mutex = Mutex()
+    private val seen = mutableMapOf<String, CombustionFrame>()
+    private val logs = mutableMapOf<String, Pair<Long, CombustionLogBatch>>()
 
-    @Synchronized private fun scanIfNeeded() {
-        if (closed) return
-        if (scanner?.isActive == true) return
-        scanner = scope.launch {
-            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-                try { scan() }
-                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                catch (_: Exception) { /* Bluetooth can disappear without stopping other sources. */ }
-                kotlinx.coroutines.delay(5_000L)
-            }
+    override suspend fun discover(): List<TelemetrySource> = mutex.withLock {
+        if (closed) return@withLock emptyList()
+        client.discover().filter { it.serial.isNotBlank() && it.serial != "0" }.distinctBy { it.serial }.map {
+            seen[it.serial] = it
+            source(it.serial, it.viaRepeater)
         }
     }
 
-    private suspend fun <T> withScan(block: suspend () -> T): T {
-        synchronized(this) { observers++ }
-        scanIfNeeded()
-        return try { block() } finally { synchronized(this) { observers-- }; stopIfIdle() }
-    }
-
-    override suspend fun discover(): List<TelemetrySource> = withScan {
-        val detected = LinkedHashSet<String>()
-        withTimeoutOrNull(scanWindowMillis) {
-            advertisements.collect { result ->
-                result.serialNumber?.takeIf { it.isNotBlank() }?.let { detected.add(it); seen[it] = decode(result, clock()) }
-            }
-        }
-        detected.map(::source)
-    }
-
-    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
-        if (closed) return emptyList()
-        seen[deviceId]?.takeIf { samples -> samples.any { clock() - it.receivedAtMillis in 0..15_000L } }?.let { return it }
-        return withScan {
-            withTimeoutOrNull(scanWindowMillis) {
-                advertisements.first { it.serialNumber == deviceId }.let { decode(it, clock()) }
-                    .also { seen[deviceId] = it }
-            }.orEmpty()
-        }
+    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> = mutex.withLock {
+        if (closed) return@withLock emptyList()
+        val cached = seen[deviceId]?.takeIf { clock() - it.receivedAtMillis in 0..15_000L }
+        val status = cached ?: client.snapshot(deviceId)?.also { seen[deviceId] = it }
+        status?.let { decode(it, anchor(it)) }.orEmpty()
     }
 
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = observe(deviceId, minimumIntervalMillis)
     override fun observe(deviceId: String, intervalMillis: Long): Flow<List<TelemetryObservation>> = flow {
         require(deviceId.isNotBlank())
-        while (kotlinx.coroutines.currentCoroutineContext().isActive && !closed) {
+        while (currentCoroutineContext().isActive && !closed) {
             val started = clock()
             emit(snapshot(deviceId))
-            // Scan only for a bounded window per requested sample, not for the whole cook.
-            kotlinx.coroutines.delay((maxOf(minimumIntervalMillis, intervalMillis) - (clock() - started).coerceAtLeast(0L)).coerceAtLeast(1_000L))
+            delay((maxOf(minimumIntervalMillis, intervalMillis) - (clock() - started).coerceAtLeast(0L)).coerceAtLeast(1_000L))
         }
     }
 
-    override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation> {
+    override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation> = mutex.withLock {
         require(untilMillis >= fromMillis)
-        // Probe log transfer is SDK-supported but not yet implemented by passive scanning.
-        return emptyList()
+        if (closed) return@withLock emptyList()
+        val now = clock()
+        val batch = logs[deviceId]?.takeIf { now - it.first in 0..30_000L }?.second
+            ?: client.logs(deviceId).also { logs[deviceId] = now to it }
+        val status = batch.status ?: return@withLock emptyList()
+        val anchor = anchor(status) ?: return@withLock emptyList()
+        batch.records.asSequence().take(MAX_LOG_RECORDS).filter { it.session == anchor.session }
+            .mapNotNull { record ->
+                val measured = anchor.timeFor(record.sequence)?.takeIf { it in fromMillis..untilMillis && it <= now }
+                    ?: return@mapNotNull null
+                // SDK Date fallbacks do not establish historical time. Raw advertisements
+                // never become historical samples. The validated anchor survives process death.
+                decode(CombustionFrame(deviceId, now, record.temperatures, core = record.core,
+                    surface = record.surface, ambient = record.ambient, connectedStatus = true,
+                    session = record.session, sequence = record.sequence, samplePeriodMillis = anchor.periodMillis),
+                    anchor, fromHistory = true, measuredOverride = measured)
+            }.flatten().toList()
+    }
+
+    private fun anchor(status: CombustionFrame): CombustionTimeAnchor? {
+        if (!status.connectedStatus || status.quality != TelemetryQuality.VALID || status.temperatures.size != 8) return null
+        val session = status.session ?: return null
+        val sequence = status.sequence ?: return null
+        val period = status.samplePeriodMillis ?: return null
+        if (session !in 0..0xffff_ffffL || sequence !in 0..0xffff_ffffL || period !in 1_000L..60_000L) return null
+        val key = TelemetryNormalizer.localKey("combustion", status.serial, session.toString())
+        val old = anchors.get(key)
+        if (old != null) {
+            val expected = old.timeFor(sequence) ?: return null
+            // Changed periods, clock discontinuities and reused sessions are ambiguous.
+            if (old.periodMillis != period || kotlin.math.abs(expected - status.receivedAtMillis) > maxOf(30_000L, period * 2)) return null
+            return old
+        }
+        val new = CombustionTimeAnchor(session, sequence, status.receivedAtMillis, period)
+        anchors.save(key, new)
+        return new
     }
 
     override suspend fun disconnect() {
         closed = true
-        scanner?.cancel()
-        scanner = null
-        seen.clear()
+        client.close()
+        mutex.withLock { seen.clear(); logs.clear() }
     }
 
     internal companion object {
-        fun source(serial: String): TelemetrySource = TelemetrySource(
+        const val MAX_LOG_RECORDS = 20_000
+        fun source(serial: String, viaRepeater: Boolean = false) = TelemetrySource(
             "combustion", serial, "Combustion probe " + serial.takeLast(4), "Combustion",
-            // The raw sensor array is not the SDK's derived core/surface measurement.
-            channels = (0..7).map { TelemetryChannel("sensor" + it, "Raw sensor " + (it + 1),
-                when (it) { 0 -> TelemetryKind.FOOD; 7 -> TelemetryKind.AMBIENT; else -> TelemetryKind.OTHER }) } +
+            model = if (viaRepeater) "Predictive Thermometer · MeatNet" else "Predictive Thermometer",
+            channels = (0..7).map { TelemetryChannel("sensor$it", "Raw sensor ${it + 1}",
+                when (it) { 0 -> TelemetryKind.FOOD; 7 -> TelemetryKind.AMBIENT; else -> TelemetryKind.OTHER }) } + listOf(
                 TelemetryChannel("instant", "Instant-read", TelemetryKind.FOOD),
+                TelemetryChannel("core", "Derived core", TelemetryKind.FOOD),
+                TelemetryChannel("surface", "Derived surface", TelemetryKind.OTHER),
+                TelemetryChannel("ambient", "Derived ambient", TelemetryKind.AMBIENT)),
         )
 
-        /** Official temperature advertisements have no source timestamp. Use BLE receipt time explicitly. */
-        fun decode(result: ProbeScanResult, received: Long): List<TelemetryObservation> {
-            val readings = result.temperatures?.values.orEmpty().take(8).mapIndexed { index, c ->
-                TelemetryObservation("sensor" + index, c.takeIf { it.isFinite() }, "°C",
-                    observedAtMillis = null, receivedAtMillis = received)
-            }
-            val instant = result.instantReadTemperature?.takeIf { it.isFinite() }?.let {
-                TelemetryObservation("instant", it, "°C", observedAtMillis = null, receivedAtMillis = received)
-            }
-            return readings + listOfNotNull(instant)
+        fun decode(frame: CombustionFrame, anchor: CombustionTimeAnchor? = null,
+                   fromHistory: Boolean = false, measuredOverride: Long? = null): List<TelemetryObservation> {
+            val measured = measuredOverride ?: frame.sequence?.let { anchor?.timeFor(it) }
+            fun sample(id: String, value: Double?) = TelemetryObservation(id, value?.takeIf { it.isFinite() }, "°C",
+                measured, frame.receivedAtMillis, frame.quality,
+                eventId = if (measured != null && frame.session != null && frame.sequence != null)
+                    "session:${frame.session}:sequence:${frame.sequence}" else null,
+                fromHistory = fromHistory,
+                timestampBasis = if (measured == null) TelemetryTimestampBasis.RECEIPT else TelemetryTimestampBasis.PROBE_SEQUENCE_ANCHOR)
+            return frame.temperatures.take(8).mapIndexed { index, c -> sample("sensor$index", c) } +
+                listOfNotNull(frame.instant?.let { sample("instant", it) }, frame.core?.let { sample("core", it) },
+                    frame.surface?.let { sample("surface", it) }, frame.ambient?.let { sample("ambient", it) })
         }
     }
 }
@@ -130,6 +167,7 @@ internal class CombustionFactory : TelemetryConnectorFactory {
             else listOf(android.Manifest.permission.ACCESS_FINE_LOCATION)
         require(permissions.all { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) { "Allow Bluetooth access to discover Combustion probes." }
         require(context.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled == true) { "Turn on Bluetooth to discover Combustion probes." }
-        return CombustionBleConnector()
+        return CombustionBleConnector(OfficialCombustionReadOnlyClient(context.applicationContext as android.app.Application),
+            FileCombustionAnchorStore(context))
     }
 }
