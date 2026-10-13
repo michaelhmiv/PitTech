@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.*
 import java.util.concurrent.ConcurrentHashMap
 
 /** Application-owned runtime; foreground service and visible UI share exactly one set of collection jobs. */
-internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase) {
+internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
     val store = TelemetryProfileStore(context)
     val states = MutableStateFlow<Map<String, String>>(emptyMap())
     val foreground = MutableStateFlow(false)
@@ -37,7 +37,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     private fun status(id: String, text: String) { states.update { it + (id to text) } }
     private suspend fun connector(profile: TelemetryProfile): ReadOnlyTelemetryConnector {
         connectors[profile.id]?.let { return it }
-        val factory = TelemetryFactories.get(profile.provider) ?: throw TelemetryRequestException(TelemetryFailureKind.CONFIGURATION)
+        val factory = factories(profile.provider) ?: throw TelemetryRequestException(TelemetryFailureKind.CONFIGURATION)
         return factory.restore(context, profile).also { fresh ->
             val prior = connectors.putIfAbsent(profile.id, fresh)
             if (prior != null) fresh.disconnect()
@@ -55,8 +55,8 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         catch (error: Exception) { status(profile.id, error.message?.takeIf { error is TelemetryRequestException } ?: "Reconnect this connection in Devices.") }
     }
     suspend fun connect(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
-        val factory = TelemetryFactories.get(profile.provider) ?: error("This connector is unavailable in this build.")
-        val session = factory.connect(context, profile, user, secret)
+        val factory = factories(profile.provider) ?: error("This connector is unavailable in this build.")
+        val session = if (user.isBlank() && secret.isBlank()) factory.restore(context, profile) else factory.connect(context, profile, user, secret)
         val discovered = session.discover().map { source ->
             val saved = profile.sources.firstOrNull { it.deviceId == source.deviceId }
             source.copy(identityScope = if (profile.provider == "home_assistant") profile.endpoint.trimEnd('/') else source.identityScope,
@@ -76,7 +76,9 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         val updated = old.copy(cookId = cookId, sources = old.sources.filterNot { it.deviceId == source.deviceId } + source,
             selectedDeviceIds = (if (old.cookId == cookId) old.selectedDeviceIds else emptySet()) + source.deviceId, monitoring = true)
         store.save(updated)
-        recorder.ingest(cookId, source, connector(updated).snapshot(source.deviceId))
+        val initial = connector(updated).snapshot(source.deviceId)
+        recorder.ingest(cookId, source, initial)
+        status(profile.id + ":" + source.deviceId, if (initial.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
     }
     suspend fun detachSource(profile: TelemetryProfile, source: TelemetrySource) {
         profile.cookId?.let { recorder.detach(it, source) }
@@ -103,12 +105,17 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         if (foreground.value && backgroundRequested.value) runCatching { CookRecordingService.startTelemetry(context) }
     }
     fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { store.save(it.copy(monitoring = false)) } }
+    suspend fun close() { scope.cancel(); connectors.values.forEach { it.disconnect() }; connectors.clear() }
     suspend fun onLog(cookId: String, force: Boolean = false) = supervisorScope {
         store.profiles.value.filter { it.cookId == cookId && it.monitoring && (it.onLogOnly || force) }.forEach { profile ->
             launch {
                 try {
                     val session = connector(profile)
-                    profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { source -> recorder.ingest(cookId, source, session.snapshot(source.deviceId)) }
+                    profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { source ->
+                        val batch = session.snapshot(source.deviceId)
+                        recorder.ingest(cookId, source, batch)
+                        status(profile.id + ":" + source.deviceId, if (batch.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
+                    }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { status(profile.id, "A reading was unavailable. Your note is saved.") }
             }
