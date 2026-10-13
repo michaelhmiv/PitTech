@@ -27,10 +27,13 @@ internal class HomeAssistantEndpoint(raw: String) {
         val uri = URI.create(raw.trim().trimEnd('/'))
         val host = uri.host?.lowercase() ?: error("Home Assistant URL needs a hostname")
         require(uri.userInfo == null && uri.fragment == null && uri.query == null)
-        require(uri.port in -1..65535)
-        val local = host == "localhost" || host.endsWith(".local") ||
-            host.startsWith("192.168.") || host.startsWith("10.") ||
-            Regex("172\\.(1[6-9]|2[0-9]|3[01])\\..+").matches(host)
+        require(uri.path.isNullOrEmpty() || uri.path == "/") { "Enter only the server origin, without a path" }
+        require(uri.port == -1 || uri.port in 1..65535)
+        val octets = host.split('.').map { it.toIntOrNull() }
+        val privateIpv4 = octets.size == 4 && octets.all { it != null && it in 0..255 } &&
+            (octets[0] == 10 || octets[0] == 127 || octets[0] == 192 && octets[1] == 168 ||
+                octets[0] == 172 && octets[1] in 16..31)
+        val local = host == "localhost" || host.endsWith(".local") || host == "::1" || privateIpv4
         require(uri.scheme == "https" || (uri.scheme == "http" && local)) {
             "Use HTTPS for Home Assistant outside your local network"
         }
