@@ -40,4 +40,17 @@ class TelemetryTokenStoreTest {
         try { store.save("meater", "invalid", "password contains spaces"); fail("Whitespace token accepted") }
         catch (_: IllegalArgumentException) {}
     }
+    @Test fun corruptionRequiresFreshAuthorizationAndRemovalDeletesTheKey() {
+        val store = TelemetryTokenStore(context)
+        val profile = "test-corrupted-session"
+        store.save("meater", profile, "valid-token")
+        val key = TelemetryNormalizer.localKey("meater", profile)
+        val file = File(context.noBackupFilesDir, "telemetry-" + key + ".bin")
+        file.writeBytes(ByteArray(32) { 0 })
+        assertNull(store.load("meater", profile))
+        assertFalse(file.exists())
+        val keys = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        assertFalse(keys.containsAlias("pittech-telemetry-" + key.take(40) + "-v1"))
+    }
+
 }

@@ -3,6 +3,7 @@ package com.pittech.devices
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.AtomicFile
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -31,21 +32,21 @@ internal class TelemetryTokenStore(context: Context) {
         val key = id(provider, profile)
         require(token.isNotBlank() && token.length <= 16384 && token.none(Char::isWhitespace))
         val plain = token.toByteArray(Charsets.UTF_8)
+        require(plain.size <= 16384)
         val target = file(key)
-        val temporary = File(directory, target.name + ".tmp")
+        val atomic = AtomicFile(target)
         try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, secretKey(key))
             cipher.updateAAD(aad(key))
-            temporary.outputStream().use { output ->
+            val output = atomic.startWrite()
+            try {
                 output.write(cipher.iv)
                 output.write(cipher.doFinal(plain))
-                output.flush()
-            }
-            check(temporary.renameTo(target)) { "Could not store the encrypted provider session" }
+                atomic.finishWrite(output)
+            } catch (error: Exception) { atomic.failWrite(output); throw error }
         } finally {
             plain.fill(0)
-            temporary.delete()
         }
     }
 
@@ -53,26 +54,36 @@ internal class TelemetryTokenStore(context: Context) {
         val key = id(provider, profile)
         val source = file(key)
         if (!source.exists()) return null
+        return try {
         require(source.length() in 29..16412) { "Invalid encrypted session" }
-        val bytes = source.readBytes()
+        val bytes = AtomicFile(source).readFully()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, secretKey(key), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val secret = store.getKey(alias(key), null) as? SecretKey ?: error("Session key unavailable")
+        cipher.init(Cipher.DECRYPT_MODE, secret, GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         cipher.updateAAD(aad(key))
         val plain = cipher.doFinal(bytes, 12, bytes.size - 12)
-        return try {
+        try {
             String(plain, Charsets.UTF_8).also {
                 require(it.isNotBlank() && it.length <= 16384 && it.none(Char::isWhitespace))
             }
         } finally {
             plain.fill(0)
         }
+        } catch (_: Exception) {
+            // A corrupt or invalidated session cannot be restored. Require fresh authorization.
+            clear(provider, profile)
+            null
+        }
     }
 
     @Synchronized fun clear(provider: String, profile: String) {
         val key = id(provider, profile)
         val source = file(key)
-        check(!source.exists() || source.delete())
+        AtomicFile(source).delete()
+        check(!source.exists())
         File(directory, source.name + ".tmp").delete()
+        KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(alias(key)) }
     }
 
     private fun secretKey(key: String): SecretKey {
