@@ -31,11 +31,13 @@ internal class CombustionBleConnector(
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "combustion"
     private var scanner: Job? = null
+    @Volatile private var closed = false
     private var observers = 0
     @Synchronized private fun stopIfIdle() { if (observers == 0) { scanner?.cancel(); scanner = null } }
     private val seen = ConcurrentHashMap<String, List<TelemetryObservation>>()
 
     @Synchronized private fun scanIfNeeded() {
+        if (closed) return
         if (scanner?.isActive == true) return
         scanner = scope.launch {
             while (kotlinx.coroutines.currentCoroutineContext().isActive) {
@@ -62,6 +64,7 @@ internal class CombustionBleConnector(
     }
 
     override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
+        if (closed) return emptyList()
         seen[deviceId]?.takeIf { samples -> samples.any { clock() - it.receivedAtMillis in 0..15_000L } }?.let { return it }
         return withScan {
             withTimeoutOrNull(scanWindowMillis) {
@@ -74,7 +77,7 @@ internal class CombustionBleConnector(
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = observe(deviceId, minimumIntervalMillis)
     override fun observe(deviceId: String, intervalMillis: Long): Flow<List<TelemetryObservation>> = flow {
         require(deviceId.isNotBlank())
-        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+        while (kotlinx.coroutines.currentCoroutineContext().isActive && !closed) {
             val started = clock()
             emit(snapshot(deviceId))
             // Scan only for a bounded window per requested sample, not for the whole cook.
@@ -89,6 +92,7 @@ internal class CombustionBleConnector(
     }
 
     override suspend fun disconnect() {
+        closed = true
         scanner?.cancel()
         scanner = null
         seen.clear()

@@ -40,14 +40,15 @@ class CombustionBleConnectorTest {
             active.incrementAndGet()
             try { while (kotlinx.coroutines.currentCoroutineContext().isActive) { radio.emit(scan); kotlinx.coroutines.delay(10) } }
             finally { active.decrementAndGet() }
-        }, scanWindowMillis = 100)
+        }, scanWindowMillis = 1_000)
         try {
             val readings = connector.snapshot("CCABC1")
             assertEquals(1, readings.size)
             kotlinx.coroutines.withTimeout(1_000) { while (active.get() != 0) kotlinx.coroutines.delay(10) }
-            connector.disconnect()
             assertTrue(connector.snapshot("missing").isEmpty())
             kotlinx.coroutines.withTimeout(1_000) { while (active.get() != 0) kotlinx.coroutines.delay(10) }
+            connector.disconnect()
+            assertTrue(connector.snapshot("CCABC1").isEmpty())
         } finally { connector.disconnect(); scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
     }
 
