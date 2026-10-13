@@ -288,8 +288,7 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]
-# Wait for the Room transaction after the fixture emits its receipt.
-sleep 1
+# The fixture receipt is the persisted Room watermark, not an uncommitted frame.
 timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-services.txt"
 grep -q 'isForeground=true' "$output_dir/telemetry-process-services.txt"
 printf 'Previous PID: %s\nRestored PID: %s\nPrevious receipt: %s\n' "$old_telemetry_pid" "$new_telemetry_pid" "$previous_receipt" > "$output_dir/telemetry-process-restart.txt"
