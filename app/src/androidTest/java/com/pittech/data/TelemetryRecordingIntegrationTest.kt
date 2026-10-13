@@ -70,4 +70,43 @@ class TelemetryRecordingIntegrationTest {
         assertEquals(0, telemetry.ingest(cook, src, listOf(value.copy(channelId = "not-selected"))))
         assertEquals(0, telemetry.ingest(cook, src, listOf(value.copy(quality = TelemetryQuality.UNAVAILABLE))))
     }
+
+    @Test fun mixedSourcesRoundTripThroughNormalCookArchiveWithoutCredentials(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Export mixed probes",
+            dishes = listOf(DishDraft("Ribs", "Pork"))))
+        val dish = db.cookDao().getDishesForCook(cook).single()
+        val started = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        val ha = source("home_assistant", "sensor.private-backyard-identity")
+        val fb = source("fireboard", "account-private-fireboard-identity")
+        telemetry.attach(cook, ha, mapOf("meat" to dish.id), started + 1L)
+        telemetry.attach(cook, fb, mapOf("meat" to dish.id), started + 1L)
+        telemetry.ingest(cook, ha, listOf(TelemetryObservation(
+            "meat", 93.0, "°C", started + 2L, started + 3L, eventId = "ha-record"
+        )))
+        telemetry.ingest(cook, fb, listOf(TelemetryObservation(
+            "meat", 201.0, "°F", started + 4L, started + 5L, eventId = "fb-record"
+        )))
+        val archive = repo.exportSnapshot(cook)
+        assertEquals(2, archive.devices.size)
+        assertEquals(2, archive.readings.size)
+        assertEquals(2, archive.assignments.size)
+        assertTrue(archive.devices.none { it.id.contains("private") })
+        assertTrue(archive.readings.none { it.id.contains("private") })
+        val restoredDb = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext<Context>(), PitTechDatabase::class.java
+        ).build()
+        try {
+            val restored = CookRepository(restoredDb, PhotoStorage(ApplicationProvider.getApplicationContext()))
+            restored.importSnapshot(archive, emptyMap())
+            restored.importSnapshot(archive, emptyMap())
+            val restoredRows = restoredDb.cookDao().getAllSensorReadings()
+            assertEquals(2, restoredRows.size)
+            assertEquals(2, restoredDb.cookDao().getAllDevices().size)
+            assertEquals(2, restoredDb.recordingDao().getAllAssignments().size)
+            assertEquals(archive.readings.map { it.id }.toSet(), restoredRows.map { it.id }.toSet())
+            assertEquals(setOf(dish.id), restoredRows.mapNotNull { it.dishId }.toSet())
+        } finally {
+            restoredDb.close()
+        }
+    }
 }
