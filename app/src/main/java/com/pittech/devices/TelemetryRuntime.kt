@@ -59,7 +59,12 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
             coordinator.launch(scope = CoroutineScope(currentCoroutineContext()), cookId = cook, bindings = bindings,
                 intervalMillis = profile.intervalMillis).join()
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { status(profile.id, error.message?.takeIf { error is TelemetryRequestException } ?: "Reconnect this connection in Devices.") }
+        catch (error: Exception) {
+            status(profile.id, error.message?.takeIf { error is TelemetryRequestException } ?: "Reconnect this connection in Devices.")
+            if (error is IllegalArgumentException || error is TelemetryRequestException && error.kind in setOf(TelemetryFailureKind.AUTHORIZATION, TelemetryFailureKind.CONFIGURATION)) {
+                store.profiles.value.firstOrNull { it.id == profile.id && it.generation == profile.generation }?.let { update(it.copy(monitoring = false)) }
+            }
+        }
     }
     suspend fun connect(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
         val factory = factories(profile.provider) ?: error("This connector is unavailable in this build.")
