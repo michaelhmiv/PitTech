@@ -132,7 +132,7 @@ extension PitTechLibrary {
                 let probe = library.probes.compactMap(\.objectValue).first { $0["id"]?.stringValue == sample?.probeId }
                 let device = library.devices.compactMap(\.objectValue).first { $0["id"]?.stringValue == sample?.sourceDeviceId }
                 let assigned = rule["dishId"]?.stringValue == nil || probe?["assignedDishId"]?.stringValue == rule["dishId"]?.stringValue
-                let eligible = library.cooks.first(where: { $0.id == cookId })?.status == "active" && sample?.sourceDeviceId.map(telemetryLiveDevices.contains) == true && device?["role"]?.stringValue == "telemetry" && assigned && probe?["measurementType"]?.stringValue == config["measurementType"]?.stringValue
+                let eligible = library.cooks.first(where: { $0.id == cookId })?.status == "active" && sample?.probeId.map(telemetryLiveProbes.contains) == true && device?["role"]?.stringValue == "telemetry" && assigned && probe?["measurementType"]?.stringValue == config["measurementType"]?.stringValue
                 probeDue = NativeProbeReminder.due(config: config, sample: sample, eligible: eligible, now: now, state: &state)
             }
             if state["deliveredAtUtcMillis"]?.numberValue != nil && state["snoozedUntilUtcMillis"]?.numberValue == nil { rule["status"] = .string("due"); library.reminderRules[index] = .object(rule); continue }

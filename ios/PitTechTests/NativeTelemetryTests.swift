@@ -143,4 +143,34 @@ final class NativeTelemetryTests: XCTestCase {
         XCTAssertEqual(restored.library.readings[0].objectValue?["measuredAtUtcMillis"]?.numberValue, now)
     }
 
+    @MainActor func testOneMissingSensorCannotStopAnotherSensorOnTheSameConnection() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); store.startCook(title: "Sensor isolation", firstDish: "Food")
+        let cook = store.library.cooks[0].id
+        final class Fixture: NativeReadOnlyTelemetry {
+            var failing = false
+            let sources = ["sensor.missing", "sensor.healthy"].map { NativeTelemetrySource(provider: .home_assistant, id: $0, label: $0, scope: "https://home.example.com", channels: [.init(id: "temperature", name: "Food", kind: .food)]) }
+            func discover() async throws -> [NativeTelemetrySource] { sources }
+            func snapshot(_ device: String) async throws -> [NativeTelemetryObservation] {
+                if !failing { return [] }
+                if device == "sensor.missing" { throw NativeTelemetryError.configuration }
+                let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
+                return [.init(channel: "temperature", value: 180, unit: "°F", observedAt: now, receivedAt: now, eventId: String(Int64(now)))]
+            }
+            func disconnect() {}
+        }
+        let adapter = Fixture(), runtime = NativeTelemetryRuntime(directory: folder, adapterFactory: { _, _ in adapter })
+        runtime.foreground(true, store: store)
+        let profile = NativeTelemetryProfile(provider: .home_assistant, endpoint: "https://home.example.com", onLogOnly: true)
+        try await runtime.connect(profile, user: "", secret: "fixture-token")
+        for source in adapter.sources { try await runtime.attach(runtime.profiles[0], source: source, cook: cook, assignments: [:], store: store) }
+        adapter.failing = true
+        await runtime.onLog(cook)
+        XCTAssertEqual(store.library.readings.count, 1)
+        XCTAssertEqual(runtime.messages[profile.id + ":sensor.healthy"], "Connected")
+        XCTAssertEqual(runtime.messages[profile.id + ":sensor.missing"], NativeTelemetryError.configuration.localizedDescription)
+        try await runtime.remove(runtime.profiles[0], store: store); runtime.foreground(false, store: store)
+    }
+
 }

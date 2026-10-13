@@ -13,6 +13,7 @@ final class CookStore {
     var reminderMessage: String?
     var notificationCookId: String?
     var telemetryLiveDevices: Set<String> = []
+    var telemetryLiveProbes: Set<String> = []
     @ObservationIgnored var telemetryOnLog: ((String) -> Void)?
     @ObservationIgnored var reminderScheduleTask: Task<Void, Never>?
     private let directory: URL

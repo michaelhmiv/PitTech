@@ -24,9 +24,9 @@ struct NativeTelemetryConnectionsView: View {
                 ForEach(runtime.profiles) { profile in
                     Section(profile.provider.label + " · Beta") {
                         Text(runtime.messages[profile.id] ?? "Saved connection")
-                        ForEach(profile.sources.filter { profile.selected.contains($0.id) }) { source in Text(source.label) }
+                        ForEach(profile.sources.filter { profile.selected.contains($0.id) }) { source in VStack(alignment: .leading) { Text(source.label); Button("Detach from meal") { do { try runtime.detach(profile, source: source, store: store) } catch { self.error = error.localizedDescription } }; Text(runtime.messages[profile.id + ":" + source.id] ?? "Waiting for a reading").font(.caption).foregroundStyle(.secondary) } }
                         Button("Devices and food assignments") { mapping = profile }
-                        Toggle("Monitor temperatures", isOn: Binding(get: { profile.monitoring }, set: { value in var p = profile; p.monitoring = value; try? runtime.update(p) })).disabled(profile.cookId == nil)
+                        Toggle("Monitor temperatures", isOn: Binding(get: { profile.monitoring }, set: { value in var p = profile; p.monitoring = value; try? runtime.update(p) })).disabled(profile.cookId == nil || profile.selected.isEmpty)
                         Toggle("Only collect when I log", isOn: Binding(get: { profile.onLogOnly }, set: { value in var p = profile; p.onLogOnly = value; try? runtime.update(p) }))
                         Picker("Sampling", selection: Binding(get: { profile.interval }, set: { value in var p = profile; p.interval = value; try? runtime.update(p) })) {
                             Text("15 seconds").tag(15_000.0); Text("30 seconds").tag(30_000.0); Text("1 minute").tag(60_000.0); Text("5 minutes").tag(300_000.0)
@@ -115,6 +115,14 @@ struct NativeTelemetryMappingView: View {
     @State private var roles: [String: NativeTelemetryKind] = [:]
     @State private var error: String?
     @State private var busy = false
+    private func restoreAssignments() {
+        assignments = [:]; roles = [:]
+        guard let source else { return }
+        for channel in source.channels {
+            let id = NativeTelemetryIdentity.probe(cookID, source, channel.id)
+            if let probe = store.library.probes.compactMap(\.objectValue).first(where: { $0["id"]?.stringValue == id }) { assignments[channel.id] = probe["assignedDishId"]?.stringValue ?? "" }
+        }
+    }
     private var source: NativeTelemetrySource? { profile.sources.first { $0.id == sourceID } }
     var body: some View {
         NavigationStack {
@@ -138,6 +146,9 @@ struct NativeTelemetryMappingView: View {
                     Task { do { try await runtime.attach(profile, source: mapped, cook: cookID, assignments: foods, store: store); dismiss() } catch { self.error = error.localizedDescription }; busy = false }
                 }.disabled(source == nil || cookID.isEmpty || busy)
             }
+            .onAppear { cookID = store.activeCooks.contains { $0.id == profile.cookId && $0.status == "active" } ? profile.cookId ?? "" : "" }
+            .onChange(of: sourceID) { _, _ in restoreAssignments() }
+            .onChange(of: cookID) { _, _ in restoreAssignments() }
             .navigationTitle("Food assignments")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
         }

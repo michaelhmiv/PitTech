@@ -10,7 +10,9 @@ import Observation
     private var collection: Task<Void, Never>?
     private weak var store: CookStore?
     private var visible = false
-    init(directory: URL? = nil) {
+    private let adapterFactory: ((NativeTelemetryProfile, String) throws -> any NativeReadOnlyTelemetry)?
+    init(directory: URL? = nil, adapterFactory: ((NativeTelemetryProfile, String) throws -> any NativeReadOnlyTelemetry)? = nil) {
+        self.adapterFactory = adapterFactory
         let folder = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         configuration = folder.appendingPathComponent("telemetry-connections-v1.json")
@@ -34,6 +36,19 @@ import Observation
         store.telemetryLiveDevices = visible ? Set(profiles.filter { $0.monitoring }.flatMap { profile in
             profile.sources.filter { profile.selected.contains($0.id) && messages[profile.id + ":" + $0.id]?.hasPrefix("Connected") == true && store.library.cooks.first(where: { $0.id == profile.cookId })?.status == "active" }.map { NativeTelemetryIdentity.device(profile.cookId ?? "", $0) }
         }) : []
+        let probes = visible ? Set(profiles.filter { $0.monitoring }.flatMap { profile in
+            profile.sources.filter { profile.selected.contains($0.id) && store.telemetryLiveDevices.contains(NativeTelemetryIdentity.device(profile.cookId ?? "", $0)) }.flatMap { source in
+                source.channels.filter { messages[profile.id + ":" + source.id + ":" + $0.id] == "Connected" }.map { NativeTelemetryIdentity.probe(profile.cookId ?? "", source, $0.id) }
+            }
+        }) : Set<String>()
+        if store.telemetryLiveProbes != probes { store.telemetryLiveProbes = probes; store.save() }
+    }
+    private func publishBatch(_ profile: NativeTelemetryProfile, source: NativeTelemetrySource, batch: [NativeTelemetryObservation]) {
+        for channel in source.channels {
+            let sample = batch.filter { $0.channel == channel.id }.max { ($0.observedAt ?? $0.receivedAt) < ($1.observedAt ?? $1.receivedAt) }
+            messages[profile.id + ":" + source.id + ":" + channel.id] = sample?.normalized != nil ? "Connected" : "Unavailable or stale"
+        }
+        refreshLiveDevices()
     }
     func connect(_ profile: NativeTelemetryProfile, user: String, secret: String) async throws {
         if profile.provider == .home_assistant { _ = try NativeTelemetryEndpoint.homeAssistant(profile.endpoint) }
@@ -48,14 +63,23 @@ import Observation
         let sources = try await connector.discover()
         if !token.isEmpty { try vault.save(profile.id, token) }
         connectors[profile.id]?.disconnect(); connectors[profile.id] = connector
-        var saved = profile; saved.sources = sources.map { source in
-            guard let previous = profile.sources.first(where: { $0.id == source.id }) else { return source }
+        let old = profiles.first { $0.id == profile.id }
+        let differentServer = profile.provider == .home_assistant && old != nil && (try? NativeTelemetryEndpoint.homeAssistant(old!.endpoint)) != (try? NativeTelemetryEndpoint.homeAssistant(profile.endpoint))
+        if differentServer, let oldCook = old?.cookId, let store {
+            for source in old!.sources where old!.selected.contains(source.id) { try store.detachTelemetry(source, cookId: oldCook) }
+        }
+        var saved = profile
+        if differentServer { saved.cookId = nil; saved.selected = []; saved.monitoring = false }
+        saved.sources = sources.map { source in
+            guard !differentServer, let previous = profile.sources.first(where: { $0.id == source.id }) else { return source }
             var mapped = source; mapped.channels = source.channels.map { channel in var ch = channel; ch.kind = previous.channels.first { $0.id == ch.id }?.kind ?? ch.kind; return ch }; return mapped
         }
+        if !differentServer { saved.sources += profile.sources.filter { previous in !sources.contains { $0.id == previous.id } } }
         if let cloud = connector as? NativeTelemetryCloudConnector { cloud.configure(saved) }
         profiles.removeAll { $0.id == profile.id }; profiles.append(saved); try persist(); messages[profile.id] = "Connected · read-only"
     }
     private func factory(_ profile: NativeTelemetryProfile, token: String) throws -> any NativeReadOnlyTelemetry {
+        if let adapterFactory { return try adapterFactory(profile, token) }
         switch profile.provider {
         case .meater, .fireboard:
             guard !token.isEmpty else { throw NativeTelemetryError.authorization }
@@ -90,6 +114,12 @@ import Observation
         defer { adapter?.disconnect(); vault.clear(profile.id) }
         // Recording is stopped locally before attempting best-effort server revocation.
         try? await adapter?.revoke()
+    }
+    func detach(_ profile: NativeTelemetryProfile, source: NativeTelemetrySource, store: CookStore) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        if let cook = profiles[index].cookId { try store.detachTelemetry(source, cookId: cook) }
+        profiles[index].selected.removeAll { $0 == source.id }; if profiles[index].selected.isEmpty { profiles[index].monitoring = false }
+        messages[profile.id + ":" + source.id] = "Disconnected"; try persist()
     }
     func update(_ profile: NativeTelemetryProfile) throws {
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
@@ -134,18 +164,22 @@ import Observation
             let adapter = try connector(profile)
             var valid = false, historyUnavailable = false
             for source in profile.sources where profile.selected.contains(source.id) {
-                if recover && adapter.supportsHistory {
-                    do { try await backfill(profile, source: source, adapter: adapter, store: store) }
-                    catch is CancellationError { return }
-                    catch { historyUnavailable = true }
-                }
-                let batch = try await adapter.snapshot(source.id)
-                if Task.isCancelled { return }
-                messages[profile.id + ":" + source.id] = batch.contains { $0.normalized != nil } ? "Connected" : "Unavailable or stale"
-                refreshLiveDevices()
-                try store.ingestTelemetry(source, cookId: cook, observations: batch, samplingInterval: profile.onLogOnly ? 0 : max(profile.interval, adapter.minimumInterval))
-                valid = valid || batch.contains { $0.normalized != nil }
-                messages[profile.id + ":" + source.id] = batch.contains { $0.normalized != nil } ? "Connected" : "Unavailable or stale"
+                do {
+                    if recover && adapter.supportsHistory {
+                        do { try await backfill(profile, source: source, adapter: adapter, store: store) }
+                        catch is CancellationError { return }
+                        catch { historyUnavailable = true }
+                    }
+                    let batch = try await adapter.snapshot(source.id)
+                    if Task.isCancelled { return }
+                    let available = batch.contains { $0.normalized != nil }
+                    messages[profile.id + ":" + source.id] = available ? "Connected" : "Unavailable or stale"
+                    publishBatch(profile, source: source, batch: batch)
+                    try store.ingestTelemetry(source, cookId: cook, observations: batch, samplingInterval: profile.onLogOnly ? 0 : max(profile.interval, adapter.minimumInterval))
+                    valid = valid || available
+                } catch is CancellationError { return }
+                catch NativeTelemetryError.authorization { throw NativeTelemetryError.authorization }
+                catch { messages[profile.id + ":" + source.id] = error is NativeTelemetryError ? error.localizedDescription : "Reconnecting…"; refreshLiveDevices() }
             }
             messages[profile.id] = valid ? (historyUnavailable ? "Connected · history unavailable" : "Connected") : "Unavailable or stale"
         } catch is CancellationError { return }

@@ -255,11 +255,42 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 20 adb shell am force-stop com.pittech.debug
 fi
 
+echo "Preparing durable telemetry for a real process-death test."
+timeout 3m adb shell am instrument -w -r -e class 'com.pittech.TelemetryProcessDeathTest#preparePersistedBackgroundCook' "$instrumentation_target" | tee "$output_dir/telemetry-process-prepare.txt"
+grep -q 'OK (1 test)' "$output_dir/telemetry-process-prepare.txt"
+timeout 30 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
+previous_receipt=""
+for _ in $(seq 1 60); do
+  previous_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$previous_receipt" =~ ^[0-9]+$ ]]; then break; fi
+  sleep 1
+done
+[[ "$previous_receipt" =~ ^[0-9]+$ ]]
+timeout 10 adb shell input keyevent KEYCODE_HOME
+old_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug | tr -d '\r')"
+[[ "$old_telemetry_pid" =~ ^[0-9]+$ ]]
+timeout 10 adb shell run-as com.pittech.debug kill -9 "$old_telemetry_pid"
+new_telemetry_pid=""
+for _ in $(seq 1 90); do
+  new_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]; then break; fi
+  sleep 1
+done
+[[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]
+printf 'Previous PID: %s\nRestored PID: %s\nPrevious receipt: %s\n' "$old_telemetry_pid" "$new_telemetry_pid" "$previous_receipt" > "$output_dir/telemetry-process-restart.txt"
+timeout 20 adb shell dumpsys activity activities > "$output_dir/telemetry-process-activities.txt"
+if grep -E 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-activities.txt"; then
+  echo "Telemetry recovery unexpectedly required a visible activity." >&2
+  exit 1
+fi
+timeout 3m adb shell am instrument -w -r -e previousReceipt "$previous_receipt" -e class 'com.pittech.TelemetryProcessDeathTest#validateRestoredCookWithoutOpeningAnActivity' "$instrumentation_target" | tee "$output_dir/telemetry-process-validate.txt"
+grep -q 'OK (1 test)' "$output_dir/telemetry-process-validate.txt"
+
 telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
-if ! grep -q 'OK (17 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+if ! grep -q 'OK (19 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
   echo "Telemetry instrumentation tests did not all pass." >&2
   exit 1
 fi
@@ -300,7 +331,7 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-if [[ "$recording_passed_count" -ne 18 ]] || ! grep -q 'OK (18 tests)' "$recording_test_output" ||
+if [[ "$recording_passed_count" -ne 18 ]] || ! grep -q 'OK (19 tests)' "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
   exit 1

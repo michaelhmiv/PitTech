@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -83,6 +84,7 @@ internal class FlameBossTelemetryConnector(
     override val connectorId = "flame_boss"
     private var last: List<TelemetryObservation> = emptyList()
     @Volatile private var closed = false
+    private val snapshots = kotlinx.coroutines.sync.Mutex()
 
     init { require(deviceId.matches(Regex("[0-9]{1,16}"))) }
 
@@ -95,10 +97,10 @@ internal class FlameBossTelemetryConnector(
                 TelemetryChannel("setpoint", "Observed setpoint", TelemetryKind.SETPOINT))
     )
 
-    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
-        if (closed || deviceId != this.deviceId) return emptyList()
-        if (last.any { clock() - it.receivedAtMillis in 0..15_000L }) return last
-        return kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> = snapshots.withLock {
+        if (closed || deviceId != this.deviceId) return@withLock emptyList()
+        if (last.any { clock() - it.receivedAtMillis in 0..15_000L }) return@withLock last
+        kotlinx.coroutines.withTimeoutOrNull(20_000L) {
             frames.mapNotNull { (topic, payload) -> FlameBossTemperatureFrame.parse(deviceId, topic, payload, clock()) }
                 .first().also { last = it }
         }.orEmpty()

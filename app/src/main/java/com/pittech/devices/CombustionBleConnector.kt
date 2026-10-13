@@ -41,7 +41,9 @@ internal class CombustionBleConnector(
         if (scanner?.isActive == true) return
         scanner = scope.launch {
             while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-                scan()
+                try { scan() }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (_: Exception) { /* Bluetooth can disappear without stopping other sources. */ }
                 kotlinx.coroutines.delay(5_000L)
             }
         }

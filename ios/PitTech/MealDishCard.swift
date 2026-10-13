@@ -34,7 +34,7 @@ struct MealDishCard: View {
     }
     private func isLive(_ sample: TemperatureSample) -> Bool {
         let age = now.timeIntervalSince(sample.measuredAt) * 1000
-        return store.library.cooks.first(where: { $0.id == cookId })?.status == "active" && sample.sourceDeviceId.map(store.telemetryLiveDevices.contains) == true && age >= 0 && age <= max(45_000, min(900_000, sample.samplingInterval * 3))
+        return store.library.cooks.first(where: { $0.id == cookId })?.status == "active" && sample.probeId.map(store.telemetryLiveProbes.contains) == true && age >= 0 && age <= max(45_000, min(900_000, sample.samplingInterval * 3))
     }
     private var reminder: [String: JSONValue]? { store.library.reminderRules.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && $0["dishId"]?.stringValue == dish.id && $0["enabled"]?.boolValue == true }.min { (store.reminderState($0["id"]?.stringValue ?? "")?["dueAtUtcMillis"]?.numberValue ?? Double.greatestFiniteMagnitude) < (store.reminderState($1["id"]?.stringValue ?? "")?["dueAtUtcMillis"]?.numberValue ?? Double.greatestFiniteMagnitude) } }
     var body: some View {
