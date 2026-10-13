@@ -4,6 +4,7 @@ import inc.combustion.framework.service.ProbeScanResult
 import inc.combustion.framework.service.ProbeTemperatures
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.isActive
 
 class CombustionBleConnectorTest {
     @Test fun sdkAdvertisementMapsEightNativeCelsiusSensorsWithoutPublishingCommands() {
@@ -30,4 +31,33 @@ class CombustionBleConnectorTest {
         assertEquals("instant", sample.single().channelId)
         assertEquals(82.3, sample.single().value!!, .01)
     }
+    @Test fun samplingCancelsIdleRadioAndDisconnectRetainsNoCachedReading() = kotlinx.coroutines.runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+        val radio = kotlinx.coroutines.flow.MutableSharedFlow<ProbeScanResult>()
+        val active = java.util.concurrent.atomic.AtomicInteger()
+        val scan = ProbeScanResult("CCABC1", null, -50, ProbeTemperatures(listOf(50.0)), null)
+        val connector = CombustionBleConnector(scope = scope, advertisements = radio, scan = {
+            active.incrementAndGet()
+            try { while (kotlinx.coroutines.currentCoroutineContext().isActive) { radio.emit(scan); kotlinx.coroutines.delay(10) } }
+            finally { active.decrementAndGet() }
+        }, scanWindowMillis = 1_000)
+        try {
+            val readings = connector.snapshot("CCABC1")
+            assertEquals(1, readings.size)
+            kotlinx.coroutines.withTimeout(1_000) { while (active.get() != 0) kotlinx.coroutines.delay(10) }
+            assertTrue(connector.snapshot("missing").isEmpty())
+            kotlinx.coroutines.withTimeout(1_000) { while (active.get() != 0) kotlinx.coroutines.delay(10) }
+            connector.disconnect()
+            assertTrue(connector.snapshot("CCABC1").isEmpty())
+        } finally { connector.disconnect(); scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+    }
+
+    @Test fun scannerFailureCannotEscapeAndCrashOtherProviders() = kotlinx.coroutines.runBlocking {
+        val failures = java.util.concurrent.atomic.AtomicInteger()
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> failures.incrementAndGet() })
+        val connector = CombustionBleConnector(scope = scope, advertisements = kotlinx.coroutines.flow.MutableSharedFlow<ProbeScanResult>(), scan = { throw SecurityException("Permission removed") }, scanWindowMillis = 100)
+        try { assertTrue(connector.snapshot("probe").isEmpty()); assertEquals(0, failures.get()) }
+        finally { connector.disconnect(); scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+    }
+
 }

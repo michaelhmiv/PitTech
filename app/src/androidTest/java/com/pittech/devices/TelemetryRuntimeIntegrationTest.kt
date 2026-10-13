@@ -58,4 +58,27 @@ class TelemetryRuntimeIntegrationTest {
             assertEquals(1, db.cookDao().getAllDevices().size)
         } finally { runtime.close(); db.close(); folder.deleteRecursively() }
     }
+    @Test fun missingRestoredCredentialsDisableOnlyThatBackgroundSession(): Unit = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(app.cacheDir, "telemetry-auth-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
+        val context = object : ContextWrapper(app) { override fun getApplicationContext(): Context = this; override fun getNoBackupFilesDir(): File = folder }
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val factory = object : TelemetryConnectorFactory {
+            override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector = throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
+            override suspend fun restore(context: Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector = throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
+        }
+        val runtime = TelemetryRuntime(context, db) { factory }
+        try {
+            val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Credentials removed"))
+            val source = TelemetrySource("meater", "probe", "Probe", channels = listOf(TelemetryChannel("internal", "Food", TelemetryKind.FOOD)))
+            val recorder = TelemetryRecordingRepository(db); recorder.attach(cook, source)
+            runtime.store.save(TelemetryProfile("missing-credentials", "meater", "Probe", sources = listOf(source), cookId = cook, monitoring = true, background = true, selectedDeviceIds = setOf(source.deviceId)))
+            runtime.foreground.value = true
+            withTimeout(5_000) { while (runtime.store.profiles.value.single().monitoring) delay(20) }
+            assertFalse(recorder.isAttached(cook, source))
+            assertEquals(1, db.cookDao().getAllDevices().size)
+            assertEquals(1, db.cookDao().getAllCooks().size)
+        } finally { runtime.close(); db.close(); folder.deleteRecursively() }
+    }
+
 }

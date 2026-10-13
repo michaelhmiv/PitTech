@@ -40,6 +40,11 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     private fun status(id: String, text: String) { states.update { it + (id to text) } }
     private suspend fun connector(profile: TelemetryProfile): ReadOnlyTelemetryConnector {
         connectors[profile.id]?.let { return it }
+        val fixture = if (com.pittech.BuildConfig.DEBUG) runCatching {
+            Class.forName("com.pittech.devices.TelemetryProcessFixture").getMethod("restore", Context::class.java, TelemetryProfile::class.java)
+                .invoke(null, context, profile) as? ReadOnlyTelemetryConnector
+        }.getOrNull() else null
+        if (fixture != null) return fixture.also { connectors[profile.id] = it }
         val factory = factories(profile.provider) ?: throw TelemetryRequestException(TelemetryFailureKind.CONFIGURATION)
         return factory.restore(context, profile).also { fresh ->
             val prior = connectors.putIfAbsent(profile.id, fresh)
@@ -59,7 +64,12 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
             coordinator.launch(scope = CoroutineScope(currentCoroutineContext()), cookId = cook, bindings = bindings,
                 intervalMillis = profile.intervalMillis).join()
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { status(profile.id, error.message?.takeIf { error is TelemetryRequestException } ?: "Reconnect this connection in Devices.") }
+        catch (error: Exception) {
+            status(profile.id, error.message?.takeIf { error is TelemetryRequestException } ?: "Reconnect this connection in Devices.")
+            if (error is IllegalArgumentException || error is TelemetryRequestException && error.kind in setOf(TelemetryFailureKind.AUTHORIZATION, TelemetryFailureKind.CONFIGURATION)) {
+                store.profiles.value.firstOrNull { it.id == profile.id && it.generation == profile.generation }?.let { update(it.copy(monitoring = false)) }
+            }
+        }
     }
     suspend fun connect(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
         val factory = factories(profile.provider) ?: error("This connector is unavailable in this build.")
