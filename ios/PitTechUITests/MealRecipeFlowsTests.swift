@@ -13,6 +13,28 @@ final class MealRecipeFlowsTests: XCTestCase {
         XCTAssertTrue(element.exists && element.isHittable)
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testBetaConnectionOnboardingRejectsInsecureServersAtStandardAndLargeText() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch()
+            app.tabBars.buttons["Devices"].tap()
+            let add = app.buttons["telemetry-add"]
+            reveal(add, app: app)
+            capture(large ? "Native Beta connections large text" : "Native Beta connections")
+            add.tap()
+            let server = app.textFields["telemetry-ha-server"]
+            XCTAssertTrue(server.waitForExistence(timeout: 10))
+            XCTAssertFalse(app.buttons["telemetry-ha-authorize"].isEnabled)
+            XCTAssertFalse(app.buttons["telemetry-connect"].isEnabled)
+            capture(large ? "Native HA onboarding large text" : "Native HA onboarding")
+            server.tap(); server.typeText("http://example.com")
+            XCTAssertFalse(app.buttons["telemetry-ha-authorize"].isEnabled)
+            app.navigationBars["Connect · Beta"].buttons["Cancel"].tap()
+            XCTAssertTrue(add.waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
     func testSavedRecipesComposeHistoricalCheckAndFinishWithoutForcedSaving() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset"]; app.launch()
         app.tabBars.buttons["Saved Recipes"].tap()

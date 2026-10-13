@@ -49,11 +49,13 @@ struct NativeTelemetryConnectionsView: View {
                 switch provider {
                 case .home_assistant:
                     Text("Connect a Home Assistant server that you operate. The phone app alone is not a server.")
-                    TextField("HTTPS server URL", text: $endpoint).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("HTTPS server URL", text: $endpoint).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("telemetry-ha-server")
                     Button("Sign in to Home Assistant") {
                         do { authRequest = try NativeHAAuthRequest(server: endpoint); authorizing = true }
                         catch { self.error = error.localizedDescription }
                     }
+                    .disabled(busy || (try? NativeTelemetryEndpoint.homeAssistant(endpoint)) == nil)
+                    .accessibilityIdentifier("telemetry-ha-authorize")
                     Text("Advanced Beta authorization: enter a long-lived access token from your Home Assistant profile.").font(.caption)
                     SecureField("Access token", text: $secret)
                 case .meater, .fireboard:
@@ -75,7 +77,7 @@ struct NativeTelemetryConnectionsView: View {
                     let entered = secret; secret = ""; busy = true
                     let p = NativeTelemetryProfile(provider: provider, endpoint: endpoint, deviceHint: deviceHint)
                     Task { do { try await runtime.connect(p, user: user, secret: entered); adding = false; error = nil } catch { self.error = error.localizedDescription }; busy = false }
-                }.disabled(busy || provider != .combustion && secret.isEmpty)
+                }.disabled(busy || provider != .combustion && secret.isEmpty).accessibilityIdentifier("telemetry-connect")
                 if let error { Text(error).foregroundStyle(.red) }
             }
             .sheet(isPresented: $authorizing) {
