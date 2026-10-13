@@ -26,8 +26,9 @@ class TelemetryProcessDeathTest {
     }
     @Test fun validateRestoredCookWithoutOpeningAnActivity(): Unit = runBlocking {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
+        val previous = InstrumentationRegistry.getArguments().getString("previousReceipt")?.toLong() ?: error("CI must provide the pre-kill receipt")
         try {
-            withTimeout(60_000) { while (!app.telemetryRuntime.serviceHosted.value || app.database.cookDao().getAllSensorReadings().size < 2) delay(100) }
+            withTimeout(60_000) { while (!app.telemetryRuntime.serviceHosted.value || app.database.cookDao().getAllSensorReadings().none { it.measuredAtUtcMillis > previous }) delay(100) }
             assertEquals(1, app.database.cookDao().getAllCooks().size)
             assertEquals(1, app.database.cookDao().getAllDevices().size)
             val readings = app.database.cookDao().getAllSensorReadings()
@@ -43,6 +44,7 @@ class TelemetryProcessDeathTest {
             app.stopService(Intent(app, CookRecordingService::class.java))
             app.telemetryRuntime.store.remove("telemetry-process-ci")
             File(app.noBackupFilesDir, "telemetry-process-ci.marker").delete(); app.database.clearAllTables()
+            File(app.noBackupFilesDir, "telemetry-process-ci.receipt").delete()
         }
     }
 }

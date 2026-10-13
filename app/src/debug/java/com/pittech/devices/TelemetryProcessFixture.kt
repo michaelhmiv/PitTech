@@ -17,6 +17,7 @@ internal object TelemetryProcessFixture {
             override suspend fun discover() = profile.sources
             override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
                 val now = System.currentTimeMillis()
+                File(context.noBackupFilesDir, "telemetry-process-ci.receipt").writeText(now.toString())
                 return listOf(TelemetryObservation("internal", 180.0, "°F", now, now, eventId = now.toString()))
             }
             override fun observe(deviceId: String) = flow {
