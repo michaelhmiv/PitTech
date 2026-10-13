@@ -13,6 +13,48 @@ import org.junit.Test
 import java.io.File
 
 class TelemetryRuntimeIntegrationTest {
+    @Test fun foregroundStartsAreCoalescedAndHiddenUiCannotReplayThem(): Unit = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(app.cacheDir, "telemetry-start-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
+        val context = object : ContextWrapper(app) { override fun getApplicationContext(): Context = this; override fun getNoBackupFilesDir(): File = folder }
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val source = TelemetrySource("meater", "probe", "Probe", channels = listOf(TelemetryChannel("internal", "Food", TelemetryKind.FOOD)))
+        val adapter = object : ReadOnlyTelemetryConnector {
+            override val connectorId = "meater"
+            override suspend fun discover() = listOf(source)
+            override suspend fun snapshot(deviceId: String) = emptyList<TelemetryObservation>()
+            override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = flow { awaitCancellation() }
+            override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long) = emptyList<TelemetryObservation>()
+            override suspend fun disconnect() = Unit
+        }
+        val factory = object : TelemetryConnectorFactory {
+            override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = adapter
+            override suspend fun restore(context: Context, profile: TelemetryProfile) = adapter
+        }
+        val starts = java.util.concurrent.atomic.AtomicInteger()
+        val runtime = TelemetryRuntime(context, db, backgroundStarter = { starts.incrementAndGet() }) { factory }
+        try {
+            val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Start coalescing"))
+            TelemetryRecordingRepository(db).attach(cook, source)
+            runtime.store.save(TelemetryProfile("start-dedup", "meater", "Probe", sources = listOf(source), cookId = cook,
+                monitoring = true, background = true, selectedDeviceIds = setOf(source.deviceId)))
+            withTimeout(5000) { while (!runtime.backgroundRequested.value) delay(10) }
+            runtime.foreground.value = true
+            repeat(20) { runtime.requestBackgroundFromVisibleApp() }
+            withTimeout(5000) { while (starts.get() == 0) delay(10) }
+            withContext(Dispatchers.Main) { }
+            assertEquals(1, starts.get())
+            withContext(Dispatchers.Main) { runtime.serviceHosted.value = true; runtime.requestBackgroundFromVisibleApp() }
+            runtime.foreground.value = false; runtime.serviceHosted.value = false
+            repeat(20) { runtime.requestBackgroundFromVisibleApp() }
+            withContext(Dispatchers.Main) { }
+            assertEquals(1, starts.get())
+            runtime.foreground.value = true
+            withTimeout(5000) { while (starts.get() != 2) delay(10) }
+            runtime.serviceHosted.value = true
+        } finally { runtime.close(); db.close(); folder.deleteRecursively() }
+    }
+
     @Test fun missingSensorCannotStopAnotherSensorOnTheSameOnLogConnection(): Unit = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Context>()
         val folder = File(app.cacheDir, "telemetry-sensor-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
