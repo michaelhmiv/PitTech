@@ -38,6 +38,14 @@ class TelemetryContractTest {
         assertFalse(a.contains("secret"))
     }
 
+    @Test fun sequenceAnchoredHistoryRetainsItsBasisAndRequiresAnAnchor() {
+        val sample = TelemetryObservation("core", 50.0, "°C", 9000, 10000,
+            fromHistory = true, timestampBasis = TelemetryTimestampBasis.PROBE_SEQUENCE_ANCHOR)
+        assertEquals("probe_sequence_anchor", TelemetryNormalizer.normalize(sample)!!.timestampBasis)
+        assertNull(TelemetryNormalizer.normalize(sample.copy(observedAtMillis = null)))
+        assertNull(TelemetryNormalizer.normalize(sample.copy(timestampBasis = TelemetryTimestampBasis.RECEIPT)))
+    }
+
     @Test fun onlyApprovedPublicConnectors() {
         TelemetryConnectorRegistry.planned.forEach(TelemetryConnectorRegistry::requirePlanned)
         try { TelemetryConnectorRegistry.requirePlanned("grillirg"); fail("legacy accepted") }
