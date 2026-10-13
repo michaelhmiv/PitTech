@@ -55,5 +55,8 @@
 			<string>cstr6suwn9.skadnetwork</string>
 		</dict>
 	</array>
+<key>NSBluetoothAlwaysUsageDescription</key><string>Connect your optional Combustion thermometer to record temperatures with a cook.</string>
+<key>NSBluetoothPeripheralUsageDescription</key><string>Read temperatures from your optional Combustion thermometer.</string>
+<key>NSLocalNetworkUsageDescription</key><string>Read temperature sensors from the Home Assistant server you choose on your network.</string>
 </dict>
 </plist>

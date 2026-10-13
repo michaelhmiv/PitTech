@@ -16,3 +16,9 @@ The complete copyright, permission and disclaimer ship in
 `app/src/main/assets/third-party-telemetry-notices.txt` and
 [LICENSES/COMBUSTION-MIT.txt](LICENSES/COMBUSTION-MIT.txt).
 No Combustion control or firmware operation is exposed by PitTech's connector.
+
+Native iOS telemetry uses CombustionBLE 1.0.0 under MIT. Its Swift Collections
+(Apache-2.0 with the Swift runtime exception) and NordicDFU (BSD-3-Clause)
+dependencies retain their upstream terms. Full texts ship in
+`ios/PitTech/TelemetryNotices.txt` and `LICENSES/`; Nordic's name cannot be used
+as an endorsement. PitTech exposes no DFU or controller-setting operation.

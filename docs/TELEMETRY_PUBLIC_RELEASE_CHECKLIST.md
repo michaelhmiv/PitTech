@@ -1,11 +1,11 @@
 # Telemetry public release gates — 2026-10-13
 
-All connection PRs remain drafts. Automated compilation and fixtures do not establish
+Code merging has been authorized; public enablement remains off. Automated compilation and fixtures do not establish
 physical device support or permission for an advertised commercial integration.
 
 | Source | Implemented Android Beta | Remaining validation or capability gap |
 |---|---|---|
-| Combustion | Official SDK v3.5.4, passive scan, permission onboarding, saved serial, raw/instant measurements, idle scan cancellation | Physical probe and battery tests. Android derived core/surface metadata, repeaters and anchored probe-log recovery are not implemented by the passive adapter. |
+| Combustion | Official SDK v3.5.4, permissions/saved serial, raw/instant/derived measurements, MeatNet, bounded SDK service leases and persisted sequence-anchored logs | Required CI of the completed path, followed by physical probe/repeater, timing and battery tests. Sessions above 20,000 records cannot be transferred through the bounded public API path. |
 | Home Assistant | Per-server configuration, OAuth/refresh/revoke or advanced token, REST discovery/snapshot/history, multiplexed WebSocket, durable bounded recovery | Real user-operated local/remote installation; Recorder enabled; authorization callback and account revocation under actual server configuration. |
 | FireBoard | Encrypted login/token, device/channel discovery, shared account budget and 429 cooldown, explicit session chart history with unique channel labels | Actual account/model schemas, C/F readings and session mapping. Duplicate labels cannot be safely mapped and are omitted. |
 | Flame Boss | Manufacturer login, authenticated hostname-verified TLS MQTT, subscription-only public cook topic, reconnect and bounded snapshot | Manufacturer-confirmed TLS host/port and topic ACL; real account/device. No guessed default broker; private topics and historical data are unsupported. |
@@ -37,7 +37,7 @@ Android can still stop the process. Supported histories recover later; unsupport
 leave a gap. Force-stop blocks Android restarts until the user opens the app. Battery effects
 and vendor-specific background behavior need physical testing.
 
-iOS counterparts are reviewed separately in draft PR #87. The current iOS public configuration
+iOS counterparts are reviewed separately in PR #87. The current iOS public configuration
 has no connected-device UI. Native Beta monitoring is foreground-only; no entitlement is used
 to imply continuous cloud polling while suspended. Home Assistant requires HTTPS on iOS.
 The Simulator cannot verify Bluetooth, MQTT vendor permissions or background hardware behavior.
@@ -51,4 +51,4 @@ continues while these public distribution gates remain open.
 
 Before enabling each provider: retain applicable permission evidence; verify on physical
 hardware and account; review the intended store binary and privacy disclosures; record exact
-build SHA, dependency graph and tests. No build is submitted or distributed by these draft PRs.
+build SHA, dependency graph and tests. No build is submitted or distributed by merging these PRs. Firebase, Play and App Store Connect require explicit manual release actions.

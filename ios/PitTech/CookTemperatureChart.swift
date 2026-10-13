@@ -194,7 +194,7 @@ struct CookTemperatureChart: View {
             ForEach(Array(Set(plottedSamples.map(\.seriesId))).sorted().filter { !hidden.contains($0) }, id: \.self) { id in
                 if let r = plottedSamples.filter({ $0.seriesId == id && $0.qualityStatus == "valid" }).min(by: { abs(x($0.measuredAt, reference: $0.cookId != cookId) - at) < abs(x($1.measuredAt, reference: $1.cookId != cookId) - at) }) {
                     Text("\(channelLabel(id, rows: plottedSamples)): \(CookChartMath.value(r, unit: unit).formatted()) °\(unit) · \(r.measuredAt.formatted(date: .abbreviated, time: .standard)) · \(r.source)").font(.caption)
-                    if r.timestampBasis == "receipt_time" { Text("Receipt time · device sample age unknown").font(.caption).foregroundStyle(.secondary) }
+                    if ["receipt_time", "receipt"].contains(r.timestampBasis ?? "") { Text("Receipt time · device sample age unknown").font(.caption).foregroundStyle(.secondary) }
                 }
             }
         }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
