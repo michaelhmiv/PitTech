@@ -83,7 +83,8 @@ class CombustionBleConnectorTest {
             frame().copy(samplePeriodMillis = 0), frame().copy(samplePeriodMillis = 10000),
             frame().copy(receivedAtMillis = now + 300_000))) {
             val connector = CombustionBleConnector(Client(bad, listOf(record(98))), store, clock = { now + 300_000 })
-            assertTrue(connector.history("CCABC1", now - 20_000, now + 300_000).isEmpty())
+            try { connector.history("CCABC1", now - 20_000, now + 300_000); fail("ambiguous history cannot advance recovery") }
+            catch (_: java.io.IOException) { }
         }
     }
 

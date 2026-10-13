@@ -129,8 +129,10 @@ internal class OfficialCombustionReadOnlyClient(private val application: Applica
         val max = probe?.maxSequence?.toLong()
         if (status?.connectedStatus != true || status.quality != TelemetryQuality.VALID ||
             status.session == null || status.sequence == null || min == null || max == null ||
-            min > max || max - min + 1 > CombustionBleConnector.MAX_LOG_RECORDS)
-            return@window CombustionLogBatch(status, emptyList())
+            min > max)
+            throw java.io.IOException("Reconnect the probe before recovering its history.")
+        if (max - min + 1 > CombustionBleConnector.MAX_LOG_RECORDS)
+            throw java.io.IOException("This probe session exceeds the official API's bounded transfer limit.")
         // The official public API requests a session, not an arbitrary range. Refuse an
         // oversized session before transmitting; time and retained result counts are bounded.
         manager.startRecordTransfer(serial)

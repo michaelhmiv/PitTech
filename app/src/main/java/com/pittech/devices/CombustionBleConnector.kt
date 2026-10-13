@@ -88,11 +88,12 @@ internal class CombustionBleConnector(
     override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation> = mutex.withLock {
         require(untilMillis >= fromMillis)
         if (closed) return@withLock emptyList()
+        val requested = clock()
+        val batch = logs[deviceId]?.takeIf { requested - it.first in 0..30_000L }?.second
+            ?: client.logs(deviceId).also { logs[deviceId] = clock() to it }
         val now = clock()
-        val batch = logs[deviceId]?.takeIf { now - it.first in 0..30_000L }?.second
-            ?: client.logs(deviceId).also { logs[deviceId] = now to it }
-        val status = batch.status ?: return@withLock emptyList()
-        val anchor = anchor(status) ?: return@withLock emptyList()
+        val status = batch.status ?: throw java.io.IOException("Probe history is unavailable until a live status is received.")
+        val anchor = anchor(status) ?: throw java.io.IOException("Probe history has no trustworthy session time anchor.")
         batch.records.asSequence().take(MAX_LOG_RECORDS).filter { it.session == anchor.session }
             .mapNotNull { record ->
                 val measured = anchor.timeFor(record.sequence)?.takeIf { it in fromMillis..untilMillis && it <= now }
