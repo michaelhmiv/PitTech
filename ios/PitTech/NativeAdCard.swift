@@ -42,7 +42,7 @@ struct NativeAdCard: View {
                 NativeAdPlatformView(nativeAd: ad)
                     .frame(height: 126)
                     .padding(14)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
             }
         }
         .task(id: consent.isAdsSDKReady) {

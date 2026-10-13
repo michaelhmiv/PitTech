@@ -34,9 +34,13 @@ class RecipeIntegrationTest {
         assertEquals(original.currentRevisionId, repo.recipes.source(dishId)!!.recipeRevisionId)
         try { repo.recipes.save(snapshot, original.id, original.currentRevisionId); fail("Stale edit accepted") } catch (_: IllegalArgumentException) { }
         assertEquals(next.currentRevisionId, repo.recipes.get(original.id)!!.currentRevisionId)
+        val branch = repo.recipes.save(snapshot.copy(description = "Variation based on the original"), original.id, next.currentRevisionId, retainAssetsFromRevisionId = original.currentRevisionId)
+        val branchedRevision = repo.recipes.revision(branch.currentRevisionId)!!
+        assertEquals(original.currentRevisionId, branchedRevision.parentRevisionId)
+        assertEquals(3, branchedRevision.revisionNumber)
         repo.deleteCook(db.cookDao().getCook(cookId)!!)
         assertEquals(2, db.recipeDao().recipes().size)
-        assertEquals(3, db.recipeDao().revisions().size)
+        assertEquals(4, db.recipeDao().revisions().size)
         assertArrayEquals(byteArrayOf(1, 2, 3), repo.readPhoto(repo.recipes.assets(variant.currentRevisionId).single().relativeFilePath))
         assertNull(repo.recipes.source(dishId))
     }

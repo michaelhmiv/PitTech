@@ -1,8 +1,9 @@
 import SwiftUI
+import UIKit
 
 enum PitTechStyle {
-    static let ink = Color(red: 0.12, green: 0.13, blue: 0.13)
-    static let canvas = Color(red: 0.96, green: 0.95, blue: 0.92)
+    static let ink = Color(uiColor: .label)
+    static let canvas = Color(uiColor: .systemGroupedBackground)
     static let accent = Color(red: 0.70, green: 0.30, blue: 0.13)
     static let sage = Color(red: 0.31, green: 0.39, blue: 0.34)
 }
