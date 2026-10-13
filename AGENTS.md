@@ -13,12 +13,38 @@ GitHub issues; this file holds the durable rules of the road.
 - `feedback-service/` — Android feedback relay (Railway → GitHub issues).
 - `store-assets/`, `distribution/` — store listing material.
 
+## Scanning the repo efficiently
+
+- **Check `docs/` before designing anything.** It holds 30+ specs and policy
+  docs (`COOK_DATA_AND_EXPORT_SPEC.md`, `MEALS_RECIPES_SPECIFICATION.md`,
+  `CONNECTION_POLICY.md`, `ADMOB_SETUP.md`, `RELEASE_PROCESS.md`, …) that
+  record decisions already made.
+- **Skip:** `LICENSES/`, `third_party/`, the notice files, `store-assets/`
+  binaries, and `app/schemas/` (generated Room schemas — only relevant when
+  writing a migration).
+- **Entry points:** Android UI in `app/src/main/java/com/pittech/ui/`; ads
+  logic in `app/src/main/java/com/pittech/ads/` mirrors iOS
+  `ios/PitTech/AdsConsentManager.swift` + `NativeAdCard.swift`; iOS state in
+  `ios/PitTech/CookStore.swift` and `LibraryModels.swift`.
+- **Canonical fixtures:** `ios/PitTechTests/Fixtures/android-meal-v9.zip`
+  (cross-platform archive sample), `ios/screenshot-fixtures/`. `scripts/`
+  has release-notes, emulator, and upgrade-fixture helpers — use them
+  instead of reinventing.
+- **Versions:** Android from `-PpittechVersionCode` / `-PpittechVersionName`
+  (defaults in `app/build.gradle.kts`); iOS from `MARKETING_VERSION` /
+  `CURRENT_PROJECT_VERSION` in `ios/project.yml`.
+
 ## Rules of the road
 
 1. **GitHub Actions is the only build machine.** The project owner has no Mac
    and does not build locally. A change is not verified until the relevant
    workflow proves it. If a change lacks the test/CI coverage that would make
    it trustworthy, add it — Actions time is free on this repo.
+   Workflow map: `ios-build.yml` (simulator build/test/screenshots, plus the
+   manual App Store IPA mode), `android-build.yml` (unit + emulator tests —
+   API 36 is the gate; the API 37 job is advisory), `play-bundle.yml` and
+   `play-closed-testing.yml` (Google Play), `firebase-dev-distribution.yml`
+   (dev builds), `feedback-relay.yml`.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
    own distribution certificate and "PitTech App Store CI" provisioning
    profile via the App Store Connect API on every run. Never add steps that
@@ -42,6 +68,20 @@ GitHub issues; this file holds the durable rules of the road.
    across platforms (iOS tests import an Android v9 archive fixture). Treat
    archive schema changes as migrations: version them, keep old archives
    importable, and test the round trip.
+7. **Read-only equipment policy (hard rule).** Grill/cloud connectors may
+   only *observe*: never write code that mutates device state (setpoints,
+   ignition, power, auger, fan, Wi-Fi credentials, firmware or
+   configuration). See `docs/CONNECTION_POLICY.md`. Authentication and
+   telemetry-subscription packets are allowed only where observation
+   requires them.
+8. **No secrets in the repo.** Never put credentials, tokens, manufacturer
+   secrets, device identifiers, or unredacted logs in code, fixtures,
+   tests, or log output.
+9. **PR conventions** (from `CONTRIBUTING.md`): every user-visible change
+   includes a short plain-language release-note entry (and a `CHANGELOG.md`
+   entry where appropriate); mark Android-only / iOS-only features
+   accurately; the PR states user impact, supported platforms, test
+   evidence, and data-migration considerations.
 
 ## Online services implementation — read issue #89 first
 
@@ -67,3 +107,10 @@ The owner requires iOS/Android parity going forward:
 - The existing Android-only surface (grill-provider integrations, telemetry)
   gets an explicit decision in the matrix — port, keep Android-only by
   decision, or fold into the plan — not silent divergence.
+
+## Keep this file current
+
+If your change alters the repo layout, the workflows and what they prove,
+signing, the ads setup, or any rule above, update this file in the same PR.
+Keep it lean — pointers over prose — and retire a stale line when you add
+one. A wrong instruction here costs every future agent time.
