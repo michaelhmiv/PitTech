@@ -17,12 +17,12 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
     fun deviceKey(cookId: String, source: TelemetrySource) =
         "telemetry:" + TelemetryNormalizer.localKey(cookId, source.connectorId, source.deviceId)
 
-    /** Room watermark survives app restarts; historical vendor credentials are never stored here. */
-    suspend fun latestObservation(cookId: String, source: TelemetrySource): Long? =
-        cooks.latestObservation(cookId, deviceKey(cookId, source))
-
     fun channelKey(cookId: String, source: TelemetrySource, channelId: String) =
         deviceKey(cookId, source) + ":" + TelemetryNormalizer.localKey(channelId)
+
+    /** Persisted source watermark, shared by every collector and restored after process death. */
+    suspend fun latestObservation(cookId: String, source: TelemetrySource): Long? =
+        cooks.latestObservation(cookId, deviceKey(cookId, source))
 
     suspend fun attach(
         cookId: String, source: TelemetrySource,
@@ -41,6 +41,26 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
             ProbeEntity(channelKey(cookId, source, it.id), cookId, id, null, it.name, it.kind.storageType,
                 "telemetry:" + source.connectorId, now)
         })
+        // Re-attaching can change a sensor's role without rewriting older observations.
+        // Close any prior food assignment when the same physical channel becomes a
+        // chamber sensor so new readings cannot inherit stale dish metadata.
+        val storedProbes = cooks.getProbesForCook(cookId).associateBy { it.id }
+        for (channel in source.channels) {
+            val existing = storedProbes[channelKey(cookId, source, channel.id)] ?: continue
+            val foodToOther = existing.measurementType == TelemetryKind.FOOD.storageType &&
+                channel.kind != TelemetryKind.FOOD
+            if (foodToOther) {
+                assignments.currentAssignment(existing.id)?.let { old ->
+                    require(now >= old.startedAtUtcMillis)
+                    assignments.updateAssignment(old.copy(endedAtUtcMillis = now))
+                }
+            }
+            val updated = existing.copy(
+                name = channel.name, measurementType = channel.kind.storageType,
+                assignedDishId = if (foodToOther) null else existing.assignedDishId,
+            )
+            if (updated != existing) cooks.updateProbe(updated)
+        }
         for ((channelId, dishId) in foodAssignments) {
             assignFoodInternal(cookId, source, channelId, dishId, now)
         }

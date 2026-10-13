@@ -3,6 +3,7 @@ import SwiftUI
 struct MealRecipeActions: View {
     @Environment(CookStore.self) private var store
     let cookId: String
+    var initiallyExpanded = false
     @State private var expanded = false
     @State private var editor: NativeRecipeRequest?
     @State private var presetName = ""
@@ -10,7 +11,7 @@ struct MealRecipeActions: View {
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var dishes: [NoteDishRecord] { store.dishRecords(cookId) }
     var body: some View {
-        if cook?.isActive == false || dishes.contains(where: { store.recipeSource($0.id) != nil }) {
+        if !dishes.isEmpty && (cook?.isActive == false || dishes.contains(where: { store.recipeSource($0.id) != nil })) {
             DisclosureGroup(cook?.isActive == false ? "Save selected dishes as recipes" : "Recipes in this meal", isExpanded: $expanded) {
                 ForEach(dishes) { dish in
                     Text(dish.name).font(.headline)
@@ -47,11 +48,15 @@ struct MealRecipeActions: View {
                 }
                 if let error { Text(error).foregroundStyle(.red) }
             }.sheet(item: $editor) { NativeRecipeEditor(request: $0) }
-                .onAppear { if presetName.isEmpty { presetName = cook?.title ?? "Meal" } }
+                .onAppear { if initiallyExpanded { expanded = true }; if presetName.isEmpty { presetName = cook?.title ?? "Meal" } }
         }
     }
     private func request(_ dishId: String) throws -> NativeRecipeRequest {
-        let snapshot = try store.extractRecipe(cookId: cookId, dishId: dishId)
+        var snapshot = try store.extractRecipe(cookId: cookId, dishId: dishId)
+        if let working = try store.recipeAttempt(dishId) {
+            snapshot.description = working.description; snapshot.tags = working.tags; snapshot.servings = working.servings; snapshot.preferredPitTemperatureF = working.preferredPitTemperatureF
+            snapshot.instructions = mergeRecipeInstructions(working.instructions, snapshot.instructions)
+        }
         let events = Set(snapshot.observations.compactMap { $0.objectValue?["sourceEventId"]?.stringValue })
         let photos = Set(store.library.photos.filter { $0.objectValue?["dishId"]?.stringValue == dishId || events.contains($0.objectValue?["eventId"]?.stringValue ?? "") }.compactMap { $0.objectValue?["id"]?.stringValue })
         let context = store.library.events.filter { row in
