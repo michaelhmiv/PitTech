@@ -17,6 +17,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     val states = MutableStateFlow<Map<String, String>>(emptyMap())
     val foreground = MutableStateFlow(false)
     val serviceHosted = MutableStateFlow(false)
+    private val backgroundStarting = java.util.concurrent.atomic.AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connectors = ConcurrentHashMap<String, ReadOnlyTelemetryConnector>()
     private val recorder = TelemetryRecordingRepository(db)
@@ -28,13 +29,8 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     val backgroundRequested = backgroundSessions.stateIn(scope, SharingStarted.Eagerly, false)
     init {
         scope.launch {
-            combine(backgroundRequested, foreground) { requested, visible -> requested && visible }.distinctUntilChanged().collect { start ->
-                if (start) runCatching { backgroundStarter(context) }.onFailure {
-                    store.profiles.value.filter { it.monitoring && it.background }.forEach { profile ->
-                        store.save(profile.copy(background = false)); status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
-                    }
-                }
-            }
+            combine(backgroundRequested, foreground, serviceHosted) { requested, visible, hosted -> Triple(requested, visible, hosted) }
+                .distinctUntilChanged().collect { requestBackgroundFromVisibleApp() }
         }
         scope.launch {
             combine(store.profiles, activeCooks, foreground, serviceHosted) { p, active, visible, hosted ->
@@ -148,7 +144,20 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         }
     }
     fun requestBackgroundFromVisibleApp() {
-        if (foreground.value && backgroundRequested.value) runCatching { backgroundStarter(context) }
+        scope.launch(Dispatchers.Main.immediate) {
+            // UI and automatic requests share one pending start. Recheck current state
+            // on Main so a queued visible-state event cannot start from the background.
+            if (!backgroundRequested.value || serviceHosted.value) { backgroundStarting.set(false); return@launch }
+            if (!foreground.value ||
+                !backgroundStarting.compareAndSet(false, true)) return@launch
+            runCatching { backgroundStarter(context) }.onFailure {
+                backgroundStarting.set(false)
+                store.profiles.value.filter { it.monitoring && it.background }.forEach { profile ->
+                    store.save(profile.copy(background = false))
+                    status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
+                }
+            }
+        }
     }
     fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { update(it.copy(monitoring = false)) } }
     suspend fun close() = withContext(NonCancellable) {

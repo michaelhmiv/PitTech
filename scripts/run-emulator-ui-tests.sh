@@ -270,7 +270,22 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 [[ "$previous_receipt" =~ ^[0-9]+$ ]]
+# Visible sampling can commit before the foreground service is ready. Observe its
+# actual foreground state before testing Android's sticky-service restart contract.
+for _ in $(seq 1 30); do
+  timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-before-services.txt"
+  if grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"; then break; fi
+  sleep 1
+done
+grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"
 timeout 10 adb shell input keyevent KEYCODE_HOME
+# Wait for the Home transition instead of killing a still-resumed activity.
+for _ in $(seq 1 30); do
+  timeout 20 adb shell dumpsys activity activities > "$output_dir/telemetry-process-before-activities.txt"
+  if ! grep -qE 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-before-activities.txt"; then break; fi
+  sleep 1
+done
+if grep -qE 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-before-activities.txt"; then exit 1; fi
 old_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug | tr -d '\r')"
 [[ "$old_telemetry_pid" =~ ^[0-9]+$ ]]
 timeout 10 adb shell run-as com.pittech.debug kill -9 "$old_telemetry_pid"
@@ -305,7 +320,7 @@ telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.CombustionAnchorStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
-if ! grep -q 'OK (22 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+if ! grep -q 'OK (23 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
   echo "Telemetry instrumentation tests did not all pass." >&2
   exit 1
 fi
