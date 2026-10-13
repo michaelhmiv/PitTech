@@ -129,6 +129,18 @@ jobs:
           npm install --global firebase-tools
           firebase --version
 
+      - name: Create change notes for Firebase testers
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          REPO_NAME: ${{ github.repository }}
+        run: >-
+          python3 scripts/release_notes.py dev
+          --commit "$SOURCE_SHA"
+          --version "$VERSION_NAME"
+          --repo "$REPO_NAME"
+          --output "$RUNNER_TEMP/pittech-dev-notes.txt"
+
       - name: Distribute to the internal Firebase group
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.google-auth.outputs.credentials_file_path }}
@@ -140,4 +152,4 @@ jobs:
           firebase appdistribution:distribute "$PITTECH_DEV_APK" \
             --app "1:848714330882:android:328e155174c939db6b481b" \
             --groups "pittech-dev" \
-            --release-notes "PitTech Dev 0.1.${SOURCE_RUN_NUMBER}-dev from main (${SOURCE_SHA:0:7}); Android checks passed."
+            --release-notes-file "$RUNNER_TEMP/pittech-dev-notes.txt"

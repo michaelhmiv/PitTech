@@ -35,3 +35,12 @@ The feedback relay is deployed from main and healthy. The privacy service is rea
 - [Production access requirements for new personal developer accounts](https://support.google.com/googleplay/android-developer/answer/14151465)
 - [AdMob setup and app readiness](https://support.google.com/admob/answer/15948559)
 - [AdMob app-ads.txt verification](https://support.google.com/admob/answer/14538460)
+
+## Public release notes and presentation
+
+- Review [CHANGELOG.md](../CHANGELOG.md) and the exact release commit before creating a tag or GitHub Release.
+- Review the [Android What's New](../distribution/play/whatsnew/whatsnew-en-US) text before every Play upload. [iOS notes](../distribution/app-store/whats-new-en-US.txt) are separately curated for manual App Store submission.
+- Validate notes with `python3 scripts/release_notes.py validate`. CI also runs the validator and Python unit tests.
+- Treat GitHub's automatically generated release notes as drafts, and verify version-specific changes, technical limitations, and platform scope before publishing.
+- Update the GitHub About description, topics and homepage through a repository administrator; the recommended metadata is in [RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+- Confirm the public artifact excludes unapproved proprietary integration code and any controller-configuration flows at the source/binary level. Disabling a UI with a build flag is not sufficient for the eventual connector release.
