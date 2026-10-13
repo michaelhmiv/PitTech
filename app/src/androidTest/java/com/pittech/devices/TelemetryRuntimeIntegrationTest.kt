@@ -13,6 +13,44 @@ import org.junit.Test
 import java.io.File
 
 class TelemetryRuntimeIntegrationTest {
+    @Test fun missingSensorCannotStopAnotherSensorOnTheSameOnLogConnection(): Unit = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(app.cacheDir, "telemetry-sensor-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
+        val context = object : ContextWrapper(app) { override fun getApplicationContext(): Context = this; override fun getNoBackupFilesDir(): File = folder }
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val sources = listOf("sensor.missing", "sensor.healthy").map { TelemetrySource("home_assistant", it, it, channels = listOf(TelemetryChannel("temperature", "Food", TelemetryKind.FOOD)), identityScope = "https://home.example.com") }
+        var failing = false
+        val adapter = object : ReadOnlyTelemetryConnector {
+            override val connectorId = "home_assistant"
+            override suspend fun discover() = sources
+            override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
+                if (!failing) return emptyList()
+                if (deviceId == "sensor.missing") throw TelemetryRequestException(TelemetryFailureKind.CONFIGURATION)
+                val now = System.currentTimeMillis()
+                return listOf(TelemetryObservation("temperature", 180.0, "°F", now, now))
+            }
+            override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = emptyFlow()
+            override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long) = emptyList<TelemetryObservation>()
+            override suspend fun disconnect() = Unit
+        }
+        val factory = object : TelemetryConnectorFactory {
+            override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = adapter
+            override suspend fun restore(context: Context, profile: TelemetryProfile) = adapter
+        }
+        val runtime = TelemetryRuntime(context, db) { factory }
+        try {
+            val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Sensor isolation"))
+            var profile = runtime.connect(TelemetryProfile("sensor-isolation", "home_assistant", "HA", onLogOnly = true), "fixture", "dummy")
+            for (source in sources) { runtime.attach(profile, cook, source, emptyMap()); profile = runtime.store.profiles.value.single() }
+            failing = true
+            runtime.onLog(cook)
+            assertEquals(1, db.cookDao().getAllSensorReadings().size)
+            assertEquals("Connected", runtime.states.value[profile.id + ":sensor.healthy"])
+            assertEquals("Unavailable or stale", runtime.states.value[profile.id + ":sensor.missing"])
+            assertEquals("Unavailable or stale", runtime.states.value[profile.id + ":sensor.missing:temperature"])
+        } finally { runtime.close(); db.close(); folder.deleteRecursively() }
+    }
+
     @Test fun onLogRecordingRestoresDurableSelectionsAndRemovalKeepsCookHistory(): Unit = runBlocking {
         val app = ApplicationProvider.getApplicationContext<Context>()
         val folder = File(app.cacheDir, "telemetry-runtime-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
