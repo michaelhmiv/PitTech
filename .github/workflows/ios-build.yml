@@ -218,30 +218,52 @@ jobs:
           sign_dir="$RUNNER_TEMP/pittech-signing"
           mkdir -p "$sign_dir"
           printf '%s' "$ASC_PRIVATE_KEY" > "$sign_dir/AuthKey.p8"
-          python3 -m pip install --quiet --user pyjwt cryptography
           SIGN_DIR="$sign_dir" python3 - <<'PYASC'
-          import base64, json, os, pathlib, subprocess, sys, time
-          import jwt, requests
+          import base64, json, os, pathlib, subprocess, time
+          import urllib.request, urllib.error
 
           sign_dir = pathlib.Path(os.environ["SIGN_DIR"])
           key_id = os.environ["ASC_KEY_ID"]
           issuer_id = os.environ["ASC_ISSUER_ID"]
-          private_key = (sign_dir / "AuthKey.p8").read_text()
-          token = jwt.encode(
-              {"iss": issuer_id, "iat": int(time.time()), "exp": int(time.time()) + 1200,
-               "aud": "appstoreconnect-v1"},
-              private_key, algorithm="ES256", headers={"kid": key_id, "typ": "JWT"})
-          headers = {"Authorization": f"Bearer {token}"}
+
+          # ES256 JWT signed with openssl + stdlib only (runner Python is
+          # externally managed, so pip installs are not an option).
+          def b64url(data):
+              return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+          now = int(time.time())
+          header = b64url(json.dumps({"alg": "ES256", "kid": key_id, "typ": "JWT"}, separators=(",", ":")).encode())
+          payload = b64url(json.dumps({"iss": issuer_id, "iat": now, "exp": now + 1200,
+                                       "aud": "appstoreconnect-v1"}, separators=(",", ":")).encode())
+          (sign_dir / "jwt-input.bin").write_bytes(f"{header}.{payload}".encode())
+          subprocess.run(["openssl", "dgst", "-sha256", "-sign", str(sign_dir / "AuthKey.p8"),
+                          "-out", str(sign_dir / "jwt-sig.der"), str(sign_dir / "jwt-input.bin")], check=True)
+          der = (sign_dir / "jwt-sig.der").read_bytes()
+          idx = 2 + (der[1] & 0x7F) if der[1] & 0x80 else 2
+
+          def read_int(buf, i):
+              length = buf[i + 1]
+              value = buf[i + 2:i + 2 + length].lstrip(b"\x00").rjust(32, b"\x00")
+              return value, i + 2 + length
+
+          r, idx = read_int(der, idx)
+          s, idx = read_int(der, idx)
+          token = f"{header}.{payload}.{b64url(r + s)}"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
           api = "https://api.appstoreconnect.apple.com/v1"
 
-          def call(method, path, **kwargs):
-              response = requests.request(method, api + path, headers=headers, timeout=60, **kwargs)
-              if response.status_code >= 300:
-                  raise SystemExit(f"ASC API {method} {path} failed ({response.status_code}): {response.text[:600]}")
-              return response
+          def call(method, path, payload=None):
+              data = json.dumps(payload).encode() if payload is not None else None
+              request = urllib.request.Request(api + path, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      body = response.read()
+                      return json.loads(body) if body else {}
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(f"ASC API {method} {path} failed ({error.code}): {error.read().decode()[:600]}")
 
           # Free the distribution-certificate slot held by any earlier CI-generated cert.
-          certs = call("GET", "/certificates?filter[certificateType]=DISTRIBUTION&limit=200").json().get("data", [])
+          certs = call("GET", "/certificates?filter[certificateType]=DISTRIBUTION&limit=200").get("data", [])
           for cert in certs:
               if cert["attributes"].get("name") == "PitTech CI":
                   call("DELETE", f"/certificates/{cert['id']}")
@@ -252,21 +274,21 @@ jobs:
           subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
                           "-out", str(sign_dir / "ci.csr"), "-subj", "/CN=PitTech CI"], check=True)
           csr = (sign_dir / "ci.csr").read_text()
-          created = call("POST", "/certificates", json={"data": {"type": "certificates", "attributes": {
-              "certificateType": "DISTRIBUTION", "csrContent": csr}}}).json()["data"]
+          created = call("POST", "/certificates", payload={"data": {"type": "certificates", "attributes": {
+              "certificateType": "DISTRIBUTION", "csrContent": csr}}})["data"]
           (sign_dir / "ci.cer").write_bytes(base64.b64decode(created["attributes"]["certificateContent"]))
           print(f"Created distribution certificate {created['id']}")
 
-          bundle_id = call("GET", "/bundleIds?filter[identifier]=com.pittech").json()["data"][0]["id"]
+          bundle_id = call("GET", "/bundleIds?filter[identifier]=com.pittech")["data"][0]["id"]
 
-          profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").json().get("data", [])
+          profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:
               call("DELETE", f"/profiles/{profile['id']}")
               print(f"Deleted previous CI profile {profile['id']}")
-          profile = call("POST", "/profiles", json={"data": {"type": "profiles", "attributes": {
+          profile = call("POST", "/profiles", payload={"data": {"type": "profiles", "attributes": {
               "name": "PitTech App Store CI", "profileType": "IOS_APP_STORE"}, "relationships": {
               "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
-              "certificates": {"data": [{"type": "certificates", "id": created["id"]}]}}}}).json()["data"]
+              "certificates": {"data": [{"type": "certificates", "id": created["id"]}]}}}})["data"]
           (sign_dir / "PitTech.mobileprovision").write_bytes(base64.b64decode(profile["attributes"]["profileContent"]))
           print(f"Created provisioning profile {profile['id']}")
 
