@@ -31,11 +31,9 @@ targets:
     platform: iOS
     sources:
       - path: PitTech
-        excludes:
-          - "**/*.xcassets/**"
     resources:
-      - path: PitTech/Assets.xcassets
       - path: PitTech/PrivacyInfo.xcprivacy
+      - path: PitTech/TelemetryNotices.txt
     dependencies:
       - package: CombustionBLE
         product: CombustionBLE

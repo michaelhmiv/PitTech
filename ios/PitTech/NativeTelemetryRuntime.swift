@@ -20,12 +20,20 @@ import Observation
         self.store = store; visible = active
         if !active { connectors.values.forEach { $0.disconnect() }; connectors.removeAll() }
         store.telemetryOnLog = { [weak self] cook in Task { await self?.onLog(cook) } }
+        refreshLiveDevices()
         restart()
     }
     func persist() throws {
         try JSONEncoder().encode(profiles).write(to: configuration, options: .atomic)
         var values = URLResourceValues(); values.isExcludedFromBackup = true; var url = configuration; try url.setResourceValues(values)
+        refreshLiveDevices()
         restart()
+    }
+    private func refreshLiveDevices() {
+        guard let store else { return }
+        store.telemetryLiveDevices = visible ? Set(profiles.filter { $0.monitoring }.flatMap { profile in
+            profile.sources.filter { profile.selected.contains($0.id) && messages[profile.id + ":" + $0.id]?.hasPrefix("Connected") == true && store.library.cooks.first(where: { $0.id == profile.cookId })?.status == "active" }.map { NativeTelemetryIdentity.device(profile.cookId ?? "", $0) }
+        }) : []
     }
     func connect(_ profile: NativeTelemetryProfile, user: String, secret: String) async throws {
         if profile.provider == .home_assistant { _ = try NativeTelemetryEndpoint.homeAssistant(profile.endpoint) }
@@ -76,11 +84,12 @@ import Observation
         try store.ingestTelemetry(source, cookId: cook, observations: readings, samplingInterval: profiles[index].onLogOnly ? 0 : max(profiles[index].interval, connector(profiles[index]).minimumInterval))
     }
     func remove(_ profile: NativeTelemetryProfile, store: CookStore) async throws {
-        // Local removal always proceeds even when a remote revocation endpoint is offline.
-        if let adapter = try? connector(profile) { try? await adapter.revoke() }
+        let adapter = try? connector(profile)
         if let cook = profile.cookId { for source in profile.sources where profile.selected.contains(source.id) { try store.detachTelemetry(source, cookId: cook) } }
-        connectors.removeValue(forKey: profile.id)?.disconnect(); vault.clear(profile.id)
-        profiles.removeAll { $0.id == profile.id }; try persist()
+        profiles.removeAll { $0.id == profile.id }; try persist(); connectors[profile.id] = nil
+        defer { adapter?.disconnect(); vault.clear(profile.id) }
+        // Recording is stopped locally before attempting best-effort server revocation.
+        try? await adapter?.revoke()
     }
     func update(_ profile: NativeTelemetryProfile) throws {
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
@@ -132,6 +141,8 @@ import Observation
                 }
                 let batch = try await adapter.snapshot(source.id)
                 if Task.isCancelled { return }
+                messages[profile.id + ":" + source.id] = batch.contains { $0.normalized != nil } ? "Connected" : "Unavailable or stale"
+                refreshLiveDevices()
                 try store.ingestTelemetry(source, cookId: cook, observations: batch, samplingInterval: profile.onLogOnly ? 0 : max(profile.interval, adapter.minimumInterval))
                 valid = valid || batch.contains { $0.normalized != nil }
                 messages[profile.id + ":" + source.id] = batch.contains { $0.normalized != nil } ? "Connected" : "Unavailable or stale"
@@ -139,10 +150,11 @@ import Observation
             messages[profile.id] = valid ? (historyUnavailable ? "Connected · history unavailable" : "Connected") : "Unavailable or stale"
         } catch is CancellationError { return }
         catch NativeTelemetryError.authorization {
+            for source in profile.sources { messages[profile.id + ":" + source.id] = "Sign in again" }; refreshLiveDevices()
             messages[profile.id] = NativeTelemetryError.authorization.localizedDescription
             if var current = profiles.first(where: { $0.id == profile.id }) { current.monitoring = false; try? update(current) }
         }
-        catch { messages[profile.id] = error is NativeTelemetryError ? error.localizedDescription : "Reconnecting…" }
+        catch { for source in profile.sources { messages[profile.id + ":" + source.id] = "Reconnecting…" }; refreshLiveDevices(); messages[profile.id] = error is NativeTelemetryError ? error.localizedDescription : "Reconnecting…" }
     }
     private func backfill(_ profile: NativeTelemetryProfile, source: NativeTelemetrySource, adapter: any NativeReadOnlyTelemetry, store: CookStore) async throws {
         guard let cook = profile.cookId else { return }

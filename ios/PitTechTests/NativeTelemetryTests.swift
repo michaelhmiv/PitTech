@@ -112,4 +112,20 @@ final class NativeTelemetryTests: XCTestCase {
         XCTAssertEqual(restored.pendingTelemetryRecovery(source, cook: cook)?.lowerBound, start + 10)
     }
 
+    func testProbeReminderRequiresFreshConnectedSamplesSustainedAcrossTime() throws {
+        let config: [String: JSONValue] = ["thresholdF": .number(185), "direction": .string("above"), "sustainMillis": .number(60_000), "hysteresisF": .number(2)]
+        func sample(_ at: Double, _ value: Double = 190) -> TemperatureSample {
+            TemperatureSample(json: .object(["id": .string(String(at)), "cookId": .string("cook"), "probeName": .string("Brisket"), "measurementType": .string("food_probe"), "value": .number(value), "unit": .string("°F"), "measuredAtUtcMillis": .number(at), "source": .string("telemetry:fireboard"), "samplingIntervalMillis": .number(30_000)]))!
+        }
+        var state: [String: JSONValue] = [:]
+        XCTAssertNil(NativeProbeReminder.due(config: config, sample: sample(100_000), eligible: true, now: 100_000, state: &state))
+        XCTAssertEqual(NativeProbeReminder.due(config: config, sample: sample(160_000), eligible: true, now: 160_000, state: &state), 160_000)
+        state["dueAtUtcMillis"] = .number(160_000)
+        XCTAssertEqual(NativeProbeReminder.due(config: config, sample: sample(180_000, 184), eligible: true, now: 180_000, state: &state), 160_000)
+        XCTAssertNil(NativeProbeReminder.due(config: config, sample: sample(190_000, 182), eligible: true, now: 190_000, state: &state))
+        XCTAssertNil(NativeProbeReminder.due(config: config, sample: sample(200_000), eligible: false, now: 200_000, state: &state))
+        XCTAssertNil(NativeProbeReminder.due(config: config, sample: sample(200_000), eligible: true, now: 600_000, state: &state))
+        XCTAssertNil(state["badSinceUtcMillis"]?.numberValue)
+    }
+
 }

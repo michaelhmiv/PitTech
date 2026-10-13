@@ -22,6 +22,7 @@ class TelemetryRecordingServiceTest {
     @Test fun backgroundServiceRestoresProfilesIsolatesOutagesAndStopsOnCookCompletion(): Unit = runBlocking {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.grantRuntimePermission(app.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
         app.stopService(Intent(app, CookRecordingService::class.java))
         app.database.clearAllTables()
         val folder = File(app.cacheDir, "telemetry-service-" + java.util.UUID.randomUUID()).apply { mkdirs() }
@@ -65,12 +66,12 @@ class TelemetryRecordingServiceTest {
             }
             instrumentation.runOnMainSync { CookRecordingService.startTelemetry(app) }
             waitUntil { current.serviceHosted.value && app.database.cookDao().getAllSensorReadings().size >= 2 }
-            assertTrue(app.getSystemService(NotificationManager::class.java).activeNotifications.any { it.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT != 0 })
+            waitUntil { app.getSystemService(NotificationManager::class.java).activeNotifications.any { it.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT != 0 } }
             scenario.moveToState(Lifecycle.State.CREATED)
             val before = app.database.cookDao().getAllSensorReadings().size
             waitUntil { app.database.cookDao().getAllSensorReadings().size >= before + 3 }
             assertFalse(current.foreground.value)
-            assertTrue(current.states.value["service-fireboard:offline"]?.contains("Reconnecting") == true)
+            waitUntil { current.states.value["service-fireboard:offline"]?.contains("Reconnecting") == true }
 
             // Recreate application-owned jobs from durable profiles/Room without a new cook.
             app.stopService(Intent(app, CookRecordingService::class.java))

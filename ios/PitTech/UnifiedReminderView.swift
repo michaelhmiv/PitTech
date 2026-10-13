@@ -51,7 +51,7 @@ struct MealRemindersView: View {
             Section(rule["title"]?.stringValue ?? "Reminder") {
                 Text("\(store.dishRecords(cookId).first { $0.id == rule["dishId"]?.stringValue }?.name ?? "Meal") · \(rule["status"]?.stringValue ?? "")")
                 if let due = store.reminderState(id)?["dueAtUtcMillis"]?.numberValue { Text("Due " + RecipeReferenceTimeline.time(due)) }
-                if rule["kind"]?.stringValue == "probe" { Text("Temperature monitoring is unavailable on iOS. This configuration is retained for compatible monitoring on Android.").font(.caption) }
+                if rule["kind"]?.stringValue == "probe" { Text("Temperature conditions require a connected probe while PitTech is open. Suspended or disconnected sources cannot trigger a condition.").font(.caption) }
                 else if active {
                     Button(rule["enabled"]?.boolValue == true ? "Disable" : "Enable") { act { try store.changeReminder(id, action: "toggle") } }
                     Button("Edit") { act {
@@ -100,7 +100,15 @@ private struct NativeReminderEditor: View {
     @State private var busy = false
     @State private var error: String?
     @State private var initialized = false
+    @State private var series = ""
+    @State private var threshold = "165"
+    @State private var direction = "above"
+    @State private var sustain = "1"
     private var anchors: [CookAction] { store.library.actions(for: cookId).filter { $0.action == action && ($0.dishIds.isEmpty || $0.dishIds.contains(dishId)) } }
+    private var seriesChoices: [TemperatureSample] {
+        let rows = store.readings(for: cookId).filter { $0.sourceDeviceId.map(store.telemetryLiveDevices.contains) == true && ["food_probe", "pit_ambient"].contains($0.measurementType) && (dishId.isEmpty || $0.dishId == dishId || $0.measurementType == "pit_ambient") }
+        return Dictionary(grouping: rows, by: \.seriesId).values.compactMap { $0.max { $0.measuredAt < $1.measuredAt } }.sorted { $0.probeName < $1.probeName }
+    }
     private var configuration: [String: JSONValue]? {
         var value: [String: JSONValue] = ["version": .number(1), "type": .string(kind)]
         switch kind {
@@ -109,6 +117,10 @@ private struct NativeReminderEditor: View {
             let millis = (amount * 60_000).rounded()
             if kind == "duration" { value["startedAt"] = request.config?["startedAt"] ?? .number(Double(Int64(Date.now.timeIntervalSince1970 * 1000))); value["delayMillis"] = .number(millis) }
             else { value[kind == "action" ? "action" : "anchorAction"] = .string(action); value["offsetMillis"] = .number(millis); if kind == "action" && !eventId.isEmpty { value["eventId"] = .string(eventId) } }
+        case "probe":
+            guard let selected = seriesChoices.first(where: { $0.seriesId == series }), let temp = Double(threshold), temp.isFinite, let minutes = Double(sustain), minutes.isFinite else { return nil }
+            value["seriesId"] = .string(series); value["measurementType"] = .string(selected.measurementType); value["direction"] = .string(direction)
+            value["thresholdF"] = .number(store.temperatureUnit == "C" ? temp * 9 / 5 + 32 : temp); value["sustainMillis"] = .number((minutes * 60_000).rounded()); value["hysteresisF"] = .number(2)
         case "clock": value["at"] = .number(Double(Int64(clock.timeIntervalSince1970 * 1000)))
         default: return nil
         }
@@ -121,9 +133,17 @@ private struct NativeReminderEditor: View {
             Picker("Scope", selection: $dishId) { Text("Meal").tag(""); ForEach(store.dishRecords(cookId)) { Text($0.name).tag($0.id) } }
             Picker("Type", selection: $kind) {
                 Text("After a duration").tag("duration"); Text("At a clock time").tag("clock"); Text("After an actual action").tag("action")
+                #if DEBUG
+                Text("Connected probe temperature").tag("probe")
+                #endif
                 if request.config?["type"]?.stringValue == "historical" { Text("Previous cook milestone").tag("historical") }
             }
-            if kind == "clock" { DatePicker("Date and time", selection: $clock) }
+            if kind == "probe" {
+                Picker("Probe", selection: $series) { Text("Choose a connected probe").tag(""); ForEach(seriesChoices) { Text($0.probeName).tag($0.seriesId) } }
+                Picker("Condition", selection: $direction) { Text("Above").tag("above"); Text("Below").tag("below") }
+                TextField("Temperature °" + store.temperatureUnit, text: $threshold).keyboardType(.numbersAndPunctuation)
+                TextField("Sustain for minutes", text: $sustain).keyboardType(.numbersAndPunctuation)
+            } else if kind == "clock" { DatePicker("Date and time", selection: $clock) }
             else {
                 TextField(kind == "duration" ? "Minutes" : "Minutes after anchor (negative = earlier)", text: $minutes).keyboardType(.numbersAndPunctuation).accessibilityIdentifier("reminder-rule-minutes")
                 if kind == "action" || kind == "historical" {
@@ -132,11 +152,11 @@ private struct NativeReminderEditor: View {
                     Text("Waits for the new attempt's actual action. Correcting its timestamp updates future reminders.").font(.caption)
                 }
             }
-            Text("Time reminders use local notifications. Continuous temperature monitoring is unavailable on iOS.").font(.caption)
+            Text("Time reminders use local notifications. Probe conditions are evaluated while PitTech is open and the selected source is connected.").font(.caption)
             if let error { Text(error).foregroundStyle(.red) }
             Button("Save reminder") { save() }.disabled(busy || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || configuration == nil).accessibilityIdentifier("reminder-rule-save")
         }.navigationTitle("Reminder").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
-            .onAppear { if !initialized { initialized = true; title = request.title; dishId = request.dishId ?? ""; kind = request.config?["type"]?.stringValue ?? "duration"; action = request.config?["action"]?.stringValue ?? request.config?["anchorAction"]?.stringValue ?? "food_on"; eventId = request.config?["eventId"]?.stringValue ?? ""; minutes = String((request.config?["delayMillis"]?.numberValue ?? request.config?["offsetMillis"]?.numberValue ?? 600_000) / 60_000); clock = Date(timeIntervalSince1970: (request.config?["at"]?.numberValue ?? Date.now.addingTimeInterval(600).timeIntervalSince1970 * 1000) / 1000) } }
+            .onAppear { if !initialized { initialized = true; series = request.config?["seriesId"]?.stringValue ?? ""; direction = request.config?["direction"]?.stringValue ?? "above"; sustain = String((request.config?["sustainMillis"]?.numberValue ?? 60_000) / 60_000); let f = request.config?["thresholdF"]?.numberValue ?? 165; threshold = String(store.temperatureUnit == "C" ? (f - 32) * 5 / 9 : f); title = request.title; dishId = request.dishId ?? ""; kind = request.config?["type"]?.stringValue ?? "duration"; action = request.config?["action"]?.stringValue ?? request.config?["anchorAction"]?.stringValue ?? "food_on"; eventId = request.config?["eventId"]?.stringValue ?? ""; minutes = String((request.config?["delayMillis"]?.numberValue ?? request.config?["offsetMillis"]?.numberValue ?? 600_000) / 60_000); clock = Date(timeIntervalSince1970: (request.config?["at"]?.numberValue ?? Date.now.addingTimeInterval(600).timeIntervalSince1970 * 1000) / 1000) } }
         }
     }
     private func save() {

@@ -298,6 +298,9 @@ struct SettingsView: View {
                         }
                     }
                     Button("Restore cook archive") { showingImport = true }
+                    NavigationLink("Third-party telemetry notices") {
+                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
+                    }
                     Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
                     Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
                 }
