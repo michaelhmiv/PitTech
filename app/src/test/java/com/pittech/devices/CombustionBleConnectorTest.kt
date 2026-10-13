@@ -55,7 +55,7 @@ class CombustionBleConnectorTest {
     @Test fun scannerFailureCannotEscapeAndCrashOtherProviders() = kotlinx.coroutines.runBlocking {
         val failures = java.util.concurrent.atomic.AtomicInteger()
         val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> failures.incrementAndGet() })
-        val connector = CombustionBleConnector(scope = scope, advertisements = kotlinx.coroutines.flow.emptyFlow(), scan = { throw SecurityException("Permission removed") }, scanWindowMillis = 100)
+        val connector = CombustionBleConnector(scope = scope, advertisements = kotlinx.coroutines.flow.MutableSharedFlow<ProbeScanResult>(), scan = { throw SecurityException("Permission removed") }, scanWindowMillis = 100)
         try { assertTrue(connector.snapshot("probe").isEmpty()); assertEquals(0, failures.get()) }
         finally { connector.disconnect(); scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
     }
