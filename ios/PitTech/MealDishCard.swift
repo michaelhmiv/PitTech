@@ -84,7 +84,7 @@ extension CookStore {
         guard let index = library.cooks.firstIndex(where: { $0.id == id && $0.isActive }) else { return }
         let desired = paused ? "paused" : "active"
         guard library.cooks[index].status != desired else { return }
-        let prior = library, at = Date.now.timeIntervalSince1970 * 1000
+        let prior = library, at = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
         library.events.append(.object(["id": .string(UUID().uuidString.lowercased()), "cookId": .string(id), "eventType": .string(paused ? "cook_paused" : "cook_resumed"), "title": .string(paused ? "Meal paused" : "Meal resumed"), "occurredAtUtcMillis": .number(at), "recordedAtUtcMillis": .number(at), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("manual"), "createdAtUtcMillis": .number(at), "updatedAtUtcMillis": .number(at)]))
         library.cooks[index].status = paused ? "paused" : "active"; library.cooks[index].updatedAtUtcMillis = Int64(Date.now.timeIntervalSince1970 * 1000); save()
         if saveError != nil { library = prior }

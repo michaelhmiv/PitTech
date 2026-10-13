@@ -129,14 +129,14 @@ enum NativeFlameBossCodec {
         guard size > 0, size <= 512, at + (qos == 1 ? 2 : 0) < data.count, let topic = String(data: data[2..<at], encoding: .utf8) else { throw NativeTelemetryError.configuration }
         if qos == 1 { let id = UInt16(data[at]) * 256 + UInt16(data[at + 1]); at += 2; guard id > 0 else { throw NativeTelemetryError.configuration }; try await send(NativeFlameBossCodec.ack(id)) }
         guard topic == "flameboss/" + device + "/send/open" else { return }
-        if let json = try JSONSerialization.jsonObject(with: Data(data[at...])) as? [String: Any] { latest = NativeFlameBossCodec.observations(json, receipt: Date.now.timeIntervalSince1970 * 1000) }
+        if let json = try JSONSerialization.jsonObject(with: Data(data[at...])) as? [String: Any] { latest = NativeFlameBossCodec.observations(json, receipt: Double(Int64(Date.now.timeIntervalSince1970 * 1000))) }
     }
     func snapshot(_ id: String) async throws -> [NativeTelemetryObservation] {
         guard id == device, !token.isEmpty else { return [] }
         if connection == nil { try await open() }
         if latest.isEmpty { for _ in 0..<100 { try await Task.sleep(for: .milliseconds(100)); if !latest.isEmpty { break } } }
         // MQTT keepalive is observational protocol traffic, never an application PUBLISH.
-        try await send(Data([0xC0, 0])); let now = Date.now.timeIntervalSince1970 * 1000
+        try await send(Data([0xC0, 0])); let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
         return latest.map { item in var value = item; value.receivedAt = now; value.available = item.available && item.observedAt.map { now - $0 <= 60_000 } == true; return value }
     }
     func disconnect() { keepAlive?.cancel(); keepAlive = nil; reader?.cancel(); reader = nil; connection?.cancel(); connection = nil; latest = []; token = ""; buffer = Data() }

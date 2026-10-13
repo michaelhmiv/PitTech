@@ -116,7 +116,7 @@ import Observation
                         var nextRecovery = 0.0
                         while !Task.isCancelled {
                             guard self.store?.library.cooks.first(where: { $0.id == profile.cookId })?.status == "active" else { return }
-                            let now = Date.now.timeIntervalSince1970 * 1000
+                            let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
                             await self.collect(profile, recover: now >= nextRecovery)
                             if now >= nextRecovery { nextRecovery = now + 300_000 }
                             guard self.profiles.first(where: { $0.id == profile.id })?.monitoring == true else { return }
@@ -158,7 +158,7 @@ import Observation
     }
     private func backfill(_ profile: NativeTelemetryProfile, source: NativeTelemetrySource, adapter: any NativeReadOnlyTelemetry, store: CookStore) async throws {
         guard let cook = profile.cookId else { return }
-        let now = Date.now.timeIntervalSince1970 * 1000, device = NativeTelemetryIdentity.device(cook, source)
+        let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000)), device = NativeTelemetryIdentity.device(cook, source)
         let pending = store.pendingTelemetryRecovery(source, cook: cook)
         let probes = store.library.probes.compactMap(\.objectValue).filter { $0["deviceId"]?.stringValue == device }
         let readings = store.library.readings.compactMap(\.objectValue)

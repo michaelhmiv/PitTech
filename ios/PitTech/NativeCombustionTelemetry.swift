@@ -15,7 +15,7 @@ import CombustionBLE
     func snapshot(_ device: String) async throws -> [NativeTelemetryObservation] {
         if !active { DeviceManager.shared.initBluetooth(); active = true }
         guard let probe = DeviceManager.shared.getProbes().first(where: { $0.serialNumberString == device }) else { return [] }
-        let receipt = Date.now.timeIntervalSince1970 * 1000
+        let receipt = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
         let values = probe.virtualTemperatures
         return [("core", values?.coreTemperature), ("surface", values?.surfaceTemperature), ("ambient", values?.ambientTemperature), ("instant", probe.instantReadCelsius)].map { channel, temp in
             .init(channel: channel, value: temp, unit: "°C", observedAt: nil, receivedAt: receipt, available: temp?.isFinite == true && !probe.stale, eventId: nil)

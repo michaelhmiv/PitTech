@@ -13,7 +13,7 @@ struct NativeHASession: Codable {
         let bytes = try await NativeTelemetryHTTP().form(url, fields: ["grant_type": "authorization_code", "code": code, "client_id": client])
         guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], let access = object["access_token"] as? String,
               let refresh = object["refresh_token"] as? String, !access.isEmpty, !refresh.isEmpty else { throw NativeTelemetryError.authorization }
-        return .init(accessToken: access, refreshToken: refresh, expiresAt: Date.now.timeIntervalSince1970 * 1000 + (NativeTelemetryEndpoint.number(object["expires_in"]) ?? 1800) * 1000)
+        return .init(accessToken: access, refreshToken: refresh, expiresAt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)) + (NativeTelemetryEndpoint.number(object["expires_in"]) ?? 1800) * 1000)
     }
 }
 struct NativeHAAuthRequest {
@@ -81,10 +81,10 @@ struct NativeHAOAuthView: UIViewRepresentable {
     }
     private func token(force: Bool = false) async throws -> String {
         guard var current = session else { return credential }
-        if force || current.expiresAt <= Date.now.timeIntervalSince1970 * 1000 + 60_000 {
+        if force || current.expiresAt <= Double(Int64(Date.now.timeIntervalSince1970 * 1000)) + 60_000 {
             let bytes = try await http.form(base.appendingPathComponent("auth/token"), fields: ["grant_type": "refresh_token", "refresh_token": current.refreshToken, "client_id": NativeHASession.client])
             guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], let access = object["access_token"] as? String, !access.isEmpty else { throw NativeTelemetryError.authorization }
-            current.accessToken = access; current.expiresAt = Date.now.timeIntervalSince1970 * 1000 + (NativeTelemetryEndpoint.number(object["expires_in"]) ?? 1800) * 1000
+            current.accessToken = access; current.expiresAt = Double(Int64(Date.now.timeIntervalSince1970 * 1000)) + (NativeTelemetryEndpoint.number(object["expires_in"]) ?? 1800) * 1000
             session = current; credential = current.encoded; try vault.save(profile.id, credential)
             receiving?.cancel(); socket?.cancel(with: .goingAway, reason: nil); socket = nil; live = [:]
         }
@@ -116,7 +116,7 @@ struct NativeHAOAuthView: UIViewRepresentable {
                     case "auth_ok": try await self.send(ws, ["id": 1, "type": "subscribe_events", "event_type": "state_changed"])
                     case "auth_invalid": self.session?.expiresAt = 0; throw NativeTelemetryError.authorization
                     case "event":
-                        if let event = json["event"] as? [String: Any], let data = event["data"] as? [String: Any], let entity = data["entity_id"] as? String, let state = data["new_state"] as? [String: Any], state["entity_id"] as? String == entity { self.live[entity] = (Date.now.timeIntervalSince1970 * 1000, state) }
+                        if let event = json["event"] as? [String: Any], let data = event["data"] as? [String: Any], let entity = data["entity_id"] as? String, let state = data["new_state"] as? [String: Any], state["entity_id"] as? String == entity { self.live[entity] = (Double(Int64(Date.now.timeIntervalSince1970 * 1000)), state) }
                     case "result": if json["success"] as? Bool == false { throw NativeTelemetryError.configuration }
                     default: break
                     }
@@ -128,7 +128,7 @@ struct NativeHAOAuthView: UIViewRepresentable {
     func snapshot(_ device: String) async throws -> [NativeTelemetryObservation] {
         guard device.range(of: "^sensor\\.[a-z0-9_]+$", options: .regularExpression) != nil else { throw NativeTelemetryError.configuration }
         try await startSocket()
-        let now = Date.now.timeIntervalSince1970 * 1000
+        let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
         if let state = live[device], now - state.0 < minimumInterval { return NativeTelemetryCloudConnector.observations(provider: .home_assistant, item: state.1, receipt: now) }
         let bytes = try await read(base.appendingPathComponent("api/states/" + device))
         guard let item = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], item["entity_id"] as? String == device else { return [] }
@@ -141,7 +141,7 @@ struct NativeHAOAuthView: UIViewRepresentable {
         parts.queryItems = [.init(name: "filter_entity_id", value: device), .init(name: "end_time", value: formatter.string(from: Date(timeIntervalSince1970: until / 1000)))]
         let bytes = try await read(parts.url!)
         let batches = try JSONSerialization.jsonObject(with: bytes) as? [[[String: Any]]] ?? []
-        return batches.flatMap { $0 }.filter { $0["entity_id"] as? String == device }.flatMap { NativeTelemetryCloudConnector.observations(provider: .home_assistant, item: $0, receipt: Date.now.timeIntervalSince1970 * 1000, historical: true) }.filter { $0.observedAt.map { from <= $0 && $0 <= until } == true }.prefix(20_000).map { $0 }
+        return batches.flatMap { $0 }.filter { $0["entity_id"] as? String == device }.flatMap { NativeTelemetryCloudConnector.observations(provider: .home_assistant, item: $0, receipt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)), historical: true) }.filter { $0.observedAt.map { from <= $0 && $0 <= until } == true }.prefix(20_000).map { $0 }
     }
     func revoke() async throws { if let session { _ = try await http.form(base.appendingPathComponent("auth/revoke"), fields: ["token": session.refreshToken]) } }
     func disconnect() { receiving?.cancel(); receiving = nil; socket?.cancel(with: .goingAway, reason: nil); socket = nil; live = [:]; credential = ""; session = nil; http.disconnect(); wsSession.invalidateAndCancel() }

@@ -26,7 +26,7 @@ enum NativeTelemetryEndpoint {
     static func millis(_ value: String?) -> Double? {
         guard let value else { return nil }
         let fractional = ISO8601DateFormatter(); fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return (fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)).map { $0.timeIntervalSince1970 * 1000 }
+        return (fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)).map { Double(Int64($0.timeIntervalSince1970 * 1000)) }
     }
 }
 @MainActor final class NativeTelemetryHTTP {
@@ -76,7 +76,7 @@ enum NativeTelemetryEndpoint {
         case 200...299: return data
         case 401, 403: throw NativeTelemetryError.authorization
         case 429:
-            let now = Date.now.timeIntervalSince1970 * 1000
+            let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
             throw NativeTelemetryError.rateLimit(NativeTelemetryEndpoint.retryAfter(response.value(forHTTPHeaderField: "Retry-After"), now: now))
         case 300...499: throw NativeTelemetryError.configuration
         default: throw NativeTelemetryError.network
@@ -89,7 +89,7 @@ enum NativeTelemetryEndpoint {
     private var cache: [String: (Double, Data)] = [:]
     private var next: [String: Double] = [:]
     private var running: [String: Task<Data, Error>] = [:]
-    func read(key: String, interval: Double, budgetKey: String? = nil, minimumSpacing: Double? = nil, now: Double = Date.now.timeIntervalSince1970 * 1000, load: @escaping @MainActor () async throws -> Data) async throws -> Data {
+    func read(key: String, interval: Double, budgetKey: String? = nil, minimumSpacing: Double? = nil, now: Double = Double(Int64(Date.now.timeIntervalSince1970 * 1000)), load: @escaping @MainActor () async throws -> Data) async throws -> Data {
         if let result = cache[key], now - result.0 >= 0 && now - result.0 < interval { return result.1 }
         if let task = running[key] { return try await task.value }
         let budget = budgetKey ?? key
@@ -151,7 +151,7 @@ enum NativeTelemetryEndpoint {
     func snapshot(_ device: String) async throws -> [NativeTelemetryObservation] {
         let rows = try await data()
         let item = rows.first { ($0[profile.provider == .home_assistant ? "entity_id" : profile.provider == .fireboard ? "uuid" : "id"] as? String) == device }
-        return item.map { Self.observations(provider: profile.provider, item: $0, receipt: Date.now.timeIntervalSince1970 * 1000) } ?? []
+        return item.map { Self.observations(provider: profile.provider, item: $0, receipt: Double(Int64(Date.now.timeIntervalSince1970 * 1000))) } ?? []
     }
     static func observations(provider: NativeTelemetryProvider, item: [String: Any], receipt: Double, historical: Bool = false) -> [NativeTelemetryObservation] {
         switch provider {
@@ -179,7 +179,7 @@ enum NativeTelemetryEndpoint {
             let bytes = try await NativeTelemetryCloudCache.shared.read(key: account + ":chart:" + profile.deviceHint, interval: 60_000, budgetKey: account, minimumSpacing: 30_000) { [self] in try await http.read(url, token: token, prefix: "Token") }
             let chart = try JSONSerialization.jsonObject(with: bytes) as? [[String: Any]] ?? []
             let channels = profile.sources.first { $0.id == device }?.channels ?? []
-            return Self.fireBoardHistory(chart, device: device, channels: channels, from: from, until: until, receipt: Date.now.timeIntervalSince1970 * 1000)
+            return Self.fireBoardHistory(chart, device: device, channels: channels, from: from, until: until, receipt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)))
         }
         guard profile.provider == .home_assistant, from > 0, until >= from, until - from <= 21_600_000, device.range(of: "^sensor\\.[a-z0-9_]+$", options: .regularExpression) != nil else { return [] }
         let formatter = ISO8601DateFormatter()
@@ -188,7 +188,7 @@ enum NativeTelemetryEndpoint {
         parts.queryItems = [.init(name: "filter_entity_id", value: device), .init(name: "end_time", value: formatter.string(from: Date(timeIntervalSince1970: until / 1000)))]
         let response = try await http.read(parts.url!, token: token, prefix: "Bearer")
         let batches = try JSONSerialization.jsonObject(with: response) as? [[[String: Any]]] ?? []
-        return batches.flatMap { $0 }.filter { $0["entity_id"] as? String == device }.flatMap { Self.observations(provider: .home_assistant, item: $0, receipt: Date.now.timeIntervalSince1970 * 1000, historical: true) }.filter { $0.observedAt.map { from <= $0 && $0 <= until } == true }.prefix(20_000).map { $0 }
+        return batches.flatMap { $0 }.filter { $0["entity_id"] as? String == device }.flatMap { Self.observations(provider: .home_assistant, item: $0, receipt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)), historical: true) }.filter { $0.observedAt.map { from <= $0 && $0 <= until } == true }.prefix(20_000).map { $0 }
     }
     static func fireBoardHistory(_ chart: [[String: Any]], device: String, channels: [NativeTelemetryChannel], from: Double, until: Double, receipt: Double) -> [NativeTelemetryObservation] {
         let grouped = Dictionary(grouping: channels, by: \.name)

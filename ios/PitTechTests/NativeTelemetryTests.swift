@@ -128,4 +128,19 @@ final class NativeTelemetryTests: XCTestCase {
         XCTAssertNil(state["badSinceUtcMillis"]?.numberValue)
     }
 
+    @MainActor func testDefaultTelemetryTimestampMetadataExportsAsIntegerMilliseconds() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); store.startCook(title: "Default time", firstDish: "Food")
+        let cook = store.library.cooks[0].id
+        let source = NativeTelemetrySource(provider: .meater, id: "probe", label: "MEATER", channels: [.init(id: "internal", name: "Food", kind: .food)])
+        try store.attachTelemetry(source, cookId: cook, assignments: [:])
+        let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000)) + 1
+        try store.ingestTelemetry(source, cookId: cook, observations: [.init(channel: "internal", value: 180, unit: "°F", observedAt: now + 0.125, receivedAt: now + 1, eventId: "fixture")])
+        let exported = try store.exportArchive()
+        let restored = CookStore(directory: folder.appendingPathComponent("restored")); _ = try restored.importArchive(exported)
+        XCTAssertEqual(restored.library.readings.count, 1)
+        XCTAssertEqual(restored.library.readings[0].objectValue?["measuredAtUtcMillis"]?.numberValue, now)
+    }
+
 }
