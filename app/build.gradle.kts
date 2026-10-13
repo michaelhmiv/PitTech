@@ -71,6 +71,7 @@ ksp {
 }
 
 dependencies {
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("com.github.combustion-inc:combustion-android-ble:v3.5.4")
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")

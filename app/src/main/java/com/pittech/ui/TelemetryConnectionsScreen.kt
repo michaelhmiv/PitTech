@@ -187,9 +187,9 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                         if (channel.kind != TelemetryKind.SETPOINT) {
                             var dropdown by remember(channel.id) { mutableStateOf(false) }
                             Box {
-                                OutlinedButton(onClick = { dropdown = true }) { Text(when(kind) { TelemetryKind.FOOD -> "Food probe"; TelemetryKind.CHAMBER -> "Grill chamber"; TelemetryKind.AMBIENT -> "Ambient"; else -> "Observed target" }) }
+                                OutlinedButton(onClick = { dropdown = true }) { Text(when(kind) { TelemetryKind.FOOD -> "Food probe"; TelemetryKind.CHAMBER -> "Grill chamber"; TelemetryKind.AMBIENT -> "Ambient"; TelemetryKind.OTHER -> "Other temperature"; else -> "Observed target" }) }
                                 DropdownMenu(dropdown, { dropdown = false }) {
-                                    listOf(TelemetryKind.FOOD to "Food probe", TelemetryKind.CHAMBER to "Grill chamber", TelemetryKind.AMBIENT to "Ambient").forEach { (role, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { roles = roles + (channel.id to role); dropdown = false }) }
+                                    listOf(TelemetryKind.FOOD to "Food probe", TelemetryKind.CHAMBER to "Grill chamber", TelemetryKind.AMBIENT to "Ambient", TelemetryKind.OTHER to "Other temperature").forEach { (role, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { roles = roles + (channel.id to role); dropdown = false }) }
                                 }
                             }
                         } else Text("Observed target · read-only")

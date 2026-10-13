@@ -92,7 +92,9 @@ internal class CombustionBleConnector(
     internal companion object {
         fun source(serial: String): TelemetrySource = TelemetrySource(
             "combustion", serial, "Combustion probe " + serial.takeLast(4), "Combustion",
-            channels = (0..7).map { TelemetryChannel("sensor" + it, "Sensor " + (it + 1), TelemetryKind.FOOD) } +
+            // The raw sensor array is not the SDK's derived core/surface measurement.
+            channels = (0..7).map { TelemetryChannel("sensor" + it, "Raw sensor " + (it + 1),
+                when (it) { 0 -> TelemetryKind.FOOD; 7 -> TelemetryKind.AMBIENT; else -> TelemetryKind.OTHER }) } +
                 TelemetryChannel("instant", "Instant-read", TelemetryKind.FOOD),
         )
 

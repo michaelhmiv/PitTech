@@ -1157,7 +1157,7 @@ internal fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, ne
     val linkedByEvent = data.logReadingLinks.groupBy { it.eventId }
     val linkedIds = data.logReadingLinks.map { it.readingId }.toSet()
     val readingsById = data.readings.associateBy { it.id }
-    data.events.filter { it.eventType != "temperature" && it.eventType != "telemetry_mapping" }.forEach { event ->
+    data.events.filter { it.eventType != "temperature" && !it.eventType.startsWith("telemetry_") }.forEach { event ->
         val photos = photosByEvent[event.id].orEmpty()
         val links = linkedByEvent[event.id].orEmpty()
         val foodMatches = CookFeedPresentation.matchesFood(event, foodId) || foodId != null &&
@@ -1578,7 +1578,7 @@ private fun ChartsTab(data: CookDetailData, displayUnit: String, comparison: @Co
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         comparison()
         SectionCard("Temperature chart") {
-            TemperatureChart(data.readings, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, markers = data.events.filter { it.eventType != "temperature" && it.eventType != "telemetry_mapping" }, onMarker = onMarker, displayUnit = displayUnit, targets = data.targets, targetHistory = data.targetHistory, photos = data.photos, timingMode = data.lifecycle?.timingMode ?: "legacy_preserved")
+            TemperatureChart(data.readings, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, markers = data.events.filter { it.eventType != "temperature" && !it.eventType.startsWith("telemetry_") }, onMarker = onMarker, displayUnit = displayUnit, targets = data.targets, targetHistory = data.targetHistory, photos = data.photos, timingMode = data.lifecycle?.timingMode ?: "legacy_preserved")
             Text("Valid recorded points only. Manual samples remain individual points and missing periods stay empty.", style = MaterialTheme.typography.bodyMedium)
         }
         SectionCard("Reading summary") {

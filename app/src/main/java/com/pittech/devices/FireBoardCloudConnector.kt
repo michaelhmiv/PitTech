@@ -195,7 +195,7 @@ internal class FireBoardCloudConnector(
                 val temperature = obj.optDouble("temp", Double.NaN)
                 TelemetryObservation("channel" + port, temperature.takeIf { it.isFinite() }, unit, time, received,
                     if (stale) TelemetryQuality.STALE else TelemetryQuality.VALID,
-                    eventId = obj.optString("created").takeIf { it.isNotBlank() })
+                    eventId = time?.toString())
             }
         }
     }
@@ -203,12 +203,14 @@ internal class FireBoardCloudConnector(
 
 internal class FireBoardFactory : TelemetryConnectorFactory {
     override suspend fun connect(context: android.content.Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector {
+        require(profile.deviceHint.isBlank() || profile.deviceHint.matches(Regex("[0-9]{1,18}"))) { "Use a numeric FireBoard session ID." }
         val credential = if (user.isBlank()) secret else FireBoardHttpTransport().login(user, secret)
         require(credential.isNotBlank()) { "Enter your account credentials or an access token." }
         val connector = FireBoardCloudConnector(credential)
-        connector.discover()
+        val discovered = connector.discover()
         TelemetryTokenStore(context).save(profile.provider, profile.id, credential)
-        return connector
+        return FireBoardCloudConnector(credential, sessionId = profile.deviceHint.takeIf { it.isNotBlank() },
+            channelLabels = discovered.associate { it.deviceId to it.channels.associate { c -> c.id to c.name } })
     }
     override suspend fun restore(context: android.content.Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector {
         val credential = TelemetryTokenStore(context).load(profile.provider, profile.id)
