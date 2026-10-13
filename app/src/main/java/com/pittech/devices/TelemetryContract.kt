@@ -8,6 +8,8 @@ import java.util.Locale
 /** Purely observational contract. No generic HTTP, MQTT, device-control or service-call methods. */
 internal interface ReadOnlyTelemetryConnector {
     val connectorId: String
+    val minimumIntervalMillis: Long get() = 15_000L
+    val supportsHistory: Boolean get() = false
     suspend fun discover(): List<TelemetrySource>
     suspend fun snapshot(deviceId: String): List<TelemetryObservation>
     fun observe(deviceId: String): Flow<List<TelemetryObservation>>
