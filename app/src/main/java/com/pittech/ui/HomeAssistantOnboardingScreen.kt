@@ -76,6 +76,8 @@ internal fun HomeAssistantOnboardingScreen(onBack: () -> Unit, modifier: Modifie
         Text("Connect Home Assistant · Beta", style = MaterialTheme.typography.titleLarge)
         Text("Connects to a Home Assistant server that you already operate. The Home Assistant phone app alone is not a server. PitTech only reads temperature sensors; it cannot control your grill.",
             style = MaterialTheme.typography.bodySmall)
+        Text("Use HTTPS whenever possible. Local HTTP is unencrypted and can expose your Home Assistant token to anyone intercepting your network traffic.",
+            style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(
             value = server, onValueChange = { server = it.take(350) },
             label = { Text("Home Assistant server URL") },
