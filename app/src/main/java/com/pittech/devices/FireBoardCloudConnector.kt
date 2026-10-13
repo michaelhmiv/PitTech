@@ -18,6 +18,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
 internal interface FireBoardTransport {
     suspend fun devices(token: String): JSONArray
@@ -64,17 +65,17 @@ internal class FireBoardCloudConnector(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "fireboard"
-    private val mutex = Mutex()
-    private var cached: JSONArray? = null
-    private var lastFetch = Long.MIN_VALUE
+    private val account = accountSnapshots.computeIfAbsent(TelemetryNormalizer.localKey(connectorId, token)) {
+        SharedSnapshot()
+    }
 
-    private suspend fun list(): JSONArray = mutex.withLock {
+    private suspend fun list(): JSONArray = account.mutex.withLock {
         require(token.isNotBlank())
         val now = clock()
-        if (cached != null && now >= lastFetch && now - lastFetch < 30_000L) return@withLock cached!!
+        if (account.cached != null && now >= account.lastFetch && now - account.lastFetch < 30_000L) return@withLock account.cached!!
         val received = transport.devices(token)
-        cached = received
-        lastFetch = now
+        account.cached = received
+        account.lastFetch = now
         received
     }
 
@@ -118,13 +119,15 @@ internal class FireBoardCloudConnector(
         return emptyList()
     }
 
-    override suspend fun disconnect() = mutex.withLock {
+    override suspend fun disconnect() = account.mutex.withLock {
         token = ""
-        cached = null
-        lastFetch = Long.MIN_VALUE
     }
 
     internal companion object {
+        private class SharedSnapshot(val mutex: Mutex = Mutex(),
+            var cached: JSONArray? = null, var lastFetch: Long = Long.MIN_VALUE)
+        private val accountSnapshots = ConcurrentHashMap<String, SharedSnapshot>()
+
         fun parseTemps(device: JSONObject, received: Long): List<TelemetryObservation> {
             val temps = device.optJSONArray("latest_temps") ?: return emptyList()
             return (0 until temps.length()).mapNotNull { i ->

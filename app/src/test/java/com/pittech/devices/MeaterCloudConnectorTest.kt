@@ -64,4 +64,32 @@ class MeaterCloudConnectorTest {
         assertTrue(connector.snapshot("not-present").isEmpty())
         assertTrue(connector.history("probe01", 0, 1000).isEmpty())
     }
+
+    @Test fun differentConnectorsForSameAccountShareOneQuotaWithoutMixingAccounts() = runBlocking {
+        val time = 1_750_000_000_000L
+        var firstCalls = 0
+        var secondCalls = 0
+        val first = object : MeaterTransport {
+            override suspend fun devices(jwt: String): JSONObject {
+                assertEquals("shared-meater-account-a", jwt)
+                firstCalls++
+                return response(time)
+            }
+        }
+        val other = object : MeaterTransport {
+            override suspend fun devices(jwt: String): JSONObject {
+                assertEquals("shared-meater-account-b", jwt)
+                secondCalls++
+                return response(time)
+            }
+        }
+        val a = MeaterCloudConnector("shared-meater-account-a", first) { time }
+        val b = MeaterCloudConnector("shared-meater-account-a", first) { time }
+        val c = MeaterCloudConnector("shared-meater-account-b", other) { time }
+        assertEquals(1, a.discover().size)
+        assertEquals(3, b.snapshot("probe01").size)
+        assertEquals(1, firstCalls)
+        assertEquals(1, c.discover().size)
+        assertEquals(1, secondCalls)
+    }
 }
