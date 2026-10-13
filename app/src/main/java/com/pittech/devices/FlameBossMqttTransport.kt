@@ -32,6 +32,7 @@ internal data class FlameBossBroker(val host: String, val port: Int) {
 
 /** MQTT 3.1.1, subscription-only. CONNECT, SUBSCRIBE, PUBACK and PINGREQ are the only outgoing packets. */
 internal object FlameBossMqttCodec {
+    class IdleTimeout : java.net.SocketTimeoutException()
     data class Packet(val header: Int, val body: ByteArray)
     private fun string(s: String): ByteArray {
         val b = s.toByteArray(Charsets.UTF_8)
@@ -54,7 +55,10 @@ internal object FlameBossMqttCodec {
     fun ack(id: Int) = packet(0x40, byteArrayOf((id ushr 8).toByte(), id.toByte()))
     fun ping() = byteArrayOf(0xC0.toByte(), 0)
     fun read(input: InputStream): Packet {
-        val header = input.read(); require(header >= 0) { "MQTT connection closed" }
+        // Only an idle timeout before the header can safely send PING and retry.
+        // A timeout inside a packet must reconnect, otherwise framing is lost.
+        val header = try { input.read() } catch (_: java.net.SocketTimeoutException) { throw IdleTimeout() }
+        require(header >= 0) { "MQTT connection closed" }
         var length = 0; var multiplier = 1; var digits = 0
         do {
             val b = input.read(); require(b >= 0 && digits++ < 4)
@@ -98,7 +102,7 @@ internal class FlameBossMqttTransport(private val broker: FlameBossBroker, priva
                 send(FlameBossMqttCodec.subscribe(deviceId))
                 var subscribed = false
                 while (isActive) {
-                    val p = try { FlameBossMqttCodec.read(input) } catch (_: java.net.SocketTimeoutException) {
+                    val p = try { FlameBossMqttCodec.read(input) } catch (_: FlameBossMqttCodec.IdleTimeout) {
                         send(FlameBossMqttCodec.ping()); continue
                     }
                     if (p.header == 0x90) {

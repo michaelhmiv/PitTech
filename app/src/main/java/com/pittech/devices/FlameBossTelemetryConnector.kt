@@ -82,6 +82,7 @@ internal class FlameBossTelemetryConnector(
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "flame_boss"
     private var last: List<TelemetryObservation> = emptyList()
+    @Volatile private var closed = false
 
     init { require(deviceId.matches(Regex("[0-9]{1,16}"))) }
 
@@ -95,7 +96,7 @@ internal class FlameBossTelemetryConnector(
     )
 
     override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
-        if (deviceId != this.deviceId) return emptyList()
+        if (closed || deviceId != this.deviceId) return emptyList()
         if (last.any { clock() - it.receivedAtMillis in 0..15_000L }) return last
         return kotlinx.coroutines.withTimeoutOrNull(20_000L) {
             frames.mapNotNull { (topic, payload) -> FlameBossTemperatureFrame.parse(deviceId, topic, payload, clock()) }
@@ -105,6 +106,7 @@ internal class FlameBossTelemetryConnector(
 
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> {
         require(deviceId == this.deviceId)
+        if (closed) return kotlinx.coroutines.flow.emptyFlow()
         return frames.mapNotNull { (topic, payload) ->
             FlameBossTemperatureFrame.parse(deviceId, topic, payload, clock())?.also { last = it }
         }
@@ -115,7 +117,7 @@ internal class FlameBossTelemetryConnector(
         return emptyList()
     }
 
-    override suspend fun disconnect() { onDisconnect(); last = emptyList() }
+    override suspend fun disconnect() { closed = true; onDisconnect(); last = emptyList() }
 }
 
 internal class FlameBossFactory : TelemetryConnectorFactory {
