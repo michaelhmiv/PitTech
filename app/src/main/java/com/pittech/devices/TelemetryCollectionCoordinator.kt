@@ -21,6 +21,7 @@ internal data class TelemetryBinding(val source: TelemetrySource, val connector:
 internal class TelemetryCollectionCoordinator(
     private val recorder: TelemetryRecordingRepository,
     private val onState: (TelemetrySource, String) -> Unit = { _, _ -> },
+    private val onBatch: (TelemetrySource, List<TelemetryObservation>) -> Unit = { _, _ -> },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     fun launch(scope: CoroutineScope, cookId: String, bindings: List<TelemetryBinding>, intervalMillis: Long = 60_000L): Job =
@@ -44,10 +45,13 @@ internal class TelemetryCollectionCoordinator(
                 try { backfill(cookId, source, connector) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { historyUnavailable = true; onState(source, "History unavailable; reconnecting live readings") }
-                recorder.ingest(cookId, source, connector.snapshot(source.deviceId), maxOf(intervalMillis, connector.minimumIntervalMillis))
+                val initial = connector.snapshot(source.deviceId)
+                onBatch(source, initial)
+                recorder.ingest(cookId, source, initial, maxOf(intervalMillis, connector.minimumIntervalMillis))
                 var lastAccepted = Long.MIN_VALUE
                 connector.observe(source.deviceId, maxOf(intervalMillis, connector.minimumIntervalMillis)).collect { batch ->
                     if (!recorder.isAttached(cookId, source)) throw CancellationException("Cook stopped or source detached")
+                    onBatch(source, batch)
                     val available = batch.any { TelemetryNormalizer.normalize(it) != null }
                     if (available) failures = 0
                     onState(source, if (available) (if (historyUnavailable) "Connected · history unavailable" else "Connected") else "Unavailable or stale")
