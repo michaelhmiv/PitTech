@@ -1,0 +1,17 @@
+name: Telemetry public release audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate release audit regression tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_telemetry_release_audit.py'
+      - name: Fail closed on unaudited public connector code
+        run: python3 scripts/telemetry_release_audit.py --strict
