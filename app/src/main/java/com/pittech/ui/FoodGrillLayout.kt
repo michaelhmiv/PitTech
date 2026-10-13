@@ -30,6 +30,13 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
     onSelect: (String?) -> Unit, onLog: (String, String, String?) -> Unit,
     onAdd: () -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, reminders: List<ReminderRule> = emptyList(), occurrences: List<ReminderOccurrence> = emptyList(), selectedTools: @Composable (DishEntity) -> Unit = {}) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.pittech.PitTechApplication
+    val telemetryProfiles by app.telemetryRuntime.store.profiles.collectAsStateWithLifecycle()
+    val telemetryStates by app.telemetryRuntime.states.collectAsStateWithLifecycle()
+    val liveTelemetryProbes = telemetryProfiles.filter { it.monitoring && it.cookId == data.cook.id && data.cook.status == CookStatus.ACTIVE }
+        .flatMap { profile -> profile.sources.filter { it.deviceId in profile.selectedDeviceIds &&
+            telemetryStates[profile.id + ":" + it.deviceId]?.startsWith("Connected") == true }
+            .flatMap { source -> source.channels.filter { telemetryStates[profile.id + ":" + source.deviceId + ":" + it.id] == "Connected" }.map { TelemetryRecordingRepository(app.database).channelKey(data.cook.id, source, it.id) } } }.toSet()
     LaunchedEffect(data.cook.id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
     val end = data.cook.endedAtUtcMillis ?: now
     val phases = FoodLivePresentation.phases(data, end)
@@ -59,7 +66,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
             }.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 foods.forEach { dish ->
                     val phase = phaseByFood[dish.id]
-                    val temperatures = FoodLivePresentation.temperatures(dish.id, data.probes, data.assignments, data.readings, data.recording, now)
+                    val temperatures = FoodLivePresentation.temperatures(dish.id, data.probes, data.assignments, data.readings, data.recording, now, liveTelemetryProbes)
                     val last = data.events.filter { CookFeedPresentation.matchesFood(it, dish.id) &&
                         (it.dishId == dish.id || dish.id in CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.orEmpty()) &&
                         it.source == "manual" }.maxByOrNull { it.occurredAtUtcMillis }
