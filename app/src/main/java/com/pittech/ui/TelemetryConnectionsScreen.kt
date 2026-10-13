@@ -129,7 +129,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                     if (provider == "home_assistant") {
                         Text("Use a Home Assistant server you already operate. PitTech does not host or install one.")
                         OutlinedTextField(endpoint, { endpoint = it.take(350) }, label = { Text("Server URL") }, singleLine = true)
-                        Button(enabled = !busy && endpoint.startsWith("https://"), onClick = {
+                        Button(modifier = Modifier.testTag("telemetry-ha-authorize"), enabled = !busy && endpoint.startsWith("https://"), onClick = {
                             val p = profile(); pending = p
                             runCatching { oauth.launch(Intent().setClassName(context, "com.pittech.HomeAssistantAuthorizationActivity").putExtra("server", p.endpoint).putExtra("profile", p.id)) }
                                 .onFailure { error = "Authorization is unavailable in this build." }

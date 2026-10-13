@@ -16,7 +16,7 @@ class TelemetryConnectionsScreenTest {
         }
         compose.onNodeWithTag("telemetry-add").performScrollTo().performClick()
         compose.onNodeWithText("Server URL", useUnmergedTree = true).assertExists()
-        compose.onNodeWithText("Sign in to Home Assistant", useUnmergedTree = true).assertIsNotEnabled()
+        compose.onNodeWithTag("telemetry-ha-authorize").assertIsNotEnabled()
         compose.onNodeWithText("Advanced token setup", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("Access token", useUnmergedTree = true).assertExists()
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
