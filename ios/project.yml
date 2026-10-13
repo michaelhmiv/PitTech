@@ -49,6 +49,16 @@ targets:
         PITTECH_ADMOB_APP_ID: "ca-app-pub-3940256099942544~1458002511"
         PITTECH_NATIVE_AD_UNIT_ID: "ca-app-pub-3940256099942544/3986624511"
         CODE_SIGN_STYLE: Automatic
+      configs:
+        Release:
+          # App Store builds sign manually with the CI-generated profile.
+          # Scoped to this target only: Swift Package targets (GoogleMobileAds,
+          # ZIPFoundation, ...) reject provisioning profiles, so these settings
+          # must never be passed as global xcodebuild overrides.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          DEVELOPMENT_TEAM: "R42LWFBXBH"
+          PROVISIONING_PROFILE_SPECIFIER: "PitTech App Store CI"
     scheme:
       testTargets: [PitTechTests, PitTechUITests]
       gatherCoverageData: false
