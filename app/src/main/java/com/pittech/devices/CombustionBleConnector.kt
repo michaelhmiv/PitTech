@@ -25,56 +25,64 @@ import java.util.concurrent.ConcurrentHashMap
 internal class CombustionBleConnector(
     private val clock: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val advertisements: Flow<ProbeScanResult> = ProbeScanner.scanResults,
+    private val scan: suspend () -> Unit = { ProbeScanner.scan() },
+    private val scanWindowMillis: Long = 8_000L,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "combustion"
     private var scanner: Job? = null
+    @Volatile private var closed = false
     private var observers = 0
     @Synchronized private fun stopIfIdle() { if (observers == 0) { scanner?.cancel(); scanner = null } }
     private val seen = ConcurrentHashMap<String, List<TelemetryObservation>>()
 
     @Synchronized private fun scanIfNeeded() {
+        if (closed) return
         if (scanner?.isActive == true) return
         scanner = scope.launch {
             while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-                ProbeScanner.scan()
+                scan()
                 kotlinx.coroutines.delay(5_000L)
             }
         }
     }
 
-    override suspend fun discover(): List<TelemetrySource> {
-        val detected = LinkedHashSet<String>()
+    private suspend fun <T> withScan(block: suspend () -> T): T {
+        synchronized(this) { observers++ }
         scanIfNeeded()
-        withTimeoutOrNull(8_000L) {
-            ProbeScanner.scanResults.collect { result ->
+        return try { block() } finally { synchronized(this) { observers-- }; stopIfIdle() }
+    }
+
+    override suspend fun discover(): List<TelemetrySource> = withScan {
+        val detected = LinkedHashSet<String>()
+        withTimeoutOrNull(scanWindowMillis) {
+            advertisements.collect { result ->
                 result.serialNumber?.takeIf { it.isNotBlank() }?.let { detected.add(it); seen[it] = decode(result, clock()) }
             }
         }
-        stopIfIdle()
-        return detected.map(::source)
+        detected.map(::source)
     }
 
     override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
+        if (closed) return emptyList()
         seen[deviceId]?.takeIf { samples -> samples.any { clock() - it.receivedAtMillis in 0..15_000L } }?.let { return it }
-        scanIfNeeded()
-        return try {
-            withTimeoutOrNull(8_000L) {
-                ProbeScanner.scanResults.first { it.serialNumber == deviceId }.let { decode(it, clock()) }
+        return withScan {
+            withTimeoutOrNull(scanWindowMillis) {
+                advertisements.first { it.serialNumber == deviceId }.let { decode(it, clock()) }
                     .also { seen[deviceId] = it }
             }.orEmpty()
-        } finally { stopIfIdle() }
+        }
     }
 
-    override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = flow {
+    override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = observe(deviceId, minimumIntervalMillis)
+    override fun observe(deviceId: String, intervalMillis: Long): Flow<List<TelemetryObservation>> = flow {
         require(deviceId.isNotBlank())
-        synchronized(this@CombustionBleConnector) { observers++ }
-        scanIfNeeded()
-        try { ProbeScanner.scanResults.filter { it.serialNumber == deviceId }.collect { result ->
-            val received = clock()
-            val sample = decode(result, received)
-            seen[deviceId] = sample
-            emit(sample)
-        } } finally { synchronized(this@CombustionBleConnector) { observers-- }; stopIfIdle() }
+        while (kotlinx.coroutines.currentCoroutineContext().isActive && !closed) {
+            val started = clock()
+            emit(snapshot(deviceId))
+            // Scan only for a bounded window per requested sample, not for the whole cook.
+            kotlinx.coroutines.delay((maxOf(minimumIntervalMillis, intervalMillis) - (clock() - started).coerceAtLeast(0L)).coerceAtLeast(1_000L))
+        }
     }
 
     override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation> {
@@ -84,6 +92,7 @@ internal class CombustionBleConnector(
     }
 
     override suspend fun disconnect() {
+        closed = true
         scanner?.cancel()
         scanner = null
         seen.clear()
