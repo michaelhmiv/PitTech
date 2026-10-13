@@ -50,8 +50,8 @@ Draft PR #87 supplies native REST/HA authorization and WebSocket, Flame Boss TLS
 Combustion official iOS SDK adapters, local recording, mappings and archive compatibility.
 The Devices UI and collection hooks are Debug-only. Public Release currently advertises no
 connected-device support. Android work does not establish iOS support or hardware results.
-The native iOS SDK adapter can read derived core/surface/ambient; anchored log recovery and
-background BLE behavior remain unvalidated. Cloud collection is explicitly foreground-only;
+The native iOS SDK adapter can read derived core/surface/ambient. It does not implement
+anchored probe-log recovery; specific repeater and background BLE behavior remain unvalidated. Cloud collection is explicitly foreground-only;
 there is no persistent background polling entitlement. Manufacturer MQTT is limited to the
 configured public cook topic and has no PUBLISH method.
 

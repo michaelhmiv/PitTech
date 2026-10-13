@@ -346,7 +346,8 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-if [[ "$recording_passed_count" -ne 18 ]] || ! grep -q 'OK (19 tests)' "$recording_test_output" ||
+recording_expected_count=18
+if [[ "$recording_passed_count" -ne "$recording_expected_count" ]] || ! grep -q "OK (${recording_expected_count} tests)" "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
   exit 1
@@ -455,6 +456,7 @@ pull_app_screenshot() {
 }
 
 pull_app_screenshot telemetry-connections
+pull_app_screenshot telemetry-ha-onboarding
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 pull_app_screenshot settings-dark
