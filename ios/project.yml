@@ -13,6 +13,9 @@ settings:
     GENERATE_INFOPLIST_FILE: NO
     INFOPLIST_FILE: PitTech/Info.plist
 packages:
+  CombustionBLE:
+    url: https://github.com/combustion-inc/combustion-ios-ble.git
+    exactVersion: 1.0.0
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads.git
     from: 13.11.0
@@ -34,6 +37,8 @@ targets:
       - path: PitTech/Assets.xcassets
       - path: PitTech/PrivacyInfo.xcprivacy
     dependencies:
+      - package: CombustionBLE
+        product: CombustionBLE
       - package: GoogleMobileAds
         product: GoogleMobileAds
       - package: GoogleUserMessagingPlatform

@@ -12,6 +12,7 @@ final class CookStore {
     var deletedNote: DeletedNativeNote?
     var reminderMessage: String?
     var notificationCookId: String?
+    @ObservationIgnored var telemetryOnLog: ((String) -> Void)?
     @ObservationIgnored var reminderScheduleTask: Task<Void, Never>?
     private let directory: URL
     init(directory: URL? = nil) {

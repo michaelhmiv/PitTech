@@ -7,7 +7,7 @@ on:
       - "ios/**"
       - ".github/workflows/ios-build.yml"
   pull_request:
-    branches: [main, feature/cook-experience-recovery]
+    branches: [main, feature/cook-experience-recovery, test/telemetry-provider-integration]
     paths:
       - "ios/**"
       - ".github/workflows/ios-build.yml"
