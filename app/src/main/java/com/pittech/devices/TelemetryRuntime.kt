@@ -59,7 +59,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         val session = if (user.isBlank() && secret.isBlank()) factory.restore(context, profile) else factory.connect(context, profile, user, secret)
         val discovered = session.discover().map { source ->
             val saved = profile.sources.firstOrNull { it.deviceId == source.deviceId }
-            source.copy(identityScope = if (profile.provider == "home_assistant") profile.endpoint.trimEnd('/') else source.identityScope,
+            source.copy(identityScope = source.identityScope,
                 channels = source.channels.map { ch -> saved?.channels?.firstOrNull { it.id == ch.id }?.let { ch.copy(kind = it.kind) } ?: ch })
         }
         connectors.put(profile.id, session)?.disconnect()
@@ -88,7 +88,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         store.remove(profile.id)
         connectors.remove(profile.id)?.disconnect()
         profile.cookId?.let { cook -> profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { recorder.detach(cook, it) } }
-        TelemetryTokenStore(context).clear(profile.provider, profile.id)
+        try { factories(profile.provider)?.revoke(context, profile) } catch (_: Exception) { status(profile.id, "Local connection removed. Revoke the original token in your provider profile if the server was unavailable.") } finally { TelemetryTokenStore(context).clear(profile.provider, profile.id) }
         status(profile.id, "Disconnected")
     }
     fun update(profile: TelemetryProfile) {
