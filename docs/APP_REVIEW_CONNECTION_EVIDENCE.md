@@ -31,7 +31,9 @@ Android account tokens are AES-GCM encrypted with Android Keystore in no-backup 
 iOS tokens/HA refresh sessions use device-only Keychain accessibility after first unlock.
 Selections/configurations remain on the phone and are excluded from backup and cook archives.
 Cook readings, source timestamps and role/assignment history persist locally. Archives contain
-hashed local source identities and readings, not tokens/passwords or raw provider device IDs.
+hashed local source identities and readings, not tokens/passwords or dedicated raw provider
+device-ID fields. Exported device/channel display names can still identify equipment or contain
+an entity identifier when a provider supplies no friendly name; an archive is not anonymous.
 Forgetting a connection retains historical cooks. HA refresh-token revocation is attempted;
 when offline, users should also revoke the original token at their server. Advanced tokens and
 other vendors may require revocation in the vendor account. Separate Google ads and explicit
