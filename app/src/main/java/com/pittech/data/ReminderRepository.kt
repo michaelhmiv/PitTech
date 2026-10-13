@@ -94,7 +94,7 @@ class ReminderRepository(private val db: PitTechDatabase) {
                             p.sources.firstOrNull { it.deviceId in p.selectedDeviceIds && TelemetryRecordingRepository(db).deviceKey(cookId, it) == r.sourceDeviceId }
                                 ?.let { p to it }
                         }
-                        val telemetryValid = selected?.let { (p, source) -> p.cookId == cookId && p.monitoring && runtime.states.value[p.id + ":" + source.deviceId] == "Connected" } == true
+                        val telemetryValid = selected?.let { (p, source) -> p.cookId == cookId && p.monitoring && runtime.states.value[p.id + ":" + source.deviceId]?.startsWith("Connected") == true } == true
                         val cloud = r.source == "controller_cloud"
                         val continuous = telemetry && telemetryValid && selected?.first?.onLogOnly == false || cloud && recording?.status == CookRecordingEntity.RECORDING && recording.samplingMode != "on_log"
                         val assignmentValid = if (telemetry && r.measurementType == "food_probe") assignments.any { it.probeId == r.probeId && it.dishId == r.dishId && it.endedAtUtcMillis == null && r.measuredAtUtcMillis >= it.startedAtUtcMillis } else !cloud || recording?.deviceId == r.sourceDeviceId && assignments.any { it.probeId == r.probeId && it.dishId == r.dishId && r.measuredAtUtcMillis >= it.startedAtUtcMillis }

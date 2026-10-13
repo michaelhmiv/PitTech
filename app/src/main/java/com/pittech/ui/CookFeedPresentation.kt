@@ -21,7 +21,7 @@ internal object CookFeedPresentation {
     fun isSetpoint(event: TimelineEventEntity) = event.eventType in setOf("setpoint_changed", "setpoint_recorded")
     fun isStory(event: TimelineEventEntity) = event.source == "manual" || isSetpoint(event) || event.eventType == "probe_assigned"
     fun matchesFood(event: TimelineEventEntity, foodId: String?): Boolean {
-        if (event.eventType == "telemetry_mapping") return false
+        if (event.eventType.startsWith("telemetry_")) return false
         if (foodId == null) return true
         val scopes = CookNoteMetadata.decode(event.noteMetadataJson)?.dishIds.orEmpty()
         return event.dishId == foodId || foodId in scopes ||
@@ -73,7 +73,8 @@ internal object FoodLivePresentation {
             ?.let { (it.end - it.start).coerceAtLeast(0) } ?: 0
 
     fun temperatures(foodId: String, probes: List<ProbeEntity>, assignments: List<ProbeAssignmentEntity>,
-        readings: List<SensorReadingEntity>, recording: CookRecordingEntity?, now: Long): List<FoodTemperature> {
+        readings: List<SensorReadingEntity>, recording: CookRecordingEntity?, now: Long,
+        liveTelemetryDevices: Set<String>? = null): List<FoodTemperature> {
         val active = probes.filter { probe ->
             probe.measurementType == "food_probe" && (probe.source.startsWith("telemetry:") || recording == null || probe.deviceId == recording.deviceId) &&
                 probe.assignedDishId == foodId
@@ -89,7 +90,8 @@ internal object FoodLivePresentation {
             val samples = readings.filter { it.probeId == probe.id && it.dishId == foodId && it.measuredAtUtcMillis >= since }
             val latest = samples.maxByOrNull { it.measuredAtUtcMillis }
             val last = samples.filter(::accepted).maxByOrNull { it.measuredAtUtcMillis }
-            val live = latest != null && accepted(latest) && (latest.source.startsWith("telemetry:") || latest.source == "controller_cloud" && recording?.status == CookRecordingEntity.RECORDING) &&
+            val live = latest != null && accepted(latest) && ((latest.source.startsWith("telemetry:") &&
+                (liveTelemetryDevices == null || probe.deviceId in liveTelemetryDevices)) || latest.source == "controller_cloud" && recording?.status == CookRecordingEntity.RECORDING) &&
                 now >= latest.measuredAtUtcMillis &&
                 now - latest.measuredAtUtcMillis <= GrillSamplingPolicy.receiptWindow(latest.samplingIntervalMillis)
             FoodTemperature(if (live) latest else last, probe, live, waiting = latest == null)

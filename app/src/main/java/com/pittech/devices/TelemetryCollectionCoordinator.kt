@@ -40,22 +40,25 @@ internal class TelemetryCollectionCoordinator(
         while (currentCoroutineContext().isActive && recorder.isAttached(cookId, source)) {
             try {
                 onState(source, "Connecting…")
-                backfill(cookId, source, connector)
-                recorder.ingest(cookId, source, connector.snapshot(source.deviceId))
-                failures = 0
+                var historyUnavailable = false
+                try { backfill(cookId, source, connector) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { historyUnavailable = true; onState(source, "History unavailable; reconnecting live readings") }
+                recorder.ingest(cookId, source, connector.snapshot(source.deviceId), maxOf(intervalMillis, connector.minimumIntervalMillis))
                 var lastAccepted = Long.MIN_VALUE
                 connector.observe(source.deviceId, maxOf(intervalMillis, connector.minimumIntervalMillis)).collect { batch ->
                     if (!recorder.isAttached(cookId, source)) throw CancellationException("Cook stopped or source detached")
                     val available = batch.any { TelemetryNormalizer.normalize(it) != null }
-                    onState(source, if (available) "Connected" else "Unavailable or stale")
+                    if (available) failures = 0
+                    onState(source, if (available) (if (historyUnavailable) "Connected · history unavailable" else "Connected") else "Unavailable or stale")
                     val now = clock()
                     if (available && (lastAccepted == Long.MIN_VALUE || now - lastAccepted >= maxOf(intervalMillis, connector.minimumIntervalMillis))) {
-                        recorder.ingest(cookId, source, batch)
+                        recorder.ingest(cookId, source, batch, maxOf(intervalMillis, connector.minimumIntervalMillis))
                         lastAccepted = now
                     }
                 }
                 // A finite stream closing is a disconnect, not a reason to tight-loop.
-                delay(5_000L)
+                delay(maxOf(5_000L, connector.minimumIntervalMillis))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -66,20 +69,41 @@ internal class TelemetryCollectionCoordinator(
                 }
                 onState(source, "Reconnecting…")
                 val retryAfter = (error as? TelemetryRequestException)?.retryAtMillis?.minus(clock())
-                delay(TelemetryRecoveryPolicy.retryDelayMillis(failures, retryAfter))
+                delay(maxOf(connector.minimumIntervalMillis, TelemetryRecoveryPolicy.retryDelayMillis(failures, retryAfter)))
             }
         }
     }
 
     suspend fun backfill(cookId: String, source: TelemetrySource, connector: ReadOnlyTelemetryConnector): Int {
         if (!connector.supportsHistory) return 0
-        val previous = recorder.recoveryStart(cookId, source) ?: return 0
+        val now = clock()
+        val pending = recorder.pendingRecovery(cookId, source)
+        val previous = pending?.first ?: recorder.recoveryStart(cookId, source) ?: return 0
+        val until = pending?.last ?: now
+        if (until <= previous) return 0
+        recorder.saveRecovery(cookId, source, previous, until)
         var processed = 0
-        for (window in TelemetryRecoveryPolicy.windows(previous, clock())) {
-            val observations = connector.history(source.deviceId, window.first, window.last)
-                .take(20_000)
-                .map { it.copy(fromHistory = true) }
-            processed += recorder.ingest(cookId, source, observations)
+        var requests = 0
+        suspend fun window(from: Long, to: Long, depth: Int): Boolean {
+            if (requests++ >= 80) return false
+            val observations = connector.history(source.deviceId, from, to)
+            if (observations.size >= 20_000 && to - from > 1_000L && depth < 16) {
+                val middle = from + (to - from) / 2
+                if (!window(from, middle, depth + 1)) return false
+                return window(middle, to, depth + 1)
+            }
+            processed += recorder.ingest(cookId, source, observations.take(20_000).map { it.copy(fromHistory = true) })
+            recorder.saveRecovery(cookId, source, to, until)
+            return true
+        }
+        for (range in TelemetryRecoveryPolicy.windows(previous, until)) {
+            if (!window(range.first, range.last, 0)) return processed
+        }
+        recorder.saveRecovery(cookId, source, until, until, complete = true)
+        if (pending != null && until < now) {
+            // The older gap is finished. Keep any newer offline period recoverable.
+            val latest = recorder.recoveryStart(cookId, source)
+            if (latest != null && latest < now) recorder.saveRecovery(cookId, source, maxOf(until, latest), now)
         }
         return processed
     }

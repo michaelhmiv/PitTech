@@ -416,6 +416,12 @@ interface CookDao {
     @Update
     suspend fun updateTelemetryDevice(device: DeviceEntity)
 
+    @Query("SELECT * FROM timeline_events WHERE cookId = :cookId AND eventType IN ('telemetry_lifecycle', 'cook_paused', 'cook_resumed') ORDER BY occurredAtUtcMillis ASC")
+    suspend fun telemetryStatusHistory(cookId: String): List<TimelineEventEntity>
+
+    @Query("SELECT * FROM timeline_events WHERE cookId = :cookId AND sourceDeviceId = :deviceId AND eventType = 'telemetry_recovery' LIMIT 1")
+    suspend fun telemetryRecovery(cookId: String, deviceId: String): TimelineEventEntity?
+
     @Query("SELECT * FROM timeline_events WHERE cookId = :cookId AND eventType = 'telemetry_mapping' ORDER BY occurredAtUtcMillis ASC")
     suspend fun telemetryMappings(cookId: String): List<TimelineEventEntity>
 
