@@ -277,7 +277,19 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]
+restored_receipt=""
+for _ in $(seq 1 90); do
+  restored_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]; then break; fi
+  sleep 1
+done
+[[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]
+# Wait for the Room transaction after the fixture emits its receipt.
+sleep 1
+timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-services.txt"
+grep -q 'isForeground=true' "$output_dir/telemetry-process-services.txt"
 printf 'Previous PID: %s\nRestored PID: %s\nPrevious receipt: %s\n' "$old_telemetry_pid" "$new_telemetry_pid" "$previous_receipt" > "$output_dir/telemetry-process-restart.txt"
+printf 'Restored receipt: %s\n' "$restored_receipt" >> "$output_dir/telemetry-process-restart.txt"
 timeout 20 adb shell dumpsys activity activities > "$output_dir/telemetry-process-activities.txt"
 if grep -E 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-activities.txt"; then
   echo "Telemetry recovery unexpectedly required a visible activity." >&2

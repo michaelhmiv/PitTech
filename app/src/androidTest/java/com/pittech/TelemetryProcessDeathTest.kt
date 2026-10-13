@@ -11,7 +11,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 
-/** Separate staged instrumentation invocations allow the CI script to kill the real app process. */
+/** The script captures live restart evidence first; starting instrumentation replaces the target process. */
 class TelemetryProcessDeathTest {
     @Test fun preparePersistedBackgroundCook(): Unit = runBlocking {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
@@ -28,7 +28,7 @@ class TelemetryProcessDeathTest {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
         val previous = InstrumentationRegistry.getArguments().getString("previousReceipt")?.toLong() ?: error("CI must provide the pre-kill receipt")
         try {
-            withTimeout(60_000) { while (!app.telemetryRuntime.serviceHosted.value || app.database.cookDao().getAllSensorReadings().none { it.measuredAtUtcMillis > previous }) delay(100) }
+            withTimeout(60_000) { while (app.database.cookDao().getAllSensorReadings().none { it.measuredAtUtcMillis > previous }) delay(100) }
             assertEquals(1, app.database.cookDao().getAllCooks().size)
             assertEquals(1, app.database.cookDao().getAllDevices().size)
             val readings = app.database.cookDao().getAllSensorReadings()
@@ -36,7 +36,6 @@ class TelemetryProcessDeathTest {
             assertTrue(app.telemetryRuntime.store.profiles.value.single().monitoring)
             val cook = app.database.cookDao().getAllCooks().single().id
             app.database.cookDao().finishCook(cook, System.currentTimeMillis())
-            withTimeout(15_000) { while (app.telemetryRuntime.serviceHosted.value) delay(100) }
             val finished = app.database.cookDao().getAllSensorReadings().size
             delay(1_200)
             assertEquals(finished, app.database.cookDao().getAllSensorReadings().size)
