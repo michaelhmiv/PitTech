@@ -53,7 +53,7 @@ class TelemetryRecordingServiceTest {
             override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = connector()
             override suspend fun restore(context: Context, profile: TelemetryProfile) = connector()
         }
-        fun runtime() = TelemetryRuntime(context, app.database, clock::get, ::factory)
+        fun runtime() = TelemetryRuntime(context, app.database, clock = clock::get, factories = ::factory)
         var current = runtime()
         app.telemetryRuntimeForTests = current
         val scenario = ActivityScenario.launch(MainActivity::class.java)

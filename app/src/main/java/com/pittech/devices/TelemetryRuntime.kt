@@ -12,7 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Application-owned runtime; foreground service and visible UI share exactly one set of collection jobs. */
-internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
+internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val backgroundStarter: (Context) -> Unit = CookRecordingService::startTelemetry, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
     val store = TelemetryProfileStore(context)
     val states = MutableStateFlow<Map<String, String>>(emptyMap())
     val foreground = MutableStateFlow(false)
@@ -27,6 +27,15 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     }
     val backgroundRequested = backgroundSessions.stateIn(scope, SharingStarted.Eagerly, false)
     init {
+        scope.launch {
+            combine(backgroundRequested, foreground) { requested, visible -> requested && visible }.distinctUntilChanged().collect { start ->
+                if (start) runCatching { backgroundStarter(context) }.onFailure {
+                    store.profiles.value.filter { it.monitoring && it.background }.forEach { profile ->
+                        store.save(profile.copy(background = false)); status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
+                    }
+                }
+            }
+        }
         scope.launch {
             combine(store.profiles, activeCooks, foreground, serviceHosted) { p, active, visible, hosted ->
                 p.filter { it.monitoring && !it.onLogOnly && it.cookId in active && (visible || it.background && hosted) }
@@ -130,7 +139,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
                 }
                 store.save(profile)
                 if (profile.monitoring && profile.background && !profile.onLogOnly) {
-                    try { CookRecordingService.startTelemetry(context) }
+                    try { backgroundStarter(context) }
                     catch (_: Exception) {
                         store.save(profile.copy(background = false))
                         status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
@@ -140,7 +149,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         }
     }
     fun requestBackgroundFromVisibleApp() {
-        if (foreground.value && backgroundRequested.value) runCatching { CookRecordingService.startTelemetry(context) }
+        if (foreground.value && backgroundRequested.value) runCatching { backgroundStarter(context) }
     }
     fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { update(it.copy(monitoring = false)) } }
     suspend fun close() { scope.cancel(); connectors.values.forEach { it.disconnect() }; connectors.clear() }

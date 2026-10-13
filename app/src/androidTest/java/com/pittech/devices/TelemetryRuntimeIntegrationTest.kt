@@ -67,7 +67,7 @@ class TelemetryRuntimeIntegrationTest {
             override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector = throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
             override suspend fun restore(context: Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector = throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
         }
-        val runtime = TelemetryRuntime(context, db) { factory }
+        val runtime = TelemetryRuntime(context, db, backgroundStarter = {}) { factory }
         try {
             val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Credentials removed"))
             val source = TelemetrySource("meater", "probe", "Probe", channels = listOf(TelemetryChannel("internal", "Food", TelemetryKind.FOOD)))
@@ -100,7 +100,7 @@ class TelemetryRuntimeIntegrationTest {
             override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = adapter(profile)
             override suspend fun restore(context: Context, profile: TelemetryProfile) = adapter(profile)
         }
-        val runtime = TelemetryRuntime(context, db) { factory }
+        val runtime = TelemetryRuntime(context, db, backgroundStarter = {}) { factory }
         try {
             val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Saved source"))
             val profile = runtime.connect(TelemetryProfile("saved-source", "home_assistant", "HA", endpoint = "https://one.example.com", onLogOnly = true), "fixture", "dummy")
