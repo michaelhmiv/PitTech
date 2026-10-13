@@ -187,8 +187,11 @@ jobs:
         with:
           ref: main
 
-      - name: Require App Store Connect API key and iOS AdMob IDs
+      - name: Require signing material, App Store Connect API key, and iOS AdMob IDs
         env:
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
@@ -197,6 +200,9 @@ jobs:
         run: |
           set -euo pipefail
           for secret_name in \
+            IOS_DISTRIBUTION_P12_BASE64 \
+            IOS_DISTRIBUTION_P12_PASSWORD \
+            IOS_PROVISIONING_PROFILE_BASE64 \
             ASC_KEY_ID \
             ASC_ISSUER_ID \
             ASC_PRIVATE_KEY \
@@ -207,6 +213,37 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Install signing certificate and provisioning profile
+        env:
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          keychain_path="$RUNNER_TEMP/pittech-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/distribution.p12"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/PitTech.mobileprovision"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$IOS_DISTRIBUTION_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -d user -s "$keychain_path"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          security cms -D -i "$RUNNER_TEMP/PitTech.mobileprovision" > "$RUNNER_TEMP/PitTech-profile.plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/PitTech-profile.plist")
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/PitTech-profile.plist")
+          app_identifier=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/PitTech-profile.plist")
+          if [[ "$app_identifier" != "R42LWFBXBH.com.pittech" ]]; then
+            echo "::error::The provisioning profile must match team R42LWFBXBH and bundle ID com.pittech."
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/PitTech.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "PITTECH_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
+          echo "PITTECH_KEYCHAIN_PATH=$keychain_path" >> "$GITHUB_ENV"
 
       - name: Install the App Store Connect API key
         env:
@@ -229,10 +266,8 @@ jobs:
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
 
-      - name: Archive for App Store Connect (unsigned; signed at export)
+      - name: Archive for App Store Connect
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           IOS_ADMOB_APP_ID: ${{ vars.IOS_ADMOB_APP_ID }}
           IOS_ADMOB_NATIVE_AD_UNIT_ID: ${{ vars.IOS_ADMOB_NATIVE_AD_UNIT_ID }}
         run: >-
@@ -245,10 +280,13 @@ jobs:
           -derivedDataPath build/ios-release
           DEVELOPMENT_TEAM=R42LWFBXBH
           CODE_SIGN_STYLE=Manual
-          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGN_IDENTITY='Apple Distribution'
+          PROVISIONING_PROFILE_SPECIFIER="$PITTECH_PROFILE_NAME"
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
           PITTECH_ADMOB_APP_ID="$IOS_ADMOB_APP_ID"
           PITTECH_NATIVE_AD_UNIT_ID="$IOS_ADMOB_NATIVE_AD_UNIT_ID"
+          CODE_SIGNING_KEYCHAIN="$PITTECH_KEYCHAIN_PATH"
+          CODE_SIGNING_ALLOWED=YES
 
       - name: Export and upload to App Store Connect
         env:
@@ -262,18 +300,21 @@ jobs:
           <plist version="1.0"><dict>
             <key>destination</key><string>upload</string>
             <key>method</key><string>app-store-connect</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
             <key>teamID</key><string>R42LWFBXBH</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.pittech</key><string>$PITTECH_PROFILE_NAME</string>
+            </dict>
             <key>stripSwiftSymbols</key><true/>
             <key>uploadSymbols</key><true/>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           PLIST
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.pittech $PITTECH_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
           xcodebuild -exportArchive \
             -archivePath build/PitTech.xcarchive \
             -exportPath build/export \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -allowProvisioningUpdates \
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
