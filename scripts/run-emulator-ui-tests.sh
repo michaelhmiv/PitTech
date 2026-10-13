@@ -258,7 +258,7 @@ fi
 echo "Preparing durable telemetry for a real process-death test."
 timeout 3m adb shell am instrument -w -r -e class 'com.pittech.TelemetryProcessDeathTest#preparePersistedBackgroundCook' "$instrumentation_target" | tee "$output_dir/telemetry-process-prepare.txt"
 grep -q 'OK (1 test)' "$output_dir/telemetry-process-prepare.txt"
-timeout 20 adb shell am start-foreground-service -n com.pittech.debug/com.pittech.CookRecordingService -a com.pittech.action.TELEMETRY
+timeout 20 adb shell am start-foreground-service -n com.pittech.debug/com.pittech.CookRecordingService -a com.pittech.MONITOR_TELEMETRY
 previous_receipt=""
 for _ in $(seq 1 60); do
   previous_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
