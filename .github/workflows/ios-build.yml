@@ -262,12 +262,21 @@ jobs:
               except urllib.error.HTTPError as error:
                   raise SystemExit(f"ASC API {method} {path} failed ({error.code}): {error.read().decode()[:600]}")
 
-          # Free the distribution-certificate slot held by any earlier CI-generated cert.
-          certs = call("GET", "/certificates?filter[certificateType]=DISTRIBUTION&limit=200").get("data", [])
-          for cert in certs:
-              if cert["attributes"].get("name") == "PitTech CI":
-                  call("DELETE", f"/certificates/{cert['id']}")
-                  print(f"Revoked previous CI certificate {cert['id']}")
+          # Free the distribution-certificate slot held by the previous CI run.
+          # Apple overrides the subject name on distribution certs, so the CI
+          # cert cannot be found by name; find it through the CI profile, whose
+          # name IS ours to choose, then delete the profile and revoke its cert.
+          old_profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
+          old_cert_ids = []
+          for old_profile in old_profiles:
+              linked = call("GET", f"/profiles/{old_profile['id']}/certificates").get("data", [])
+              old_cert_ids.extend(cert["id"] for cert in linked)
+          for old_profile in old_profiles:
+              call("DELETE", f"/profiles/{old_profile['id']}")
+              print(f"Deleted previous CI profile {old_profile['id']}")
+          for cert_id in dict.fromkeys(old_cert_ids):
+              call("DELETE", f"/certificates/{cert_id}")
+              print(f"Revoked previous CI certificate {cert_id}")
 
           # Fresh key + CSR on this runner; the private key never leaves it.
           subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
