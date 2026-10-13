@@ -29,6 +29,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
         buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
+        buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "false")
     }
 
     buildTypes {
@@ -39,6 +40,7 @@ android {
             // a developer accidentally passes -PpittechLiveAds=true.
             buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$testNativeAdUnitId\"")
             buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "true")
+            buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
         }
 
         // Firebase Dev can be installed beside both the Play app and local debug builds.
@@ -47,6 +49,7 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "true")
+            buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
         }
     }
 

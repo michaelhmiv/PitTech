@@ -31,6 +31,7 @@ class TelemetryRecoveryIntegrationTest {
             val ranges = mutableListOf<LongRange>()
             val fake = object : ReadOnlyTelemetryConnector {
                 override val connectorId = "home_assistant"
+                override val supportsHistory = true
                 override suspend fun discover() = listOf(device)
                 override suspend fun snapshot(deviceId: String) = emptyList<TelemetryObservation>()
                 override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = emptyFlow()

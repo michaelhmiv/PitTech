@@ -407,6 +407,18 @@ interface CookDao {
     @Query("SELECT MAX(measuredAtUtcMillis) FROM sensor_readings WHERE cookId = :cookId AND sourceDeviceId = :deviceId")
     suspend fun latestObservation(cookId: String, deviceId: String): Long?
 
+    @Query("SELECT MIN(COALESCE((SELECT MAX(r.measuredAtUtcMillis) FROM sensor_readings r WHERE r.cookId = :cookId AND r.probeId = p.id), p.createdAtUtcMillis)) FROM probes p WHERE p.cookId = :cookId AND p.deviceId = :deviceId")
+    suspend fun earliestChannelWatermark(cookId: String, deviceId: String): Long?
+
+    @Query("SELECT * FROM devices WHERE id = :deviceId AND cookId = :cookId LIMIT 1")
+    suspend fun telemetryDevice(cookId: String, deviceId: String): DeviceEntity?
+
+    @Update
+    suspend fun updateTelemetryDevice(device: DeviceEntity)
+
+    @Query("SELECT * FROM timeline_events WHERE cookId = :cookId AND eventType = 'telemetry_mapping' ORDER BY occurredAtUtcMillis ASC")
+    suspend fun telemetryMappings(cookId: String): List<TimelineEventEntity>
+
     @Query("SELECT * FROM timeline_events WHERE source = 'controller_cloud' AND eventType = 'connection_gap' ORDER BY occurredAtUtcMillis")
     fun observeConnectionGaps(): Flow<List<TimelineEventEntity>>
     @Query("SELECT * FROM probes WHERE cookId = :cookId ORDER BY name ASC")
@@ -464,7 +476,7 @@ interface CookDao {
     suspend fun insertEventsIgnoringDuplicates(events: List<TimelineEventEntity>)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertReadingsIgnoringDuplicates(readings: List<SensorReadingEntity>)
+    suspend fun insertReadingsIgnoringDuplicates(readings: List<SensorReadingEntity>): List<Long>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTargetsIgnoringDuplicates(targets: List<TargetEntity>)
