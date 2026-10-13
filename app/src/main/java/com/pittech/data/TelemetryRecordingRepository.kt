@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.pittech.devices.*
 import java.time.ZoneId
 import java.util.UUID
+import org.json.JSONObject
 
 /**
  * Parallel-source recorder. Reuses Room's existing device/probe/reading/assignment
@@ -37,6 +38,7 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
     suspend fun detach(cookId: String, source: TelemetrySource, at: Long = System.currentTimeMillis()) = db.withTransaction {
         val device = cooks.telemetryDevice(cookId, deviceKey(cookId, source)) ?: return@withTransaction
         cooks.updateTelemetryDevice(device.copy(role = "telemetry_detached"))
+        lifecycle(cookId, source, "detached", at)
         cooks.getProbesForCook(cookId).filter { it.deviceId == device.id }.forEach { probe ->
             assignments.currentAssignment(probe.id)?.let { old ->
                 require(at >= old.startedAtUtcMillis)
@@ -44,6 +46,39 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
             }
             cooks.updateProbe(probe.copy(assignedDishId = null))
         }
+    }
+
+    suspend fun setMonitoring(cookId: String, source: TelemetrySource, enabled: Boolean, at: Long = System.currentTimeMillis()) = db.withTransaction {
+        val device = cooks.telemetryDevice(cookId, deviceKey(cookId, source)) ?: return@withTransaction
+        if (device.role == "telemetry_detached") return@withTransaction
+        cooks.updateTelemetryDevice(device.copy(role = if (enabled) "telemetry" else "telemetry_paused"))
+        lifecycle(cookId, source, if (enabled) "active" else "paused", at)
+    }
+    private suspend fun lifecycle(cookId: String, source: TelemetrySource, state: String, at: Long) {
+        cooks.insertTimelineEvents(listOf(TimelineEventEntity(UUID.randomUUID().toString(), cookId,
+            eventType = "telemetry_lifecycle", title = "Temperature monitoring", details = state,
+            occurredAtUtcMillis = at, recordedAtUtcMillis = at, timeZoneId = ZoneId.systemDefault().id,
+            source = "telemetry:" + source.connectorId, sourceDeviceId = deviceKey(cookId, source),
+            createdAtUtcMillis = at, updatedAtUtcMillis = at)))
+    }
+    suspend fun pendingRecovery(cookId: String, source: TelemetrySource): LongRange? {
+        val event = cooks.telemetryRecovery(cookId, deviceKey(cookId, source)) ?: return null
+        return runCatching {
+            val details = JSONObject(event.details ?: "{}")
+            if (details.optBoolean("complete")) null else details.getLong("from")..details.getLong("until")
+        }.getOrNull()?.takeIf { it.first > 0 && it.last >= it.first }
+    }
+    suspend fun saveRecovery(cookId: String, source: TelemetrySource, from: Long, until: Long, complete: Boolean = false) = db.withTransaction {
+        if (!isAttached(cookId, source)) return@withTransaction
+        val device = deviceKey(cookId, source)
+        val old = cooks.telemetryRecovery(cookId, device)
+        val at = System.currentTimeMillis()
+        val detail = JSONObject().put("from", from).put("until", until).put("complete", complete).toString()
+        if (old != null) cooks.updateTimelineEvent(old.copy(details = detail, updatedAtUtcMillis = at))
+        else cooks.insertTimelineEvents(listOf(TimelineEventEntity("telemetry-recovery:" + TelemetryNormalizer.localKey(cookId, device), cookId,
+            eventType = "telemetry_recovery", title = "Temperature history synchronization", details = detail,
+            occurredAtUtcMillis = at, recordedAtUtcMillis = at, timeZoneId = ZoneId.systemDefault().id,
+            source = "telemetry:" + source.connectorId, sourceDeviceId = device, createdAtUtcMillis = at, updatedAtUtcMillis = at)))
     }
 
     suspend fun attach(
@@ -60,8 +95,9 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
             id, cookId, source.manufacturer, source.model, source.label, "telemetry", null, now
         )))
         cooks.telemetryDevice(cookId, id)?.let { cooks.updateTelemetryDevice(it.copy(role = "telemetry")) }
+        lifecycle(cookId, source, "active", now)
         cooks.insertProbesIgnoringDuplicates(source.channels.map {
-            ProbeEntity(channelKey(cookId, source, it.id), cookId, id, null, it.name, it.kind.storageType,
+            ProbeEntity(channelKey(cookId, source, it.id), cookId, id, null, if (source.channels.size == 1) source.label else source.label + " · " + it.name, it.kind.storageType,
                 "telemetry:" + source.connectorId, now)
         })
         // Re-attaching can change a sensor's role without rewriting older observations.
@@ -80,7 +116,7 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
                 }
             }
             val updated = existing.copy(
-                name = channel.name, measurementType = channel.kind.storageType,
+                name = if (source.channels.size == 1) source.label else source.label + " · " + channel.name, measurementType = channel.kind.storageType,
                 assignedDishId = if (foodToOther) null else existing.assignedDishId,
             )
             if (updated != existing) cooks.updateProbe(updated)
@@ -125,7 +161,7 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
     }
 
     /** Room ignores duplicates using deterministic event IDs. Missing samples remain gaps. */
-    suspend fun ingest(cookId: String, source: TelemetrySource, observations: List<TelemetryObservation>): Int =
+    suspend fun ingest(cookId: String, source: TelemetrySource, observations: List<TelemetryObservation>, samplingIntervalMillis: Long = 60_000L): Int =
         db.withTransaction {
             val cook = cooks.getCook(cookId) ?: return@withTransaction 0
             if (cook.status != CookStatus.ACTIVE) return@withTransaction 0
@@ -135,12 +171,19 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
             if (existing.isEmpty()) return@withTransaction 0
             val channels = source.channels.associateBy { it.id }
             val mappings = cooks.telemetryMappings(cookId).groupBy { it.sourceDeviceId }
+            val status = cooks.telemetryStatusHistory(cookId)
+            fun enabledAt(at: Long): Boolean {
+                val local = status.lastOrNull { it.eventType == "telemetry_lifecycle" && it.sourceDeviceId == id && it.occurredAtUtcMillis <= at }
+                val meal = status.lastOrNull { it.eventType != "telemetry_lifecycle" && it.occurredAtUtcMillis <= at }
+                return (local == null || local.details == "active") && meal?.eventType != "cook_paused"
+            }
             val candidate = observations.mapNotNull { item ->
                 val channel = channels[item.channelId] ?: return@mapNotNull null
                 val probe = existing[channelKey(cookId, source, channel.id)] ?: return@mapNotNull null
                 val value = TelemetryNormalizer.normalize(item) ?: return@mapNotNull null
                 if (value.measuredAtMillis < cook.startedAtUtcMillis ||
                     value.measuredAtMillis > (cook.endedAtUtcMillis ?: Long.MAX_VALUE)) return@mapNotNull null
+                if (!enabledAt(value.measuredAtMillis)) return@mapNotNull null
                 val recordedRole = mappings[probe.id]?.lastOrNull { it.occurredAtUtcMillis <= value.measuredAtMillis }?.details
                 val kind = recordedRole?.let { runCatching { TelemetryKind.valueOf(it) }.getOrNull() } ?: channel.kind
                 val dish = if (kind == TelemetryKind.FOOD)
@@ -156,7 +199,7 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
                     timeZoneId = ZoneId.systemDefault().id, source = "telemetry:" + source.connectorId,
                     sourceDeviceId = id, qualityStatus = "valid",
                     recordedAtUtcMillis = value.receivedAtMillis,
-                    timestampBasis = value.timestampBasis, samplingIntervalMillis = 60_000L,
+                    timestampBasis = value.timestampBasis, samplingIntervalMillis = if (item.fromHistory) 0L else samplingIntervalMillis,
                 )
             }
             cooks.insertReadingsIgnoringDuplicates(candidate).count { it != -1L }

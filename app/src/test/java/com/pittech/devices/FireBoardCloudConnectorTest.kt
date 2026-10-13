@@ -117,4 +117,12 @@ class FireBoardCloudConnectorTest {
         assertTrue(FireBoardCloudConnector.parseHistory(chart, "different-device", mapOf("channel1" to "Pork"), at, at + 5000, at + 6000).isEmpty())
     }
 
+    @Test fun overlappingLiveAndHistoryResponsesHaveTheSameEventIdentity() {
+        val live = FireBoardCloudConnector.parseTemps(fixture().getJSONObject(0), at).first()
+        val history = JSONArray().put(JSONObject().put("device", "fb1").put("label", "Pork").put("degreetype", 1)
+            .put("x", JSONArray().put(at / 1000L)).put("y", JSONArray().put(100.0)))
+        val recovered = FireBoardCloudConnector.parseHistory(history, "fb1", mapOf("channel1" to "Pork"), at, at, at).single()
+        assertEquals(TelemetryNormalizer.normalize(live)!!.eventKey, TelemetryNormalizer.normalize(recovered)!!.eventKey)
+    }
+
 }

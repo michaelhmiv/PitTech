@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice telemetry-connections; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -255,6 +255,15 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 20 adb shell am force-stop com.pittech.debug
 fi
 
+telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
+telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
+echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
+timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
+if ! grep -q 'OK (17 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+  echo "Telemetry instrumentation tests did not all pass." >&2
+  exit 1
+fi
+
 cloud_test_output="$output_dir/grillirg-cloud-tests.txt"
 cloud_test_selector='com.pittech.ui.GrillirGCloudMonitorScreenTest,com.pittech.devices.PrimePolarisSessionStoreTest'
 echo "Running GrillirG cloud UI and encrypted-session tests on API $api_level."
@@ -399,6 +408,7 @@ pull_app_screenshot() {
   echo "Saved emulator screenshot: ${name}.png"
 }
 
+pull_app_screenshot telemetry-connections
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 pull_app_screenshot settings-dark

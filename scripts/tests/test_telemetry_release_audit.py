@@ -69,3 +69,10 @@ class PublicTelemetryAuditTests(TestCase):
             graph = root / "deps.txt"
             graph.write_text("com.example:pytboss:1.0")
             self.assertTrue(audit_dependencies(graph))
+
+    def test_private_endpoint_is_rejected_without_an_original_class_name(self):
+        with tempfile.TemporaryDirectory() as folder:
+            apk = Path(folder) / "public.apk"
+            with zipfile.ZipFile(apk, "w") as z:
+                z.writestr("classes.dex", b"dex\n039\x00socket.dansonscorp.com")
+            self.assertTrue(any("Private controller endpoint" in item for item in audit_artifact(apk)))

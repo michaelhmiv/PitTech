@@ -60,4 +60,72 @@ class TelemetryRecoveryIntegrationTest {
             db.close()
         }
     }
+    @Test fun interruptedHistoryResumesOlderCursorEvenAfterNewerLiveSamples(): Unit = runBlocking {
+        withRecoveryCook { db, recorder, cook, source, started ->
+            val first = started + 2 * 3_600_000L
+            val missed = started + 8 * 3_600_000L
+            val now = started + 10 * 3_600_000L
+            var offline = true
+            val requests = mutableListOf<LongRange>()
+            val connector = historyFixture(source) { from, until ->
+                requests += from..until
+                if (offline && from >= started + 6 * 3_600_000L) throw java.io.IOException("Offline")
+                listOf(first, missed).filter { it in from..until }.map {
+                    TelemetryObservation("p", 170.0, "°F", it, now, eventId = it.toString(), fromHistory = true)
+                }
+            }
+            try { TelemetryCollectionCoordinator(recorder, clock = { now }).backfill(cook, source, connector); fail("Expected the second window to fail") }
+            catch (_: java.io.IOException) { }
+            val pending = recorder.pendingRecovery(cook, source)!!
+            assertTrue(pending.first < missed)
+            recorder.ingest(cook, source, listOf(TelemetryObservation("p", 180.0, "°F", now, now, eventId = "live")))
+            offline = false; requests.clear()
+            // Recreate the recorder/coordinator as after process death.
+            TelemetryCollectionCoordinator(TelemetryRecordingRepository(db), clock = { now }).backfill(cook, source, connector)
+            assertEquals(pending.first, requests.first().first)
+            assertEquals(setOf(first, missed, now), db.cookDao().getAllSensorReadings().map { it.measuredAtUtcMillis }.toSet())
+            assertNull(recorder.pendingRecovery(cook, source))
+        }
+    }
+
+    @Test fun saturatedHistoryWindowSplitsAndOverlapsRemainIdempotent(): Unit = runBlocking {
+        withRecoveryCook { db, recorder, cook, source, started ->
+            val now = started + 20_000L
+            var calls = 0
+            val sample = TelemetryObservation("p", 180.0, "°F", started + 5_000, now, eventId = "sample", fromHistory = true)
+            val connector = historyFixture(source) { from, until ->
+                calls++
+                if (until - from > 10_000L) List(20_000) { sample }
+                else listOf(sample).filter { it.observedAtMillis!! in from..until }
+            }
+            assertEquals(1, TelemetryCollectionCoordinator(recorder, clock = { now }).backfill(cook, source, connector))
+            assertEquals(3, calls)
+            assertEquals(1, db.cookDao().getAllSensorReadings().size)
+            assertNull(recorder.pendingRecovery(cook, source))
+        }
+    }
+
+    private suspend fun withRecoveryCook(block: suspend (PitTechDatabase, TelemetryRecordingRepository, String, TelemetrySource, Long) -> Unit) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Recovery"))
+            val started = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+            val source = TelemetrySource("home_assistant", "sensor.test", "Test", channels = listOf(TelemetryChannel("p", "Probe", TelemetryKind.FOOD)))
+            val recorder = TelemetryRecordingRepository(db)
+            recorder.attach(cook, source, now = started)
+            block(db, recorder, cook, source, started)
+        } finally { db.close() }
+    }
+
+    private fun historyFixture(source: TelemetrySource, get: suspend (Long, Long) -> List<TelemetryObservation>) = object : ReadOnlyTelemetryConnector {
+        override val connectorId = source.connectorId
+        override val supportsHistory = true
+        override suspend fun discover() = listOf(source)
+        override suspend fun snapshot(deviceId: String) = emptyList<TelemetryObservation>()
+        override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = emptyFlow()
+        override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long) = get(fromMillis, untilMillis)
+        override suspend fun disconnect() = Unit
+    }
+
 }

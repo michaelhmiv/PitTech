@@ -1,29 +1,54 @@
-# PitTech telemetry public release acceptance gates
+# Telemetry public release gates — 2026-10-13
 
-The five integrations are under development. Passing Android or JVM tests is not proof of
-manufacturer authorization, model support, hardware interoperability or App Store approval.
+All connection PRs remain drafts. Automated compilation and fixtures do not establish
+physical device support or permission for an advertised commercial integration.
 
-| Source | Implemented transport/decoder | Needed for actual public Beta |
+| Source | Implemented Android Beta | Remaining validation or capability gap |
 |---|---|---|
-| Combustion | Official v3.5.4 Android BLE SDK, passive scanning, raw sensor conversion | Android permission UX, verified physical probe, background recovery, probe logs |
-| Home Assistant | REST sensor discovery/snapshot/history and WebSocket events | Authentication onboarding, encrypted credentials, local/remote behavior, HA end-to-end fixture |
-| FireBoard | Public REST device readings, shared 30-second cache | Real account/hardware, session mapping, token handling, HTTP 429 backoff |
-| Flame Boss | MQTT topic frame decoder and public login; no actual broker session yet | Verified broker host, TLS and topic ACL; tested read-only subscription |
-| MEATER | Public REST devices, 30-second cache and temperature decoding | Real account, cloud bridge availability, token storage, rate handling |
+| Combustion | Official SDK v3.5.4, passive scan, permission onboarding, saved serial, raw/instant measurements, idle scan cancellation | Physical probe and battery tests. Android derived core/surface metadata, repeaters and anchored probe-log recovery are not implemented by the passive adapter. |
+| Home Assistant | Per-server configuration, OAuth/refresh/revoke or advanced token, REST discovery/snapshot/history, multiplexed WebSocket, durable bounded recovery | Real user-operated local/remote installation; Recorder enabled; authorization callback and account revocation under actual server configuration. |
+| FireBoard | Encrypted login/token, device/channel discovery, shared account budget and 429 cooldown, explicit session chart history with unique channel labels | Actual account/model schemas, C/F readings and session mapping. Duplicate labels cannot be safely mapped and are omitted. |
+| Flame Boss | Manufacturer login, authenticated hostname-verified TLS MQTT, subscription-only public cook topic, reconnect and bounded snapshot | Manufacturer-confirmed TLS host/port and topic ACL; real account/device. No guessed default broker; private topics and historical data are unsupported. |
+| MEATER | Encrypted login/token, shared account polling and failed-request budget, multi-device internal/ambient/observed target samples | Actual account/device and Bluetooth/cloud bridge. The published API supplies no history. |
 
-Current legacy Prime Polaris, Traeger and Pit Boss direct clients are still in common Android source.
-Before any new connected-device feature ships publicly, exclude those legacy implementations
-and their setup/control code from the distributed release artifact. Hide-only UI is insufficient.
-Preserve all historical cook records without requiring any legacy provider client.
+The unified Android Devices screen supports food/chamber/ambient/other roles, simultaneous
+sources, explicit monitoring, on-log-only reads, provider-constrained sampling and opt-in
+foreground collection. Room schema remains version 10; telemetry uses existing record tables.
+Source pauses, assignment history, removal and cook completion preserve archived data.
 
-User-owned provider credentials must be encrypted on device; do not send raw vendor credentials
-or cook histories to PitTech servers. Support multiple devices, distinguish sensor observed time
-from phone receipt time, suppress fabricated missing readings, and document unsupported history.
+## Packaging
 
-Run the source audit in strict mode against the production packaging source tree as part of
-public telemetry release review. A strict failure is an intentional release blocker, not an
-invitation to suppress the check.
+Legacy proprietary transports, provisioning and diagnostics reside under `app/src/internal`.
+Only debug and Dev Kotlin source sets include that directory. Public release uses the
+non-network compatibility monitor in `app/src/release`; historical models remain readable.
+The gate checks public source sets, compiled APK/AAB DEX and the resolved release dependency
+graph. Production cleartext is disabled. Hiding a route is not accepted as isolation.
+New telemetry remains disabled in public release until the source-specific gates are cleared.
 
-External service terms and trademark usage must be checked against the then-current policy.
-A vendor's public API documents a technical integration route; do not describe it as blanket
-unconditional commercial permission.
+Full Combustion MIT text ships in Android assets. Native iOS notices include Combustion MIT,
+Swift Collections and NordicDFU terms. Inspect the resolved dependency versions before release.
+NordicDFU is an unused transitive SDK capability; PitTech exposes no firmware operation.
+
+## Platform limits
+
+Android foreground collection displays an ongoing notification and pause action, uses a
+bounded wake lease, and stops when the cook is paused/finished or monitoring is disabled.
+Android can still stop the process. Supported histories recover later; unsupported providers
+leave a gap. Force-stop blocks Android restarts until the user opens the app. Battery effects
+and vendor-specific background behavior need physical testing.
+
+iOS counterparts are reviewed separately in draft PR #87. The current iOS public configuration
+has no connected-device UI. Native Beta monitoring is foreground-only; no entitlement is used
+to imply continuous cloud polling while suspended. Home Assistant requires HTTPS on iOS.
+The Simulator cannot verify Bluetooth, MQTT vendor permissions or background hardware behavior.
+
+## Release evidence
+
+See [APP_REVIEW_CONNECTION_EVIDENCE.md](APP_REVIEW_CONNECTION_EVIDENCE.md) for dated terms,
+privacy boundaries and the actual iOS release distinction. A public API and SDK license do not
+by themselves establish unrestricted service or trademark permission. Ordinary development
+continues while these public distribution gates remain open.
+
+Before enabling each provider: retain applicable permission evidence; verify on physical
+hardware and account; review the intended store binary and privacy disclosures; record exact
+build SHA, dependency graph and tests. No build is submitted or distributed by these draft PRs.

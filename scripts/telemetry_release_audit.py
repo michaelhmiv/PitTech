@@ -62,7 +62,9 @@ FORBIDDEN_CLASSES = (
     "MongooseBleRpcProbe", "BluetoothGattInspector", "ControllerProbeDiagnostics",
     "GrillirGCloudMonitorScreen", "GrillirGWifiSetupPanel", "ControllerDiagnosticsScreen",
 )
-FORBIDDEN_ENDPOINTS = (b"/auth/m2s/email/login", b"/dms/queryDeviceRealTimeData", b"api.grillirg.com")
+FORBIDDEN_ENDPOINTS = (b"/auth/m2s/email/login", b"/dms/queryDeviceRealTimeData", b"api.grillirg.com",
+                       b"api.prime-polaris.com", b"socket.dansonscorp.com",
+                       b"mobile-iot-api.iot.traegergrills.io", b"auth-api.iot.traegergrills.io")
 
 def audit_artifact(path: Path) -> list[str]:
     issues = []

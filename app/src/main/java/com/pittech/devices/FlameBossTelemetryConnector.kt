@@ -3,6 +3,7 @@ package com.pittech.devices
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -81,6 +82,7 @@ internal class FlameBossTelemetryConnector(
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "flame_boss"
     private var last: List<TelemetryObservation> = emptyList()
+    @Volatile private var closed = false
 
     init { require(deviceId.matches(Regex("[0-9]{1,16}"))) }
 
@@ -93,11 +95,18 @@ internal class FlameBossTelemetryConnector(
                 TelemetryChannel("setpoint", "Observed setpoint", TelemetryKind.SETPOINT))
     )
 
-    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> =
-        if (deviceId == this.deviceId) last else emptyList()
+    override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
+        if (closed || deviceId != this.deviceId) return emptyList()
+        if (last.any { clock() - it.receivedAtMillis in 0..15_000L }) return last
+        return kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+            frames.mapNotNull { (topic, payload) -> FlameBossTemperatureFrame.parse(deviceId, topic, payload, clock()) }
+                .first().also { last = it }
+        }.orEmpty()
+    }
 
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> {
         require(deviceId == this.deviceId)
+        if (closed) return kotlinx.coroutines.flow.emptyFlow()
         return frames.mapNotNull { (topic, payload) ->
             FlameBossTemperatureFrame.parse(deviceId, topic, payload, clock())?.also { last = it }
         }
@@ -108,7 +117,7 @@ internal class FlameBossTelemetryConnector(
         return emptyList()
     }
 
-    override suspend fun disconnect() { onDisconnect(); last = emptyList() }
+    override suspend fun disconnect() { closed = true; onDisconnect(); last = emptyList() }
 }
 
 internal class FlameBossFactory : TelemetryConnectorFactory {
