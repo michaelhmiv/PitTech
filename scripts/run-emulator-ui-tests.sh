@@ -40,13 +40,14 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
     done
   fi
   timeout 20 adb exec-out screencap -p > "$output_dir/final-emulator-screen.png" 2>/dev/null
+  python3 scripts/emit-ui-review-images.py "$output_dir/recipe-composed-live.png" "$output_dir/meal-finished-recipe-choice.png"
   if [[ -n "$emulator_pid" ]]; then
     adb emu kill >/dev/null 2>&1
     wait "$emulator_pid" >/dev/null 2>&1
@@ -302,17 +303,19 @@ fi
 recipe_test_output="$output_dir/recipe-preparation-tests.txt"
 echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest' \
+  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (8 tests)' "$recipe_test_output"
+grep -q 'OK (10 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
+mkdir -p "$output_dir/portable-fixtures"
+timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
 
 companion_test_output="$output_dir/companion-tests.txt"
 echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest' \
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (10 tests)' "$companion_test_output"
+grep -q 'OK (11 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -404,6 +407,10 @@ pull_app_screenshot prep-checklist
 pull_app_screenshot food-first-live
 pull_app_screenshot food-first-timeline
 pull_app_screenshot food-first-note
+if (( api_level == 36 )); then
+  pull_app_screenshot recipe-composed-live
+  pull_app_screenshot meal-finished-recipe-choice
+fi
 
 if (( api_level >= 37 )); then
   echo "Android 17 launch and cook-save smoke checks passed."
