@@ -22,7 +22,7 @@ class TelemetryRecordingServiceTest {
     @Test fun backgroundServiceRestoresProfilesIsolatesOutagesAndStopsOnCookCompletion(): Unit = runBlocking {
         val app = ApplicationProvider.getApplicationContext<PitTechApplication>()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.uiAutomation.executeShellCommand("pm grant " + app.packageName + " android.permission.POST_NOTIFICATIONS").close()
+        instrumentation.uiAutomation.grantRuntimePermission(app.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
         app.stopService(Intent(app, CookRecordingService::class.java))
         app.database.clearAllTables()
         val folder = File(app.cacheDir, "telemetry-service-" + java.util.UUID.randomUUID()).apply { mkdirs() }
