@@ -17,6 +17,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
 /** Strictly documented MEATER endpoints; no device-control methods. */
 internal interface MeaterTransport {
@@ -68,21 +69,23 @@ internal class MeaterCloudConnector(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "meater"
-    private val mutex = Mutex()
-    private var lastFetch = Long.MIN_VALUE
-    private var cached: JSONArray? = null
+    // Process-wide, per-account cache. Multiple screens/probes must not each spend
+    // the cloud account's request quota independently.
+    private val account = accountSnapshots.computeIfAbsent(TelemetryNormalizer.localKey(connectorId, jwt)) {
+        SharedSnapshot()
+    }
 
-    private suspend fun deviceList(): JSONArray = mutex.withLock {
+    private suspend fun deviceList(): JSONArray = account.mutex.withLock {
         require(jwt.isNotBlank()) { "Connect your MEATER Cloud account" }
         val now = clock()
-        if (cached != null && now >= lastFetch && now - lastFetch < 30_000L) return@withLock cached!!
+        if (account.cached != null && now >= account.lastFetch && now - account.lastFetch < 30_000L) return@withLock account.cached!!
         val response = transport.devices(jwt)
         if (response.optInt("statusCode", 200) !in 200..299) {
             throw IOException("MEATER returned an API error")
         }
         val devices = response.getJSONObject("data").getJSONArray("devices")
-        cached = devices
-        lastFetch = now
+        account.cached = devices
+        account.lastFetch = now
         devices
     }
 
@@ -119,10 +122,14 @@ internal class MeaterCloudConnector(
     }
 
     override suspend fun disconnect() {
-        mutex.withLock { jwt = ""; cached = null; lastFetch = Long.MIN_VALUE }
+        account.mutex.withLock { jwt = "" }
     }
 
     internal companion object {
+        private class SharedSnapshot(val mutex: Mutex = Mutex(),
+            var cached: JSONArray? = null, var lastFetch: Long = Long.MIN_VALUE)
+        private val accountSnapshots = ConcurrentHashMap<String, SharedSnapshot>()
+
         fun parseDevice(device: JSONObject, receipt: Long): List<TelemetryObservation> {
             val updated = device.optLong("updated_at", 0L)
             val observed = updated.takeIf { it > 0 && it < Long.MAX_VALUE / 1000L }?.times(1000L)
