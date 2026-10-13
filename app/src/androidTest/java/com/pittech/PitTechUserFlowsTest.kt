@@ -100,13 +100,9 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-devices").performClick()
-        composeRule.onNodeWithText("Connect a grill").assertIsDisplayed()
-        composeRule.onNodeWithTag("cloud-provider").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("devices-bluetooth").performClick()
-        composeRule.onNodeWithText("Find your controller").assertIsDisplayed()
-        composeRule.onNodeWithText("This check doesn't start live temperature monitoring or change grill settings. Nothing is shared unless you review and submit a support report.").assertIsDisplayed()
-        composeRule.onNodeWithTag("controller-scan").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(56.dp)
-        composeRule.onNodeWithText("Scan for controllers").assertIsDisplayed()
+        composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
+        composeRule.onNodeWithTag("telemetry-add").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Temperature connections · Beta").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()

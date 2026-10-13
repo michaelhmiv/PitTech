@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(CookStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var telemetry = NativeTelemetryRuntime()
 
     var body: some View {
         TabView {
@@ -10,8 +12,26 @@ struct ContentView: View {
             NavigationStack { SavedRecipesView() }.tabItem { Label("Saved Recipes", systemImage: "book") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
+            #if DEBUG
+            NativeTelemetryConnectionsView(runtime: telemetry).tabItem { Label("Devices", systemImage: "thermometer") }
+            #endif
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
+        }
+        .task {
+            #if DEBUG
+            telemetry.foreground(scenePhase == .active, store: store)
+            #endif
+        }
+        .onChange(of: scenePhase) { _, phase in
+            #if DEBUG
+            telemetry.foreground(phase == .active, store: store)
+            #endif
+        }
+        .onChange(of: store.library.cooks.map { $0.id + ":" + $0.status }) { _, _ in
+            #if DEBUG
+            telemetry.foreground(scenePhase == .active, store: store)
+            #endif
         }
         .preferredColorScheme(store.appearance)
         .background(PitTechStyle.canvas)
@@ -278,6 +298,9 @@ struct SettingsView: View {
                         }
                     }
                     Button("Restore cook archive") { showingImport = true }
+                    NavigationLink("Third-party telemetry notices") {
+                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
+                    }
                     Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
                     Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
                 }

@@ -309,16 +309,12 @@ fun PitTechApp(
             )
             MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
                 EquipmentTools(viewModel)
-                if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                    ControllerDevicesScreen(modifier = Modifier.weight(1f))
+                if (BuildConfig.TELEMETRY_BETA_ENABLED) {
+                    TelemetryConnectionsScreen(viewModel, Modifier.weight(1f))
                 } else {
-                    FeaturePlaceholder(
-                        title = "Devices",
-                        message = "Grill connections aren't available yet.",
-                        note = "You can add temperature readings by hand during a cook.",
-                        modifier = Modifier.weight(1f),
-                    )
+                    FeaturePlaceholder(title = "Devices", message = "Grill connections aren't available yet.", note = "You can add temperature readings by hand during a cook.", modifier = Modifier.weight(1f))
                 }
+
             }
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,

@@ -88,12 +88,19 @@ class ReminderRepository(private val db: PitTechDatabase) {
                 val previous = ReminderState(old.active, old.badSinceUtcMillis, old.lastSampleAtUtcMillis, old.deliveredAtUtcMillis, old.snoozedUntilUtcMillis, old.status == "completed")
                 val sample = (trigger as? ReminderTrigger.Probe)?.let { probe ->
                     readings.filter { it.channelIdentity() == probe.seriesId && it.probeId == probe.probeId && it.measurementType == probe.measurementType && (rule.dishId == null || it.dishId == rule.dishId) }.maxByOrNull { it.measuredAtUtcMillis }?.let { r ->
+                        val telemetry = r.source.startsWith("telemetry:")
+                        val runtime = if (telemetry) (context.applicationContext as? com.pittech.PitTechApplication)?.telemetryRuntime else null
+                        val selected = runtime?.store?.profiles?.value?.firstNotNullOfOrNull { p ->
+                            p.sources.firstOrNull { it.deviceId in p.selectedDeviceIds && TelemetryRecordingRepository(db).deviceKey(cookId, it) == r.sourceDeviceId }
+                                ?.let { p to it }
+                        }
+                        val telemetryValid = selected?.let { (p, source) -> p.cookId == cookId && p.monitoring && runtime.states.value[p.id + ":" + source.deviceId]?.startsWith("Connected") == true && source.channels.any { channel -> channel.kind.storageType == r.measurementType && TelemetryRecordingRepository(db).channelKey(cookId, source, channel.id) == r.probeId && runtime.states.value[p.id + ":" + source.deviceId + ":" + channel.id] == "Connected" } } == true
                         val cloud = r.source == "controller_cloud"
-                        val continuous = cloud && recording?.status == CookRecordingEntity.RECORDING && recording.samplingMode != "on_log"
-                        val assignmentValid = !cloud || recording?.deviceId == r.sourceDeviceId && assignments.any { it.probeId == r.probeId && it.dishId == r.dishId && r.measuredAtUtcMillis >= it.startedAtUtcMillis }
-                        val valid = r.qualityStatus == "valid" && r.unit in setOf("°F", "°C") && (!cloud || recording?.status == CookRecordingEntity.RECORDING && recording.gapStartedAtUtcMillis == null && r.measuredAtUtcMillis >= recording.resumedAtUtcMillis)
+                        val continuous = telemetry && telemetryValid && selected?.first?.onLogOnly == false || cloud && recording?.status == CookRecordingEntity.RECORDING && recording.samplingMode != "on_log"
+                        val assignmentValid = if (telemetry && r.measurementType == "food_probe") assignments.any { it.probeId == r.probeId && it.dishId == r.dishId && it.endedAtUtcMillis == null && r.measuredAtUtcMillis >= it.startedAtUtcMillis } else !cloud || recording?.deviceId == r.sourceDeviceId && assignments.any { it.probeId == r.probeId && it.dishId == r.dishId && r.measuredAtUtcMillis >= it.startedAtUtcMillis }
+                        val valid = (!telemetry || telemetryValid) && r.qualityStatus == "valid" && r.unit in setOf("°F", "°C") && (!cloud || recording?.status == CookRecordingEntity.RECORDING && recording.gapStartedAtUtcMillis == null && r.measuredAtUtcMillis >= recording.resumedAtUtcMillis)
                         ReminderProbeSample(r.channelIdentity(), r.probeId, r.measurementType, AlertSample(CookPlanEngine.fahrenheit(r.value, r.unit), r.measuredAtUtcMillis, r.recordedAtUtcMillis, valid,
-                            if (cloud) com.pittech.devices.GrillSamplingPolicy.receiptWindow(r.samplingIntervalMillis) else 330_000, r.timestampBasis != "cloud_receipt"), assignmentValid, continuous)
+                            if (cloud || telemetry) com.pittech.devices.GrillSamplingPolicy.receiptWindow(r.samplingIntervalMillis) else 330_000, r.timestampBasis != "cloud_receipt"), assignmentValid, continuous)
                     }
                 }
                 val result = ReminderEngine.evaluate(trigger, previous, events, rule.dishId, now, sample)

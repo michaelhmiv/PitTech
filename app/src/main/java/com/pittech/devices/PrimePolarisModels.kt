@@ -3,14 +3,7 @@ package com.pittech.devices
 import java.time.Instant
 
 /** Only authenticated observations and explicit sign-in operations are exposed. */
-internal enum class PolarisOperation(val path: String) {
-    REQUEST_CODE("/email/m2s/send/verify/code"),
-    SIGN_IN("/auth/m2s/email/login"),
-    DEVICES("/dms/queryDeviceListByUserId"),
-    STATUS("/dms/queryDeviceStatus"),
-    READINGS("/dms/queryDeviceRealTimeData"),
-    REFRESH_SESSION(""),
-}
+internal enum class PolarisOperation { REQUEST_CODE, SIGN_IN, DEVICES, STATUS, READINGS, REFRESH_SESSION }
 
 internal class PolarisSession(
     val token: String,
