@@ -8,7 +8,7 @@ internal object TelemetryRecoveryPolicy {
     const val MAX_LOOKBACK_MS = 10L * 24 * 3_600_000L
 
     fun retryDelayMillis(failures: Int, retryAfterMillis: Long? = null): Long {
-        val exponent = (failures - 1).coerceIn(0, 8)
+        val exponent = (failures - 1).coerceIn(0, 9)
         val delay = (1_000L shl exponent).coerceAtMost(300_000L)
         return maxOf(delay, retryAfterMillis?.coerceAtLeast(0L) ?: 0L).coerceAtMost(3_600_000L)
     }
