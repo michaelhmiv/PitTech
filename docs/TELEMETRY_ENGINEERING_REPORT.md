@@ -97,9 +97,13 @@ channel. Changed periods, stale/unconnected status, invalid epochs and clock dis
 reject history. SDK Date fallbacks are ignored. Incomplete or oversized sessions preserve the
 recovery cursor for retry; the official public API cannot request only part of an oversized
 session, so sessions larger than 20,000 records are not transferred. The physical accuracy of
-the sequence-to-receipt estimate still needs measurement.
+the sequence-to-receipt estimate still needs measurement. Decoded observations are also capped
+at 20,000 per window so the shared saturation splitter bounds memory and retains the remaining
+range. Discovery does not establish fresh telemetry: the official service replays cached
+advertisements. Live normal readings require a matching connected normal-status log record;
+instant-read values use the official ProbeScanner's newly received, non-replayed frames.
 
-Eight Android Combustion JVM cases replace four passive-scanner cases, one normalization case
+Nine Android Combustion JVM cases replace four passive-scanner cases, one normalization case
 was added, and two instrumented no-backup anchor persistence/corruption cases are included in
 the complete telemetry group. The previous 211-test result below remains a verified baseline;
 new test totals will be recorded from CI, not inferred. Native adds two raw/derived/stale
@@ -124,6 +128,13 @@ dependency audit: [38469539519](https://github.com/michaelhmiv/PitTech/actions/r
 and native UI jobs are still running at this checkpoint. Native has been restacked to
 `d4e21a55` with the same native files; original native history is preserved on
 `feature/telemetry-native-pre-merge-20261013`. #76 is being restacked without #75 history.
+An advisory release run exposed a real Room shutdown race in the runtime fixture: cancellation
+returned before its observer jobs had completed. Runtime close now joins the root job before
+clients/database teardown; the existing restart/removal/credential tests exercise that repair.
+A publication helper initially attached newly merged main history to an older scoped tree;
+those draft trees were restored, merged provider paths are now checked before publication, and
+only explicitly merged parents are attached. Local synchronization preserves committed
+checkpoints and the working/index state. The five completed main merges were unaffected.
 Final merge results and the required CI outcomes will replace this pending status.
 
 ## Test evidence
