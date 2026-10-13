@@ -306,7 +306,19 @@ fun PitTechApp(
             MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
                 EquipmentTools(viewModel)
                 if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                    ControllerDevicesScreen(modifier = Modifier.weight(1f))
+                    var showHomeAssistant by rememberSaveable { mutableStateOf(false) }
+                    if (showHomeAssistant) {
+                        HomeAssistantOnboardingScreen(
+                            onBack = { showHomeAssistant = false },
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        OutlinedButton(
+                            onClick = { showHomeAssistant = true },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        ) { Text("Connect Home Assistant · Beta") }
+                        ControllerDevicesScreen(modifier = Modifier.weight(1f))
+                    }
                 } else {
                     FeaturePlaceholder(
                         title = "Devices",
