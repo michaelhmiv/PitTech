@@ -25,7 +25,7 @@ internal class HomeAssistantEndpoint(raw: String) {
     val websocket: String
     init {
         val uri = URI.create(raw.trim().trimEnd('/'))
-        val host = requireNotNull(uri.host?.lowercase()) { "Home Assistant URL needs a hostname" }
+        val host = requireNotNull(uri.host?.lowercase()?.removePrefix("[")?.removeSuffix("]")) { "Home Assistant URL needs a hostname" }
         require(uri.userInfo == null && uri.fragment == null && uri.query == null)
         require(uri.path.isNullOrEmpty() || uri.path == "/") { "Enter only the server origin, without a path" }
         require(uri.port == -1 || uri.port in 1..65535)
@@ -33,11 +33,13 @@ internal class HomeAssistantEndpoint(raw: String) {
         val privateIpv4 = octets.size == 4 && octets.all { it != null && it in 0..255 } &&
             (octets[0] == 10 || octets[0] == 127 || octets[0] == 192 && octets[1] == 168 ||
                 octets[0] == 172 && octets[1] in 16..31)
-        val local = host == "localhost" || host.endsWith(".local") || host == "::1" || privateIpv4
+        val privateIpv6 = host.contains(":") && runCatching { HomeAssistantLanDns.isLan(java.net.InetAddress.getByName(host)) }.getOrDefault(false)
+        val local = host == "localhost" || host.endsWith(".local") || privateIpv6 || privateIpv4
         require(uri.scheme == "https" || (uri.scheme == "http" && local)) {
             "Use HTTPS for Home Assistant outside your local network"
         }
-        base = raw.trim().trimEnd('/')
+        val port = if (uri.scheme == "https" && uri.port == 443 || uri.scheme == "http" && uri.port == 80) -1 else uri.port
+        base = URI(uri.scheme, null, host, port, null, null, null).toASCIIString()
         websocket = (if (uri.scheme == "https") "wss://" else "ws://") + base.substringAfter("://") + "/api/websocket"
     }
 
@@ -118,7 +120,7 @@ internal class HomeAssistantConnector(
             TelemetrySource(
                 connectorId, id, obj.optJSONObject("attributes")?.optString("friendly_name")
                     ?.takeIf { it.isNotBlank() } ?: id,
-                "Home Assistant", channels = listOf(TelemetryChannel("temperature", "Temperature", TelemetryKind.FOOD)),
+                "Home Assistant", channels = listOf(TelemetryChannel("temperature", "Temperature", TelemetryKind.FOOD)), identityScope = endpoint.base,
             )
         }
     }
@@ -221,12 +223,12 @@ internal object HomeAssistantPayload {
         val quality = if (status == "unavailable" || status == "unknown" || value == null) {
             TelemetryQuality.UNAVAILABLE
         } else TelemetryQuality.VALID
-        val timestamp = listOf("last_updated", "last_changed").firstNotNullOfOrNull { key ->
+        val timestamp = listOf("last_reported", "last_updated", "last_changed").firstNotNullOfOrNull { key ->
             runCatching { Instant.parse(state.getString(key)).toEpochMilli() }.getOrNull()
         }
         return TelemetryObservation(
             "temperature", value, state.getJSONObject("attributes").getString("unit_of_measurement"),
-            timestamp, received, quality, eventId = state.optString("last_updated").takeIf { it.isNotBlank() },
+            timestamp, received, quality, eventId = timestamp?.toString(),
             fromHistory = historical,
         )
     }

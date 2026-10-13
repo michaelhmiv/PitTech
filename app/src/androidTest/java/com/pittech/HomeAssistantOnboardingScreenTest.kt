@@ -13,10 +13,11 @@ class HomeAssistantOnboardingScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun advancedHaComponentExplainsUserOwnedTokenSetup() {
-        compose.activity.setContent {
+        compose.runOnUiThread { compose.activity.setContent {
             com.pittech.ui.PitTechTheme {
                 com.pittech.ui.HomeAssistantOnboardingScreen(onBack = {})
             }
+        }
         }
         compose.onNodeWithText("Home Assistant server URL", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("Access token", useUnmergedTree = true).assertExists()
