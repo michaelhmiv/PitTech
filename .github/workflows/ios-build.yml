@@ -187,11 +187,8 @@ jobs:
         with:
           ref: main
 
-      - name: Require signing material, App Store Connect API key, and iOS AdMob IDs
+      - name: Require App Store Connect API key and iOS AdMob IDs
         env:
-          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
-          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
@@ -200,9 +197,6 @@ jobs:
         run: |
           set -euo pipefail
           for secret_name in \
-            IOS_DISTRIBUTION_P12_BASE64 \
-            IOS_DISTRIBUTION_P12_PASSWORD \
-            IOS_PROVISIONING_PROFILE_BASE64 \
             ASC_KEY_ID \
             ASC_ISSUER_ID \
             ASC_PRIVATE_KEY \
@@ -214,21 +208,92 @@ jobs:
             fi
           done
 
-      - name: Install signing certificate and provisioning profile
+      - name: Generate signing material with the App Store Connect API
         env:
-          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
-          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sign_dir="$RUNNER_TEMP/pittech-signing"
+          mkdir -p "$sign_dir"
+          printf '%s' "$ASC_PRIVATE_KEY" > "$sign_dir/AuthKey.p8"
+          python3 -m pip install --quiet --user pyjwt cryptography
+          SIGN_DIR="$sign_dir" python3 - <<'PYASC'
+          import base64, json, os, pathlib, subprocess, sys, time
+          import jwt, requests
+
+          sign_dir = pathlib.Path(os.environ["SIGN_DIR"])
+          key_id = os.environ["ASC_KEY_ID"]
+          issuer_id = os.environ["ASC_ISSUER_ID"]
+          private_key = (sign_dir / "AuthKey.p8").read_text()
+          token = jwt.encode(
+              {"iss": issuer_id, "iat": int(time.time()), "exp": int(time.time()) + 1200,
+               "aud": "appstoreconnect-v1"},
+              private_key, algorithm="ES256", headers={"kid": key_id, "typ": "JWT"})
+          headers = {"Authorization": f"Bearer {token}"}
+          api = "https://api.appstoreconnect.apple.com/v1"
+
+          def call(method, path, **kwargs):
+              response = requests.request(method, api + path, headers=headers, timeout=60, **kwargs)
+              if response.status_code >= 300:
+                  raise SystemExit(f"ASC API {method} {path} failed ({response.status_code}): {response.text[:600]}")
+              return response
+
+          # Free the distribution-certificate slot held by any earlier CI-generated cert.
+          certs = call("GET", "/certificates?filter[certificateType]=DISTRIBUTION&limit=200").json().get("data", [])
+          for cert in certs:
+              if cert["attributes"].get("name") == "PitTech CI":
+                  call("DELETE", f"/certificates/{cert['id']}")
+                  print(f"Revoked previous CI certificate {cert['id']}")
+
+          # Fresh key + CSR on this runner; the private key never leaves it.
+          subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
+          subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
+                          "-out", str(sign_dir / "ci.csr"), "-subj", "/CN=PitTech CI"], check=True)
+          csr = (sign_dir / "ci.csr").read_text()
+          created = call("POST", "/certificates", json={"data": {"type": "certificates", "attributes": {
+              "certificateType": "DISTRIBUTION", "csrContent": csr}}}).json()["data"]
+          (sign_dir / "ci.cer").write_bytes(base64.b64decode(created["attributes"]["certificateContent"]))
+          print(f"Created distribution certificate {created['id']}")
+
+          bundle_id = call("GET", "/bundleIds?filter[identifier]=com.pittech").json()["data"][0]["id"]
+
+          profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").json().get("data", [])
+          for profile in profiles:
+              call("DELETE", f"/profiles/{profile['id']}")
+              print(f"Deleted previous CI profile {profile['id']}")
+          profile = call("POST", "/profiles", json={"data": {"type": "profiles", "attributes": {
+              "name": "PitTech App Store CI", "profileType": "IOS_APP_STORE"}, "relationships": {
+              "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
+              "certificates": {"data": [{"type": "certificates", "id": created["id"]}]}}}}).json()["data"]
+          (sign_dir / "PitTech.mobileprovision").write_bytes(base64.b64decode(profile["attributes"]["profileContent"]))
+          print(f"Created provisioning profile {profile['id']}")
+
+          # Bundle cert + key into a .p12 for the keychain install step.
+          subprocess.run(["openssl", "x509", "-inform", "DER", "-in", str(sign_dir / "ci.cer"),
+                          "-out", str(sign_dir / "ci.pem")], check=True)
+          p12_password = subprocess.run(["uuidgen"], capture_output=True, text=True, check=True).stdout.strip()
+          subprocess.run(["openssl", "pkcs12", "-export", "-inkey", str(sign_dir / "ci.key"),
+                          "-in", str(sign_dir / "ci.pem"), "-out", str(sign_dir / "distribution.p12"),
+                          "-passout", f"pass:{p12_password}", "-name", "PitTech CI"], check=True)
+          with open(os.environ["GITHUB_ENV"], "a") as env_file:
+              env_file.write(f"PITTECH_P12_PATH={sign_dir / 'distribution.p12'}\n")
+              env_file.write(f"PITTECH_P12_PASSWORD={p12_password}\n")
+              env_file.write(f"PITTECH_PROFILE_PATH={sign_dir / 'PitTech.mobileprovision'}\n")
+          PYASC
+
+      - name: Install signing certificate and provisioning profile
         run: |
           set -euo pipefail
           keychain_path="$RUNNER_TEMP/pittech-signing.keychain-db"
           keychain_password="$(uuidgen)"
-          printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/distribution.p12"
-          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/PitTech.mobileprovision"
+          cp "$PITTECH_P12_PATH" "$RUNNER_TEMP/distribution.p12"
+          cp "$PITTECH_PROFILE_PATH" "$RUNNER_TEMP/PitTech.mobileprovision"
           security create-keychain -p "$keychain_password" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$keychain_password" "$keychain_path"
-          security import "$RUNNER_TEMP/distribution.p12" -P "$IOS_DISTRIBUTION_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$PITTECH_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
           security default-keychain -d user -s "$keychain_path"
