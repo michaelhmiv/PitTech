@@ -229,7 +229,7 @@ jobs:
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
 
-      - name: Archive for App Store Connect (automatic signing)
+      - name: Archive for App Store Connect (unsigned; signed at export)
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -243,12 +243,9 @@ jobs:
           -destination 'generic/platform=iOS'
           -archivePath build/PitTech.xcarchive
           -derivedDataPath build/ios-release
-          -allowProvisioningUpdates
-          -authenticationKeyPath "$ASC_KEY_PATH"
-          -authenticationKeyID "$ASC_KEY_ID"
-          -authenticationKeyIssuerID "$ASC_ISSUER_ID"
           DEVELOPMENT_TEAM=R42LWFBXBH
-          CODE_SIGN_STYLE=Automatic
+          CODE_SIGN_STYLE=Manual
+          CODE_SIGNING_ALLOWED=NO
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
           PITTECH_ADMOB_APP_ID="$IOS_ADMOB_APP_ID"
           PITTECH_NATIVE_AD_UNIT_ID="$IOS_ADMOB_NATIVE_AD_UNIT_ID"
