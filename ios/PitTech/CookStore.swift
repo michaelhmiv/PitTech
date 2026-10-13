@@ -19,6 +19,9 @@ final class CookStore {
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
         load()
         noteDrafts = (try? JSONDecoder().decode([CookNoteDraft].self, from: Data(contentsOf: draftsURL))) ?? []
+        #if DEBUG
+        if directory == nil { prepareUIFlowFixture() }
+        #endif
     }
 
     var activeCooks: [CookRecord] { library.cooks.filter(\.isActive).sorted { $0.startedAtUtcMillis > $1.startedAtUtcMillis } }
@@ -29,7 +32,7 @@ final class CookStore {
     func startCook(title: String, firstDish: String, alreadyCooking: Bool = false, foodOn: Date = .now) {
         guard !alreadyCooking || foodOn <= .now && foodOn.timeIntervalSince1970 > 0 else { saveError = "Choose the actual Food on time, up to now."; return }
         let prior = library
-        let cook = CookRecord.start(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New cook" : title)
+        let cook = CookRecord.start(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New meal" : title)
         library.cooks.append(cook)
         library.lifecycles.append(.object(["cookId": .string(cook.id), "timingMode": .string("explicit_phases")]))
         if !firstDish.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -164,6 +167,9 @@ final class CookStore {
     func exportArchive() throws -> Data {
         var portable = library
         portable.schemaVersion = PitTechLibrary.archiveVersion
+        if let unit = portable.preferences?["temperatureUnit"]?.stringValue, ["F", "C"].contains(unit) {
+            portable.preferences?["temperatureUnit"] = .string("°" + unit)
+        }
         portable.readings = portable.readings.map { row in
             guard var o = row.objectValue else { return row }
             if let unit = o["unit"]?.stringValue, ["F", "C"].contains(unit) { o["unit"] = .string("°" + unit) }
@@ -176,7 +182,7 @@ final class CookStore {
             "archiveVersion": PitTechLibrary.archiveVersion,
             "exportedAtUtc": ISO8601DateFormatter().string(from: .now),
             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
-            "includesPreferences": true,
+            "includesPreferences": portable.preferences != nil,
             "counts": ["cooks": library.cooks.count, "dishes": library.dishes.count,
                        "timelineEvents": library.events.count, "readings": library.readings.count]
         ]
@@ -335,7 +341,7 @@ final class CookStore {
         library.results = mergeUnique(library.results, imported.results.filter { belongsToNewCook($0, ids: newIds) })
         library.devices = mergeUnique(library.devices, imported.devices.filter { belongsToNewCook($0, ids: newIds) })
         library.probes = mergeUnique(library.probes, imported.probes.filter { belongsToNewCook($0, ids: newIds) })
-        library.reminders = mergeUnique(library.reminders, imported.reminders.filter { belongsToNewCook($0, ids: newIds) })
+        library.reminders = mergeUnique(library.reminders, imported.reminders.filter { belongsToNewCook($0, ids: newIds) }.map { row in guard var o = row.objectValue, o["status"]?.stringValue == "pending" else { return row }; o["status"] = .string("cancelled"); return .object(o) })
         library.recordings = mergeUnique(library.recordings, imported.recordings.filter { belongsToNewCook($0, ids: newIds) }.map { item in
             guard case .object(var object) = item else { return item }
             object["status"] = .string("stopped")

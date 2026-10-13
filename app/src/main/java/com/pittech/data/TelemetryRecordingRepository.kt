@@ -20,6 +20,10 @@ internal class TelemetryRecordingRepository(private val db: PitTechDatabase) {
     fun channelKey(cookId: String, source: TelemetrySource, channelId: String) =
         deviceKey(cookId, source) + ":" + TelemetryNormalizer.localKey(channelId)
 
+    /** Persisted source watermark, shared by every collector and restored after process death. */
+    suspend fun latestObservation(cookId: String, source: TelemetrySource): Long? =
+        cooks.latestObservation(cookId, deviceKey(cookId, source))
+
     suspend fun attach(
         cookId: String, source: TelemetrySource,
         foodAssignments: Map<String, String?> = emptyMap(),
