@@ -95,6 +95,7 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
     testImplementation("org.json:json:20250517")
 
     androidTestImplementation(platform(composeBom))

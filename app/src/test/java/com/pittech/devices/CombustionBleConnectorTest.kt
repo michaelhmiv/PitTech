@@ -4,6 +4,11 @@ import inc.combustion.framework.service.DeviceConnectionState
 import inc.combustion.framework.service.Probe
 import inc.combustion.framework.service.ProbeTemperatures
 import inc.combustion.framework.service.SessionInformation
+import inc.combustion.framework.service.LoggedProbeDataPoint
+import inc.combustion.framework.service.ProbeVirtualSensors
+import inc.combustion.framework.service.ProbePredictionMode
+import inc.combustion.framework.service.ProbePredictionState
+import inc.combustion.framework.service.ProbePredictionType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -51,6 +56,17 @@ class CombustionBleConnectorTest {
         val stale = OfficialCombustionReadOnlyClient.frame(probe.copy(statusNotificationsStale = true), now)
         assertFalse(stale.connectedStatus)
         assertTrue(CombustionBleConnector.decode(stale).all { TelemetryNormalizer.normalize(it) == null })
+        val point = LoggedProbeDataPoint(41u, 100u, java.util.Date(1), probe.temperaturesCelsius!!,
+            ProbeVirtualSensors.VirtualCoreSensor.T2, ProbeVirtualSensors.VirtualSurfaceSensor.T5,
+            ProbeVirtualSensors.VirtualAmbientSensor.T8, ProbePredictionState.PROBE_INSERTED,
+            ProbePredictionMode.NONE, ProbePredictionType.NONE, 0.0, 0u, 0.0)
+        // A cached field/ad cannot substitute for the confirmed normal-status record.
+        val confirmed = OfficialCombustionReadOnlyClient.confirmedFrame(probe.copy(coreTemperatureCelsius = 99.0), point, now)!!
+        assertEquals(51.0, confirmed.core!!, .001)
+        assertNull(OfficialCombustionReadOnlyClient.confirmedFrame(probe, point.copy(sessionId = 99u), now))
+        assertNull(OfficialCombustionReadOnlyClient.confirmedFrame(probe, point.copy(sequenceNumber = 99u), now))
+        val advertising = probe.copy(baseDevice = probe.baseDevice.copy(connectionState = DeviceConnectionState.ADVERTISING_CONNECTABLE))
+        assertNull(OfficialCombustionReadOnlyClient.confirmedFrame(advertising, point, now))
     }
 
     @Test fun historyUsesSessionSequencesAndDeduplicatesTheLiveWatermark() = runBlocking {
@@ -115,5 +131,13 @@ class CombustionBleConnectorTest {
         assertNull(anchor.timeFor(4_294_967_296L))
         assertNull(CombustionTimeAnchor(1, 100, 1000, 5000).timeFor(0))
         assertNull(CombustionTimeAnchor(1, 0, Long.MAX_VALUE, 5000).timeFor(1))
+    }
+
+    @Test fun aSaturatedHistoryWindowIsBoundedForTheSharedRecoverySplitter() = runBlocking {
+        val client = Client(frame(3000), (1L..3000L).map { record(it) })
+        val history = CombustionBleConnector(client, clock = { now }).history("CCABC1", now - 20_000_000, now)
+        assertEquals(20_000, history.size)
+        assertTrue(history.all { it.fromHistory && TelemetryNormalizer.normalize(it) != null })
+        assertTrue(history.last().observedAtMillis!! < now)
     }
 }
