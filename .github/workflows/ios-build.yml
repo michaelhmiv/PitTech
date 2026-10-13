@@ -63,8 +63,21 @@ jobs:
           -configuration Debug
           -destination 'generic/platform=iOS Simulator'
           -derivedDataPath build/ios-simulator
-          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_ALLOWED=YES
+          CODE_SIGN_IDENTITY=-
+          DEVELOPMENT_TEAM=R42LWFBXBH
+          ENTITLEMENTS_REQUIRED=YES
           build
+
+      - name: Verify local Simulator Keychain entitlement
+        run: |
+          codesign -d --entitlements :- build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app > build/ios-simulator-entitlements.plist
+          python3 - <<'PYENTITLEMENTS'
+          import plistlib
+          with open("build/ios-simulator-entitlements.plist", "rb") as source:
+              entitlements = plistlib.load(source)
+          assert entitlements.get("application-identifier", "").endswith(".com.pittech"), "Simulator tests require a local app identity for Keychain access"
+          PYENTITLEMENTS
 
       - name: Build and inspect unsigned public Simulator configuration
         run: |
@@ -77,7 +90,7 @@ jobs:
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
           fixture_started_at=$(date +%s)
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=NO test
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test
           python3 - "$fixture_started_at" <<'PYFIXTURE'
           import pathlib, shutil, sys
           # Xcode may run tests on a clone and shut it down. Read the fixture from its

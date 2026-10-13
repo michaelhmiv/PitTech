@@ -1,4 +1,5 @@
 import XCTest
+import Security
 @testable import PitTech
 
 final class NativeTelemetryTests: XCTestCase {
@@ -141,6 +142,21 @@ final class NativeTelemetryTests: XCTestCase {
         let restored = CookStore(directory: folder.appendingPathComponent("restored")); _ = try restored.importArchive(exported)
         XCTAssertEqual(restored.library.readings.count, 1)
         XCTAssertEqual(restored.library.readings[0].objectValue?["measuredAtUtcMillis"]?.numberValue, now)
+    }
+
+    func testDeviceOnlyKeychainCredentialCanBeReplacedAndRemoved() throws {
+        let vault = NativeTelemetryTokenVault(), profile = "ci-" + UUID().uuidString
+        defer { vault.clear(profile) }
+        try vault.save(profile, "fixture-initial")
+        XCTAssertEqual(try vault.load(profile), "fixture-initial")
+        try vault.save(profile, "fixture-replacement")
+        XCTAssertEqual(try vault.load(profile), "fixture-replacement")
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.pittech.telemetry.v1", kSecAttrAccount as String: profile, kSecReturnAttributes as String: true]
+        var attributes: CFTypeRef?
+        XCTAssertEqual(SecItemCopyMatching(query as CFDictionary, &attributes), errSecSuccess)
+        XCTAssertEqual((attributes as? [String: Any])?[kSecAttrAccessible as String] as? String, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        vault.clear(profile)
+        XCTAssertNil(try vault.load(profile))
     }
 
     @MainActor func testOneMissingSensorCannotStopAnotherSensorOnTheSameConnection() async throws {
