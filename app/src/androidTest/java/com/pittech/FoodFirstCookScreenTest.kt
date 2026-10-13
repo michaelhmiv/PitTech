@@ -136,11 +136,11 @@ class FoodFirstCookScreenTest {
         }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Sunday mixed grill").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Sunday mixed grill").performClick()
-        compose.onNodeWithTag("food-card-" + steaks.id).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("food-card-" + potatoes.id).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("food-card-" + steaks.id, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("food-card-" + potatoes.id, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Resting and finished").performScrollTo().assertIsDisplayed()
         screenshot("food-first-live")
-        compose.onNodeWithTag("food-card-" + potatoes.id).performScrollTo().performClick()
+        compose.onNodeWithTag("food-card-" + potatoes.id, useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithTag("food-ingredients-" + potatoes.id).performScrollTo().performClick()
         compose.onNodeWithTag("food-ingredient-name").performTextInput("Butter")
         assertTrue(compose.onAllNodesWithTag("food-ingredient-amount").fetchSemanticsNodes().isEmpty())

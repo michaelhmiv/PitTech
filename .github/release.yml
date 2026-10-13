@@ -1,0 +1,15 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: Features
+      labels: [enhancement, feature]
+    - title: Fixes
+      labels: [bug, fix]
+    - title: Security and privacy
+      labels: [security, privacy]
+    - title: Documentation and release engineering
+      labels: [documentation, release, ci]
+    - title: Other changes
+      labels: ["*"]

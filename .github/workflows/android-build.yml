@@ -56,6 +56,11 @@ jobs:
         with:
           gradle-version: '9.6.1'
 
+      - name: Verify public release-note tooling and safety policy
+        run: |
+          python3 scripts/release_notes.py validate
+          python3 -m unittest discover -s scripts/tests -p "test_*.py"
+
       - name: Run JVM tests and build debug and instrumented apps
         run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest
 

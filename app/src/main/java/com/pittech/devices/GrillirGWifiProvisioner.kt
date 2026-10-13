@@ -184,29 +184,8 @@ internal class AndroidGrillirGSetupEngine(context: Context) : GrillirGSetupEngin
     }
 
     override fun provision(network: GrillirGProtocol.WifiNetwork, password: String) {
-        if (snapshot.stage != GrillirGSetupStage.NETWORKS_READY) return
-        val frame = try {
-            GrillirGProtocol.createWifiCredentialFrame(network, password)
-        } catch (error: IllegalArgumentException) {
-            update(GrillirGSetupStage.NETWORKS_READY, error.message ?: "The selected network details are invalid.")
-            return
-        } catch (_: Exception) {
-            update(GrillirGSetupStage.NETWORKS_READY, "Could not encrypt the Wi-Fi password for this controller.")
-            return
-        }
-
-        update(
-            GrillirGSetupStage.SENDING_CREDENTIALS,
-            "Sending the selected network details to the controller over Bluetooth…",
-        )
-        armTimeout(WRITE_TIMEOUT_MILLIS, "The controller did not acknowledge the Wi-Fi setup request.")
-        writeFrame(frame, "Wi-Fi credentials") {
-            update(
-                GrillirGSetupStage.WAITING_FOR_WIFI,
-                "The controller received the setup request. Waiting for its Wi-Fi connection result…",
-            )
-            armTimeout(WIFI_CONNECT_TIMEOUT_MILLIS, wifiConnectionTimeoutMessage())
-        }
+        // Intentionally disabled. Do not send controller Wi-Fi credentials or modify settings.
+        fail("Controller Wi-Fi setup is unavailable. PitTech supports observation-only monitoring.")
     }
 
     override fun close() {

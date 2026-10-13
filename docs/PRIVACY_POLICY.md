@@ -1,6 +1,6 @@
 # PitTech Privacy Policy
 
-Last updated: October 11, 2026
+Last updated: October 12, 2026
 
 This policy describes how PitTech (iOS bundle identifier com.pittech and Android package com.pittech) handles information. PitTech is a barbecue cook logging app published by Sportfolio.
 
@@ -10,7 +10,7 @@ On iOS, cook names, dishes, notes, dates, and temperature readings you enter are
 
 The iOS app uses Google's User Messaging Platform to refresh consent information when the app starts and to present a consent form when required. PitTech requests Google Mobile Ads only after Google's consent state allows ads. Google may process information such as IP address, ad interactions, diagnostics, and device or advertising identifiers to provide ads, measure performance, and prevent fraud. PitTech does not include cook records, notes, or temperature readings in ad requests. PitTech does not request App Tracking Transparency authorization or use cook data for advertising.
 
-GrillirG monitoring is optional. If you choose to connect, PitTech sends the email address and one-time code you enter to GrillirG's Prime Polaris service for sign-in. PitTech stores the returned session token and selected grill identifier in the iOS Keychain, and sends the token and selected identifier to that vendor service to request your grill list, status, and temperature readings. PitTech does not send cook records, notes, or photos to GrillirG. The current iOS build does not connect to Pit Boss or Traeger services and does not submit feedback reports.
+The iOS app does not connect to grill-controller accounts or services. Grill readings can be added manually as part of a cook record. The iOS app does not submit feedback reports.
 
 ## Android app
 

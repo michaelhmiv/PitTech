@@ -1,0 +1,1 @@
+This update includes improvements to cook logging and review. PitTech on iOS currently supports manual temperature logging; automatic grill connections are not yet available.
