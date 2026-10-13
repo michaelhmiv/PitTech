@@ -15,6 +15,14 @@ class HomeAssistantConnectorTest {
     @Test fun acceptsHttpsRemoteAndLocalHttpButRejectsInsecureRemote() {
         assertEquals("https://example.com/api/states", HomeAssistantEndpoint("https://example.com").readPath("api/states"))
         assertEquals("ws://homeassistant.local:8123/api/websocket", HomeAssistantEndpoint("http://homeassistant.local:8123").websocket)
+        for (url in listOf("http://10.attacker.com", "http://192.168.evil.com",
+            "http://172.16.attacker.com", "http://10.12.999.2",
+            "https://example.com/unexpected-path")) {
+            try { HomeAssistantEndpoint(url); fail("Accepted unsafe endpoint: " + url) }
+            catch (_: IllegalArgumentException) {}
+        }
+        assertEquals("http://10.0.0.20:8123/api/states",
+            HomeAssistantEndpoint("http://10.0.0.20:8123").readPath("api/states"))
         try { HomeAssistantEndpoint("http://public.example.com"); fail("public plain HTTP accepted") }
         catch (_: IllegalArgumentException) {}
         try { HomeAssistantEndpoint("https://example.com").readPath("api/services/light/turn_on"); fail("service write accepted") }
