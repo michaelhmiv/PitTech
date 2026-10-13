@@ -17,7 +17,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-@Composable internal fun RecipeReferenceTools(data: CookDetailData, viewModel: CooksViewModel) {
+@Composable internal fun RecipeReferenceTools(data: CookDetailData, viewModel: CooksViewModel, initialDishId: String? = null) {
     val sources by viewModel.recipes.observeSources().collectAsStateWithLifecycle(emptyList())
     val revisions by viewModel.recipes.observeRevisions().collectAsStateWithLifecycle(emptyList())
     val headers by viewModel.recipes.observeRecipes().collectAsStateWithLifecycle(emptyList())
@@ -25,7 +25,7 @@ import java.time.format.DateTimeFormatter
     var dishId by remember(data.cook.id) { mutableStateOf<String?>(null) }
     val source = sources.firstOrNull { it.dishId == dishId }
     var revisionId by remember(dishId, source?.recipeRevisionId) { mutableStateOf(source?.recipeRevisionId) }
-    val loaded = data.dishes.filter { dish -> sources.any { it.dishId == dish.id } }
+    val loaded = data.dishes.filter { dish -> (initialDishId == null || dish.id == initialDishId) && sources.any { it.dishId == dish.id } }
     if (loaded.isEmpty()) return
     loaded.forEach { dish -> TextButton({ dishId = dish.id }, Modifier.testTag("recipe-history-${dish.id}")) { Text("Previous cook · ${dish.name}") } }
     if (dishId != null) ModalBottomSheet(onDismissRequest = { dishId = null }) {
