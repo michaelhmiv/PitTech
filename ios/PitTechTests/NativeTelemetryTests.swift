@@ -3,6 +3,25 @@ import Security
 @testable import PitTech
 
 final class NativeTelemetryTests: XCTestCase {
+    @MainActor func testCombustionExposesRawAndDerivedCelsiusWithoutGuessingHistory() {
+        let readings = NativeCombustionConnector.observations(raw: (0..<8).map { 50.0 + Double($0) },
+            core: 51, surface: 54, ambient: 57, instant: nil, receipt: 1_760_000_000_000, stale: false)
+        XCTAssertEqual(NativeCombustionConnector.channels.count, 12)
+        XCTAssertEqual(readings.first?.channel, "sensor0")
+        XCTAssertEqual(readings.first?.normalized?.value, 122)
+        XCTAssertEqual(readings.first?.normalized?.basis, "receipt")
+        XCTAssertEqual(readings.first { $0.channel == "core" }?.value, 51)
+        XCTAssertNil(readings.last?.normalized)
+        XCTAssertFalse(NativeCombustionConnector().supportsHistory)
+    }
+    @MainActor func testCombustionStaleOrNonfiniteSensorsCannotBecomeLive() {
+        let stale = NativeCombustionConnector.observations(raw: [50], core: 51, surface: 54, ambient: 57,
+            instant: 60, receipt: 1_760_000_000_000, stale: true)
+        XCTAssertTrue(stale.allSatisfy { $0.normalized == nil })
+        let invalid = NativeCombustionConnector.observations(raw: [.nan], core: .infinity, surface: nil,
+            ambient: nil, instant: nil, receipt: 1_760_000_000_000, stale: false)
+        XCTAssertTrue(invalid.allSatisfy { $0.normalized == nil })
+    }
     func testNormalizationUsesSourceTimestampsAndNeverInventsHistory() {
         let c = NativeTelemetryObservation(channel: "internal", value: 100, unit: "°C", observedAt: 1000, receivedAt: 2000, eventId: "sample")
         XCTAssertEqual(c.normalized?.value, 212)

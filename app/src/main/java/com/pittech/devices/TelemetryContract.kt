@@ -22,6 +22,9 @@ internal enum class TelemetryKind(val storageType: String) {
     CHAMBER("pit_ambient"), FOOD("food_probe"), AMBIENT("pit_ambient"), SETPOINT("setpoint"), OTHER("sensor_temperature")
 }
 internal enum class TelemetryQuality { VALID, UNAVAILABLE, STALE, ERROR }
+internal enum class TelemetryTimestampBasis(val storageValue: String) {
+    RECEIPT("receipt"), SOURCE_OBSERVED("source_observed"), PROBE_SEQUENCE_ANCHOR("probe_sequence_anchor")
+}
 
 internal data class TelemetryChannel(val id: String, val name: String, val kind: TelemetryKind)
 
@@ -51,6 +54,7 @@ internal data class TelemetryObservation(
     val quality: TelemetryQuality = TelemetryQuality.VALID,
     val eventId: String? = null,
     val fromHistory: Boolean = false,
+    val timestampBasis: TelemetryTimestampBasis? = null,
 )
 
 internal data class NormalizedTelemetry(
@@ -67,6 +71,9 @@ internal object TelemetryNormalizer {
         if (raw.quality != TelemetryQuality.VALID || raw.value?.isFinite() != true ||
             raw.channelId.isBlank() || raw.receivedAtMillis <= 0L) return null
         if (raw.fromHistory && raw.observedAtMillis == null) return null
+        val basis = raw.timestampBasis ?: if (raw.observedAtMillis == null)
+            TelemetryTimestampBasis.RECEIPT else TelemetryTimestampBasis.SOURCE_OBSERVED
+        if ((basis == TelemetryTimestampBasis.RECEIPT) != (raw.observedAtMillis == null)) return null
         val time = raw.observedAtMillis ?: raw.receivedAtMillis
         if (time <= 0 || time > raw.receivedAtMillis + 300_000L) return null
         val f = when (raw.unit.trim().lowercase(Locale.ROOT)) {
@@ -76,7 +83,7 @@ internal object TelemetryNormalizer {
         }
         if (!f.isFinite() || f !in -100.0..1000.0) return null
         return NormalizedTelemetry(raw.channelId, f, time, raw.receivedAtMillis,
-            if (raw.observedAtMillis == null) "receipt" else "source_observed",
+            basis.storageValue,
             raw.eventId?.takeIf { it.isNotBlank() } ?: (time.toString() + ":" + f.toBits().toString()))
     }
 
