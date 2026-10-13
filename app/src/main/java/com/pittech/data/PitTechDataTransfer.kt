@@ -391,7 +391,8 @@ class PitTechDataTransfer(
 
     private fun parsePreferences(json: JSONObject?): BackupPreferences? {
         if (json == null) return null
-        val temperatureUnit = json.optString("temperatureUnit")
+        // Native libraries historically stored the display preference as F/C.
+        val temperatureUnit = json.optString("temperatureUnit").uppercase().let { if (it in setOf("F", "C")) "°$it" else it }
         val weightUnit = json.optString("weightUnit")
         val themeMode = json.optString("themeMode").uppercase()
         require(temperatureUnit in setOf("°F", "°C")) { "The backup contains an invalid temperature preference." }

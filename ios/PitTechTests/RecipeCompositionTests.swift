@@ -47,8 +47,12 @@ final class RecipeCompositionTests: XCTestCase {
         store.startCook(title: "Mac", firstDish: "Mac")
         let cook = store.library.cooks[0].id, dish = store.dishRecords(cook)[0].id
         let bytes = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { $0.cgContext.setFillColor(UIColor.orange.cgColor); $0.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }.jpegData(compressionQuality: 0.8)!
+        let photo = try store.stagePhoto(bytes)
+        try store.saveNote(CookNoteDraft(cookId: cook, dishId: dish, title: "Original source photo", photos: [photo]))
+        let originalPhoto = try XCTUnwrap(store.library.photos.first?.objectValue)
+        let originalPath = try XCTUnwrap(originalPhoto["archivePath"]?.stringValue)
         let snapshot = try store.extractRecipe(cookId: cook, dishId: dish)
-        let id = try store.saveRecipe(snapshot, sourceCookId: cook, sourceDishId: dish, addedPhotos: [bytes])
+        let id = try store.saveRecipe(snapshot, sourceCookId: cook, sourceDishId: dish, photoIds: [try XCTUnwrap(originalPhoto["id"]?.stringValue)])
         let first = store.recipe(id)!["currentRevisionId"]!.stringValue!
         var changed = snapshot; changed.description = "Better next time"
         try store.saveRecipe(changed, recipeId: id, expectedRevisionId: first)
@@ -56,9 +60,15 @@ final class RecipeCompositionTests: XCTestCase {
         let current = store.recipe(id)!["currentRevisionId"]!.stringValue!
         XCTAssertEqual(store.recipeAssets(current).count, 1)
         XCTAssertThrowsError(try store.saveRecipe(snapshot, recipeId: id, expectedRevisionId: first))
-        store.library.cooks = []; store.library.dishes = []; store.library.lifecycles = []
+        try store.saveRecipe(snapshot, recipeId: id, expectedRevisionId: current, assetRevisionId: first)
+        let branch = try XCTUnwrap(store.recipe(id)?["currentRevisionId"]?.stringValue)
+        XCTAssertEqual(store.recipeRevision(branch)?["parentRevisionId"]?.stringValue, first)
+        XCTAssertEqual(store.recipeRevision(branch)?["revisionNumber"]?.numberValue, 3)
+        store.library.cooks = []; store.library.dishes = []; store.library.lifecycles = []; store.library.events = []; store.library.photos = []; store.library.logReadingLinks = []; store.library.readings = []
+        try FileManager.default.removeItem(at: store.photoURL(originalPath))
         try store.library.validateRecipes()
-        let asset = store.recipeAssets(current)[0].objectValue!
+        let asset = store.recipeAssets(branch)[0].objectValue!
+        XCTAssertNotEqual(asset["archivePath"]?.stringValue, originalPath)
         XCTAssertEqual(try Data(contentsOf: store.photoURL(asset["archivePath"]!.stringValue!)), bytes)
         try store.duplicateRecipe(id, name: "Spicy Mac")
         XCTAssertEqual(store.library.recipes.count, 2)

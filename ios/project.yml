@@ -49,13 +49,27 @@ targets:
         PITTECH_ADMOB_APP_ID: "ca-app-pub-3940256099942544~1458002511"
         PITTECH_NATIVE_AD_UNIT_ID: "ca-app-pub-3940256099942544/3986624511"
         CODE_SIGN_STYLE: Automatic
+      configs:
+        Release:
+          # App Store builds sign manually with the CI-generated profile.
+          # Scoped to this target only: Swift Package targets (GoogleMobileAds,
+          # ZIPFoundation, ...) reject provisioning profiles, so these settings
+          # must never be passed as global xcodebuild overrides.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          DEVELOPMENT_TEAM: "R42LWFBXBH"
+          PROVISIONING_PROFILE_SPECIFIER: "PitTech App Store CI"
     scheme:
-      testTargets: [PitTechTests]
+      testTargets: [PitTechTests, PitTechUITests]
       gatherCoverageData: false
   PitTechTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [PitTechTests]
+    sources:
+      - path: PitTechTests
+        excludes: ["Fixtures/**"]
+      - path: PitTechTests/Fixtures/android-meal-v9.zip
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:
@@ -64,3 +78,17 @@ targets:
         INFOPLIST_FILE: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         PRODUCT_BUNDLE_IDENTIFIER: com.pittech.tests
+
+  PitTechUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [PitTechUITests]
+    dependencies:
+      - target: PitTech
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        PRODUCT_BUNDLE_IDENTIFIER: com.pittech.uitests
+        TEST_TARGET_NAME: PitTech

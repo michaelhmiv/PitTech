@@ -12,6 +12,8 @@ struct CookDetailView: View {
     @State private var error: String?
     @State private var adopting = false
     @State private var foodOnTime = Date.now
+    @State private var finishing = false
+    @State private var completionChoices = false
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var readings: [TemperatureSample] { store.readings(for: cookId) }
     private var events: [TimelineEntry] { store.events(for: cookId) }
@@ -24,7 +26,7 @@ struct CookDetailView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             Text(cook.title).font(.largeTitle.bold())
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
-                            HStack { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
+                            MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
                             shortcutBar
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
@@ -37,13 +39,31 @@ struct CookDetailView: View {
                             }
                             if let error { Text(error).foregroundStyle(.red) }
                             if store.deletedNote != nil { Button("Undo deleted note") { do { try store.undoDeleteNote() } catch { self.error = error.localizedDescription } } }
-                            if cook.isActive { Button("Finish cook", role: .destructive) { store.finishCook(cookId) }.buttonStyle(.bordered).frame(minHeight: 48) }
+                            if cook.isActive {
+                                Button(cook.status == "paused" ? "Resume meal" : "Pause meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }.buttonStyle(.bordered)
+                                Button("Finish meal", role: .destructive) { finishing = true }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("finish-meal")
+                            }
                         }.padding(20)
                     }
                     .onChange(of: focused) { _, id in if let id { DispatchQueue.main.async { withAnimation { proxy.scrollTo(id, anchor: .top) } } } }
                 }
                 .background(PitTechStyle.canvas.ignoresSafeArea())
-                .navigationTitle("Cook").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("Meal").navigationBarTitleDisplayMode(.inline)
+                .alert("Finish meal?", isPresented: $finishing) {
+                    Button("Finish meal", role: .destructive) { store.finishCook(cookId); if store.saveError == nil { completionChoices = true } }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    let incomplete = store.phases(cookId).filter { $0.phase != "done" }.map(\.name)
+                    Text(incomplete.isEmpty ? "Finish this meal? You can add notes and results afterward." : "No completion action recorded for \(incomplete.joined(separator: ", ")). You can still finish; physical actions stay as recorded.")
+                }
+                .sheet(isPresented: $completionChoices) {
+                    NavigationStack { ScrollView { VStack(alignment: .leading, spacing: 14) {
+                        Text("Meal finished").font(.title2)
+                        Button("View meal summary") { section = "Timeline"; completionChoices = false }
+                        MealRecipeActions(cookId: cookId, initiallyExpanded: true)
+                        Button("Leave without saving") { completionChoices = false }
+                    }.padding(20) }.navigationTitle("Meal finished") }
+                }
                 .sheet(item: $draft) { CookNoteComposer(draft: $0) }
                 .sheet(isPresented: $showingDish) { AddDishSheet(cookId: cookId) }
                 .sheet(isPresented: $showingEditCook) { EditCookSheet(cook: cook) }
@@ -60,14 +80,14 @@ struct CookDetailView: View {
     }
     private var shortcutBar: some View {
         VStack(alignment: .leading) {
-            HStack {
+            MealActionRow {
                 Button { open() } label: { Label("Log", systemImage: "note.text") }
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer") }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera") }
             }.buttonStyle(.bordered)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in
-                    Button(CookStore.actionLabel(action)) { open(category: "action", action: action) }.buttonStyle(.bordered)
+                    Button(CookStore.actionLabel(action)) { open(category: "action", action: action) }.buttonStyle(.bordered).fixedSize()
                 } }
             }
         }
@@ -81,7 +101,6 @@ struct CookDetailView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
                 MealRemindersLink(cookId: cookId)
-                RecipeReferenceLinks(cookId: cookId)
                 MealRecipeActions(cookId: cookId)
                 MealActivityTimers(cookId: cookId)
                 Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())
@@ -91,19 +110,7 @@ struct CookDetailView: View {
                     Button("Use actual Food on timing") { foodOnTime = cook.startedAt; adopting = true }
                 }
                 if cook.isActive { CookPrepChecklist(cookId: cookId) }
-                if store.timingMode(cookId) == "explicit_phases" { ForEach(store.phases(cookId, now: context.date)) { phase in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("\(phase.name) · \(CookPhaseEngine.label(phase.phase))").font(.headline)
-                        Text("Cooking \(duration(phase.cooking)) · Rest \(duration(phase.rest)) · Hold \(duration(phase.hold))").font(.subheadline.monospacedDigit())
-                        if phase.phase == "prep", cook.isActive { Button("Food on · \(phase.name)") { open(category: "action", action: "food_on", dishId: phase.id == "whole" ? nil : phase.id) }.buttonStyle(.borderedProminent) }
-                        if let dish = store.library.dishes.first(where: { $0.objectValue?["id"]?.stringValue == phase.id })?.objectValue, let prep = dish["prepNotes"]?.stringValue, !prep.isEmpty { Text(prep).font(.subheadline) }
-                        ForEach(store.library.ingredients.filter { $0.objectValue?["dishId"]?.stringValue == phase.id }.indices, id: \.self) { index in
-                            let row = store.library.ingredients.filter { $0.objectValue?["dishId"]?.stringValue == phase.id }[index]
-                            Text(row.objectValue?["name"]?.stringValue ?? "Preparation item").font(.caption)
-                        }
-                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                }
-                }
+                ForEach(store.dishRecords(cookId)) { dish in MealDishCard(cookId: cookId, dish: dish, now: context.date) { category, action in open(category: category, action: action, dishId: dish.id) } }
                 if cook.isActive { Button("Log preheat started") { open(category: "action", action: "preheat_start") }; Text("Preheat can overlap prep. Cooking starts at actual Food on.").font(.caption).foregroundStyle(.secondary) }
                 if let notes = cook.notes, !notes.isEmpty { Text(notes).font(.subheadline) }
                 Text("Session created \(cook.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
@@ -124,6 +131,16 @@ struct CookDetailView: View {
         }
     }
     private func duration(_ millis: Double) -> String { "\(Int(millis / 3_600_000))h \(Int(millis / 60_000) % 60)m" }
+}
+
+struct MealActionRow<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var textSize
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    var body: some View {
+        let layout = textSize >= .xxxLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        layout { content }
+    }
 }
 
 private struct CookNoteCard: View {
