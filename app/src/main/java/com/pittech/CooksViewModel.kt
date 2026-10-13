@@ -77,7 +77,7 @@ class CooksViewModel(
 
     /** Log creation may fail independently of the optional grill snapshot. Never prevent saving the log. */
     internal suspend fun snapshotForCookLog(cookId: String, force: Boolean = false) {
-        if (BuildConfig.TELEMETRY_BETA_ENABLED) app.telemetryRuntime.onLog(cookId, force)
+        if (BuildConfig.TELEMETRY_BETA_ENABLED) viewModelScope.launch(Dispatchers.IO) { app.telemetryRuntime.onLog(cookId, force) }
         if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
         val recording = app.database.recordingDao().getRecording(cookId) ?: return
         if (recording.status != com.pittech.data.CookRecordingEntity.RECORDING ||
