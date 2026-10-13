@@ -71,7 +71,8 @@ class HomeAssistantConnectorTest {
             }
         }
         val client = HomeAssistantConnector("https://ha.example.com", "test-token", rest)
-        val values = client.history("sensor.patio_probe", 1_760_000_000_000L, 1_760_000_600_000L)
+        val at = java.time.Instant.parse(date).toEpochMilli()
+        val values = client.history("sensor.patio_probe", at - 1000, at + 1000)
         assertEquals(2, values.size)
         assertTrue(values.all { it.fromHistory })
         try { client.history("sensor.patio_probe", 1, 4 * 86_400_000L); fail("Unbounded history") }

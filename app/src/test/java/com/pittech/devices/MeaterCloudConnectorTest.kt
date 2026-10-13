@@ -92,4 +92,21 @@ class MeaterCloudConnectorTest {
         assertEquals(1, c.discover().size)
         assertEquals(1, secondCalls)
     }
+    @Test fun outageAnd429AcrossInstancesCannotBypassTheSharedQuota() = runBlocking {
+        var now = 1_760_000_000_000L
+        var calls = 0
+        val transport = object : MeaterTransport {
+            override suspend fun devices(jwt: String): JSONObject {
+                calls++
+                throw TelemetryRequestException(TelemetryFailureKind.RATE_LIMIT, now + 300_000)
+            }
+        }
+        val first = MeaterCloudConnector("quota-failure-test", transport) { now }
+        val second = MeaterCloudConnector("quota-failure-test", transport) { now }
+        try { first.discover(); fail("Failure missing") } catch (_: TelemetryRequestException) {}
+        now += 30_000
+        try { second.discover(); fail("Cooldown ignored") } catch (_: TelemetryRequestException) {}
+        assertEquals(1, calls)
+    }
+
 }

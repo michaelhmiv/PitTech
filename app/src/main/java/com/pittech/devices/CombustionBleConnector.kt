@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,9 +29,14 @@ internal class CombustionBleConnector(
     private var scanner: Job? = null
     private val seen = ConcurrentHashMap<String, List<TelemetryObservation>>()
 
-    private fun scanIfNeeded() {
+    @Synchronized private fun scanIfNeeded() {
         if (scanner?.isActive == true) return
-        scanner = scope.launch { ProbeScanner.scan() }
+        scanner = scope.launch {
+            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                ProbeScanner.scan()
+                kotlinx.coroutines.delay(5_000L)
+            }
+        }
     }
 
     override suspend fun discover(): List<TelemetrySource> {
@@ -38,14 +44,14 @@ internal class CombustionBleConnector(
         scanIfNeeded()
         withTimeoutOrNull(8_000L) {
             ProbeScanner.scanResults.collect { result ->
-                result.serialNumber?.takeIf { it.isNotBlank() }?.let { detected.add(it) }
+                result.serialNumber?.takeIf { it.isNotBlank() }?.let { detected.add(it); seen[it] = decode(result, clock()) }
             }
         }
         return detected.map(::source)
     }
 
     override suspend fun snapshot(deviceId: String): List<TelemetryObservation> =
-        seen[deviceId].orEmpty()
+        seen[deviceId].orEmpty().map { if (clock() - it.receivedAtMillis > 60_000L) it.copy(quality = TelemetryQuality.STALE) else it }
 
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = flow {
         require(deviceId.isNotBlank())
@@ -67,7 +73,6 @@ internal class CombustionBleConnector(
     override suspend fun disconnect() {
         scanner?.cancel()
         scanner = null
-        scope.cancel()
         seen.clear()
     }
 
@@ -89,5 +94,16 @@ internal class CombustionBleConnector(
             }
             return readings + listOfNotNull(instant)
         }
+    }
+}
+
+internal class CombustionFactory : TelemetryConnectorFactory {
+    override suspend fun connect(context: android.content.Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector = restore(context, profile)
+    override suspend fun restore(context: android.content.Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector {
+        val permissions = if (android.os.Build.VERSION.SDK_INT >= 31) listOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
+            else listOf(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        require(permissions.all { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) { "Allow Bluetooth access to discover Combustion probes." }
+        require(context.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled == true) { "Turn on Bluetooth to discover Combustion probes." }
+        return CombustionBleConnector()
     }
 }

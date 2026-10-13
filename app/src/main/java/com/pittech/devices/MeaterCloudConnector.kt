@@ -39,7 +39,7 @@ internal class MeaterHttpTransport(
             .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .header("Accept", "application/json").build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("MEATER sign-in was rejected (HTTP " + response.code + ")")
+            TelemetryHttpPolicy.check(response)
             JSONObject(response.body?.string() ?: "{}").getJSONObject("data").getString("token")
         }
     }
@@ -51,7 +51,7 @@ internal class MeaterHttpTransport(
             .header("Authorization", "Bearer " + jwt)
             .header("Accept", "application/json").build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("MEATER cloud request failed (HTTP " + response.code + ")")
+            TelemetryHttpPolicy.check(response)
             JSONObject(response.body?.string() ?: "{}")
         }
     }
@@ -69,6 +69,7 @@ internal class MeaterCloudConnector(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "meater"
+    override val minimumIntervalMillis = 30_000L
     // Process-wide, per-account cache. Multiple screens/probes must not each spend
     // the cloud account's request quota independently.
     private val account = accountSnapshots.computeIfAbsent(TelemetryNormalizer.localKey(connectorId, jwt)) {
@@ -79,7 +80,8 @@ internal class MeaterCloudConnector(
         require(jwt.isNotBlank()) { "Connect your MEATER Cloud account" }
         val now = clock()
         if (account.cached != null && now >= account.lastFetch && now - account.lastFetch < 30_000L) return@withLock account.cached!!
-        val response = transport.devices(jwt)
+        account.budget.reserve(now)
+        val response = try { transport.devices(jwt) } catch (error: Exception) { account.budget.failed(error, now); throw error }
         if (response.optInt("statusCode", 200) !in 200..299) {
             throw IOException("MEATER returned an API error")
         }
@@ -109,10 +111,11 @@ internal class MeaterCloudConnector(
         return parseDevice(obj, clock())
     }
 
-    override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = flow {
+    override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = observe(deviceId, 30_000L)
+    override fun observe(deviceId: String, intervalMillis: Long): Flow<List<TelemetryObservation>> = flow {
         while (currentCoroutineContext().isActive) {
             emit(snapshot(deviceId))
-            delay(30_000L)
+            delay(maxOf(minimumIntervalMillis, intervalMillis))
         }
     }
 
@@ -122,12 +125,13 @@ internal class MeaterCloudConnector(
     }
 
     override suspend fun disconnect() {
-        account.mutex.withLock { jwt = "" }
+        account.mutex.withLock { jwt = ""; account.cached = null }
     }
 
     internal companion object {
         private class SharedSnapshot(val mutex: Mutex = Mutex(),
-            var cached: JSONArray? = null, var lastFetch: Long = Long.MIN_VALUE)
+            var cached: JSONArray? = null, var lastFetch: Long = Long.MIN_VALUE,
+            val budget: TelemetryAccountBudget = TelemetryAccountBudget(30_000L))
         private val accountSnapshots = ConcurrentHashMap<String, SharedSnapshot>()
 
         fun parseDevice(device: JSONObject, receipt: Long): List<TelemetryObservation> {
@@ -148,5 +152,21 @@ internal class MeaterCloudConnector(
                 reading("target", target?.optDouble("target", Double.NaN) ?: Double.NaN),
             )
         }
+    }
+}
+
+internal class MeaterFactory : TelemetryConnectorFactory {
+    override suspend fun connect(context: android.content.Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector {
+        val credential = if (user.isBlank()) secret else MeaterHttpTransport().login(user, secret)
+        require(credential.isNotBlank()) { "Enter your account credentials or an access token." }
+        val connector = MeaterCloudConnector(credential)
+        connector.discover()
+        TelemetryTokenStore(context).save(profile.provider, profile.id, credential)
+        return connector
+    }
+    override suspend fun restore(context: android.content.Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector {
+        val credential = TelemetryTokenStore(context).load(profile.provider, profile.id)
+            ?: throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
+        return MeaterCloudConnector(credential)
     }
 }

@@ -309,28 +309,12 @@ fun PitTechApp(
             )
             MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
                 EquipmentTools(viewModel)
-                if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                    var showHomeAssistant by rememberSaveable { mutableStateOf(false) }
-                    if (showHomeAssistant) {
-                        HomeAssistantOnboardingScreen(
-                            onBack = { showHomeAssistant = false },
-                            modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        OutlinedButton(
-                            onClick = { showHomeAssistant = true },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                        ) { Text("Connect Home Assistant · Beta") }
-                        ControllerDevicesScreen(modifier = Modifier.weight(1f))
-                    }
+                if (BuildConfig.TELEMETRY_BETA_ENABLED) {
+                    TelemetryConnectionsScreen(viewModel, Modifier.weight(1f))
                 } else {
-                    FeaturePlaceholder(
-                        title = "Devices",
-                        message = "Grill connections aren't available yet.",
-                        note = "You can add temperature readings by hand during a cook.",
-                        modifier = Modifier.weight(1f),
-                    )
+                    FeaturePlaceholder(title = "Devices", message = "Grill connections aren't available yet.", note = "You can add temperature readings by hand during a cook.", modifier = Modifier.weight(1f))
                 }
+
             }
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,

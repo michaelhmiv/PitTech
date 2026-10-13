@@ -87,4 +87,34 @@ class FireBoardCloudConnectorTest {
         assertEquals(1, independent.discover().size)
         assertEquals(1, two)
     }
+    @Test fun outageAnd429AcrossInstancesCannotBypassTheSharedQuota() = runBlocking {
+        var now = 1_760_000_000_000L
+        var calls = 0
+        val transport = object : FireBoardTransport {
+            override suspend fun devices(token: String): JSONArray {
+                calls++
+                throw TelemetryRequestException(TelemetryFailureKind.RATE_LIMIT, now + 300_000)
+            }
+        }
+        val first = FireBoardCloudConnector("quota-failure-test", transport) { now }
+        val second = FireBoardCloudConnector("quota-failure-test", transport) { now }
+        try { first.discover(); fail("Failure missing") } catch (_: TelemetryRequestException) {}
+        now += 30_000
+        try { second.discover(); fail("Cooldown ignored") } catch (_: TelemetryRequestException) {}
+        assertEquals(1, calls)
+    }
+
+    @Test fun documentedChartHistoryRejectsAmbiguousLabelsAndPreservesSourceTimes() {
+        val row = JSONObject().put("device", "fb1").put("label", "Pork").put("degreetype", 1)
+            .put("x", JSONArray().put(at / 1000L).put((at + 1000) / 1000L))
+            .put("y", JSONArray().put(90.0).put(JSONObject.NULL))
+        val chart = JSONArray().put(row)
+        val result = FireBoardCloudConnector.parseHistory(chart, "fb1", mapOf("channel1" to "Pork"), at, at + 5000, at + 6000)
+        assertEquals(1, result.size)
+        assertEquals(at, result.single().observedAtMillis)
+        assertTrue(result.single().fromHistory)
+        assertTrue(FireBoardCloudConnector.parseHistory(chart, "fb1", mapOf("channel1" to "Pork", "channel2" to "Pork"), at, at + 5000, at + 6000).isEmpty())
+        assertTrue(FireBoardCloudConnector.parseHistory(chart, "different-device", mapOf("channel1" to "Pork"), at, at + 5000, at + 6000).isEmpty())
+    }
+
 }
