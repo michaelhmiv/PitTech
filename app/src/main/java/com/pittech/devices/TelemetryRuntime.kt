@@ -47,6 +47,10 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         }
     }
     private fun status(id: String, text: String) { states.update { it + (id to text) } }
+    private fun publishBatch(profile: TelemetryProfile, source: TelemetrySource, batch: List<TelemetryObservation>) {
+        val valid = TelemetryChannelHealth.validChannels(source, batch)
+        states.update { old -> old + source.channels.associate { channel -> (profile.id + ":" + source.deviceId + ":" + channel.id) to if (channel.id in valid) "Connected" else "Unavailable or stale" } }
+    }
     private suspend fun connector(profile: TelemetryProfile): ReadOnlyTelemetryConnector {
         connectors[profile.id]?.let { return it }
         val fixture = if (com.pittech.BuildConfig.DEBUG) runCatching {
@@ -65,7 +69,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         try {
             val connected = connector(profile)
             val bindings = profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.map { TelemetryBinding(it, connected) }
-            val coordinator = TelemetryCollectionCoordinator(recorder, clock = clock, onState = { source, message ->
+            val coordinator = TelemetryCollectionCoordinator(recorder, clock = clock, onBatch = { source, batch -> publishBatch(profile, source, batch) }, onState = { source, message ->
                 status(profile.id + ":" + source.deviceId, message)
                 if (message == "Sign in again") store.profiles.value.firstOrNull { it.id == profile.id && it.generation == profile.generation }
                     ?.let { update(it.copy(monitoring = false)) }
@@ -114,6 +118,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
             selectedDeviceIds = (if (old.cookId == cookId) old.selectedDeviceIds else emptySet()) + source.deviceId, monitoring = true)
         store.save(updated)
         val initial = connector(updated).snapshot(source.deviceId)
+        publishBatch(updated, source, initial)
         recorder.ingest(cookId, source, initial, if (updated.onLogOnly) 0L else maxOf(updated.intervalMillis, connector(updated).minimumIntervalMillis))
         status(profile.id + ":" + source.deviceId, if (initial.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
     }
@@ -138,13 +143,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
                     profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { recorder.setMonitoring(cook, it, profile.monitoring) }
                 }
                 store.save(profile)
-                if (profile.monitoring && profile.background && !profile.onLogOnly) {
-                    try { backgroundStarter(context) }
-                    catch (_: Exception) {
-                        store.save(profile.copy(background = false))
-                        status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
-                    }
-                }
+
             }
         }
     }
@@ -160,6 +159,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
                     val session = connector(profile)
                     profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { source ->
                         val batch = session.snapshot(source.deviceId)
+                        publishBatch(profile, source, batch)
                         recorder.ingest(cookId, source, batch, if (profile.onLogOnly) 0L else maxOf(profile.intervalMillis, session.minimumIntervalMillis))
                         status(profile.id + ":" + source.deviceId, if (batch.any { TelemetryNormalizer.normalize(it) != null }) "Connected" else "Unavailable or stale")
                     }

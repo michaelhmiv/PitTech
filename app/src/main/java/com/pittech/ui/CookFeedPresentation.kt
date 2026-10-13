@@ -74,7 +74,7 @@ internal object FoodLivePresentation {
 
     fun temperatures(foodId: String, probes: List<ProbeEntity>, assignments: List<ProbeAssignmentEntity>,
         readings: List<SensorReadingEntity>, recording: CookRecordingEntity?, now: Long,
-        liveTelemetryDevices: Set<String>? = null): List<FoodTemperature> {
+        liveTelemetryProbes: Set<String>? = null): List<FoodTemperature> {
         val active = probes.filter { probe ->
             probe.measurementType == "food_probe" && (probe.source.startsWith("telemetry:") || recording == null || probe.deviceId == recording.deviceId) &&
                 probe.assignedDishId == foodId
@@ -91,7 +91,7 @@ internal object FoodLivePresentation {
             val latest = samples.maxByOrNull { it.measuredAtUtcMillis }
             val last = samples.filter(::accepted).maxByOrNull { it.measuredAtUtcMillis }
             val live = latest != null && accepted(latest) && ((latest.source.startsWith("telemetry:") &&
-                (liveTelemetryDevices == null || probe.deviceId in liveTelemetryDevices)) || latest.source == "controller_cloud" && recording?.status == CookRecordingEntity.RECORDING) &&
+                (liveTelemetryProbes == null || probe.id in liveTelemetryProbes)) || latest.source == "controller_cloud" && recording?.status == CookRecordingEntity.RECORDING) &&
                 now >= latest.measuredAtUtcMillis &&
                 now - latest.measuredAtUtcMillis <= GrillSamplingPolicy.receiptWindow(latest.samplingIntervalMillis)
             FoodTemperature(if (live) latest else last, probe, live, waiting = latest == null)
