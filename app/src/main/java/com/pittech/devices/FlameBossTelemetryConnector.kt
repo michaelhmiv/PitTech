@@ -27,7 +27,7 @@ internal class FlameBossSessionApi(
         val request = Request.Builder().url("https://myflameboss.com/api/v4/sessions")
             .post(form).header("User-Agent", "PitTech/0.1 (read-only)").build()
         http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Flame Boss login failed (HTTP " + response.code + ")")
+            TelemetryHttpPolicy.check(response)
             val data = JSONObject(response.body?.string() ?: "{}")
             Session(data.getLong("user_id"), data.getString("auth_token"))
         }
@@ -48,18 +48,19 @@ internal object FlameBossTemperatureFrame {
         if (observed == null) return null
         val temperatures = frame.optJSONArray("temps") ?: return null
         val list = (0 until temperatures.length().coerceAtMost(8)).map { i ->
-            val counts = temperatures.optInt(i, DISCONNECTED)
+            val number = temperatures.opt(i) as? Number
+            val counts = number?.toDouble()?.takeIf { it.isFinite() && it % 1.0 == 0.0 }?.toInt() ?: DISCONNECTED
             val available = counts != DISCONNECTED && counts in -200..9000
             TelemetryObservation(
                 "probe" + i, if (available) counts / 10.0 else null, "°C", observed, received,
-                if (available) TelemetryQuality.VALID else TelemetryQuality.UNAVAILABLE,
+                if (!available) TelemetryQuality.UNAVAILABLE else if (observed > received + 300_000L || received - observed > 60_000L) TelemetryQuality.STALE else TelemetryQuality.VALID,
                 eventId = observed.toString(),
             )
         }
         val setpoint = frame.optInt("set_temp", DISCONNECTED)
         if (setpoint != DISCONNECTED && setpoint in -200..9000) {
             return list + TelemetryObservation("setpoint", setpoint / 10.0, "°C", observed, received,
-                eventId = observed.toString())
+                quality = if (received - observed > 60_000L) TelemetryQuality.STALE else TelemetryQuality.VALID, eventId = observed.toString())
         }
         return list
     }
@@ -75,6 +76,7 @@ internal object FlameBossTemperatureFrame {
 internal class FlameBossTelemetryConnector(
     private val deviceId: String,
     private val frames: Flow<Pair<String, String>>,
+    private val onDisconnect: () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "flame_boss"
@@ -84,7 +86,10 @@ internal class FlameBossTelemetryConnector(
 
     override suspend fun discover(): List<TelemetrySource> = listOf(
         TelemetrySource(connectorId, deviceId, "Flame Boss " + deviceId, "Flame Boss",
-            channels = (0..3).map { TelemetryChannel("probe" + it, "Probe " + (it + 1), TelemetryKind.FOOD) } +
+            // Flame Boss frame slot zero is the pit/chamber sensor; subsequent
+            // channels represent removable food probes.
+            channels = listOf(TelemetryChannel("probe0", "Pit chamber", TelemetryKind.CHAMBER)) +
+                (1..3).map { TelemetryChannel("probe" + it, "Food probe " + it, TelemetryKind.FOOD) } +
                 TelemetryChannel("setpoint", "Observed setpoint", TelemetryKind.SETPOINT))
     )
 
@@ -103,5 +108,24 @@ internal class FlameBossTelemetryConnector(
         return emptyList()
     }
 
-    override suspend fun disconnect() { last = emptyList() }
+    override suspend fun disconnect() { onDisconnect(); last = emptyList() }
+}
+
+internal class FlameBossFactory : TelemetryConnectorFactory {
+    override suspend fun connect(context: android.content.Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector {
+        val broker = FlameBossBroker.parse(profile.endpoint)
+        require(profile.deviceHint.matches(Regex("[0-9]{1,16}"))) { "Enter your Flame Boss device ID." }
+        val session = FlameBossSessionApi().login(user, secret)
+        val payload = org.json.JSONObject().put("userId", session.userId).put("token", session.token).toString()
+        TelemetryTokenStore(context).save(profile.provider, profile.id, java.util.Base64.getEncoder().encodeToString(payload.toByteArray()))
+        val mqtt = FlameBossMqttTransport(broker, session, profile.deviceHint)
+        return FlameBossTelemetryConnector(profile.deviceHint, mqtt.frames(), onDisconnect = mqtt::close)
+    }
+    override suspend fun restore(context: android.content.Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector {
+        val encoded = TelemetryTokenStore(context).load(profile.provider, profile.id) ?: throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
+        val json = JSONObject(String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8))
+        val session = FlameBossSessionApi.Session(json.getLong("userId"), json.getString("token"))
+        val mqtt = FlameBossMqttTransport(FlameBossBroker.parse(profile.endpoint), session, profile.deviceHint)
+        return FlameBossTelemetryConnector(profile.deviceHint, mqtt.frames(), onDisconnect = mqtt::close)
+    }
 }

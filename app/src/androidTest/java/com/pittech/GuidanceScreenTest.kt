@@ -25,7 +25,8 @@ class GuidanceScreenTest {
         }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Guided brisket").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Guided brisket").performClick()
-        compose.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-more-tools-toggle", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("live-more-tools-toggle", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithTag("next-action-card").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("guidance-done").performClick()
         compose.onNodeWithTag("view-plan").performScrollTo().performClick()

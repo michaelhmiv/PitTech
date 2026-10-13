@@ -91,7 +91,8 @@ import java.time.Instant
 import java.util.Date
 
 private enum class MainSection(val title: String, val icon: ImageVector) {
-    COOKS("Cooks", Icons.Filled.Home),
+    COOKS("Meals", Icons.Filled.Home),
+    RECIPES("Recipes", Icons.Filled.List),
     INSIGHTS("Insights", Icons.Filled.List),
     DEVICES("Devices", Icons.Filled.Info),
     SETTINGS("Settings", Icons.Filled.Settings),
@@ -280,7 +281,7 @@ fun PitTechApp(
         when (section) {
             MainSection.COOKS -> CooksHome(
                 cooks = cooks,
-                playbooks = { SavedRecipesLibrary(viewModel); UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
+                playbooks = { UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
                 adsEnabled = adsEnabled,
                 error = saveError,
                 notice = notice,
@@ -293,6 +294,9 @@ fun PitTechApp(
                     isStartingCook = true
                 },
             )
+            MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SavedRecipesLibrary(viewModel, standalone = true)
+            }
             MainSection.INSIGHTS -> InsightsScreen(
                 data = insights,
                 onOpenCook = viewModel::openCook,
@@ -305,16 +309,12 @@ fun PitTechApp(
             )
             MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
                 EquipmentTools(viewModel)
-                if (BuildConfig.CONTROLLER_TESTING_ENABLED) {
-                    ControllerDevicesScreen(modifier = Modifier.weight(1f))
+                if (BuildConfig.TELEMETRY_BETA_ENABLED) {
+                    TelemetryConnectionsScreen(viewModel, Modifier.weight(1f))
                 } else {
-                    FeaturePlaceholder(
-                        title = "Devices",
-                        message = "Grill connections aren't available yet.",
-                        note = "You can add temperature readings by hand during a cook.",
-                        modifier = Modifier.weight(1f),
-                    )
+                    FeaturePlaceholder(title = "Devices", message = "Grill connections aren't available yet.", note = "You can add temperature readings by hand during a cook.", modifier = Modifier.weight(1f))
                 }
+
             }
             MainSection.SETTINGS -> SettingsScreen(
                 viewModel = viewModel,
@@ -363,7 +363,7 @@ private fun CooksHome(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (activeCooks.isNotEmpty()) {
-            SectionHeading("Active cook")
+            SectionHeading("Active meals")
             if (showCookListAd) {
                 PitTechNativeAdPlacement(adsEnabled = adsEnabled)
             }
@@ -377,7 +377,7 @@ private fun CooksHome(
         ) {
             Icon(Icons.Filled.Add, contentDescription = null)
             Spacer(Modifier.width(10.dp))
-            Text("Prepare a cook")
+            Text("Start meal")
         }
 
         if (cooks.isEmpty()) Text(
@@ -392,7 +392,7 @@ private fun CooksHome(
         if (showPlanning) playbooks()
 
         if (finishedCooks.isNotEmpty()) {
-            SectionHeading("Recent cooks")
+            SectionHeading("Completed meals")
             if (showCookListAd && activeCooks.isEmpty()) {
                 PitTechNativeAdPlacement(adsEnabled = adsEnabled)
             }
@@ -582,7 +582,7 @@ private fun StartCookScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Prepare a cook") },
+                title = { Text("Start meal") },
                 navigationIcon = {
                     IconButton(onClick = requestBack, enabled = !saving) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Go back")

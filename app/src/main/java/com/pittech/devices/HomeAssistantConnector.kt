@@ -25,17 +25,20 @@ internal class HomeAssistantEndpoint(raw: String) {
     val websocket: String
     init {
         val uri = URI.create(raw.trim().trimEnd('/'))
-        val host = uri.host?.lowercase() ?: error("Home Assistant URL needs a hostname")
+        val host = requireNotNull(uri.host?.lowercase()) { "Home Assistant URL needs a hostname" }
         require(uri.userInfo == null && uri.fragment == null && uri.query == null)
-        require(uri.port in -1..65535)
-        val local = host == "localhost" || host.endsWith(".local") ||
-            host.startsWith("192.168.") || host.startsWith("10.") ||
-            Regex("172\\.(1[6-9]|2[0-9]|3[01])\\..+").matches(host)
+        require(uri.path.isNullOrEmpty() || uri.path == "/") { "Enter only the server origin, without a path" }
+        require(uri.port == -1 || uri.port in 1..65535)
+        val octets = host.split('.').map { it.toIntOrNull() }
+        val privateIpv4 = octets.size == 4 && octets.all { it != null && it in 0..255 } &&
+            (octets[0] == 10 || octets[0] == 127 || octets[0] == 192 && octets[1] == 168 ||
+                octets[0] == 172 && octets[1] in 16..31)
+        val local = host == "localhost" || host.endsWith(".local") || host == "::1" || privateIpv4
         require(uri.scheme == "https" || (uri.scheme == "http" && local)) {
             "Use HTTPS for Home Assistant outside your local network"
         }
         base = raw.trim().trimEnd('/')
-        websocket = base.replaceFirst(Regex("^https?://")) { if (uri.scheme == "https") "wss://" else "ws://" } + "/api/websocket"
+        websocket = (if (uri.scheme == "https") "wss://" else "ws://") + base.substringAfter("://") + "/api/websocket"
     }
 
     fun readPath(path: String): String {
@@ -53,14 +56,15 @@ internal interface HomeAssistantRest {
 
 internal class HomeAssistantHttp(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .followRedirects(false).callTimeout(20, TimeUnit.SECONDS).build(),
+        .followRedirects(false).followSslRedirects(false).callTimeout(20, TimeUnit.SECONDS).build(),
 ) : HomeAssistantRest {
     override suspend fun get(url: String, token: String): String = withContext(Dispatchers.IO) {
         require(token.isNotBlank())
+        val chosenClient = if (url.startsWith("http://")) client.newBuilder().dns(HomeAssistantLanDns).build() else client
         val request = Request.Builder().url(url)
             .header("Authorization", "Bearer " + token).header("Accept", "application/json").build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Home Assistant read failed (HTTP " + response.code + ")")
+        chosenClient.newCall(request).execute().use { response ->
+            TelemetryHttpPolicy.check(response)
             response.body?.string() ?: throw IOException("Empty Home Assistant response")
         }
     }
@@ -76,14 +80,37 @@ internal class HomeAssistantConnector(
     private var accessToken: String,
     private val rest: HomeAssistantRest = HomeAssistantHttp(),
     private val wsClient: OkHttpClient = OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS).build(),
+    private val tokenProvider: (suspend () -> String)? = null,
+    private val tokenRefresh: (suspend () -> String)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ReadOnlyTelemetryConnector {
     override val connectorId = "home_assistant"
+    override val supportsHistory = true
     private val endpoint = HomeAssistantEndpoint(url)
-    private val sockets = mutableSetOf<WebSocket>()
+    private val socketLock = Any()
+    private var sharedSocket: WebSocket? = null
+    private val listeners = mutableMapOf<String, MutableSet<(List<TelemetryObservation>?, Throwable?) -> Unit>>()
+    private fun failSocket(socket: WebSocket, error: Throwable) {
+        val callbacks = synchronized(socketLock) {
+            if (socket !== sharedSocket) return
+            sharedSocket = null
+            listeners.values.flatMap { it.toList() }.also { listeners.clear() }
+        }
+        callbacks.forEach { it(null, error) }
+        socket.cancel()
+    }
+    private suspend fun get(path: String): String {
+        accessToken = tokenProvider?.invoke() ?: accessToken
+        return try { rest.get(endpoint.readPath(path), accessToken) }
+        catch (e: TelemetryRequestException) {
+            if (e.kind != TelemetryFailureKind.AUTHORIZATION || tokenRefresh == null) throw e
+            accessToken = tokenRefresh.invoke()
+            rest.get(endpoint.readPath(path), accessToken)
+        }
+    }
 
     override suspend fun discover(): List<TelemetrySource> {
-        val states = JSONArray(rest.get(endpoint.readPath("api/states"), accessToken))
+        val states = JSONArray(get("api/states"))
         return (0 until states.length()).mapNotNull { i ->
             val obj = states.optJSONObject(i) ?: return@mapNotNull null
             val id = obj.optString("entity_id")
@@ -98,41 +125,53 @@ internal class HomeAssistantConnector(
 
     override suspend fun snapshot(deviceId: String): List<TelemetryObservation> {
         require(HomeAssistantPayload.isSensorId(deviceId))
-        val json = JSONObject(rest.get(endpoint.readPath("api/states/" + deviceId), accessToken))
+        val json = JSONObject(get("api/states/" + deviceId))
         return listOfNotNull(HomeAssistantPayload.reading(json, clock(), historical = false))
     }
 
-    /** One observational state_changed subscription. No call_service operations. */
+    /** Multiplex all sensors in this account through one observational subscription. */
     override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = callbackFlow {
         require(HomeAssistantPayload.isSensorId(deviceId))
-        val socket = wsClient.newWebSocket(Request.Builder().url(endpoint.websocket).build(),
-            object : WebSocketListener() {
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    runCatching {
-                        val message = JSONObject(text)
-                        when (message.optString("type")) {
-                            "auth_required" -> webSocket.send(JSONObject().put("type", "auth")
-                                .put("access_token", accessToken).toString())
-                            "auth_ok" -> webSocket.send(JSONObject().put("id", 1)
-                                .put("type", "subscribe_events").put("event_type", "state_changed").toString())
-                            "auth_invalid" -> close(IOException("Home Assistant authentication expired"))
-                            "event" -> {
-                                val data = message.optJSONObject("event")?.optJSONObject("data")
-                                if (data?.optString("entity_id") == deviceId) {
+        accessToken = tokenProvider?.invoke() ?: accessToken
+        val callback: (List<TelemetryObservation>?, Throwable?) -> Unit = { values, error ->
+            if (error != null) close(error) else if (values != null) trySend(values)
+        }
+        synchronized(socketLock) {
+            listeners.getOrPut(deviceId) { mutableSetOf() }.add(callback)
+            if (sharedSocket == null) {
+                val chosen = wsClient.newBuilder().followRedirects(false).followSslRedirects(false)
+                    .apply { if (endpoint.websocket.startsWith("ws://")) dns(HomeAssistantLanDns) }.build()
+                sharedSocket = chosen.newWebSocket(Request.Builder().url(endpoint.websocket).build(), object : WebSocketListener() {
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        runCatching {
+                            val message = JSONObject(text)
+                            when (message.optString("type")) {
+                                "auth_required" -> webSocket.send(JSONObject().put("type", "auth").put("access_token", accessToken).toString())
+                                "auth_ok" -> webSocket.send(JSONObject().put("id", 1).put("type", "subscribe_events").put("event_type", "state_changed").toString())
+                                "auth_invalid" -> failSocket(webSocket, TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION))
+                                "result" -> if (!message.optBoolean("success", true)) failSocket(webSocket, TelemetryRequestException(TelemetryFailureKind.CONFIGURATION))
+                                "event" -> {
+                                    val data = message.optJSONObject("event")?.optJSONObject("data") ?: return@runCatching
                                     val state = data.optJSONObject("new_state") ?: return@runCatching
-                                    val observation = HomeAssistantPayload.reading(state, clock(), false)
-                                    if (observation != null) trySend(listOf(observation))
+                                    val reading = HomeAssistantPayload.reading(state, clock(), false) ?: return@runCatching
+                                    val callbacks = synchronized(socketLock) { listeners[data.optString("entity_id")]?.toList().orEmpty() }
+                                    callbacks.forEach { it(listOf(reading), null) }
                                 }
                             }
-                        }
-                    }.onFailure { close(it) }
-                }
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    close(IOException("Home Assistant connection interrupted", t))
-                }
-            })
-        synchronized(sockets) { sockets.add(socket) }
-        awaitClose { socket.close(1000, "PitTech disconnected"); synchronized(sockets) { sockets.remove(socket) } }
+                        }.onFailure { failSocket(webSocket, it) }
+                    }
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = failSocket(webSocket, IOException("Home Assistant disconnected"))
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = failSocket(webSocket, IOException("Home Assistant connection interrupted", t))
+                })
+            }
+        }
+        awaitClose {
+            synchronized(socketLock) {
+                listeners[deviceId]?.remove(callback)
+                if (listeners[deviceId]?.isEmpty() == true) listeners.remove(deviceId)
+                if (listeners.isEmpty()) { sharedSocket?.cancel(); sharedSocket = null }
+            }
+        }
     }
 
     override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long): List<TelemetryObservation> {
@@ -144,21 +183,20 @@ internal class HomeAssistantConnector(
         val end = URLEncoder.encode(Instant.ofEpochMilli(untilMillis).toString(), StandardCharsets.UTF_8.name())
         val path = "api/history/period/" + Instant.ofEpochMilli(fromMillis).toString() +
             "?filter_entity_id=" + entity + "&end_time=" + end
-        val blocks = JSONArray(rest.get(endpoint.readPath(path), accessToken))
+        val blocks = JSONArray(get(path))
         return (0 until blocks.length()).flatMap { i ->
             val entries = blocks.optJSONArray(i) ?: return@flatMap emptyList()
             (0 until entries.length()).mapNotNull { index ->
                 val state = entries.optJSONObject(index) ?: return@mapNotNull null
                 if (state.optString("entity_id") != deviceId) return@mapNotNull null
-                HomeAssistantPayload.reading(state, clock(), historical = true)
+                HomeAssistantPayload.reading(state, clock(), historical = true)?.takeIf { it.observedAtMillis?.let { t -> t in fromMillis..untilMillis } == true }
             }
         }
     }
 
     override suspend fun disconnect() {
-        synchronized(sockets) { sockets.toList().also { sockets.clear() } }.forEach {
-            it.close(1000, "PitTech disconnected")
-        }
+        val socket = synchronized(socketLock) { sharedSocket }
+        if (socket != null) failSocket(socket, IOException("Home Assistant disconnected"))
         accessToken = ""
     }
 }

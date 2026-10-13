@@ -55,7 +55,7 @@ private data class TargetEdit(val type: String, val value: String, val unit: Str
         onDismissRequest = { if (!busy) onClose() }, title = { Text(if (request.attemptDishId != null) "Adjust for this meal" else if (request.recipeId == null) "Save recipe" else "Edit a new version") }, text = {
             Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(snapshot.name, { value -> snapshot = snapshot.copy(name = value, dish = if (snapshot.dish.name == snapshot.name) snapshot.dish.copy(name = value) else snapshot.dish) }, label = { Text("Recipe name") }, modifier = Modifier.fillMaxWidth().testTag("recipe-name"))
-                OutlinedTextField(snapshot.description, { snapshot = snapshot.copy(description = it) }, label = { Text("Description (optional)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(snapshot.description, { snapshot = snapshot.copy(description = it) }, label = { Text("Description (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-description"))
                 OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = { showSetup = true }) { Text("Edit dish, ingredients & preparation") }
                 OutlinedTextField(snapshot.servings, { snapshot = snapshot.copy(servings = it) }, label = { Text("Serving amount (optional)") }, modifier = Modifier.fillMaxWidth())

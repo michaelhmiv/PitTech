@@ -41,7 +41,11 @@ class CooksViewModel(
     private val context: Context,
 ) : ViewModel() {
     internal val recipes get() = repository.recipes
-    internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()) = com.pittech.data.RecipeExtraction.fromMeal(repository.observeCookDetail(cookId).first() ?: error("Meal unavailable."), dishId, contextIds)
+    internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()): com.pittech.data.RecipeExtractionDraft {
+        val recorded = com.pittech.data.RecipeExtraction.fromMeal(repository.observeCookDetail(cookId).first() ?: error("Meal unavailable."), dishId, contextIds)
+        val working = repository.recipeAttempt(dishId)
+        return if (working == null) recorded else recorded.copy(snapshot = com.pittech.data.RecipeExtraction.mergeAttempt(working, recorded.snapshot))
+    }
     internal suspend fun startRecipeMeal(title: String, revisions: List<String>) = repository.startRecipeMeal(title, revisions).also { openCook(it) }
     internal suspend fun addRecipeToMeal(cookId: String, revisionId: String) = repository.addRecipeToMeal(cookId, revisionId)
     internal suspend fun updateRecipeAttempt(dishId: String, snapshot: com.pittech.domain.RecipeSnapshot) = repository.updateRecipeAttempt(dishId, snapshot)
@@ -55,6 +59,7 @@ class CooksViewModel(
     internal suspend fun confirmReminderAction(id: String, action: String) = app.reminderRepository.confirmAction(context, id, action, repository)
     internal val activities get() = repository.activities
     private val app get() = context.applicationContext as PitTechApplication
+    internal val telemetry get() = app.telemetryRuntime
     internal val grillState get() = app.grillMonitor.state
     internal val recordingServiceRunning get() = app.recordingServiceRunning
 
@@ -66,11 +71,13 @@ class CooksViewModel(
     }
 
     private suspend fun reconcileRecording() {
+        if (BuildConfig.TELEMETRY_BETA_ENABLED) app.telemetryRuntime.requestBackgroundFromVisibleApp()
         CookRecordingRecovery.reconcile(context)
     }
 
     /** Log creation may fail independently of the optional grill snapshot. Never prevent saving the log. */
     internal suspend fun snapshotForCookLog(cookId: String, force: Boolean = false) {
+        if (BuildConfig.TELEMETRY_BETA_ENABLED) app.telemetryRuntime.onLog(cookId, force)
         if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
         val recording = app.database.recordingDao().getRecording(cookId) ?: return
         if (recording.status != com.pittech.data.CookRecordingEntity.RECORDING ||
@@ -100,6 +107,7 @@ class CooksViewModel(
     internal fun readGrillNow(cookId: String) = perform { snapshotForCookLog(cookId, force = true) }
 
     internal fun setAppForeground(active: Boolean) {
+        if (BuildConfig.TELEMETRY_BETA_ENABLED) { app.telemetryRuntime.foreground.value = active; if (active) app.telemetryRuntime.requestBackgroundFromVisibleApp() }
         if (!BuildConfig.CONTROLLER_TESTING_ENABLED) return
         app.grillMonitor.setForeground(active)
         if (active) viewModelScope.launch {

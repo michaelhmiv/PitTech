@@ -33,6 +33,8 @@ class FlameBossTelemetryConnectorTest {
     @Test fun onlySelectedDeviceIsObservedWithoutHistoryFabrication() = runBlocking {
         val connector = FlameBossTelemetryConnector(device, flowOf(topic to payload)) { 1621028685000 }
         assertEquals(1, connector.discover().size)
+        assertEquals(TelemetryKind.CHAMBER, connector.discover().single().channels.first().kind)
+        assertEquals(TelemetryKind.FOOD, connector.discover().single().channels[1].kind)
         assertEquals(1, connector.observe(device).toList().size)
         assertEquals(5, connector.snapshot(device).size)
         assertTrue(connector.history(device, 0, 1000).isEmpty())

@@ -7,11 +7,15 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Meals with independent dishes, editable saved recipe revisions and combinations drawn from different previous meals (Android and iOS).
+- Flexible preparation notes, ingredients and persistent task timers, with separate previous-cook references.
+- Optional time and historical-action reminders; probe thresholds are available with Android monitoring.
 - A public-facing project overview, contribution and security-reporting guidance, and a documented release-note process.
 - The Apache-2.0 source-code license, separately reserved branding asset guidance, and third-party notice references.
 - A five-integration roadmap approving all four manufacturer SDK/API candidates and the optional user-operated Home Assistant bridge for development, with separate public-release terms validation. Legacy GrillirG cook histories remain supported without a public direct connector.
 
 ### Changed
+- Live dish cards show recorded stages, readings, recent actions and enabled reminders. Finishing offers selected recipe saves or leaving without saving.
 - Clarified the product direction: observational, read-only temperature monitoring only; no grill or Wi-Fi configuration.
 - Connected release documentation to Google Play and Firebase distribution.
 

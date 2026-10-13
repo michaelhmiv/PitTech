@@ -2,7 +2,7 @@ name: Build Play App Bundle
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, test/telemetry-provider-integration]
   workflow_dispatch:
     inputs:
       use_live_ads:

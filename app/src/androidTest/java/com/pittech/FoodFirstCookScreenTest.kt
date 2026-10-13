@@ -138,7 +138,7 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithText("Sunday mixed grill").performClick()
         compose.onNodeWithTag("food-card-" + steaks.id, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("food-card-" + potatoes.id, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Off the grill").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Resting and finished").performScrollTo().assertIsDisplayed()
         screenshot("food-first-live")
         compose.onNodeWithTag("food-card-" + potatoes.id, useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithTag("food-ingredients-" + potatoes.id).performScrollTo().performClick()

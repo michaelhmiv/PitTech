@@ -3,8 +3,8 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-DIAGNOSTICS = ROOT / "app/src/main/java/com/pittech/ui/ControllerDiagnosticsScreen.kt"
-PROVISIONER = ROOT / "app/src/main/java/com/pittech/devices/GrillirGWifiProvisioner.kt"
+DIAGNOSTICS = ROOT / "app/src/internal/java/com/pittech/ui/ControllerDiagnosticsScreen.kt"
+PROVISIONER = ROOT / "app/src/internal/java/com/pittech/devices/GrillirGWifiProvisioner.kt"
 
 
 class ObservationOnlyTests(unittest.TestCase):

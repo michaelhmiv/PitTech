@@ -20,23 +20,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-internal interface PolarisMonitorEngine {
-    val state: StateFlow<PolarisMonitorState>
-    fun setForeground(active: Boolean)
-    fun setRecording(active: Boolean) {}
-    fun lockDevice(id: String) {}
-    fun selectProvider(provider: GrillProvider) {}
-    fun requestCode(email: String)
-    fun signIn(email: String, code: String)
-    fun reloadDevices()
-    fun selectDevice(id: String)
-    fun refresh()
-    fun configureSampling(policy: GrillSamplingPolicy) {}
-    suspend fun snapshot(): PolarisSample? = null
-    fun signOut()
-    fun close()
-}
-
 /** One serial foreground poller. Cancellation propagates to HTTP; stale results cannot publish. */
 internal class PrimePolarisMonitor(
     private val backend: PolarisBackend,

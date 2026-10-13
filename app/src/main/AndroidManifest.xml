@@ -1,9 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- BLE monitoring is optional; never make PitTech incompatible with phones without BLE. -->
-    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"
-        tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" tools:replace="android:required" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
@@ -15,6 +13,8 @@
     <application
         android:name=".PitTechApplication"
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        tools:replace="android:usesCleartextTraffic"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
@@ -32,6 +32,7 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <activity android:name=".HomeAssistantAuthorizationActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true">
