@@ -62,7 +62,7 @@ class MealRecipeUserFlowsTest {
         val suggestion = "historical-reminder-${chicken.id}-${milestone.sourceEventId}"
         waitFor(suggestion); compose.onNodeWithTag(suggestion).performScrollTo().performClick()
         compose.onNodeWithTag("reminder-rule-save").performClick()
-        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().size == 1 } }
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().singleOrNull()?.status == "waiting" } }
         assertEquals("waiting", runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().single().status })
         androidx.test.espresso.Espresso.pressBack()
         waitFor("meal-recipe-actions"); compose.onNodeWithTag("meal-recipe-actions").performScrollTo().performClick()

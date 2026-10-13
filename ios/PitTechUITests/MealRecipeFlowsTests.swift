@@ -44,7 +44,10 @@ final class MealRecipeFlowsTests: XCTestCase {
         if allow.waitForExistence(timeout: 10) { allow.tap() }
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "waiting")).firstMatch.waitForExistence(timeout: 15))
         capture("Native explicit historical reminder")
-        app.navigationBars["Reminders"].buttons.element(boundBy: 0).tap()
+        let back = app.navigationBars["Reminders"].buttons["BackButton"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Meal"].waitForExistence(timeout: 10))
         let finish = app.buttons["finish-meal"]; reveal(finish, app: app); finish.tap()
         XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 5))
         app.alerts.buttons["Finish meal"].tap()
