@@ -84,7 +84,10 @@ internal class FlameBossTelemetryConnector(
 
     override suspend fun discover(): List<TelemetrySource> = listOf(
         TelemetrySource(connectorId, deviceId, "Flame Boss " + deviceId, "Flame Boss",
-            channels = (0..3).map { TelemetryChannel("probe" + it, "Probe " + (it + 1), TelemetryKind.FOOD) } +
+            // Flame Boss frame slot zero is the pit/chamber sensor; subsequent
+            // channels represent removable food probes.
+            channels = listOf(TelemetryChannel("probe0", "Pit chamber", TelemetryKind.CHAMBER)) +
+                (1..3).map { TelemetryChannel("probe" + it, "Food probe " + it, TelemetryKind.FOOD) } +
                 TelemetryChannel("setpoint", "Observed setpoint", TelemetryKind.SETPOINT))
     )
 
