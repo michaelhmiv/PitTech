@@ -109,4 +109,33 @@ class TelemetryRecordingIntegrationTest {
             restoredDb.close()
         }
     }
+
+    @Test fun changingSensorRoleDoesNotRelabelPreviousFoodReadings(): Unit = runBlocking {
+        val cook = repo.startCook(NewCookDraft("Role switch",
+            dishes = listOf(DishDraft("Brisket", "Beef"))))
+        val dish = db.cookDao().getDishesForCook(cook).single()
+        val start = db.cookDao().getCook(cook)!!.startedAtUtcMillis
+        val food = source("home_assistant", "patio")
+        telemetry.attach(cook, food, mapOf("meat" to dish.id), start + 1)
+        telemetry.ingest(cook, food, listOf(TelemetryObservation(
+            "meat", 180.0, "°F", start + 2, start + 2
+        )))
+        val chamber = food.copy(channels = food.channels.map {
+            if (it.id == "meat") it.copy(name = "Chamber", kind = TelemetryKind.CHAMBER) else it
+        })
+        telemetry.attach(cook, chamber, now = start + 3)
+        telemetry.ingest(cook, chamber, listOf(TelemetryObservation(
+            "meat", 250.0, "°F", start + 4, start + 4
+        )))
+        val readings = db.cookDao().getAllSensorReadings().sortedBy { it.measuredAtUtcMillis }
+        assertEquals(2, readings.size)
+        assertEquals(dish.id, readings[0].dishId)
+        assertEquals("food_probe", readings[0].measurementType)
+        assertNull(readings[1].dishId)
+        assertEquals("pit_ambient", readings[1].measurementType)
+        val current = db.cookDao().getProbesForCook(cook).first { it.id == telemetry.channelKey(cook, chamber, "meat") }
+        assertEquals("pit_ambient", current.measurementType)
+        assertNull(current.assignedDishId)
+        assertEquals(start + 3, db.recordingDao().getAllAssignments().single().endedAtUtcMillis)
+    }
 }
