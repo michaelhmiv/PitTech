@@ -19,7 +19,7 @@ internal interface ReadOnlyTelemetryConnector {
 }
 
 internal enum class TelemetryKind(val storageType: String) {
-    CHAMBER("pit_ambient"), FOOD("food_probe"), AMBIENT("pit_ambient"), SETPOINT("setpoint")
+    CHAMBER("pit_ambient"), FOOD("food_probe"), AMBIENT("pit_ambient"), SETPOINT("setpoint"), OTHER("sensor_temperature")
 }
 internal enum class TelemetryQuality { VALID, UNAVAILABLE, STALE, ERROR }
 
