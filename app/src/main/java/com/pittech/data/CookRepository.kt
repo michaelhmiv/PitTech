@@ -802,7 +802,7 @@ class CookRepository(
                 database.experienceDao().linkReadings(snapshot.logReadingLinks.filter { link -> snapshot.events.any { it.id == link.eventId && it.cookId in newIds } })
                 newCooks.forEach { c -> database.experienceDao().putLifecycle(snapshot.lifecycles.firstOrNull { it.cookId == c.id } ?: CookLifecycle(c.id)) }
                 database.experienceDao().putHistory(snapshot.targetHistory.filter { it.cookId in newIds })
-                dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds })
+                dao.insertRemindersIgnoringDuplicates(snapshot.reminders.filter { it.cookId in newIds }.map { if (it.status == CookReminderEntity.STATUS_PENDING) it.copy(status = CookReminderEntity.STATUS_CANCELLED) else it })
                 database.companionDao().restore(newRecords.map { r -> if (r.kind == "plan") r.copy(payload = org.json.JSONObject(r.payload).put("paused", true).toString()) else if (r.kind == "alert") { val rule = com.pittech.domain.CookAlertEngine.decode(r.payload).first; r.copy(payload = com.pittech.domain.CookAlertEngine.encode(rule.copy(enabled = false))) } else r })
                 database.companionDao().putPhotos(referencePhotos)
                 database.recordingDao().insertRecordings(snapshot.recordings.filter { it.cookId in newIds }
@@ -860,7 +860,10 @@ class CookRepository(
             CookEntryValidation.optionalPositiveNumber(item.amountText), item.amountUnit.takeIf { item.amountText.isNotBlank() },
             createdAtUtcMillis = now, amountText = item.amountText.trim().ifBlank { null })) }
         dao.getAllTargets().filter { it.dishId == dishId }.forEach { dao.deleteTarget(it) }
-        snapshot.targets.forEach { t -> addTarget(dish.cookId, dishId, t.type, t.value, t.unit, t.explanation) }
+        snapshot.targets.forEach { t ->
+            database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), dish.cookId, dishId, t.type, t.value, t.unit, now)))
+            dao.insertTarget(TargetEntity(id = UUID.randomUUID().toString(), cookId = dish.cookId, dishId = dishId, targetType = t.type, value = t.value, unit = t.unit, scope = "dish", explanation = t.explanation, createdAtUtcMillis = now))
+        }
         val prior = database.companionDao().get("recipe-attempt:$dishId")
         database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
             RecipeAttemptCodec.encode(dishId, source.recipeRevisionId, snapshot), prior?.createdAtUtcMillis ?: now, now))

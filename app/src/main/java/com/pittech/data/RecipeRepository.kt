@@ -56,7 +56,9 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
                 val saved = SavedRecipe(id, snapshot.name.trim(), snapshot.description, JSONArray(snapshot.tags).toString(), revisionId,
                     previous?.createdAtUtcMillis ?: now, now, previous?.archivedAtUtcMillis, previous?.favorite ?: false)
                 if (previous == null) dao.insertRecipe(saved)
-                dao.insertRevision(RecipeRevision(revisionId, id, prior?.id, (prior?.revisionNumber ?: 0) + 1,
+                val parent = if (previous == null) null else retainAssetsFromRevisionId?.let { dao.revision(it) }?.takeIf { it.recipeId == id } ?: prior
+                val revisionNumber = (dao.history(id).maxOfOrNull { it.revisionNumber } ?: 0) + 1
+                dao.insertRevision(RecipeRevision(revisionId, id, parent?.id, revisionNumber,
                     sourceCookId ?: prior?.sourceCookId, sourceDishId ?: prior?.sourceDishId, snapshot.schemaVersion, payload, now, changeNotes))
                 dao.insertAssets(copies)
                 if (previous != null) dao.updateRecipe(saved)
