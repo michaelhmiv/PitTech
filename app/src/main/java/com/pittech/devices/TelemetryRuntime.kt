@@ -74,16 +74,27 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     suspend fun connect(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
         val factory = factories(profile.provider) ?: error("This connector is unavailable in this build.")
         val session = if (user.isBlank() && secret.isBlank()) factory.restore(context, profile) else factory.connect(context, profile, user, secret)
+        val old = store.profiles.value.firstOrNull { it.id == profile.id }
+        val differentServer = old != null && profile.provider == "home_assistant" && endpointScope(old.endpoint) != endpointScope(profile.endpoint)
         val discovered = session.discover().map { source ->
-            val saved = profile.sources.firstOrNull { it.deviceId == source.deviceId }
+            val saved = if (differentServer) null else profile.sources.firstOrNull { it.deviceId == source.deviceId }
             source.copy(identityScope = source.identityScope,
                 channels = source.channels.map { ch -> saved?.channels?.firstOrNull { it.id == ch.id }?.let { ch.copy(kind = it.kind) } ?: ch })
         }
         connectors.put(profile.id, session)?.disconnect()
-        val saved = profile.copy(sources = discovered, generation = (store.profiles.value.firstOrNull { it.id == profile.id }?.generation ?: profile.generation) + 1)
+        val missing = if (differentServer) emptyList() else profile.sources.filter { prior -> discovered.none { it.deviceId == prior.deviceId } }
+        missing.forEach { status(profile.id + ":" + it.deviceId, "Unavailable or stale") }
+        if (differentServer) old?.cookId?.let { cook -> old.sources.filter { it.deviceId in old.selectedDeviceIds }.forEach { recorder.detach(cook, it) } }
+        val configured = if (differentServer) profile.copy(cookId = null, selectedDeviceIds = emptySet(), monitoring = false) else profile
+        val saved = configured.copy(sources = discovered + missing, generation = (store.profiles.value.firstOrNull { it.id == profile.id }?.generation ?: profile.generation) + 1)
         store.save(saved); status(profile.id, "Connected · read-only")
         return saved
     }
+    private fun endpointScope(raw: String): String = runCatching {
+        val uri = java.net.URI(raw.trim()); val scheme = uri.scheme.lowercase()
+        val port = uri.port.takeUnless { it == -1 || scheme == "https" && it == 443 || scheme == "http" && it == 80 }
+        scheme + "://" + uri.host.lowercase() + (port?.let { ":" + it } ?: "")
+    }.getOrDefault(raw)
     suspend fun attach(profile: TelemetryProfile, cookId: String, source: TelemetrySource, assignments: Map<String, String?>) {
         val old = store.profiles.value.firstOrNull { it.id == profile.id } ?: profile
         if (old.cookId != null && old.cookId != cookId) {
