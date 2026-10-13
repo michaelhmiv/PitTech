@@ -84,12 +84,18 @@ internal object FlameBossMqttCodec {
 }
 
 internal class FlameBossMqttTransport(private val broker: FlameBossBroker, private val session: FlameBossSessionApi.Session, private val deviceId: String) {
-    private val socket = AtomicReference<SSLSocket?>()
+    @Volatile private var closed = false
+    private val sockets = java.util.concurrent.ConcurrentHashMap.newKeySet<SSLSocket>()
     fun frames(): Flow<Pair<String, String>> = callbackFlow {
+        if (closed) { close(); return@callbackFlow }
+        val socket = AtomicReference<SSLSocket?>()
+        fun closeOwnedSocket() { socket.getAndSet(null)?.let { sockets.remove(it); runCatching { it.close() } } }
         val worker = launch(Dispatchers.IO) {
             try {
                 val tls = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket() as SSLSocket
                 socket.set(tls)
+                sockets.add(tls)
+                check(!closed) { "Connection removed" }
                 tls.sslParameters = tls.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
                 tls.connect(InetSocketAddress(broker.host, broker.port), 20_000); tls.soTimeout = 30_000
                 tls.startHandshake()
@@ -118,9 +124,9 @@ internal class FlameBossMqttTransport(private val broker: FlameBossBroker, priva
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (error: Exception) { close(error) }
-            finally { socket.getAndSet(null)?.close() }
+            finally { closeOwnedSocket() }
         }
-        awaitClose { socket.getAndSet(null)?.close(); worker.cancel() }
+        awaitClose { closeOwnedSocket(); worker.cancel() }
     }
-    fun close() { socket.getAndSet(null)?.close() }
+    fun close() { closed = true; sockets.toList().forEach { runCatching { it.close() } }; sockets.clear() }
 }

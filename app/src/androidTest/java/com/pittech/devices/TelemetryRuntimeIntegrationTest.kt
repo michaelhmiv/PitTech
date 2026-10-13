@@ -67,7 +67,7 @@ class TelemetryRuntimeIntegrationTest {
             override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String): ReadOnlyTelemetryConnector = throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
             override suspend fun restore(context: Context, profile: TelemetryProfile): ReadOnlyTelemetryConnector = throw TelemetryRequestException(TelemetryFailureKind.AUTHORIZATION)
         }
-        val runtime = TelemetryRuntime(context, db) { factory }
+        val runtime = TelemetryRuntime(context, db, backgroundStarter = {}) { factory }
         try {
             val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Credentials removed"))
             val source = TelemetrySource("meater", "probe", "Probe", channels = listOf(TelemetryChannel("internal", "Food", TelemetryKind.FOOD)))
@@ -77,6 +77,42 @@ class TelemetryRuntimeIntegrationTest {
             withTimeout(5_000) { while (runtime.store.profiles.value.single().monitoring) delay(20) }
             assertFalse(recorder.isAttached(cook, source))
             assertEquals(1, db.cookDao().getAllDevices().size)
+            assertEquals(1, db.cookDao().getAllCooks().size)
+        } finally { runtime.close(); db.close(); folder.deleteRecursively() }
+    }
+
+    @Test fun unavailableDeviceConfigurationSurvivesReconnectAndNewServerRequiresRemapping(): Unit = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(app.cacheDir, "telemetry-discovery-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
+        val context = object : ContextWrapper(app) { override fun getApplicationContext(): Context = this; override fun getNoBackupFilesDir(): File = folder }
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        var found = true
+        val factory = object : TelemetryConnectorFactory {
+            private fun adapter(profile: TelemetryProfile) = object : ReadOnlyTelemetryConnector {
+                override val connectorId = "home_assistant"
+                private val source = TelemetrySource("home_assistant", "sensor.probe", "Probe", channels = listOf(TelemetryChannel("temperature", "Food", TelemetryKind.FOOD)), identityScope = profile.endpoint)
+                override suspend fun discover() = if (found) listOf(source) else emptyList()
+                override suspend fun snapshot(deviceId: String) = emptyList<TelemetryObservation>()
+                override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = emptyFlow()
+                override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long) = emptyList<TelemetryObservation>()
+                override suspend fun disconnect() = Unit
+            }
+            override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = adapter(profile)
+            override suspend fun restore(context: Context, profile: TelemetryProfile) = adapter(profile)
+        }
+        val runtime = TelemetryRuntime(context, db, backgroundStarter = {}) { factory }
+        try {
+            val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Saved source"))
+            val profile = runtime.connect(TelemetryProfile("saved-source", "home_assistant", "HA", endpoint = "https://one.example.com", onLogOnly = true), "fixture", "dummy")
+            val source = profile.sources.single(); runtime.attach(profile, cook, source, emptyMap())
+            found = false
+            val offline = runtime.connect(runtime.store.profiles.value.single(), "fixture", "dummy")
+            assertEquals(listOf(source), offline.sources); assertEquals(cook, offline.cookId)
+            assertEquals(setOf(source.deviceId), offline.selectedDeviceIds)
+            found = true
+            val changed = runtime.connect(offline.copy(endpoint = "https://two.example.com"), "fixture", "dummy")
+            assertNull(changed.cookId); assertTrue(changed.selectedDeviceIds.isEmpty()); assertFalse(changed.monitoring)
+            assertFalse(TelemetryRecordingRepository(db).isAttached(cook, source))
             assertEquals(1, db.cookDao().getAllCooks().size)
         } finally { runtime.close(); db.close(); folder.deleteRecursively() }
     }

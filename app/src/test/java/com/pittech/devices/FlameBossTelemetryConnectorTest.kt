@@ -3,6 +3,8 @@ package com.pittech.devices
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -44,4 +46,14 @@ class FlameBossTelemetryConnectorTest {
         assertTrue(connector.snapshot(device).isEmpty())
         assertTrue(connector.observe(device).toList().isEmpty())
     }
+    @Test fun simultaneousColdSnapshotsShareOneSubscription(): Unit = runBlocking {
+        var subscriptions = 0
+        val frames = kotlinx.coroutines.flow.flow { subscriptions++; kotlinx.coroutines.delay(20); emit(topic to payload) }
+        val connector = FlameBossTelemetryConnector(device, frames) { 1621028685000 }
+        try {
+            val samples = awaitAll(async { connector.snapshot(device) }, async { connector.snapshot(device) })
+            assertEquals(1, subscriptions); assertTrue(samples.all { it.size == 5 })
+        } finally { connector.disconnect() }
+    }
+
 }

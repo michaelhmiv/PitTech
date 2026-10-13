@@ -12,7 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Application-owned runtime; foreground service and visible UI share exactly one set of collection jobs. */
-internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
+internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val backgroundStarter: (Context) -> Unit = CookRecordingService::startTelemetry, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
     val store = TelemetryProfileStore(context)
     val states = MutableStateFlow<Map<String, String>>(emptyMap())
     val foreground = MutableStateFlow(false)
@@ -27,6 +27,15 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     }
     val backgroundRequested = backgroundSessions.stateIn(scope, SharingStarted.Eagerly, false)
     init {
+        scope.launch {
+            combine(backgroundRequested, foreground) { requested, visible -> requested && visible }.distinctUntilChanged().collect { start ->
+                if (start) runCatching { backgroundStarter(context) }.onFailure {
+                    store.profiles.value.filter { it.monitoring && it.background }.forEach { profile ->
+                        store.save(profile.copy(background = false)); status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
+                    }
+                }
+            }
+        }
         scope.launch {
             combine(store.profiles, activeCooks, foreground, serviceHosted) { p, active, visible, hosted ->
                 p.filter { it.monitoring && !it.onLogOnly && it.cookId in active && (visible || it.background && hosted) }
@@ -74,16 +83,27 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
     suspend fun connect(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
         val factory = factories(profile.provider) ?: error("This connector is unavailable in this build.")
         val session = if (user.isBlank() && secret.isBlank()) factory.restore(context, profile) else factory.connect(context, profile, user, secret)
+        val old = store.profiles.value.firstOrNull { it.id == profile.id }
+        val differentServer = old != null && profile.provider == "home_assistant" && endpointScope(old.endpoint) != endpointScope(profile.endpoint)
         val discovered = session.discover().map { source ->
-            val saved = profile.sources.firstOrNull { it.deviceId == source.deviceId }
+            val saved = if (differentServer) null else profile.sources.firstOrNull { it.deviceId == source.deviceId }
             source.copy(identityScope = source.identityScope,
                 channels = source.channels.map { ch -> saved?.channels?.firstOrNull { it.id == ch.id }?.let { ch.copy(kind = it.kind) } ?: ch })
         }
         connectors.put(profile.id, session)?.disconnect()
-        val saved = profile.copy(sources = discovered, generation = (store.profiles.value.firstOrNull { it.id == profile.id }?.generation ?: profile.generation) + 1)
+        val missing = if (differentServer) emptyList() else profile.sources.filter { prior -> discovered.none { it.deviceId == prior.deviceId } }
+        missing.forEach { status(profile.id + ":" + it.deviceId, "Unavailable or stale") }
+        if (differentServer) old?.cookId?.let { cook -> old.sources.filter { it.deviceId in old.selectedDeviceIds }.forEach { recorder.detach(cook, it) } }
+        val configured = if (differentServer) profile.copy(cookId = null, selectedDeviceIds = emptySet(), monitoring = false) else profile
+        val saved = configured.copy(sources = discovered + missing, generation = (store.profiles.value.firstOrNull { it.id == profile.id }?.generation ?: profile.generation) + 1)
         store.save(saved); status(profile.id, "Connected · read-only")
         return saved
     }
+    private fun endpointScope(raw: String): String = runCatching {
+        val uri = java.net.URI(raw.trim()); val scheme = uri.scheme.lowercase()
+        val port = uri.port.takeUnless { it == -1 || scheme == "https" && it == 443 || scheme == "http" && it == 80 }
+        scheme + "://" + uri.host.lowercase() + (port?.let { ":" + it } ?: "")
+    }.getOrDefault(raw)
     suspend fun attach(profile: TelemetryProfile, cookId: String, source: TelemetrySource, assignments: Map<String, String?>) {
         val old = store.profiles.value.firstOrNull { it.id == profile.id } ?: profile
         if (old.cookId != null && old.cookId != cookId) {
@@ -119,7 +139,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
                 }
                 store.save(profile)
                 if (profile.monitoring && profile.background && !profile.onLogOnly) {
-                    try { CookRecordingService.startTelemetry(context) }
+                    try { backgroundStarter(context) }
                     catch (_: Exception) {
                         store.save(profile.copy(background = false))
                         status(profile.id, "Android could not start background monitoring. Open PitTech and try again.")
@@ -129,7 +149,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         }
     }
     fun requestBackgroundFromVisibleApp() {
-        if (foreground.value && backgroundRequested.value) runCatching { CookRecordingService.startTelemetry(context) }
+        if (foreground.value && backgroundRequested.value) runCatching { backgroundStarter(context) }
     }
     fun pauseBackground() { store.profiles.value.filter { it.background }.forEach { update(it.copy(monitoring = false)) } }
     suspend fun close() { scope.cancel(); connectors.values.forEach { it.disconnect() }; connectors.clear() }
