@@ -59,4 +59,32 @@ class FireBoardCloudConnectorTest {
         try { connector.snapshot("fb1"); fail("Disconnected token was used") }
         catch (_: IllegalArgumentException) {}
     }
+
+    @Test fun accountWideCacheIsSharedAcrossIndependentDeviceScreens() = runBlocking {
+        val now = at
+        var one = 0
+        var two = 0
+        val adapter = object : FireBoardTransport {
+            override suspend fun devices(token: String): JSONArray {
+                assertEquals("shared-fireboard-a", token)
+                one++
+                return fixture()
+            }
+        }
+        val other = object : FireBoardTransport {
+            override suspend fun devices(token: String): JSONArray {
+                assertEquals("shared-fireboard-b", token)
+                two++
+                return fixture()
+            }
+        }
+        val first = FireBoardCloudConnector("shared-fireboard-a", adapter) { now }
+        val second = FireBoardCloudConnector("shared-fireboard-a", adapter) { now }
+        val independent = FireBoardCloudConnector("shared-fireboard-b", other) { now }
+        assertEquals(1, first.discover().size)
+        assertEquals(2, second.snapshot("fb1").size)
+        assertEquals(1, one)
+        assertEquals(1, independent.discover().size)
+        assertEquals(1, two)
+    }
 }
