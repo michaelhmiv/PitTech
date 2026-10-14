@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import ZIPFoundation
 @testable import PitTech
 
 final class RecipeCompositionTests: XCTestCase {
@@ -43,7 +44,17 @@ final class RecipeCompositionTests: XCTestCase {
         XCTAssertEqual(try destination.sharingDocument(sharingId), sharing)
         try destination.library.validateCookExperience()
         // CI retrieves this synthetic fixture to exercise the native writer with the Android reader.
-        try bytes.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("pittech-native-recipe-fixture.zip"), options: .atomic)
+        let fixtureURL = FileManager.default.temporaryDirectory.appendingPathComponent("pittech-native-recipe-fixture.zip")
+        try bytes.write(to: fixtureURL, options: .atomic)
+        // Preserve the legacy/full fixture and carry actual writer outputs inside the same CI artifact.
+        let recipePack = try store.exportCookPack(sharingId)
+        for index in sharing.entries.indices { sharing.entries[index].included = true; sharing.entries[index].includeStory = true }
+        try store.saveSharingDraft(sharingId, document: sharing, expectedUpdated: store.sharingRecord(sharingId)!["updated"]!.numberValue!)
+        let collectionPack = try store.exportCookPack(sharingId)
+        let fixture = try Archive(url: fixtureURL, accessMode: .update)
+        for (path, data) in [("fixtures/recipe.pittech", recipePack), ("fixtures/collection.pittech", collectionPack)] {
+            try fixture.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), compressionMethod: .deflate) { offset, count in data.subdata(in: Int(offset)..<(Int(offset) + count)) }
+        }
     }
     @MainActor func testRecipePhotoCopiesAndVersionsRemainAvailableWithoutTheirSourceMeal() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

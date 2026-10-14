@@ -33,6 +33,10 @@ struct ContentView: View {
             if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
         } }
         .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
+        .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })) { source in NativeArchiveImportView(source: source) }
+        .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
+            Button("OK", role: .cancel) { store.archiveMessage = nil }
+        } message: { Text(store.archiveMessage ?? "") }
         .alert("Couldn't save", isPresented: Binding(
             get: { store.saveError != nil },
             set: { if !$0 { store.clearSaveError() } }
@@ -245,10 +249,7 @@ struct SettingsView: View {
     @Environment(AdsConsentManager.self) private var adsConsent
     @State private var showingExport = false
     @State private var showingImport = false
-    @State private var showingImportConfirmation = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
-    @State private var pendingImportURL: URL?
-    @State private var pendingPreview: PitTechImportPreview?
     @State private var archiveError: String?
 
     var body: some View {
@@ -309,39 +310,11 @@ struct SettingsView: View {
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }
             }
-            .fileImporter(isPresented: $showingImport, allowedContentTypes: [.zip], allowsMultipleSelection: false) { result in
+            .fileImporter(isPresented: $showingImport, allowedContentTypes: [.zip, .pittechCookPack], allowsMultipleSelection: false) { result in
                 do {
                     guard let url = try result.get().first else { return }
-                    let hasAccess = url.startAccessingSecurityScopedResource()
-                    defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
-                    let staged = try CookStore.stageArchive(at: url)
-                    do { pendingPreview = try CookStore.previewArchive(at: staged) }
-                    catch { try? FileManager.default.removeItem(at: staged); throw error }
-                    if let previous = pendingImportURL { try? FileManager.default.removeItem(at: previous) }
-                    pendingImportURL = staged
-                    showingImportConfirmation = true
-                } catch {
-                    archiveError = (error as? LocalizedError)?.errorDescription ?? "PitTech couldn't open that backup. Your existing library was left unchanged."
-                }
-            }
-            .confirmationDialog("Restore cook archive?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
-                Button("Restore \(pendingPreview?.cooks ?? 0) cooks", role: .destructive) {
-                    do {
-                        guard let pendingImportURL else { return }
-                        let result = try store.importArchive(at: pendingImportURL)
-                        archiveError = "Restored \(result.imported) cooks. Skipped \(result.skipped) duplicate cooks."
-                    } catch {
-                        archiveError = (error as? LocalizedError)?.errorDescription ?? "PitTech couldn't restore this backup. Your existing library was left unchanged."
-                    }
-                    if let pendingImportURL { try? FileManager.default.removeItem(at: pendingImportURL) }
-                    pendingImportURL = nil
-                    pendingPreview = nil
-                }
-                Button("Cancel", role: .cancel) { if let pendingImportURL { try? FileManager.default.removeItem(at: pendingImportURL) }; pendingImportURL = nil; pendingPreview = nil }
-            } message: {
-                if let pendingPreview {
-                    Text("Schema \(pendingPreview.version) • \(pendingPreview.cooks) cooks • \(pendingPreview.dishes) dishes • \(pendingPreview.readings) readings. Matching cook IDs will be skipped.")
-                }
+                    Task { await store.receiveArchive(at: url) }
+                } catch { archiveError = error.localizedDescription }
             }
             .alert("Cook archive", isPresented: Binding(get: { archiveError != nil }, set: { if !$0 { archiveError = nil } })) {
                 Button("OK", role: .cancel) { archiveError = nil }

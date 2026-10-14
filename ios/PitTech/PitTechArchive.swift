@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct PitTechImportPreview {
+struct PitTechImportPreview: Sendable {
     let cooks: Int
     let dishes: Int
     let readings: Int
@@ -35,7 +35,7 @@ enum PitTechArchiveError: LocalizedError {
 }
 
 struct PitTechArchiveDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.zip] }
+    static var readableContentTypes: [UTType] { [.zip, .pittechCookPack] }
     var data: Data
 
     init(data: Data) { self.data = data }
@@ -48,4 +48,8 @@ struct PitTechArchiveDocument: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
     }
+}
+
+extension UTType {
+    static let pittechCookPack = UTType(exportedAs: "com.pittech.cook-pack", conformingTo: .zip)
 }

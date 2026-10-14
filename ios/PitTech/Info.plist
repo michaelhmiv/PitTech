@@ -55,8 +55,50 @@
 			<string>cstr6suwn9.skadnetwork</string>
 		</dict>
 	</array>
-<key>NSBluetoothAlwaysUsageDescription</key><string>Connect your optional Combustion thermometer to record temperatures with a cook.</string>
-<key>NSBluetoothPeripheralUsageDescription</key><string>Read temperatures from your optional Combustion thermometer.</string>
-<key>NSLocalNetworkUsageDescription</key><string>Read temperature sensors from the Home Assistant server you choose on your network.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connect your optional Combustion thermometer to record temperatures with a cook.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Read temperatures from your optional Combustion thermometer.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Read temperature sensors from the Home Assistant server you choose on your network.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.pittech.cook-pack</string>
+			<key>UTTypeDescription</key>
+			<string>PitTech Cook Pack</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>pittech</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/zip</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>PitTech Cook Pack</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.pittech.cook-pack</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

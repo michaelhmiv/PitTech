@@ -21,6 +21,7 @@ extension CookStore {
             var total: Int64 = 0
             var buffer = [UInt8](repeating: 0, count: 32 * 1024)
             while true {
+                try Task.checkCancellation()
                 let count = input.read(&buffer, maxLength: buffer.count)
                 guard count >= 0 else { throw input.streamError ?? PitTechArchiveError.invalidArchive }
                 if count == 0 { break }

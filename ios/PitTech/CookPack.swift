@@ -1,4 +1,5 @@
 import Foundation
+import ZIPFoundation
 
 final class NativeCookPackProjection {
     private var identities: [String: String] = [:]
@@ -50,38 +51,88 @@ final class NativeCookPackProjection {
     }
 }
 
-@MainActor extension CookStore {
-    /// Public derivatives are held separately from private originals and never written over them.
-    func exportCookPack(_ id: String) throws -> Data {
-        guard let row = sharingRecord(id) else { throw RecipeError.unavailable }
-        let draft = try sharingDocument(id), selected = draft.entries.filter(\.included)
+private struct NativeCookPackInputPhoto: Sendable {
+    let sourceId: String
+    let entryId: String
+    let url: URL
+    let caption: String
+}
+private struct NativeCookPackInput: Sendable {
+    let draft: NativeSharingDocument
+    let kind: String
+    let updated: Double
+    let photos: [NativeCookPackInputPhoto]
+    func render() throws -> Data {
+        let selected = draft.entries.filter(\.included)
         guard !selected.isEmpty else { throw PitTechArchiveError.invalidArchive }
         let packId = UUID().uuidString.lowercased(), projection = NativeCookPackProjection()
-        let now = row["updated"]?.numberValue ?? 0
-        var portable = PitTechLibrary(), attachments: [String: Data] = [:], entries: [NativeSharingEntry] = []
+        let now = updated
+        var portable = PitTechLibrary(), attachments: [String: Data] = [:], entries: [NativeSharingEntry] = []; var expandedPhotos: Int64 = 0; var heroPhotoId: String?
+        portable.preferences = nil
         for (index, source) in selected.enumerated() {
             let recipeId = UUID().uuidString.lowercased(), revisionId = UUID().uuidString.lowercased()
             let story = projection.story(source), snapshot = try projection.recipe(source, story: story)
             portable.recipes.append(.object(["id": .string(recipeId), "name": .string(snapshot.name), "description": .string(snapshot.description), "tagsJson": .string(try recipeJSON(snapshot.tags)), "currentRevisionId": .string(revisionId), "createdAtUtcMillis": .number(now), "updatedAtUtcMillis": .number(now), "favorite": .bool(false)]))
             portable.recipeRevisions.append(.object(["id": .string(revisionId), "recipeId": .string(recipeId), "revisionNumber": .number(1), "snapshotSchemaVersion": .number(1), "snapshotJson": .string(try recipeJSON(snapshot)), "createdAtUtcMillis": .number(now), "changeNotes": .string("Shared Cook Pack")]))
             var entry = NativeSharingEntry(sourceRevisionId: revisionId, snapshotJson: try recipeJSON(snapshot), story: story, includeStory: source.includeStory)
-            for sourceId in source.photoIds {
-                guard let photo = sharingPhotos(id).first(where: { $0["id"]?.stringValue == sourceId && $0["action"]?.stringValue == source.id }), let path = photo["archivePath"]?.stringValue else { throw CookNoteError.missingPhoto }
-                let derivative = try NativeCookPackPhoto.derivative(Data(contentsOf: photoURL(path)))
+            for sourceId in source.photoIds.filter({ $0 == draft.heroPhotoId }) + source.photoIds.filter({ $0 != draft.heroPhotoId }) {
+                guard let photo = photos.first(where: { $0.sourceId == sourceId && $0.entryId == source.id }) else { throw CookNoteError.missingPhoto }
+                try Task.checkCancellation()
+                let derivative = try NativeCookPackPhoto.derivative(Data(contentsOf: photo.url))
+                expandedPhotos += Int64(derivative.count) * 2
+                guard expandedPhotos <= NativeArchiveLimits.cookPack.expanded, attachments.count + 2 <= NativeArchiveLimits.cookPack.entries - 3 else { throw PitTechArchiveError.tooLarge }
                 let photoId = UUID().uuidString.lowercased(), assetId = UUID().uuidString.lowercased()
                 attachments[photoId] = derivative; attachments[assetId] = derivative; entry.photoIds.append(photoId)
-                portable.companionPhotos.append(.object(["id": .string(photoId), "recordId": .string(packId), "archivePath": .string("attachments/\(photoId).jpg"), "mimeType": .string("image/jpeg"), "caption": photo["caption"] ?? .string(""), "dishIndex": .number(Double(index)), "action": .string(entry.id)]))
-                portable.recipeAssets.append(.object(["id": .string(assetId), "recipeRevisionId": .string(revisionId), "relativeFilePath": .string("photos/\(assetId).jpg"), "archivePath": .string("attachments/\(assetId).jpg"), "mimeType": .string("image/jpeg"), "caption": photo["caption"] ?? .string(""), "createdAtUtcMillis": .number(now)]))
+                if sourceId == draft.heroPhotoId { heroPhotoId = photoId }
+                portable.companionPhotos.append(.object(["id": .string(photoId), "recordId": .string(packId), "archivePath": .string("attachments/\(photoId).jpg"), "mimeType": .string("image/jpeg"), "caption": .string(photo.caption), "dishIndex": .number(Double(index)), "action": .string(entry.id)]))
+                portable.recipeAssets.append(.object(["id": .string(assetId), "recipeRevisionId": .string(revisionId), "relativeFilePath": .string("photos/\(assetId).jpg"), "archivePath": .string("attachments/\(assetId).jpg"), "mimeType": .string("image/jpeg"), "caption": .string(photo.caption), "createdAtUtcMillis": .number(now)]))
             }
             entries.append(entry)
         }
-        let kind = selected.count == 1 && row["kind"]?.stringValue != "collection_revision" ? "recipe" : "collection"
-        let document = NativeSharingDocument(title: draft.title, collectionId: packId, entries: entries)
+        let kind = selected.count == 1 && self.kind != "collection_revision" ? "recipe" : "collection"
+        let document = NativeSharingDocument(title: draft.title, heroPhotoId: heroPhotoId, collectionId: packId, entries: entries)
         portable.companionRecords = [.object(["id": .string(packId), "kind": .string(kind == "recipe" ? "recipe_reference" : "collection_revision"), "title": .string(draft.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)])]
         let metadata: JSONValue = .object(["contractVersion": .number(1), "id": .string(packId), "kind": .string(kind), "recipeRevisionIds": .array(portable.recipeRevisions.compactMap { $0.objectValue?["id"] }), "dishIds": .array([]), "includedStory": .bool(entries.contains { $0.includeStory }), "source": .null])
         try portable.validateCookExperience()
-        let result = try exportArchive(sourceLibrary: portable, pack: metadata, attachments: attachments)
-        _ = try Self.previewArchive(result, limits: .cookPack)
+        let result = try NativeCookPackArchive.write(portable, metadata: metadata, attachments: attachments)
+        _ = try CookStore.previewCookPack(result)
         return result
+    }
+}
+
+enum NativeCookPackArchive {
+    static func write(_ library: PitTechLibrary, metadata: JSONValue, attachments: [String: Data]) throws -> Data {
+        let archive = try Archive(accessMode: .create)
+        var expanded: Int64 = 0
+        func add(_ path: String, _ data: Data) throws {
+            expanded += Int64(data.count)
+            guard Int64(data.count) <= NativeArchiveLimits.cookPack.entry, expanded <= NativeArchiveLimits.cookPack.expanded else { throw PitTechArchiveError.tooLarge }
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), compressionMethod: .deflate) { position, size in data.subdata(in: Int(position)..<(Int(position) + size)) }
+        }
+        let manifest: JSONValue = .object(["format": .string("PitTech complete cook archive"), "archiveVersion": .number(Double(PitTechLibrary.archiveVersion)), "includesPreferences": .bool(false), "exportedAtUtc": .string(ISO8601DateFormatter().string(from: .now)), "cookPack": metadata])
+        try add("manifest.json", JSONEncoder().encode(manifest))
+        try add("README.txt", Data("PitTech Cook Pack. Selected recipes and optional recorded guidance; no accounts needed.\n".utf8))
+        try add("data/pittech.json", JSONEncoder().encode(library))
+        for (id, data) in attachments { try add("attachments/\(id).jpg", data) }
+        guard let bytes = archive.data, Int64(bytes.count) <= NativeArchiveLimits.cookPack.compressed else { throw PitTechArchiveError.tooLarge }
+        return bytes
+    }
+}
+
+@MainActor extension CookStore {
+    private func cookPackInput(_ id: String) throws -> NativeCookPackInput {
+        guard let row = sharingRecord(id) else { throw RecipeError.unavailable }
+        let document = try sharingDocument(id)
+        let photos = try sharingPhotos(id).map { photo -> NativeCookPackInputPhoto in
+            guard let sourceId = photo["id"]?.stringValue, let entryId = photo["action"]?.stringValue, let path = photo["archivePath"]?.stringValue else { throw CookNoteError.missingPhoto }
+            return NativeCookPackInputPhoto(sourceId: sourceId, entryId: entryId, url: photoURL(path), caption: photo["caption"]?.stringValue ?? "")
+        }
+        return NativeCookPackInput(draft: document, kind: row["kind"]?.stringValue ?? "sharing_draft", updated: row["updated"]?.numberValue ?? 0, photos: photos)
+    }
+    func exportCookPack(_ id: String) throws -> Data { try cookPackInput(id).render() }
+    func exportCookPackAsync(_ id: String) async throws -> Data {
+        let input = try cookPackInput(id)
+        let renderer = Task.detached(priority: .userInitiated) { try input.render() }
+        return try await withTaskCancellationHandler(operation: { try await renderer.value }, onCancel: { renderer.cancel() })
     }
 }

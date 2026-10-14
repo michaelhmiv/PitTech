@@ -70,4 +70,54 @@ import UniformTypeIdentifiers
         XCTAssertThrowsError(try NativeCookPackPhoto.validatePublic(locatedPhoto()))
         XCTAssertThrowsError(try NativeCookPackPhoto.derivative(Data("not a photograph".utf8)))
     }
+
+    func testPartialThenWholeCollectionOwnsPhotosAndRepeatedImportsStayIdempotent() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = CookStore(directory: folder)
+        source.startCook(title: "Pork and potatoes", firstDish: "Pork")
+        let cook = source.activeCooks[0].id
+        source.addDish(cookId: cook, name: "Potatoes")
+        for dish in source.dishRecords(cook) {
+            let photo = try source.stagePhoto(locatedPhoto())
+            try source.saveNote(CookNoteDraft(cookId: cook, dishId: dish.id, title: "\(dish.name) result", photos: [photo]))
+        }
+        source.finishCook(cook)
+        let id = try source.createSharingDraft(cookId: cook, dishIds: Set(source.dishRecords(cook).map(\.id)))
+        var document = try source.sharingDocument(id)
+        for index in document.entries.indices {
+            document.entries[index].includeStory = true
+            document.entries[index].photoIds = source.sharingPhotos(id).filter { $0["action"]?.stringValue == document.entries[index].id }.compactMap { $0["id"]?.stringValue }
+        }
+        try source.saveSharingDraft(id, document: document, expectedUpdated: source.sharingRecord(id)!["updated"]!.numberValue!)
+        let pack = try await source.exportCookPackAsync(id), url = folder.appendingPathComponent("collection.pittech")
+        try pack.write(to: url)
+        let recipient = CookStore(directory: folder.appendingPathComponent("recipient"))
+        await recipient.receiveArchive(at: url)
+        let intake = try XCTUnwrap(recipient.archiveIntake)
+        try FileManager.default.removeItem(at: url) // The provider's original can disappear after preview.
+        let pork = try XCTUnwrap(intake.library.recipes.first { $0.objectValue?["name"]?.stringValue == "Pork" }?.objectValue?["currentRevisionId"]?.stringValue)
+        let all = Set(intake.library.recipes.compactMap { $0.objectValue?["currentRevisionId"]?.stringValue })
+        try await recipient.importSelectedRecipes(intake, selected: [pork])
+        try await recipient.importSelectedRecipes(intake, selected: [pork])
+        XCTAssertEqual(recipient.library.recipes.count, 1)
+        XCTAssertEqual(recipient.library.recipeAssets.count, 1)
+        XCTAssertEqual(recipient.library.companionPhotos.count, 1)
+        try await recipient.importSelectedRecipes(intake, selected: all)
+        try await recipient.importSelectedRecipes(intake, selected: all)
+        XCTAssertEqual(recipient.library.recipes.count, 2)
+        XCTAssertEqual(recipient.library.recipeAssets.count, 2)
+        XCTAssertEqual(recipient.library.companionRecords.count, 2)
+        XCTAssertEqual(recipient.library.companionPhotos.count, 3)
+        XCTAssertTrue(recipient.library.cooks.isEmpty)
+        XCTAssertNil(intake.library.preferences)
+        XCTAssertThrowsError(try NativeCookPackSelection.library(intake.library, selected: []))
+        XCTAssertThrowsError(try NativeCookPackSelection.library(intake.library, selected: [UUID().uuidString]))
+        for photo in recipient.library.recipeAssets + recipient.library.companionPhotos {
+            let path = try XCTUnwrap(photo.objectValue?["archivePath"]?.stringValue)
+            try NativeCookPackPhoto.validatePublic(Data(contentsOf: recipient.photoURL(path)))
+        }
+        recipient.discardArchiveIntake()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: intake.url.path))
+    }
 }

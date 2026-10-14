@@ -49,15 +49,19 @@ suspend fun SharingRepository.prepareCookPack(id: String): PreparedCookPack {
     val packId = UUID.randomUUID().toString(); val projector = CookPackProjection(); val bytes = linkedMapOf<String, ByteArray>()
     val owned = assets(id).associateBy { it.id }; val recipes = mutableListOf<SavedRecipe>(); val revisions = mutableListOf<RecipeRevision>()
     val recipePhotos = mutableListOf<RecipeAsset>(); val referencePhotos = mutableListOf<CompanionPhoto>()
+    var expandedPhotos = 0L; var heroPhotoId: String? = null
     val entries = selected.mapIndexed { index, entry ->
         val recipeId = UUID.randomUUID().toString(); val revisionId = UUID.randomUUID().toString(); val entryId = UUID.randomUUID().toString()
         val story = projector.story(entry); val snapshot = projector.recipe(entry, story)
         recipes += SavedRecipe(recipeId, snapshot.name, snapshot.description, JSONArray(snapshot.tags).toString(), revisionId, row.updatedAtUtcMillis, row.updatedAtUtcMillis)
         revisions += RecipeRevision(revisionId, recipeId, null, 1, null, null, 1, RecipeSnapshotCodec.encode(snapshot), row.updatedAtUtcMillis, "Shared Cook Pack")
-        val photos = entry.photoIds.map { sourceId ->
+        val photos = entry.photoIds.sortedBy { if (it == draft.heroPhotoId) 0 else 1 }.map { sourceId ->
             val source = owned[sourceId]?.takeIf { it.action == entry.id } ?: error("A selected dish photo is unavailable.")
             val derivative = CookPackPhoto.derivative(photoBytes(source.relativePath) ?: error("A selected photo is missing. Your saved composition is unchanged."))
+            expandedPhotos += derivative.size.toLong() * 2
+            require(expandedPhotos <= CookPackContract.MAX_EXPANDED && bytes.size + 2 <= CookPackContract.MAX_ENTRIES - 32) { "This Cook Pack is too large. Choose fewer photos or dishes." }
             val photoId = UUID.randomUUID().toString(); bytes[photoId] = derivative
+            if (sourceId == draft.heroPhotoId) heroPhotoId = photoId
             referencePhotos += CompanionPhoto(photoId, packId, "photos/$photoId.jpg", "image/jpeg", source.caption, index, entryId)
             val assetId = UUID.randomUUID().toString(); bytes[assetId] = derivative
             recipePhotos += RecipeAsset(assetId, revisionId, "photos/$assetId.jpg", "image/jpeg", source.caption, null, row.updatedAtUtcMillis)
@@ -66,7 +70,7 @@ suspend fun SharingRepository.prepareCookPack(id: String): PreparedCookPack {
         SharingEntry(entryId, null, revisionId, snapshot, story.toString(), true, entry.includeStory, photos)
     }
     val kind = if (selected.size == 1 && row.kind != SharingDraftCodec.COLLECTION) "recipe" else "collection"
-    val document = SharingDocument(draft.title, entries, collectionId = packId)
+    val document = SharingDocument(draft.title, entries, heroPhotoId = heroPhotoId, collectionId = packId)
     val record = CompanionRecord(packId, if (kind == "recipe") "recipe_reference" else SharingDraftCodec.COLLECTION, title = draft.title,
         payload = SharingDraftCodec.encode(document), createdAtUtcMillis = row.updatedAtUtcMillis, updatedAtUtcMillis = row.updatedAtUtcMillis)
     val snapshot = ExportSnapshot(cooks = emptyList(), dishes = emptyList(), ingredients = emptyList(), events = emptyList(), readings = emptyList(), targets = emptyList(), results = emptyList(), devices = emptyList(), probes = emptyList(), photos = emptyList(),

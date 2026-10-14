@@ -16,6 +16,49 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 
 class CookPackIntegrationTest {
+    @Test fun partialThenWholeCollectionKeepsStableRecipesAndIndependentReferencePhotos(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val recipient = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val storage = PhotoStorage(context)
+        try {
+            val repository = CookRepository(source, storage)
+            val cook = repository.startCook(NewCookDraft("Pork and potatoes", dishes = listOf(DishDraft("Pork", "Pork"), DishDraft("Potatoes", "Vegetables"))))
+            val dishes = source.cookDao().getDishesForCook(cook)
+            for (dish in dishes) {
+                val file = CameraPhotoFiles.create(context); val uri = CameraPhotoFiles.uri(context, file)
+                val image = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.YELLOW) }
+                context.contentResolver.openOutputStream(uri, "w")!!.use { assertTrue(image.compress(Bitmap.CompressFormat.JPEG, 90, it)) }; image.recycle()
+                repository.notes.save(CookNoteDraft(cookId = cook, dishId = dish.id, title = "${dish.name} result", photos = listOf(NotePhoto(uri = uri.toString()))))
+                file.delete()
+            }
+            repository.completeCook(cook)
+            val id = repository.sharing.fromMeal(cook, dishes.map { it.id }.toSet()); val row = repository.sharing.get(id)!!
+            val document = SharingDraftCodec.decode(row.payload); val photos = repository.sharing.assets(id)
+            repository.sharing.save(id, document.copy(entries = document.entries.map { e -> e.copy(includeStory = true, photoIds = photos.filter { it.action == e.id }.map { it.id }) }), row.updatedAtUtcMillis)
+            val transfer = PitTechDataTransfer(context, repository); val bytes = ByteArrayOutputStream(); transfer.writeCookPack(bytes, id)
+            val pack = transfer.previewCookPack(ByteArrayInputStream(bytes.toByteArray()))
+            val pork = pack.snapshot.recipes.single { it.name == "Pork" }.currentRevisionId
+            val all = pack.snapshot.recipes.map { it.currentRevisionId }.toSet()
+            val destination = CookRepository(recipient, storage)
+            val one = pack.selectCookPackRecipes(setOf(pork))
+            repeat(2) { destination.importSnapshot(one.snapshot, one.attachments) }
+            assertEquals(1, recipient.recipeDao().recipes().size); assertEquals(1, recipient.recipeDao().assets().size); assertEquals(1, recipient.companionDao().photos().size)
+            val whole = pack.selectCookPackRecipes(all)
+            repeat(2) { destination.importSnapshot(whole.snapshot, whole.attachments) }
+            assertEquals(2, recipient.recipeDao().recipes().size); assertEquals(2, recipient.recipeDao().assets().size)
+            assertEquals(2, recipient.companionDao().all().size); assertEquals(3, recipient.companionDao().photos().size)
+            assertTrue(recipient.cookDao().getAllCooks().isEmpty()); assertNull(pack.preferences)
+            for (ids in listOf(emptySet<String>(), setOf(java.util.UUID.randomUUID().toString()))) {
+                try { pack.selectCookPackRecipes(ids); fail("An invalid selection was saved") } catch (_: IllegalArgumentException) { }
+            }
+            recipient.companionDao().photos().forEach { CookPackPhoto.validatePublic(storage.read(it.relativePath)!!) }
+        } finally {
+            source.companionDao().photos().forEach { storage.delete(it.relativePath) }; source.cookDao().getAllPhotos().forEach { storage.delete(it.relativePath) }
+            recipient.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; recipient.companionDao().photos().forEach { storage.delete(it.relativePath) }
+            source.close(); recipient.close()
+        }
+    }
     @Test fun selectedPackPreservesActualCelsiusGuideAndPrivateOriginalPhoto(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val source = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()

@@ -41,6 +41,8 @@ import kotlinx.coroutines.sync.withLock
     var error by remember(id) { mutableStateOf<String?>(null) }; var busy by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }; var editId by remember { mutableStateOf<String?>(null) }
     var chooseRecipe by remember { mutableStateOf(false) }
+    val exporting by viewModel.busy.collectAsStateWithLifecycle()
+    val exportError by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope(); val lock = remember { Mutex() }
     val recipes by remember { viewModel.recipes.observeRecipes() }.collectAsStateWithLifecycle(emptyList())
     suspend fun reload() { record = viewModel.sharing.get(id) ?: kotlin.error("Draft unavailable."); document = SharingDraftCodec.decode(record!!.payload); saved = true }
@@ -93,6 +95,8 @@ import kotlinx.coroutines.sync.withLock
                     }
                     OutlinedButton(onClick = { act { persist(); chooseRecipe = true } }, enabled = current.entries.size < 20 && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add a saved recipe") }
                     Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
+                    exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }
                 }

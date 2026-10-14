@@ -30,6 +30,12 @@ struct SavedRecipesView: View {
     @State private var destination: String?
     @State private var selecting = false
     @State private var filterDraft: RecipeFilterDraft?
+    private func selection(_ revision: String) -> Binding<Bool> {
+        Binding(get: { selected.contains(revision) }, set: { chosen in
+            if chosen { if !selected.contains(revision) { selected.append(revision) } }
+            else { selected.removeAll { $0 == revision } }
+        })
+    }
     private var snapshots: [String: RecipeSnapshot] {
         Dictionary(uniqueKeysWithValues: store.library.recipeRevisions.compactMap { row -> (String, RecipeSnapshot)? in
             guard let o = row.objectValue, let id = o["id"]?.stringValue, let raw = o["snapshotJson"]?.stringValue, let snapshot = try? RecipeSnapshot.decode(raw) else { return nil }
@@ -77,17 +83,7 @@ struct SavedRecipesView: View {
                         }.buttonStyle(.plain)
                         HStack {
                             if selecting {
-                                Button {
-                                    if selected.contains(revision) { selected.removeAll { $0 == revision } } else { selected.append(revision) }
-                                } label: {
-                                    Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.circle.fill" : "circle")
-                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }.buttonStyle(.bordered).tint(selected.contains(revision) ? PitTechStyle.sage : PitTechStyle.supporting).disabled(archived)
-                                    .accessibilityElement(children: .ignore)
-                                    .accessibilityLabel("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal")
-                                    .accessibilityValue(selected.contains(revision) ? "Selected" : "Not selected")
-                                    .accessibilityIdentifier("recipe-select-" + id)
+                                NativeRecipeSelectionButton(name: o["name"]?.stringValue ?? "Recipe", recipeId: id, isSelected: selection(revision), disabled: archived)
                             }
                             Spacer(minLength: 0)
                             Menu {
@@ -245,5 +241,27 @@ struct RecipeAssetGallery: View {
                 Text(o["caption"]?.stringValue ?? "")
             }
         }
+    }
+}
+
+private struct NativeRecipeSelectionButton: View {
+    let name: String
+    let recipeId: String
+    @Binding var isSelected: Bool
+    let disabled: Bool
+    private var tint: Color { isSelected ? PitTechStyle.sage : PitTechStyle.border }
+    var body: some View {
+        Button { isSelected.toggle() } label: {
+            Label("Add " + name + " to meal", systemImage: isSelected ? "checkmark.circle.fill" : "circle")
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, 12)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(isSelected ? PitTechStyle.sage : PitTechStyle.ink).disabled(disabled)
+            .accessibilityLabel("Add " + name + " to meal")
+            .accessibilityValue(isSelected ? "Selected" : "Not selected")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityHint(isSelected ? "Tap to remove this recipe from the meal" : "Tap to add this recipe to the meal")
+            .accessibilityIdentifier("recipe-select-" + recipeId)
     }
 }

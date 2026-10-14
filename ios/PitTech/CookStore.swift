@@ -12,6 +12,9 @@ final class CookStore {
     var deletedNote: DeletedNativeNote?
     var reminderMessage: String?
     var notificationCookId: String?
+    var archiveIntake: NativeArchiveIntake?
+    var archiveMessage: String?
+    @ObservationIgnored var archiveIntakeRequest: String?
     var telemetryLiveDevices: Set<String> = []
     var telemetryLiveProbes: Set<String> = []
     @ObservationIgnored var telemetryOnLog: ((String) -> Void)?
@@ -245,6 +248,7 @@ final class CookStore {
         var paths = Set<String>()
         var largestEntry: UInt64 = 0
         for entry in archive {
+            try Task.checkCancellation()
             guard Self.isSafeArchivePath(entry.path), paths.insert(entry.path).inserted, entry.type == .file,
                   entry.uncompressedSize <= UInt64(limits.entry) else { throw PitTechArchiveError.invalidArchive }
             totalBytes += Int64(entry.uncompressedSize)
@@ -253,6 +257,7 @@ final class CookStore {
             let keep = entry.path == "manifest.json" || entry.path == "data/pittech.json"
             var contents = Data(), extracted: Int64 = 0
             let checksum = try archive.extract(entry) { chunk in
+                try Task.checkCancellation()
                 extracted += Int64(chunk.count)
                 guard extracted <= limits.entry else { throw PitTechArchiveError.tooLarge }
                 if keep { contents.append(chunk) }

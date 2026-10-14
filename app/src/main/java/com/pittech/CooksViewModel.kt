@@ -15,6 +15,7 @@ import com.pittech.data.CookReminderEntity
 import com.pittech.data.BackupPreferences
 import com.pittech.data.InsightsSnapshot
 import com.pittech.data.PitTechDataTransfer
+import com.pittech.data.selectCookPackRecipes
 import com.pittech.data.TimelineEventEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TargetEntity
@@ -656,13 +657,26 @@ class CooksViewModel(
         _notice.value = "Backup ready to share. Choose where to send it."
     }
 
+    fun createShareCookPack(documentId: String) = perform {
+        _shareArchiveUri.value = withContext(Dispatchers.IO) {
+            val directory = File(context.cacheDir, "exports").apply { mkdirs() }
+            pruneStaleShareArchives(directory)
+            val pack = File.createTempFile("pittech_recipe_", ".pittech", directory)
+            try {
+                pack.outputStream().buffered().use { dataTransfer.writeCookPack(it, documentId) }
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pack)
+            } catch (failure: Throwable) { pack.delete(); throw failure }
+        }
+        _notice.value = "Cook Pack ready to share."
+    }
+
     fun consumeShareArchive() { _shareArchiveUri.value = null }
 
     private fun pruneStaleShareArchives(directory: File = File(context.cacheDir, "exports")) {
         runCatching {
             val expiry = System.currentTimeMillis() - SHARE_ARCHIVE_MAX_AGE_MILLIS
             directory.listFiles().orEmpty()
-                .filter { it.isFile && it.extension.equals("zip", ignoreCase = true) && it.lastModified() < expiry }
+                .filter { it.isFile && it.extension.lowercase() in setOf("zip", "pittech") && it.lastModified() < expiry }
                 .forEach(File::delete)
         }
     }
@@ -694,6 +708,16 @@ class CooksViewModel(
                 (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
             val reminderStatus = if (pendingReminders.isNotEmpty() && !notificationsEnabled) " Reminders are saved, but notifications are off so they may not alert." else ""
             _notice.value = "Restored ${result.importedCooks} cooks and ${result.importedPhotos} photos. ${result.skippedCooks} duplicate cooks skipped.$reminderStatus"
+        }
+    }
+
+    fun confirmCookPackImport(revisions: Set<String>) {
+        val source = _importPreview.value ?: return
+        perform {
+            val draft = source.selectCookPackRecipes(revisions)
+            withContext(Dispatchers.IO) { dataTransfer.import(draft) }
+            _importPreview.value = null
+            _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
         }
     }
 

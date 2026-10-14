@@ -157,7 +157,7 @@ fun PitTechApp(
     LaunchedEffect(shareArchiveUri) {
         val uri = shareArchiveUri ?: return@LaunchedEffect
         runCatching {
-            context.startActivity(Intent.createChooser(ZipShareIntent.create(uri), "Share PitTech backup"))
+            context.startActivity(Intent.createChooser(ZipShareIntent.create(uri), if (uri.lastPathSegment?.endsWith(".pittech") == true) "Share Cook Pack" else "Share PitTech backup"))
         }.onFailure { failure ->
             val message = if (failure is ActivityNotFoundException) "No app can share this ZIP. Use Save backup instead." else "The backup could not be shared."
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -167,7 +167,8 @@ fun PitTechApp(
 
     if (importPreview != null) {
         val draft = importPreview!!
-        AlertDialog(
+        if (draft.cookPack != null) CookPackImportDialog(draft, saving, saveError, viewModel::cancelImport, viewModel::confirmCookPackImport)
+        else AlertDialog(
             onDismissRequest = viewModel::cancelImport,
             title = { Text("Review backup contents") },
             text = {

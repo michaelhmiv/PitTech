@@ -10,7 +10,7 @@ enum NativeCookPackPhoto {
               (properties[kCGImagePropertyGPSDictionary as String] as? [String: Any])?.isEmpty != false else { throw PitTechArchiveError.invalidArchive }
         _ = try derivative(data)
     }
-    static func derivative(_ original: Data) throws -> Data {
+    static func derivative(_ original: Data, maximumPixels: Int = 2048) throws -> Data {
         guard !original.isEmpty, Int64(original.count) <= NativeArchiveLimits.backup.entry,
               let source = CGImageSourceCreateWithData(original as CFData, nil),
               let type = CGImageSourceGetType(source), UTType(type as String)?.conforms(to: .image) == true,
@@ -18,7 +18,7 @@ enum NativeCookPackPhoto {
               let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
               let height = properties[kCGImagePropertyPixelHeight as String] as? Int,
               (1...32768).contains(width), (1...32768).contains(height), Int64(width) * Int64(height) <= 100_000_000,
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2048] as CFDictionary) else { throw CookNoteError.missingPhoto }
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maximumPixels] as CFDictionary) else { throw CookNoteError.missingPhoto }
         let result = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(result, UTType.jpeg.identifier as CFString, 1, nil) else { throw CookNoteError.missingPhoto }
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
