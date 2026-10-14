@@ -38,10 +38,10 @@ class TelemetryRuntimeIntegrationTest {
             TelemetryRecordingRepository(db).attach(cook, source)
             runtime.store.save(TelemetryProfile("start-dedup", "meater", "Probe", sources = listOf(source), cookId = cook,
                 monitoring = true, background = true, selectedDeviceIds = setOf(source.deviceId)))
-            withTimeout(5000) { while (!runtime.backgroundRequested.value) delay(10) }
+            withTimeout(20_000) { while (!runtime.backgroundRequested.value) delay(10) }
             runtime.foreground.value = true
             repeat(20) { runtime.requestBackgroundFromVisibleApp() }
-            withTimeout(5000) { while (starts.get() == 0) delay(10) }
+            withTimeout(20_000) { while (starts.get() == 0) delay(10) }
             withContext(Dispatchers.Main) { }
             assertEquals(1, starts.get())
             withContext(Dispatchers.Main) { runtime.serviceHosted.value = true; runtime.requestBackgroundFromVisibleApp() }
@@ -50,7 +50,11 @@ class TelemetryRuntimeIntegrationTest {
             withContext(Dispatchers.Main) { }
             assertEquals(1, starts.get())
             runtime.foreground.value = true
-            withTimeout(5000) { while (starts.get() != 2) delay(10) }
+            // CooksViewModel explicitly requests collection on resume. StateFlow may
+            // conflate the brief hidden/hosted transitions above, so exercise that
+            // actual UI entry point instead of relying on a transient flow event.
+            repeat(20) { runtime.requestBackgroundFromVisibleApp() }
+            withTimeout(20_000) { while (starts.get() != 2) delay(10) }
             runtime.serviceHosted.value = true
         } finally { runtime.close(); db.close(); folder.deleteRecursively() }
     }

@@ -143,8 +143,24 @@ That failure is retained. The runner was strengthened to establish a new committ
 reading while hidden before killing the process; a reading from the visible launch is not
 sufficient. This changes test setup only, with the changed-PID, restored-reading,
 foreground-service and hidden-UI assertions retained. Subsequent feature commits retain
-exactly the verified Android/iOS application and test-case sources from `f7a322be`; only
-the runner's additional background barrier and this evidence documentation change.
+exactly the verified Android/iOS application sources from `f7a322be`. Test setup was also
+repaired after inspecting actual failures: keyboard dismissal now targets the window with
+focus (including a dialog above the Activity), and the runtime fixture explicitly requests
+collection on resume as CooksViewModel does, rather than relying on a brief StateFlow event
+that can be conflated. State waits use the same generous bound as other emulator fixtures.
+No test case or assertion was removed.
+
+On report snapshot `3ead9587`, the strengthened real process-death setup and all 23 regular
+telemetry cases passed at both API 36 fonts. Standard-font job
+[115586516394](https://github.com/michaelhmiv/PitTech/actions/runs/38481992516/job/115586516394)
+passed the complete suite. Large-font job
+[115586516664](https://github.com/michaelhmiv/PitTech/actions/runs/38481992516/job/115586516664)
+failed later when Espresso selected the unfocused Activity during recipe-dialog keyboard
+dismissal; that failed full-job result is retained. Native Simulator
+[38481992562](https://github.com/michaelhmiv/PitTech/actions/runs/38481992562), unsigned AAB
+[38481992559](https://github.com/michaelhmiv/PitTech/actions/runs/38481992559) and public artifact
+audit [38481992519](https://github.com/michaelhmiv/PitTech/actions/runs/38481992519) all passed.
+The fixture-only synchronization/window corrections are on #74 and copied to #75/#76.
 
 Native/release branches were restacked onto owning feature history to keep the unmerged #75
 head out of the feature merge ancestry. Original histories remain on
