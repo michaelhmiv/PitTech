@@ -2,8 +2,10 @@ package com.pittech.data
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import java.io.ByteArrayOutputStream
 
-/** Small local documents have explicit domain codecs. Cook-owned documents cascade with a cook;
+/** Local documents have explicit domain codecs. Cook-owned documents cascade with a cook;
  * saved playbooks and equipment remain independent. No credentials or controller state belong here. */
 @Entity(tableName = "companion_records", foreignKeys = [ForeignKey(entity = CookEntity::class,
     parentColumns = ["id"], childColumns = ["cookId"], onDelete = ForeignKey.CASCADE)],
@@ -30,28 +32,50 @@ data class CompanionPhoto(
     val action: String?,
 )
 
+/** Header and bounded BLOB slices avoid Android's per-row CursorWindow limit without changing JSON. */
+data class CompanionRecordHeader(
+    val id: String, val kind: String, val cookId: String?, val title: String,
+    val payloadBytes: Int, val createdAtUtcMillis: Long, val updatedAtUtcMillis: Long,
+)
+
 @Dao
-interface CookCompanionDao {
-    @Query("SELECT * FROM companion_records ORDER BY updatedAtUtcMillis DESC")
-    fun observeAll(): Flow<List<CompanionRecord>>
-    @Query("SELECT * FROM companion_records WHERE cookId = :cookId")
-    fun observeCook(cookId: String): Flow<List<CompanionRecord>>
-    @Query("SELECT * FROM companion_records ORDER BY createdAtUtcMillis ASC")
-    suspend fun all(): List<CompanionRecord>
-    @Query("SELECT * FROM companion_records WHERE id = :id")
-    suspend fun get(id: String): CompanionRecord?
-    @Query("SELECT * FROM companion_records WHERE cookId = :cookId")
-    suspend fun forCook(cookId: String): List<CompanionRecord>
+abstract class CookCompanionDao {
+    @Query("SELECT id, kind, cookId, title, length(CAST(payload AS BLOB)) AS payloadBytes, createdAtUtcMillis, updatedAtUtcMillis FROM companion_records ORDER BY createdAtUtcMillis ASC")
+    abstract suspend fun headers(): List<CompanionRecordHeader>
+    @Query("SELECT id, kind, cookId, title, length(CAST(payload AS BLOB)) AS payloadBytes, createdAtUtcMillis, updatedAtUtcMillis FROM companion_records ORDER BY updatedAtUtcMillis DESC")
+    abstract fun observeHeaders(): Flow<List<CompanionRecordHeader>>
+    @Query("SELECT id, kind, cookId, title, length(CAST(payload AS BLOB)) AS payloadBytes, createdAtUtcMillis, updatedAtUtcMillis FROM companion_records WHERE id = :id")
+    abstract suspend fun header(id: String): CompanionRecordHeader?
+    @Query("SELECT substr(CAST(payload AS BLOB), :offset, :count) FROM companion_records WHERE id = :id")
+    abstract suspend fun payloadSlice(id: String, offset: Int, count: Int): ByteArray?
+    private suspend fun complete(header: CompanionRecordHeader): CompanionRecord {
+        val output = ByteArrayOutputStream(header.payloadBytes.coerceAtMost(512 * 1024))
+        var offset = 1
+        while (offset <= header.payloadBytes) {
+            val bytes = payloadSlice(header.id, offset, minOf(512 * 1024, header.payloadBytes - offset + 1)) ?: error("This saved document is no longer available.")
+            check(bytes.isNotEmpty()) { "A saved document could not be reopened." }
+            output.write(bytes); offset += bytes.size
+        }
+        return CompanionRecord(header.id, header.kind, header.cookId, header.title, output.toString(Charsets.UTF_8.name()), header.createdAtUtcMillis, header.updatedAtUtcMillis)
+    }
+    @Transaction
+    open suspend fun all(): List<CompanionRecord> = headers().map { complete(it) }
+    @Transaction
+    open suspend fun get(id: String): CompanionRecord? = header(id)?.let { complete(it) }
+    @Transaction
+    open suspend fun forCook(cookId: String): List<CompanionRecord> = headers().filter { it.cookId == cookId }.map { complete(it) }
+    fun observeAll(): Flow<List<CompanionRecord>> = observeHeaders().map { all().sortedByDescending { record -> record.updatedAtUtcMillis } }
+    fun observeCook(cookId: String): Flow<List<CompanionRecord>> = observeHeaders().map { forCook(cookId) }
     @Upsert
-    suspend fun put(record: CompanionRecord)
+    abstract suspend fun put(record: CompanionRecord)
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun restore(records: List<CompanionRecord>)
+    abstract suspend fun restore(records: List<CompanionRecord>)
     @Query("DELETE FROM companion_records WHERE id = :id")
-    suspend fun delete(id: String)
+    abstract suspend fun delete(id: String)
     @Query("SELECT * FROM companion_photos")
-    suspend fun photos(): List<CompanionPhoto>
+    abstract suspend fun photos(): List<CompanionPhoto>
     @Query("SELECT * FROM companion_photos WHERE recordId = :recordId")
-    suspend fun photosFor(recordId: String): List<CompanionPhoto>
+    abstract suspend fun photosFor(recordId: String): List<CompanionPhoto>
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun putPhotos(photos: List<CompanionPhoto>)
+    abstract suspend fun putPhotos(photos: List<CompanionPhoto>)
 }
