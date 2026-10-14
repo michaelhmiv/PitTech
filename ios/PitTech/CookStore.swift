@@ -12,6 +12,9 @@ final class CookStore {
     var deletedNote: DeletedNativeNote?
     var reminderMessage: String?
     var notificationCookId: String?
+    var telemetryLiveDevices: Set<String> = []
+    var telemetryLiveProbes: Set<String> = []
+    @ObservationIgnored var telemetryOnLog: ((String) -> Void)?
     @ObservationIgnored var reminderScheduleTask: Task<Void, Never>?
     private let directory: URL
     init(directory: URL? = nil) {
@@ -143,7 +146,7 @@ final class CookStore {
 
     func events(for cookId: String) -> [TimelineEntry] {
         library.events
-            .filter { $0.objectValue?["cookId"]?.stringValue == cookId }
+            .filter { $0.objectValue?["cookId"]?.stringValue == cookId && !($0.objectValue?["eventType"]?.stringValue ?? "").hasPrefix("telemetry_") }
             .compactMap(TimelineEntry.init(json:))
             .sorted { $0.occurredAt > $1.occurredAt }
     }

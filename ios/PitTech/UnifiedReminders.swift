@@ -125,10 +125,18 @@ extension PitTechLibrary {
                 if rule["enabled"]?.boolValue == true { rule["enabled"] = .bool(false); rule["status"] = .string("cancelled"); library.reminderRules[index] = .object(rule) }
                 continue
             }
-            guard config["type"]?.stringValue != "probe" else { result.cancellations += allIdentifiers; rule["status"] = .string("waiting"); library.reminderRules[index] = .object(rule); continue }
             var state = reminderState(id) ?? ["id": .string("state:" + id), "ruleId": .string(id), "sequence": .number(0), "status": .string("pending"), "active": .bool(false)]
+            var probeDue: Double?
+            if config["type"]?.stringValue == "probe" {
+                let sample = readings(for: cookId).filter { $0.seriesId == config["seriesId"]?.stringValue && $0.measurementType == config["measurementType"]?.stringValue && $0.measuredAt.timeIntervalSince1970 * 1000 >= (rule["createdAtUtcMillis"]?.numberValue ?? 0) }.max { $0.measuredAt < $1.measuredAt }
+                let probe = library.probes.compactMap(\.objectValue).first { $0["id"]?.stringValue == sample?.probeId }
+                let device = library.devices.compactMap(\.objectValue).first { $0["id"]?.stringValue == sample?.sourceDeviceId }
+                let assigned = rule["dishId"]?.stringValue == nil || probe?["assignedDishId"]?.stringValue == rule["dishId"]?.stringValue
+                let eligible = library.cooks.first(where: { $0.id == cookId })?.status == "active" && sample?.probeId.map(telemetryLiveProbes.contains) == true && device?["role"]?.stringValue == "telemetry" && assigned && probe?["measurementType"]?.stringValue == config["measurementType"]?.stringValue
+                probeDue = NativeProbeReminder.due(config: config, sample: sample, eligible: eligible, now: now, state: &state)
+            }
             if state["deliveredAtUtcMillis"]?.numberValue != nil && state["snoozedUntilUtcMillis"]?.numberValue == nil { rule["status"] = .string("due"); library.reminderRules[index] = .object(rule); continue }
-            guard let due = state["snoozedUntilUtcMillis"]?.numberValue ?? NativeReminderEngine.due(config, dishId: rule["dishId"]?.stringValue, actions: library.actions(for: cookId)) else {
+            guard let due = state["snoozedUntilUtcMillis"]?.numberValue ?? (config["type"]?.stringValue == "probe" ? probeDue : NativeReminderEngine.due(config, dishId: rule["dishId"]?.stringValue, actions: library.actions(for: cookId))) else {
                 rule["status"] = .string("waiting"); state["status"] = .string("waiting"); state["dueAtUtcMillis"] = .null; putOccurrence(state); library.reminderRules[index] = .object(rule); result.cancellations += allIdentifiers; continue
             }
             var occurrence = rows.filter { $0["status"]?.stringValue == "scheduled" }.max { ($0["sequence"]?.numberValue ?? 0) < ($1["sequence"]?.numberValue ?? 0) }

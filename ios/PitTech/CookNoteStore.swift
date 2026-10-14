@@ -109,6 +109,7 @@ import UniformTypeIdentifiers
         try next.validateCookExperience()
         let prior = library; library = next; save()
         if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
+        telemetryOnLog?(draft.cookId)
         try discardDraft(draft.id)
     }
     func deleteNote(_ id: String) throws {
