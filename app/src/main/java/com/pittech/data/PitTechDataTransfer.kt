@@ -329,11 +329,11 @@ class PitTechDataTransfer(
         var expanded = 0L
         val longSink = longFile.outputStream().buffered()
         var longRows = 0; var longBytes = 0L
-        val start = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><sheetData>"
+        val start = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>"
         fun longAppend(value: String) { val bytes = value.toByteArray(Charsets.UTF_8); longBytes += bytes.size; require(longBytes <= MAX_ARCHIVE_ENTRY_BYTES) { "Long values exceed the workbook table limit. Export a cook archive." }; longSink.write(bytes) }
         fun textCell(reference: String, value: String) = "<c r=\"$reference\" t=\"inlineStr\"><is><t xml:space=\"preserve\">${xml(value)}</t></is></c>"
         fun longRow(sheet: String, cell: String, part: Int, value: String) {
-            if (longRows == 0) { longAppend(start); longRows = 1; longAppend("<row r=\"1\">" + listOf("Sheet", "Cell", "Part", "Text").mapIndexed { index, title -> textCell("${columnName(index + 1)}1", title) }.joinToString("") + "</row>") }
+            if (longRows == 0) { longAppend(start + workbookColumns(listOf("Sheet", "Cell", "Part", "Text")) + "<sheetData>"); longRows = 1; longAppend("<row r=\"1\">" + listOf("Sheet", "Cell", "Part", "Text").mapIndexed { index, title -> textCell("${columnName(index + 1)}1", title) }.joinToString("") + "</row>") }
             longRows++; require(longRows <= 1_048_576) { "Long values exceed Excel's row limit. Export a cook archive." }
             longAppend("<row r=\"$longRows\">${textCell("A$longRows", sheet)}${textCell("B$longRows", cell)}<c r=\"C$longRows\"><v>$part</v></c>${textCell("D$longRows", value)}</row>")
         }
@@ -341,8 +341,10 @@ class PitTechDataTransfer(
             sheets.forEachIndexed { sheetIndex, sheet ->
                 zip.putNextEntry(ZipEntry("xl/worksheets/sheet${sheetIndex + 1}.xml")); var entryBytes = 0L
                 fun append(value: String) { val bytes = value.toByteArray(Charsets.UTF_8); entryBytes += bytes.size; expanded += bytes.size; require(entryBytes <= MAX_ARCHIVE_ENTRY_BYTES && expanded <= MAX_ARCHIVE_BYTES) { "This workbook is too large. Export a smaller cook selection." }; zip.write(bytes) }
-                append(start); var rows = 0; var columns = 1
+                var rows = 0; var columns = 1
+                var started = false
                 sheet.rows.forEach { row ->
+                    if (!started) { append(start + workbookColumns(row.map { (it as Cell.Text).value }) + "<sheetData>"); started = true }
                     rows++; require(rows <= 1_048_576) { "This table exceeds Excel's row limit. Export a smaller cook selection." }; columns = maxOf(columns, row.size)
                     append("<row r=\"$rows\">")
                     row.forEachIndexed { index, cell ->
@@ -378,6 +380,17 @@ class PitTechDataTransfer(
             putText(zip, "xl/workbook.xml", workbookXml(names)); putText(zip, "xl/_rels/workbook.xml.rels", workbookRels(names.size))
         } finally { longSink.close(); longFile.delete() }
     }
+
+    private fun workbookColumns(headers: List<String>) = "<cols>" + headers.mapIndexed { index, header ->
+        val title = header.lowercase()
+        val width = when {
+            title.contains("json") || title.contains("notes") || title.contains("details") || title == "text" -> 48
+            title.contains("id") && !title.contains("valid") -> 38
+            title.contains("utc") || title.contains("local") || title.contains("zone") -> 32
+            else -> (header.length + 5).coerceIn(16, 42)
+        }
+        "<col min=\"${index + 1}\" max=\"${index + 1}\" width=\"$width\" customWidth=\"1\"/>"
+    }.joinToString("") + "</cols>"
 
     private fun contentTypes(count: Int) = buildString {
         append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>")

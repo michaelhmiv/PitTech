@@ -43,7 +43,9 @@ class MealRecipeUserFlowsTest {
             val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
             uri to omit
         }
-        compose.activityRule.scenario.onActivity { activity -> activity.onNewIntent(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(prepared.first, "application/zip")) }
+        compose.activityRule.scenario.onActivity { activity ->
+            InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(activity, android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(prepared.first, "application/zip"))
+        }
         waitFor("pack-save-recipes")
         compose.onNodeWithTag("pack-select-${prepared.second}").performScrollTo().performClick()
         compose.onNodeWithTag("pack-save-recipes").assertTextEquals("Save 1 recipe")

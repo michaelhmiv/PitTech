@@ -191,10 +191,20 @@ enum NativeTabularExport {
         while number > 0 { name = String(UnicodeScalar(65 + (number - 1) % 26)!) + name; number = (number - 1) / 26 }
         return name
     }
+    private static func columns(_ headers: [String]) -> String {
+        "<cols>" + headers.enumerated().map { index, header in
+            let title = header.lowercased(), width: Int
+            if title.contains("json") || title.contains("notes") || title.contains("details") || title == "text" { width = 48 }
+            else if title.contains("id") && !title.contains("valid") { width = 38 }
+            else if title.contains("utc") || title.contains("local") || title.contains("zone") { width = 32 }
+            else { width = min(42, max(16, header.count + 5)) }
+            return "<col min=\"\(index + 1)\" max=\"\(index + 1)\" width=\"\(width)\" customWidth=\"1\"/>"
+        }.joined() + "</cols>"
+    }
     private static func writeSheet(_ sheet: NativeTableSheet, to file: URL, longValues: LongValueWriter) throws {
         let sink = try NativeTableSink(file)
         defer { sink.close() }
-        try sink.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"\(namespace)\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><sheetData>")
+        try sink.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"\(namespace)\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>" + columns(sheet.headers) + "<sheetData>")
         var rowIndex = 1
         func append(_ cells: [NativeTableCell]) throws {
             guard rowIndex <= 1_048_576 else { throw NativeTabularExportError.tooManyRows }
@@ -242,7 +252,7 @@ enum NativeTabularExport {
         }
         func store(_ value: String, sheet: String, cell: String) throws {
             if rows == 0 {
-                try sink.append("<worksheet xmlns=\"\(NativeTabularExport.namespace)\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><sheetData>")
+                try sink.append("<worksheet xmlns=\"\(NativeTabularExport.namespace)\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>" + NativeTabularExport.columns(["Sheet", "Cell", "Part", "Text"]) + "<sheetData>")
                 try row(["Sheet", "Cell", "Part", "Text"].map(NativeTableCell.text))
             }
             var part = 1, units = 0, chunk = ""

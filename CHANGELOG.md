@@ -25,6 +25,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 - Connected release documentation to Google Play and Firebase distribution.
 
 ### Fixed
+- Large sharing drafts reopen on Android using bounded SQLite reads, preserving every recorded sample and the existing archive format.
 - Corrected the repository's iOS privacy-policy source to match the currently published iOS behavior.
 
 ## Development baseline — October 12, 2026 (not a tagged release)
