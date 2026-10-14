@@ -24,7 +24,7 @@ class DenseSharingPersistenceTest {
             val cook = repository.startCook(NewCookDraft("Dense guide", dishes = listOf(DishDraft("Pork", "Pork"))))
             val dish = database.cookDao().getDishesForCook(cook).single()
             val snapshot = RecipeExtraction.fromMeal(repository.observeCookDetail(cook).first()!!, dish.id).snapshot
-            val readings = JSONArray((0 until 12000).map { i -> JSONObject().put("id", UUID.randomUUID().toString()).put("probeId", "logical-food")
+            val readings = JSONArray((0 until 20000).map { i -> JSONObject().put("id", UUID.randomUUID().toString()).put("probeId", "logical-food")
                 .put("probeName", "Food 🌶").put("measurementType", "food").put("value", 20.125 + i / 1000.0).put("unit", "°C")
                 .put("measuredAtUtcMillis", 1700000000000L + i * 15000L).put("samplingIntervalMillis", 15000).put("qualityStatus", "valid").put("source", "recorded") })
             val story = JSONObject().put("version", 1).put("attemptId", dish.id).put("anchorUtcMillis", 1700000000000L).put("observations", JSONArray()).put("readings", readings).put("results", JSONArray())
@@ -39,7 +39,7 @@ class DenseSharingPersistenceTest {
             val restored = transfer.previewImport(ByteArrayInputStream(file.toByteArray())); val destination = CookRepository(recipient, PhotoStorage(context))
             destination.importSnapshot(restored.snapshot, restored.attachments)
             val imported = SharingDraftCodec.decode(destination.sharing.get(id)!!.payload)
-            assertEquals(12000, JSONObject(imported.entries.single().storyJson).getJSONArray("readings").length())
+            assertEquals(20000, JSONObject(imported.entries.single().storyJson).getJSONArray("readings").length())
             assertTrue(SharingDraftCodec.sameStory(story.toString(), imported.entries.single().storyJson))
             assertEquals(payload, recipient.companionDao().all().single().payload)
         } finally { database.close(); recipient.close(); context.deleteDatabase(name) }
