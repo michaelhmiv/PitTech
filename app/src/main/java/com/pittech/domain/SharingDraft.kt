@@ -74,6 +74,7 @@ object SharingDraftCodec {
             require(story.getInt("version") == 1 && (story.isNull("attemptId") || story.getString("attemptId").isNotBlank())) { "Invalid recorded cook story." }
             require(story.getJSONArray("readings").length() <= 250000) { "Too many source measurements in one dish." }
             require(!story.isNull("attemptId") || story.getJSONArray("readings").length() == 0) { "Measurements require an actual source attempt." }
+            if (!story.isNull("anchorUtcMillis")) require(story.getDouble("anchorUtcMillis") in 1.0..253402300799999.0) { "Invalid source anchor time." }
             RecipeSnapshotCodec.decode(JSONObject(RecipeSnapshotCodec.encode(e.snapshot)).put("observations", story.optJSONArray("observations") ?: JSONArray())
                 .put("smokingAnchorUtcMillis", story.opt("anchorUtcMillis") ?: JSONObject.NULL).toString())
             val samples = story.getJSONArray("readings")
@@ -81,7 +82,7 @@ object SharingDraftCodec {
             for (i in 0 until samples.length()) {
                 val sample = samples.getJSONObject(i)
                 require(sample.getString("id").isNotBlank() && sample.getString("id").length <= 128 && sample.getString("measurementType").isNotBlank()) { "Invalid source sample identity or role." }
-                require(sample.getDouble("value").isFinite() && sample.getString("unit") in setOf("°F", "°C") && sample.getLong("measuredAtUtcMillis") > 0) { "Invalid source measurement." }
+                require(sample.getDouble("value").isFinite() && sample.getString("unit") in setOf("°F", "°C") && sample.getDouble("measuredAtUtcMillis") in 1.0..253402300799999.0) { "Invalid source measurement." }
                 require(sample.getString("source") in setOf("manual", "recorded") && sample.getString("probeName").length <= 200) { "Invalid source channel." }
                 require(!sample.has("sourceDeviceId") && !sample.has("deviceId") && !sample.has("credentials")) { "Private device fields cannot enter a cook story." }
             }

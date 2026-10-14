@@ -34,7 +34,7 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
             for sample in readings {
                 guard let row = sample.objectValue, row["value"]?.numberValue?.isFinite == true,
                       row["id"]?.stringValue.map({ !$0.isEmpty && $0.count <= 128 }) == true, row["measurementType"]?.stringValue?.isEmpty == false,
-                      ["°F", "°C"].contains(row["unit"]?.stringValue ?? ""), (row["measuredAtUtcMillis"]?.numberValue ?? 0) > 0,
+                      ["°F", "°C"].contains(row["unit"]?.stringValue ?? ""), (1...253402300799999).contains(row["measuredAtUtcMillis"]?.numberValue ?? 0),
                       ["manual", "recorded"].contains(row["source"]?.stringValue ?? ""), (row["probeName"]?.stringValue?.count ?? 201) <= 200,
                       row["sourceDeviceId"] == nil, row["deviceId"] == nil, row["credentials"] == nil else { throw PitTechArchiveError.invalidArchive }
             }
@@ -42,7 +42,11 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
             guard gaps.count <= 10000, gaps.allSatisfy({ $0.numberValue.map { $0.isFinite && $0 > 0 } == true }) else { throw PitTechArchiveError.invalidArchive }
             var facts = try entry.snapshot
             facts.observations = story["observations"]?.arrayValue ?? []
-            facts.smokingAnchorUtcMillis = story["anchorUtcMillis"]?.numberValue.map(Int64.init)
+            if let anchor = story["anchorUtcMillis"]?.numberValue {
+                guard (1...253402300799999).contains(anchor), let integer = Int64(exactly: anchor.rounded(.towardZero)) else { throw PitTechArchiveError.invalidArchive }
+                facts.smokingAnchorUtcMillis = integer
+            } else { facts.smokingAnchorUtcMillis = nil }
+            guard facts.observations.allSatisfy({ (1...253402300799999).contains($0.objectValue?["occurredAtUtcMillis"]?.numberValue ?? 0) }) else { throw PitTechArchiveError.invalidArchive }
             try facts.validate()
         }
         if let heroPhotoId, !entries.contains(where: { $0.included && $0.photoIds.contains(heroPhotoId) }) { throw PitTechArchiveError.invalidArchive }

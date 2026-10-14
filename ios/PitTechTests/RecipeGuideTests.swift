@@ -64,5 +64,8 @@ import XCTest
         XCTAssertEqual(corrected.originalTimes, projected.originalTimes)
         XCTAssertTrue(RecipeGuideProjection.aligned(guide, dishId: "current-dish", name: "Pork", anchor: nil).readings.isEmpty)
         XCTAssertNotEqual(RecipeGuideProjection.role("setpoint"), RecipeGuideProjection.role("pit"))
+        var invalidStory = try XCTUnwrap(story.objectValue);invalidStory["anchorUtcMillis"] = .number(1e100)
+        let invalid = NativeSharingEntry(snapshotJson:try recipeJSON(snapshot),story:.object(invalidStory))
+        XCTAssertThrowsError(try NativeSharingDocument(title:"Overflow",entries:[invalid]).validate())
     }
 }

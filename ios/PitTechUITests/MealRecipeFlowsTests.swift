@@ -1,6 +1,7 @@
 import XCTest
 
 final class MealRecipeFlowsTests: XCTestCase {
+    override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<12 {
             if element.waitForExistence(timeout: 1) && element.isHittable {

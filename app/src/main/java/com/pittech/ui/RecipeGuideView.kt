@@ -54,7 +54,7 @@ internal fun guideState(records: List<CompanionRecord>) = records.firstOrNull { 
                     val eligible = data.readings.filter { RecipeGuideProjection.role(it.measurementType) == role && (it.dishId == dish.id || it.dishId == null && role != "food") }.distinctBy(TemperaturePlot::identity)
                     val labels = listOf("Separate reference channel") + eligible.map { "${it.probeName} · ${it.measurementType} · ${(it.probeId ?: it.id).takeLast(6)}" }
                     val chosen = eligible.indexOfFirst { TemperaturePlot.identity(it) == state.channels[key] }
-                    ChoiceField("Author · ${row.getString("probeName")} · $role", labels[chosen + 1], labels) { label ->
+                    ChoiceField("Author · ${row.getString("probeName")} · $role · ${(if (row.isNull("probeId")) row.getString("id") else row.getString("probeId")).takeLast(6)}", labels[chosen + 1], labels) { label ->
                         val mapped = labels.indexOf(label) - 1
                         save(state.copy(channels = if (mapped < 0) state.channels - key else state.channels + (key to TemperaturePlot.identity(eligible[mapped]))))
                     }
