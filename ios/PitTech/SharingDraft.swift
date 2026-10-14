@@ -80,6 +80,7 @@ extension PitTechLibrary {
                 let samples = library.readings.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && ($0["dishId"]?.stringValue == dish.id || $0["dishId"]?.stringValue == nil && ["pit", "pit_ambient", "setpoint", "grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature"].contains($0["measurementType"]?.stringValue ?? "")) }
                 let rows = samples.map { source -> JSONValue in
                     var row = source.filter { ["id", "probeId", "probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "samplingIntervalMillis", "qualityStatus"].contains($0.key) }
+                    if let unit = row["unit"]?.stringValue, ["F", "C"].contains(unit) { row["unit"] = .string("°" + unit) }
                     row["samplingIntervalMillis"] = row["samplingIntervalMillis"] ?? .number(15000); row["qualityStatus"] = row["qualityStatus"] ?? .string("valid")
                     row["source"] = .string(source["source"]?.stringValue == "manual" ? "manual" : "recorded")
                     return .object(row)
