@@ -26,7 +26,9 @@ final class MealRecipeFlowsTests: XCTestCase {
             if large { XCTAssertGreaterThan(app.staticTexts["Choose what to save"].frame.height, 40, "Exercise the sheet at the requested accessibility text size.") }
             let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
             XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
-            let first = choices.firstMatch; reveal(first, app: app); first.tap()
+            let first = choices.firstMatch; reveal(first, app: app)
+            first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            XCTAssertTrue(NSPredicate(format: "value == %@", "0").evaluate(with: first) || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: first)], timeout: 5) == .completed)
             let save = app.buttons["pack-save-recipes"]; reveal(save, app: app)
             XCTAssertEqual(save.label, "Save 1 recipe")
             capture(large ? "Native Cook Pack selective preview large text" : "Native Cook Pack selective preview")

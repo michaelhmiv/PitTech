@@ -24,8 +24,8 @@ struct NativeArchiveImportView: View {
                         Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")").frame(maxWidth: .infinity, minHeight: 44) }
                             .buttonStyle(.borderedProminent).disabled(selected.isEmpty || saving).accessibilityIdentifier("pack-save-recipes")
                         if source.preview.cookPack?.objectValue?["kind"]?.stringValue == "cook" {
-                            Button("Add recorded meal to history") { saveHistory() }.buttonStyle(.bordered).frame(minHeight: 44).disabled(saving).accessibilityIdentifier("pack-add-history")
                             Text("Add all \(source.preview.dishes) recorded dishes in this file. Recipe selections above apply when saving recipes.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                            Button("Add recorded meal to history") { saveHistory() }.buttonStyle(.bordered).frame(minHeight: 44).disabled(saving).accessibilityIdentifier("pack-add-history")
                         }
                         Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.").font(.caption).foregroundStyle(PitTechStyle.supporting)
                     } else {
@@ -67,9 +67,27 @@ struct NativeArchiveImportView: View {
 }
 
 private struct NativeArchiveRecipeCard: View {
+    @Environment(\.dynamicTypeSize) private var textSize
     let recipe: NativeArchiveRecipePreview
     @Binding var selected: Bool
     var body: some View {
+        Group {
+        if textSize >= .xxxLarge {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    if let data = recipe.thumbnail, let image = UIImage(data: data) {
+                        Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10)).accessibilityHidden(true)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(recipe.title).font(.headline)
+                        if !recipe.detail.isEmpty { Text(recipe.detail).font(.subheadline).foregroundStyle(PitTechStyle.supporting) }
+                    }.fixedSize(horizontal: false, vertical: true)
+                }
+                if !recipe.description.isEmpty { Text(recipe.description).font(.subheadline) }
+                if recipe.hasGuide { Label("Recorded cook guide included", systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(PitTechStyle.sage) }
+                Toggle("Save recipe", isOn: $selected).frame(minHeight: 44).accessibilityIdentifier("pack-select-" + recipe.id)
+            }
+        } else {
         Toggle(isOn: $selected) {
             HStack(alignment: .top, spacing: 12) {
                 if let data = recipe.thumbnail, let image = UIImage(data: data) {
@@ -82,6 +100,8 @@ private struct NativeArchiveRecipeCard: View {
                     if recipe.hasGuide { Label("Recorded cook guide included", systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(PitTechStyle.sage) }
                 }.fixedSize(horizontal: false, vertical: true)
             }
-        }.tint(PitTechStyle.sage).padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("pack-select-" + recipe.id)
+        }.accessibilityIdentifier("pack-select-" + recipe.id)
+        }
+        }.tint(PitTechStyle.sage).padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
     }
 }
