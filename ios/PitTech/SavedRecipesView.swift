@@ -82,11 +82,14 @@ struct SavedRecipesView: View {
                                 } label: {
                                     Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.circle.fill" : "circle")
                                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                        .padding(.horizontal, 12)
+                                        .background((selected.contains(revision) ? PitTechStyle.sage : PitTechStyle.border).opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
                                         .contentShape(Rectangle())
-                                }.buttonStyle(.bordered).tint(selected.contains(revision) ? PitTechStyle.sage : PitTechStyle.supporting).disabled(archived)
-                                    .accessibilityElement(children: .ignore)
+                                }.buttonStyle(.plain).foregroundStyle(selected.contains(revision) ? PitTechStyle.sage : PitTechStyle.ink).disabled(archived)
                                     .accessibilityLabel("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal")
                                     .accessibilityValue(selected.contains(revision) ? "Selected" : "Not selected")
+                                    .accessibilityAddTraits(selected.contains(revision) ? .isSelected : [])
+                                    .accessibilityHint(selected.contains(revision) ? "Tap to remove this recipe from the meal" : "Tap to add this recipe to the meal")
                                     .accessibilityIdentifier("recipe-select-" + id)
                             }
                             Spacer(minLength: 0)
