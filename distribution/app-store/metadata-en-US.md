@@ -1,6 +1,6 @@
 # PitTech App Store metadata (English U.S.)
 
-Prepared from the current iOS source on October 12, 2026. This copy does not claim Android-only controller features.
+Prepared from the current iOS source on October 12, 2026. This copy distinguishes the current iOS optional read-only beta telemetry connectors from Android-only controller features.
 
 | Field | Draft | Limit |
 |---|---|---:|
@@ -28,11 +28,11 @@ PitTech is an offline-first cook journal for planning, logging, and learning fro
 
 Your cook library stays in PitTech's local app storage. No account is required. Core cook logging works offline. Network access is used for Google's consent and advertising services when available.
 
-The iOS app does not connect to grill controllers or monitor them in the background. Enter temperatures yourself; PitTech does not automatically read or control a grill.
+Optional beta, read-only temperature connections are available for supported Combustion thermometers, Home Assistant, FireBoard, Flame Boss, and MEATER services. Connections require compatible hardware/accounts and user setup; coverage varies. Automatic monitoring may pause when iOS backgrounds the app. PitTech does not control grill setpoints, ignition, or equipment configuration.
 
 ## App Review notes
 
-No account or sign-in is required. Cook logging, saved recipes, and charts are available offline. Temperature readings are entered manually; this iOS app does not use Bluetooth or connect to grill controllers. Photos can be selected with Apple's system photo picker or taken with the camera. Reminders are local notifications scheduled on this device after permission is granted. Google's User Messaging Platform refreshes consent information, and Google Mobile Ads may request ads when consent allows. The app does not send cook records or readings to PitTech servers.
+No account or sign-in is required. Cook logging, saved recipes, and charts are available offline. Temperature readings can be entered manually or received from optional beta read-only connections to compatible equipment and services, including Bluetooth thermometers and user-authorized vendor clouds. These integrations are not required for core offline logging. Photos can be selected with Apple's system photo picker or taken with the camera. Reminders are local notifications scheduled on this device after permission is granted. Google's User Messaging Platform refreshes consent information, and Google Mobile Ads may request ads when consent allows. The app does not send cook records or readings to PitTech servers.
 
 ## Listing and review follow-up
 
