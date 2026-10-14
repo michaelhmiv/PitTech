@@ -11,6 +11,7 @@ struct ScreenshotTextSize: ViewModifier {
     func prepareUIFlowFixture() {
         guard CommandLine.arguments.contains("--ui-test-reset") else { return }
         library = PitTechLibrary(); noteDrafts = []
+        if CommandLine.arguments.contains("--ui-test-pack") { prepareIncomingPackFixture(); return }
         if !CommandLine.arguments.contains("--ui-test-empty") {
             for (name, category) in [("Chicken", "Poultry"), ("Mac and cheese", "Pasta"), ("Pork", "Pork")] {
                 startCook(title: "Previous " + name, firstDish: name)
@@ -28,6 +29,36 @@ struct ScreenshotTextSize: ViewModifier {
             }
         }
         save()
+    }
+    private func prepareIncomingPackFixture() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        Task { @MainActor in
+            defer { try? FileManager.default.removeItem(at: folder) }
+            do {
+                let source = CookStore(directory: folder)
+                source.startCook(title: "Pork and potatoes", firstDish: "Pork")
+                let cook = source.activeCooks[0].id; source.addDish(cookId: cook, name: "Potatoes")
+                for dish in source.dishRecords(cook) {
+                    let image = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 60)).image { context in
+                        (dish.name == "Pork" ? UIColor.brown : UIColor.systemYellow).setFill(); context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+                    }
+                    let photo = try source.stagePhoto(image.jpegData(compressionQuality: 0.8)!)
+                    try source.saveNote(CookNoteDraft(cookId: cook, dishId: dish.id, title: "Recorded result", photos: [photo]))
+                }
+                source.finishCook(cook)
+                let id = try source.createSharingDraft(cookId: cook, dishIds: Set(source.dishRecords(cook).map(\.id)))
+                var document = try source.sharingDocument(id)
+                for index in document.entries.indices {
+                    document.entries[index].includeStory = true
+                    document.entries[index].photoIds = source.sharingPhotos(id).filter { $0["action"]?.stringValue == document.entries[index].id }.compactMap { $0["id"]?.stringValue }
+                }
+                try source.saveSharingDraft(id, document: document, expectedUpdated: source.sharingRecord(id)!["updated"]!.numberValue!)
+                let file = folder.appendingPathComponent("preview.pittech")
+                let data = try await source.exportCookPackAsync(id)
+                try data.write(to: file)
+                await receiveArchive(at: file)
+            } catch { assertionFailure("Cook Pack UI fixture failed: " + error.localizedDescription) }
+        }
     }
 }
 #else

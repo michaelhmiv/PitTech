@@ -80,16 +80,22 @@ class CrossPlatformArchiveTest {
             val latest = repo.sharing.get(sharingId)!!; val selected = SharingDraftCodec.decode(latest.payload)
             repo.sharing.save(sharingId, selected.copy(entries = selected.entries.map { it.copy(included = true) }), latest.updatedAtUtcMillis)
             val all = ByteArrayOutputStream(); transfer.writeCookPack(all, sharingId)
+            repoDaoSetFixtureNotes(db, meal.id)
+            val workbook = ByteArrayOutputStream(); transfer.writeWorkbook(workbook)
+            val csv = ByteArrayOutputStream(); transfer.writeCsv(csv)
             File(context.filesDir, "pittech-portable/android-meal-v9.zip").apply {
                 parentFile!!.mkdirs()
                 ZipOutputStream(outputStream().buffered()).use { zip ->
                     ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { original ->
                         while (true) { val entry = original.nextEntry ?: break; zip.putNextEntry(ZipEntry(entry.name)); original.copyTo(zip); zip.closeEntry() }
                     }
-                    for ((name, data) in listOf("fixtures/recipe.pittech" to one.toByteArray(), "fixtures/collection.pittech" to all.toByteArray())) { zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry() }
+                    for ((name, data) in listOf("fixtures/recipe.pittech" to one.toByteArray(), "fixtures/collection.pittech" to all.toByteArray(), "fixtures/portable.xlsx" to workbook.toByteArray(), "fixtures/readings.csv" to csv.toByteArray())) { zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry() }
                 }
             }
             cameraFile.delete()
         } finally { db.close() }
+    }
+    private suspend fun repoDaoSetFixtureNotes(db: PitTechDatabase, id: String) {
+        db.cookDao().updateCook(db.cookDao().getCook(id)!!.copy(notes = "🌶".repeat(17000)))
     }
 }

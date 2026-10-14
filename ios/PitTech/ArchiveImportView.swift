@@ -29,7 +29,7 @@ struct NativeArchiveImportView: View {
                         Text("\(source.preview.cooks) meals · \(source.preview.dishes) dishes · \(source.preview.recipes) recipes · \(source.preview.readings) readings").foregroundStyle(PitTechStyle.supporting)
                         Text("Existing meal IDs are skipped. Restored monitoring and reminders remain inactive.")
                         Button("Restore backup") {
-                            do { let result = try store.importArchive(at: source.url); store.archiveMessage = "Restored \(result.imported) meals; skipped \(result.skipped) duplicates."; dismiss() }
+                            do { let result = try store.importArchive(at: source.url); store.archiveCompletionMessage = "Restored \(result.imported) meals; skipped \(result.skipped) duplicates."; dismiss() }
                             catch { self.error = error.localizedDescription }
                         }.buttonStyle(.borderedProminent).frame(minHeight: 44).accessibilityIdentifier("archive-restore")
                     }

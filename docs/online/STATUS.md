@@ -7,9 +7,9 @@ remain separate. No online phase is released until its complete parity gate pass
 | PR | Deliverable | State | Evidence |
 |---|---|---|---|
 | 00 | Design, parity, contracts, CI requirements | Draft PR #92 | Three schemas validated; concept states rendered/inspected; backend workflow write path remains open |
-| 01 | Native refresh and core parity | Draft PR #93 | Toolbar navigation/height fix pushed at `43270a0`; exact-head native runs pending; deeper free Insights/provider port remain open |
-| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | Reuses existing result/companion storage; archive v10, Room remains v10; source isolation, owned-photo restore/reimport and stale-draft tests added; native CI/review pending |
-| 03 | Cook Packs and exports | Draft PR #97 | Native file export, photo preview and selective recipe import added; partial→whole/repeated import tests own reference media independently. Initial Android gate and iOS archive-boundary tests passed; updated exact-head CI, scoped recorded-history import, workbook/CSV parity and actual writer fixture exchange remain open |
+| 01 | Native refresh and core parity | Draft PR #93 | All configured checks passed at `d9389c9`; iOS run 38592169385 and Android run 38592169411. Native composition/finish and large-text screenshots inspected. Deeper free Insights/provider port remain open |
+| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | All configured checks passed at `c622884`; iOS run 38592179176 and Android run 38592179181. Source isolation, owned-photo restore/reimport and stale edits pass; native source-unit normalization regression is being added. Archive v10, Room v10 |
+| 03 | Cook Packs and exports | Draft PR #97 | Partial→whole/repeated import and archive-boundary tests pass on iOS; image fixture corrected to explicit pixels. Native preview-flow tests and bounded CSV/workbooks added, including lossless long-text chunks and probe-channel summaries. Updated exact-head CI, scoped recorded-history import and actual writer fixture exchange remain open |
 | 04 | Shared guide presentation | Pending | |
 | 05 | Native share cards | Pending | |
 | 06 | API/relay | Pending | |

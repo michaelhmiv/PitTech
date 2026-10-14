@@ -33,7 +33,9 @@ struct ContentView: View {
             if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
         } }
         .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
-        .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })) { source in NativeArchiveImportView(source: source) }
+        .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
+            store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil
+        }) { source in NativeArchiveImportView(source: source) }
         .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
             Button("OK", role: .cancel) { store.archiveMessage = nil }
         } message: { Text(store.archiveMessage ?? "") }
@@ -288,6 +290,7 @@ struct SettingsView: View {
                         }
                     }
                     Button("Restore cook archive") { showingImport = true }
+                    NativeDataExportButtons()
                     NavigationLink("Third-party telemetry notices") {
                         ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
                     }

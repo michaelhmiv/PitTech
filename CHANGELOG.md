@@ -8,6 +8,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ### Added
 - Share selected recipes or meal collections as Cook Pack files, and preview individual recipes before saving them on Android and iOS. Packs own their guide data and location-free photos. iOS full-backup restore uses bounded disk staging and the shared Android size limits.
+- Readings CSV and Excel workbooks are available on iOS. Both platforms write bounded worksheet files, preserve long text in a Long Values sheet and keep distinct probe channels separate in summaries.
 - Optional dish ratings and cook-again choices, independently editable sharing drafts and saved meal collections on Android and iOS. Drafts own their reference photos and leave the original meal unchanged.
 - Meals with independent dishes, editable saved recipe revisions and combinations drawn from different previous meals (Android and iOS).
 - Flexible preparation notes, ingredients and persistent task timers, with separate previous-cook references.

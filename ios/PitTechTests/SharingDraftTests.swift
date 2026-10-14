@@ -53,6 +53,21 @@ import UIKit
         XCTAssertThrowsError(try relaunched.saveSharingDraft(id, document: stale, expectedUpdated: 0))
         XCTAssertEqual(try relaunched.sharingDocument(id), draft)
     }
+    func testStoryKeepsCelsiusAndFahrenheitValuesWithoutChangingNativeSourceUnits() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); store.startCook(title: "Pork", firstDish: "Pork")
+        let cook = store.activeCooks[0].id, dish = store.dishRecords(cook)[0].id
+        try store.saveNote(CookNoteDraft(cookId: cook, dishId: dish, title: "Manual samples", temperatures: [
+            NoteTemperatureDraft(probeName: "Celsius", valueText: "0", unit: "°C", dishId: dish),
+            NoteTemperatureDraft(probeName: "Fahrenheit", valueText: "32.125", unit: "°F", dishId: dish)]))
+        let original = store.library.readings
+        let id = try store.createSharingDraft(cookId: cook, dishIds: [dish])
+        let readings = try XCTUnwrap(store.sharingDocument(id).entries[0].story.objectValue?["readings"]?.arrayValue)
+        XCTAssertEqual(readings.compactMap { $0.objectValue?["unit"]?.stringValue }, ["°C", "°F"])
+        XCTAssertEqual(readings.compactMap { $0.objectValue?["value"]?.numberValue }, [0, 32.125])
+        XCTAssertEqual(store.library.readings, original)
+    }
     func testUnknownVerdictAndOldArchivesRemainUnset() throws {
         let old = try JSONDecoder().decode(PitTechLibrary.self, from: Data("{\"schemaVersion\":9}".utf8))
         XCTAssertTrue(old.results.isEmpty); XCTAssertTrue(old.companionRecords.isEmpty)

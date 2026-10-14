@@ -17,6 +17,26 @@ final class MealRecipeFlowsTests: XCTestCase {
         XCTAssertTrue(element.exists && element.isHittable)
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testCookPackPreviewSavesOneRecipeWithoutImportingHistoryAtStandardAndLargeText() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-pack"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch()
+            XCTAssertTrue(app.navigationBars["Cook Pack"].waitForExistence(timeout: 20))
+            let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
+            XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
+            let first = choices.firstMatch; reveal(first, app: app); first.tap()
+            let save = app.buttons["pack-save-recipes"]; reveal(save, app: app)
+            XCTAssertEqual(save.label, "Save 1 recipe")
+            capture(large ? "Native Cook Pack selective preview large text" : "Native Cook Pack selective preview")
+            save.tap()
+            XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20)); app.alerts.buttons["OK"].tap()
+            app.tabBars.buttons["Recipes"].tap()
+            XCTAssertFalse(app.staticTexts["Sharing drafts"].exists)
+            capture(large ? "Native Cook Pack saved recipe large text" : "Native Cook Pack saved recipe")
+            app.terminate()
+        }
+    }
     func testBetaConnectionOnboardingRejectsInsecureServersAtStandardAndLargeText() {
         for large in [false, true] {
             let app = XCUIApplication()

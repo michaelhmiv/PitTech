@@ -14,6 +14,7 @@ final class CookStore {
     var notificationCookId: String?
     var archiveIntake: NativeArchiveIntake?
     var archiveMessage: String?
+    var archiveCompletionMessage: String?
     @ObservationIgnored var archiveIntakeRequest: String?
     var telemetryLiveDevices: Set<String> = []
     var telemetryLiveProbes: Set<String> = []
@@ -206,6 +207,14 @@ final class CookStore {
         try archive.addEntry(with: "data/pittech.json", type: .file, uncompressedSize: Int64(jsonData.count), provider: { position, size in
             jsonData.subdata(in: Int(position)..<(Int(position) + size))
         })
+        if pack == nil {
+            let tables = FileManager.default.temporaryDirectory.appendingPathComponent("PitTech-csv-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: tables) }
+            try NativeTabularExport.writeCSVTables(portable, directory: tables)
+            for definition in NativeExportTables.csv {
+                try archive.addEntry(with: "csv/" + definition.name, fileURL: tables.appendingPathComponent(definition.name), compressionMethod: .deflate)
+            }
+        }
         for row in portable.photos + portable.companionPhotos + portable.recipeAssets {
             guard let object = row.objectValue,
                   let path = object["archivePath"]?.stringValue,

@@ -28,6 +28,33 @@ class MealRecipeUserFlowsTest {
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
     }
     private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    @Test fun cookPackPreviewLetsGuestSaveOnlyOneRecipeAndKeepsHistorySeparate() {
+        val prepared = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val cook = app.cookRepository.startCook(NewCookDraft("Pork and potatoes", dishes = listOf(DishDraft("Pork", "Pork"), DishDraft("Potatoes", "Vegetables"))))
+            val dishes = app.database.cookDao().getDishesForCook(cook)
+            app.cookRepository.completeCook(cook)
+            val id = app.cookRepository.sharing.fromMeal(cook, dishes.map { it.id }.toSet())
+            val file = File(app.cacheDir, "exports/ui-selection.pittech").apply { parentFile!!.mkdirs() }
+            file.outputStream().use { app.dataTransfer.writeCookPack(it, id) }
+            val preview = file.inputStream().use(app.dataTransfer::previewCookPack)
+            val omit = preview.snapshot.recipes.first { it.name == "Potatoes" }.currentRevisionId
+            app.database.clearAllTables()
+            val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+            uri to omit
+        }
+        compose.activityRule.scenario.onActivity { activity -> activity.onNewIntent(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(prepared.first, "application/zip")) }
+        waitFor("pack-save-recipes")
+        compose.onNodeWithTag("pack-select-${prepared.second}").performScrollTo().performClick()
+        compose.onNodeWithTag("pack-save-recipes").assertTextEquals("Save 1 recipe")
+        shot("cook-pack-selective-preview")
+        compose.onNodeWithTag("pack-save-recipes").performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().size == 1 } }
+        assertEquals("Pork", runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().single().name })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().isEmpty() })
+        compose.onNodeWithTag("nav-recipes").performClick(); shot("cook-pack-saved-recipe")
+    }
     @Test fun combineAdjustEnableHistoricalCheckAndSaveOnlyOneDishAfterPausedFinish() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         if (Build.VERSION.SDK_INT >= 33) instrumentation.uiAutomation.grantRuntimePermission(app.packageName, Manifest.permission.POST_NOTIFICATIONS)

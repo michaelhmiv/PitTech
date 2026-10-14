@@ -84,6 +84,6 @@ enum NativeArchiveIntakeReader {
         let data = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
         try Task.checkCancellation()
         _ = try importArchive(data)
-        archiveMessage = "Saved \(selected.count) \(selected.count == 1 ? "recipe" : "recipes"). Find them in Recipes."
+        archiveCompletionMessage = "Saved \(selected.count) \(selected.count == 1 ? "recipe" : "recipes"). Find them in Recipes."
     }
 }

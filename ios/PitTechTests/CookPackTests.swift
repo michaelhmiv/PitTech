@@ -7,7 +7,8 @@ import UniformTypeIdentifiers
 
 @MainActor final class CookPackTests: XCTestCase {
     private func locatedPhoto() throws -> Data {
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 4)).image { UIColor.orange.setFill(); $0.fill(CGRect(x: 0, y: 0, width: 8, height: 4)) }
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 4), format: format).image { UIColor.orange.setFill(); $0.fill(CGRect(x: 0, y: 0, width: 8, height: 4)) }
         let data = NSMutableData()
         let target = try XCTUnwrap(CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil))
         CGImageDestinationAddImage(target, try XCTUnwrap(image.cgImage), [kCGImagePropertyOrientation: 6, kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 32.0, kCGImagePropertyGPSLatitudeRef: "N", kCGImagePropertyGPSLongitude: 80.0, kCGImagePropertyGPSLongitudeRef: "W"]] as CFDictionary)

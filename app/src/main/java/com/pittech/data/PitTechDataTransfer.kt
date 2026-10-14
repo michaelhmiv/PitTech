@@ -61,7 +61,12 @@ class PitTechDataTransfer(
     suspend fun writeWorkbook(output: OutputStream, cookId: String? = null) {
         val snapshot = repository.exportSnapshot(cookId)
         val sheets = workbookSheets(snapshot)
-        ZipOutputStream(output.buffered()).use { zip -> writeWorkbookZip(zip, sheets) }
+        val file = File.createTempFile("pittech_workbook_", ".xlsx", context.cacheDir)
+        try {
+            ZipOutputStream(file.outputStream().buffered()).use { zip -> writeWorkbookZip(zip, sheets) }
+            require(file.length() <= MAX_ARCHIVE_COMPRESSED_BYTES) { "This workbook is too large. Export a smaller cook selection." }
+            file.inputStream().use { it.copyTo(output) }
+        } finally { file.delete() }
     }
 
     suspend fun writeCookPack(output: OutputStream, documentId: String) {
@@ -282,86 +287,109 @@ class PitTechDataTransfer(
     }
 
     private fun workbookSheets(s: ExportSnapshot): List<Sheet> {
-        fun rows(header: List<Cell>, values: List<List<Cell>>) = listOf(header) + values
+        fun rows(header: List<Cell>, values: Sequence<List<Cell>>) = sequenceOf(header) + values
         fun text(value: Any?) = Cell.Text(value?.toString().orEmpty())
         fun num(value: Number?) = value?.let { Cell.Number(it.toString()) } ?: Cell.Text("")
         val summaryHeader = listOf("Cook ID", "Cook", "Status", "Started UTC", "Started local time", "Time zone", "Finished UTC", "Finished local time", "Duration minutes", "Smoker", "Fuel", "Wood or pellet blend", "Outdoor temperature", "Outdoor unit", "Weather", "Wind", "Dishes", "Overall rating", "Notes")
-        val summary = s.cooks.map { cook ->
+        val summary = s.cooks.asSequence().map { cook ->
             val duration = cook.endedAtUtcMillis?.let { (it - cook.startedAtUtcMillis).coerceAtLeast(0) / 60_000.0 }
             listOf(text(cook.id),text(cook.title),text(cook.status),text(utc(cook.startedAtUtcMillis)),text(local(cook.startedAtUtcMillis,cook.startedTimeZoneId)),text(cook.startedTimeZoneId),text(utc(cook.endedAtUtcMillis)),text(local(cook.endedAtUtcMillis,cook.startedTimeZoneId)),num(duration),text(cook.smokerName),text(cook.fuelType),text(cook.woodOrPelletBlend),num(cook.outdoorTemperatureValue),text(cook.outdoorTemperatureUnit),text(cook.weatherNotes),text(cook.windNotes),text(s.dishes.filter { it.cookId == cook.id }.joinToString { it.name }),num(s.results.firstOrNull { it.cookId == cook.id && it.resultType == "overall_rating" }?.numericValue),text(cook.notes))
         }
-        val readings = s.readings.sortedBy { it.measuredAtUtcMillis }.map { r -> listOf(text(r.id),text(r.cookId),text(r.dishId),text(r.probeName),text(r.measurementType),num(r.value),text(r.unit),text(utc(r.measuredAtUtcMillis)),text(local(r.measuredAtUtcMillis,r.timeZoneId)),text(r.timeZoneId),text(r.source),text(r.qualityStatus),text(r.timestampBasis),num(r.samplingIntervalMillis)) }
-        val derived = s.readings.filter { it.qualityStatus == "valid" }.groupBy { Triple(it.cookId, it.probeName, it.unit) }.flatMap { (key, values) ->
+        val readings = s.readings.sortedBy { it.measuredAtUtcMillis }.asSequence().map { r -> listOf(text(r.id),text(r.cookId),text(r.dishId),text(r.probeName),text(r.measurementType),num(r.value),text(r.unit),text(utc(r.measuredAtUtcMillis)),text(local(r.measuredAtUtcMillis,r.timeZoneId)),text(r.timeZoneId),text(r.source),text(r.qualityStatus),text(r.timestampBasis),num(r.samplingIntervalMillis)) }
+        val derived = s.readings.filter { it.qualityStatus == "valid" }.groupBy { listOf(it.cookId, it.probeName, it.unit, it.probeId.orEmpty(), it.dishId.orEmpty(), it.measurementType) }.flatMap { (key, values) ->
             val sorted = values.sortedBy { it.measuredAtUtcMillis }
             listOf("reading_count" to values.size.toDouble(), "minimum" to values.minOf { it.value }, "maximum" to values.maxOf { it.value }, "last" to sorted.last().value).map { (metric, value) ->
-                listOf(text(key.first),text(key.second),text(metric),num(value),text(key.third),text("Valid recorded values; no interpolation"),text(utc(sorted.first().measuredAtUtcMillis)),text(utc(sorted.last().measuredAtUtcMillis)),text("PitTech summary v1"))
+                listOf(text(key[0]),text(key[1]),text(metric),num(value),text(key[2]),text("Valid recorded values; no interpolation"),text(utc(sorted.first().measuredAtUtcMillis)),text(utc(sorted.last().measuredAtUtcMillis)),text("PitTech summary v2"),text(key[3]),text(key[4]),text(key[5]))
             }
         }
         return listOf(
-            Sheet("Log Reading Links", rows(listOf("Event ID", "Reading ID").map(::text), s.logReadingLinks.map { listOf(text(it.eventId), text(it.readingId)) })),
-            Sheet("Lifecycle", rows(listOf("Cook ID", "Timing mode").map(::text), s.lifecycles.map { listOf(text(it.cookId), text(it.timingMode)) })),
-            Sheet("Target History", rows(listOf("ID", "Cook ID", "Dish ID", "Type", "Value", "Unit", "Effective UTC").map(::text), s.targetHistory.map { listOf(text(it.id), text(it.cookId), text(it.dishId), text(it.targetType), num(it.value), text(it.unit), text(utc(it.effectiveAt))) })),
+            Sheet("Log Reading Links", rows(listOf("Event ID", "Reading ID").map(::text), s.logReadingLinks.asSequence().map { listOf(text(it.eventId), text(it.readingId)) })),
+            Sheet("Lifecycle", rows(listOf("Cook ID", "Timing mode").map(::text), s.lifecycles.asSequence().map { listOf(text(it.cookId), text(it.timingMode)) })),
+            Sheet("Target History", rows(listOf("ID", "Cook ID", "Dish ID", "Type", "Value", "Unit", "Effective UTC").map(::text), s.targetHistory.asSequence().map { listOf(text(it.id), text(it.cookId), text(it.dishId), text(it.targetType), num(it.value), text(it.unit), text(utc(it.effectiveAt))) })),
             Sheet("Cook Summary", rows(summaryHeader.map(::text), summary)),
-            Sheet("Dishes", rows(listOf("Dish ID","Cook ID","Name","Food type","Cut","Weight","Weight unit","Pieces","Starting condition","Bone in","Placement","Grade or source","Thickness notes","Prep notes").map(::text), s.dishes.map { listOf(text(it.id),text(it.cookId),text(it.name),text(it.foodType),text(it.cut),num(it.weightValue),text(it.weightUnit),num(it.pieceCount),text(it.startingCondition),text(it.boneIn),text(it.placement),text(it.gradeOrSource),text(it.thicknessNotes),text(it.prepNotes)) })),
-            Sheet("Ingredients", rows(listOf("Ingredient use ID","Cook ID","Dish ID","Stage","Name","Brand","Amount","Unit","Applied UTC","Notes").map(::text), s.ingredients.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.stage),text(it.name),text(it.brand),num(it.amountValue),text(it.amountUnit),text(utc(it.appliedAtUtcMillis)),text(it.notes)) })),
-            Sheet("Timeline", rows(listOf("Event ID","Cook ID","Dish ID","Type","Title","Details","Occurred UTC","Recorded UTC","Time zone","Source","Temperature context","Note metadata").map(::text), s.events.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventType),text(it.title),text(it.details),text(utc(it.occurredAtUtcMillis)),text(utc(it.recordedAtUtcMillis)),text(it.timeZoneId),text(it.source),text(it.temperatureContextJson),text(it.noteMetadataJson)) })),
+            Sheet("Dishes", rows(listOf("Dish ID","Cook ID","Name","Food type","Cut","Weight","Weight unit","Pieces","Starting condition","Bone in","Placement","Grade or source","Thickness notes","Prep notes").map(::text), s.dishes.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.name),text(it.foodType),text(it.cut),num(it.weightValue),text(it.weightUnit),num(it.pieceCount),text(it.startingCondition),text(it.boneIn),text(it.placement),text(it.gradeOrSource),text(it.thicknessNotes),text(it.prepNotes)) })),
+            Sheet("Ingredients", rows(listOf("Ingredient use ID","Cook ID","Dish ID","Stage","Name","Brand","Amount","Unit","Applied UTC","Notes").map(::text), s.ingredients.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.stage),text(it.name),text(it.brand),num(it.amountValue),text(it.amountUnit),text(utc(it.appliedAtUtcMillis)),text(it.notes)) })),
+            Sheet("Timeline", rows(listOf("Event ID","Cook ID","Dish ID","Type","Title","Details","Occurred UTC","Recorded UTC","Time zone","Source","Temperature context","Note metadata").map(::text), s.events.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventType),text(it.title),text(it.details),text(utc(it.occurredAtUtcMillis)),text(utc(it.recordedAtUtcMillis)),text(it.timeZoneId),text(it.source),text(it.temperatureContextJson),text(it.noteMetadataJson)) })),
             Sheet("Readings", rows(listOf("Reading ID","Cook ID","Dish ID","Probe","Measurement","Value","Unit","Measured UTC","Measured local time","Time zone","Source","Quality","Timestamp basis","Sampling interval millis (0 = on log)").map(::text), readings)),
-            Sheet("Targets Results", rows(listOf("Record ID","Cook ID","Dish ID","Type","Value","Unit","Text","Notes","Recorded UTC").map(::text), (s.targets.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.targetType),num(it.value),text(it.unit),text(it.scope),text(it.explanation),text(utc(it.createdAtUtcMillis))) } + s.results.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.resultType),num(it.numericValue),text(it.unit),text(it.textValue),text(it.notes),text(utc(it.recordedAtUtcMillis))) }))),
-            Sheet("Devices", rows(listOf("Device ID","Cook ID","Brand","Model","Name","Role","Firmware","Created UTC").map(::text), s.devices.map { listOf(text(it.id),text(it.cookId),text(it.brand),text(it.model),text(it.deviceName),text(it.role),text(it.firmwareVersion),text(utc(it.createdAtUtcMillis))) })),
-            Sheet("Probes", rows(listOf("Probe ID","Cook ID","Device ID","Dish ID","Name","Measurement","Source","Created UTC").map(::text), s.probes.map { listOf(text(it.id),text(it.cookId),text(it.deviceId),text(it.assignedDishId),text(it.name),text(it.measurementType),text(it.source),text(utc(it.createdAtUtcMillis))) })),
-            Sheet("Photos", rows(listOf("Photo ID","Cook ID","Dish ID","Event ID","Caption","File name","MIME type","Captured UTC","Added UTC","Temperature context").map(::text), s.photos.map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventId),text(it.caption),text(it.originalFileName),text(it.mimeType),text(utc(it.capturedAtUtcMillis)),text(utc(it.addedAtUtcMillis)),text(it.temperatureContextJson)) })),
-            Sheet("Derived Metrics", rows(listOf("Cook ID","Probe","Metric","Value","Unit","Method","Source start UTC","Source end UTC","Method version").map(::text), derived)),
-            Sheet("Recording History", rows(listOf("Cook ID","Device ID","Status","Unit","Started UTC","Last received UTC","Sampling mode","Sampling interval millis").map(::text), s.recordings.map { listOf(text(it.cookId),text(it.deviceId),text(CookRecordingEntity.STOPPED),text(it.unit),text(utc(it.startedAtUtcMillis)),text(utc(it.lastReceivedAtUtcMillis)),text(it.samplingMode),num(it.samplingIntervalMillis)) })),
-            Sheet("Probe Assignments", rows(listOf("ID","Cook ID","Probe ID","Dish ID","Started UTC","Ended UTC").map(::text), s.assignments.map { listOf(text(it.id),text(it.cookId),text(it.probeId),text(it.dishId),text(utc(it.startedAtUtcMillis)),text(utc(it.endedAtUtcMillis))) })),
-            Sheet("Saved Guidance", rows(listOf("Record ID","Kind","Cook ID","Title","Payload JSON","Created UTC","Updated UTC").map(::text), s.companionRecords.map { listOf(text(it.id),text(it.kind),text(it.cookId),text(it.title),text(it.payload),text(utc(it.createdAtUtcMillis)),text(utc(it.updatedAtUtcMillis))) })),
-            Sheet("Reference Photos", rows(listOf("Photo ID","Record ID","Caption","Dish index","Action","MIME type").map(::text), s.companionPhotos.map { listOf(text(it.id),text(it.recordId),text(it.caption),num(it.dishIndex),text(it.action),text(it.mimeType)) })),
-            Sheet("Reminders", rows(listOf("Reminder ID","Cook ID","Title","Due UTC","Time zone","Status","Created UTC","Completed UTC").map(::text), s.reminders.map { listOf(text(it.id),text(it.cookId),text(it.title),text(utc(it.dueAtUtcMillis)),text(it.timeZoneId),text(it.status),text(utc(it.createdAtUtcMillis)),text(utc(it.completedAtUtcMillis))) })),
+            Sheet("Targets Results", rows(listOf("Record ID","Cook ID","Dish ID","Type","Value","Unit","Text","Notes","Recorded UTC").map(::text), (s.targets.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.targetType),num(it.value),text(it.unit),text(it.scope),text(it.explanation),text(utc(it.createdAtUtcMillis))) } + s.results.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.resultType),num(it.numericValue),text(it.unit),text(it.textValue),text(it.notes),text(utc(it.recordedAtUtcMillis))) }))),
+            Sheet("Devices", rows(listOf("Device ID","Cook ID","Brand","Model","Name","Role","Firmware","Created UTC").map(::text), s.devices.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.brand),text(it.model),text(it.deviceName),text(it.role),text(it.firmwareVersion),text(utc(it.createdAtUtcMillis))) })),
+            Sheet("Probes", rows(listOf("Probe ID","Cook ID","Device ID","Dish ID","Name","Measurement","Source","Created UTC").map(::text), s.probes.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.deviceId),text(it.assignedDishId),text(it.name),text(it.measurementType),text(it.source),text(utc(it.createdAtUtcMillis))) })),
+            Sheet("Photos", rows(listOf("Photo ID","Cook ID","Dish ID","Event ID","Caption","File name","MIME type","Captured UTC","Added UTC","Temperature context").map(::text), s.photos.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.dishId),text(it.eventId),text(it.caption),text(it.originalFileName),text(it.mimeType),text(utc(it.capturedAtUtcMillis)),text(utc(it.addedAtUtcMillis)),text(it.temperatureContextJson)) })),
+            Sheet("Derived Metrics", rows(listOf("Cook ID","Probe","Metric","Value","Unit","Method","Source start UTC","Source end UTC","Method version","Probe ID","Dish ID","Measurement").map(::text), derived.asSequence())),
+            Sheet("Recording History", rows(listOf("Cook ID","Device ID","Status","Unit","Started UTC","Last received UTC","Sampling mode","Sampling interval millis").map(::text), s.recordings.asSequence().map { listOf(text(it.cookId),text(it.deviceId),text(CookRecordingEntity.STOPPED),text(it.unit),text(utc(it.startedAtUtcMillis)),text(utc(it.lastReceivedAtUtcMillis)),text(it.samplingMode),num(it.samplingIntervalMillis)) })),
+            Sheet("Probe Assignments", rows(listOf("ID","Cook ID","Probe ID","Dish ID","Started UTC","Ended UTC").map(::text), s.assignments.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.probeId),text(it.dishId),text(utc(it.startedAtUtcMillis)),text(utc(it.endedAtUtcMillis))) })),
+            Sheet("Saved Guidance", rows(listOf("Record ID","Kind","Cook ID","Title","Payload JSON","Created UTC","Updated UTC").map(::text), s.companionRecords.asSequence().map { listOf(text(it.id),text(it.kind),text(it.cookId),text(it.title),text(it.payload),text(utc(it.createdAtUtcMillis)),text(utc(it.updatedAtUtcMillis))) })),
+            Sheet("Reference Photos", rows(listOf("Photo ID","Record ID","Caption","Dish index","Action","MIME type").map(::text), s.companionPhotos.asSequence().map { listOf(text(it.id),text(it.recordId),text(it.caption),num(it.dishIndex),text(it.action),text(it.mimeType)) })),
+            Sheet("Reminders", rows(listOf("Reminder ID","Cook ID","Title","Due UTC","Time zone","Status","Created UTC","Completed UTC").map(::text), s.reminders.asSequence().map { listOf(text(it.id),text(it.cookId),text(it.title),text(utc(it.dueAtUtcMillis)),text(it.timeZoneId),text(it.status),text(utc(it.createdAtUtcMillis)),text(utc(it.completedAtUtcMillis))) })),
         )
     }
 
     private fun writeWorkbookZip(zip: ZipOutputStream, sheets: List<Sheet>) {
-        putText(zip, "[Content_Types].xml", contentTypes(sheets.size))
-        putText(zip, "_rels/.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>")
-        putText(zip, "xl/workbook.xml", workbookXml(sheets))
-        putText(zip, "xl/_rels/workbook.xml.rels", workbookRels(sheets.size))
-        sheets.forEachIndexed { index, sheet -> putText(zip, "xl/worksheets/sheet${index + 1}.xml", sheetXml(sheet)) }
+        val longFile = File.createTempFile("pittech_excel_values_", ".xml", context.cacheDir)
+        var expanded = 0L
+        val longSink = longFile.outputStream().buffered()
+        var longRows = 0; var longBytes = 0L
+        val start = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><sheetData>"
+        fun longAppend(value: String) { val bytes = value.toByteArray(Charsets.UTF_8); longBytes += bytes.size; require(longBytes <= MAX_ARCHIVE_ENTRY_BYTES) { "Long values exceed the workbook table limit. Export a cook archive." }; longSink.write(bytes) }
+        fun textCell(reference: String, value: String) = "<c r=\"$reference\" t=\"inlineStr\"><is><t xml:space=\"preserve\">${xml(value)}</t></is></c>"
+        fun longRow(sheet: String, cell: String, part: Int, value: String) {
+            if (longRows == 0) { longAppend(start); longRows = 1; longAppend("<row r=\"1\">" + listOf("Sheet", "Cell", "Part", "Text").mapIndexed { index, title -> textCell("${columnName(index + 1)}1", title) }.joinToString("") + "</row>") }
+            longRows++; require(longRows <= 1_048_576) { "Long values exceed Excel's row limit. Export a cook archive." }
+            longAppend("<row r=\"$longRows\">${textCell("A$longRows", sheet)}${textCell("B$longRows", cell)}<c r=\"C$longRows\"><v>$part</v></c>${textCell("D$longRows", value)}</row>")
+        }
+        try {
+            sheets.forEachIndexed { sheetIndex, sheet ->
+                zip.putNextEntry(ZipEntry("xl/worksheets/sheet${sheetIndex + 1}.xml")); var entryBytes = 0L
+                fun append(value: String) { val bytes = value.toByteArray(Charsets.UTF_8); entryBytes += bytes.size; expanded += bytes.size; require(entryBytes <= MAX_ARCHIVE_ENTRY_BYTES && expanded <= MAX_ARCHIVE_BYTES) { "This workbook is too large. Export a smaller cook selection." }; zip.write(bytes) }
+                append(start); var rows = 0; var columns = 1
+                sheet.rows.forEach { row ->
+                    rows++; require(rows <= 1_048_576) { "This table exceeds Excel's row limit. Export a smaller cook selection." }; columns = maxOf(columns, row.size)
+                    append("<row r=\"$rows\">")
+                    row.forEachIndexed { index, cell ->
+                        val reference = "${columnName(index + 1)}$rows"
+                        when (cell) {
+                            is Cell.Number -> append("<c r=\"$reference\"><v>${cell.value}</v></c>")
+                            is Cell.Text -> {
+                                require(cell.value.all { it == '\t' || it == '\n' || it == '\r' || it >= ' ' && it != '\ufffe' && it != '\uffff' }) { "One value contains text Excel cannot represent. Export a cook archive." }
+                                if (cell.value.length <= 32767) append(textCell(reference, cell.value)) else {
+                                    append(textCell(reference, "Full value: Long Values · ${sheet.name}!$reference"))
+                                    var offset = 0; var part = 0
+                                    while (offset < cell.value.length) {
+                                        var end = minOf(offset + 32767, cell.value.length)
+                                        if (end < cell.value.length && Character.isHighSurrogate(cell.value[end - 1])) end--
+                                        longRow(sheet.name, reference, ++part, cell.value.substring(offset, end)); offset = end
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    append("</row>")
+                }
+                append("</sheetData><autoFilter ref=\"A1:${columnName(columns)}$rows\"/></worksheet>"); zip.closeEntry()
+            }
+            val names = sheets.map { it.name }.toMutableList()
+            if (longRows > 0) {
+                longAppend("</sheetData><autoFilter ref=\"A1:D$longRows\"/></worksheet>"); longSink.close(); expanded += longBytes
+                require(expanded <= MAX_ARCHIVE_BYTES) { "This workbook is too large. Export a smaller cook selection." }
+                names += "Long Values"; zip.putNextEntry(ZipEntry("xl/worksheets/sheet${names.size}.xml")); longFile.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+            }
+            putText(zip, "[Content_Types].xml", contentTypes(names.size))
+            putText(zip, "_rels/.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>")
+            putText(zip, "xl/workbook.xml", workbookXml(names)); putText(zip, "xl/_rels/workbook.xml.rels", workbookRels(names.size))
+        } finally { longSink.close(); longFile.delete() }
     }
 
     private fun contentTypes(count: Int) = buildString {
-        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>")
-        repeat(count) { append("<Override PartName=\"/xl/worksheets/sheet${it + 1}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>") }
-        append("</Types>")
+        append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>")
+        repeat(count) { append("<Override PartName=\"/xl/worksheets/sheet${it + 1}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>") }; append("</Types>")
     }
-
-    private fun workbookXml(sheets: List<Sheet>) = buildString {
-        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>")
-        sheets.forEachIndexed { index, sheet -> append("<sheet name=\"${xml(sheet.name)}\" sheetId=\"${index + 1}\" r:id=\"rId${index + 1}\"/>") }
-        append("</sheets></workbook>")
+    private fun workbookXml(names: List<String>) = buildString {
+        append("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>")
+        names.forEachIndexed { index, name -> append("<sheet name=\"${xml(name)}\" sheetId=\"${index + 1}\" r:id=\"rId${index + 1}\"/>") }; append("</sheets></workbook>")
     }
-
     private fun workbookRels(count: Int) = buildString {
-        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">")
-        repeat(count) { append("<Relationship Id=\"rId${it + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet${it + 1}.xml\"/>") }
-        append("</Relationships>")
-    }
-
-    private fun sheetXml(sheet: Sheet) = buildString {
-        val rows = sheet.rows
-        val columns = rows.maxOfOrNull { it.size } ?: 1
-        val lastCell = "${columnName(columns)}${rows.size}"
-        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><sheetData>")
-        rows.forEachIndexed { rowIndex, row ->
-            append("<row r=\"${rowIndex + 1}\">")
-            row.forEachIndexed { columnIndex, cell ->
-                val reference = "${columnName(columnIndex + 1)}${rowIndex + 1}"
-                when (cell) {
-                    is Cell.Number -> append("<c r=\"$reference\"><v>${xml(cell.value)}</v></c>")
-                    is Cell.Text -> append("<c r=\"$reference\" t=\"inlineStr\"><is><t xml:space=\"preserve\">${xml(cell.value)}</t></is></c>")
-                }
-            }
-            append("</row>")
-        }
-        append("</sheetData><autoFilter ref=\"A1:$lastCell\"/></worksheet>")
+        append("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">")
+        repeat(count) { append("<Relationship Id=\"rId${it + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet${it + 1}.xml\"/>") }; append("</Relationships>")
     }
 
     private fun columnName(number: Int): String {
@@ -377,7 +405,7 @@ class PitTechDataTransfer(
 
     private fun xml(value: String) = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 
-    private data class Sheet(val name: String, val rows: List<List<Cell>>)
+    private data class Sheet(val name: String, val rows: Sequence<List<Cell>>)
     private sealed interface Cell {
         data class Text(val value: String) : Cell
         data class Number(val value: String) : Cell
