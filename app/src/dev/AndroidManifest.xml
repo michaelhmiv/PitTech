@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -24,7 +24,7 @@
         android:maxSdkVersion="30" />
 
     <!-- Developer-only private-LAN HTTP for user-operated Home Assistant; production stays HTTPS-only. -->
-    <application android:usesCleartextTraffic="true">
+    <application android:usesCleartextTraffic="true" tools:replace="android:usesCleartextTraffic">
         <service android:name="com.pittech.CookRecordingService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started active pellet-grill cook monitoring: continuously observe temperatures through the grill vendor cloud and record them locally while the phone is locked or the camera is open. A persistent notification lets the user pause. This cook session can exceed six hours and requires live observations; scheduled jobs cannot provide its sampling cadence." />
         </service>

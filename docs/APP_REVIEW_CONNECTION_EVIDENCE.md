@@ -1,27 +1,66 @@
-# PitTech third-party connection evidence for App Review
+# Third-party connection evidence — reviewed 2026-10-13
 
-**Status:** pre-release evidence checklist, not a manufacturer endorsement or assertion of blanket legal permission. Refresh each source and the applicable service terms at the time of submission.
+This record describes implementation and unresolved release gates. It is not an endorsement,
+legal clearance, App Store approval, or evidence of a completed hardware demonstration.
 
-## Data boundary
+## Dated primary evidence
 
-Users explicitly authorize PitTech to access their own grill/thermometer account, device or Home Assistant installation. PitTech connects directly from the user's phone and **stores selected temperature observations locally** in the user's private cooking journal. It does not automatically upload manufacturer credentials or cook telemetry to a PitTech-hosted server. Access is read-only; no controller power, setpoints, modes, Wi-Fi settings or firmware can be changed.
-
-Apple Guideline 5.2.2 requires authorization under applicable third-party terms and evidence upon request: https://developer.apple.com/app-store/review/guidelines/#intellectual-property
-
-## Source-backed evidence index
-
-| Planned source | Primary publisher documentation | Review before shipping |
+| Source | Primary documentation and terms | Finding for intended public release |
 |---|---|---|
-| Combustion | https://github.com/combustion-inc/combustion-ios-ble and https://github.com/combustion-inc/combustion-android-ble | Preserve SDK MIT attribution, validate hardware and platform APIs |
-| FireBoard | https://docs.fireboard.io/app/app-api/ | Evaluate current API/service terms, rate limits and commercial use |
-| Flame Boss | https://support.flameboss.com/support/solutions/articles/14000129040-connect-to-flame-boss-cloud-mqtt-broker | Confirm present MQTT availability and current third-party usage terms |
-| MEATER | https://github.com/apption-labs/meater-cloud-public-rest-api | Check API beta conditions, user cloud bridge, rate limits and app usage terms |
-| Home Assistant | https://developers.home-assistant.io/docs/auth_api/ and https://developers.home-assistant.io/docs/api/rest/ | Verify current authorization flows and permitted observational endpoints |
+| Combustion | [Android SDK v3.5.4](https://github.com/combustion-inc/combustion-android-ble/tree/v3.5.4), [iOS SDK 1.0.0](https://github.com/combustion-inc/combustion-ios-ble/tree/1.0.0), [site terms](https://combustion.inc/policies/terms-of-service) | Both SDK repository LICENSE files grant MIT software rights, including commercial use with retained notices. Hardware interoperability and brand presentation still need review. Site shopping terms do not replace the SDK license. |
+| Home Assistant | [authorization](https://developers.home-assistant.io/docs/auth_api/), [REST](https://developers.home-assistant.io/docs/api/rest/), [WebSocket](https://developers.home-assistant.io/docs/websocket/) | Users operate and authorize their own server. PitTech uses states/history and state_changed subscriptions. No services, control commands or manufacturer community plugins are bundled. Real server/OAuth validation remains necessary. |
+| FireBoard | [Cloud API](https://docs.fireboard.io/app/app-api/), [terms](https://www.fireboard.com/terms/) (page last modified 2025-04-11) | API v1 documents devices and session charts, requires User-Agent, and imposes account limits. Terms §1 provide revocable personal/business access; §2.3 restrict advertising/trademark uses, and §4 restrict redistribution. Resolve application/service and promotional rights before public enablement. |
+| Flame Boss | [manufacturer MQTT article](https://support.flameboss.com/support/solutions/articles/14000129040-connect-to-flame-boss-cloud-mqtt-broker), [privacy](https://www.flameboss.com/privacy-policy/) | The article documents login and public cook frames. It does not establish verified TLS broker/port, private topic rights or unrestricted commercial app permission. Affiliate terms are not MQTT API terms. Account-specific service terms and secure broker/ACL evidence remain open. |
+| MEATER | [published REST API](https://github.com/apption-labs/meater-cloud-public-rest-api), [terms](https://meater.com/terms-of-use), [privacy](https://meater.com/privacy-policy) | Published Beta API supports cloud-backed device snapshots and recommends two requests/minute; no history endpoint is documented. Terms §§1–3 limit use and commercial exploitation. Record clarification or specific applicable permission for the intended public app before enabling it. |
 
-A dated API document is valuable technical evidence, but does not supersede later changes to a vendor's terms. A written commercial partnership is not assumed necessary if existing documentation and license actually permit the intended use. If authorization remains materially ambiguous, resolve it before enabling that particular connector in the public app.
+These are engineering observations of the linked documents, not a determination of legal
+rights. No written partnership, vendor approval, special account entitlement or physical
+validation was supplied. API publication does not override service terms. Do not delay
+ordinary authorized development solely because a separate partnership has not been obtained.
 
-## App Review submission note, when features are implemented
+## Data flow and privacy
 
-PitTech is a local-first barbecue cooking journal. Optional connected-device features let users authenticate to their own equipment or Home Assistant system and select temperature sensors. Device telemetry is recorded only on the user's phone as part of their cook log and is not relayed to a PitTech server. All manufacturer connections use published SDK/API interfaces and are observational: PitTech cannot change the device operating state. The shipping build includes only the integrations identified in its attached source-specific evidence records.
+Connections go directly from the phone to the user's selected Home Assistant HTTPS server,
+manufacturer REST service, authenticated TLS MQTT broker, or nearby Bluetooth thermometer.
+There is no PitTech telemetry relay, account proxy or centrally stored vendor credential.
+The existing Railway privacy site identifies the HA OAuth client; the phone intercepts its
+exact callback before the authorization code is sent to that site. Railway hosts no telemetry.
 
-Do not submit this as a claim for an integration not present in the actual iOS binary. Apple reviewers may require functional demonstration or additional proof of terms permission.
+Passwords are transient UI input and go only to the fixed manufacturer authentication endpoint.
+Android account tokens are AES-GCM encrypted with Android Keystore in no-backup storage.
+iOS tokens/HA refresh sessions use device-only Keychain accessibility after first unlock.
+Selections/configurations remain on the phone and are excluded from backup and cook archives.
+Cook readings, source timestamps and role/assignment history persist locally. Archives contain
+hashed local source identities and readings, not tokens/passwords or dedicated raw provider
+device-ID fields. Exported device/channel display names can still identify equipment or contain
+an entity identifier when a provider supplies no friendly name; an archive is not anonymous.
+Forgetting a connection retains historical cooks. HA refresh-token revocation is attempted;
+when offline, users should also revoke the original token at their server. Advanced tokens and
+other vendors may require revocation in the vendor account. Separate Google ads and explicit
+feedback data flows retain their existing disclosures; telemetry is not added to ad or feedback
+requests automatically.
+
+Android local HTTP is an explicit development-only option, guarded against public-address
+resolution and redirects. It exposes its token on that LAN; production networking is HTTPS/TLS.
+iOS HA supports HTTPS only, including user-operated LAN servers with a trusted certificate.
+
+## Actual iOS binary distinction
+
+PR #87 supplies native REST/HA authorization and WebSocket, Flame Boss TLS MQTT, and
+Combustion official iOS SDK adapters, local recording, mappings and archive compatibility.
+The Devices UI and collection hooks are Debug-only. Public Release currently advertises no
+connected-device support. Android work does not establish iOS support or hardware results.
+The native iOS SDK adapter reads eight raw sensors plus instant/core/surface/ambient values.
+It does not implement anchored probe-log recovery: the pinned SDK automatically transfers
+missing logs but exposes neither a bounded log-request API nor scanner-stop control. Native
+BLE history/repeater mode remains unavailable, and physical behavior is unvalidated. Cloud
+collection is explicitly foreground-only;
+there is no persistent background polling entitlement. Manufacturer MQTT is limited to the
+configured public cook topic and has no PUBLISH method.
+
+Before a connected public iOS binary exists, retain an unsigned release artifact audit,
+resolved package versions/notices, current privacy disclosures, a reproducible reviewer demo,
+actual account/hardware evidence and the applicable service permissions. Apple's
+[Guideline 5.2.2](https://developer.apple.com/app-store/review/guidelines/#intellectual-property)
+requires permission under third-party service terms and evidence when requested. No submission,
+TestFlight action or upload is performed as part of this work.

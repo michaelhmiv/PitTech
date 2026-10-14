@@ -57,6 +57,8 @@ android {
         compose = true
         buildConfig = true
     }
+    sourceSets.getByName("debug").kotlin.srcDir("src/internal/java")
+    sourceSets.getByName("dev").kotlin.srcDir("src/internal/java")
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 
     compileOptions {
@@ -109,3 +111,13 @@ dependencies {
 }
 
 tasks.matching { it.name == "mergeDebugAndroidTestAssets" }.configureEach { dependsOn("kspDebugKotlin") }
+
+// Produce inspectable evidence from the resolved production graph, independent of hidden UI routes.
+tasks.register("recordPublicRuntimeDependencies") {
+    doLast {
+        val output = layout.buildDirectory.file("reports/telemetry/release-runtime-dependencies.txt").get().asFile
+        output.parentFile.mkdirs()
+        output.writeText(configurations.getByName("releaseRuntimeClasspath").resolvedConfiguration.resolvedArtifacts
+            .map { it.moduleVersion.id.toString() }.distinct().sorted().joinToString("\n", postfix = "\n"))
+    }
+}
