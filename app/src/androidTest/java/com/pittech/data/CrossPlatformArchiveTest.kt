@@ -26,12 +26,19 @@ class CrossPlatformArchiveTest {
         val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
         try {
             val repo = CookRepository(db, PhotoStorage(context)); val transfer = PitTechDataTransfer(context, repo)
-            val bytes = instrumentation.context.assets.open("cross-platform/native-meal-v9.zip").use { it.readBytes() }
+            val bytes = instrumentation.context.assets.open("cross-platform/native-guide-meal-v10.zip").use { it.readBytes() }
             val preview = transfer.previewImport(ByteArrayInputStream(bytes)); assertTrue(preview.archiveVersion in 9..PitTechDataTransfer.ARCHIVE_VERSION); assertEquals(1, preview.snapshot.reminderRules.size)
             repo.importSnapshot(preview.snapshot, preview.attachments); repo.importSnapshot(preview.snapshot, preview.attachments)
             val rule = db.reminderDao().rules().single(); assertFalse(rule.enabled); assertEquals("inactive", rule.status)
             assertEquals("historical", rule.kind); assertEquals(12000000L, (ReminderTriggerCodec.decode(rule.triggerConfig) as ReminderTrigger.Historical).offsetMillis)
             assertTrue(db.reminderDao().occurrences().filter { it.sequence == 0 }.none { it.active })
+            val stateRecord = db.companionDao().observeAll().first().single { it.kind == "guide_presentation" }
+            val state = GuidePresentation.decode(stateRecord.payload)
+            assertTrue(state.visible);assertEquals(2,state.dishIds!!.size)
+            val pinned = db.companionDao().observeAll().first().filter { it.kind == "recipe_attempt" }.mapNotNull { JSONObject(it.payload).optJSONObject("guide") }
+            assertEquals(3,pinned.size)
+            val sample = pinned.flatMap { CookPackHistory.rows(it.getJSONObject("story"),"readings") }.single()
+            assertEquals("°C",sample.getString("unit"));assertEquals(74.125,sample.getDouble("value"),0.0)
         } finally { db.close() }
     }
     @Test fun nativeVersionEightReadsAndAndroidWriterProducesOwnedVersionNineFixture(): Unit = runBlocking {

@@ -4,14 +4,14 @@ final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<12 {
+            let top = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable })?.frame.maxY ?? app.windows.firstMatch.frame.minY
+            let bottom = app.tabBars.allElementsBoundByIndex.first(where: { $0.isHittable })?.frame.minY ?? app.windows.firstMatch.frame.maxY
             if element.waitForExistence(timeout: 1) && element.isHittable {
-                let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
-                let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
                 if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
             }
-            let scroll = app.scrollViews["cook-content"].exists ? app.scrollViews["cook-content"] : app.scrollViews.firstMatch
-            let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
-            if scroll.exists && scroll.isHittable {
+            let cookScroll = app.scrollViews["cook-content"]
+            let scroll = cookScroll.exists && cookScroll.isHittable ? cookScroll : app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
+            if let scroll, scroll.exists && scroll.isHittable {
                 if element.exists && element.frame.maxY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
@@ -26,7 +26,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let meal = app.staticTexts["Guided meal"].firstMatch; reveal(meal, app: app); meal.tap()
             let toggle = app.switches["show-guide"]; reveal(toggle, app: app)
             XCTAssertEqual(toggle.value as? String, "0"); toggle.tap()
-            let reference = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "guide-heading-")).firstMatch
+            let reference = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "guide-reference-", "Guide · ")).firstMatch
             XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
             capture(large ? "Native Show guide Live large text" : "Native Show guide Live")
             let timeline = app.segmentedControls.buttons["Timeline"]; reveal(timeline, app: app); timeline.tap()
