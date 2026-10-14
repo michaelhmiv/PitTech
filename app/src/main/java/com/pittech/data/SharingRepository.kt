@@ -14,6 +14,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
     suspend fun get(id: String) = dao.get(id)?.takeIf { it.kind in setOf(SharingDraftCodec.DRAFT, SharingDraftCodec.COLLECTION) }
     suspend fun assets(id: String) = dao.photosFor(id)
     fun photoUri(path: String) = photos.uri(path).toString()
+    suspend fun photoBytes(path: String) = photos.read(path)
 
     suspend fun fromMeal(cookId: String, dishIds: Set<String>): String {
         val meal = cooks.observeCookDetail(cookId).first() ?: error("This meal is unavailable.")

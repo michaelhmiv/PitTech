@@ -167,8 +167,8 @@ final class CookStore {
         save()
     }
 
-    func exportArchive() throws -> Data {
-        var portable = library
+    func exportArchive(sourceLibrary: PitTechLibrary? = nil, pack: JSONValue? = nil, attachments: [String: Data]? = nil) throws -> Data {
+        var portable = sourceLibrary ?? library
         portable.schemaVersion = PitTechLibrary.archiveVersion
         if let unit = portable.preferences?["temperatureUnit"]?.stringValue, ["F", "C"].contains(unit) {
             portable.preferences?["temperatureUnit"] = .string("°" + unit)
@@ -180,15 +180,16 @@ final class CookStore {
             return .object(o)
         }
         let jsonData = try JSONEncoder().encode(portable)
-        let manifest: [String: Any] = [
+        var manifest: [String: Any] = [
             "format": "PitTech complete cook archive",
             "archiveVersion": PitTechLibrary.archiveVersion,
             "exportedAtUtc": ISO8601DateFormatter().string(from: .now),
             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
             "includesPreferences": portable.preferences != nil,
-            "counts": ["cooks": library.cooks.count, "dishes": library.dishes.count,
-                       "timelineEvents": library.events.count, "readings": library.readings.count]
+            "counts": ["cooks": portable.cooks.count, "dishes": portable.dishes.count,
+                       "timelineEvents": portable.events.count, "readings": portable.readings.count]
         ]
+        if let pack { manifest["cookPack"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(pack)) }
         let archive = try Archive(accessMode: .create)
         let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
         try archive.addEntry(with: "manifest.json", type: .file, uncompressedSize: Int64(manifestData.count), provider: { position, size in
@@ -202,12 +203,12 @@ final class CookStore {
         try archive.addEntry(with: "data/pittech.json", type: .file, uncompressedSize: Int64(jsonData.count), provider: { position, size in
             jsonData.subdata(in: Int(position)..<(Int(position) + size))
         })
-        for row in library.photos + library.companionPhotos + library.recipeAssets {
+        for row in portable.photos + portable.companionPhotos + portable.recipeAssets {
             guard let object = row.objectValue,
                   let path = object["archivePath"]?.stringValue,
                   let id = object["id"]?.stringValue else { continue }
             guard Self.isExpectedAttachment(path: path, id: id),
-                  let bytes = try? Data(contentsOf: attachmentURL(id: id, archivePath: path)),
+                  let bytes = attachments?[id] ?? (try? Data(contentsOf: attachmentURL(id: id, archivePath: path))),
                   !bytes.isEmpty else { throw CocoaError(.fileNoSuchFile) }
             try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(bytes.count), provider: { position, size in
                 bytes.subdata(in: Int(position)..<(Int(position) + size))
@@ -217,24 +218,48 @@ final class CookStore {
         return result
     }
 
-    static func previewArchive(_ data: Data) throws -> PitTechImportPreview {
-        guard data.count <= 64 * 1024 * 1024 else { throw PitTechArchiveError.tooLarge }
-        let archive = try Archive(data: data, accessMode: .read)
-        guard archive.reduce(0, { count, _ in count + 1 }) <= 1_000 else { throw PitTechArchiveError.tooManyEntries }
+    nonisolated static func previewCookPack(_ data: Data) throws -> PitTechImportPreview {
+        let preview = try previewArchive(data, limits: .cookPack)
+        guard preview.cookPack != nil else { throw PitTechArchiveError.invalidArchive }
+        return preview
+    }
+
+    nonisolated static func previewArchive(_ data: Data, limits: NativeArchiveLimits = .backup) throws -> PitTechImportPreview {
+        guard Int64(data.count) <= limits.compressed else { throw PitTechArchiveError.tooLarge }
+        let preview = try previewArchive(Archive(data: data, accessMode: .read), limits: limits)
+        guard preview.cookPack == nil || Int64(data.count) <= NativeArchiveLimits.cookPack.compressed else { throw PitTechArchiveError.tooLarge }
+        return preview
+    }
+
+    nonisolated static func previewArchive(at url: URL, limits: NativeArchiveLimits = .backup) throws -> PitTechImportPreview {
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size > 0, Int64(size) <= limits.compressed else { throw PitTechArchiveError.tooLarge }
+        return try previewArchive(Archive(url: url, accessMode: .read), limits: limits)
+    }
+
+    nonisolated private static func previewArchive(_ archive: Archive, limits: NativeArchiveLimits) throws -> PitTechImportPreview {
+        guard archive.reduce(0, { count, _ in count + 1 }) <= limits.entries else { throw PitTechArchiveError.tooManyEntries }
         var totalBytes: Int64 = 0
         var manifestData: Data?
         var libraryData: Data?
         var paths = Set<String>()
+        var largestEntry: UInt64 = 0
         for entry in archive {
             guard Self.isSafeArchivePath(entry.path), paths.insert(entry.path).inserted, entry.type == .file,
-                  entry.uncompressedSize <= 16 * 1024 * 1024 else { throw PitTechArchiveError.invalidArchive }
+                  entry.uncompressedSize <= UInt64(limits.entry) else { throw PitTechArchiveError.invalidArchive }
             totalBytes += Int64(entry.uncompressedSize)
-            guard totalBytes <= 64 * 1024 * 1024 else { throw PitTechArchiveError.tooLarge }
-            if entry.path == "manifest.json" || entry.path == "data/pittech.json" {
-                var contents = Data()
-                _ = try archive.extract(entry) { chunk in contents.append(chunk) }
-                if entry.path == "manifest.json" { manifestData = contents } else { libraryData = contents }
+            largestEntry = max(largestEntry, entry.uncompressedSize)
+            guard totalBytes <= limits.expanded else { throw PitTechArchiveError.tooLarge }
+            let keep = entry.path == "manifest.json" || entry.path == "data/pittech.json"
+            var contents = Data(), extracted: Int64 = 0
+            let checksum = try archive.extract(entry) { chunk in
+                extracted += Int64(chunk.count)
+                guard extracted <= limits.entry else { throw PitTechArchiveError.tooLarge }
+                if keep { contents.append(chunk) }
             }
+            guard extracted == Int64(entry.uncompressedSize), checksum == entry.checksum else { throw PitTechArchiveError.invalidArchive }
+            if entry.path == "manifest.json" { manifestData = contents }
+            if entry.path == "data/pittech.json" { libraryData = contents }
         }
         guard let manifestData, let libraryData,
               let manifest = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
@@ -252,15 +277,47 @@ final class CookStore {
                         cookIds.contains(cookId) else { return false }
                   return true
               }) else { throw PitTechArchiveError.invalidArchive }
+        let assets = (library.photos + library.companionPhotos + library.recipeAssets).compactMap(\.objectValue)
+        let ids = assets.compactMap { $0["id"]?.stringValue }
+        guard assets.count == library.photos.count + library.companionPhotos.count + library.recipeAssets.count,
+              Set(ids).count == assets.count, assets.allSatisfy({ row in
+                  guard let id = row["id"]?.stringValue, let path = row["archivePath"]?.stringValue,
+                        isExpectedAttachment(path: path, id: id), let entry = archive[path] else { return false }
+                  return entry.type == .file && entry.uncompressedSize > 0
+              }) else { throw PitTechArchiveError.invalidArchive }
         try library.validateCookExperience()
+        let pack = (try JSONDecoder().decode(JSONValue.self, from: manifestData)).objectValue?["cookPack"]
+        if let pack {
+            guard totalBytes <= NativeArchiveLimits.cookPack.expanded, largestEntry <= UInt64(NativeArchiveLimits.cookPack.entry), paths.count <= NativeArchiveLimits.cookPack.entries else { throw PitTechArchiveError.tooLarge }
+            if let size = try? archive.url.resourceValues(forKeys: [.fileSizeKey]).fileSize, Int64(size) > NativeArchiveLimits.cookPack.compressed { throw PitTechArchiveError.tooLarge }
+            try NativeCookPackContract.validate(pack, library: library, root: JSONDecoder().decode(JSONValue.self, from: libraryData))
+            for asset in assets {
+                guard let path = asset["archivePath"]?.stringValue, let entry = archive[path] else { throw PitTechArchiveError.invalidArchive }
+                var data = Data()
+                _ = try archive.extract(entry) { chunk in
+                    guard Int64(data.count + chunk.count) <= NativeArchiveLimits.cookPack.entry else { throw PitTechArchiveError.tooLarge }
+                    data.append(chunk)
+                }
+                try NativeCookPackPhoto.validatePublic(data)
+            }
+        }
         return PitTechImportPreview(cooks: library.cooks.count, dishes: library.dishes.count,
                                     readings: library.readings.count, events: library.events.count,
-                                    version: library.schemaVersion)
+                                    version: library.schemaVersion, recipes: library.recipes.count,
+                                    collections: library.companionRecords.filter { $0.objectValue?["kind"]?.stringValue == "collection_revision" }.count, cookPack: pack)
     }
 
     func importArchive(_ data: Data) throws -> PitTechImportResult {
         _ = try Self.previewArchive(data)
-        let archive = try Archive(data: data, accessMode: .read)
+        return try importArchive(Archive(data: data, accessMode: .read))
+    }
+
+    func importArchive(at url: URL) throws -> PitTechImportResult {
+        _ = try Self.previewArchive(at: url)
+        return try importArchive(Archive(url: url, accessMode: .read))
+    }
+
+    private func importArchive(_ archive: Archive) throws -> PitTechImportResult {
         guard let entry = archive["data/pittech.json"] else { throw PitTechArchiveError.invalidArchive }
         var jsonData = Data()
         _ = try archive.extract(entry) { chunk in jsonData.append(chunk) }
@@ -301,7 +358,10 @@ final class CookStore {
         guard Set(photoIds).count == photoIds.count, photoIds.allSatisfy({ !existingPhotoIds.contains($0) }) else {
             throw PitTechArchiveError.invalidArchive
         }
-        var attachmentWrites: [(URL, Data)] = []
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var attachmentWrites: [(staged: URL, destination: URL)] = []
         if !photoRows.isEmpty {
             for row in photoRows {
                 guard let object = row.objectValue,
@@ -309,21 +369,29 @@ final class CookStore {
                       let path = object["archivePath"]?.stringValue,
                       Self.isExpectedAttachment(path: path, id: id),
                       let entry = archive[path] else { throw PitTechArchiveError.invalidArchive }
-                var bytes = Data()
-                _ = try archive.extract(entry) { chunk in
-                    guard bytes.count + chunk.count <= 16 * 1024 * 1024 else { throw PitTechArchiveError.tooLarge }
-                    bytes.append(chunk)
-                }
-                guard !bytes.isEmpty else { throw PitTechArchiveError.invalidArchive }
-                attachmentWrites.append((attachmentURL(id: id, archivePath: path), bytes))
+                let staged = staging.appendingPathComponent(UUID().uuidString)
+                guard FileManager.default.createFile(atPath: staged.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+                let handle = try FileHandle(forWritingTo: staged)
+                do {
+                    var written: Int64 = 0
+                    let checksum = try archive.extract(entry) { chunk in
+                        written += Int64(chunk.count)
+                        guard written <= NativeArchiveLimits.backup.entry else { throw PitTechArchiveError.tooLarge }
+                        try handle.write(contentsOf: chunk)
+                    }
+                    try handle.close()
+                    guard written > 0, written == Int64(entry.uncompressedSize), checksum == entry.checksum else { throw PitTechArchiveError.invalidArchive }
+                    attachmentWrites.append((staged, attachmentURL(id: id, archivePath: path)))
+                } catch { try? handle.close(); throw error }
             }
         }
 
         var writtenURLs: [URL] = []
         do {
-            for (url, bytes) in attachmentWrites {
+            for (staged, url) in attachmentWrites {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try bytes.write(to: url, options: .atomic)
+                guard !FileManager.default.fileExists(atPath: url.path) else { throw PitTechArchiveError.invalidArchive }
+                try FileManager.default.moveItem(at: staged, to: url)
                 var values = URLResourceValues()
                 values.isExcludedFromBackup = true
                 var fileURL = url
@@ -398,7 +466,7 @@ final class CookStore {
 
     private static let archiveReadme = "PitTech cook archive, schema 10. Cook records, editable sharing drafts and saved collections are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
 
-    private static func isSafeArchivePath(_ path: String) -> Bool {
+    nonisolated private static func isSafeArchivePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.contains("\\") &&
         !path.split(separator: "/").contains(where: { $0 == ".." || $0 == "." })
     }

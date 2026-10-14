@@ -8,6 +8,9 @@ struct PitTechImportPreview {
     let readings: Int
     let events: Int
     let version: Int
+    var recipes = 0
+    var collections = 0
+    var cookPack: JSONValue?
 }
 
 struct PitTechImportResult {

@@ -31,20 +31,25 @@ class PitTechDataTransfer(
     suspend fun writeZip(output: OutputStream, cookId: String? = null) {
         val snapshot = repository.exportSnapshot(cookId)
         val preferences = if (cookId == null) readPreferences() else null
+        writeSnapshotZip(output, snapshot, preferences)
+    }
+
+    internal suspend fun writeSnapshotZip(output: OutputStream, snapshot: ExportSnapshot, preferences: BackupPreferences? = null, pack: JSONObject? = null, attachments: Map<String, ByteArray>? = null) {
         ZipOutputStream(output.buffered()).use { zip ->
-            putText(zip, "manifest.json", manifest(snapshot, preferences).toString(2))
+            val description = manifest(snapshot, preferences).apply { if (pack != null) put("cookPack", pack) }
+            putText(zip, "manifest.json", description.toString(2))
             putText(zip, "README.txt", README)
             putText(zip, "data/pittech.json", snapshotJson(snapshot, preferences).toString())
             csvTables(snapshot).forEach { (name, content) -> putText(zip, "csv/$name", content) }
             snapshot.recipeAssets.forEach { asset ->
-                putBytes(zip, RecipeArchive.attachmentPath(asset), repository.readPhoto(asset.relativeFilePath) ?: error("A recipe photo is unavailable."))
+                putBytes(zip, RecipeArchive.attachmentPath(asset), (attachments?.get(asset.id) ?: repository.readPhoto(asset.relativeFilePath)) ?: error("A recipe photo is unavailable."))
             }
             snapshot.companionPhotos.forEach { photo ->
-                val bytes = repository.readPhoto(photo.relativePath) ?: error("A playbook reference photo could not be read for backup.")
+                val bytes = attachments?.get(photo.id) ?: repository.readPhoto(photo.relativePath) ?: error("A playbook reference photo could not be read for backup.")
                 putBytes(zip, "attachments/${photo.id}.${photo.relativePath.substringAfterLast('.')}", bytes)
             }
             snapshot.photos.forEach { photo ->
-                val bytes = repository.readPhoto(photo.relativePath)
+                val bytes = attachments?.get(photo.id) ?: repository.readPhoto(photo.relativePath)
                     ?: error("The photo '${photo.originalFileName}' could not be read for backup.")
                 val extension = photo.originalFileName.substringAfterLast('.', "jpg")
                     .filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
@@ -59,7 +64,20 @@ class PitTechDataTransfer(
         ZipOutputStream(output.buffered()).use { zip -> writeWorkbookZip(zip, sheets) }
     }
 
-    fun previewImport(input: InputStream): ImportDraft {
+    suspend fun writeCookPack(output: OutputStream, documentId: String) {
+        val pack = repository.sharing.prepareCookPack(documentId)
+        val file = File.createTempFile("pittech_share_", ".pittech", context.cacheDir)
+        try {
+            file.outputStream().use { writeSnapshotZip(it, pack.snapshot, pack = pack.metadata, attachments = pack.attachments) }
+            file.inputStream().use { previewCookPack(it) }
+            file.inputStream().use { it.copyTo(output) }
+        } finally { file.delete() }
+    }
+
+    fun previewImport(input: InputStream): ImportDraft = previewArchive(input, strictPack = false)
+    fun previewCookPack(input: InputStream): ImportDraft = previewArchive(input, strictPack = true)
+
+    private fun previewArchive(input: InputStream, strictPack: Boolean): ImportDraft {
         val stagedArchive = File.createTempFile("pittech_restore_", ".zip", context.cacheDir)
         try {
             var compressedBytes = 0L
@@ -70,7 +88,7 @@ class PitTechDataTransfer(
                         val count = source.read(buffer)
                         if (count < 0) break
                         compressedBytes += count
-                        require(compressedBytes <= MAX_ARCHIVE_COMPRESSED_BYTES) { "This backup file is too large to inspect on this phone." }
+                        require(compressedBytes <= if (strictPack) CookPackContract.MAX_COMPRESSED else MAX_ARCHIVE_COMPRESSED_BYTES) { "This file is too large to inspect on this phone." }
                         output.write(buffer, 0, count)
                     }
                 }
@@ -80,20 +98,23 @@ class PitTechDataTransfer(
             val seenEntries = mutableSetOf<String>()
             var total = 0L
             var entryCount = 0
+            var largestEntry = 0L
             ZipFile(stagedArchive).use { zip ->
                 val archiveEntries = zip.entries()
                 while (archiveEntries.hasMoreElements()) {
                     val entry = archiveEntries.nextElement()
                     entryCount++
-                    require(entryCount <= MAX_ARCHIVE_ENTRIES) { "This backup contains too many files." }
+                    require(entryCount <= if (strictPack) CookPackContract.MAX_ENTRIES else MAX_ARCHIVE_ENTRIES) { "This backup contains too many files." }
                     require(isSafeArchivePath(entry.name, entry.isDirectory)) { "The backup contains an invalid file path." }
                     require(seenEntries.add(entry.name)) { "The backup contains a duplicate file path." }
-                    require(entry.size in 0..MAX_ARCHIVE_ENTRY_BYTES.toLong()) { "A file in this backup is too large." }
+                    val entryLimit = if (strictPack) CookPackContract.MAX_ENTRY else MAX_ARCHIVE_ENTRY_BYTES
+                    require(entry.size in 0..entryLimit.toLong()) { "A file in this backup is too large." }
                     total += entry.size
-                    require(total <= MAX_ARCHIVE_BYTES) { "This backup is too large to preview on this phone." }
+                    largestEntry = maxOf(largestEntry, entry.size)
+                    require(total <= if (strictPack) CookPackContract.MAX_EXPANDED else MAX_ARCHIVE_BYTES) { "This backup is too large to preview on this phone." }
                     if (entry.isDirectory) continue
 
-                    val bytes = zip.getInputStream(entry).use { it.readBounded(MAX_ARCHIVE_ENTRY_BYTES) }
+                    val bytes = zip.getInputStream(entry).use { it.readBounded(entryLimit) }
                     require(bytes.size.toLong() == entry.size) { "This backup is incomplete or corrupted." }
                     val checksum = CRC32().apply { update(bytes) }.value
                     require(checksum == entry.crc) { "This backup is incomplete or corrupted." }
@@ -125,12 +146,20 @@ class PitTechDataTransfer(
                 entries[archivePath]?.also { attachments[photoId] = it }
             }
             val preferences = parsePreferences(root.optJSONObject("preferences"))
+            val pack = manifest.optJSONObject("cookPack")
+            require(!strictPack || pack != null) { "This file is a backup, rather than a shared Cook Pack." }
+            if (pack != null) {
+                require(compressedBytes <= CookPackContract.MAX_COMPRESSED && total <= CookPackContract.MAX_EXPANDED && largestEntry <= CookPackContract.MAX_ENTRY && entryCount <= CookPackContract.MAX_ENTRIES) { "This Cook Pack exceeds the shared-file limit. Choose fewer dishes or photos." }
+                CookPackContract.validate(pack, root, snapshot)
+                attachments.values.forEach(CookPackPhoto::validatePublic)
+            }
             return ImportDraft(
                 snapshot = snapshot,
                 attachments = attachments,
                 preferences = preferences,
                 archiveVersion = archiveVersion,
                 exportedAtUtc = manifest.optString("exportedAtUtc").takeIf { it.isNotBlank() },
+                cookPack = pack,
             )
         } catch (_: ZipException) {
             error("This backup is incomplete or corrupted.")
@@ -360,6 +389,7 @@ class PitTechDataTransfer(
         val preferences: BackupPreferences?,
         val archiveVersion: Int,
         val exportedAtUtc: String?,
+        val cookPack: JSONObject? = null,
     ) {
         val cookCount: Int get() = snapshot.cooks.size
         val dishCount: Int get() = snapshot.dishes.size
@@ -619,9 +649,9 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     }
     val companionRecords = root.arrayObjects("companionRecords").map { o ->
         val kind = o.string("kind")
-        require(kind in setOf("playbook", "plan", "alert", "upcoming", "serve_goal", "reference", "prep_combo", "checklist", "equipment", "fuel", "recipe_attempt", "sharing_draft", "collection_revision")) { "Unsupported saved guidance in this archive." }
+        require(kind in setOf("playbook", "plan", "alert", "upcoming", "serve_goal", "reference", "prep_combo", "checklist", "equipment", "fuel", "recipe_attempt", "sharing_draft", "collection_revision", "recipe_reference")) { "Unsupported saved guidance in this archive." }
         val payload = o.getJSONObject("payload").toString()
-        when (kind) { "sharing_draft", "collection_revision" -> com.pittech.domain.SharingDraftCodec.decode(payload); "recipe_attempt" -> RecipeAttemptCodec.snapshot(payload); "plan" -> com.pittech.domain.CookPlanEngine.decode(payload); "alert" -> com.pittech.domain.CookAlertEngine.decode(payload); "upcoming", "serve_goal" -> com.pittech.domain.ServeTimePlanner.decode(payload); "reference" -> com.pittech.domain.CookReferenceCodec.decode(payload); "prep_combo" -> com.pittech.domain.CookPreparation.decodeCombo(payload); "checklist" -> com.pittech.domain.CookPreparation.decodeChecklist(payload); "equipment" -> com.pittech.domain.CookPreparation.decodeEquipment(payload); "fuel" -> com.pittech.domain.CookPreparation.decodeFuel(payload); else -> com.pittech.domain.PlaybookCodec.decode(payload) }
+        when (kind) { "sharing_draft", "collection_revision", "recipe_reference" -> com.pittech.domain.SharingDraftCodec.decode(payload); "recipe_attempt" -> RecipeAttemptCodec.snapshot(payload); "plan" -> com.pittech.domain.CookPlanEngine.decode(payload); "alert" -> com.pittech.domain.CookAlertEngine.decode(payload); "upcoming", "serve_goal" -> com.pittech.domain.ServeTimePlanner.decode(payload); "reference" -> com.pittech.domain.CookReferenceCodec.decode(payload); "prep_combo" -> com.pittech.domain.CookPreparation.decodeCombo(payload); "checklist" -> com.pittech.domain.CookPreparation.decodeChecklist(payload); "equipment" -> com.pittech.domain.CookPreparation.decodeEquipment(payload); "fuel" -> com.pittech.domain.CookPreparation.decodeFuel(payload); else -> com.pittech.domain.PlaybookCodec.decode(payload) }
         CompanionRecord(o.string("id"), kind, o.stringOrNull("cookId"), o.string("title"), payload, o.long("created"), o.long("updated"))
     }
     require(companionRecords.map { it.id }.distinct().size == companionRecords.size) { "Duplicate saved guidance IDs." }
@@ -676,7 +706,7 @@ private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> Byte
     }
     require(companionRecords.all { record -> when (record.kind) {
         "playbook", "prep_combo", "equipment", "upcoming" -> record.cookId == null
-        "sharing_draft", "collection_revision" -> record.cookId == null && com.pittech.domain.SharingDraftCodec.decode(record.payload).entries.all { entry -> entry.photoIds.all { id -> companionPhotos.any { it.id == id && it.recordId == record.id } } }
+        "sharing_draft", "collection_revision", "recipe_reference" -> record.cookId == null && com.pittech.domain.SharingDraftCodec.decode(record.payload).entries.all { entry -> entry.photoIds.all { id -> companionPhotos.any { it.id == id && it.recordId == record.id && it.action == entry.id } } }
         "plan" -> record.cookId != null && com.pittech.domain.CookPlanEngine.decode(record.payload).dishIds.all { dishesById[it]?.cookId == record.cookId }
         "alert" -> record.cookId != null && com.pittech.domain.CookAlertEngine.decode(record.payload).first.dishId.let { it == null || dishesById[it]?.cookId == record.cookId }
         "recipe_attempt" -> org.json.JSONObject(record.payload).let { o -> record.cookId != null && dishesById[o.getString("dishId")]?.cookId == record.cookId }

@@ -247,7 +247,7 @@ struct SettingsView: View {
     @State private var showingImport = false
     @State private var showingImportConfirmation = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
-    @State private var pendingImportData: Data?
+    @State private var pendingImportURL: URL?
     @State private var pendingPreview: PitTechImportPreview?
     @State private var archiveError: String?
 
@@ -314,9 +314,11 @@ struct SettingsView: View {
                     guard let url = try result.get().first else { return }
                     let hasAccess = url.startAccessingSecurityScopedResource()
                     defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
-                    let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                    pendingPreview = try CookStore.previewArchive(data)
-                    pendingImportData = data
+                    let staged = try CookStore.stageArchive(at: url)
+                    do { pendingPreview = try CookStore.previewArchive(at: staged) }
+                    catch { try? FileManager.default.removeItem(at: staged); throw error }
+                    if let previous = pendingImportURL { try? FileManager.default.removeItem(at: previous) }
+                    pendingImportURL = staged
                     showingImportConfirmation = true
                 } catch {
                     archiveError = (error as? LocalizedError)?.errorDescription ?? "PitTech couldn't open that backup. Your existing library was left unchanged."
@@ -325,16 +327,17 @@ struct SettingsView: View {
             .confirmationDialog("Restore cook archive?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
                 Button("Restore \(pendingPreview?.cooks ?? 0) cooks", role: .destructive) {
                     do {
-                        guard let pendingImportData else { return }
-                        let result = try store.importArchive(pendingImportData)
+                        guard let pendingImportURL else { return }
+                        let result = try store.importArchive(at: pendingImportURL)
                         archiveError = "Restored \(result.imported) cooks. Skipped \(result.skipped) duplicate cooks."
                     } catch {
                         archiveError = (error as? LocalizedError)?.errorDescription ?? "PitTech couldn't restore this backup. Your existing library was left unchanged."
                     }
-                    pendingImportData = nil
+                    if let pendingImportURL { try? FileManager.default.removeItem(at: pendingImportURL) }
+                    pendingImportURL = nil
                     pendingPreview = nil
                 }
-                Button("Cancel", role: .cancel) { pendingImportData = nil; pendingPreview = nil }
+                Button("Cancel", role: .cancel) { if let pendingImportURL { try? FileManager.default.removeItem(at: pendingImportURL) }; pendingImportURL = nil; pendingPreview = nil }
             } message: {
                 if let pendingPreview {
                     Text("Schema \(pendingPreview.version) • \(pendingPreview.cooks) cooks • \(pendingPreview.dishes) dishes • \(pendingPreview.readings) readings. Matching cook IDs will be skipped.")

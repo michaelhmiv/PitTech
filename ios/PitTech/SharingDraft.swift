@@ -46,7 +46,7 @@ struct NativeSharingDocument: Codable, Equatable {
 
 extension PitTechLibrary {
     func validateSharingDocuments() throws {
-        for row in companionRecords where ["sharing_draft", "collection_revision"].contains(row.objectValue?["kind"]?.stringValue ?? "") {
+        for row in companionRecords where ["sharing_draft", "collection_revision", "recipe_reference"].contains(row.objectValue?["kind"]?.stringValue ?? "") {
             guard let record = row.objectValue, record["cookId"]?.stringValue == nil, let id = record["id"]?.stringValue, let payload = record["payload"] else { throw PitTechArchiveError.invalidArchive }
             let document = try NativeSharingDocument.decode(payload)
             let owned = Set(companionPhotos.compactMap(\.objectValue).filter { $0["recordId"]?.stringValue == id }.compactMap { $0["id"]?.stringValue })
