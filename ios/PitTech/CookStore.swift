@@ -20,11 +20,30 @@ final class CookStore {
     init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
+        // Exclude new and previously created local cook storage from device backup.
+        try? excludeFromDeviceBackup(self.directory)
+        for item in [storageURL, draftsURL] where FileManager.default.fileExists(atPath: item.path) {
+            try? excludeFromDeviceBackup(item)
+        }
+        let attachments = self.directory.appendingPathComponent("attachments", isDirectory: true)
+        if FileManager.default.fileExists(atPath: attachments.path) {
+            try? excludeFromDeviceBackup(attachments)
+            if let existing = try? FileManager.default.contentsOfDirectory(at: attachments, includingPropertiesForKeys: nil) {
+                for item in existing { try? excludeFromDeviceBackup(item) }
+            }
+        }
         load()
         noteDrafts = (try? JSONDecoder().decode([CookNoteDraft].self, from: Data(contentsOf: draftsURL))) ?? []
         #if DEBUG
         if directory == nil { prepareUIFlowFixture() }
         #endif
+    }
+
+    func excludeFromDeviceBackup(_ url: URL) throws {
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var targetURL = url
+        try targetURL.setResourceValues(values)
     }
 
     var activeCooks: [CookRecord] { library.cooks.filter(\.isActive).sorted { $0.startedAtUtcMillis > $1.startedAtUtcMillis } }

@@ -12,6 +12,23 @@ import UIKit
     private func jpeg() -> Data {
         UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).jpegData(withCompressionQuality: 1) { context in UIColor.orange.setFill(); context.fill(CGRect(x: 0, y: 0, width: 4, height: 4)) }
     }
+    func testLocalCookFilesAreExcludedFromDeviceBackup() async throws {
+        let directory = try folder(), store = CookStore(directory: directory)
+        store.startCook(title: "Backup check", firstDish: "Ribs")
+        let cookId = try XCTUnwrap(store.activeCooks.first?.id)
+        let photo = try store.stagePhoto(jpeg())
+        try store.persistDraft(CookNoteDraft(cookId: cookId, description: "Draft", photos: [photo]))
+
+        func isExcluded(_ url: URL) throws -> Bool? {
+            try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+        }
+
+        XCTAssertEqual(try isExcluded(directory), true)
+        XCTAssertEqual(try isExcluded(store.storageURL), true)
+        XCTAssertEqual(try isExcluded(store.draftsURL), true)
+        XCTAssertEqual(try isExcluded(store.photoURL("attachments")), true)
+        XCTAssertEqual(try isExcluded(store.photoURL(photo.path)), true)
+    }
     func testAtomicNoteEditKeepsIdentityTimeReadingsAndPhotosTogether() async throws {
         let store = CookStore(directory: try folder())
         store.startCook(title: "Ribs", firstDish: "Rack")
@@ -111,6 +128,7 @@ import UIKit
         XCTAssertEqual(destination.prepChecklist(id)?.items[0].done, true)
         XCTAssertEqual(destination.savedReference(id, dishId: currentDish)?.sourceDishId, sourceDish)
         XCTAssertEqual(try Data(contentsOf: destination.photoURL(note.photos[0].path)), try Data(contentsOf: store.photoURL(note.photos[0].path)))
+        XCTAssertEqual(try destination.photoURL(note.photos[0].path).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
         XCTAssertEqual(try destination.importArchive(archive).imported, 0)
     }
     func testSaveRejectsForeignReadingIdentityWithoutChangingEitherCook() async throws {

@@ -6,11 +6,13 @@ This policy describes how PitTech (iOS bundle identifier com.pittech and Android
 
 ## iOS app
 
-On iOS, cook names, dishes, notes, dates, and temperature readings you enter are stored in the app's private local library. The library is excluded from device backup. Cook logging does not require an account, and PitTech does not upload your cook library to its servers. You can choose a PitTech ZIP backup in the Files picker to restore it, or export a ZIP archive to a location you choose. Files you export or share can be accessed by the destination you select.
+PitTech for iOS stores cook and dish names, dates, notes, manually entered temperature readings, saved recipes, note drafts, and photos in its local app storage. You can take a photo with the camera or select one through Apple's system photo picker. Local cook data, drafts, and photo attachments are excluded from device backup. No account is required, and PitTech does not upload your cook library to its servers. You can restore a PitTech ZIP backup through the Files picker or export a ZIP archive to a location you choose. Files you export or share can be accessed by the destination you select.
 
-The iOS app uses Google's User Messaging Platform to refresh consent information when the app starts and to present a consent form when required. PitTech requests Google Mobile Ads only after Google's consent state allows ads. Google may process information such as IP address, ad interactions, diagnostics, and device or advertising identifiers to provide ads, measure performance, and prevent fraud. PitTech does not include cook records, notes, or temperature readings in ad requests. PitTech does not request App Tracking Transparency authorization or use cook data for advertising.
+Charts show temperature values you entered. Saved recipes can include instructions, notes, and reference photos. Activity timers run in the app. If you enable a reminder and grant notification permission, PitTech schedules a local notification on your device; it does not use remote push notifications or monitor a grill in the background.
 
-The iOS app does not connect to grill-controller accounts or services. Grill readings can be added manually as part of a cook record. The iOS app does not submit feedback reports.
+The iOS app uses Google's User Messaging Platform to refresh consent information when the app starts and to present a consent form when required. PitTech requests Google Mobile Ads only after Google's consent state allows ads. Google's SDK may process information such as IP address (which can indicate general location), diagnostics and performance data, device identifiers, advertisements shown, and product interactions to provide ads, measure performance, and prevent fraud. PitTech does not include cook records, notes, photos, or temperature readings in ad requests. PitTech does not request App Tracking Transparency authorization or use cook data for advertising.
+
+The iOS app does not create user accounts, connect to grill-controller accounts or services, or submit feedback reports. Grill readings must be added manually. The iOS app contains no Bluetooth controller integration.
 
 ## Android app
 
@@ -20,9 +22,9 @@ On Android, PitTech stores cook information, photos, crash diagnostics, and expe
 
 PitTech stores the cook information you choose to enter. This may include cook and dish names, meat type and cut, weight, preparation and ingredients, notes, dates and times, temperature readings, grill and probe names, ratings, and results.
 
-On Android, if you select photos, PitTech copies them into the app's private storage on your device. On iOS, an imported PitTech ZIP archive can restore photos from an existing cook history; the current iOS app does not add or display photos. Android may also save a crash diagnostic locally. That report can include a reference code, time, error summary, exception details, thread name, stack trace, and Android process-exit details.
+On Android and iOS, if you select or take photos, PitTech copies them into the app's private storage on your device. A compatible PitTech ZIP archive can restore photos on either platform. Android may also save a crash diagnostic locally. That report can include a reference code, time, error summary, exception details, thread name, stack trace, and Android process-exit details.
 
-Cook logging does not require sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. The app does not use a separate analytics or automatic crash-reporting service. In experimental debug and Firebase Dev controller-test builds, BLE scan observations, GATT inventory, protocol responses, bounded passive-notification statistics, and bounded controller debug observations are held in memory for the current controller-test screen session and are not uploaded automatically. Raw controller interrogation data is not persisted as a controller history.
+Cook logging does not require sign-in or online sync. Cook records and photos stay on your device unless you export or share them. Crash reports are saved locally and are not sent automatically. PitTech does not integrate a separate analytics or automatic crash-reporting service; third-party advertising SDK collection is described above. In experimental debug and Firebase Dev controller-test builds, BLE scan observations, GATT inventory, protocol responses, bounded passive-notification statistics, and bounded controller debug observations are held in memory for the current controller-test screen session and are not uploaded automatically. Raw controller interrogation data is not persisted as a controller history.
 
 ## Android grill connections
 
