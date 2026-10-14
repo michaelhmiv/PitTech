@@ -72,7 +72,7 @@ class MealRecipeUserFlowsTest {
         compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.cookRepository.recipeAttempt(mac.id)?.description == "Try more Gouda" } }
         assertTrue(runBlocking(Dispatchers.IO) { app.database.recipeDao().revisions().all { RecipeSnapshotCodec.decode(it.snapshotJson).description.isEmpty() } })
         compose.waitUntil(20000) { compose.onAllNodesWithTag("recipe-save").fetchSemanticsNodes().isEmpty() }
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         compose.onNodeWithTag("meal-recipe-actions").performScrollTo().performClick()
         compose.onNodeWithTag("live-cook-elapsed").performScrollTo()
         compose.waitForIdle()
@@ -90,7 +90,7 @@ class MealRecipeUserFlowsTest {
         assertEquals(meal.id, variation.sourceCookId)
         assertTrue(runBlocking(Dispatchers.IO) { notePlanEvents(app.database.cookDao().getTimelineEventsForCook(meal.id)).none { it.action in CookPhases.phaseActions } })
         compose.waitUntil(20000) { compose.onAllNodesWithTag("recipe-save").fetchSemanticsNodes().isEmpty() }
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         compose.onNodeWithTag("meal-view-summary").performScrollTo()
         compose.waitForIdle()
         shot("meal-finished-recipe-choice")
