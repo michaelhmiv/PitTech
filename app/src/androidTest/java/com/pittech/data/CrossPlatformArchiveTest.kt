@@ -66,6 +66,7 @@ class CrossPlatformArchiveTest {
             reminders.save(next, currentMac.id, "Last time wrapped · check the bark", ReminderTrigger.Historical("food_on", milestone.offsetMillis!!), sourceRevision = saved.currentRevisionId, sourceMilestone = milestone.sourceEventId)
             reminders.save(next, null, "Stir in ten minutes", ReminderTrigger.Duration(System.currentTimeMillis(), 600000))
             repo.createCookReminder(next, "Legacy pending timer", System.currentTimeMillis() + 600000)
+            repo.guide.save(next, GuidePresentation(true, db.cookDao().getDishesForCook(next).take(2).map { it.id }.toSet()))
             val output = ByteArrayOutputStream(); transfer.writeZip(output)
             val final = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
             assertEquals(PitTechDataTransfer.ARCHIVE_VERSION, final.archiveVersion); assertEquals(2, final.snapshot.reminderRules.size)

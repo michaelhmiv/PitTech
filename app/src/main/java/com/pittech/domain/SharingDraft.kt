@@ -74,6 +74,8 @@ object SharingDraftCodec {
             require(story.getInt("version") == 1 && (story.isNull("attemptId") || story.getString("attemptId").isNotBlank())) { "Invalid recorded cook story." }
             require(story.getJSONArray("readings").length() <= 250000) { "Too many source measurements in one dish." }
             require(!story.isNull("attemptId") || story.getJSONArray("readings").length() == 0) { "Measurements require an actual source attempt." }
+            RecipeSnapshotCodec.decode(JSONObject(RecipeSnapshotCodec.encode(e.snapshot)).put("observations", story.optJSONArray("observations") ?: JSONArray())
+                .put("smokingAnchorUtcMillis", story.opt("anchorUtcMillis") ?: JSONObject.NULL).toString())
             val samples = story.getJSONArray("readings")
             story.optJSONArray("connectionGaps")?.let { gaps -> require(gaps.length() <= 10000 && (0 until gaps.length()).all { gaps.getDouble(it).isFinite() && gaps.getDouble(it) > 0 }) { "Invalid recorded measurement gaps." } }
             for (i in 0 until samples.length()) {

@@ -80,7 +80,7 @@ internal fun guideState(records: List<CompanionRecord>) = records.firstOrNull { 
             TextButton({ expanded = !expanded }) { Text(if (expanded) "Hide instructions" else "Instructions · ${working.instructions.size}") }
             if (expanded) working.instructions.forEach { step -> Text("Instruction · ${step.title}${if (step.details.isBlank()) "" else ": ${step.details}"}") }
             if (anchor == null) Text("Record actual Food on for this dish to align the guide. Preparation offsets are retained.")
-            val observations = RecipeReferenceTimeline.events(guide.snapshot)
+            val observations = RecipeReferenceTimeline.events(guide.recordedSnapshot)
             val displayed = if (compact) observations.take(3) else observations.take(count)
             displayed.forEach { source ->
                 val ordinal = observations.takeWhile { it.sourceEventId != source.sourceEventId }.count { source.action != null && it.action == source.action }

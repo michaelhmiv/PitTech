@@ -84,7 +84,7 @@ private struct RecipeDishGuide: View {
     let compact: Bool
     var onFullGuide: () -> Void
     @State private var count = 50
-    private var events: [JSONValue] { RecipeReferenceTimeline.events(item.guide.snapshot) }
+    private var events: [JSONValue] { RecipeReferenceTimeline.events(item.guide.recordedSnapshot) }
     private var anchor: Double? { store.guideAnchor(cookId, dishId: item.id) }
     private var differs: Bool { item.working.draft != item.guide.snapshot.draft || item.working.instructions != item.guide.snapshot.instructions }
     private func paired(_ source: JSONValue, index: Int) -> String {

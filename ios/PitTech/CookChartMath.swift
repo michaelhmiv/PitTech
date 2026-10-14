@@ -4,6 +4,7 @@ struct NativePlotPoint: Identifiable {
     let id: String
     let reading: TemperatureSample
     let segmentId: String
+    let segmentSize: Int
 }
 enum CookChartMath {
     static func value(_ sample: TemperatureSample, unit: String) -> Double { unit == "C" ? (sample.fahrenheit - 32) * 5 / 9 : sample.fahrenheit }

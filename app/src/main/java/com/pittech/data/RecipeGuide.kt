@@ -20,6 +20,11 @@ data class GuidePresentation(val visible: Boolean = false, val dishIds: Set<Stri
 }
 
 data class PinnedRecipeGuide(val revisionId: String, val snapshot: RecipeSnapshot, val story: String) {
+    val recordedSnapshot: RecipeSnapshot get() {
+        val facts = JSONObject(story)
+        return RecipeSnapshotCodec.decode(JSONObject(RecipeSnapshotCodec.encode(snapshot)).put("observations", facts.optJSONArray("observations") ?: JSONArray())
+            .put("smokingAnchorUtcMillis", facts.opt("anchorUtcMillis") ?: JSONObject.NULL).toString())
+    }
     fun encode() = JSONObject().put("version", 1).put("revisionId", revisionId)
         .put("snapshot", JSONObject(RecipeSnapshotCodec.encode(snapshot))).put("story", JSONObject(story))
     companion object {
@@ -40,7 +45,7 @@ object RecipeGuideProjection {
         "pit", "pit_ambient", "ambient_temperature", "grill_temperature", "pit_temperature", "pit_probe" -> "pit"
         else -> raw
     }
-    fun channel(dishId: String, row: JSONObject) = listOf(dishId, if (row.isNull("probeId")) row.getString("probeName") else row.getString("probeId"), role(row.getString("measurementType"))).joinToString("|")
+    fun channel(dishId: String, row: JSONObject) = listOf(dishId, if (row.isNull("probeId")) "sample:${row.getString("id")}" else row.getString("probeId"), role(row.getString("measurementType"))).joinToString("|")
     fun rows(guide: PinnedRecipeGuide) = CookPackHistory.rows(JSONObject(guide.story), "readings")
     fun currentAnchor(data: CookDetailData, dishId: String): Long? {
         val created = data.dishes.firstOrNull { it.id == dishId }?.createdAtUtcMillis ?: return null
@@ -58,7 +63,7 @@ object RecipeGuideProjection {
             val sourceAt = row.getLong("measuredAtUtcMillis"); val at = anchor + sourceAt - originalAnchor
             val id = "guide:$dishId:${row.getString("id")}"
             original[id] = sourceAt
-            SensorReadingEntity(id, "guide:$dishId", dishId, if (row.isNull("probeId")) null else row.getString("probeId"),
+            SensorReadingEntity(id, "guide:$dishId", dishId, if (row.isNull("probeId")) "sample:${row.getString("id")}" else row.getString("probeId"),
                 "Author · $name · ${row.getString("probeName")}", row.getString("measurementType"), row.getDouble("value"), row.getString("unit"),
                 at, row.optString("timeZoneId", "UTC"), row.getString("source"), qualityStatus = row.optString("qualityStatus", "valid"),
                 recordedAtUtcMillis = at, timestampBasis = row.optString("timestampBasis", "measurement"), samplingIntervalMillis = row.optLong("samplingIntervalMillis", 15000))

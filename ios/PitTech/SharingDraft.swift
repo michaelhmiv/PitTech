@@ -40,6 +40,10 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
             }
             let gaps = story["connectionGaps"]?.arrayValue ?? []
             guard gaps.count <= 10000, gaps.allSatisfy({ $0.numberValue.map { $0.isFinite && $0 > 0 } == true }) else { throw PitTechArchiveError.invalidArchive }
+            var facts = try entry.snapshot
+            facts.observations = story["observations"]?.arrayValue ?? []
+            facts.smokingAnchorUtcMillis = story["anchorUtcMillis"]?.numberValue.map(Int64.init)
+            try facts.validate()
         }
         if let heroPhotoId, !entries.contains(where: { $0.included && $0.photoIds.contains(heroPhotoId) }) { throw PitTechArchiveError.invalidArchive }
     }

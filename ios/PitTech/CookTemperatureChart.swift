@@ -87,7 +87,7 @@ struct CookTemperatureChart: View {
         let gaps = id.hasPrefix("guide:") ? guideData.filter { $0.readings.first?.cookId == id }.flatMap(\.gaps) : store.events(for: id).filter { $0.eventType == "connection_gap" }.map(\.occurredAt)
         return CookChartMath.segments(rows, gaps: gaps)
     } }
-    private var points: [NativePlotPoint] { segments.filter { !hidden.contains($0[0].seriesId) }.flatMap { rows in CookChartMath.reduced(rows).map { NativePlotPoint(id: $0.id, reading: $0, segmentId: rows[0].id) } } }
+    private var points: [NativePlotPoint] { segments.filter { !hidden.contains($0[0].seriesId) }.flatMap { rows in CookChartMath.reduced(rows).map { NativePlotPoint(id: $0.id, reading: $0, segmentId: rows[0].id, segmentSize: rows.count) } } }
     private var fullStart: Double { min((plottedSamples.map(plotX) + events.map { markerX($0) }).min() ?? 0, x(cook?.startedAt ?? .now)) }
     private var fullEnd: Double { max(fullStart + 1, (plottedSamples.map(plotX) + events.map { markerX($0) }).max() ?? fullStart + 1) }
     private var span: Double { min(max(1, window), fullEnd - fullStart) }
@@ -185,7 +185,7 @@ struct CookTemperatureChart: View {
         Chart {
             ForEach(points) { point in
                 let r = point.reading
-                if r.source == "manual" {
+                if r.source == "manual" || point.segmentSize == 1 {
                     PointMark(x: .value("Time", plotX(r)), y: .value("Temperature", CookChartMath.value(r, unit: unit))).foregroundStyle(color(r.seriesId))
                 } else {
                     LineMark(x: .value("Time", plotX(r)), y: .value("Temperature", CookChartMath.value(r, unit: unit)), series: .value("Segment", point.segmentId)).foregroundStyle(color(r.seriesId)).lineStyle(StrokeStyle(lineWidth: 2, dash: r.id.hasPrefix("guide:") ? [7, 5] : []))
@@ -266,10 +266,7 @@ struct CookTemperatureChart: View {
     }
     private func eligible(_ sample: TemperatureSample, dish: String) -> Bool { dish.isEmpty || sample.dishId == dish || sample.dishId == nil && ["pit", "pit_ambient", "ambient_temperature", "setpoint"].contains(sample.measurementType) }
     private func restoreReference() {
-        guard let ref = store.savedReference(cookId, dishId: currentDish) ?? store.recipeSource(currentDish).flatMap({ source -> NativeCookReference? in
-            guard let revision = source["recipeRevisionId"]?.stringValue.flatMap(store.recipeRevision), let original = revision["sourceCookId"]?.stringValue, let dish = revision["sourceDishId"]?.stringValue else { return nil }
-            return NativeCookReference(dishId: currentDish, sourceCookId: original, sourceDishId: dish)
-        }) else { return }
+        guard let ref = store.savedReference(cookId, dishId: currentDish) else { return }
         comparisonCook = ref.sourceCookId; sourceDish = ref.sourceDishId; alignment = ref.anchor
         let current = samples.filter { eligible($0, dish: currentDish) }, source = store.readings(for: ref.sourceCookId).filter { eligible($0, dish: sourceDish) }
         func key(_ preferred: String?, _ name: String, _ rows: [TemperatureSample]) -> String {

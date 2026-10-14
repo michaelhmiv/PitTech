@@ -10,6 +10,12 @@ struct NativePinnedRecipeGuide {
     let revisionId: String
     let snapshot: RecipeSnapshot
     let story: JSONValue
+    var recordedSnapshot: RecipeSnapshot {
+        var result = snapshot
+        result.observations = story.objectValue?["observations"]?.arrayValue ?? []
+        result.smokingAnchorUtcMillis = story.objectValue?["anchorUtcMillis"]?.numberValue.map(Int64.init)
+        return result
+    }
     init(revisionId: String, snapshot: RecipeSnapshot, story: JSONValue) {
         self.revisionId = revisionId; self.snapshot = snapshot; self.story = story
     }
@@ -49,7 +55,7 @@ enum RecipeGuideProjection {
         return raw
     }
     static func channel(_ dishId: String, _ row: [String: JSONValue]) -> String {
-        [dishId, row["probeId"]?.stringValue ?? row["probeName"]?.stringValue ?? "", role(row["measurementType"]?.stringValue ?? "food")].joined(separator: "|")
+        [dishId, row["probeId"]?.stringValue ?? "sample:" + (row["id"]?.stringValue ?? ""), role(row["measurementType"]?.stringValue ?? "food")].joined(separator: "|")
     }
     static func aligned(_ guide: NativePinnedRecipeGuide, dishId: String, name: String, anchor: Double?) -> NativeAlignedGuide {
         guard let anchor, let original = guide.story.objectValue?["anchorUtcMillis"]?.numberValue else { return NativeAlignedGuide() }
@@ -59,6 +65,7 @@ enum RecipeGuideProjection {
             let alias = "guide:\(dishId):\(id)"
             result.originalTimes[alias] = at
             row["id"] = .string(alias); row["cookId"] = .string("guide:" + dishId); row["dishId"] = .string(dishId)
+            if row["probeId"]?.stringValue == nil { row["probeId"] = .string("sample:" + id) }
             row["probeName"] = .string("Author · \(name) · \(row["probeName"]?.stringValue ?? "Source channel")")
             row["measuredAtUtcMillis"] = .number(anchor + at - original)
             if let sample = TemperatureSample(json: .object(row)) { result.readings.append(sample) }
