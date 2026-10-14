@@ -79,6 +79,14 @@ PY
 collect_evidence_and_stop() {
   local result=$?
   set +e
+  # If recording ever started, salvage whatever video exists even when the
+  # storyboard died early — a partial video is far better evidence than none.
+  if [[ "$video_started" == "true" ]]; then
+    timeout 20 adb shell pkill -2 screenrecord >/dev/null 2>&1
+    sleep 2
+    timeout 60 adb pull /sdcard/fgs-demo.mp4 "$output_dir/fgs-demo.mp4" >/dev/null 2>&1
+    timeout 20 adb pull /sdcard/screenrecord.log "$output_dir/screenrecord.log" >/dev/null 2>&1
+  fi
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   timeout 20 adb exec-out screencap -p > "$output_dir/final-emulator-screen.png" 2>/dev/null
   if [[ -n "$emulator_pid" ]]; then
@@ -145,7 +153,7 @@ printf 'no\n' | "$avdmanager_bin" create avd \
 "$emulator_bin" \
   -avd "$avd_name" \
   -no-window \
-  -gpu lavapipe \
+  -gpu swiftshader_indirect \
   -noaudio \
   -no-boot-anim \
   -no-snapshot \
@@ -187,6 +195,15 @@ echo "Preparing the device (disable lock screen, keep screen on, long timeout)."
 timeout 30 adb shell locksettings set-disabled true
 timeout 30 adb shell svc power stayon true
 timeout 30 adb shell settings put system screen_off_timeout 1800000
+
+# Pre-grant runtime permissions so no system permission dialog interrupts the
+# storyboard (run #1: the Bluetooth grant flow derailed the later steps).
+# The demo is about foreground-service behavior, not the permission prompt.
+echo "Pre-granting runtime permissions (Bluetooth, location, notifications)."
+timeout 30 adb shell pm grant com.pittech.debug android.permission.BLUETOOTH_SCAN || true
+timeout 30 adb shell pm grant com.pittech.debug android.permission.BLUETOOTH_CONNECT || true
+timeout 30 adb shell pm grant com.pittech.debug android.permission.ACCESS_FINE_LOCATION || true
+timeout 30 adb shell pm grant com.pittech.debug android.permission.POST_NOTIFICATIONS || true
 # One plain launch first so any first-run dialogs are dismissed before seeding.
 timeout 60 adb shell am start -n com.pittech.debug/com.pittech.MainActivity
 sleep 8
@@ -204,13 +221,26 @@ timeout 20 adb shell am force-stop com.pittech.debug
 timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
 
 echo "Starting on-device screen recording."
-timeout 20 adb shell 'nohup screenrecord --size 1080x1920 --bit-rate 4000000 --time-limit 175 /sdcard/fgs-demo.mp4 >/dev/null 2>&1 &' >/dev/null 2>&1
+timeout 20 adb shell 'nohup screenrecord --size 1080x1920 --bit-rate 4000000 --time-limit 175 /sdcard/fgs-demo.mp4 >/sdcard/screenrecord.log 2>&1 &' >/dev/null 2>&1
 sleep 2
 if [[ -z "$(timeout 20 adb shell pidof screenrecord 2>/dev/null | tr -d '\r' || true)" ]]; then
   echo "screenrecord did not start on the emulator." >&2
+  timeout 20 adb shell cat /sdcard/screenrecord.log >&2 2>/dev/null || true
   exit 1
 fi
 video_started=true
+# Verify the encoder is actually writing: run #1's screenrecord process stayed
+# alive but its H.264 encoder failed at startup ("Failed to query component
+# interface for required system resources"), leaving no usable video. The mp4
+# must exist and be growing after a few seconds, else fail fast and loud.
+sleep 4
+mp4_probe="$(timeout 20 adb shell stat -c%s /sdcard/fgs-demo.mp4 2>/dev/null | tr -d '\r' || true)"
+if [[ -z "$mp4_probe" || "$mp4_probe" == "0" ]]; then
+  echo "screenrecord is running but /sdcard/fgs-demo.mp4 is missing or empty after 6s — encoder failure." >&2
+  timeout 20 adb shell cat /sdcard/screenrecord.log >&2 2>/dev/null || true
+  exit 1
+fi
+echo "Recording verified: fgs-demo.mp4 is ${mp4_probe} bytes and growing."
 
 # --- Storyboard (keep total under ~115s; screenrecord caps at 175s) ---
 # 1. Devices tab shows "Temperature connections · Beta" with the seeded profile.
@@ -228,14 +258,18 @@ if ! tap_text "Add temperature connection" 15; then
 fi
 sleep 3
 
-# 3. Pick the Combustion provider and grant Bluetooth access.
+# 3. Pick the Combustion provider and grant Bluetooth access. Permissions are
+# pre-granted (see device prep), so the in-app grant button and the system
+# dialog may legitimately never appear — both taps are best-effort only.
 tap_text "Combustion"
 sleep 3
-tap_text "Allow Bluetooth access"
-sleep 3
-# The Android 12+ Bluetooth permission system dialog.
-tap_text "Allow" 15
-sleep 2
+if tap_text "Allow Bluetooth access" 10; then
+  sleep 2
+  # The Android 12+ Bluetooth permission system dialog, if it still appears.
+  if tap_text "Allow" 10; then
+    sleep 2
+  fi
+fi
 
 # 4. Run the real Combustion discovery window so the SDK foreground service
 # starts (evidence captured next). Discovery with no probe nearby ends on its own.
@@ -248,12 +282,20 @@ timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/
 timeout 20 adb logcat -d -t 300 > "$output_dir/logcat-during-discovery.txt" 2>/dev/null || true
 if tap_text "Cancel" 5; then
   sleep 1
-else
-  press_back
 fi
+# NOTE: no press_back fallback here. In run #1, Back from the post-grant
+# profile screen exited the app to the launcher, and the next tab tap then
+# timed out fatally. The bottom tabs are visible on every main screen, so
+# step 5 can navigate directly.
 
 # 5. Back to the cook with live synthetic temperatures. The cooks tab is
-# labeled "Meals" (MainSection.COOKS title in CookScreens.kt).
+# labeled "Meals" (MainSection.COOKS title in CookScreens.kt). Make sure the
+# app is in the foreground first (relaunch if anything backgrounded it).
+if ! timeout 15 adb shell dumpsys activity activities 2>/dev/null | grep -q "topResumedActivity=ActivityRecord{[^}]*com.pittech.debug"; then
+  echo "App was not in the foreground before step 5; relaunching it."
+  timeout 60 adb shell am start -n com.pittech.debug/com.pittech.MainActivity
+  sleep 4
+fi
 tap_text "Meals"
 tap_text "CI synthetic telemetry restart"
 sleep 10
