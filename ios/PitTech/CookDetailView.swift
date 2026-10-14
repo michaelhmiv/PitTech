@@ -85,13 +85,13 @@ struct CookDetailView: View {
         }
     }
     private var shortcutBar: some View {
-        VStack(alignment: .leading) {
-            MealActionRow {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
                 Button { open() } label: { Label("Log", systemImage: "note.text") }
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer") }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera") }
-            }.buttonStyle(.bordered)
-            MealRemindersLink(cookId: cookId)
+                NavigationLink { MealRemindersView(cookId: cookId) } label: { Label("Reminders", systemImage: "bell") }
+            }.font(.caption).buttonStyle(.bordered).fixedSize(horizontal: true, vertical: false).frame(minHeight: 44)
         }
     }
     private func open(category: String = "general", action: String? = nil, dishId: String? = nil) {
