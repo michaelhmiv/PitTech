@@ -1,7 +1,10 @@
-# Telemetry public release gates — 2026-10-13
+# Telemetry public release validation — 2026-10-13
 
-Code merging has been authorized; public enablement remains off. Automated compilation and fixtures do not establish
-physical device support or permission for an advertised commercial integration.
+The owner authorized enabling all implemented connections in store builds on
+2026-10-13. Android Release and iOS Release now expose the five read-only Beta
+providers, collection and probe reminders. Automated compilation and fixtures do
+not establish physical device compatibility or a manufacturer's endorsement.
+The validation items below remain recorded limitations, not feature switches.
 
 | Source | Implemented Android Beta | Remaining validation or capability gap |
 |---|---|---|
@@ -23,7 +26,8 @@ Only debug and Dev Kotlin source sets include that directory. Public release use
 non-network compatibility monitor in `app/src/release`; historical models remain readable.
 The gate checks public source sets, compiled APK/AAB DEX and the resolved release dependency
 graph. Production cleartext is disabled. Hiding a route is not accepted as isolation.
-New telemetry remains disabled in public release until the source-specific gates are cleared.
+New telemetry is enabled in public release. The source, compiled-artifact and
+dependency isolation checks continue to reject legacy controller clients.
 
 Full Combustion MIT text ships in Android assets. Native iOS notices include Combustion MIT,
 Swift Collections and NordicDFU terms. Inspect the resolved dependency versions before release.
@@ -37,8 +41,9 @@ Android can still stop the process. Supported histories recover later; unsupport
 leave a gap. Force-stop blocks Android restarts until the user opens the app. Battery effects
 and vendor-specific background behavior need physical testing.
 
-iOS counterparts are reviewed separately in PR #87. The current iOS public configuration
-has no connected-device UI. Native Beta monitoring is foreground-only; no entitlement is used
+iOS counterparts are reviewed separately in PR #87. The iOS public configuration
+includes Devices, collection lifecycle hooks and connected-probe reminders.
+Native Beta monitoring is foreground-only; no entitlement is used
 to imply continuous cloud polling while suspended. Home Assistant requires HTTPS on iOS.
 The pinned iOS SDK lacks a bounded log-request API and scanner-stop control, so native BLE
 history/repeater mode remains unavailable. The Simulator cannot verify Bluetooth, MQTT vendor
@@ -49,8 +54,10 @@ permissions or background hardware behavior.
 See [APP_REVIEW_CONNECTION_EVIDENCE.md](APP_REVIEW_CONNECTION_EVIDENCE.md) for dated terms,
 privacy boundaries and the actual iOS release distinction. A public API and SDK license do not
 by themselves establish unrestricted service or trademark permission. Ordinary development
-continues while these public distribution gates remain open.
+continues with these compatibility and service-evidence items recorded.
 
-Before enabling each provider: retain applicable permission evidence; verify on physical
-hardware and account; review the intended store binary and privacy disclosures; record exact
-build SHA, dependency graph and tests. No build is submitted or distributed by merging these PRs. Firebase, Play and App Store Connect require explicit manual release actions.
+For each provider, retain applicable service evidence, verify on physical
+hardware and accounts, review the intended store binary and privacy disclosures,
+and record the exact build SHA, dependency graph and tests. These checks do not
+disable the implemented connections. No build is submitted or distributed by
+merging these PRs. Firebase, Play and App Store Connect use manual release actions.

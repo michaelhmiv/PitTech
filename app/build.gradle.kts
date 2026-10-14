@@ -29,7 +29,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
         buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
-        buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "false")
+        buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
     }
 
     buildTypes {

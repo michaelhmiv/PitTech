@@ -37,6 +37,13 @@ The older Android code includes an experimental read-only Prime Polaris/GrillirG
 
 ## Standard Beta and release gates
 
+On 2026-10-13 the owner authorized enabling all five implemented read-only Beta
+connections in store builds on Android and iOS. Outstanding hardware/account and
+service-evidence checks remain documented; they do not impose a debug-only switch.
+See [platform parity](CONNECTION_PLATFORM_PARITY.md) for actual capabilities and
+platform-specific limitations. This directive does not restore the excluded legacy
+direct-controller clients or authorize equipment-control operations.
+
 A connection may be marked Beta only when it is included in the public artifact, has a documented compatibility/test matrix, uses observation-only operations, handles stale/missing data, protects credentials, respects rate/background limits, and has a truthful, source-backed review of the applicable API/SDK terms. Do not demand a signed partnership when the existing published terms are sufficient; do not ignore material restrictions.
 
 Unsupported and experimental code may be retained in isolated development builds but must never be treated as approved public support solely because a product is open source.

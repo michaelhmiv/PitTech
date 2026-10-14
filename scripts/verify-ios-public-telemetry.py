@@ -14,7 +14,10 @@ for required in ("MIT License", "Combustion", "Nordic", "Apache License", "Runti
         raise SystemExit("Missing bundled dependency notice: " + required)
 executable = root / info["CFBundleExecutable"]
 data = executable.read_bytes()
+for token in (b"Add temperature connection", b"telemetry-connect", b"telemetry-ha-authorize", b"Connected probe temperature"):
+    if token not in data:
+        raise SystemExit("Connected-device UI or probe reminders missing from native public executable: " + token.decode())
 for token in (b"PrimePolarisApi", b"TraegerBackend", b"PitBossCloudTransport", b"api.prime-polaris.com", b"socket.dansonscorp.com", b"mobile-iot-api.iot.traegergrills.io"):
     if token in data:
         raise SystemExit("Legacy controller implementation in native public executable: " + token.decode())
-print("Unsigned iOS Release Simulator bundle passed notices, background-mode and legacy-transport checks.")
+print("Unsigned iOS Release Simulator bundle passed connection/reminder availability, notices, background-mode and legacy-transport checks.")

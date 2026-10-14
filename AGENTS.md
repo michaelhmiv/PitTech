@@ -104,9 +104,9 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
-- The existing Android-only surface (grill-provider integrations, telemetry)
-  gets an explicit decision in the matrix — port, keep Android-only by
-  decision, or fold into the plan — not silent divergence.
+- The [connection parity matrix](docs/CONNECTION_PLATFORM_PARITY.md) records
+  store availability on both clients and explicit port/platform decisions
+  for provider history and background monitoring differences.
 
 ## Keep this file current
 

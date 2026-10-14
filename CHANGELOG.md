@@ -9,7 +9,8 @@ This file begins with a truthful **development baseline** rather than inventing 
 ### Added
 - Meals with independent dishes, editable saved recipe revisions and combinations drawn from different previous meals (Android and iOS).
 - Flexible preparation notes, ingredients and persistent task timers, with separate previous-cook references.
-- Optional time and historical-action reminders; probe thresholds are available with Android monitoring.
+- Optional time and historical-action reminders, plus connected-probe thresholds on Android and iOS.
+- Optional read-only Beta connections for Home Assistant, Combustion, FireBoard, Flame Boss and MEATER in Google Play, TestFlight and App Store builds. Android supports opted-in foreground-service monitoring; iOS monitoring runs while the app is open.
 - A public-facing project overview, contribution and security-reporting guidance, and a documented release-note process.
 - The Apache-2.0 source-code license, separately reserved branding asset guidance, and third-party notice references.
 - A five-integration roadmap approving all four manufacturer SDK/API candidates and the optional user-operated Home Assistant bridge for development, with separate public-release terms validation. Legacy GrillirG cook histories remain supported without a public direct connector.
