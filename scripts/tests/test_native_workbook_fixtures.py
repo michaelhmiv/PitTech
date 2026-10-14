@@ -67,6 +67,36 @@ class NativeWorkbookFixtureTests(unittest.TestCase):
         self.assertIsInstance(workbook['Derived Metrics']['D2'], Decimal)
         self.assertEqual(workbook['Derived Metrics']['I2'], 'PitTech summary v2')
 
+    def test_actual_android_numeric_celsius_matches_csv_and_preserves_relationships(self):
+        path = ROOT / 'contracts/fixtures/tabular/android-v1.xlsx'
+        workbook = read_workbook(path)
+        self.assertEqual(len(workbook), 19)
+        with (path.parent / 'android-v1.csv').open(newline='', encoding='utf-8') as source:
+            rows = list(csv.DictReader(source))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(workbook['Readings']['A2'], row['reading_id'])
+        self.assertEqual(workbook['Readings']['B2'], row['cook_id'])
+        self.assertEqual(workbook['Readings']['C2'], row['dish_id'])
+        self.assertEqual(workbook['Readings']['F2'], Decimal(row['value']))
+        self.assertEqual(workbook['Readings']['F2'], Decimal('85'))
+        self.assertEqual(workbook['Readings']['G2'], row['unit'])
+        self.assertEqual(row['unit'], '°C')
+        self.assertEqual(workbook['Readings']['H2'], row['measured_at_utc'])
+        self.assertEqual(workbook['Readings']['J2'], row['time_zone'])
+        self.assertEqual(workbook['Readings']['N2'], Decimal(row['sampling_interval_millis']))
+        self.assertEqual(workbook['Photos']['B2'], row['cook_id'])
+        self.assertEqual(workbook['Photos']['C2'], row['dish_id'])
+        self.assertEqual(workbook['Derived Metrics']['I2'], 'PitTech summary v2')
+
+    def test_actual_android_long_values_keep_every_unicode_character(self):
+        workbook = read_workbook(ROOT / 'contracts/fixtures/tabular/android-v1.xlsx')
+        chunks = workbook['Long Values']
+        self.assertEqual([(chunks[f'A{r}'], chunks[f'B{r}']) for r in (2, 3)], [('Cook Summary', 'S3')] * 2)
+        self.assertEqual([chunks[f'C{r}'] for r in (2, 3)], [Decimal(1), Decimal(2)])
+        self.assertEqual(chunks['D2'] + chunks['D3'], '🌶' * 17000)
+        self.assertIn('Long Values', workbook['Cook Summary']['S3'])
+
 
 if __name__ == '__main__':
     unittest.main()

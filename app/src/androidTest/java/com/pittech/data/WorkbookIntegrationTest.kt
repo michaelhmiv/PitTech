@@ -32,7 +32,7 @@ class WorkbookIntegrationTest {
             val repository = CookRepository(database, PhotoStorage(context)); val transfer = PitTechDataTransfer(context, repository)
             val cook = repository.startCook(NewCookDraft("Pork", dishes = listOf(DishDraft("Pork", "Pork"))))
             val dish = database.cookDao().getDishesForCook(cook).single()
-            val probes = listOf("first", "second").map { ProbeEntity(it, cook, assignedDishId = dish.id, name = "=Probe, \"same\"\n", measurementType = "food", source = "manual", createdAtUtcMillis = 1700000000000) }
+            val probes = listOf("first", "second").map { ProbeEntity(it, cook, assignedDishId = dish.id, name = "=Probe,\n\"same\"", measurementType = "food", source = "manual", createdAtUtcMillis = 1700000000000) }
             database.cookDao().insertProbesIgnoringDuplicates(probes)
             repository.notes.save(CookNoteDraft(cookId = cook, dishId = dish.id, title = "Measured", temperatures = probes.mapIndexed { index, probe -> NoteTemperature(probeName = probe.name, probeId = probe.id, valueText = if (index == 0) "74.125" else "84.375", unit = "°C", measuredAt = 1700000000123 + index, dishId = dish.id) }))
             val text = "🌶".repeat(17000) + "Line, \"quoted\"\nNext"
@@ -42,13 +42,13 @@ class WorkbookIntegrationTest {
             val sheets = sheets(output.toByteArray()); assertEquals(19, sheets.size)
             val readings = cells(sheets.getValue("Readings"))
             assertEquals("74.125", readings.getValue("F2").textContent); assertEquals("", readings.getValue("F2").getAttribute("t"))
-            assertEquals("=Probe, \"same\"\n", readings.getValue("D2").textContent); assertEquals("inlineStr", readings.getValue("D2").getAttribute("t")); assertEquals("°C", readings.getValue("G2").textContent)
+            assertEquals("=Probe,\n\"same\"", readings.getValue("D2").textContent); assertEquals("inlineStr", readings.getValue("D2").getAttribute("t")); assertEquals("°C", readings.getValue("G2").textContent)
             assertEquals(0, sheets.getValue("Readings").getElementsByTagNameNS("*", "f").length)
             val summary = cells(sheets.getValue("Cook Summary")); assertEquals("Pork", summary.getValue("B2").textContent); assertFalse(summary.containsKey("B3"))
             val chunks = cells(sheets.getValue("Long Values")); assertEquals(text, chunks.getValue("D2").textContent + chunks.getValue("D3").textContent)
             chunks.filter { it.key.startsWith("D") }.values.forEach { assertTrue(it.textContent.length <= 32767) }
             val metrics = cells(sheets.getValue("Derived Metrics")); assertEquals(2, metrics.filter { it.key.startsWith("C") && it.value.textContent == "reading_count" }.size)
-            val csv = ByteArrayOutputStream(); transfer.writeCsv(csv, cook); assertTrue(csv.toString("UTF-8").contains("\"'=Probe, \"\"same\"\"\n\""))
+            val csv = ByteArrayOutputStream(); transfer.writeCsv(csv, cook); assertTrue(csv.toString("UTF-8").contains("\"'=Probe,\n\"\"same\"\"\""))
         } finally { database.close() }
     }
 }

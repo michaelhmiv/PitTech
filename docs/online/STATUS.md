@@ -8,8 +8,8 @@ remain separate. No online phase is released until its complete parity gate pass
 |---|---|---|---|
 | 00 | Design, parity, contracts, CI requirements | Draft PR #92 | Three schemas validated; concept states rendered/inspected; backend workflow write path remains open |
 | 01 | Native refresh and core parity | Draft PR #93 | All configured checks passed at `d9389c9`; iOS run 38592169385 and Android run 38592169411. Native composition/finish and large-text screenshots inspected. Deeper free Insights/provider port remain open |
-| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | All configured checks passed at `c622884`; iOS run 38592179176 and Android run 38592179181. Source isolation, owned-photo restore/reimport and stale edits pass; native source-unit normalization regression is being added. Archive v10, Room v10 |
-| 03 | Cook Packs and exports | Draft PR #97 | Partial→whole/repeated import and archive-boundary tests pass on iOS; image fixture corrected to explicit pixels. Native preview-flow tests and bounded CSV/workbooks added, including lossless long-text chunks and probe-channel summaries. Updated exact-head CI, scoped recorded-history import and actual writer fixture exchange remain open |
+| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | iOS passed at `4b0b9e7`. The expanded Android gate exposed a dense-test fixture smaller than its asserted boundary; `488baef` uses 20,000 raw samples and is awaiting Actions. Archive v10, Room v10 |
+| 03 | Cook Packs and exports | Draft PR #97 | Actual Android and native recipe/collection packs, CSV and workbook fixtures retained with hashes and producer provenance. Independent reader: 18 local checks pass; Actions/native cross-platform exchange is pending. Expanded Android gate exposed fixture-size/probe-name setup issues; native reminder-return test now waits for sheet and navigation dismissal. Scoped recorded-history export/import and full parity evidence remain open |
 | 04 | Shared guide presentation | Pending | |
 | 05 | Native share cards | Pending | |
 | 06 | API/relay | Pending | |

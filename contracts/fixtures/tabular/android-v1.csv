@@ -1,0 +1,2 @@
+reading_id,cook_id,dish_id,probe_id,probe_name,measurement_type,value,unit,measured_at_utc,measured_at_local,time_zone,source,source_device_id,quality_status,recorded_at_utc,timestamp_basis,sampling_interval_millis
+"e9a148c2-8939-4e5d-a1b1-3e379f638b65","12dafa3f-866a-4e9b-b8d5-696c0d14a256","e522085f-5661-423c-adad-13c3b040323e","4e2c399e-20eb-381a-b7de-fe339145160a","Android food","food","85.0","°C","2026-10-14T17:24:09.332Z","2026-10-14T17:24:09.332Z","Etc/UTC","manual","","valid","2026-10-14T17:34:09.360Z","measurement","0"

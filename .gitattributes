@@ -1,3 +1,3 @@
 * text=auto
-contracts/fixtures/tabular/*.csv -text
+contracts/fixtures/tabular/*.csv -text whitespace=cr-at-eol
 *.bat text eol=crlf
