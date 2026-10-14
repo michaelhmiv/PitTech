@@ -46,7 +46,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         app.buttons["recipe-compose"].tap()
         for name in ["Chicken", "Mac and cheese", "Pork"] {
             let toggle = app.buttons["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
-            expectation(for: NSPredicate(format: "value == %@", "Selected"), evaluatedWith: toggle)
+            expectation(for: NSPredicate(format: "selected == YES"), evaluatedWith: toggle)
             waitForExpectations(timeout: 5)
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()
