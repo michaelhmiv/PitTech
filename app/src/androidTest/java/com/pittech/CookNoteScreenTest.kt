@@ -23,7 +23,7 @@ class CookNoteScreenTest {
         compose.onNodeWithTag("timeline-add-temperature", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("timeline-entry-details").performTextInput("Bark is set")
         compose.onNodeWithTag("temperature-value").performTextInput("165")
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         compose.onNodeWithTag("temperature-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(id).any { it.details == "Bark is set" } } }
         val original = runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(id).single { it.details == "Bark is set" } }
@@ -37,7 +37,7 @@ class CookNoteScreenTest {
         compose.onNodeWithTag("timeline-event-edit-note").performClick()
         compose.onNodeWithTag("timeline-entry-details").performTextClearance()
         compose.onNodeWithTag("timeline-entry-details").performTextInput("Wrapped after checking bark")
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         compose.onNodeWithTag("temperature-save").performClick()
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEvent(original.id)?.details == "Wrapped after checking bark" } }
         val edited = runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEvent(original.id)!! }
