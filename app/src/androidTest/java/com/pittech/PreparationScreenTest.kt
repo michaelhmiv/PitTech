@@ -22,7 +22,8 @@ class PreparationScreenTest {
             app.database.clearAllTables()
             app.cookRepository.startCook(NewCookDraft("Prep sample", dishes = listOf(DishDraft("Ribs", "Pork", preparationItems = listOf(IngredientDraft("House rub", amountText = "2", amountUnit = "tbsp"))))))
         }
-        compose.onNodeWithTag("nav-devices").performClick()
+        compose.onNodeWithTag("nav-more").performClick()
+        compose.onNodeWithTag("more-devices").performClick()
         compose.onNodeWithTag("equipment-open").performClick()
         compose.onNodeWithTag("equipment-add").performScrollTo().performClick()
         compose.onNodeWithTag("equipment-name").performTextInput("Backyard")

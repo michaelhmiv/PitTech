@@ -3,6 +3,7 @@ import SwiftUI
 struct NativeTelemetryConnectionsView: View {
     @Environment(CookStore.self) private var store
     @Bindable var runtime: NativeTelemetryRuntime
+    var embedded = false
     @State private var adding = false
     @State private var authorizing = false
     @State private var authRequest: NativeHAAuthRequest?
@@ -15,7 +16,12 @@ struct NativeTelemetryConnectionsView: View {
     @State private var error: String?
     @State private var mapping: NativeTelemetryProfile?
     var body: some View {
-        NavigationStack {
+        Group {
+            if embedded { connectionsContent }
+            else { NavigationStack { connectionsContent } }
+        }
+    }
+    private var connectionsContent: some View {
             List {
                 Section {
                     Text("Optional, read-only connections. Credentials stay in this device's Keychain and cooking telemetry stays in your local library.")
@@ -40,7 +46,6 @@ struct NativeTelemetryConnectionsView: View {
             .navigationTitle("Connections · Beta")
             .sheet(isPresented: $adding) { addView }
             .sheet(item: $mapping) { profile in NativeTelemetryMappingView(profile: profile, runtime: runtime) }
-        }
     }
     private var addView: some View {
         NavigationStack {

@@ -18,7 +18,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             let app = XCUIApplication()
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty"] + (large ? ["--screenshot-large-text"] : [])
             app.launch()
-            app.tabBars.buttons["Devices"].tap()
+            app.tabBars.buttons["More"].tap()
+            app.buttons["more-devices"].tap()
             let add = app.buttons["telemetry-add"]
             reveal(add, app: app)
             capture(large ? "Native Beta connections large text" : "Native Beta connections")
@@ -37,7 +38,8 @@ final class MealRecipeFlowsTests: XCTestCase {
     }
     func testSavedRecipesComposeHistoricalCheckAndFinishWithoutForcedSaving() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset"]; app.launch()
-        app.tabBars.buttons["Saved Recipes"].tap()
+        app.tabBars.buttons["Recipes"].tap()
+        app.buttons["recipe-compose"].tap()
         for name in ["Chicken", "Mac and cheese", "Pork"] {
             let toggle = app.buttons["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
             expectation(for: NSPredicate(format: "value == %@", "Selected"), evaluatedWith: toggle)

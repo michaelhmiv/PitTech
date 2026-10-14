@@ -47,6 +47,7 @@ class MealRecipeUserFlowsTest {
         }
         compose.activityRule.scenario.recreate()
         waitFor("nav-recipes"); compose.onNodeWithTag("nav-recipes").performClick()
+        compose.onNodeWithTag("recipe-compose").performClick()
         sourceRecipes.forEach { recipe -> waitFor("recipe-select-${recipe.id}"); compose.onNodeWithTag("recipe-select-${recipe.id}").performScrollTo().performClick() }
         compose.onNodeWithTag("recipe-meal-title").performScrollTo().performTextInput("Three source meal")
         compose.onNodeWithTag("recipe-start-meal").performScrollTo().performClick()

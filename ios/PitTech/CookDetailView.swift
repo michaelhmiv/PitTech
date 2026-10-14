@@ -3,6 +3,7 @@ import UIKit
 
 struct CookDetailView: View {
     @Environment(CookStore.self) private var store
+    @Environment(NativeTelemetryRuntime.self) private var telemetry
     let cookId: String
     @State private var section = "Live"
     @State private var draft: CookNoteDraft?
@@ -14,6 +15,7 @@ struct CookDetailView: View {
     @State private var foodOnTime = Date.now
     @State private var finishing = false
     @State private var completionChoices = false
+    @State private var showingDevices = false
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var readings: [TemperatureSample] { store.readings(for: cookId) }
     private var events: [TimelineEntry] { store.events(for: cookId) }
@@ -24,10 +26,9 @@ struct CookDetailView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
-                            Text(cook.title).font(.largeTitle.bold())
+                            Text(cook.title).font(.title.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
                             MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
-                            shortcutBar
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
                             }
@@ -49,6 +50,11 @@ struct CookDetailView: View {
                 }
                 .background(PitTechStyle.canvas.ignoresSafeArea())
                 .navigationTitle("Meal").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingDevices = true } label: { Label("Devices", systemImage: "thermometer") }.accessibilityIdentifier("meal-devices")
+                } }
+                .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
+                .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
                 .alert("Finish meal?", isPresented: $finishing) {
                     Button("Finish meal", role: .destructive) { store.finishCook(cookId); if store.saveError == nil { completionChoices = true } }
                     Button("Cancel", role: .cancel) { }
@@ -85,11 +91,7 @@ struct CookDetailView: View {
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer") }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera") }
             }.buttonStyle(.bordered)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in
-                    Button(CookStore.actionLabel(action)) { open(category: "action", action: action) }.buttonStyle(.bordered).fixedSize()
-                } }
-            }
+            MealRemindersLink(cookId: cookId)
         }
     }
     private func open(category: String = "general", action: String? = nil, dishId: String? = nil) {
@@ -100,7 +102,6 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
-                MealRemindersLink(cookId: cookId)
                 MealRecipeActions(cookId: cookId)
                 MealActivityTimers(cookId: cookId)
                 Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())

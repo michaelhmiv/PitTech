@@ -3,9 +3,17 @@ package com.pittech.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,19 +28,22 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val sourcePhotos: List<PhotoEntity> = emptyList(), val selectedPhotoIds: Set<String> = emptySet(),
     val context: List<TimelineEventEntity> = emptyList(), val attemptDishId: String? = null)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable internal fun SavedRecipesLibrary(viewModel: CooksViewModel, standalone: Boolean = false) {
     val recipes by remember { viewModel.recipes.observeRecipes() }.collectAsStateWithLifecycle(emptyList())
     val revisions by remember { viewModel.recipes.observeRevisions() }.collectAsStateWithLifecycle(emptyList())
     val presets by remember { viewModel.recipes.observePresets() }.collectAsStateWithLifecycle(emptyList())
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     var expanded by remember(standalone) { mutableStateOf(standalone) }
-    var query by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("All categories") }
-    var tag by remember { mutableStateOf("All tags") }
-    var favorites by remember { mutableStateOf(false) }
-    var archived by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf(emptySet<String>()) }
-    var mealTitle by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var category by rememberSaveable { mutableStateOf("All categories") }
+    var tag by rememberSaveable { mutableStateOf("All tags") }
+    var favorites by rememberSaveable { mutableStateOf(false) }
+    var archived by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var composing by rememberSaveable { mutableStateOf(false) }
+    var filters by rememberSaveable { mutableStateOf(false) }
+    var mealTitle by rememberSaveable { mutableStateOf("") }
     var existingMealId by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<SavedRecipe?>(null) }
     var editor by remember { mutableStateOf<RecipeEditorRequest?>(null) }
@@ -41,35 +52,70 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val scope = rememberCoroutineScope()
     fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
     val snapshots = remember(revisions) { revisions.associate { it.id to RecipeSnapshotCodec.decode(it.snapshotJson) } }
-    if (standalone) Text("Saved Recipes", style = MaterialTheme.typography.headlineMedium)
+    if (standalone) Text("Your cookbook, ready for another cook.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     else TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}") }
     if (expanded) {
-        OutlinedTextField(query, { query = it }, label = { Text("Find a recipe") }, modifier = Modifier.fillMaxWidth().testTag("recipe-search"))
-        SimpleDropdownField("Category", category, listOf("All categories") + snapshots.values.map { it.dish.foodType }.distinct().sorted(), { category = it })
-        SimpleDropdownField("Tag", tag, listOf("All tags") + snapshots.values.flatMap { it.tags }.distinct().sorted(), { tag = it })
-        Row { FilterChip(favorites, { favorites = !favorites }, label = { Text("Favorites") }); Spacer(Modifier.width(8.dp)); FilterChip(archived, { archived = !archived }, label = { Text("Archived") }) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(query, { query = it }, label = { Text("Find a recipe") }, modifier = Modifier.weight(1f).testTag("recipe-search"))
+            OutlinedIconButton(onClick = { filters = true }, modifier = Modifier.size(48.dp).testTag("recipe-filters")) { Icon(Icons.Filled.FilterList, "Filter recipes") }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(favorites, { favorites = !favorites }, label = { Text("Favorites") }, modifier = Modifier.heightIn(min = 48.dp))
+            FilterChip(composing, { composing = !composing; if (!composing) selected = emptyList() }, label = { Text(if (composing) "Cancel selection" else "Build a meal") }, modifier = Modifier.heightIn(min = 48.dp).testTag("recipe-compose"))
+        }
+        if (category != "All categories" || tag != "All tags" || archived) {
+            Text(listOfNotNull(category.takeUnless { it == "All categories" }, tag.takeUnless { it == "All tags" }, "Archived".takeIf { archived }).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+        }
+        if (filters) {
+            var pendingCategory by remember { mutableStateOf(category) }; var pendingTag by remember { mutableStateOf(tag) }; var pendingArchived by remember { mutableStateOf(archived) }
+            AlertDialog(onDismissRequest = { filters = false }, title = { Text("Filter recipes") }, text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SimpleDropdownField("Category", pendingCategory, listOf("All categories") + snapshots.values.map { it.dish.foodType }.distinct().sorted(), { pendingCategory = it })
+                    SimpleDropdownField("Tag", pendingTag, listOf("All tags") + snapshots.values.flatMap { it.tags }.distinct().sorted(), { pendingTag = it })
+                    FilterChip(pendingArchived, { pendingArchived = !pendingArchived }, label = { Text("Show archived recipes") })
+                }
+            }, confirmButton = { TextButton(onClick = { category = pendingCategory; tag = pendingTag; archived = pendingArchived; filters = false }) { Text("Apply filters") } }, dismissButton = { TextButton(onClick = { filters = false }) { Text("Cancel") } })
+        }
         val shown = recipes.filter { r -> val s = snapshots[r.currentRevisionId]
             (r.archivedAtUtcMillis != null) == archived && r.name.contains(query, true) && (!favorites || r.favorite) &&
                 (category == "All categories" || s?.dish?.foodType == category) && (tag == "All tags" || tag in s?.tags.orEmpty()) }
         if (shown.isEmpty()) Text(if (recipes.isEmpty()) "Save selected dishes from a finished meal here. Your meal history stays available." else "No recipes match these filters.")
         shown.forEach { recipe ->
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row { Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
-                    TextButton(onClick = { detail = recipe }, modifier = Modifier.weight(1f).testTag("recipe-open-" + recipe.id)) { Text(recipe.name) } }
-                Text("Preferred version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: ""} · ${snapshots[recipe.currentRevisionId]?.dish?.foodType.orEmpty()}", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { act { if (archived) viewModel.recipes.unarchive(recipe.id) else viewModel.recipes.setFavorite(recipe.id, !recipe.favorite) } }) { Text(if (archived) "Restore recipe" else if (recipe.favorite) "Remove favorite" else "Favorite") }
-            } }
+            var assets by remember(recipe.currentRevisionId) { mutableStateOf(emptyList<RecipeAsset>()) }
+            LaunchedEffect(recipe.currentRevisionId) { assets = viewModel.recipes.assets(recipe.currentRevisionId) }
+            var menu by remember { mutableStateOf(false) }
+            val snapshot = snapshots[recipe.currentRevisionId]
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    assets.firstOrNull()?.let { RecipePicture(viewModel.recipes.photoUri(it.relativeFilePath)) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (composing) Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
+                        TextButton(onClick = { detail = recipe }, modifier = Modifier.weight(1f).testTag("recipe-open-" + recipe.id)) { Text(recipe.name, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
+                        Box {
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Actions for ${recipe.name}") }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(text = { Text(if (archived) "Restore recipe" else if (recipe.favorite) "Remove favorite" else "Favorite") }, onClick = { menu = false; act { if (archived) viewModel.recipes.unarchive(recipe.id) else viewModel.recipes.setFavorite(recipe.id, !recipe.favorite) } })
+                            }
+                        }
+                    }
+                    snapshot?.let { s ->
+                        Text(listOf(s.dish.foodType, s.dish.cut, if (s.dish.weightText.isNotBlank()) "${s.dish.weightText} ${s.dish.weightUnit}" else "").filter(String::isNotBlank).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (s.description.isNotBlank()) Text(s.description, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                    }
+                    Text("Saved recipe · version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: 1}${if (recipe.favorite) " · favorite" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                }
+            }
         }
         if (selected.isNotEmpty()) {
             val temperatures = selected.mapNotNull { snapshots[it]?.preferredPitTemperatureF }.distinct()
             if (temperatures.size > 1) Text("These recipes use different smoker settings. Choose the setting for this meal when ready.")
             OutlinedTextField(mealTitle, { mealTitle = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-meal-title"))
-            Button(onClick = { act { viewModel.startRecipeMeal(mealTitle, selected.toList()); selected = emptySet() } }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
+            Button(onClick = { act { viewModel.startRecipeMeal(mealTitle, selected); selected = emptyList() } }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
             val active = cooks.filter { it.cook.status != CookStatus.COMPLETED }
             if (active.isNotEmpty()) {
                 val choices = active.mapIndexed { index, c -> c.cook.id to "${c.cook.title} (${index + 1})" }
                 SimpleDropdownField("Existing meal", choices.firstOrNull { it.first == existingMealId }?.second ?: "Choose a meal", listOf("Choose a meal") + choices.map { it.second }, { value -> existingMealId = choices.firstOrNull { it.second == value }?.first })
-                OutlinedButton(onClick = { act { val id = existingMealId ?: return@act; selected.forEach { viewModel.addRecipeToMeal(id, it) }; selected = emptySet(); viewModel.openCook(id) } }, enabled = existingMealId != null && !busy) { Text("Add selected recipes") }
+                OutlinedButton(onClick = { act { val id = existingMealId ?: return@act; selected.forEach { viewModel.addRecipeToMeal(id, it) }; selected = emptyList(); viewModel.openCook(id) } }, enabled = existingMealId != null && !busy) { Text("Add selected recipes") }
             }
         }
         presets.forEach { preset -> TextButton(onClick = { act { viewModel.startMealPreset(preset.id) } }, enabled = !busy) { Text("Repeat ${preset.name}") } }

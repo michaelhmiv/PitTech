@@ -27,6 +27,8 @@ struct SavedRecipesView: View {
     @State private var editor: NativeRecipeRequest?
     @State private var error: String?
     @State private var destination: String?
+    @State private var selecting = false
+    @State private var filterDraft: RecipeFilterDraft?
     private var snapshots: [String: RecipeSnapshot] {
         Dictionary(uniqueKeysWithValues: store.library.recipeRevisions.compactMap { row -> (String, RecipeSnapshot)? in
             guard let o = row.objectValue, let id = o["id"]?.stringValue, let raw = o["snapshotJson"]?.stringValue, let snapshot = try? RecipeSnapshot.decode(raw) else { return nil }
@@ -44,35 +46,51 @@ struct SavedRecipesView: View {
         }
     }
     var body: some View {
-        List {
-            Section {
-                TextField("Find a recipe", text: $query)
-                Picker("Category", selection: $category) {
-                    Text("All categories").tag("All categories")
-                    ForEach(Array(Set(snapshots.values.compactMap { $0.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue?["foodType"]?.stringValue })).sorted(), id: \.self) { Text($0).tag($0) }
-                }
-                Picker("Tag", selection: $tag) { Text("All tags").tag("All tags"); ForEach(Array(Set(snapshots.values.flatMap(\.tags))).sorted(), id: \.self) { Text($0).tag($0) } }
-                Toggle("Favorites", isOn: $favorites); Toggle("Archived", isOn: $archived)
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            Text("Your cookbook, ready for another cook.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+            HStack(spacing: 12) {
+                HStack { Image(systemName: "magnifyingglass").foregroundStyle(PitTechStyle.supporting); TextField("Find a recipe", text: $query).accessibilityIdentifier("recipe-search") }
+                    .padding(12).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                Button { filterDraft = RecipeFilterDraft(category: category, tag: tag, archived: archived) } label: {
+                    Image(systemName: "line.3.horizontal.decrease").frame(width: 44, height: 44)
+                }.accessibilityLabel("Filter recipes").accessibilityIdentifier("recipe-filters")
             }
-            if shown.isEmpty { Text("Save selected dishes from a finished meal, or change these filters.").foregroundStyle(.secondary) }
+            ViewThatFits(in: .horizontal) {
+                HStack { favoriteButton; composeButton }
+                VStack(alignment: .leading) { favoriteButton; composeButton }
+            }
+            if category != "All categories" || tag != "All tags" || archived {
+                Text([category == "All categories" ? nil : category, tag == "All tags" ? nil : tag, archived ? "Archived" : nil].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(PitTechStyle.sage)
+            }
+            if shown.isEmpty {
+                ContentUnavailableView(store.library.recipes.isEmpty ? "Your cookbook starts here" : "No matching recipes", systemImage: "book.closed", description: Text(store.library.recipes.isEmpty ? "Save selected dishes from a finished meal. Your original cook stays in history." : "Try another search or change the filters."))
+            }
             ForEach(shown.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
                 if let o = store.recipe(id), let revision = o["currentRevisionId"]?.stringValue {
-                    Section {
-                        NavigationLink(o["name"]?.stringValue ?? "Recipe") { SavedRecipeDetailView(recipeId: id) }
-                        Button {
-                            if selected.contains(revision) { selected.removeAll { $0 == revision } } else { selected.append(revision) }
-                        } label: {
-                            Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.square.fill" : "square")
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                .contentShape(Rectangle())
+                    VStack(alignment: .leading, spacing: 10) {
+                        NavigationLink { SavedRecipeDetailView(recipeId: id) } label: {
+                            SavedRecipeCardContent(name: o["name"]?.stringValue ?? "Recipe", revisionId: revision, snapshot: snapshots[revision], favorite: o["favorite"]?.boolValue == true)
+                        }.buttonStyle(.plain)
+                        HStack {
+                            if selecting {
+                                Button {
+                                    if selected.contains(revision) { selected.removeAll { $0 == revision } } else { selected.append(revision) }
+                                } label: {
+                                    Label("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal", systemImage: selected.contains(revision) ? "checkmark.circle.fill" : "circle")
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                }.buttonStyle(.plain).disabled(archived)
+                                    .accessibilityValue(selected.contains(revision) ? "Selected" : "Not selected")
+                                    .accessibilityIdentifier("recipe-select-" + id)
+                            }
+                            Spacer(minLength: 0)
+                            Menu {
+                                Button(archived ? "Restore recipe" : o["favorite"]?.boolValue == true ? "Remove favorite" : "Favorite") { act { try store.setRecipeFlag(id, favorite: archived ? nil : !(o["favorite"]?.boolValue ?? false), archived: archived ? false : nil) } }
+                            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Actions for " + (o["name"]?.stringValue ?? "recipe"))
                         }
-                            .buttonStyle(.plain).disabled(archived)
-                            .accessibilityLabel("Add " + (o["name"]?.stringValue ?? "recipe") + " to meal")
-                            .accessibilityValue(selected.contains(revision) ? "Selected" : "Not selected")
-                            .accessibilityIdentifier("recipe-select-" + id)
-                        Text("Preferred version \(Int(store.recipeRevision(revision)?["revisionNumber"]?.numberValue ?? 1))").font(.caption)
-                        Button(archived ? "Restore recipe" : o["favorite"]?.boolValue == true ? "Remove favorite" : "Favorite") { act { try store.setRecipeFlag(id, favorite: archived ? nil : !(o["favorite"]?.boolValue ?? false), archived: archived ? false : nil) } }
-                    }
+                    }.padding(16).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.border, lineWidth: 1))
                 }
             }
             if !selected.isEmpty {
@@ -97,10 +115,79 @@ struct SavedRecipesView: View {
                 }
             }
             if let error { Text(error).foregroundStyle(.red) }
-        }.navigationTitle("Saved Recipes")
+          }.padding(20)
+        }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Recipes")
+            .sheet(item: $filterDraft) { draft in
+                RecipeFilterSheet(initial: draft,
+                    categories: Array(Set(snapshots.values.compactMap { $0.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue?["foodType"]?.stringValue })).sorted(),
+                    tags: Array(Set(snapshots.values.flatMap(\.tags))).sorted()) { applied in
+                        category = applied.category; tag = applied.tag; archived = applied.archived; filterDraft = nil
+                    }
+            }
             .navigationDestination(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) { if let destination { CookDetailView(cookId: destination) } }
     }
+    private var favoriteButton: some View {
+        Button { favorites.toggle() } label: { Label("Favorites", systemImage: favorites ? "heart.fill" : "heart").frame(minHeight: 44) }
+            .buttonStyle(.bordered).accessibilityValue(favorites ? "Selected" : "Not selected")
+    }
+    private var composeButton: some View {
+        Button { selecting.toggle(); if !selecting { selected = [] } } label: { Label(selecting ? "Cancel selection" : "Build a meal", systemImage: "plus").frame(minHeight: 44) }
+            .buttonStyle(.bordered).accessibilityIdentifier("recipe-compose")
+    }
     private func act(_ block: () throws -> Void) { do { try block(); error = nil } catch { self.error = error.localizedDescription } }
+}
+
+private struct RecipeFilterDraft: Identifiable {
+    let id = UUID()
+    var category: String
+    var tag: String
+    var archived: Bool
+}
+
+private struct RecipeFilterSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State var initial: RecipeFilterDraft
+    let categories: [String]
+    let tags: [String]
+    let onApply: (RecipeFilterDraft) -> Void
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Category", selection: $initial.category) { Text("All categories").tag("All categories"); ForEach(categories, id: \.self) { Text($0).tag($0) } }
+                Picker("Tag", selection: $initial.tag) { Text("All tags").tag("All tags"); ForEach(tags, id: \.self) { Text($0).tag($0) } }
+                Toggle("Show archived recipes", isOn: $initial.archived)
+            }.navigationTitle("Filter recipes").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { Button("Apply") { onApply(initial) } }
+                }
+        }
+    }
+}
+
+private struct SavedRecipeCardContent: View {
+    @Environment(CookStore.self) private var store
+    let name: String
+    let revisionId: String
+    let snapshot: RecipeSnapshot?
+    let favorite: Bool
+    private var setup: [String: JSONValue] { snapshot?.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue ?? [:] }
+    private var hero: UIImage? {
+        guard let path = store.recipeAssets(revisionId).first?.objectValue?["archivePath"]?.stringValue else { return nil }
+        return store.photoPreview(path)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let hero { Image(uiImage: hero).resizable().scaledToFill().frame(height: 150).clipped().clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Recipe reference photo") }
+            Text(name).font(.title3.weight(.semibold)).foregroundStyle(PitTechStyle.ink).fixedSize(horizontal: false, vertical: true)
+            let weight = setup["weight"]?.stringValue ?? ""
+            Text([setup["foodType"]?.stringValue, setup["cut"]?.stringValue, weight.isEmpty ? nil : weight + " " + (setup["weightUnit"]?.stringValue ?? "lb")].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+            if let description = snapshot?.description, !description.isEmpty { Text(description).font(.subheadline).foregroundStyle(PitTechStyle.supporting).lineLimit(3) }
+            Text("Saved recipe · version \(Int(store.recipeRevision(revisionId)?["revisionNumber"]?.numberValue ?? 1))" + (favorite ? " · favorite" : ""))
+                .font(.caption).foregroundStyle(PitTechStyle.sage)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 struct SavedRecipeDetailView: View {

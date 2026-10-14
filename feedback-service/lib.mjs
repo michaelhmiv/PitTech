@@ -3,6 +3,7 @@ const MAX = Object.freeze({
   description: 1500,
   appVersion: 40,
   androidVersion: 40,
+  osVersion: 40,
   device: 120,
   referenceCode: 64,
   occurredAtUtc: 80,
@@ -24,7 +25,10 @@ export function normalizeSubmission(input) {
   const title = text(input.title, "title", MAX.title, true);
   const description = text(input.description, "description", MAX.description, false);
   const appVersion = text(input.appVersion, "appVersion", MAX.appVersion, true);
-  const androidVersion = text(input.androidVersion, "androidVersion", MAX.androidVersion, true);
+  const platform = String(input.platform ?? "android").toLowerCase();
+  if (platform !== "android" && platform !== "ios") throw new ValidationError("platform must be android or ios.");
+  const osVersion = text(input.osVersion ?? input.androidVersion, "osVersion", MAX.osVersion, true);
+  const androidVersion = platform === "android" ? osVersion : "";
   const device = text(input.device, "device", MAX.device, true);
 
   let diagnosticReport = null;
@@ -46,7 +50,7 @@ export function normalizeSubmission(input) {
     throw new ValidationError("DEVICE_DIAGNOSTIC requires a diagnosticReport.");
   }
 
-  return { kind, title, description, appVersion, androidVersion, device, diagnosticReport };
+  return { kind, title, description, appVersion, platform, osVersion, androidVersion, device, diagnosticReport };
 }
 
 export function buildGitHubIssue(submission) {
@@ -59,7 +63,7 @@ export function buildGitHubIssue(submission) {
     "",
     "## App and device",
     `- PitTech: ${submission.appVersion}`,
-    `- Android: ${submission.androidVersion}`,
+    `- ${submission.platform === "ios" ? "iOS" : "Android"}: ${submission.osVersion}`,
     `- Device: ${submission.device}`,
   ];
 
