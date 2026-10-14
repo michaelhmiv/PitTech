@@ -12,7 +12,7 @@ Charts show temperature values you entered. Saved recipes can include instructio
 
 The iOS app uses Google's User Messaging Platform to refresh consent information when the app starts and to present a consent form when required. PitTech requests Google Mobile Ads only after Google's consent state allows ads. Google's SDK may process information such as IP address (which can indicate general location), diagnostics and performance data, device identifiers, advertisements shown, and product interactions to provide ads, measure performance, and prevent fraud. PitTech does not include cook records, notes, photos, or temperature readings in ad requests. PitTech does not request App Tracking Transparency authorization or use cook data for advertising.
 
-The iOS app does not create user accounts, connect to grill-controller accounts or services, or submit feedback reports. Grill readings must be added manually. The iOS app contains no Bluetooth controller integration.
+The iOS app does not create PitTech accounts or submit feedback reports. In the optional beta Connections feature, you may connect read-only telemetry from a nearby Combustion Bluetooth thermometer or from Home Assistant, FireBoard, Flame Boss, or MEATER services that you choose. PitTech may send credentials and authorized requests directly to your selected equipment or provider service, not to a PitTech account server. Connection credentials are stored in the iOS Keychain (device-only); connection preferences are stored locally. Readings selected for a cook are saved in its local library. iOS can suspend live monitoring when the app is not in the foreground, and only supported sources offer history backfill. These connections do not remotely change your grill settings.
 
 ## Android app
 
