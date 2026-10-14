@@ -44,6 +44,14 @@ import UIKit
         let restored = CookStore(directory: folder.appendingPathComponent("restored")); _ = try restored.importArchive(archive)
         XCTAssertEqual(try restored.sharingDocument(id), draft)
         XCTAssertEqual(restored.sharingPhotos(id).count, 1)
+        let importedLibrary = restored.library
+        _ = try restored.importArchive(archive)
+        XCTAssertEqual(restored.library.companionRecords, importedLibrary.companionRecords)
+        XCTAssertEqual(restored.library.companionPhotos, importedLibrary.companionPhotos)
+        XCTAssertEqual(try Data(contentsOf: restored.photoURL(ownedPath)), bytes)
+        var stale = draft; stale.title = "Stale edit"
+        XCTAssertThrowsError(try relaunched.saveSharingDraft(id, document: stale, expectedUpdated: 0))
+        XCTAssertEqual(try relaunched.sharingDocument(id), draft)
     }
     func testUnknownVerdictAndOldArchivesRemainUnset() throws {
         let old = try JSONDecoder().decode(PitTechLibrary.self, from: Data("{\"schemaVersion\":9}".utf8))

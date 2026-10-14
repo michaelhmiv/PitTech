@@ -282,11 +282,12 @@ final class CookStore {
             }) else { throw PitTechArchiveError.invalidArchive }
         }
         let existingPhotoIds = Set((library.photos + library.companionPhotos + library.recipeAssets).compactMap { $0.objectValue?["id"]?.stringValue })
+        let existingRecordIds = Set(library.companionRecords.compactMap { $0.objectValue?["id"]?.stringValue })
         let importedRecords = imported.companionRecords.filter { row in
             guard let object = row.objectValue else { return false }
-            return object["cookId"]?.stringValue.map(newIds.contains) ?? true
+            return !(object["id"]?.stringValue.map(existingRecordIds.contains) ?? true) && (object["cookId"]?.stringValue.map(newIds.contains) ?? true)
         }
-        let existingRecordIds = Set(library.companionRecords.compactMap { $0.objectValue?["id"]?.stringValue })
+        guard imported.companionRecords.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ !existingRecordIds.contains($0.objectValue?["id"]?.stringValue ?? "") }) else { throw PitTechArchiveError.invalidArchive }
         guard importedRecords.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ !existingRecordIds.contains($0.objectValue?["id"]?.stringValue ?? "") }) else { throw PitTechArchiveError.invalidArchive }
         let newRecordIds = Set(importedRecords.compactMap { $0.objectValue?["id"]?.stringValue })
         let importedPhotos = imported.photos.filter { belongsToNewCook($0, ids: newIds) }

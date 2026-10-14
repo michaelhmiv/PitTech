@@ -50,7 +50,10 @@ extension PitTechLibrary {
             guard let record = row.objectValue, record["cookId"]?.stringValue == nil, let id = record["id"]?.stringValue, let payload = record["payload"] else { throw PitTechArchiveError.invalidArchive }
             let document = try NativeSharingDocument.decode(payload)
             let owned = Set(companionPhotos.compactMap(\.objectValue).filter { $0["recordId"]?.stringValue == id }.compactMap { $0["id"]?.stringValue })
-            guard document.entries.allSatisfy({ Set($0.photoIds).isSubset(of: owned) }) else { throw PitTechArchiveError.invalidArchive }
+            guard document.entries.allSatisfy({ entry in
+                let scoped = Set(companionPhotos.compactMap(\.objectValue).filter { $0["recordId"]?.stringValue == id && $0["action"]?.stringValue == entry.id }.compactMap { $0["id"]?.stringValue })
+                return Set(entry.photoIds).isSubset(of: owned.intersection(scoped))
+            }) else { throw PitTechArchiveError.invalidArchive }
         }
     }
 }
@@ -74,7 +77,7 @@ extension PitTechLibrary {
                 snapshot.name = actual.name; snapshot.smokingAnchorUtcMillis = actual.smokingAnchorUtcMillis
                 snapshot.resultNotes = actual.resultNotes; snapshot.rating = actual.rating; snapshot.cookAgain = actual.cookAgain
                 let actions = library.actions(for: cookId).filter { $0.dishIds.isEmpty || $0.dishIds.contains(dish.id) }.sorted { $0.at < $1.at }
-                let samples = library.readings.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && ($0["dishId"]?.stringValue == dish.id || ["grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature"].contains($0["measurementType"]?.stringValue ?? "")) }
+                let samples = library.readings.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && ($0["dishId"]?.stringValue == dish.id || $0["dishId"]?.stringValue == nil && ["pit", "pit_ambient", "setpoint", "grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature"].contains($0["measurementType"]?.stringValue ?? "")) }
                 let rows = samples.map { source -> JSONValue in
                     var row = source.filter { ["id", "probeId", "probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "samplingIntervalMillis", "qualityStatus"].contains($0.key) }
                     row["samplingIntervalMillis"] = row["samplingIntervalMillis"] ?? .number(15000); row["qualityStatus"] = row["qualityStatus"] ?? .string("valid")

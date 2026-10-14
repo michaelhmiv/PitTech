@@ -42,6 +42,8 @@ class SharingIntegrationTest {
             val bytes = storage.read(asset.relativePath)!!
             val edited = original.copy(entries = original.entries.map { if (it.id == entry.id) it.copy(snapshot = it.snapshot.copy(description = "Add extra pepper"), includeStory = true, photoIds = listOf(asset.id)) else it.copy(included = false) })
             val saved = repo.sharing.save(id, edited, row.updatedAtUtcMillis)
+            try { repo.sharing.save(id, edited.copy(title = "Stale edit"), row.updatedAtUtcMillis); fail("Stale draft accepted") } catch (_: IllegalArgumentException) { }
+            assertEquals(edited.title, SharingDraftCodec.decode(repo.sharing.get(id)!!.payload).title)
             assertEquals(history.events, repo.exportSnapshot().events)
             assertEquals(history.dishes, repo.exportSnapshot().dishes)
             assertTrue(SharingDraftCodec.sameStory(entry.storyJson, SharingDraftCodec.decode(saved.payload).entries.first { it.id == entry.id }.storyJson))
@@ -58,7 +60,14 @@ class SharingIntegrationTest {
             assertEquals(2, preview.snapshot.companionRecords.count { it.kind in setOf("sharing_draft", "collection_revision") })
             assertEquals(2, preview.snapshot.companionPhotos.size)
             val restored = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
-            try { CookRepository(restored, storage).importSnapshot(preview.snapshot, preview.attachments); assertEquals(2, restored.companionDao().all().size) } finally { restored.close() }
+            try {
+                val imported = CookRepository(restored, storage)
+                imported.importSnapshot(preview.snapshot, preview.attachments)
+                val records = restored.companionDao().all(); val restoredAssets = restored.companionDao().photos()
+                imported.importSnapshot(preview.snapshot, preview.attachments)
+                assertEquals(2, records.size); assertEquals(records, restored.companionDao().all()); assertEquals(restoredAssets, restored.companionDao().photos())
+                assertArrayEquals(bytes, storage.read(asset.relativePath))
+            } finally { restored.close() }
             camera.delete()
         } finally { db.companionDao().photos().forEach { storage.delete(it.relativePath) }; db.close() }
     }

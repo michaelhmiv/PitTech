@@ -48,8 +48,8 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         require(previous.kind == SharingDraftCodec.DRAFT && previous.updatedAtUtcMillis == expectedUpdatedAt) { "This draft changed. Reopen its saved version." }
         val before = SharingDraftCodec.decode(previous.payload)
         require(value.entries.all { e -> before.entries.firstOrNull { it.id == e.id }?.storyJson?.let { SharingDraftCodec.sameStory(it, e.storyJson) } == true }) { "Recorded source facts cannot be edited as instructions." }
-        val owned = assets(id).map { it.id }.toSet()
-        require(value.entries.all { it.photoIds.all(owned::contains) }) { "Choose photos owned by this draft." }
+        val owned = assets(id)
+        require(value.entries.all { entry -> entry.photoIds.all { photoId -> owned.any { it.id == photoId && it.action == entry.id } } }) { "Choose photos owned by this draft's dish." }
         previous.copy(title = value.title, payload = SharingDraftCodec.encode(value), updatedAtUtcMillis = maxOf(System.currentTimeMillis(), previous.updatedAtUtcMillis + 1)).also { dao.put(it) }
     }
 
@@ -126,7 +126,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         val scoped = notePlanEvents(meal.events).filter { it.dishId == null || it.dishId == dishId }.sortedBy { it.at }
         val anchor = scoped.firstOrNull { it.action == "food_on" }?.at
         val source = RecipeExtraction.fromMeal(meal, dishId).snapshot
-        val readings = meal.readings.filter { it.dishId == dishId || it.measurementType in setOf("grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature") }
+        val readings = meal.readings.filter { it.dishId == dishId || it.dishId == null && it.measurementType in setOf("pit", "pit_ambient", "setpoint", "grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature") }
         return JSONObject().put("version", 1).put("attemptId", dishId).put("anchorUtcMillis", anchor ?: JSONObject.NULL)
             .put("observations", JSONObject(RecipeSnapshotCodec.encode(source)).getJSONArray("observations"))
             .put("readings", JSONArray(readings.map { r -> JSONObject().put("id", r.id).put("probeId", r.probeId ?: JSONObject.NULL)
