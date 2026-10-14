@@ -33,7 +33,8 @@ enum NativeCookPackContract {
         case .object(let rows):
             for (key, child) in rows {
                 guard child == .null || !["credentials", "credential", "password", "accessToken", "refreshToken", "secret", "apiKey", "sourceDeviceId", "deviceId", "controllerKey", "macAddress", "serialNumber"].contains(key) else { throw PitTechArchiveError.invalidArchive }
-                if key.hasSuffix("Json"), let string = child.stringValue, string.hasPrefix("{") || string.hasPrefix("["), let nested = try? JSONDecoder().decode(JSONValue.self, from: Data(string.utf8)) { try rejectPrivateFields(nested) }
+                let string = child.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if key.hasSuffix("Json"), string.hasPrefix("{") || string.hasPrefix("["), let nested = try? JSONDecoder().decode(JSONValue.self, from: Data(string.utf8)) { try rejectPrivateFields(nested) }
                 else { try rejectPrivateFields(child) }
             }
         case .array(let rows): try rows.forEach(rejectPrivateFields)

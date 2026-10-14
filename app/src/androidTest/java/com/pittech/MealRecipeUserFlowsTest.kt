@@ -44,7 +44,11 @@ class MealRecipeUserFlowsTest {
             uri to omit
         }
         compose.activityRule.scenario.onActivity { activity ->
-            InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(activity, android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(prepared.first, "application/zip"))
+            val launchIntent = activity.intent
+            val incoming = android.content.Intent(launchIntent).setAction(android.content.Intent.ACTION_VIEW).setDataAndType(prepared.first, "application/zip")
+            InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(activity, incoming)
+            // ActivityScenario matches the launch intent when it receives later lifecycle callbacks.
+            activity.intent = launchIntent
         }
         waitFor("pack-save-recipes")
         compose.onNodeWithTag("pack-select-${prepared.second}").performScrollTo().performClick()

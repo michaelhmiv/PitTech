@@ -36,6 +36,7 @@ final class NativeCookPackProjection {
         var result = try entry.snapshot
         result.observations = story.objectValue?["observations"]?.arrayValue ?? []
         result.smokingAnchorUtcMillis = story.objectValue?["anchorUtcMillis"]?.numberValue.map(Int64.init)
+        if !entry.includeStory { result.rating = nil; result.cookAgain = nil; result.resultNotes = "" }
         result.instructions = result.instructions.map { value in
             var row = known(value, ["title", "details", "method", "offsetMillis", "durationMillis"])
             row["id"] = alias(value.objectValue?["id"]); row["sourceEventId"] = alias(value.objectValue?["sourceEventId"])

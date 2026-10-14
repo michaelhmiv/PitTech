@@ -25,6 +25,7 @@ import UniformTypeIdentifiers
         let original = try locatedPhoto(), photo = try source.stagePhoto(original)
         try source.saveNote(CookNoteDraft(cookId: cook, dishId: pork, metadata: CookNoteMetadata(category: "action", action: "wrap"), title: "Wrapped", occurredAt: anchor + 3600000, temperatures: [NoteTemperatureDraft(probeName: "Pork probe", valueText: "74", unit: "°C", measuredAt: anchor + 3600000, dishId: pork)], photos: [photo]))
         source.finishCook(cook)
+        try source.saveDishVerdict(cookId: cook, dishId: pork, rating: 4.5, again: false, notes: "More pepper")
         let id = try source.createSharingDraft(cookId: cook, dishIds: Set(source.dishRecords(cook).map(\.id)))
         var draft = try source.sharingDocument(id)
         let asset = try XCTUnwrap(source.sharingPhotos(id).first)
@@ -66,6 +67,18 @@ import UniformTypeIdentifiers
         let instructionsRevision = instructionsOnly.library.recipeRevisions[0].objectValue!["id"]!.stringValue!
         XCTAssertTrue(try instructionsOnly.recipeSnapshot(instructionsRevision).observations.isEmpty)
         XCTAssertEqual(try instructionsOnly.recipeSnapshot(instructionsRevision).instructions.count, 2)
+        let clean = try instructionsOnly.recipeSnapshot(instructionsRevision)
+        XCTAssertNil(clean.rating); XCTAssertNil(clean.cookAgain); XCTAssertEqual(clean.resultNotes, "")
+    }
+    func testPublicContractRejectsPrivateFieldsInsideWhitespacePrefixedJSON() throws {
+        let recipeId = UUID().uuidString.lowercased(), revisionId = UUID().uuidString.lowercased()
+        var library = PitTechLibrary(); library.preferences = nil
+        library.recipes = [.object(["id": .string(recipeId), "currentRevisionId": .string(revisionId)])]
+        library.recipeRevisions = [.object(["id": .string(revisionId), "recipeId": .string(recipeId)])]
+        let metadata: JSONValue = .object(["contractVersion": .number(1), "id": .string(UUID().uuidString.lowercased()), "kind": .string("recipe"), "recipeRevisionIds": .array([.string(revisionId)]), "dishIds": .array([]), "includedStory": .bool(false), "source": .null])
+        XCTAssertNoThrow(try NativeCookPackContract.validate(metadata, library: library, root: .object([:])))
+        let forged: JSONValue = .object(["snapshotJson": .string(" \n{\"apiKey\":\"synthetic-unshareable\"}")])
+        XCTAssertThrowsError(try NativeCookPackContract.validate(metadata, library: library, root: forged))
     }
     func testPublicImageRejectsLocationMetadataAndNonImageBytes() throws {
         XCTAssertThrowsError(try NativeCookPackPhoto.validatePublic(locatedPhoto()))

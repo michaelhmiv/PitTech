@@ -35,6 +35,7 @@ class CookPackProjection {
     fun recipe(entry: SharingEntry, story: JSONObject): RecipeSnapshot {
         val value = JSONObject(RecipeSnapshotCodec.encode(entry.snapshot))
         value.put("observations", story.getJSONArray("observations")).put("smokingAnchorUtcMillis", story.opt("anchorUtcMillis") ?: JSONObject.NULL)
+        if (!entry.includeStory) value.put("rating", JSONObject.NULL).put("cookAgain", JSONObject.NULL).put("resultNotes", "")
         value.put("instructions", JSONArray(objects(value.getJSONArray("instructions")).map { instruction ->
             known(instruction, setOf("title", "details", "method", "offsetMillis", "durationMillis")).put("id", alias(instruction.opt("id"))).put("sourceEventId", alias(instruction.opt("sourceEventId")))
         }))

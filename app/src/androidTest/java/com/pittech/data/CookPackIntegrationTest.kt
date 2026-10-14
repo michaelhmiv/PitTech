@@ -82,6 +82,7 @@ class CookPackIntegrationTest {
             repository.notes.save(CookNoteDraft(cookId = cook, dishId = pork.id, action = "wrap", title = "Wrapped", occurredAt = anchor + 3600000,
                 temperatures = listOf(NoteTemperature(probeName = "Pork probe", valueText = "74", unit = "°C", measuredAt = anchor + 3600000, dishId = pork.id)), photos = listOf(NotePhoto(uri = uri.toString()))))
             repository.completeCook(cook)
+            repository.saveDishVerdict(cook, pork.id, 4.5, false, "More pepper")
             val id = repository.sharing.fromMeal(cook, dishes.map { it.id }.toSet()); val row = repository.sharing.get(id)!!
             val draft = SharingDraftCodec.decode(row.payload); val photo = repository.sharing.assets(id).single()
             repository.sharing.save(id, draft.copy(title = "Pepper pork", entries = draft.entries.map { entry -> if (entry.sourceDishId == pork.id) entry.copy(includeStory = true, photoIds = listOf(photo.id)) else entry.copy(included = false) }), row.updatedAtUtcMillis)
@@ -89,6 +90,10 @@ class CookPackIntegrationTest {
             val preview = transfer.previewCookPack(ByteArrayInputStream(file.toByteArray()))
             assertEquals("recipe", preview.cookPack!!.getString("kind")); assertEquals(1, preview.snapshot.recipes.size); assertEquals(0, preview.cookCount)
             assertTrue(preview.snapshot.devices.isEmpty()); assertTrue(preview.snapshot.recordings.isEmpty())
+            val safeRoot = JSONObject().put("preferences", JSONObject.NULL)
+            CookPackContract.validate(preview.cookPack!!, safeRoot, preview.snapshot)
+            val forged = JSONObject(safeRoot.toString()).put("snapshotJson", " \n{\"apiKey\":\"synthetic-unshareable\"}")
+            try { CookPackContract.validate(preview.cookPack!!, forged, preview.snapshot); fail("Whitespace-prefixed private fields accepted") } catch (_: IllegalArgumentException) { }
             val recipe = RecipeSnapshotCodec.decode(preview.snapshot.recipeRevisions.single().snapshotJson)
             assertEquals(2, recipe.observations.size); assertEquals(3600000L, recipe.observations.last().offsetMillis)
             assertEquals("°C", recipe.observations.last().recordedTemperatures.single().unit)
@@ -108,6 +113,13 @@ class CookPackIntegrationTest {
             assertEquals(1, recipient.companionDao().all().size)
             assertEquals(2, source.cookDao().getDishesForCook(cook).size)
             try { CookPackPhoto.validatePublic(original); fail("Located image accepted") } catch (_: IllegalArgumentException) { }
+            val latest = repository.sharing.get(id)!!; val current = SharingDraftCodec.decode(latest.payload)
+            repository.sharing.save(id, current.copy(entries = current.entries.map { it.copy(includeStory = false) }), latest.updatedAtUtcMillis)
+            val instructionsOnly = ByteArrayOutputStream(); transfer.writeCookPack(instructionsOnly, id)
+            val clean = transfer.previewCookPack(ByteArrayInputStream(instructionsOnly.toByteArray()))
+            val definition = RecipeSnapshotCodec.decode(clean.snapshot.recipeRevisions.single().snapshotJson)
+            assertTrue(definition.observations.isEmpty()); assertEquals(2, definition.instructions.size)
+            assertNull(definition.rating); assertNull(definition.cookAgain); assertEquals("", definition.resultNotes)
         } finally {
             source.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; source.companionDao().photos().forEach { storage.delete(it.relativePath) }; source.cookDao().getAllPhotos().forEach { storage.delete(it.relativePath) }
             recipient.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; recipient.companionDao().photos().forEach { storage.delete(it.relativePath) }

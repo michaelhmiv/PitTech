@@ -34,7 +34,8 @@ object CookPackContract {
                 require(value.isNull(key) || key !in setOf("credentials", "credential", "password", "accessToken", "refreshToken", "secret", "apiKey", "sourceDeviceId", "deviceId", "controllerKey", "macAddress", "serialNumber")) { "Private device information cannot be shared in a Cook Pack." }
                 val child = value.opt(key)
                 if (key.endsWith("Json") && child is String) {
-                    val nested = runCatching { if (child.startsWith("{")) JSONObject(child) else if (child.startsWith("[")) JSONArray(child) else null }.getOrNull()
+                    val raw = child.trim()
+                    val nested = runCatching { if (raw.startsWith("{")) JSONObject(raw) else if (raw.startsWith("[")) JSONArray(raw) else null }.getOrNull()
                     rejectPrivateFields(nested)
                 } else rejectPrivateFields(child)
             }
