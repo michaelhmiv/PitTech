@@ -395,7 +395,7 @@ final class CookStore {
 
     var storageURL: URL { directory.appendingPathComponent("pittech.json") }
 
-    private static let archiveReadme = "PitTech cook archive, schema 9. Cook records are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
+    private static let archiveReadme = "PitTech cook archive, schema 10. Cook records, editable sharing drafts and saved collections are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
 
     private static func isSafeArchivePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.contains("\\") &&

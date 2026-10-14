@@ -7,6 +7,7 @@ struct MealDishCard: View {
     let now: Date
     let onLog: (String, String?) -> Void
     @State private var expanded = false
+    @State private var showingVerdict = false
     private var phase: NativeDishPhase? { store.timingMode(cookId) == "explicit_phases" ? store.phases(cookId, now: now).first { $0.id == dish.id } : nil }
     private var last: TimelineEntry? {
         let ids = Set(store.library.events.compactMap(\.objectValue).filter { o in
@@ -59,6 +60,7 @@ struct MealDishCard: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("food-card-" + dish.id)
             if expanded {
+                Button("Results & cook again") { showingVerdict = true }.accessibilityIdentifier("dish-verdict-" + dish.id)
                 MealActionRow { Button("Note") { onLog("general", nil) }; Button("Temp") { onLog("temperature", nil) }; Button("Photo") { onLog("photo", nil) } }.buttonStyle(.bordered)
                 MealRemindersLink(cookId: cookId, dishId: dish.id)
                 if store.recipeSource(dish.id) != nil { NavigationLink("Previous cook") { RecipeReferenceView(cookId: cookId, dishId: dish.id) } }
@@ -73,7 +75,8 @@ struct MealDishCard: View {
                     if store.library.cooks.contains(where: { $0.id == cookId && $0.isActive }) { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in Button(CookStore.actionLabel(action)) { onLog("action", action) } } }
                 }
             }
-        }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .sheet(isPresented: $showingVerdict) { DishVerdictSheet(cookId: cookId, dish: dish) }
     }
 }
 extension CookStore {

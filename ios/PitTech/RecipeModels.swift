@@ -15,6 +15,7 @@ struct RecipeSnapshot: Codable {
     var smokingAnchorUtcMillis: Int64?
     var preferredPitTemperatureF: Double?
     var servings: String
+    var cookAgain: Bool? = nil
 
     static func decode(_ raw: String) throws -> RecipeSnapshot {
         guard let bytes = raw.data(using: .utf8) else { throw PitTechArchiveError.invalidArchive }

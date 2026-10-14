@@ -147,6 +147,8 @@ fun CookDetailScreen(
 ) {
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     var showConnections by rememberSaveable { mutableStateOf(false) }
+    var sharingDraftId by rememberSaveable { mutableStateOf<String?>(null) }
+    var verdictDishId by rememberSaveable { mutableStateOf<String?>(null) }
     val recordingRunning by viewModel.recordingServiceRunning.collectAsStateWithLifecycle()
     var noteDraftJson by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var noteEditing by rememberSaveable(data.cook.id) { mutableStateOf(false) }
@@ -571,6 +573,8 @@ fun CookDetailScreen(
                 data.photos.filter { it.eventId == event.id }.forEach { photo -> PhotoThumbnail(photo, Modifier.size(90.dp)) { viewingMarker = null; viewingPhoto = photo } }
             } }, confirmButton = { TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
     }
+    sharingDraftId?.let { id -> SharingDraftEditor(id, viewModel) { sharingDraftId = null } }
+    verdictDishId?.let { id -> data.dishes.firstOrNull { it.id == id }?.let { dish -> DishVerdictEditor(data, dish, viewModel) { verdictDishId = null } } }
     if (showConnections) ModalBottomSheet(onDismissRequest = { showConnections = false }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -633,13 +637,18 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    foodLayout = { UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
+                    foodLayout = {
+                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Create sharing draft") }
+                        UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
                         onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
                         onAdd = { addDish = true }, onEdit = { editDish = it },
                         onIngredients = { ingredientDish = it },
                         onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }, reminders = reminderRules, occurrences = reminderOccurrences,
-                        selectedTools = { dish -> UnifiedReminderTools(data, viewModel, dish.id); RecipeReferenceTools(data, viewModel, dish.id) }) },
+                        selectedTools = { dish ->
+                            TextButton(onClick = { verdictDishId = dish.id }, modifier = Modifier.testTag("dish-verdict-${dish.id}")) { Text("Results & cook again") }
+                            UnifiedReminderTools(data, viewModel, dish.id); RecipeReferenceTools(data, viewModel, dish.id)
+                        }) },
                     displayUnit = preferredTemperatureUnit,
                     configuredTools = { CookPlaybookTools(data, viewModel, configuredOnly = true); CookAlertTools(data, viewModel, configuredOnly = true) },
                     playbookTools = {

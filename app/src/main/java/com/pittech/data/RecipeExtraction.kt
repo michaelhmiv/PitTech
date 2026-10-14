@@ -42,7 +42,8 @@ object RecipeExtraction {
         val snapshot = RecipeSnapshot(dish.name, setup, instructions = instructions, observations = observations,
             targets = data.targets.filter { it.dishId == dishId }.map { PlaybookTarget(0, it.targetType, it.value, it.unit, it.explanation) },
             resultNotes = results.mapNotNull { it.textValue }.distinct().joinToString("\n"),
-            rating = results.firstOrNull { it.resultType == "overall" }?.numericValue, smokingAnchorUtcMillis = anchor)
+            rating = (results.firstOrNull { it.resultType == "overall_rating" } ?: results.firstOrNull { it.resultType == "overall" })?.numericValue, smokingAnchorUtcMillis = anchor,
+            cookAgain = results.firstOrNull { it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 })
         val eventIds = events.map { it.id }.toSet()
         return RecipeExtractionDraft(snapshot, data.photos.filter { it.dishId == dishId || it.eventId in eventIds }.map { it.id }.toSet(),
             data.events.filter { !owns(it) && it.id != anchorEvent?.id && it.dishId == null && CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.isNullOrEmpty() })

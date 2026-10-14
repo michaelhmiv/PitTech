@@ -20,6 +20,20 @@ class CookRepository(
     val activities by lazy { ActivityTimerRepository(database) }
     val recipes by lazy { RecipeRepository(database, photoStorage) }
     val notes by lazy { CookNoteRepository(database, photoStorage, this) }
+    val sharing by lazy { SharingRepository(database, photoStorage, this) }
+
+    suspend fun saveDishVerdict(cookId: String, dishId: String, rating: Double?, cookAgain: Boolean?, notes: String) = database.withTransaction {
+        require(dao.getDish(dishId)?.cookId == cookId) { "This dish is unavailable." }
+        require(rating == null || rating.isFinite() && rating in 1.0..5.0) { "Ratings must be from 1 to 5." }
+        val now = System.currentTimeMillis()
+        dao.getAllResults().filter { it.cookId == cookId && it.dishId == dishId && it.resultType in setOf("overall", "overall_rating", "cook_again", "result_notes") }.forEach { dao.deleteResult(it.id) }
+        listOf("overall_rating" to rating, "cook_again" to cookAgain?.let { if (it) 1.0 else 0.0 }).forEach { (type, value) ->
+            val id = "$cookId:$dishId:$type"
+            if (value == null) dao.deleteResult(id) else dao.upsertResult(CookResultEntity(id, cookId, dishId, type, numericValue = value, unit = if (type == "overall_rating") "stars" else null, recordedAtUtcMillis = now))
+        }
+        val id = "$cookId:$dishId:notes"
+        if (notes.isBlank()) dao.deleteResult(id) else dao.upsertResult(CookResultEntity(id, cookId, dishId, "result_notes", textValue = notes.trim(), recordedAtUtcMillis = now))
+    }
 
     fun observeCooks(): Flow<List<CookWithDishes>> = dao.observeCooks()
 

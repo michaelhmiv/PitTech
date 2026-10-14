@@ -81,7 +81,7 @@ enum RecipeError: LocalizedError, Equatable {
         let resultNotes = library.results.filter { $0.objectValue?["dishId"]?.stringValue == dishId }.compactMap { $0.objectValue?["textValue"]?.stringValue }.joined(separator: "\n")
         let result = RecipeSnapshot(version: 1, name: dish["name"]?.stringValue ?? "Dish", description: "", tags: [],
             draft: .object(["title": dish["name"] ?? .string("Dish"), "dishes": .array([.object(setup)])]), instructions: instructions, observations: observations,
-            targets: targets, resultNotes: resultNotes, rating: nil, smokingAnchorUtcMillis: anchor.map { Int64($0) }, preferredPitTemperatureF: nil, servings: "")
+            targets: targets, resultNotes: resultNotes, rating: dishVerdict(cookId: cookId, dishId: dishId).rating, smokingAnchorUtcMillis: anchor.map { Int64($0) }, preferredPitTemperatureF: nil, servings: "", cookAgain: dishVerdict(cookId: cookId, dishId: dishId).again)
         try result.validate(); return result
     }
 

@@ -55,6 +55,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     if (standalone) Text("Your cookbook, ready for another cook.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     else TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}") }
     if (expanded) {
+        SavedSharingDocuments(viewModel)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it }, label = { Text("Find a recipe") }, modifier = Modifier.weight(1f).testTag("recipe-search"))
             OutlinedIconButton(onClick = { filters = true }, modifier = Modifier.size(48.dp).testTag("recipe-filters")) { Icon(Icons.Filled.FilterList, "Filter recipes") }

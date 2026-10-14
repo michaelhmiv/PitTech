@@ -6,9 +6,9 @@ remain separate. No online phase is released until its complete parity gate pass
 
 | PR | Deliverable | State | Evidence |
 |---|---|---|---|
-| 00 | Design, parity, contracts, CI requirements | In progress | Concrete review board and approved amendment |
-| 01 | Native refresh and core parity | Pending | |
-| 02 | Verdicts, collections, persistent drafts | Pending | |
+| 00 | Design, parity, contracts, CI requirements | Draft PR #92 | Three schemas validated; concept states rendered/inspected; backend workflow write path remains open |
+| 01 | Native refresh and core parity | Draft PR #93 | Android/feedback/audit passed at `3899dfc`; iOS large-text footer issue corrected at `090706a`, rerun pending; deeper free Insights/provider port remain open |
+| 02 | Verdicts, collections, persistent drafts | In progress | Reuses existing result/companion storage; archive v10, Room remains v10; source-isolation/photo-ownership tests added |
 | 03 | Cook Packs and exports | Pending | |
 | 04 | Shared guide presentation | Pending | |
 | 05 | Native share cards | Pending | |

@@ -4,6 +4,7 @@ extension PitTechLibrary {
     /// Validate portable relationships before files are copied or the saved library changes.
     func validateCookExperience() throws {
         try validateRecipes()
+        try validateSharingDocuments()
         try validateRecipeAttempts()
         try validateActivityTimers()
         try validateReminderRules()

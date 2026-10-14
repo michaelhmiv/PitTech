@@ -34,6 +34,7 @@ data class RecipeSnapshot(
     val preferredPitTemperatureF: Double? = null,
     val servings: String = "",
     val schemaVersion: Int = 1,
+    val cookAgain: Boolean? = null,
 )
 
 data class RecipeMeasurement(val sourceReadingId: String, val probeId: String?, val probeName: String, val measurementType: String,

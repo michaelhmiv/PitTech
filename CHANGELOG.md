@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Optional dish ratings and cook-again choices, independently editable sharing drafts and saved meal collections on Android and iOS. Drafts own their reference photos and leave the original meal unchanged.
 - Meals with independent dishes, editable saved recipe revisions and combinations drawn from different previous meals (Android and iOS).
 - Flexible preparation notes, ingredients and persistent task timers, with separate previous-cook references.
 - Optional time and historical-action reminders, plus connected-probe thresholds on Android and iOS.
