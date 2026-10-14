@@ -1,0 +1,17 @@
+{
+  "producer": "Android instrumentation CrossPlatformArchiveTest",
+  "commit": "0d7e0725eb836ca665f6e51663b8e392d5c2ce20",
+  "run": 38648690604,
+  "artifact": 11934945234,
+  "path": "portable-fixtures/android-meal-v9.zip",
+  "sha256": "117229dfc19611f1075612f458e67ecbcffeacd507efbd8c676159ff8df6f19b",
+  "retainedAs": "ios/PitTechTests/Fixtures/android-guide-meal-v10.zip",
+  "assertions": [
+    "visible guide",
+    "two selected dishes",
+    "three pinned guides",
+    "85 Celsius raw story",
+    "inactive imported reminders",
+    "idempotent roundtrip"
+  ]
+}

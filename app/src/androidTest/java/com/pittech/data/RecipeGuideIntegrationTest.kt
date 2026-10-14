@@ -78,5 +78,10 @@ class RecipeGuideIntegrationTest {
         assertEquals(projected.originalTimes, corrected.originalTimes)
         assertNotEquals(RecipeGuideProjection.channel("current-dish", rows[0]), RecipeGuideProjection.channel("current-dish", rows[3]))
         assertNotEquals(RecipeGuideProjection.role("setpoint"), RecipeGuideProjection.role("pit"))
+        val invalidStory = JSONObject(story.toString()).put("anchorUtcMillis",1e100)
+        try {
+            SharingDraftCodec.validate(SharingDocument("Overflow",listOf(SharingEntry(snapshot=snapshot,storyJson=invalidStory.toString()))))
+            fail("Unbounded source epoch was accepted")
+        } catch (_: IllegalArgumentException) { }
     }
 }

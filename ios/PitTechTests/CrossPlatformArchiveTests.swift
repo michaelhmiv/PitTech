@@ -4,7 +4,7 @@ import UIKit
 
 final class CrossPlatformArchiveTests: XCTestCase {
     @MainActor func testActualAndroidWriterPreservesNotesCelsiusMediaSourcesAndInactiveReminders() throws {
-        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "android-meal-v9", withExtension: "zip"), "The fixture must be collected from the successful Android emulator writer.")
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "android-guide-meal-v10", withExtension: "zip"), "The fixture must be collected from the successful Android emulator writer.")
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = CookStore(directory: folder)
@@ -35,9 +35,16 @@ final class CrossPlatformArchiveTests: XCTestCase {
         XCTAssertEqual(store.library.reminderRules.count, 2)
         XCTAssertTrue(store.library.reminderRules.allSatisfy { $0.objectValue?["enabled"]?.boolValue == false && $0.objectValue?["status"]?.stringValue == "inactive" })
         XCTAssertTrue(store.library.reminders.allSatisfy { $0.objectValue?["status"]?.stringValue != "pending" })
+        let state = store.guideState(current.id)
+        XCTAssertTrue(state.visible);XCTAssertEqual(state.dishIds?.count,2)
+        XCTAssertEqual(store.guides(current.id).count,3)
+        let pinned = try XCTUnwrap(store.guides(current.id).first { $0.guide.story.objectValue?["readings"]?.arrayValue?.isEmpty == false })
+        let sample = try XCTUnwrap(pinned.guide.story.objectValue?["readings"]?.arrayValue?.first?.objectValue)
+        XCTAssertEqual(sample["unit"]?.stringValue,"°C");XCTAssertEqual(sample["value"]?.numberValue,85)
         try store.library.validateCookExperience()
         let restored = CookStore(directory: folder.appendingPathComponent("roundtrip"))
         let bytes = try store.exportArchive(); _ = try restored.importArchive(bytes); _ = try restored.importArchive(bytes)
+        XCTAssertEqual(restored.guideState(current.id),state)
         XCTAssertEqual(restored.library.recipes.count, 4)
         XCTAssertEqual(restored.library.reminderRules.count, 2)
         XCTAssertEqual(restored.library.photos.count, store.library.photos.count)

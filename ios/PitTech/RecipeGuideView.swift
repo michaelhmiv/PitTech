@@ -48,7 +48,7 @@ private struct RecipeGuideScope: View {
                     })).accessibilityIdentifier("guide-dish-" + item.id)
                     ForEach(Array(channels(item).enumerated()), id: \.offset) { _, row in
                         let key = RecipeGuideProjection.channel(item.id, row), role = RecipeGuideProjection.role(row["measurementType"]?.stringValue ?? "food")
-                        Picker("Author · \(row["probeName"]?.stringValue ?? "Channel") · \(role)", selection: Binding(get: { state.channels[key] ?? "" }, set: { value in
+                        Picker("Author · \(row["probeName"]?.stringValue ?? "Channel") · \(role) · \((row["probeId"]?.stringValue ?? row["id"]?.stringValue ?? "").suffix(6))", selection: Binding(get: { state.channels[key] ?? "" }, set: { value in
                             var copy = state; if value.isEmpty { copy.channels.removeValue(forKey: key) } else { copy.channels[key] = value }; save(copy)
                         })) {
                             Text("Separate reference channel").tag("")

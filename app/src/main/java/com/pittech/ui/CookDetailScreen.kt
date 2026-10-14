@@ -1027,7 +1027,7 @@ private fun TimelineTab(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Text("Cook timeline", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1)
+            Text("Cook timeline", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             IconButton(onClick = onShowPhotoGallery, modifier = Modifier.testTag("timeline-gallery")) {
                 Icon(Icons.Filled.PhotoCamera, contentDescription = "Cook photos")
             }

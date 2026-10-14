@@ -37,7 +37,7 @@ private struct CardLayout {
     private static func layout(_ root: [String: JSONValue]) throws -> CardLayout {
         var result = CardLayout()
         let left = 72.0, width = 936.0
-        @discardableResult func text(_ value: String, _ x: Double, _ y: Double, _ w: Double, _ size: Double, _ lines: Int = 1, _ color: Color = ink, _ bold: Bool = false) -> Double {
+        @discardableResult func text(_ value: String, _ x: Double, _ y: Double, _ w: Double, _ size: Double, _ lines: Int = 1, _ color: Color = Color(red:36/255,green:38/255,blue:34/255), _ bold: Bool = false) -> Double {
             let display = shareCardLimited(value,600) + (value.unicodeScalars.count > 600 ? "…" : "")
             let font = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
             let measured = (display as NSString).boundingRect(with: CGSize(width: w, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font], context: nil)
@@ -134,8 +134,13 @@ private struct ShareCardChart: View {
                     for (j,row) in points.enumerated() { let at = point(row);if j == 0 { line.move(to:at) } else { line.addLine(to:at) };context.fill(Path(ellipseIn:CGRect(x:at.x-4,y:at.y-4,width:8,height:8)),with:.color(color)) }
                     context.stroke(line,with:.color(color),lineWidth:4)
                 }
-                let label = "\(i+1). \(shareCardLimited(curve["label"]?.stringValue ?? "",100))"
-                context.draw(Text(label).font(.system(size:19)).foregroundColor(color).lineLimit(1).truncationMode(.tail),
+                var label = "\(i+1). \(shareCardLimited(curve["label"]?.stringValue ?? "",100))"
+                let font = UIFont.systemFont(ofSize:19), available = size.width/2-8
+                if (label as NSString).size(withAttributes:[.font:font]).width > available {
+                    while !label.isEmpty && ((label + "…") as NSString).size(withAttributes:[.font:font]).width > available { label.removeLast() }
+                    label += "…"
+                }
+                context.draw(Text(label).font(.system(size:19)).foregroundColor(color),
                     in:CGRect(x:Double(i%2)*size.width/2,y:size.height-70+Double(i/2)*24,width:size.width/2-8,height:24))
             }
         }
