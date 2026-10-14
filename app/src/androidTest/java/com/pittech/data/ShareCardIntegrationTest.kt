@@ -49,7 +49,7 @@ class ShareCardIntegrationTest {
         assertEquals("none",quiet.getString("hero"));assertEquals(0,quiet.getJSONArray("curves").length());assertFalse(quiet.toString().contains("Private source"))
         val full = base.copy(entries=listOf(entry.copy(includeStory=true)))
         val shown = JSONObject(ShareCardContent.build(full,null).content)
-        assertEquals(2,shown.getJSONArray("curves").length());assertEquals("°C",shown.getString("unit"));assertTrue(shown.getJSONArray("stats").toString().contains("4.5 / 5"));assertTrue(shown.isNull("relay"))
+        assertEquals(2,shown.getJSONArray("curves").length());assertEquals("°C",shown.getString("unit"));assertEquals("4.5 / 5",shown.getJSONArray("stats").getJSONObject(0).getString("value"));assertTrue(shown.isNull("relay"))
         val long = full.copy(card=full.card.copy(note="🌶".repeat(2000)))
         assertEquals(long,SharingDraftCodec.decode(SharingDraftCodec.encode(long)))
         val code = ShareCardContent.build(full,null,ShareCardRelay("EMBER-OAK-7","https://pittech.app/s/EMBER-OAK-7"))

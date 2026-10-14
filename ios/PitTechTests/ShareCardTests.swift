@@ -34,7 +34,7 @@ import UIKit
         entry.includeStory = true;doc.entries = [entry]
         let shown = try NativeShareCardContent.build(doc,photo:nil)
         XCTAssertEqual(shown.content.objectValue?["curves"]?.arrayValue?.count,2)
-        XCTAssertTrue(try recipeJSON(shown.content.objectValue?["stats"] ?? .null).contains("4.5 / 5"))
+        XCTAssertEqual(shown.content.objectValue?["stats"]?.arrayValue?.first?.objectValue?["value"]?.stringValue,"4.5 / 5")
         doc.card?.note = String(repeating:"🌶",count:2000)
         let roundTrip = try NativeSharingDocument.decode(JSONDecoder().decode(JSONValue.self,from:JSONEncoder().encode(doc)))
         XCTAssertEqual(roundTrip,doc)
