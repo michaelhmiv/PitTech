@@ -8,8 +8,11 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
                 if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
             }
-            let cookContent = app.scrollViews["cook-content"]
-            if cookContent.exists && cookContent.isHittable { cookContent.swipeUp() } else { app.swipeUp() }
+            let scroll = app.scrollViews["cook-content"].exists ? app.scrollViews["cook-content"] : app.scrollViews.firstMatch
+            let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
+            if scroll.exists && scroll.isHittable {
+                if element.exists && element.frame.maxY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
+            } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
     }
