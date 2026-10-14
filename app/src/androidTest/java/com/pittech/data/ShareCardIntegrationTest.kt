@@ -33,6 +33,11 @@ class ShareCardIntegrationTest {
             val shared = ShareCardFiles.create(context,bytes);ShareCardFiles.prune(context,shared.lastModified()+25*3600000L);assertFalse(shared.exists())
         }
         assertArrayEquals(before,photo)
+        val narrow = Bitmap.createBitmap(1,120,Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(155,95,40)) }
+        val narrowPhoto = ByteArrayOutputStream().use { narrow.compress(Bitmap.CompressFormat.JPEG,90,it);it.toByteArray() };narrow.recycle()
+        val narrowPNG = ShareCardRenderer.render(PreparedShareCard(JSONObject(fixture.toString()).put("hero","photo").toString(),narrowPhoto))
+        val narrowImage = BitmapFactory.decodeByteArray(narrowPNG,0,narrowPNG.size)
+        assertTrue("A narrow valid photo must fill the hero",Color.red(narrowImage.getPixel(540,500))<200);narrowImage.recycle()
         try { ShareCardRenderer.render(PreparedShareCard(JSONObject(fixture.toString()).put("hero","photo").toString(),byteArrayOf(1)));fail("Bad cover rendered") } catch (_: Exception) { }
     }
     @Test fun builderKeepsStoryVerdictAndNotesExplicitAndPreservesFullTextInThePackModel() {

@@ -20,6 +20,17 @@ import UIKit
             let attachment = XCTAttachment(data:bytes,uniformTypeIdentifier:"public.png");attachment.name = "Native share card " + mode;attachment.lifetime = .keepAlways;add(attachment)
         }
         XCTAssertEqual(photo,before)
+        let narrow = UIGraphicsImageRenderer(size:CGSize(width:1,height:120),format:format).image { UIColor.brown.setFill();$0.fill(CGRect(x:0,y:0,width:1,height:120)) }.jpegData(compressionQuality:0.9)!
+        var narrowContent = fixture;narrowContent["hero"] = .string("photo")
+        let narrowPNG = try NativeShareCardRenderer.render(PreparedNativeShareCard(content:.object(narrowContent),photo:narrow))
+        let pixelImage = try XCTUnwrap(UIImage(data:narrowPNG)?.cgImage?.cropping(to:CGRect(x:540,y:500,width:1,height:1)))
+        var pixel = [UInt8](repeating:0,count:4)
+        pixel.withUnsafeMutableBytes { bytes in
+            let context = CGContext(data:bytes.baseAddress,width:1,height:1,bitsPerComponent:8,bytesPerRow:4,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(pixelImage,in:CGRect(x:0,y:0,width:1,height:1))
+        }
+        XCTAssertLessThan(pixel[0],200,"A narrow valid photo must fill the hero")
+        let narrowAttachment = XCTAttachment(data:narrowPNG,uniformTypeIdentifier:"public.png");narrowAttachment.name = "Native narrow share card";narrowAttachment.lifetime = .keepAlways;add(narrowAttachment)
         var broken = fixture;broken["hero"] = .string("photo")
         XCTAssertThrowsError(try NativeShareCardRenderer.render(PreparedNativeShareCard(content:.object(broken),photo:Data([1]))))
     }

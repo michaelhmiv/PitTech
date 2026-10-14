@@ -30,7 +30,9 @@ private struct CardLayout {
         let root = input.content.objectValue ?? [:], zoom = root["zoom"]?.numberValue ?? 1
         let scale = max(rect.width / CGFloat(image.width), rect.height / CGFloat(image.height)) * zoom
         let width = rect.width / scale, height = rect.height / scale
-        let crop = CGRect(x: (CGFloat(image.width) - width) * (root["cropX"]?.numberValue ?? 0.5), y: (CGFloat(image.height) - height) * (root["cropY"]?.numberValue ?? 0.5), width: width, height: height)
+        let cropWidth = max(1,min(image.width,Int(width.rounded()))), cropHeight = max(1,min(image.height,Int(height.rounded())))
+        let x = (Double(image.width-cropWidth) * (root["cropX"]?.numberValue ?? 0.5)).rounded(), y = (Double(image.height-cropHeight) * (root["cropY"]?.numberValue ?? 0.5)).rounded()
+        let crop = CGRect(x:x,y:y,width:Double(cropWidth),height:Double(cropHeight))
         guard let cropped = image.cropping(to: crop) else { throw CookNoteError.missingPhoto }
         return UIImage(cgImage: cropped)
     }

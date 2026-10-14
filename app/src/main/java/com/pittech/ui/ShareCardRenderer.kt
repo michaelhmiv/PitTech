@@ -55,8 +55,9 @@ object ShareCardRenderer {
                     val image = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("This cover photo could not be rendered."); cover = image
                     val scale = max(rect.width() / image.width, rect.height() / image.height) * root.getDouble("zoom").toFloat()
                     val w = rect.width() / scale; val h = rect.height() / scale
-                    val x = (image.width - w) * root.getDouble("cropX").toFloat(); val top = (image.height - h) * root.getDouble("cropY").toFloat()
-                    val crop = Rect(x.roundToInt(), top.roundToInt(), (x + w).roundToInt().coerceAtMost(image.width), (top + h).roundToInt().coerceAtMost(image.height))
+                    val cropWidth = w.roundToInt().coerceIn(1,image.width); val cropHeight = h.roundToInt().coerceIn(1,image.height)
+                    val x = ((image.width - cropWidth) * root.getDouble("cropX")).roundToInt(); val top = ((image.height - cropHeight) * root.getDouble("cropY")).roundToInt()
+                    val crop = Rect(x,top,x+cropWidth,top+cropHeight)
                     val path = Path().apply { addRoundRect(rect, 24f, 24f, Path.Direction.CW) }
                     canvas.save(); canvas.clipPath(path); canvas.drawBitmap(image, crop, rect, paint); canvas.restore()
                 } else chart(canvas, root, rect, ::text)
