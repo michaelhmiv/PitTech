@@ -23,6 +23,10 @@ struct NativeArchiveImportView: View {
                         }
                         Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")").frame(maxWidth: .infinity, minHeight: 44) }
                             .buttonStyle(.borderedProminent).disabled(selected.isEmpty || saving).accessibilityIdentifier("pack-save-recipes")
+                        if source.preview.cookPack?.objectValue?["kind"]?.stringValue == "cook" {
+                            Button("Add recorded meal to history") { saveHistory() }.buttonStyle(.bordered).frame(minHeight: 44).disabled(saving).accessibilityIdentifier("pack-add-history")
+                            Text("Add all \(source.preview.dishes) recorded dishes in this file. Recipe selections above apply when saving recipes.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                        }
                         Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.").font(.caption).foregroundStyle(PitTechStyle.supporting)
                     } else {
                         Text("Restore your backup").font(.title2.weight(.semibold))
@@ -48,6 +52,14 @@ struct NativeArchiveImportView: View {
         saving = true; error = nil
         Task { @MainActor in
             do { try await store.importSelectedRecipes(source, selected: selected); if store.archiveIntake?.id == source.id { dismiss() } }
+            catch { self.error = error.localizedDescription }
+            saving = false
+        }
+    }
+    private func saveHistory() {
+        saving = true; error = nil
+        Task { @MainActor in
+            do { try await store.importRecordedCook(source); if store.archiveIntake?.id == source.id { dismiss() } }
             catch { self.error = error.localizedDescription }
             saving = false
         }

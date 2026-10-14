@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.pittech.data.PitTechDataTransfer
 import com.pittech.domain.RecipeSnapshotCodec
 
-@Composable internal fun CookPackImportDialog(source: PitTechDataTransfer.ImportDraft, saving: Boolean, error: String?, onCancel: () -> Unit, onSave: (Set<String>) -> Unit) {
+@Composable internal fun CookPackImportDialog(source: PitTechDataTransfer.ImportDraft, saving: Boolean, error: String?, onCancel: () -> Unit, onSave: (Set<String>) -> Unit, onAddHistory: () -> Unit) {
     var selected by remember(source) { mutableStateOf(source.snapshot.recipes.map { it.currentRevisionId }.toSet()) }
     AlertDialog(onDismissRequest = { if (!saving) onCancel() }, title = { Text("Cook Pack") }, text = {
         Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -48,6 +48,10 @@ import com.pittech.domain.RecipeSnapshotCodec
                         Checkbox(selected.contains(revision.id), onCheckedChange = null)
                     }
                 }
+            }
+            if (source.cookPack?.optString("kind") == "cook") {
+                OutlinedButton(onClick = onAddHistory, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("pack-add-history")) { Text("Add recorded meal to history") }
+                Text("Add all ${source.snapshot.dishes.size} recorded dishes in this file. Recipe selections above apply when saving recipes.", style = MaterialTheme.typography.bodySmall)
             }
             Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.", style = MaterialTheme.typography.bodySmall)
             if (saving) CircularProgressIndicator(Modifier.size(24.dp))

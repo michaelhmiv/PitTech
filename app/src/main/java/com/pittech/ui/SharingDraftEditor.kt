@@ -36,6 +36,7 @@ import kotlinx.coroutines.sync.withLock
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun SharingDraftEditor(id: String, viewModel: CooksViewModel, onClose: () -> Unit) {
+    var includeRecordedCook by remember(id) { mutableStateOf(false) }
     var record by remember(id) { mutableStateOf<CompanionRecord?>(null) }
     var document by remember(id) { mutableStateOf<SharingDocument?>(null) }
     var error by remember(id) { mutableStateOf<String?>(null) }; var busy by remember { mutableStateOf(false) }
@@ -95,7 +96,18 @@ import kotlinx.coroutines.sync.withLock
                     }
                     OutlinedButton(onClick = { act { persist(); chooseRecipe = true } }, enabled = current.entries.size < 20 && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add a saved recipe") }
                     Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
+                    if (current.sourceHistoryJson != null) {
+                        val originalDishes = remember(current.sourceHistoryJson) { com.pittech.data.CookPackHistory.rows(org.json.JSONObject(current.sourceHistoryJson), "dishes").map { it.getString("id") }.toSet() }
+                        val chosen = current.entries.filter { it.included }
+                        val eligible = chosen.isNotEmpty() && chosen.all { it.includeStory && it.sourceDishId in originalDishes }
+                        LaunchedEffect(eligible) { if (!eligible) includeRecordedCook = false }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(includeRecordedCook, { includeRecordedCook = it }, enabled = eligible && !exporting, modifier = Modifier.testTag("sharing-include-history"))
+                            Text("Include this recorded meal", modifier = Modifier.weight(1f))
+                        }
+                        Text(if (eligible) "Recipients can choose to add this finished meal to history." else "Enable the recorded story for each selected original dish first.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }

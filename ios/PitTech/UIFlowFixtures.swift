@@ -54,7 +54,7 @@ struct ScreenshotTextSize: ViewModifier {
                 }
                 try source.saveSharingDraft(id, document: document, expectedUpdated: source.sharingRecord(id)!["updated"]!.numberValue!)
                 let file = folder.appendingPathComponent("preview.pittech")
-                let data = try await source.exportCookPackAsync(id)
+                let data = try await source.exportCookPackAsync(id, includeRecordedCook: CommandLine.arguments.contains("--ui-test-recorded-pack"))
                 try data.write(to: file)
                 await receiveArchive(at: file)
             } catch { assertionFailure("Cook Pack UI fixture failed: " + error.localizedDescription) }

@@ -167,7 +167,7 @@ fun PitTechApp(
 
     if (importPreview != null) {
         val draft = importPreview!!
-        if (draft.cookPack != null) CookPackImportDialog(draft, saving, saveError, viewModel::cancelImport, viewModel::confirmCookPackImport)
+        if (draft.cookPack != null) CookPackImportDialog(draft, saving, saveError, viewModel::cancelImport, viewModel::confirmCookPackImport, viewModel::confirmCookPackHistoryImport)
         else AlertDialog(
             onDismissRequest = viewModel::cancelImport,
             title = { Text("Review backup contents") },

@@ -131,4 +131,33 @@ class MealRecipeUserFlowsTest {
         compose.onNodeWithTag("leave-without-saving").performScrollTo().performClick()
         assertEquals(CookStatus.COMPLETED, runBlocking(Dispatchers.IO) { app.database.cookDao().getCook(meal.id)!!.status })
     }
+    @Test fun recordedCookPreviewAddsHistoryWithoutSavingRecipesOrStartingAutomation() {
+        val uri = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val cook = app.cookRepository.startCook(NewCookDraft("Pork and potatoes", dishes = listOf(DishDraft("Pork", "Pork"), DishDraft("Potatoes", "Vegetables"))))
+            val dishes = app.database.cookDao().getDishesForCook(cook)
+            app.cookRepository.completeCook(cook)
+            val id = app.cookRepository.sharing.fromMeal(cook, dishes.map { it.id }.toSet())
+            val record = app.cookRepository.sharing.get(id)!!; val document = SharingDraftCodec.decode(record.payload)
+            app.cookRepository.sharing.save(id, document.copy(entries = document.entries.map { it.copy(includeStory = true) }), record.updatedAtUtcMillis)
+            val file = File(app.cacheDir, "exports/ui-history.pittech").apply { parentFile!!.mkdirs() }
+            file.outputStream().use { app.dataTransfer.writeCookPack(it, id, includeRecordedCook = true) }
+            app.database.clearAllTables()
+            androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+        }
+        compose.activityRule.scenario.onActivity { activity ->
+            val launch = activity.intent
+            InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(activity, android.content.Intent(launch).setAction(android.content.Intent.ACTION_VIEW).setDataAndType(uri, "application/zip"))
+            activity.intent = launch
+        }
+        waitFor("pack-add-history"); compose.onNodeWithTag("pack-add-history").performScrollTo()
+        shot("cook-pack-recorded-history-preview")
+        compose.onNodeWithTag("pack-add-history").performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().size == 1 } }
+        assertEquals(CookStatus.COMPLETED, runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().single().status })
+        assertEquals(2, runBlocking(Dispatchers.IO) { app.database.cookDao().getAllDishes().size })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.recordingDao().getAllRecordings().isEmpty() })
+    }
 }

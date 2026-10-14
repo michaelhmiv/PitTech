@@ -201,3 +201,26 @@ These are examples of the practical steps and details a smoker may want to remem
 - [USDA FSIS: Thermometers when smoking meat](https://ask.fsis.usda.gov/article/Do-you-need-a-thermometer-when-smoking-meat)
 - [USDA FSIS: Safe internal temperatures for meat and poultry](https://ask.fsis.usda.gov/article/What-is-a-safe-internal-temperature-for-cooking-meat-and-poultry)
 - [Microsoft Support: Excel specifications and limits](https://support.microsoft.com/en-us/excel/excel-specifications-and-limits)
+
+
+## Cook Pack recorded history
+
+A draft created from a finished meal can retain an optional frozen `sourceHistory`
+inside its existing companion document. It owns references to copied photos.
+Older drafts default to no history payload; no completion time is invented for
+an active meal. This addition keeps archive v10 and Room v10 unchanged.
+
+A recorded Cook Pack contains one completed meal, selected original dishes,
+all scoped raw readings and their original timestamps, logical probe channels,
+results, source activity, selected original photos and timing metadata. Public
+identities are remapped; device configuration and automation are excluded.
+Recipe edits cannot change the frozen facts. Shared images are derivatives;
+backup originals remain intact. Editable reference photos added after the cook
+stay with recipes and do not become newly recorded historical photos.
+
+The recipient chooses **Save recipes** or **Add recorded meal to history**.
+Saving recipes imports no actual cook records. Adding history imports all
+recorded dishes in the file and saves no recipes automatically. Both choices
+are idempotent for the same file and leave existing active cooking, settings
+and monitoring alone. Recipe-only and collection-only files contain no actual
+history. File credit is unverified; a file does not establish publisher identity.

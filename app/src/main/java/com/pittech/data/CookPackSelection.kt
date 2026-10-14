@@ -5,6 +5,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+fun PitTechDataTransfer.ImportDraft.recordedCookOnly(): PitTechDataTransfer.ImportDraft {
+    val header = cookPack ?: error("This file does not contain a recorded meal.")
+    require(header.getString("kind") == "cook" && snapshot.cooks.size == 1 && snapshot.cooks.single().status == CookStatus.COMPLETED) { "Choose a finished recorded meal." }
+    val history = snapshot.copy(recipes = emptyList(), recipeRevisions = emptyList(), recipeAssets = emptyList(), companionRecords = emptyList(), companionPhotos = emptyList(), dishRecipeSources = emptyList(), mealPresets = emptyList())
+    val photoIds = history.photos.map { it.id }.toSet()
+    return copy(snapshot = history, attachments = attachments.filterKeys { it in photoIds }, preferences = null,
+        cookPack = JSONObject(header.toString()).put("recipeRevisionIds", JSONArray()))
+}
+
 /** Selection happens after validation; copies own reference assets under deterministic local identities. */
 fun PitTechDataTransfer.ImportDraft.selectCookPackRecipes(selected: Set<String>): PitTechDataTransfer.ImportDraft {
     val metadata = cookPack ?: error("Choose recipes from a Cook Pack.")

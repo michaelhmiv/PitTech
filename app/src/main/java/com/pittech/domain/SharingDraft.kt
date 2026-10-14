@@ -24,6 +24,7 @@ data class SharingDocument(
     val heroPhotoId: String? = null,
     val collectionId: String? = null,
     val parentRevisionId: String? = null,
+    val sourceHistoryJson: String? = null,
 )
 
 object SharingDraftCodec {
@@ -44,6 +45,7 @@ object SharingDraftCodec {
         return JSONObject().put("version", 1).put("title", value.title).put("identityMode", value.identityMode)
             .put("sourceCookId", value.sourceCookId ?: JSONObject.NULL).put("heroPhotoId", value.heroPhotoId ?: JSONObject.NULL)
             .put("collectionId", value.collectionId ?: JSONObject.NULL).put("parentRevisionId", value.parentRevisionId ?: JSONObject.NULL)
+            .put("sourceHistory", value.sourceHistoryJson?.let(::JSONObject) ?: JSONObject.NULL)
             .put("entries", JSONArray(value.entries.map { entry -> JSONObject().put("id", entry.id)
                 .put("sourceDishId", entry.sourceDishId ?: JSONObject.NULL).put("sourceRevisionId", entry.sourceRevisionId ?: JSONObject.NULL)
                 .put("snapshotJson", RecipeSnapshotCodec.encode(entry.snapshot)).put("story", JSONObject(entry.storyJson))
@@ -59,7 +61,7 @@ object SharingDraftCodec {
             SharingEntry(row.getString("id"), if (row.isNull("sourceDishId")) null else row.getString("sourceDishId"),
                 if (row.isNull("sourceRevisionId")) null else row.getString("sourceRevisionId"), RecipeSnapshotCodec.decode(row.getString("snapshotJson")),
                 row.getJSONObject("story").toString(), row.getBoolean("included"), row.getBoolean("includeStory"), (0 until photos.length()).map { photos.getString(it) })
-        }, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"))
+        }, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString())
         validate(result); return result
     }
     fun validate(value: SharingDocument) {

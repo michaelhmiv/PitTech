@@ -19,6 +19,7 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
     var heroPhotoId: String?
     var collectionId: String?
     var parentRevisionId: String?
+    var sourceHistory: JSONValue?
     var entries: [NativeSharingEntry]
     func validate() throws {
         guard version == 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 160,
@@ -68,7 +69,7 @@ extension PitTechLibrary {
     func sharingPhotos(_ id: String) -> [[String: JSONValue]] { library.companionPhotos.compactMap(\.objectValue).filter { $0["recordId"]?.stringValue == id } }
     @discardableResult func createSharingDraft(cookId: String, dishIds: Set<String>) throws -> String {
         guard let cook = library.cooks.first(where: { $0.id == cookId }), !dishIds.isEmpty, dishIds.isSubset(of: Set(dishRecords(cookId).map(\.id))) else { throw RecipeError.unavailable }
-        let id = UUID().uuidString.lowercased(), prior = library; var copied: [String] = []
+        let id = UUID().uuidString.lowercased(), prior = library; var copied: [String] = [], copiedPhotos: [JSONValue] = []
         do {
             let entries = try dishRecords(cookId).filter { dishIds.contains($0.id) }.enumerated().map { index, dish -> NativeSharingEntry in
                 let actual = try extractRecipe(cookId: cookId, dishId: dish.id)
@@ -97,11 +98,14 @@ extension PitTechLibrary {
                     let newId = UUID().uuidString.lowercased(), destination = "attachments/\(newId).\(URL(fileURLWithPath: path).pathExtension)"
                     try FileManager.default.createDirectory(at: photoURL(destination).deletingLastPathComponent(), withIntermediateDirectories: true)
                     try Data(contentsOf: photoURL(path)).write(to: photoURL(destination), options: .atomic); copied.append(destination)
+                    var recordedPhoto = source; recordedPhoto["id"] = .string(newId); recordedPhoto["archivePath"] = .string(destination)
+                    copiedPhotos.append(.object(recordedPhoto))
                     library.companionPhotos.append(.object(["id": .string(newId), "recordId": .string(id), "archivePath": .string(destination), "mimeType": source["mimeType"] ?? .string("image/jpeg"), "caption": source["caption"] ?? .string(""), "dishIndex": .number(Double(index)), "action": .string(entry.id)]))
                 }
                 return entry
             }
-            let document = NativeSharingDocument(title: String(cook.title.prefix(160)), sourceCookId: cookId, entries: entries)
+            let history = try NativeCookPackHistory.freeze(prior, cookId: cookId, dishIds: dishIds, copiedPhotos: copiedPhotos)
+            let document = NativeSharingDocument(title: String(cook.title.prefix(160)), sourceCookId: cookId, sourceHistory: history, entries: entries)
             try document.validate(); let now = Date.now.timeIntervalSince1970 * 1000
             library.companionRecords.append(.object(["id": .string(id), "kind": .string("sharing_draft"), "title": .string(document.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)]))
             try library.validateSharingDocuments(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }; return id
@@ -111,6 +115,7 @@ extension PitTechLibrary {
         guard let index = library.companionRecords.firstIndex(where: { $0.objectValue?["id"]?.stringValue == id }), let record = sharingRecord(id), record["kind"]?.stringValue == "sharing_draft",
               record["updated"]?.numberValue == expectedUpdated else { throw RecipeError.changed }
         let before = try sharingDocument(id); try document.validate()
+        guard document.sourceHistory == before.sourceHistory else { throw PitTechArchiveError.invalidArchive }
         guard document.entries.allSatisfy({ entry in before.entries.contains { $0.id == entry.id && $0.story == entry.story } }) else { throw PitTechArchiveError.invalidArchive }
         let prior = library; var updated = record
         do {
@@ -145,6 +150,7 @@ extension PitTechLibrary {
             }
             for index in document.entries.indices { document.entries[index].photoIds = try document.entries[index].photoIds.map { guard let newId = mapping[$0] else { throw CookNoteError.missingPhoto }; return newId } }
             document.heroPhotoId = document.heroPhotoId.flatMap { mapping[$0] }
+            document.sourceHistory = try NativeCookPackHistory.remapOwnedPhotos(document.sourceHistory, mappings: mapping, dishIds: Set(document.entries.compactMap(\.sourceDishId)))
             let now = Date.now.timeIntervalSince1970 * 1000
             library.companionRecords.append(.object(["id": .string(newId), "kind": .string(asCollection ? "collection_revision" : "sharing_draft"), "title": .string(document.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)]))
             try library.validateSharingDocuments(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }; return newId

@@ -3,6 +3,7 @@ import ZIPFoundation
 
 final class NativeCookPackProjection {
     private var identities: [String: String] = [:]
+    func identifier(_ value: String) -> String { alias(.string(value)).stringValue! }
     private func alias(_ value: JSONValue?) -> JSONValue {
         guard let source = value?.stringValue, !source.isEmpty else { return .null }
         if identities[source] == nil { identities[source] = UUID().uuidString.lowercased() }
@@ -63,9 +64,12 @@ private struct NativeCookPackInput: Sendable {
     let kind: String
     let updated: Double
     let photos: [NativeCookPackInputPhoto]
+    let includeRecordedCook: Bool
     func render() throws -> Data {
         let selected = draft.entries.filter(\.included)
         guard !selected.isEmpty else { throw PitTechArchiveError.invalidArchive }
+        guard !includeRecordedCook || draft.sourceHistory != nil && selected.allSatisfy({ $0.includeStory && $0.sourceDishId != nil }) else { throw PitTechArchiveError.invalidArchive }
+        var derivatives: [String: Data] = [:]
         let packId = UUID().uuidString.lowercased(), projection = NativeCookPackProjection()
         let now = updated
         var portable = PitTechLibrary(), attachments: [String: Data] = [:], entries: [NativeSharingEntry] = []; var expandedPhotos: Int64 = 0; var heroPhotoId: String?
@@ -80,6 +84,7 @@ private struct NativeCookPackInput: Sendable {
                 guard let photo = photos.first(where: { $0.sourceId == sourceId && $0.entryId == source.id }) else { throw CookNoteError.missingPhoto }
                 try Task.checkCancellation()
                 let derivative = try NativeCookPackPhoto.derivative(Data(contentsOf: photo.url))
+                derivatives[sourceId] = derivative
                 expandedPhotos += Int64(derivative.count) * 2
                 guard expandedPhotos <= NativeArchiveLimits.cookPack.expanded, attachments.count + 2 <= NativeArchiveLimits.cookPack.entries - 3 else { throw PitTechArchiveError.tooLarge }
                 let photoId = UUID().uuidString.lowercased(), assetId = UUID().uuidString.lowercased()
@@ -90,10 +95,25 @@ private struct NativeCookPackInput: Sendable {
             }
             entries.append(entry)
         }
-        let kind = selected.count == 1 && self.kind != "collection_revision" ? "recipe" : "collection"
+        if includeRecordedCook {
+            let dishIds = Set(selected.compactMap(\.sourceDishId)), photoIds = Set(selected.flatMap(\.photoIds))
+            let source = try NativeCookPackHistory.scope(draft.sourceHistory!, dishIds: dishIds, photoIds: photoIds)
+            for photo in NativeCookPackHistory.rows(source, "photos") {
+                guard let ownedId = photo["id"]?.stringValue, let data = derivatives[ownedId] else { throw CookNoteError.missingPhoto }
+                attachments[projection.identifier(ownedId)] = data
+            }
+            let title: String
+            if selected.count == 1 { title = try selected[0].snapshot.name } else { title = draft.title }
+            let root = try NativeCookPackHistory.scope(source, dishIds: dishIds, photoIds: photoIds, title: title, alias: projection.identifier)
+            let history = try JSONDecoder().decode(PitTechLibrary.self, from: JSONEncoder().encode(root))
+            portable.cooks = history.cooks; portable.dishes = history.dishes; portable.ingredients = history.ingredients; portable.events = history.events
+            portable.readings = history.readings; portable.targets = history.targets; portable.results = history.results; portable.probes = history.probes; portable.photos = history.photos
+            portable.logReadingLinks = history.logReadingLinks; portable.lifecycles = history.lifecycles; portable.targetHistory = history.targetHistory
+        }
+        let kind = includeRecordedCook ? "cook" : selected.count == 1 && self.kind != "collection_revision" ? "recipe" : "collection"
         let document = NativeSharingDocument(title: draft.title, heroPhotoId: heroPhotoId, collectionId: packId, entries: entries)
         portable.companionRecords = [.object(["id": .string(packId), "kind": .string(kind == "recipe" ? "recipe_reference" : "collection_revision"), "title": .string(draft.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)])]
-        let metadata: JSONValue = .object(["contractVersion": .number(1), "id": .string(packId), "kind": .string(kind), "recipeRevisionIds": .array(portable.recipeRevisions.compactMap { $0.objectValue?["id"] }), "dishIds": .array([]), "includedStory": .bool(entries.contains { $0.includeStory }), "source": .null])
+        let metadata: JSONValue = .object(["contractVersion": .number(1), "id": .string(packId), "kind": .string(kind), "recipeRevisionIds": .array(portable.recipeRevisions.compactMap { $0.objectValue?["id"] }), "dishIds": .array(portable.dishes.compactMap { $0.objectValue?["id"] }), "includedStory": .bool(entries.contains { $0.includeStory }), "source": .null])
         try portable.validateCookExperience()
         let result = try NativeCookPackArchive.write(portable, metadata: metadata, attachments: attachments)
         _ = try CookStore.previewCookPack(result)
@@ -121,18 +141,18 @@ enum NativeCookPackArchive {
 }
 
 @MainActor extension CookStore {
-    private func cookPackInput(_ id: String) throws -> NativeCookPackInput {
+    private func cookPackInput(_ id: String, includeRecordedCook: Bool) throws -> NativeCookPackInput {
         guard let row = sharingRecord(id) else { throw RecipeError.unavailable }
         let document = try sharingDocument(id)
         let photos = try sharingPhotos(id).map { photo -> NativeCookPackInputPhoto in
             guard let sourceId = photo["id"]?.stringValue, let entryId = photo["action"]?.stringValue, let path = photo["archivePath"]?.stringValue else { throw CookNoteError.missingPhoto }
             return NativeCookPackInputPhoto(sourceId: sourceId, entryId: entryId, url: photoURL(path), caption: photo["caption"]?.stringValue ?? "")
         }
-        return NativeCookPackInput(draft: document, kind: row["kind"]?.stringValue ?? "sharing_draft", updated: row["updated"]?.numberValue ?? 0, photos: photos)
+        return NativeCookPackInput(draft: document, kind: row["kind"]?.stringValue ?? "sharing_draft", updated: row["updated"]?.numberValue ?? 0, photos: photos, includeRecordedCook: includeRecordedCook)
     }
-    func exportCookPack(_ id: String) throws -> Data { try cookPackInput(id).render() }
-    func exportCookPackAsync(_ id: String) async throws -> Data {
-        let input = try cookPackInput(id)
+    func exportCookPack(_ id: String, includeRecordedCook: Bool = false) throws -> Data { try cookPackInput(id, includeRecordedCook: includeRecordedCook).render() }
+    func exportCookPackAsync(_ id: String, includeRecordedCook: Bool = false) async throws -> Data {
+        let input = try cookPackInput(id, includeRecordedCook: includeRecordedCook)
         let renderer = Task.detached(priority: .userInitiated) { try input.render() }
         return try await withTaskCancellationHandler(operation: { try await renderer.value }, onCancel: { renderer.cancel() })
     }

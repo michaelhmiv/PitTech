@@ -39,7 +39,7 @@ class PitTechDataTransfer(
             val description = manifest(snapshot, preferences).apply { if (pack != null) put("cookPack", pack) }
             putText(zip, "manifest.json", description.toString(2))
             putText(zip, "README.txt", README)
-            putText(zip, "data/pittech.json", snapshotJson(snapshot, preferences).toString())
+            putText(zip, "data/pittech.json", archiveSnapshotJson(snapshot, preferences).toString())
             csvTables(snapshot).forEach { (name, content) -> putText(zip, "csv/$name", content) }
             snapshot.recipeAssets.forEach { asset ->
                 putBytes(zip, RecipeArchive.attachmentPath(asset), (attachments?.get(asset.id) ?: repository.readPhoto(asset.relativeFilePath)) ?: error("A recipe photo is unavailable."))
@@ -69,8 +69,8 @@ class PitTechDataTransfer(
         } finally { file.delete() }
     }
 
-    suspend fun writeCookPack(output: OutputStream, documentId: String) {
-        val pack = repository.sharing.prepareCookPack(documentId)
+    suspend fun writeCookPack(output: OutputStream, documentId: String, includeRecordedCook: Boolean = false) {
+        val pack = repository.sharing.prepareCookPack(documentId, includeRecordedCook)
         val file = File.createTempFile("pittech_share_", ".pittech", context.cacheDir)
         try {
             file.outputStream().use { writeSnapshotZip(it, pack.snapshot, pack = pack.metadata, attachments = pack.attachments) }
@@ -147,7 +147,7 @@ class PitTechDataTransfer(
                 "The backup manifest and app preferences do not match."
             }
             val attachments = mutableMapOf<String, ByteArray>()
-            val snapshot = parseSnapshot(root) { photoId, archivePath ->
+            val snapshot = parseArchiveSnapshot(root) { photoId, archivePath ->
                 entries[archivePath]?.also { attachments[photoId] = it }
             }
             val preferences = parsePreferences(root.optJSONObject("preferences"))
@@ -191,39 +191,6 @@ class PitTechDataTransfer(
             .put("results", snapshot.results.size)
             .put("photos", snapshot.photos.size)
             .put("reminders", snapshot.reminders.size))
-
-    private fun snapshotJson(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
-        .apply { RecipeArchive.write(this, snapshot); ActivityTimerArchive.write(this, snapshot); ReminderArchive.write(this, snapshot) }
-        .put("schemaVersion", ARCHIVE_VERSION)
-        .putNullable("preferences", preferences?.let {
-            JSONObject()
-                .put("temperatureUnit", it.temperatureUnit)
-                .put("weightUnit", it.weightUnit)
-                .put("themeMode", it.themeMode)
-        })
-        .put("cooks", JSONArray().apply { snapshot.cooks.forEach { put(it.toJson()) } })
-        .put("dishes", JSONArray().apply { snapshot.dishes.forEach { put(it.toJson()) } })
-        .put("ingredients", JSONArray().apply { snapshot.ingredients.forEach { put(it.toJson()) } })
-        .put("events", JSONArray().apply { snapshot.events.forEach { put(it.toJson()) } })
-        .put("readings", JSONArray().apply { snapshot.readings.forEach { put(it.toJson()) } })
-        .put("targets", JSONArray().apply { snapshot.targets.forEach { put(it.toJson()) } })
-        .put("results", JSONArray().apply { snapshot.results.forEach { put(it.toJson()) } })
-        .put("devices", JSONArray().apply { snapshot.devices.forEach { put(it.toJson()) } })
-        .put("probes", JSONArray().apply { snapshot.probes.forEach { put(it.toJson()) } })
-        .put("reminders", JSONArray().apply { snapshot.reminders.forEach { put(it.toJson()) } })
-        .put("recordings", JSONArray().apply { snapshot.recordings.forEach { put(it.toJson()) } })
-        .put("probeAssignments", JSONArray().apply { snapshot.assignments.forEach { put(it.toJson()) } })
-        .put("logReadingLinks", JSONArray(snapshot.logReadingLinks.map { JSONObject().put("readingId", it.readingId).put("eventId", it.eventId) }))
-        .put("lifecycles", JSONArray(snapshot.lifecycles.map { JSONObject().put("cookId", it.cookId).put("timingMode", it.timingMode) }))
-        .put("targetHistory", JSONArray(snapshot.targetHistory.map { JSONObject().put("id", it.id).put("cookId", it.cookId).putNullable("dishId", it.dishId).put("targetType", it.targetType).put("value", it.value).put("unit", it.unit).put("effectiveAt", it.effectiveAt) }))
-        .put("companionRecords", JSONArray(snapshot.companionRecords.map { JSONObject().put("id", it.id).put("kind", it.kind).put("cookId", it.cookId).put("title", it.title).put("payload", JSONObject(it.payload)).put("created", it.createdAtUtcMillis).put("updated", it.updatedAtUtcMillis) }))
-        .put("companionPhotos", JSONArray(snapshot.companionPhotos.map { JSONObject().put("id", it.id).put("recordId", it.recordId).put("archivePath", "attachments/${it.id}.${it.relativePath.substringAfterLast('.')}").put("mimeType", it.mimeType).put("caption", it.caption).put("dishIndex", it.dishIndex).put("action", it.action) }))
-        .put("photos", JSONArray().apply {
-            snapshot.photos.forEach { photo ->
-                val extension = photo.originalFileName.substringAfterLast('.', "jpg").filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
-                put(photo.toJson().put("archivePath", "attachments/${photo.id}.$extension"))
-            }
-        })
 
     private fun csvTables(snapshot: ExportSnapshot): Map<String, String> = linkedMapOf(
         "log_reading_links.csv" to csv("event_id,reading_id", snapshot.logReadingLinks.map { listOf(it.eventId, it.readingId) }),
@@ -485,6 +452,40 @@ data class BackupPreferences(
     val themeMode: String,
 )
 
+internal fun archiveSnapshotJson(snapshot: ExportSnapshot, preferences: BackupPreferences?) = JSONObject()
+    .apply { RecipeArchive.write(this, snapshot); ActivityTimerArchive.write(this, snapshot); ReminderArchive.write(this, snapshot) }
+    .put("schemaVersion", PitTechDataTransfer.ARCHIVE_VERSION)
+    .putNullable("preferences", preferences?.let {
+        JSONObject()
+            .put("temperatureUnit", it.temperatureUnit)
+            .put("weightUnit", it.weightUnit)
+            .put("themeMode", it.themeMode)
+    })
+    .put("cooks", JSONArray().apply { snapshot.cooks.forEach { put(it.toJson()) } })
+    .put("dishes", JSONArray().apply { snapshot.dishes.forEach { put(it.toJson()) } })
+    .put("ingredients", JSONArray().apply { snapshot.ingredients.forEach { put(it.toJson()) } })
+    .put("events", JSONArray().apply { snapshot.events.forEach { put(it.toJson()) } })
+    .put("readings", JSONArray().apply { snapshot.readings.forEach { put(it.toJson()) } })
+    .put("targets", JSONArray().apply { snapshot.targets.forEach { put(it.toJson()) } })
+    .put("results", JSONArray().apply { snapshot.results.forEach { put(it.toJson()) } })
+    .put("devices", JSONArray().apply { snapshot.devices.forEach { put(it.toJson()) } })
+    .put("probes", JSONArray().apply { snapshot.probes.forEach { put(it.toJson()) } })
+    .put("reminders", JSONArray().apply { snapshot.reminders.forEach { put(it.toJson()) } })
+    .put("recordings", JSONArray().apply { snapshot.recordings.forEach { put(it.toJson()) } })
+    .put("probeAssignments", JSONArray().apply { snapshot.assignments.forEach { put(it.toJson()) } })
+    .put("logReadingLinks", JSONArray(snapshot.logReadingLinks.map { JSONObject().put("readingId", it.readingId).put("eventId", it.eventId) }))
+    .put("lifecycles", JSONArray(snapshot.lifecycles.map { JSONObject().put("cookId", it.cookId).put("timingMode", it.timingMode) }))
+    .put("targetHistory", JSONArray(snapshot.targetHistory.map { JSONObject().put("id", it.id).put("cookId", it.cookId).putNullable("dishId", it.dishId).put("targetType", it.targetType).put("value", it.value).put("unit", it.unit).put("effectiveAt", it.effectiveAt) }))
+    .put("companionRecords", JSONArray(snapshot.companionRecords.map { JSONObject().put("id", it.id).put("kind", it.kind).put("cookId", it.cookId).put("title", it.title).put("payload", JSONObject(it.payload)).put("created", it.createdAtUtcMillis).put("updated", it.updatedAtUtcMillis) }))
+    .put("companionPhotos", JSONArray(snapshot.companionPhotos.map { JSONObject().put("id", it.id).put("recordId", it.recordId).put("archivePath", "attachments/${it.id}.${it.relativePath.substringAfterLast('.')}").put("mimeType", it.mimeType).put("caption", it.caption).put("dishIndex", it.dishIndex).put("action", it.action) }))
+    .put("photos", JSONArray().apply {
+        snapshot.photos.forEach { photo ->
+            val extension = photo.originalFileName.substringAfterLast('.', "jpg").filter(Char::isLetterOrDigit).take(8).ifBlank { "jpg" }
+            put(photo.toJson().put("archivePath", "attachments/${photo.id}.$extension"))
+        }
+    })
+
+
 private fun JSONObject.putNullable(key: String, value: Any?): JSONObject = put(key, value ?: JSONObject.NULL)
 
 private fun CookEntity.toJson() = JSONObject()
@@ -575,7 +576,7 @@ private fun JSONObject.arrayObjects(key: String): List<JSONObject> {
     return (0 until array.length()).map { array.getJSONObject(it) }
 }
 
-private fun parseSnapshot(root: JSONObject, attachment: (String, String) -> ByteArray?): ExportSnapshot {
+internal fun parseArchiveSnapshot(root: JSONObject, attachment: (String, String) -> ByteArray?): ExportSnapshot {
     val cooks = root.arrayObjects("cooks").map { o ->
         CookEntity(
             id=o.string("id"), title=o.string("title"), status=o.string("status"), startedAtUtcMillis=o.long("startedAtUtcMillis"),

@@ -60,13 +60,14 @@ final class RecipeCompositionTests: XCTestCase {
         chosen.entries[0].photoIds = store.sharingPhotos(packDraft).compactMap { $0["id"]?.stringValue }; chosen.heroPhotoId = chosen.entries[0].photoIds.first
         try store.saveSharingDraft(packDraft, document: chosen, expectedUpdated: store.sharingRecord(packDraft)!["updated"]!.numberValue!)
         let recipePack = try store.exportCookPack(packDraft)
+        let recordedPack = try store.exportCookPack(packDraft, includeRecordedCook: true)
         try store.addRecipeToSharingDraft(packDraft, revisionId: revisions[1], expectedUpdated: store.sharingRecord(packDraft)!["updated"]!.numberValue!)
         let collectionPack = try store.exportCookPack(packDraft)
         store.library.cooks[0].notes = String(repeating: "🌶", count: 17000)
         let workbookURL = directory.appendingPathComponent("native.xlsx"), csvURL = directory.appendingPathComponent("native.csv")
         try NativeTabularExport.writeWorkbook(store.library, to: workbookURL); try NativeTabularExport.writeCSV(store.library, to: csvURL)
         let fixture = try Archive(url: fixtureURL, accessMode: .update)
-        for (path, data) in [("fixtures/recipe.pittech", recipePack), ("fixtures/collection.pittech", collectionPack), ("fixtures/portable.xlsx", try Data(contentsOf: workbookURL)), ("fixtures/readings.csv", try Data(contentsOf: csvURL))] {
+        for (path, data) in [("fixtures/recipe.pittech", recipePack), ("fixtures/cook.pittech", recordedPack), ("fixtures/collection.pittech", collectionPack), ("fixtures/portable.xlsx", try Data(contentsOf: workbookURL)), ("fixtures/readings.csv", try Data(contentsOf: csvURL))] {
             try fixture.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), compressionMethod: .deflate) { offset, count in data.subdata(in: Int(offset)..<(Int(offset) + count)) }
         }
         let attachment = XCTAttachment(data: try Data(contentsOf: fixtureURL), uniformTypeIdentifier: "public.zip-archive")

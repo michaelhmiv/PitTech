@@ -60,6 +60,24 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.terminate()
         }
     }
+    func testRecordedCookImportDoesNotSaveRecipesAtStandardAndLargeText() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-pack", "--ui-test-recorded-pack"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch()
+            XCTAssertTrue(app.navigationBars["Cook Pack"].waitForExistence(timeout: 20))
+            let add = app.buttons["pack-add-history"]; reveal(add, app: app)
+            capture(large ? "Native recorded meal choice large text" : "Native recorded meal choice")
+            add.tap()
+            XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20)); app.alerts.buttons["OK"].tap()
+            app.tabBars.buttons["Meals"].tap()
+            XCTAssertTrue(app.staticTexts["Pork and potatoes"].firstMatch.waitForExistence(timeout: 10))
+            capture(large ? "Native imported history large text" : "Native imported history")
+            app.tabBars.buttons["Recipes"].tap()
+            XCTAssertTrue(app.staticTexts["Your cookbook starts here"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
     func testSavedRecipesComposeHistoricalCheckAndFinishWithoutForcedSaving() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset"]; app.launch()
         app.tabBars.buttons["Recipes"].tap()
@@ -89,7 +107,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(suggestion, app: app); suggestion.tap()
         let saveReminder = app.buttons["reminder-rule-save"]
         saveReminder.tap()
-        expectation(for: NSPredicate(format: "exists == NO"), evaluatedWith: saveReminder)
+        expectation(for: NSPredicate(format: "hittable == NO"), evaluatedWith: saveReminder)
         waitForExpectations(timeout: 10)
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Allow"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }

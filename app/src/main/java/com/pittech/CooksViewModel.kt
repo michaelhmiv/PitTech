@@ -16,6 +16,7 @@ import com.pittech.data.BackupPreferences
 import com.pittech.data.InsightsSnapshot
 import com.pittech.data.PitTechDataTransfer
 import com.pittech.data.selectCookPackRecipes
+import com.pittech.data.recordedCookOnly
 import com.pittech.data.TimelineEventEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TargetEntity
@@ -657,13 +658,13 @@ class CooksViewModel(
         _notice.value = "Backup ready to share. Choose where to send it."
     }
 
-    fun createShareCookPack(documentId: String) = perform {
+    fun createShareCookPack(documentId: String, includeRecordedCook: Boolean = false) = perform {
         _shareArchiveUri.value = withContext(Dispatchers.IO) {
             val directory = File(context.cacheDir, "exports").apply { mkdirs() }
             pruneStaleShareArchives(directory)
             val pack = File.createTempFile("pittech_recipe_", ".pittech", directory)
             try {
-                pack.outputStream().buffered().use { dataTransfer.writeCookPack(it, documentId) }
+                pack.outputStream().buffered().use { dataTransfer.writeCookPack(it, documentId, includeRecordedCook) }
                 FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pack)
             } catch (failure: Throwable) { pack.delete(); throw failure }
         }
@@ -718,6 +719,15 @@ class CooksViewModel(
             withContext(Dispatchers.IO) { dataTransfer.import(draft) }
             _importPreview.value = null
             _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
+        }
+    }
+
+    fun confirmCookPackHistoryImport() {
+        val source = _importPreview.value ?: return
+        perform {
+            val result = withContext(Dispatchers.IO) { dataTransfer.import(source.recordedCookOnly()) }
+            _importPreview.value = null
+            _notice.value = if (result.importedCooks == 0) "This recorded meal is already in your history." else "Added the recorded meal to history."
         }
     }
 

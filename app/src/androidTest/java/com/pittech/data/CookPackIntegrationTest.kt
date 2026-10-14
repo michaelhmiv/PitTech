@@ -29,10 +29,13 @@ class CookPackIntegrationTest {
                 val file = CameraPhotoFiles.create(context); val uri = CameraPhotoFiles.uri(context, file)
                 val image = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.YELLOW) }
                 context.contentResolver.openOutputStream(uri, "w")!!.use { assertTrue(image.compress(Bitmap.CompressFormat.JPEG, 90, it)) }; image.recycle()
-                repository.notes.save(CookNoteDraft(cookId = cook, dishId = dish.id, title = "${dish.name} result", photos = listOf(NotePhoto(uri = uri.toString()))))
+                repository.notes.save(CookNoteDraft(cookId = cook, dishId = dish.id, title = "${dish.name} result", temperatures = listOf(NoteTemperature(probeName = "Same name", valueText = if (dish.name == "Pork") "74.125" else "88.375", unit = "°C", dishId = dish.id)), photos = listOf(NotePhoto(uri = uri.toString()))))
                 file.delete()
             }
             repository.completeCook(cook)
+            val actualCook = source.cookDao().getCook(cook)!!
+            val porkDish = dishes.single { it.name == "Pork" }
+            repository.saveDishVerdict(cook, porkDish.id, 4.5, false, "More pepper")
             val id = repository.sharing.fromMeal(cook, dishes.map { it.id }.toSet()); val row = repository.sharing.get(id)!!
             val document = SharingDraftCodec.decode(row.payload); val photos = repository.sharing.assets(id)
             repository.sharing.save(id, document.copy(entries = document.entries.map { e -> e.copy(includeStory = true, photoIds = photos.filter { it.action == e.id }.map { it.id }) }), row.updatedAtUtcMillis)
@@ -53,9 +56,36 @@ class CookPackIntegrationTest {
                 try { pack.selectCookPackRecipes(ids); fail("An invalid selection was saved") } catch (_: IllegalArgumentException) { }
             }
             recipient.companionDao().photos().forEach { CookPackPhoto.validatePublic(storage.read(it.relativePath)!!) }
+            val duplicate = repository.sharing.duplicate(id)
+            val cloned = repository.sharing.get(duplicate)!!; val frozen = SharingDraftCodec.decode(cloned.payload)
+            repository.sharing.save(duplicate, frozen.copy(entries = frozen.entries.map { entry -> entry.copy(included = entry.sourceDishId == porkDish.id, snapshot = entry.snapshot.copy(name = "Edited recipe")) }), cloned.updatedAtUtcMillis)
+            repository.deleteCook(actualCook)
+            assertNull(source.cookDao().getCook(cook))
+            val historicalBytes = ByteArrayOutputStream(); transfer.writeCookPack(historicalBytes, duplicate, includeRecordedCook = true)
+            val historical = transfer.previewCookPack(ByteArrayInputStream(historicalBytes.toByteArray()))
+            assertEquals("cook", historical.cookPack!!.getString("kind")); assertEquals(1, historical.snapshot.dishes.size)
+            assertEquals("Pork", historical.snapshot.dishes.single().name)
+            assertEquals(actualCook.startedAtUtcMillis, historical.snapshot.cooks.single().startedAtUtcMillis)
+            assertEquals(actualCook.endedAtUtcMillis, historical.snapshot.cooks.single().endedAtUtcMillis)
+            assertEquals(74.125, historical.snapshot.readings.single().value, 0.0); assertEquals("°C", historical.snapshot.readings.single().unit)
+            assertEquals(1, historical.snapshot.photos.size)
+            assertTrue(historical.snapshot.results.any { it.numericValue == 4.5 })
+            assertTrue(historical.snapshot.results.any { it.resultType == "cook_again" && it.numericValue == 0.0 })
+            val projected = archiveSnapshotJson(historical.snapshot, null).toString()
+            assertFalse(projected.contains("Potatoes")); assertFalse(projected.contains(cook)); assertFalse(projected.contains(porkDish.id))
+            val recipesOnly = historical.selectCookPackRecipes(historical.snapshot.recipes.map { it.currentRevisionId }.toSet())
+            assertTrue(recipesOnly.snapshot.cooks.isEmpty()); assertTrue(recipesOnly.snapshot.readings.isEmpty())
+            val active = destination.startCook(NewCookDraft("Existing active meal"))
+            val historyOnly = historical.recordedCookOnly()
+            repeat(2) { destination.importSnapshot(historyOnly.snapshot, historyOnly.attachments) }
+            assertEquals(2, recipient.cookDao().getAllCooks().size)
+            assertEquals(CookStatus.ACTIVE, recipient.cookDao().getCook(active)!!.status)
+            assertEquals(2, recipient.recipeDao().recipes().size) // History import does not save additional recipes.
+            assertTrue(recipient.recordingDao().getAllRecordings().isEmpty()); assertTrue(recipient.reminderDao().rules().isEmpty())
+
         } finally {
             source.companionDao().photos().forEach { storage.delete(it.relativePath) }; source.cookDao().getAllPhotos().forEach { storage.delete(it.relativePath) }
-            recipient.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; recipient.companionDao().photos().forEach { storage.delete(it.relativePath) }
+            recipient.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; recipient.companionDao().photos().forEach { storage.delete(it.relativePath) }; recipient.cookDao().getAllPhotos().forEach { storage.delete(it.relativePath) }
             source.close(); recipient.close()
         }
     }

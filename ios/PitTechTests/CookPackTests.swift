@@ -84,6 +84,72 @@ import UniformTypeIdentifiers
         XCTAssertThrowsError(try NativeCookPackPhoto.validatePublic(locatedPhoto()))
         XCTAssertThrowsError(try NativeCookPackPhoto.derivative(Data("not a photograph".utf8)))
     }
+    func testRecordedCookIsFrozenIndependentAndImportedByAnExplicitChoice() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = CookStore(directory: folder)
+        source.startCook(title: "Pork and potatoes", firstDish: "Pork")
+        let cookId = source.activeCooks[0].id
+        source.addDish(cookId: cookId, name: "Potatoes")
+        let pork = try XCTUnwrap(source.dishRecords(cookId).first { $0.name == "Pork" }?.id)
+        let at = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
+        let photo = try source.stagePhoto(locatedPhoto())
+        try source.saveNote(CookNoteDraft(cookId: cookId, dishId: pork, title: "Pork result", occurredAt: at, temperatures: [NoteTemperatureDraft(probeName: "Same name", valueText: "74.125", unit: "°C", measuredAt: at, dishId: pork)], photos: [photo]))
+        source.finishCook(cookId)
+        try source.saveDishVerdict(cookId: cookId, dishId: pork, rating: 4.5, again: false, notes: "More pepper")
+        let actual = try XCTUnwrap(source.library.cooks.first)
+        let id = try source.createSharingDraft(cookId: cookId, dishIds: Set(source.dishRecords(cookId).map(\.id)))
+        var document = try source.sharingDocument(id)
+        for index in document.entries.indices {
+            document.entries[index].included = document.entries[index].sourceDishId == pork
+            document.entries[index].includeStory = true
+            document.entries[index].photoIds = source.sharingPhotos(id).filter { $0["action"]?.stringValue == document.entries[index].id }.compactMap { $0["id"]?.stringValue }
+            var recipe = try document.entries[index].snapshot; recipe.name = "Edited instructions"
+            document.entries[index].snapshotJson = try recipeJSON(recipe)
+        }
+        try source.saveSharingDraft(id, document: document, expectedUpdated: source.sharingRecord(id)!["updated"]!.numberValue!)
+        let copy = try source.copySharingDocument(id)
+        for row in source.library.photos { if let path = row.objectValue?["archivePath"]?.stringValue { try FileManager.default.removeItem(at: source.photoURL(path)) } }
+        source.library.cooks = []; source.library.dishes = []; source.library.ingredients = []; source.library.events = []
+        source.library.readings = []; source.library.results = []; source.library.probes = []; source.library.photos = []; source.library.lifecycles = []; source.library.logReadingLinks = []
+        let pack = try await source.exportCookPackAsync(copy, includeRecordedCook: true)
+        let preview = try CookStore.previewArchive(pack)
+        XCTAssertEqual(preview.cooks, 1); XCTAssertEqual(preview.dishes, 1); XCTAssertEqual(preview.cookPack?.objectValue?["kind"]?.stringValue, "cook")
+        let url = folder.appendingPathComponent("recorded.pittech"); try pack.write(to: url)
+        let recipes = CookStore(directory: folder.appendingPathComponent("recipes"))
+        recipes.startCook(title: "Existing active meal", firstDish: "")
+        await recipes.receiveArchive(at: url)
+        let intake = try XCTUnwrap(recipes.archiveIntake)
+        try await recipes.importSelectedRecipes(intake, selected: Set(intake.recipes.map(\.id)))
+        XCTAssertEqual(recipes.library.recipes.count, 1); XCTAssertEqual(recipes.library.cooks.count, 1)
+        XCTAssertTrue(recipes.library.readings.isEmpty)
+        let history = CookStore(directory: folder.appendingPathComponent("history"))
+        history.startCook(title: "Keep this active", firstDish: "")
+        await history.receiveArchive(at: url)
+        let recorded = try XCTUnwrap(history.archiveIntake)
+        try await history.importRecordedCook(recorded); try await history.importRecordedCook(recorded)
+        XCTAssertEqual(history.library.cooks.count, 2); XCTAssertEqual(history.activeCooks.count, 1)
+        XCTAssertTrue(history.library.recipes.isEmpty); XCTAssertTrue(history.library.reminderRules.isEmpty); XCTAssertTrue(history.library.recordings.isEmpty)
+        let restored = try XCTUnwrap(history.completedCooks.first)
+        XCTAssertEqual(restored.startedAtUtcMillis, actual.startedAtUtcMillis); XCTAssertEqual(restored.endedAtUtcMillis, actual.endedAtUtcMillis)
+        XCTAssertEqual(history.dishRecords(restored.id).first?.name, "Pork")
+        let reading = try XCTUnwrap(history.library.readings.first?.objectValue)
+        XCTAssertEqual(reading["value"]?.numberValue, 74.125); XCTAssertEqual(reading["unit"]?.stringValue, "°C"); XCTAssertEqual(reading["measuredAtUtcMillis"]?.numberValue, at)
+        XCTAssertEqual(history.library.photos.count, 1)
+        XCTAssertTrue(history.library.results.contains { $0.objectValue?["numericValue"]?.numberValue == 4.5 })
+        XCTAssertTrue(history.library.results.contains { $0.objectValue?["resultType"]?.stringValue == "cook_again" && $0.objectValue?["numericValue"]?.numberValue == 0 })
+        let raw = try recipeJSON(history.library)
+        XCTAssertFalse(raw.contains("Potatoes")); XCTAssertFalse(raw.contains(cookId)); XCTAssertFalse(raw.contains(pork))
+        recipes.discardArchiveIntake(); history.discardArchiveIntake()
+    }
+    func testAnActiveMealCannotBeTurnedIntoCompletedHistory() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = CookStore(directory: folder); source.startCook(title: "Still cooking", firstDish: "Pork")
+        let cook = source.activeCooks[0].id, id = try source.createSharingDraft(cookId: cook, dishIds: Set(source.dishRecords(cook).map(\.id)))
+        XCTAssertNil(try source.sharingDocument(id).sourceHistory)
+        XCTAssertThrowsError(try source.exportCookPack(id, includeRecordedCook: true))
+    }
 
     func testPartialThenWholeCollectionOwnsPhotosAndRepeatedImportsStayIdempotent() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

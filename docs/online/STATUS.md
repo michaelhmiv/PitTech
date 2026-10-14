@@ -8,8 +8,8 @@ remain separate. No online phase is released until its complete parity gate pass
 |---|---|---|---|
 | 00 | Design, parity, contracts, CI requirements | Draft PR #92 | Three schemas validated; concept states rendered/inspected; backend workflow write path remains open |
 | 01 | Native refresh and core parity | Draft PR #93 | All configured checks passed at `d9389c9`; iOS run 38592169385 and Android run 38592169411. Native composition/finish and large-text screenshots inspected. Deeper free Insights/provider port remain open |
-| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | iOS passed at `4b0b9e7`. The expanded Android gate exposed a dense-test fixture smaller than its asserted boundary; `488baef` uses 20,000 raw samples and is awaiting Actions. Archive v10, Room v10 |
-| 03 | Cook Packs and exports | Draft PR #97 | Actual Android and native recipe/collection packs, CSV and workbook fixtures retained with hashes and producer provenance. Independent reader: 18 local checks pass; Actions/native cross-platform exchange is pending. Expanded Android gate exposed fixture-size/probe-name setup issues; native reminder-return test now waits for sheet and navigation dismissal. Scoped recorded-history export/import and full parity evidence remain open |
+| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | All 12 expanded Android data tests passed at `488baef`; the runner still expected 10. `135036b` fixes the count and native editor dismissal wait; full Actions gates pending. Archive v10, Room v10 |
+| 03 | Cook Packs and exports | Draft PR #97 | Actual Android↔native recipe/collection/CSV/workbook fixtures retained; all 16 expanded Android data tests passed at `1e78ab1`. Native 55-test run failed only its overly strict editor-disappearance wait. Runner counts and waits corrected. Frozen recorded-meal projection and separate history import are implemented on both clients with unit/UI tests; native builds, actual cook-fixture exchange and memory/performance evidence pending |
 | 04 | Shared guide presentation | Pending | |
 | 05 | Native share cards | Pending | |
 | 06 | API/relay | Pending | |

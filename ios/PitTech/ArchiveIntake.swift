@@ -86,4 +86,12 @@ enum NativeArchiveIntakeReader {
         _ = try importArchive(data)
         archiveCompletionMessage = "Saved \(selected.count) \(selected.count == 1 ? "recipe" : "recipes"). Find them in Recipes."
     }
+    func importRecordedCook(_ source: NativeArchiveIntake) async throws {
+        guard let metadata = source.preview.cookPack else { throw PitTechArchiveError.invalidArchive }
+        let preparation = Task.detached(priority: .userInitiated) { try NativeCookPackHistory.historyOnlyArchive(at: source.url, library: source.library, metadata: metadata) }
+        let bytes = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
+        try Task.checkCancellation()
+        let result = try importArchive(bytes)
+        archiveCompletionMessage = result.imported == 0 ? "This recorded meal is already in your history." : "Added the recorded meal to history."
+    }
 }

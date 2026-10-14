@@ -19,7 +19,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
     suspend fun fromMeal(cookId: String, dishIds: Set<String>): String {
         val meal = cooks.observeCookDetail(cookId).first() ?: error("This meal is unavailable.")
         require(dishIds.isNotEmpty() && dishIds.all { id -> meal.dishes.any { it.id == id } }) { "Choose dishes from this meal." }
-        val id = UUID.randomUUID().toString(); val copies = mutableListOf<CompanionPhoto>()
+        val id = UUID.randomUUID().toString(); val copies = mutableListOf<CompanionPhoto>(); val photoSources = mutableListOf<Pair<PhotoEntity, CompanionPhoto>>()
         try {
             val entries = meal.dishes.filter { it.id in dishIds }.mapIndexed { index, dish ->
                 val extraction = RecipeExtraction.fromMeal(meal, dish.id)
@@ -30,11 +30,13 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
                 meal.photos.filter { it.id in extraction.photoIds }.forEach { sourcePhoto ->
                     val photoId = UUID.randomUUID().toString(); val path = "photos/$photoId.${sourcePhoto.relativePath.substringAfterLast('.')}"
                     photos.writeImported(path, photos.read(sourcePhoto.relativePath) ?: error("A source photo is unavailable. Your meal is unchanged."))
-                    copies += CompanionPhoto(photoId, id, path, sourcePhoto.mimeType, sourcePhoto.caption.orEmpty(), index, entry.id)
+                    val owned = CompanionPhoto(photoId, id, path, sourcePhoto.mimeType, sourcePhoto.caption.orEmpty(), index, entry.id)
+                    copies += owned; photoSources += sourcePhoto to owned
                 }
                 entry
             }
-            val document = SharingDocument(meal.cook.title.take(160), entries, cookId)
+            val history = CookPackHistory.freeze(cooks.exportSnapshot(cookId), dishIds, photoSources)
+            val document = SharingDocument(meal.cook.title.take(160), entries, cookId, sourceHistoryJson = history)
             val now = System.currentTimeMillis()
             database.withTransaction {
                 dao.put(CompanionRecord(id, SharingDraftCodec.DRAFT, title = document.title, payload = SharingDraftCodec.encode(document), createdAtUtcMillis = now, updatedAtUtcMillis = now))
@@ -48,6 +50,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         val previous = get(id) ?: error("This sharing draft is unavailable.")
         require(previous.kind == SharingDraftCodec.DRAFT && previous.updatedAtUtcMillis == expectedUpdatedAt) { "This draft changed. Reopen its saved version." }
         val before = SharingDraftCodec.decode(previous.payload)
+        require(value.sourceHistoryJson == null && before.sourceHistoryJson == null || value.sourceHistoryJson != null && before.sourceHistoryJson != null && SharingDraftCodec.sameStory(value.sourceHistoryJson, before.sourceHistoryJson)) { "Recorded meal facts cannot be edited as instructions." }
         require(value.entries.all { e -> before.entries.firstOrNull { it.id == e.id }?.storyJson?.let { SharingDraftCodec.sameStory(it, e.storyJson) } == true }) { "Recorded source facts cannot be edited as instructions." }
         val owned = assets(id)
         require(value.entries.all { entry -> entry.photoIds.all { photoId -> owned.any { it.id == photoId && it.action == entry.id } } }) { "Choose photos owned by this draft's dish." }
@@ -73,7 +76,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
                 photos.writeImported(path, photos.read(asset.relativePath) ?: error("A saved reference photo is unavailable."))
                 copies += asset.copy(id = newId, recordId = id, relativePath = path)
             }
-            val copied = value.copy(entries = value.entries.map { it.copy(photoIds = it.photoIds.map { old -> mapping[old] ?: error("Reference photo unavailable.") }) }, heroPhotoId = value.heroPhotoId?.let(mapping::get))
+            val copied = value.copy(entries = value.entries.map { it.copy(photoIds = it.photoIds.map { old -> mapping[old] ?: error("Reference photo unavailable.") }) }, heroPhotoId = value.heroPhotoId?.let(mapping::get), sourceHistoryJson = CookPackHistory.remapOwnedPhotos(value.sourceHistoryJson, mapping, value.entries.mapNotNull { it.sourceDishId }.toSet()))
             val now = System.currentTimeMillis()
             database.withTransaction { dao.put(CompanionRecord(id, kind, title = copied.title, payload = SharingDraftCodec.encode(copied), createdAtUtcMillis = now, updatedAtUtcMillis = now)); dao.putPhotos(copies) }
             return id

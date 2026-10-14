@@ -18,8 +18,20 @@ object CookPackContract {
         require(kind in setOf("recipe", "collection", "cook")) { "Unsupported Cook Pack content." }
         require(ids(metadata.getJSONArray("recipeRevisionIds")) == snapshot.recipeRevisions.map { it.id }.toSet() && ids(metadata.getJSONArray("dishIds")) == snapshot.dishes.map { it.id }.toSet()) { "This Cook Pack does not match its declared scope." }
         metadata.getBoolean("includedStory")
-        require(root.isNull("preferences") && snapshot.devices.isEmpty() && snapshot.probes.isEmpty() && snapshot.recordings.isEmpty() && snapshot.assignments.isEmpty() && snapshot.reminders.isEmpty() && snapshot.activityTimers.isEmpty() && snapshot.reminderRules.isEmpty() && snapshot.reminderOccurrences.isEmpty()) { "Private settings and device configuration do not belong in a Cook Pack." }
-        require(snapshot.recipes.size in 1..20 && (kind != "recipe" || snapshot.recipes.size == 1) && (kind == "cook" || snapshot.cooks.isEmpty())) { "Invalid Cook Pack selection." }
+        require(root.isNull("preferences") && snapshot.devices.isEmpty() && snapshot.probes.all { it.deviceId == null && uuid(it.id) } && snapshot.recordings.isEmpty() && snapshot.assignments.isEmpty() && snapshot.reminders.isEmpty() && snapshot.activityTimers.isEmpty() && snapshot.reminderRules.isEmpty() && snapshot.reminderOccurrences.isEmpty()) { "Private settings and device configuration do not belong in a Cook Pack." }
+        require(snapshot.recipes.size in (if (kind == "cook") 0..20 else 1..20) && (kind != "recipe" || snapshot.recipes.size == 1) && (kind == "cook" || snapshot.cooks.isEmpty())) { "Invalid Cook Pack selection." }
+        if (kind == "cook") {
+            require(snapshot.cooks.size == 1 && snapshot.dishes.size in 1..20 && snapshot.cooks.all { it.status == CookStatus.COMPLETED && it.endedAtUtcMillis != null && it.endedAtUtcMillis >= it.startedAtUtcMillis } && metadata.getBoolean("includedStory")) { "A recorded Cook Pack must contain a finished meal with its actual times." }
+        } else {
+            require(listOf(snapshot.cooks, snapshot.dishes, snapshot.ingredients, snapshot.events, snapshot.readings, snapshot.targets, snapshot.results, snapshot.probes, snapshot.photos, snapshot.logReadingLinks, snapshot.lifecycles, snapshot.targetHistory).all { it.isEmpty() }) { "A recipe or collection must not import recorded history." }
+        }
+        val documents = snapshot.companionRecords.map { com.pittech.domain.SharingDraftCodec.decode(it.payload) }
+        require(metadata.getBoolean("includedStory") == (kind == "cook" || documents.any { doc -> doc.entries.any { it.includeStory } })) { "The declared guide does not match this file." }
+        require(documents.all { doc -> doc.sourceCookId == null && doc.sourceHistoryJson == null && doc.entries.all { entry ->
+            entry.sourceDishId == null && (entry.includeStory || JSONObject(entry.storyJson).let { story ->
+                story.isNull("attemptId") && story.isNull("anchorUtcMillis") && listOf("observations", "readings", "results").all { story.getJSONArray(it).length() == 0 } && entry.snapshot.rating == null && entry.snapshot.cookAgain == null && entry.snapshot.resultNotes.isEmpty()
+            })
+        } }) { "This file includes undeclared source facts." }
         require(snapshot.companionRecords.all { it.kind in setOf("recipe_reference", "collection_revision") && it.cookId == null }) { "This Cook Pack includes unrelated saved content." }
         if (!metadata.isNull("source")) {
             val source = metadata.getJSONObject("source")
