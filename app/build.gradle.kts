@@ -29,6 +29,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
         buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
+        buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "false")
     }
 
     buildTypes {
@@ -39,6 +40,7 @@ android {
             // a developer accidentally passes -PpittechLiveAds=true.
             buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$testNativeAdUnitId\"")
             buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "true")
+            buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
         }
 
         // Firebase Dev can be installed beside both the Play app and local debug builds.
@@ -47,6 +49,7 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "true")
+            buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
         }
     }
 
@@ -57,9 +60,9 @@ android {
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        isCoreLibraryDesugaringEnabled = true
     }
 }
 
@@ -68,7 +71,9 @@ ksp {
 }
 
 dependencies {
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    implementation("com.github.combustion-inc:combustion-android-ble:v3.5.4")
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
 
@@ -86,8 +91,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
 
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
-    // Official Combustion Inc. Android BLE SDK (MIT); see NOTICE.
-    implementation("com.github.combustion-inc:combustion-android-ble:v3.5.4")
 
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
@@ -95,7 +98,6 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.0")
     testImplementation("org.json:json:20250517")
 
     androidTestImplementation(platform(composeBom))

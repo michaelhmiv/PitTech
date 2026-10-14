@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice telemetry-connections; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -255,6 +255,89 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 20 adb shell am force-stop com.pittech.debug
 fi
 
+echo "Preparing durable telemetry for a real process-death test."
+timeout 3m adb shell am instrument -w -r -e class 'com.pittech.TelemetryProcessDeathTest#preparePersistedBackgroundCook' "$instrumentation_target" | tee "$output_dir/telemetry-process-prepare.txt"
+grep -q 'OK (1 test)' "$output_dir/telemetry-process-prepare.txt"
+# Instrumentation completion asynchronously kills its target process. Cold-start the
+# prepared app once so the launch cannot race that kill; the tested kill below is
+# run-as kill -9 and is deliberately never a force-stop.
+timeout 20 adb shell am force-stop com.pittech.debug
+timeout 30 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
+previous_receipt=""
+for _ in $(seq 1 60); do
+  previous_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$previous_receipt" =~ ^[0-9]+$ ]]; then break; fi
+  sleep 1
+done
+[[ "$previous_receipt" =~ ^[0-9]+$ ]]
+# Visible sampling can commit before the foreground service is ready. Observe its
+# actual foreground state before testing Android's sticky-service restart contract.
+for _ in $(seq 1 30); do
+  timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-before-services.txt"
+  if grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"; then break; fi
+  sleep 1
+done
+grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"
+timeout 10 adb shell input keyevent KEYCODE_HOME
+# Wait for the Home transition instead of killing a still-resumed activity.
+for _ in $(seq 1 30); do
+  timeout 20 adb shell dumpsys activity activities > "$output_dir/telemetry-process-before-activities.txt"
+  if ! grep -qE 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-before-activities.txt"; then break; fi
+  sleep 1
+done
+if grep -qE 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-before-activities.txt"; then exit 1; fi
+# Establish ongoing background collection before killing it. A foreground service
+# can be promoted while the Activity's Home/stop transition is still being handled;
+# the receipt captured above only proves collection during the visible launch.
+background_receipt=""
+for _ in $(seq 1 60); do
+  background_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$background_receipt" =~ ^[0-9]+$ && "$background_receipt" -gt "$previous_receipt" ]]; then break; fi
+  sleep 1
+done
+[[ "$background_receipt" =~ ^[0-9]+$ && "$background_receipt" -gt "$previous_receipt" ]]
+previous_receipt="$background_receipt"
+timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-before-services.txt"
+grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"
+old_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug | tr -d '\r')"
+[[ "$old_telemetry_pid" =~ ^[0-9]+$ ]]
+timeout 10 adb shell run-as com.pittech.debug kill -9 "$old_telemetry_pid"
+new_telemetry_pid=""
+for _ in $(seq 1 90); do
+  new_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]; then break; fi
+  sleep 1
+done
+[[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]
+restored_receipt=""
+for _ in $(seq 1 90); do
+  restored_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]; then break; fi
+  sleep 1
+done
+[[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]
+# The fixture receipt is the persisted Room watermark, not an uncommitted frame.
+timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-services.txt"
+grep -q 'isForeground=true' "$output_dir/telemetry-process-services.txt"
+printf 'Previous PID: %s\nRestored PID: %s\nPrevious receipt: %s\n' "$old_telemetry_pid" "$new_telemetry_pid" "$previous_receipt" > "$output_dir/telemetry-process-restart.txt"
+printf 'Restored receipt: %s\n' "$restored_receipt" >> "$output_dir/telemetry-process-restart.txt"
+timeout 20 adb shell dumpsys activity activities > "$output_dir/telemetry-process-activities.txt"
+if grep -E 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-activities.txt"; then
+  echo "Telemetry recovery unexpectedly required a visible activity." >&2
+  exit 1
+fi
+timeout 3m adb shell am instrument -w -r -e previousReceipt "$previous_receipt" -e class 'com.pittech.TelemetryProcessDeathTest#validateRestoredCookWithoutOpeningAnActivity' "$instrumentation_target" | tee "$output_dir/telemetry-process-validate.txt"
+grep -q 'OK (1 test)' "$output_dir/telemetry-process-validate.txt"
+
+telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
+telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.CombustionAnchorStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
+echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
+timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
+if ! grep -q 'OK (23 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+  echo "Telemetry instrumentation tests did not all pass." >&2
+  exit 1
+fi
+
 cloud_test_output="$output_dir/grillirg-cloud-tests.txt"
 cloud_test_selector='com.pittech.ui.GrillirGCloudMonitorScreenTest,com.pittech.devices.PrimePolarisSessionStoreTest'
 echo "Running GrillirG cloud UI and encrypted-session tests on API $api_level."
@@ -291,7 +374,8 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-if [[ "$recording_passed_count" -ne 18 ]] || ! grep -q 'OK (18 tests)' "$recording_test_output" ||
+recording_expected_count=18
+if [[ "$recording_passed_count" -ne "$recording_expected_count" ]] || ! grep -q "OK (${recording_expected_count} tests)" "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
   exit 1
@@ -399,6 +483,8 @@ pull_app_screenshot() {
   echo "Saved emulator screenshot: ${name}.png"
 }
 
+pull_app_screenshot telemetry-connections
+pull_app_screenshot telemetry-ha-onboarding
 pull_app_screenshot home-empty
 pull_app_screenshot cook-saved
 pull_app_screenshot settings-dark

@@ -38,6 +38,10 @@ class PitTechApplication : Application() {
         CookRepository(database, PhotoStorage(this))
     }
 
+    private val sharedTelemetryRuntime by lazy { com.pittech.devices.TelemetryRuntime(this, database) }
+    internal var telemetryRuntimeForTests: com.pittech.devices.TelemetryRuntime? = null
+    internal val telemetryRuntime get() = telemetryRuntimeForTests ?: sharedTelemetryRuntime
+
     val preparationRepository by lazy { com.pittech.data.CookPreparationRepository(database) }
     val servePlanRepository by lazy { com.pittech.data.ServePlanRepository(database, companionRepository) }
     val reminderRepository by lazy { com.pittech.data.ReminderRepository(database) }

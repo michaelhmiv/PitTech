@@ -100,13 +100,9 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-devices").performClick()
-        composeRule.onNodeWithText("Connect a grill").assertIsDisplayed()
-        composeRule.onNodeWithTag("cloud-provider").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("devices-bluetooth").performClick()
-        composeRule.onNodeWithText("Find your controller").assertIsDisplayed()
-        composeRule.onNodeWithText("This check doesn't start live temperature monitoring or change grill settings. Nothing is shared unless you review and submit a support report.").assertIsDisplayed()
-        composeRule.onNodeWithTag("controller-scan").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(56.dp)
-        composeRule.onNodeWithText("Scan for controllers").assertIsDisplayed()
+        composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
+        composeRule.onNodeWithTag("telemetry-add").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Temperature connections · Beta").assertIsDisplayed()
 
         composeRule.onNodeWithTag("nav-settings").performClick()
         composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
@@ -363,7 +359,7 @@ class PitTechUserFlowsTest {
         waitForText("Add to cook log")
         saveScreenshot("cook-log-entry")
         composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Honey apple cider vinegar")
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         composeRule.onNodeWithText("More details", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("timeline-entry-type", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("timeline-entry-type", useUnmergedTree = true).performScrollTo().assertIsDisplayed().performClick()
@@ -376,7 +372,7 @@ class PitTechUserFlowsTest {
         waitForTextsToDisappear("Entry added to the timeline.")
         composeRule.onNodeWithTag("timeline-event-actions-spritz").performScrollTo().performClick()
         composeRule.onNodeWithTag("timeline-event-edit-spritz").performClick()
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         composeRule.onNodeWithText("More details", useUnmergedTree = true).performScrollTo().performClick()
         captureCurrentScreen("timeline-edit-dialog")
         composeRule.waitUntil(timeoutMillis = 10_000) {
@@ -398,7 +394,7 @@ class PitTechUserFlowsTest {
         waitForTextsToDisappear("Entry restored.")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         composeRule.onNodeWithText("More details", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
         composeRule.onNodeWithTag("temperature-probe").performTextInput("Brisket probe")
@@ -423,7 +419,7 @@ class PitTechUserFlowsTest {
         waitForText("Brisket probe: 156.0 °F")
 
         composeRule.onNodeWithTag("timeline-add-temperature").performClick()
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         composeRule.onNodeWithText("More details", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.onNodeWithTag("temperature-probe").performTextClearance()
         composeRule.onNodeWithTag("temperature-probe").performTextInput("Smoker ambient")
@@ -751,7 +747,7 @@ class PitTechUserFlowsTest {
         composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("timeline-add").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("timeline-add").performClick()
         composeRule.onNodeWithTag("timeline-entry-details").performTextInput("Boiled macaroni slightly underdone")
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        closeFocusedSoftKeyboard()
         composeRule.onNodeWithText("More details", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("note-method", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("note-method", useUnmergedTree = true).performScrollTo().performClick()

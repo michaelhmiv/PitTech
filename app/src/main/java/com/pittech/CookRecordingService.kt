@@ -29,6 +29,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 
 /** Explicit active-cook observation, never a grill-control service. Debug/Dev manifests only. */
 class CookRecordingService : Service() {
@@ -36,6 +37,7 @@ class CookRecordingService : Service() {
     private val app get() = application as PitTechApplication
     private var wakeLock: PowerManager.WakeLock? = null
     private var observing = false
+    private var telemetryObserving = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -47,6 +49,11 @@ class CookRecordingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_PAUSE_TELEMETRY) {
+            app.telemetryRuntime.pauseBackground(); stopSelf(); return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_TELEMETRY || (intent == null && app.telemetryRuntime.store.profiles.value.any { it.monitoring && it.background && !it.onLogOnly }))
+            return monitorTelemetry()
         if (!BuildConfig.CONTROLLER_TESTING_ENABLED) { stopSelf(); return START_NOT_STICKY }
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Opening cook recording…"),
@@ -65,7 +72,7 @@ class CookRecordingService : Service() {
             observing = true
             scope.launch {
                 app.database.recordingDao().observeActiveRecording().distinctUntilChangedBy { it?.let { value -> listOf(value.cookId, value.deviceId, value.resumedAtUtcMillis.toString(), value.samplingMode, value.samplingIntervalMillis.toString()) } }.collectLatest { recording ->
-                    if (recording == null) { app.loggingRecordingActive = false; stopSelf(); return@collectLatest }
+                    if (recording == null) { app.loggingRecordingActive = false; if (!telemetryObserving) stopSelf(); return@collectLatest }
                     val sampling = GrillSamplingPolicy.stored(recording.samplingMode, recording.samplingIntervalMillis)
                     app.grillMonitor.configureSampling(sampling)
                     if (sampling.mode == GrillSamplingMode.ON_LOG) {
@@ -134,6 +141,36 @@ class CookRecordingService : Service() {
         return START_STICKY
     }
 
+    private fun monitorTelemetry(): Int {
+        if (!BuildConfig.TELEMETRY_BETA_ENABLED) { stopSelf(); return START_NOT_STICKY }
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, telemetryNotification(),
+                if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
+        } catch (_: Exception) {
+            app.telemetryRuntime.pauseBackground(); stopSelf(); return START_NOT_STICKY
+        }
+        app.telemetryRuntime.serviceHosted.value = true
+        if (!telemetryObserving) {
+            telemetryObserving = true
+            scope.launch {
+                coroutineScope {
+                    launch { while (kotlinx.coroutines.currentCoroutineContext().isActive) { renewWakeLease(); delay(60_000L) } }
+                    app.telemetryRuntime.backgroundSessions.collect { requested ->
+                        if (!requested && app.database.recordingDao().getActiveRecording() == null) stopSelf()
+                    }
+                }
+            }
+        }
+        return START_STICKY
+    }
+    private fun telemetryNotification() = NotificationCompat.Builder(this, CHANNEL)
+        .setSmallIcon(R.drawable.ic_stat_pittech).setContentTitle("PitTech · monitoring temperatures")
+        .setContentText("Read-only temperature recording is active. Tap to view your cook.")
+        .setOngoing(true).setOnlyAlertOnce(true)
+        .setContentIntent(PendingIntent.getActivity(this, 9501, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        .addAction(0, "Pause monitoring", PendingIntent.getService(this, 9503,
+            Intent(this, CookRecordingService::class.java).setAction(ACTION_PAUSE_TELEMETRY), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)).build()
+
     private fun renewWakeLease() {
         val lease = wakeLock ?: getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:cook-recording").apply { setReferenceCounted(false); wakeLock = this }
@@ -153,6 +190,7 @@ class CookRecordingService : Service() {
         .build()
 
     override fun onDestroy() {
+        app.telemetryRuntime.serviceHosted.value = false
         scope.cancel()
         if (!app.loggingRecordingActive) app.grillMonitor.setRecording(false)
         app.recordingServiceRunning.value = false
@@ -164,6 +202,12 @@ class CookRecordingService : Service() {
     companion object {
         internal const val CHANNEL = "pittech-cook-recording"
         private const val NOTIFICATION_ID = 9501
+        private const val ACTION_TELEMETRY = "com.pittech.MONITOR_TELEMETRY"
+        private const val ACTION_PAUSE_TELEMETRY = "com.pittech.PAUSE_TELEMETRY"
+        internal fun startTelemetry(context: Context) {
+            require(BuildConfig.TELEMETRY_BETA_ENABLED)
+            ContextCompat.startForegroundService(context, Intent(context, CookRecordingService::class.java).setAction(ACTION_TELEMETRY))
+        }
         private const val ACTION_PAUSE = "com.pittech.PAUSE_RECORDING"
         internal fun start(context: Context) {
             require(BuildConfig.CONTROLLER_TESTING_ENABLED) { "Controller recording is available in the test build." }
