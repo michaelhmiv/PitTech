@@ -69,11 +69,11 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(suggestion, app: app); suggestion.tap()
         let saveReminder = app.buttons["reminder-rule-save"]
         saveReminder.tap()
-        expectation(for: NSPredicate(format: "hittable == NO"), evaluatedWith: saveReminder)
-        waitForExpectations(timeout: 10)
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Allow"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "waiting")).firstMatch.waitForExistence(timeout: 15))
+        expectation(for: NSPredicate(format: "hittable == NO"), evaluatedWith: saveReminder)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(app.staticTexts["Chicken · waiting"].waitForExistence(timeout: 15))
         capture("Native explicit historical reminder")
         let back = app.navigationBars["Reminders"].buttons["BackButton"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
