@@ -34,7 +34,7 @@ jobs:
     name: Build iOS app for Simulator
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'simulator'
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Check out candidate
         uses: actions/checkout@v6
@@ -129,8 +129,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Capture App Store screenshots from the Simulator app
-        timeout-minutes: 25
+      - name: Capture App Store screenshots (guided tour)
+        timeout-minutes: 35
         run: |
           set -euo pipefail
           mkdir -p build/app-store-screenshots
@@ -152,7 +152,7 @@ jobs:
           ' > "$RUNNER_TEMP/pittech-simulators.txt"
 
           while IFS='|' read -r family device_id device_name; do
-            echo "Capturing PitTech on ${device_name} (${device_id})"
+            echo "Capturing PitTech tour on ${device_name} (${device_id})"
             python3 - "$device_id" <<'PYBOOT'
           import subprocess, sys
           device = sys.argv[1]
@@ -168,24 +168,24 @@ jobs:
                   subprocess.run(["xcrun", "simctl", "erase", device], check=True)
           PYBOOT
             xcrun simctl install "$device_id" build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
-            app_container="$(xcrun simctl get_app_container "$device_id" com.pittech data)"
-            mkdir -p "$app_container/Documents"
-            cp ios/screenshot-fixtures/pittech.json "$app_container/Documents/pittech.json"
             xcrun simctl ui "$device_id" appearance light
             xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
-            sleep 4
-            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}.png"
-            xcrun simctl terminate "$device_id" com.pittech
+            rm -rf "build/tour-${family}.xcresult" "build/tour-export-${family}"
+            xcodebuild test \
+              -project ios/PitTech.xcodeproj \
+              -scheme PitTech \
+              -destination "platform=iOS Simulator,id=$device_id" \
+              -derivedDataPath build/ios-simulator \
+              -resultBundlePath "build/tour-${family}.xcresult" \
+              -only-testing:PitTechUITests/AppStoreScreenshotTests \
+              CODE_SIGNING_ALLOWED=NO
+            xcrun xcresulttool export attachments --path "build/tour-${family}.xcresult" --output-path "build/tour-export-${family}"
+            python3 scripts/collect-tour-screenshots.py "build/tour-export-${family}" build/app-store-screenshots "$family"
             xcrun simctl ui "$device_id" appearance dark
             xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
-            sleep 2
-            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-dark.png"
-            xcrun simctl terminate "$device_id" com.pittech
-            xcrun simctl ui "$device_id" appearance light
-            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads --screenshot-large-text
-            sleep 2
-            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-large-text.png"
+            sleep 4
+            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-08-Dark-Home.png"
+            xcrun simctl terminate "$device_id" com.pittech || true
             xcrun simctl shutdown "$device_id"
           done < "$RUNNER_TEMP/pittech-simulators.txt"
 
