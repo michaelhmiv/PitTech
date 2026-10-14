@@ -77,6 +77,8 @@ targets:
         buildPhase: resources
       - path: PitTechTests/Fixtures/android-cook-pack-collection-v1.pittech
         buildPhase: resources
+      - path: PitTechTests/Fixtures/android-cook-pack-cook-v1.pittech
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

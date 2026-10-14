@@ -35,7 +35,7 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
         .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
             store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil
-        }) { source in NativeArchiveImportView(source: source) }
+        }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
         .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
             Button("OK", role: .cancel) { store.archiveMessage = nil }
         } message: { Text(store.archiveMessage ?? "") }

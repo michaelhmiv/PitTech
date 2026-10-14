@@ -23,6 +23,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launchArguments = ["--ui-test-reset", "--ui-test-pack"] + (large ? ["--screenshot-large-text"] : [])
             app.launch()
             XCTAssertTrue(app.navigationBars["Cook Pack"].waitForExistence(timeout: 20))
+            if large { XCTAssertGreaterThan(app.staticTexts["Choose what to save"].frame.height, 40, "Exercise the sheet at the requested accessibility text size.") }
             let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
             XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
             let first = choices.firstMatch; reveal(first, app: app); first.tap()
@@ -67,6 +68,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launch()
             XCTAssertTrue(app.navigationBars["Cook Pack"].waitForExistence(timeout: 20))
             let add = app.buttons["pack-add-history"]; reveal(add, app: app)
+            if large { let heading = app.staticTexts["Choose what to save"]; reveal(heading, app: app); XCTAssertGreaterThan(heading.frame.height, 40); reveal(add, app: app) }
             capture(large ? "Native recorded meal choice large text" : "Native recorded meal choice")
             add.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20)); app.alerts.buttons["OK"].tap()

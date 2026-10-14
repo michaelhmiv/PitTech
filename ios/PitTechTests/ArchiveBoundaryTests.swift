@@ -57,6 +57,25 @@ import ZIPFoundation
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("local/attachments").path))
     }
 
+    func testStreamedSeventyTwoMiBImportMemoryAndElapsedTime() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("measured.zip")
+        _ = try fixture(at: url, photoCount: 4, photoBytes: 18 * 1024 * 1024, compression: .deflate)
+        let options = XCTMeasureOptions(); options.iterationCount = 3
+        // XCTest retains physical-memory and clock measurements in the CI xcresult.
+        measure(metrics: [XCTMemoryMetric(), XCTClockMetric()], options: options) {
+            let destination = folder.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: destination) }
+            do {
+                let store = CookStore(directory: destination)
+                _ = try store.importArchive(at: url)
+                XCTAssertEqual(store.library.photos.count, 4)
+            } catch { XCTFail("Measured backup import failed: \(error)") }
+        }
+    }
+
     func testFailedPhotoCommitKeepsExistingFilesAndRollsBackPriorMoves() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
