@@ -133,9 +133,7 @@ private struct NativeReminderEditor: View {
             Picker("Scope", selection: $dishId) { Text("Meal").tag(""); ForEach(store.dishRecords(cookId)) { Text($0.name).tag($0.id) } }
             Picker("Type", selection: $kind) {
                 Text("After a duration").tag("duration"); Text("At a clock time").tag("clock"); Text("After an actual action").tag("action")
-                #if DEBUG
                 Text("Connected probe temperature").tag("probe")
-                #endif
                 if request.config?["type"]?.stringValue == "historical" { Text("Previous cook milestone").tag("historical") }
             }
             if kind == "probe" {

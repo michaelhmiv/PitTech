@@ -2,15 +2,19 @@
 
 The user authorized completion and merging on 2026-10-13. The feature merge set is
 #68–#74, #76 and #87; the linked PRs retain the actual GitHub merge records. PR #75 remains
-unmerged verification, with its test fixes owned by #74. Public telemetry enablement is off,
-and no Firebase, Play, TestFlight or App Store distribution was initiated. Required Android
+unmerged verification, with its test fixes owned by #74. The owner subsequently
+authorized all implemented connections in store builds on 2026-10-13. Public
+telemetry, Devices and probe reminders are now enabled on Android and iOS;
+no Firebase, Play, TestFlight or App Store distribution was initiated. Required Android
 API 36, native iOS and public packaging results are recorded below with exact code snapshots.
 
 The original `latestObservation` compilation failure is repaired in the foundation and
 shared recorder. The five Android Beta connections now share persistent setup, source
 selection, food/channel mapping, cook recording, source health, graphs and probe reminders.
 Native iOS counterparts are separately documented in #87. Packaging isolation has
-passed an actual APK/AAB/dependency audit. This is development evidence; no connector is
+passed an actual APK/AAB/dependency audit. The results below document the earlier
+validated baseline; the store-enablement PR retains its own workflow results.
+This is development evidence; no connector is
 declared production-ready or endorsed by a manufacturer.
 
 ## Scope and branch reconciliation
@@ -37,7 +41,7 @@ complete application experience.
 | [#73](https://github.com/michaelhmiv/PitTech/pull/73) | Official SDK v3.5.4, Bluetooth onboarding, saved identity, raw/instant/derived Celsius readings, MeatNet routing, bounded radio/service leases and persisted session/sequence log anchors | Android software capability work passed the recorded JVM, emulator and artifact checks. Transfers are limited to 20,000 records and completed before recovery advances. Physical compatibility, repeater behavior and battery tests remain open. |
 | [#74](https://github.com/michaelhmiv/PitTech/pull/74) | Unified Devices Beta UI, source/food mappings, live channel health, on-log sampling, independent observation jobs, opt-in foreground recorder, bounded retries/history, lifecycle/removal and persistent restart state | Implemented and verified Beta runtime. The required API 36 matrix passed at both font scales. One missing on-log sensor is isolated from other sensors on the same connection. Physical background/battery/vendor restrictions remain open. |
 | [#75](https://github.com/michaelhmiv/PitTech/pull/75) | Combined Android compile, JVM, required API 36 font scales, process-death, upgrade and UI matrix | Required API 36 verification completed; never merge. API 37 retains its documented system-crash advisory result. Real providers remain unverified. |
-| [#76](https://github.com/michaelhmiv/PitTech/pull/76) | Legacy client source-set isolation, source/compiled-artifact/dependency gates, notices, privacy draft and dated release evidence | Packaging implementation verified on the audited code snapshot below. Public Beta enablement remains off while provider/hardware/terms gates are open. |
+| [#76](https://github.com/michaelhmiv/PitTech/pull/76) | Legacy client source-set isolation, source/compiled-artifact/dependency gates, notices, privacy draft and dated release evidence | Packaging implementation verified on the audited code snapshot below. The owner subsequently authorized public Beta enablement; source-specific hardware/service validation remains documented. |
 | [#87](https://github.com/michaelhmiv/PitTech/pull/87) | Native five-provider Beta adapters, HA OAuth/WS, official Combustion SDK 1.0.0 raw and derived readings, local recording/mappings/archives, on-log/source isolation and foreground reminders | Native software is separate from Android. The complete Simulator workflow including the raw-sensor update passed. iOS collection remains foreground-only. The pinned SDK exposes neither bounded log-request nor scanner-stop controls; native BLE history/repeater mode stays unavailable pending that SDK capability and hardware validation. |
 
 ## Recording and connection behavior
@@ -214,9 +218,10 @@ Thirty-four legacy proprietary transport/provisioning/diagnostic files were move
 common Android sources into the internal Debug/Dev source set. Release uses a non-network
 compatibility monitor and preserves historical models. The audit examines public source
 sets, compiled DEX, original legacy hosts and resolved dependency names; hiding UI alone is
-not accepted. Public telemetry enablement remains off.
+not accepted. Public telemetry is enabled in store builds by the owner's directive.
 
-Native Release has no connected-device UI/hooks or background polling entitlement. Its
+Native Release includes connected-device UI, foreground collection hooks and
+probe reminders, without a background polling entitlement. Its
 unsigned Simulator binary has its own legacy-string and bundled-notice audit. The official
 SDKs contain capabilities such as configuration/DFU internally, but PitTech's new adapters
 do not invoke equipment-control or firmware APIs. MQTT transmits only connection,
@@ -229,7 +234,7 @@ official manufacturer documentation and current terms; API publication alone is 
 as unrestricted commercial permission. The privacy-site disclosure is included in the source merge. Existing Railway services
 can rebuild main automatically; no new infrastructure is required.
 
-Before public enablement, validate the new Combustion Android capability work on hardware; obtain
+Outstanding validation: test the new Combustion Android capability work on hardware; obtain
 the secure Flame Boss broker/port/ACL evidence; run real HA/OAuth/Recorder and cloud-account
 flows; compare readings/units against supported hardware; measure Bluetooth/background
 battery behavior; validate device lock and credential invalidation on physical devices;

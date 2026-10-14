@@ -1,6 +1,7 @@
 # Third-party connection evidence — reviewed 2026-10-13
 
-This record describes implementation and unresolved release gates. It is not an endorsement,
+The owner authorized all implemented connections in Android and iOS store builds
+on 2026-10-13. This record describes implementation and outstanding validation. It is not an endorsement,
 legal clearance, App Store approval, or evidence of a completed hardware demonstration.
 
 ## Dated primary evidence
@@ -48,8 +49,9 @@ iOS HA supports HTTPS only, including user-operated LAN servers with a trusted c
 
 PR #87 supplies native REST/HA authorization and WebSocket, Flame Boss TLS MQTT, and
 Combustion official iOS SDK adapters, local recording, mappings and archive compatibility.
-The Devices UI and collection hooks are Debug-only. Public Release currently advertises no
-connected-device support. Android work does not establish iOS support or hardware results.
+The Devices UI, collection hooks and connected-probe reminder choice are enabled
+in Debug and Release. Public Release exposes all five optional read-only Beta
+connections. Android work does not establish iOS hardware results.
 The native iOS SDK adapter reads eight raw sensors plus instant/core/surface/ambient values.
 It does not implement anchored probe-log recovery: the pinned SDK automatically transfers
 missing logs but exposes neither a bounded log-request API nor scanner-stop control. Native
@@ -58,7 +60,7 @@ collection is explicitly foreground-only;
 there is no persistent background polling entitlement. Manufacturer MQTT is limited to the
 configured public cook topic and has no PUBLISH method.
 
-Before a connected public iOS binary exists, retain an unsigned release artifact audit,
+For the connected public iOS binary, retain an unsigned release artifact audit,
 resolved package versions/notices, current privacy disclosures, a reproducible reviewer demo,
 actual account/hardware evidence and the applicable service permissions. Apple's
 [Guideline 5.2.2](https://developer.apple.com/app-store/review/guidelines/#intellectual-property)

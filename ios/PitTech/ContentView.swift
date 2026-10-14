@@ -12,26 +12,18 @@ struct ContentView: View {
             NavigationStack { SavedRecipesView() }.tabItem { Label("Saved Recipes", systemImage: "book") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
-            #if DEBUG
             NativeTelemetryConnectionsView(runtime: telemetry).tabItem { Label("Devices", systemImage: "thermometer") }
-            #endif
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .task {
-            #if DEBUG
             telemetry.foreground(scenePhase == .active, store: store)
-            #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            #if DEBUG
             telemetry.foreground(phase == .active, store: store)
-            #endif
         }
         .onChange(of: store.library.cooks.map { $0.id + ":" + $0.status }) { _, _ in
-            #if DEBUG
             telemetry.foreground(scenePhase == .active, store: store)
-            #endif
         }
         .preferredColorScheme(store.appearance)
         .background(PitTechStyle.canvas)
