@@ -9,12 +9,14 @@ import UniformTypeIdentifiers
     func persistDraft(_ draft: CookNoteDraft) throws {
         var next = noteDrafts.filter { $0.id != draft.id }; next.insert(draft, at: 0)
         try JSONEncoder().encode(next).write(to: draftsURL, options: .atomic)
+        try excludeFromDeviceBackup(draftsURL)
         noteDrafts = next
     }
     func discardDraft(_ id: String) throws {
         let photos = noteDrafts.first { $0.id == id }?.photos ?? []
         let next = noteDrafts.filter { $0.id != id }
         try JSONEncoder().encode(next).write(to: draftsURL, options: .atomic)
+        try excludeFromDeviceBackup(draftsURL)
         noteDrafts = next
         for photo in photos where !library.photos.contains(where: { $0.objectValue?["id"]?.stringValue == photo.id }) {
             try? FileManager.default.removeItem(at: photoURL(photo.path))
@@ -34,8 +36,17 @@ import UniformTypeIdentifiers
             actualCapture = formatter.date(from: date + " " + offset).map { $0.timeIntervalSince1970 * 1_000 }
         }
         let photo = NotePhotoDraft(id: id, path: "attachments/\(id).\(ext)", mimeType: type.preferredMIMEType ?? "image/jpeg", capturedAt: actualCapture)
-        try FileManager.default.createDirectory(at: photoURL("attachments"), withIntermediateDirectories: true)
-        try data.write(to: photoURL(photo.path), options: .atomic)
+        let attachmentsURL = photoURL("attachments")
+        let photoFileURL = photoURL(photo.path)
+        try FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+        try excludeFromDeviceBackup(attachmentsURL)
+        try data.write(to: photoFileURL, options: .atomic)
+        do {
+            try excludeFromDeviceBackup(photoFileURL)
+        } catch {
+            try? FileManager.default.removeItem(at: photoFileURL)
+            throw error
+        }
         return photo
     }
     func loadNote(_ eventId: String) throws -> CookNoteDraft {
@@ -109,7 +120,6 @@ import UniformTypeIdentifiers
         try next.validateCookExperience()
         let prior = library; library = next; save()
         if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
-        telemetryOnLog?(draft.cookId)
         try discardDraft(draft.id)
     }
     func deleteNote(_ id: String) throws {
