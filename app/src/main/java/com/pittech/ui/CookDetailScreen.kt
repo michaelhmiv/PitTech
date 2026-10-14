@@ -116,6 +116,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.CameraPhotoFiles
 import com.pittech.data.CookDetailData
+import com.pittech.data.AlignedGuide
 import com.pittech.data.CookReminderEntity
 import com.pittech.data.CookStatus
 import com.pittech.data.DishEntity

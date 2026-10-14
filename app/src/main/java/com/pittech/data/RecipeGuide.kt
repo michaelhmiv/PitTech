@@ -41,7 +41,7 @@ data class AlignedGuide(val readings: List<SensorReadingEntity> = emptyList(), v
 
 object RecipeGuideProjection {
     fun role(raw: String) = when (raw) {
-        "food", "food_probe" -> "food"
+        "food", "food_probe", "internal_temperature" -> "food"
         "pit", "pit_ambient", "ambient_temperature", "grill_temperature", "pit_temperature", "pit_probe" -> "pit"
         else -> raw
     }

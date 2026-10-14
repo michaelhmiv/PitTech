@@ -50,7 +50,7 @@ struct NativeAlignedGuide {
 }
 enum RecipeGuideProjection {
     static func role(_ raw: String) -> String {
-        if ["food", "food_probe"].contains(raw) { return "food" }
+        if ["food", "food_probe", "internal_temperature"].contains(raw) { return "food" }
         if ["pit", "pit_ambient", "ambient_temperature", "grill_temperature", "pit_temperature", "pit_probe"].contains(raw) { return "pit" }
         return raw
     }
@@ -110,7 +110,7 @@ extension PitTechLibrary {
         var readings: [JSONValue] = [], gaps: [JSONValue] = []
         var attempt: JSONValue = revision?["sourceDishId"] ?? .null
         if let cook = revision?["sourceCookId"]?.stringValue, let dish = revision?["sourceDishId"]?.stringValue, dishRecords(cook).contains(where: { $0.id == dish }) {
-            for row in library.readings.compactMap(\.objectValue).filter({ $0["cookId"]?.stringValue == cook && ($0["dishId"]?.stringValue == dish || $0["dishId"]?.stringValue == nil && RecipeGuideProjection.role($0["measurementType"]?.stringValue ?? "") != "food") }) {
+            for row in library.readings.compactMap(\.objectValue).filter({ $0["cookId"]?.stringValue == cook && ($0["dishId"]?.stringValue == dish || $0["dishId"]?.stringValue == nil && ["pit", "pit_ambient", "setpoint", "grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature"].contains($0["measurementType"]?.stringValue ?? "")) }) {
                 var safe = row.filter { ["id", "probeId", "probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "timeZoneId", "source", "samplingIntervalMillis", "qualityStatus", "timestampBasis"].contains($0.key) }
                 safe["source"] = .string(row["source"]?.stringValue == "manual" ? "manual" : "recorded")
                 if let unit = safe["unit"]?.stringValue, ["C", "F"].contains(unit) { safe["unit"] = .string("°" + unit) }
@@ -162,7 +162,9 @@ extension PitTechLibrary {
         if changed { save() }
     }
     func guides(_ cookId: String) -> [NativeDishGuide] {
-        dishRecords(cookId).compactMap { dish in
+        let dishes = dishRecords(cookId), ids = Set(dishes.map(\.id))
+        recipeGuideCache = recipeGuideCache.filter { ids.contains($0.key) }
+        return dishes.compactMap { dish in
             guard let record = library.companionRecords.first(where: { $0.objectValue?["id"]?.stringValue == "recipe-attempt:" + dish.id })?.objectValue,
                   let payload = record["payload"]?.objectValue, let raw = payload["guide"], let revision = raw.objectValue?["revisionId"]?.stringValue else { return nil }
             let stamp = record["updated"]?.numberValue ?? 0

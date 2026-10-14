@@ -50,8 +50,8 @@ import com.pittech.domain.RecipeSnapshotCodec
                 }
             }
             if (source.cookPack?.optString("kind") == "cook") {
-                OutlinedButton(onClick = onAddHistory, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("pack-add-history")) { Text("Add recorded meal to history") }
                 Text("Add all ${source.snapshot.dishes.size} recorded dishes in this file. Recipe selections above apply when saving recipes.", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onAddHistory, enabled = !saving, modifier = Modifier.fillMaxWidth().testTag("pack-add-history")) { Text("Add recorded meal to history") }
             }
             Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.", style = MaterialTheme.typography.bodySmall)
             if (saving) CircularProgressIndicator(Modifier.size(24.dp))
