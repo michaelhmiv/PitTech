@@ -83,6 +83,11 @@ class CrossPlatformArchiveTest {
             repoDaoSetFixtureNotes(db, meal.id)
             val workbook = ByteArrayOutputStream(); transfer.writeWorkbook(workbook)
             val csv = ByteArrayOutputStream(); transfer.writeCsv(csv)
+            // Synthetic writer bytes are also retained in CI logs for cross-platform fixture exchange.
+            for ((kind, bytes) in listOf("recipe" to one.toByteArray(), "collection" to all.toByteArray(), "workbook" to workbook.toByteArray(), "csv" to csv.toByteArray())) {
+                val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+                println("PITTECH_ANDROID_FIXTURE_V1 $kind $hash " + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+            }
             File(context.filesDir, "pittech-portable/android-meal-v9.zip").apply {
                 parentFile!!.mkdirs()
                 ZipOutputStream(outputStream().buffered()).use { zip ->
