@@ -10,6 +10,17 @@
 
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
+    <!-- The Combustion BLE library (combustion-android-ble) declares
+         ACCESS_BACKGROUND_LOCATION (capped at API 30) in its manifest, which the
+         manifest merger would otherwise pull into the app bundle. PitTech never
+         requests or uses background location: Bluetooth scanning is foreground
+         only (BLUETOOTH_SCAN is declared neverForLocation by the library, and on
+         API 30 and below the app requests ACCESS_FINE_LOCATION only while in
+         use), and live cook monitoring runs in the library's foreground
+         service. Strip the unused permission so Play does not require a
+         background-location declaration for a capability the app does not use. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" tools:node="remove" />
+
     <application
         android:name=".PitTechApplication"
         android:allowBackup="false"
