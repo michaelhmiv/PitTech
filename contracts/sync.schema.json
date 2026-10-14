@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pittech.app/contracts/sync-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": 1
+    },
+    "baseVersion": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mutationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "clientId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordType": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "counter": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "clientId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "counter",
+              "clientId"
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "recordType",
+          "recordId",
+          "version",
+          "deleted",
+          "payload",
+          "assetIds"
+        ]
+      },
+      "maxItems": 100000
+    }
+  },
+  "required": [
+    "contractVersion",
+    "baseVersion",
+    "mutationId",
+    "clientId",
+    "records"
+  ]
+}

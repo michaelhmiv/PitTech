@@ -1,0 +1,543 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pittech.app/contracts/publication-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": 1
+    },
+    "kind": {
+      "enum": [
+        "recipe",
+        "collection",
+        "attempt"
+      ]
+    },
+    "identityMode": {
+      "enum": [
+        "named",
+        "anonymous"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "foodType": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "cut": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weightGrams": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "amount": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "name",
+                "amount"
+              ]
+            },
+            "maxItems": 100
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "details": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "action": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 80
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "suggestedOffsetMillis": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "details",
+                "action",
+                "suggestedOffsetMillis"
+              ]
+            },
+            "maxItems": 100
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "maxItems": 20
+          },
+          "story": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "foodOnOffsetMillis": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "foodOffOffsetMillis": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "channels": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "role": {
+                          "enum": [
+                            "food",
+                            "pit"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "maxLength": 160
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "role",
+                        "label"
+                      ]
+                    },
+                    "maxItems": 32
+                  },
+                  "measurements": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "offsetMillis": {
+                          "type": "integer",
+                          "minimum": -604800000,
+                          "maximum": 2592000000
+                        },
+                        "channelId": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "role": {
+                          "enum": [
+                            "food",
+                            "pit"
+                          ]
+                        },
+                        "valueCelsius": {
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 1000
+                        },
+                        "quality": {
+                          "enum": [
+                            "measured",
+                            "manual",
+                            "recovered"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "offsetMillis",
+                        "channelId",
+                        "role",
+                        "valueCelsius",
+                        "quality"
+                      ]
+                    },
+                    "maxItems": 250000
+                  },
+                  "milestones": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "offsetMillis": {
+                          "type": "integer"
+                        },
+                        "action": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "offsetMillis",
+                        "action",
+                        "text"
+                      ]
+                    },
+                    "maxItems": 1000
+                  },
+                  "verdict": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "rating": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "cookAgain": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "notes": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "rating",
+                      "cookAgain",
+                      "notes"
+                    ]
+                  },
+                  "gaps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "channelId": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "fromMillis": {
+                          "type": "integer"
+                        },
+                        "toMillis": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "channelId",
+                        "fromMillis",
+                        "toMillis"
+                      ]
+                    },
+                    "maxItems": 1000
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "foodOnOffsetMillis",
+                  "foodOffOffsetMillis",
+                  "channels",
+                  "measurements",
+                  "milestones",
+                  "verdict",
+                  "gaps"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^attachments/[a-zA-Z0-9_-]+\\.(jpg|png|webp)$",
+                  "maxLength": 160
+                },
+                "mimeType": {
+                  "enum": [
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp"
+                  ]
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "caption": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "mimeType",
+                "sha256",
+                "caption"
+              ]
+            },
+            "maxItems": 30
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "itemId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "revisionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "removed": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "itemId",
+                  "revisionId",
+                  "removed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revisionId",
+          "title",
+          "description",
+          "foodType",
+          "cut",
+          "weightGrams",
+          "method",
+          "ingredients",
+          "instructions",
+          "tags",
+          "story",
+          "assets",
+          "source"
+        ]
+      },
+      "maxItems": 20,
+      "minItems": 1
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "revisionId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "displayName": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "removed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "itemId",
+            "revisionId",
+            "removed"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "measuredAttemptId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "heroAssetId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contractVersion",
+    "kind",
+    "identityMode",
+    "title",
+    "recipes",
+    "source",
+    "measuredAttemptId",
+    "heroAssetId"
+  ]
+}
