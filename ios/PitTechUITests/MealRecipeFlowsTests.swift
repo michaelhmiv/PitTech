@@ -67,14 +67,21 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(reminders, app: app); reminders.tap()
         let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Chicken · last time")).firstMatch
         reveal(suggestion, app: app); suggestion.tap()
-        app.buttons["reminder-rule-save"].tap()
+        let saveReminder = app.buttons["reminder-rule-save"]
+        saveReminder.tap()
+        expectation(for: NSPredicate(format: "hittable == NO"), evaluatedWith: saveReminder)
+        waitForExpectations(timeout: 10)
         let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Allow"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "waiting")).firstMatch.waitForExistence(timeout: 15))
         capture("Native explicit historical reminder")
         let back = app.navigationBars["Reminders"].buttons["BackButton"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "hittable == YES"), evaluatedWith: back)
+        waitForExpectations(timeout: 10)
         back.tap()
+        expectation(for: NSPredicate(format: "exists == NO"), evaluatedWith: app.navigationBars["Reminders"])
+        waitForExpectations(timeout: 10)
         XCTAssertTrue(app.navigationBars["Meal"].waitForExistence(timeout: 10))
         let finish = app.buttons["finish-meal"]; reveal(finish, app: app); finish.tap()
         XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 5))
