@@ -33,7 +33,7 @@ struct CookDetailView: View {
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
                             MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
                             if !store.dishRecords(cookId).isEmpty {
-                                Button("Create sharing draft") { do { sharingDraftId = try store.createSharingDraft(cookId: cookId, dishIds: Set(store.dishRecords(cookId).map(\.id))) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("meal-sharing-draft")
+                                Button("Share meal") { do { sharingDraftId = try store.createSharingDraft(cookId: cookId, dishIds: Set(store.dishRecords(cookId).map(\.id))) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("meal-sharing-draft")
                             }
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
@@ -65,7 +65,7 @@ struct CookDetailView: View {
                 .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId) }
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
                 .sheet(isPresented: Binding(get: { sharingDraftId != nil }, set: { if !$0 { sharingDraftId = nil } })) {
-                    if let sharingDraftId { NavigationStack { SharingDraftView(id: sharingDraftId) } }
+                    if let sharingDraftId { NavigationStack { SharingDraftView(id: sharingDraftId) }.modifier(ScreenshotTextSize()) }
                 }
                 .alert("Finish meal?", isPresented: $finishing) {
                     Button("Finish meal", role: .destructive) { store.finishCook(cookId); if store.saveError == nil { completionChoices = true } }

@@ -15,6 +15,9 @@ struct SharingDraftView: View {
     @State private var includeRecordedCook = false
     @State private var preparingExport = false
     @State private var exporting = false
+    @State private var cardSettings = false
+    @State private var cardPreview = false
+    @State private var cardPackRequested = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
     @State private var exportTask: Task<Void, Never>?
     var body: some View {
@@ -62,6 +65,9 @@ struct SharingDraftView: View {
                         Text(canIncludeHistory(current) ? "Recipients can choose to add this finished meal to history." : "Enable the recorded story for each selected original dish first.").font(.caption).foregroundStyle(PitTechStyle.supporting)
                     }
                     if preparingExport { ProgressView("Preparing Cook Pack…") }
+                    Button("Card appearance & note") { cardSettings.toggle() }.frame(minHeight:44)
+                    if cardSettings { ShareCardOptionsView(document:Binding(get:{ document ?? current },set:{ value in change { $0 = value } })) }
+                    Button("Preview share card") { act { try persist();cardPreview = true } }.buttonStyle(.bordered).frame(minHeight:44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-preview-card")
                     Button { prepareExport() } label: { Label("Share Cook Pack file", systemImage: "square.and.arrow.up") }
                         .buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-export-pack")
                     Button("Save meal collection") { act { try persist(); _ = try store.copySharingDocument(id, asCollection: true); try store.discardSharingDraft(id); document = nil; dismiss() } }
@@ -88,6 +94,9 @@ struct SharingDraftView: View {
                 exportDocument = PitTechArchiveDocument(data: Data())
             }
             .sheet(item: $editor, onDismiss: { act { try reload() } }) { NativeRecipeEditor(request: $0) }
+            .sheet(isPresented:$cardPreview,onDismiss:{ if cardPackRequested { cardPackRequested = false;prepareExport() } }) {
+                NavigationStack { NativeShareCardPreview(id:id) { cardPackRequested = true;cardPreview = false } }.modifier(ScreenshotTextSize())
+            }
             .sheet(isPresented: $choosingRecipe) {
                 NavigationStack {
                     List(store.library.recipes.compactMap(\.objectValue).filter { $0["archivedAtUtcMillis"]?.numberValue == nil }.compactMap { $0["id"]?.stringValue }, id: \.self) { recipeId in

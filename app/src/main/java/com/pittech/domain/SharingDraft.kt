@@ -25,6 +25,7 @@ data class SharingDocument(
     val collectionId: String? = null,
     val parentRevisionId: String? = null,
     val sourceHistoryJson: String? = null,
+    val card: com.pittech.data.ShareCardOptions = com.pittech.data.ShareCardOptions(),
 )
 
 object SharingDraftCodec {
@@ -46,6 +47,7 @@ object SharingDraftCodec {
             .put("sourceCookId", value.sourceCookId ?: JSONObject.NULL).put("heroPhotoId", value.heroPhotoId ?: JSONObject.NULL)
             .put("collectionId", value.collectionId ?: JSONObject.NULL).put("parentRevisionId", value.parentRevisionId ?: JSONObject.NULL)
             .put("sourceHistory", value.sourceHistoryJson?.let(::JSONObject) ?: JSONObject.NULL)
+            .put("card", value.card.encode())
             .put("entries", JSONArray(value.entries.map { entry -> JSONObject().put("id", entry.id)
                 .put("sourceDishId", entry.sourceDishId ?: JSONObject.NULL).put("sourceRevisionId", entry.sourceRevisionId ?: JSONObject.NULL)
                 .put("snapshotJson", RecipeSnapshotCodec.encode(entry.snapshot)).put("story", JSONObject(entry.storyJson))
@@ -61,10 +63,11 @@ object SharingDraftCodec {
             SharingEntry(row.getString("id"), if (row.isNull("sourceDishId")) null else row.getString("sourceDishId"),
                 if (row.isNull("sourceRevisionId")) null else row.getString("sourceRevisionId"), RecipeSnapshotCodec.decode(row.getString("snapshotJson")),
                 row.getJSONObject("story").toString(), row.getBoolean("included"), row.getBoolean("includeStory"), (0 until photos.length()).map { photos.getString(it) })
-        }, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString())
+        }, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString(), com.pittech.data.ShareCardOptions.decode(o.optJSONObject("card")))
         validate(result); return result
     }
     fun validate(value: SharingDocument) {
+        value.card.encode()
         require(value.title.isNotBlank() && value.title.length <= 160 && value.entries.size in 1..20 && value.identityMode in setOf("named", "anonymous")) { "Choose a title and one to twenty dishes." }
         require(value.entries.map { it.id }.distinct().size == value.entries.size) { "Duplicate sharing dish identities." }
         value.entries.forEach { e ->
@@ -74,6 +77,7 @@ object SharingDraftCodec {
             require(story.getInt("version") == 1 && (story.isNull("attemptId") || story.getString("attemptId").isNotBlank())) { "Invalid recorded cook story." }
             require(story.getJSONArray("readings").length() <= 250000) { "Too many source measurements in one dish." }
             require(!story.isNull("attemptId") || story.getJSONArray("readings").length() == 0) { "Measurements require an actual source attempt." }
+            if (!story.isNull("anchorUtcMillis")) require(story.getDouble("anchorUtcMillis") in 1.0..253402300799999.0) { "Invalid source anchor time." }
             RecipeSnapshotCodec.decode(JSONObject(RecipeSnapshotCodec.encode(e.snapshot)).put("observations", story.optJSONArray("observations") ?: JSONArray())
                 .put("smokingAnchorUtcMillis", story.opt("anchorUtcMillis") ?: JSONObject.NULL).toString())
             val samples = story.getJSONArray("readings")
@@ -81,7 +85,7 @@ object SharingDraftCodec {
             for (i in 0 until samples.length()) {
                 val sample = samples.getJSONObject(i)
                 require(sample.getString("id").isNotBlank() && sample.getString("id").length <= 128 && sample.getString("measurementType").isNotBlank()) { "Invalid source sample identity or role." }
-                require(sample.getDouble("value").isFinite() && sample.getString("unit") in setOf("°F", "°C") && sample.getLong("measuredAtUtcMillis") > 0) { "Invalid source measurement." }
+                require(sample.getDouble("value").isFinite() && sample.getString("unit") in setOf("°F", "°C") && sample.getDouble("measuredAtUtcMillis") in 1.0..253402300799999.0) { "Invalid source measurement." }
                 require(sample.getString("source") in setOf("manual", "recorded") && sample.getString("probeName").length <= 200) { "Invalid source channel." }
                 require(!sample.has("sourceDeviceId") && !sample.has("deviceId") && !sample.has("credentials")) { "Private device fields cannot enter a cook story." }
             }

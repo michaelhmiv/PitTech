@@ -642,7 +642,7 @@ fun CookDetailScreen(
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
                     foodLayout = {
-                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Create sharing draft") }
+                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
                         UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel)
                         RecipeGuideMilestones(data, guideRecords, compact = true) { selectedTab = CookTab.TIMELINE.name }
                         FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,

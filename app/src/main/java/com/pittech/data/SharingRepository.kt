@@ -16,6 +16,28 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
     fun photoUri(path: String) = photos.uri(path).toString()
     suspend fun photoBytes(path: String) = photos.read(path)
 
+    suspend fun fromRecipe(revisionId: String): String {
+        val revision = database.recipeDao().revision(revisionId) ?: error("Recipe version unavailable.")
+        val snapshot = RecipeSnapshotCodec.decode(revision.snapshotJson)
+        val entry = SharingEntry(sourceDishId = revision.sourceDishId, sourceRevisionId = revision.id,
+            snapshot = snapshot, storyJson = cooks.guide.pin(revision, snapshot).getJSONObject("story").toString())
+        val id = UUID.randomUUID().toString(); val copies = mutableListOf<CompanionPhoto>()
+        try {
+            database.recipeDao().assetsFor(revisionId).forEach { asset ->
+                val photoId = UUID.randomUUID().toString(); val path = "photos/$photoId.${asset.relativeFilePath.substringAfterLast('.')}"
+                photos.writeImported(path, photos.read(asset.relativeFilePath) ?: error("A recipe photo is unavailable."))
+                copies += CompanionPhoto(photoId, id, path, asset.mimeType, asset.caption, 0, entry.id)
+            }
+            val document = SharingDocument(snapshot.name.take(160), listOf(entry)); val now = System.currentTimeMillis()
+            database.withTransaction {
+                dao.put(CompanionRecord(id, SharingDraftCodec.DRAFT, title = document.title,
+                    payload = SharingDraftCodec.encode(document), createdAtUtcMillis = now, updatedAtUtcMillis = now))
+                dao.putPhotos(copies)
+            }
+            return id
+        } catch (failure: Throwable) { copies.forEach { photos.delete(it.relativePath) }; throw failure }
+    }
+
     suspend fun fromMeal(cookId: String, dishIds: Set<String>): String {
         val meal = cooks.observeCookDetail(cookId).first() ?: error("This meal is unavailable.")
         require(dishIds.isNotEmpty() && dishIds.all { id -> meal.dishes.any { it.id == id } }) { "Choose dishes from this meal." }

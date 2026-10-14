@@ -76,7 +76,7 @@ suspend fun SharingRepository.prepareCookPack(id: String, includeRecordedCook: B
         SharingEntry(entryId, null, revisionId, snapshot, story.toString(), true, entry.includeStory, photos)
     }
     val kind = if (includeRecordedCook) "cook" else if (selected.size == 1 && row.kind != SharingDraftCodec.COLLECTION) "recipe" else "collection"
-    val document = SharingDocument(draft.title, entries, heroPhotoId = heroPhotoId, collectionId = packId)
+    val document = SharingDocument(draft.title, entries, heroPhotoId = heroPhotoId, collectionId = packId, card = draft.card)
     val record = CompanionRecord(packId, if (kind == "recipe") "recipe_reference" else SharingDraftCodec.COLLECTION, title = draft.title,
         payload = SharingDraftCodec.encode(document), createdAtUtcMillis = row.updatedAtUtcMillis, updatedAtUtcMillis = row.updatedAtUtcMillis)
     var snapshot = ExportSnapshot(cooks = emptyList(), dishes = emptyList(), ingredients = emptyList(), events = emptyList(), readings = emptyList(), targets = emptyList(), results = emptyList(), devices = emptyList(), probes = emptyList(), photos = emptyList(),

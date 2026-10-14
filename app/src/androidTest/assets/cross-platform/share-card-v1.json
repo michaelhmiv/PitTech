@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "title": "Pepper pork & pommes 🌶 — shared contract fixture",
+  "dishes": [
+    "Pork",
+    "Potatoes",
+    "Mac and cheese",
+    "Corn"
+  ],
+  "hero": "chart",
+  "unit": "°C",
+  "curves": [
+    {
+      "label": "Pork · Same name · food",
+      "segments": [
+        [
+          {
+            "x": -10,
+            "y": 3.125
+          },
+          {
+            "x": 0,
+            "y": 22.5
+          },
+          {
+            "x": 30,
+            "y": 74.125
+          }
+        ],
+        [
+          {
+            "x": 80,
+            "y": 85.5
+          }
+        ]
+      ]
+    },
+    {
+      "label": "Potatoes · Same name · food",
+      "segments": [
+        [
+          {
+            "x": 0,
+            "y": 15.25
+          },
+          {
+            "x": 40,
+            "y": 88.375
+          }
+        ]
+      ]
+    }
+  ],
+  "channelCount": 2,
+  "milestones": [
+    {
+      "dish": "Pork",
+      "title": "Food on",
+      "offsetMillis": 0
+    },
+    {
+      "dish": "Potatoes",
+      "title": "Food on",
+      "offsetMillis": 0
+    },
+    {
+      "dish": "Pork",
+      "title": "Wrapped",
+      "offsetMillis": 3600000
+    },
+    {
+      "dish": "Potatoes",
+      "title": "Rest started",
+      "offsetMillis": 5400000
+    },
+    {
+      "dish": "Pork",
+      "title": "Ready to serve",
+      "offsetMillis": 7200000
+    }
+  ],
+  "stats": [
+    {
+      "label": "Selected dishes",
+      "value": "4"
+    }
+  ],
+  "note": "A deliberate card note. Keep it peppery 🌶.",
+  "cropX": 0.5,
+  "cropY": 0.5,
+  "zoom": 1,
+  "theme": "classic",
+  "relay": null
+}

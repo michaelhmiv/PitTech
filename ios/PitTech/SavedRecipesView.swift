@@ -198,6 +198,7 @@ struct SavedRecipeDetailView: View {
     @State private var editor: NativeRecipeRequest?
     @State private var error: String?
     @State private var destination: String?
+    @State private var sharingDraftId: String?
     let recipeId: String
     private var recipe: [String: JSONValue] { store.recipe(recipeId) ?? [:] }
     private var history: [[String: JSONValue]] { store.library.recipeRevisions.compactMap(\.objectValue).filter { $0["recipeId"]?.stringValue == recipeId }.sorted { ($0["revisionNumber"]?.numberValue ?? 0) > ($1["revisionNumber"]?.numberValue ?? 0) } }
@@ -217,6 +218,7 @@ struct SavedRecipeDetailView: View {
                 else { Text("Source meal is unavailable. Saved instructions and reference photos remain available.").foregroundStyle(.secondary) }
             }
             Button("Use this version") { act { destination = try store.startRecipeMeal(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId]) } }
+            Button("Share recipe") { act { sharingDraftId = try store.createRecipeSharingDraft(revisionId) } }.accessibilityIdentifier("recipe-share")
             Button("Edit a new version") { act { let revision = store.recipeRevision(revisionId) ?? [:]; editor = NativeRecipeRequest(snapshot: try store.recipeSnapshot(revisionId), recipeId: recipeId, expectedRevisionId: recipe["currentRevisionId"]?.stringValue, assetRevisionId: revisionId, sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue) } }
             TextField("Variation name", text: $duplicateName)
             Button("Duplicate recipe") { act { try store.duplicateRecipe(recipeId, name: duplicateName) } }.disabled(duplicateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -225,6 +227,9 @@ struct SavedRecipeDetailView: View {
         }.navigationTitle(recipe["name"]?.stringValue ?? "Recipe")
             .onAppear { if duplicateName.isEmpty { duplicateName = (recipe["name"]?.stringValue ?? "Recipe") + " copy" } }
             .sheet(item: $editor) { NativeRecipeEditor(request: $0) }
+            .sheet(isPresented:Binding(get:{ sharingDraftId != nil },set:{ if !$0 { sharingDraftId = nil } })) {
+                if let sharingDraftId { NavigationStack { SharingDraftView(id:sharingDraftId) }.modifier(ScreenshotTextSize()) }
+            }
             .navigationDestination(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) { if let destination { CookDetailView(cookId: destination) } }
     }
     private func act(_ block: () throws -> Void) { do { try block(); error = nil } catch { self.error = error.localizedDescription } }

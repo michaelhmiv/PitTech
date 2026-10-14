@@ -15,6 +15,7 @@ class PitTechApplication : Application() {
         super.onCreate()
         CrashDiagnostics.install(this)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            com.pittech.ui.ShareCardFiles.prune(this@PitTechApplication)
             kotlinx.coroutines.flow.combine(database.companionDao().observeAll(), database.cookDao().observeAllTimelineEvents(), database.cookDao().observeAllSensorReadings(), database.reminderDao().observeRules()) { _, _, _, _ -> Unit }
                 .collect { companionRepository.reconcileAll(this@PitTechApplication); alertRepository.reconcileAll(this@PitTechApplication); reminderRepository.reconcileAll(this@PitTechApplication) }
         }

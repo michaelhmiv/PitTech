@@ -112,7 +112,7 @@ private struct NativeCookPackInput: Sendable {
             portable.logReadingLinks = history.logReadingLinks; portable.lifecycles = history.lifecycles; portable.targetHistory = history.targetHistory
         }
         let kind = includeRecordedCook ? "cook" : selected.count == 1 && self.kind != "collection_revision" ? "recipe" : "collection"
-        let document = NativeSharingDocument(title: draft.title, heroPhotoId: heroPhotoId, collectionId: packId, entries: entries)
+        let document = NativeSharingDocument(title: draft.title, heroPhotoId: heroPhotoId, collectionId: packId, entries: entries, card: draft.card)
         portable.companionRecords = [.object(["id": .string(packId), "kind": .string(kind == "recipe" ? "recipe_reference" : "collection_revision"), "title": .string(draft.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)])]
         let metadata: JSONValue = .object(["contractVersion": .number(1), "id": .string(packId), "kind": .string(kind), "recipeRevisionIds": .array(portable.recipeRevisions.compactMap { $0.objectValue?["id"] }), "dishIds": .array(portable.dishes.compactMap { $0.objectValue?["id"] }), "includedStory": .bool(entries.contains { $0.includeStory }), "source": .null])
         try portable.validateCookExperience()

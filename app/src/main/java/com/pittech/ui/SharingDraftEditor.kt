@@ -42,6 +42,7 @@ import kotlinx.coroutines.sync.withLock
     var error by remember(id) { mutableStateOf<String?>(null) }; var busy by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }; var editId by remember { mutableStateOf<String?>(null) }
     var chooseRecipe by remember { mutableStateOf(false) }
+    var cardSettings by remember { mutableStateOf(false) }; var cardPreview by remember { mutableStateOf(false) }
     val exporting by viewModel.busy.collectAsStateWithLifecycle()
     val exportError by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope(); val lock = remember { Mutex() }
@@ -107,6 +108,9 @@ import kotlinx.coroutines.sync.withLock
                         }
                         Text(if (eligible) "Recipients can choose to add this finished meal to history." else "Enable the recorded story for each selected original dish first.", style = MaterialTheme.typography.bodySmall)
                     }
+                    TextButton({ cardSettings = !cardSettings }) { Text("Card appearance & note") }
+                    if (cardSettings) ShareCardOptionsEditor(current) { document = it }
+                    OutlinedButton({ act { persist(); cardPreview = true } }, enabled = !busy && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-preview-card")) { Text("Preview share card") }
                     OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
@@ -117,6 +121,7 @@ import kotlinx.coroutines.sync.withLock
             }
         }
     }
+    if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false })
     if (chooseRecipe) AlertDialog(onDismissRequest = { chooseRecipe = false }, title = { Text("Add a recipe") }, text = {
         Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
             recipes.filter { it.archivedAtUtcMillis == null }.forEach { recipe -> TextButton(onClick = { act { viewModel.sharing.addRecipe(id, recipe.currentRevisionId, record!!.updatedAtUtcMillis); chooseRecipe = false; reload() } }, enabled = !busy) { Text(recipe.name) } }
