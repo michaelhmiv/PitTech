@@ -6,6 +6,7 @@ extension PitTechLibrary {
         try validateRecipes()
         try validateSharingDocuments()
         try validateRecipeAttempts()
+        try validateGuidePresentation()
         try validateActivityTimers()
         try validateReminderRules()
         let cooksById = Set(cooks.map(\.id))

@@ -92,9 +92,7 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         require(before.kind == SharingDraftCodec.DRAFT && before.updatedAtUtcMillis == expectedUpdatedAt) { "This draft changed. Reopen it." }
         val revision = database.recipeDao().revision(revisionId) ?: error("Recipe version unavailable.")
         val snapshot = RecipeSnapshotCodec.decode(revision.snapshotJson)
-        val story = JSONObject().put("version", 1).put("attemptId", revision.sourceDishId ?: JSONObject.NULL)
-            .put("anchorUtcMillis", snapshot.smokingAnchorUtcMillis ?: JSONObject.NULL)
-            .put("observations", JSONObject(revision.snapshotJson).getJSONArray("observations")).put("readings", JSONArray()).put("results", JSONArray()).toString()
+        val story = cooks.guide.pin(revision, snapshot).getJSONObject("story").toString()
         val entry = SharingEntry(sourceDishId = revision.sourceDishId, sourceRevisionId = revision.id, snapshot = snapshot, storyJson = story)
         val document = SharingDraftCodec.decode(before.payload); val copies = mutableListOf<CompanionPhoto>()
         try {
@@ -126,16 +124,17 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         } catch (failure: Throwable) { copies.forEach { photos.delete(it.relativePath) }; throw failure }
     }
 
-    private fun story(meal: CookDetailData, dishId: String): String {
+    internal fun story(meal: CookDetailData, dishId: String): String {
         val scoped = notePlanEvents(meal.events).filter { it.dishId == null || it.dishId == dishId }.sortedBy { it.at }
         val anchor = scoped.firstOrNull { it.action == "food_on" }?.at
         val source = RecipeExtraction.fromMeal(meal, dishId).snapshot
         val readings = meal.readings.filter { it.dishId == dishId || it.dishId == null && it.measurementType in setOf("pit", "pit_ambient", "setpoint", "grill_temperature", "pit_temperature", "pit_probe", "ambient_temperature") }
         return JSONObject().put("version", 1).put("attemptId", dishId).put("anchorUtcMillis", anchor ?: JSONObject.NULL)
+            .put("connectionGaps", JSONArray(meal.events.filter { it.eventType == "connection_gap" && (it.dishId == null || it.dishId == dishId) }.map { it.occurredAtUtcMillis }))
             .put("observations", JSONObject(RecipeSnapshotCodec.encode(source)).getJSONArray("observations"))
             .put("readings", JSONArray(readings.map { r -> JSONObject().put("id", r.id).put("probeId", r.probeId ?: JSONObject.NULL)
                 .put("probeName", r.probeName).put("measurementType", r.measurementType).put("value", r.value).put("unit", r.unit)
-                .put("measuredAtUtcMillis", r.measuredAtUtcMillis).put("samplingIntervalMillis", r.samplingIntervalMillis)
+                .put("measuredAtUtcMillis", r.measuredAtUtcMillis).put("timeZoneId", r.timeZoneId).put("timestampBasis", r.timestampBasis).put("samplingIntervalMillis", r.samplingIntervalMillis)
                 .put("qualityStatus", r.qualityStatus).put("source", if (r.source == "manual") "manual" else "recorded") }))
             .put("results", JSONArray(meal.results.filter { it.dishId == dishId }.map { r -> JSONObject().put("type", r.resultType)
                 .put("numericValue", r.numericValue ?: JSONObject.NULL).put("textValue", r.textValue ?: JSONObject.NULL).put("unit", r.unit ?: JSONObject.NULL) })).toString()

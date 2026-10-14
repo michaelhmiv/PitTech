@@ -34,7 +34,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     markers: List<TimelineEventEntity> = emptyList(), onMarker: ((TimelineEventEntity) -> Unit)? = null, chartHeight: Dp = 260.dp,
     connectionGaps: List<TimelineEventEntity> = emptyList(), displayUnit: String? = null,
     targets: List<TargetEntity> = emptyList(), targetHistory: List<TargetHistory> = emptyList(),
-    photos: List<PhotoEntity> = emptyList(), interactive: Boolean = true, timingMode: String = "legacy_preserved") {
+    photos: List<PhotoEntity> = emptyList(), interactive: Boolean = true, timingMode: String = "legacy_preserved", referenceTimes: Map<String, Long> = emptyMap(), referenceMatches: Map<String, String> = emptyMap()) {
     val valid = readings.filter { it.qualityStatus == "valid" && it.value.isFinite() && it.unit in setOf("°F", "°C") }
     val unit = displayUnit?.takeIf { it in setOf("°F", "°C") } ?: valid.firstOrNull()?.unit ?: "°F"
     var clockMode by rememberSaveable { mutableStateOf(false) }
@@ -57,7 +57,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
         plans.filter { it.action == "food_on" && (selectedDish == null || it.dishId == null || it.dishId == selectedDish) }.minOfOrNull { it.at } ?: cookStartTimes[cookId] ?: firstTime
     fun x(cookId: String, time: Long) = if (clockMode && cookNames.size <= 1) time.toDouble() else (time - anchor(cookId)).toDouble()
     fun y(value: Double, rawUnit: String) = CookTelemetryPolicy.convert(value, rawUnit, unit)
-    fun label(r: SensorReadingEntity) = listOfNotNull(cookNames[r.cookId], r.probeName, r.dishId?.let { dishNames[it] }, r.measurementType.replace('_', ' ')).joinToString(" · ")
+    fun label(r: SensorReadingEntity) = listOfNotNull(cookNames[r.cookId], r.probeName, r.dishId?.let { dishNames[it] }, r.measurementType.replace('_', ' '), referenceMatches[r.id]?.let { key -> readings.firstOrNull { TemperaturePlot.identity(it) == key }?.let { "matched to ${it.probeName}" } }).joinToString(" · ")
     val rawSegments = remember(readings, markers, connectionGaps) { TemperaturePlot.segments(readings, markers + connectionGaps) }
     val series = valid.filter { selectedDish == null || it.dishId == selectedDish || it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature", "setpoint") }.groupBy { TemperaturePlot.identity(it) }
     val visibleSegments = rawSegments.filter { it.isNotEmpty() && TemperaturePlot.identity(it.first()) in series && TemperaturePlot.identity(it.first()) !in hidden }
@@ -76,7 +76,10 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     val clusters = CookChartMath.clusterTimes(selectedMarkers.map { it.id to x(it.cookId, it.occurredAtUtcMillis) }, minX, maxX, plotWidth.toDouble())
     var selectedCluster by remember { mutableStateOf(emptyList<String>()) }
     val chartColors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, Color(0xFF568CB7), Color(0xFFB779BD), Color(0xFFD3993C), Color(0xFF539674))
-    fun color(id: String) = chartColors[(id.hashCode() and Int.MAX_VALUE) % chartColors.size]
+    fun color(id: String): Color {
+        val key = series[id]?.firstOrNull()?.let { referenceMatches[it.id] } ?: id
+        return chartColors[(key.hashCode() and Int.MAX_VALUE) % chartColors.size]
+    }
     val grid = MaterialTheme.colorScheme.outlineVariant
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val markerColor = MaterialTheme.colorScheme.tertiary
@@ -139,7 +142,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
             clipRect(left, top, right, bottom) {
                 visibleSegments.forEach { segment -> val reduced = TemperaturePlot.reduce(segment); val c = color(TemperaturePlot.identity(segment.first()))
                     fun point(r: SensorReadingEntity) = Offset(px(x(r.cookId, r.measuredAtUtcMillis)), py(y(r.value, r.unit)))
-                    if (segment.first().source != "manual") reduced.zipWithNext().forEach { (a, b) -> drawLine(c, point(a), point(b), 2.dp.toPx(), StrokeCap.Round) }
+                    if (segment.first().source != "manual") reduced.zipWithNext().forEach { (a, b) -> drawLine(c, point(a), point(b), 2.dp.toPx(), StrokeCap.Round, pathEffect = if (a.id in referenceTimes) PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx())) else null) }
                     reduced.forEach { drawCircle(c, if (it.source == "manual") 4.dp.toPx() else 2.dp.toPx(), point(it)) }
                 }
                 scrub?.takeIf { it in minX..maxX }?.let { drawLine(markerColor, Offset(px(it), top), Offset(px(it), bottom), 2.dp.toPx()) }
@@ -150,6 +153,7 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
             Text("Phase bands: " + listOf("prep", "cooking", "wrapped", "removed", "resting", "holding", "done").joinToString { CookPhases.label(it) }, style = MaterialTheme.typography.bodySmall)
         }
         if (valid.isEmpty()) Text("No temperatures recorded yet. Notes and phases still appear on the time axis.")
+        if (referenceTimes.isNotEmpty()) Text("Author curves are dashed. Manual source measurements remain individual points. Each guide is aligned to that dish's actual Food on.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("guide-chart-legend"))
         if (interactive) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton({ pan(-span / 4) }, enabled = span < fullSpan, modifier = Modifier.testTag("chart-pan-left")) { Text("Earlier") }
@@ -160,7 +164,8 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
             scrub?.let { selected ->
                 Text("Selected ${formatX(selected)} · nearest recorded samples", style = MaterialTheme.typography.labelLarge)
                 series.filterKeys { it !in hidden }.forEach { (_, rows) -> rows.minByOrNull { abs(x(it.cookId, it.measuredAtUtcMillis) - selected) }?.let { r ->
-                    Text("${label(r)}: ${String.format(Locale.US, "%.1f", y(r.value, r.unit))} $unit · ${formatX(x(r.cookId, r.measuredAtUtcMillis))} · ${if (r.timestampBasis == "cloud_receipt") "cloud receipt; sensor age unknown" else "measured"}", style = MaterialTheme.typography.bodySmall)
+                    Text("${label(r)}: ${y(r.value, r.unit)} $unit · recorded ${r.value} ${r.unit} · ${formatX(x(r.cookId, r.measuredAtUtcMillis))} · ${if (r.timestampBasis == "cloud_receipt") "cloud receipt; sensor age unknown" else "measured"}", style = MaterialTheme.typography.bodySmall)
+                    referenceTimes[r.id]?.let { original -> Text("Author source time · ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS z", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone(r.timeZoneId) }.format(Date(original))}", style = MaterialTheme.typography.bodySmall) }
                 } }
             }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

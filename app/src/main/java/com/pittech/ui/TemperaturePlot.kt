@@ -18,7 +18,7 @@ internal object TemperaturePlot {
                 if (row.qualityStatus != "valid" || !row.value.isFinite() || row.unit !in setOf("°F", "°C")) flush()
                 else {
                     if (previous != null && (previous.dishId != row.dishId ||
-                        (row.source == "controller_cloud" && (gaps.any { it > previous.measuredAtUtcMillis && it <= row.measuredAtUtcMillis } ||
+                        (row.source != "manual" && (gaps.any { it > previous.measuredAtUtcMillis && it <= row.measuredAtUtcMillis } ||
                             row.samplingIntervalMillis == 0L || previous.samplingIntervalMillis == 0L ||
                             row.measuredAtUtcMillis - previous.measuredAtUtcMillis > GrillSamplingPolicy.receiptWindow(maxOf(row.samplingIntervalMillis, previous.samplingIntervalMillis)))))) flush()
                     current += row

@@ -77,9 +77,13 @@ extension PitTechLibrary {
         let snapshotValue = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(snapshot))
         let id = "recipe-attempt:\(dishId)"
         let old = library.companionRecords.first { $0.objectValue?["id"]?.stringValue == id }?.objectValue
+        let pinned: JSONValue
+        if let existing = old?["payload"]?.objectValue?["guide"], existing != .null { pinned = existing }
+        else { pinned = try pinGuide(revisionId, snapshot: recipeSnapshot(revisionId)) }
         library.companionRecords.removeAll { $0.objectValue?["id"]?.stringValue == id }
         library.companionRecords.append(.object(["id": .string(id), "kind": .string("recipe_attempt"), "cookId": .string(cookId), "title": .string(snapshot.name),
-            "payload": .object(["version": .number(1), "dishId": .string(dishId), "revisionId": .string(revisionId), "snapshot": snapshotValue]),
+            "payload": .object(["version": .number(1), "dishId": .string(dishId), "revisionId": .string(revisionId), "snapshot": snapshotValue,
+                "guide": pinned]),
             "created": old?["created"] ?? .number(now), "updated": .number(now)]))
     }
     func recipeAttempt(_ dishId: String) throws -> RecipeSnapshot? {

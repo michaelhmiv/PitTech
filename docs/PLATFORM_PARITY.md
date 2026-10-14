@@ -12,7 +12,7 @@ OS limitation. Completion requires both clients and CI evidence. Existing
 | Scoped drafts and source-owned story/photos | Port both | 02 | Pork-only draft leaves potatoes/history unchanged; relaunch |
 | Full backup limits (Android 350/300/45 MiB, 10k entries; iOS 64/64/16 MiB, 1k) | Port iOS bounded streaming | 03 | Cross-platform boundaries, peak memory and ZIP attack fixtures |
 | iOS CSV/workbook export equivalents | Port | 03 | Independent reader; units/timezones/escaping/relationships |
-| One guide toggle, per-dish reference, dashed curves | Port both | 04 | Actual-log isolation; missing curves; anchor/probe corrections |
+| One guide toggle, per-dish reference, dashed curves | Implemented on both; Actions/visual gate pending | 04 | Pinned stories; independent visibility/reminders; negative offsets; gaps; scope-safe channel mapping |
 | Native share-card rendering and system share | Port both | 05 | Exported pixel fixtures, long/sparse/multi-dish states |
 | Code entry, Universal/App Links | Port both | 07 | Signed artifacts, installed/uninstalled fallback, cancel import |
 | Secure magic-link/code sessions and account controls | Port both | 09 | Replays, code retries, sign-out/account switch/delete |

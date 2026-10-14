@@ -75,8 +75,10 @@ object SharingDraftCodec {
             require(story.getJSONArray("readings").length() <= 250000) { "Too many source measurements in one dish." }
             require(!story.isNull("attemptId") || story.getJSONArray("readings").length() == 0) { "Measurements require an actual source attempt." }
             val samples = story.getJSONArray("readings")
+            story.optJSONArray("connectionGaps")?.let { gaps -> require(gaps.length() <= 10000 && (0 until gaps.length()).all { gaps.getDouble(it).isFinite() && gaps.getDouble(it) > 0 }) { "Invalid recorded measurement gaps." } }
             for (i in 0 until samples.length()) {
                 val sample = samples.getJSONObject(i)
+                require(sample.getString("id").isNotBlank() && sample.getString("id").length <= 128 && sample.getString("measurementType").isNotBlank()) { "Invalid source sample identity or role." }
                 require(sample.getDouble("value").isFinite() && sample.getString("unit") in setOf("°F", "°C") && sample.getLong("measuredAtUtcMillis") > 0) { "Invalid source measurement." }
                 require(sample.getString("source") in setOf("manual", "recorded") && sample.getString("probeName").length <= 200) { "Invalid source channel." }
                 require(!sample.has("sourceDeviceId") && !sample.has("deviceId") && !sample.has("credentials")) { "Private device fields cannot enter a cook story." }

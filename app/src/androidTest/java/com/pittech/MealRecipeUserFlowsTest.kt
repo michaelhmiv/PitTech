@@ -28,6 +28,43 @@ class MealRecipeUserFlowsTest {
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
     }
     private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    @Test fun oneGuideToggleControlsLiveTimelineAndChartsAndSurvivesRecreation() {
+        val prepared = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val now = System.currentTimeMillis(); val revisions = mutableListOf<String>()
+            for (name in listOf("Chicken", "Mac", "Pork")) {
+                val source = app.cookRepository.startCook(NewCookDraft(name, dishes = listOf(DishDraft(name, "Other"))))
+                val dish = app.database.cookDao().getDishesForCook(source).single().id
+                app.cookRepository.addTimelineEvent(source, dish, "meat_on", "Food on", null, now - 7200000)
+                app.cookRepository.notes.save(CookNoteDraft(cookId = source, dishId = dish, title = "Recorded check", occurredAt = now - 7140000,
+                    temperatures = listOf(NoteTemperature(probeName = "Same name", valueText = "74.125", unit = "°C", measuredAt = now - 7140000, dishId = dish))))
+                app.cookRepository.completeCook(source)
+                revisions += app.cookRepository.recipes.save(RecipeExtraction.fromMeal(app.cookRepository.observeCookDetail(source).first()!!, dish).snapshot, sourceCookId = source, sourceDishId = dish).currentRevisionId
+            }
+            val cook = app.cookRepository.startRecipeMeal("Guided meal", revisions)
+            val dishes = app.database.cookDao().getDishesForCook(cook)
+            dishes.forEachIndexed { i, dish -> app.cookRepository.addTimelineEvent(cook, dish.id, "meat_on", "Food on", null, now - 3600000 + i * 600000) }
+            app.reminderRepository.save(cook, dishes[0].id, "My separate check", ReminderTrigger.Historical("food_on", 7200000))
+            cook to dishes.map { it.id }
+        }
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(20000) { compose.onAllNodesWithText("Guided meal").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Guided meal").performClick()
+        waitFor("show-guide"); compose.onNodeWithTag("show-guide").assertIsOff().performClick()
+        waitFor("guide-reference-${prepared.second[0]}"); shot("show-guide-live")
+        compose.onNodeWithTag("cook-tab-timeline").performClick()
+        waitFor("guide-reference-${prepared.second[0]}"); shot("show-guide-timeline")
+        compose.onNodeWithTag("cook-tab-charts").performClick()
+        waitFor("guide-chart-legend"); compose.onNodeWithTag("guide-chart-legend").performScrollTo(); shot("show-guide-charts")
+        compose.onNodeWithTag("show-guide").performClick()
+        waitFor("guide-reminders-active")
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().single().enabled })
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(20000) { compose.onAllNodesWithText("Guided meal").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Guided meal").performClick(); waitFor("show-guide")
+        compose.onNodeWithTag("show-guide").assertIsOff()
+        assertEquals(3, runBlocking(Dispatchers.IO) { notePlanEvents(app.database.cookDao().getTimelineEventsForCook(prepared.first)).count { it.action == "food_on" } })
+    }
     @Test fun cookPackPreviewLetsGuestSaveOnlyOneRecipeAndKeepsHistorySeparate() {
         val prepared = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()

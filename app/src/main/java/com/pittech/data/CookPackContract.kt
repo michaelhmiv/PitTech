@@ -29,7 +29,7 @@ object CookPackContract {
         require(metadata.getBoolean("includedStory") == (kind == "cook" || documents.any { doc -> doc.entries.any { it.includeStory } })) { "The declared guide does not match this file." }
         require(documents.all { doc -> doc.sourceCookId == null && doc.sourceHistoryJson == null && doc.entries.all { entry ->
             entry.sourceDishId == null && (entry.includeStory || JSONObject(entry.storyJson).let { story ->
-                story.isNull("attemptId") && story.isNull("anchorUtcMillis") && listOf("observations", "readings", "results").all { story.getJSONArray(it).length() == 0 } && entry.snapshot.rating == null && entry.snapshot.cookAgain == null && entry.snapshot.resultNotes.isEmpty()
+                story.isNull("attemptId") && story.isNull("anchorUtcMillis") && (story.optJSONArray("connectionGaps")?.length() ?: 0) == 0 && listOf("observations", "readings", "results").all { story.getJSONArray(it).length() == 0 } && entry.snapshot.rating == null && entry.snapshot.cookAgain == null && entry.snapshot.resultNotes.isEmpty()
             })
         } }) { "This file includes undeclared source facts." }
         require(snapshot.companionRecords.all { it.kind in setOf("recipe_reference", "collection_revision") && it.cookId == null }) { "This Cook Pack includes unrelated saved content." }

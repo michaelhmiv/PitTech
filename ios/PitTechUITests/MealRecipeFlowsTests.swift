@@ -17,6 +17,31 @@ final class MealRecipeFlowsTests: XCTestCase {
         XCTAssertTrue(element.exists && element.isHittable)
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testOneGuideToggleControlsAllSectionsAndPersistsAtStandardAndLargeText() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-guide"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch()
+            let meal = app.staticTexts["Guided meal"].firstMatch; reveal(meal, app: app); meal.tap()
+            let toggle = app.switches["show-guide"]; reveal(toggle, app: app)
+            XCTAssertEqual(toggle.value as? String, "0"); toggle.tap()
+            let reference = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "guide-heading-")).firstMatch
+            XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
+            capture(large ? "Native Show guide Live large text" : "Native Show guide Live")
+            let timeline = app.segmentedControls.buttons["Timeline"]; reveal(timeline, app: app); timeline.tap()
+            XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
+            capture(large ? "Native Show guide Timeline large text" : "Native Show guide Timeline")
+            let charts = app.segmentedControls.buttons["Charts"]; reveal(charts, app: app); charts.tap()
+            let legend = app.staticTexts["guide-chart-legend"]; reveal(legend, app: app)
+            capture(large ? "Native Show guide Charts large text" : "Native Show guide Charts")
+            reveal(toggle, app: app); toggle.tap(); XCTAssertEqual(toggle.value as? String, "0")
+            app.terminate()
+            app.launchArguments = (large ? ["--screenshot-large-text"] : [])
+            app.launch(); let reopened = app.staticTexts["Guided meal"].firstMatch; reveal(reopened, app: app); reopened.tap()
+            let restored = app.switches["show-guide"]; reveal(restored, app: app); XCTAssertEqual(restored.value as? String, "0")
+            app.terminate()
+        }
+    }
     func testCookPackPreviewSavesOneRecipeWithoutImportingHistoryAtStandardAndLargeText() {
         for large in [false, true] {
             let app = XCUIApplication()

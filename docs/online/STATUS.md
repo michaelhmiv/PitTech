@@ -10,7 +10,7 @@ remain separate. No online phase is released until its complete parity gate pass
 | 01 | Native refresh and core parity | Draft PR #93 | All configured checks passed at `d9389c9`; iOS run 38592169385 and Android run 38592169411. Native composition/finish and large-text screenshots inspected. Deeper free Insights/provider port remain open |
 | 02 | Verdicts, collections, persistent drafts | Draft PR #95 | Both Android API 36 text-size lanes passed at `4ee5077`. Native reminder test now handles notification permission before waiting for dismissal; a Simulator termination failure in the Beta onboarding test is being retried. Archive v10, Room v10 |
 | 03 | Cook Packs and exports | Draft PR #97 | Actual Android↔native recipe/collection/cook files, CSV and workbook fixtures retained with producer provenance. At `cfeea73`, all 53 native unit tests and all 16 Android data / 13 companion tests passed; native UI was canceled by the next push, and the Android count assertion needed correction. Reciprocal recorded-cook import tests and native 72 MiB memory/time measurement are added; their Actions gates and final native UI/visual review remain pending |
-| 04 | Shared guide presentation | Pending | |
+| 04 | Shared guide presentation | Draft implementation | Both clients pin independently owned recipe stories, share one saved visibility/scope setting across Live/Timeline/Charts, pair semantic actions and overlay distinct reference channels. Source-deletion, three-dish alignment, gaps/quality, persistence and UI tests added; Actions/visual and actual guide-fixture exchange gates pending |
 | 05 | Native share cards | Pending | |
 | 06 | API/relay | Pending | |
 | 07 | Code/link import | Pending | |

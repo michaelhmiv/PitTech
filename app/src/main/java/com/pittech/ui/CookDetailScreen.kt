@@ -169,6 +169,8 @@ fun CookDetailScreen(
     var editReading by remember { mutableStateOf<SensorReadingEntity?>(null) }
     var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     val reminderRules by viewModel.reminders.observeRules().collectAsStateWithLifecycle(emptyList())
+    val guideFlow = remember(data.cook.id) { viewModel.guide.observe(data.cook.id) }
+    val guideRecords by guideFlow.collectAsStateWithLifecycle(emptyList())
     val reminderOccurrences by viewModel.reminders.observeOccurrences().collectAsStateWithLifecycle(emptyList())
     var selectedFood by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var showProbeMove by remember { mutableStateOf(false) }
@@ -633,13 +635,16 @@ fun CookDetailScreen(
                     noteDraftJson = saved.payload
                 }, modifier = Modifier.testTag("cook-resume-note")) { Text("Resume saved note (${data.logDrafts.size})") }
             }
+            RecipeGuideControl(data, guideRecords, viewModel, reminderRules.any { it.cookId == data.cook.id && it.enabled })
             Box(Modifier.weight(1f)) {
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
                     foodLayout = {
                         if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Create sharing draft") }
-                        UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel); FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
+                        UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel)
+                        RecipeGuideMilestones(data, guideRecords, compact = true) { selectedTab = CookTab.TIMELINE.name }
+                        FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
                         onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
                         onAdd = { addDish = true }, onEdit = { editDish = it },
@@ -714,8 +719,9 @@ fun CookDetailScreen(
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
                     onFoodFilter = { selectedFood = it },
+                    guide = { RecipeGuideMilestones(data, guideRecords) },
                 )
-                CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
+                CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, guide = remember(data, guideRecords) { alignedGuide(data, guideRecords) }, guideVisible = guideState(guideRecords).visible, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
             }
             }
 
@@ -975,6 +981,7 @@ private fun TimelineTab(
     focusEventId: String? = null,
     onFoodFilter: (String?) -> Unit = {},
     onFocusHandled: () -> Unit = {},
+    guide: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
     val filterPreferences = remember(context) { context.getSharedPreferences("pittech-feed", 0) }
@@ -988,7 +995,7 @@ private fun TimelineTab(
     val coroutineScope = rememberCoroutineScope()
     val rows = buildTimelineLines(data, selectedFilter, newestFirst, foodFilter)
     val days = rows.groupBy { timelineDayKey(it.time) }
-    val latestIndex = rows.size + days.size
+    val latestIndex = rows.size + days.size + 1
     LaunchedEffect(selectedFilterName, foodFilter) {
         filterPreferences.edit().putString(data.cook.id + ":type", selectedFilterName).putString(data.cook.id + ":food", foodFilter).apply()
         onFoodFilter(foodFilter)
@@ -1003,7 +1010,7 @@ private fun TimelineTab(
     }
     LaunchedEffect(focusEventId, rows.map { it.stableKey }) {
         if (focusEventId != null) {
-            var position = 1
+            var position = 2
             var target: Int? = null
             days.values.forEach { group -> position++; group.forEach { row -> if (row is TimelineLine.Event && row.event.id == focusEventId) target = position; position++ } }
             target?.let { listState.scrollToItem(it); onFocusHandled() }
@@ -1071,7 +1078,8 @@ private fun TimelineTab(
 
         if (rows.isEmpty()) {
             val emptyTitle = if (selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL) "No cook history yet" else "No matching entries"
-            Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.Center) {
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                guide()
                 Text(emptyTitle, style = MaterialTheme.typography.titleLarge)
                 Text(
                     if (selectedFilter == TimelineFilter.ALL) {
@@ -1090,6 +1098,7 @@ private fun TimelineTab(
                     contentPadding = PaddingValues(top = 6.dp, bottom = 76.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    item(key = "timeline-guide") { guide() }
                     item(key = "timeline-summary") {
                         Text(
                             "Started ${formatTimeOfDay(data.cook.startedAtUtcMillis)} · ${formatCookDuration(calculateElapsed(data))} elapsed",
@@ -1594,13 +1603,14 @@ private fun formatTimelineDay(millis: Long): String {
 }
 
 @Composable
-private fun ChartsTab(data: CookDetailData, displayUnit: String, comparison: @Composable () -> Unit = {}, onMarker: (TimelineEventEntity) -> Unit) {
+private fun ChartsTab(data: CookDetailData, displayUnit: String, guide: AlignedGuide = AlignedGuide(), guideVisible: Boolean = false, comparison: @Composable () -> Unit = {}, onMarker: (TimelineEventEntity) -> Unit) {
     val valid = data.readings.filter { it.qualityStatus == "valid" }
     val grouped = valid.groupBy { TemperaturePlot.identity(it) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         comparison()
         SectionCard("Temperature chart") {
-            TemperatureChart(data.readings, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, markers = data.events.filter { it.eventType != "temperature" && !it.eventType.startsWith("telemetry_") }, onMarker = onMarker, displayUnit = displayUnit, targets = data.targets, targetHistory = data.targetHistory, photos = data.photos, timingMode = data.lifecycle?.timingMode ?: "legacy_preserved")
+            if (guideVisible && guide.readings.isEmpty()) Text("Guide curves wait for actual Food on. Sources without temperatures show instructions only.")
+            TemperatureChart(data.readings + guide.readings, cookStartTimes = mapOf(data.cook.id to data.cook.startedAtUtcMillis), dishNames = data.dishes.associate { it.id to it.name }, markers = data.events.filter { it.eventType != "temperature" && !it.eventType.startsWith("telemetry_") }, connectionGaps = guide.gaps, onMarker = onMarker, displayUnit = displayUnit, targets = data.targets, targetHistory = data.targetHistory, photos = data.photos, timingMode = data.lifecycle?.timingMode ?: "legacy_preserved", referenceTimes = guide.originalTimes, referenceMatches = guide.matches)
             Text("Valid recorded points only. Manual samples remain individual points and missing periods stay empty.", style = MaterialTheme.typography.bodyMedium)
         }
         SectionCard("Reading summary") {
