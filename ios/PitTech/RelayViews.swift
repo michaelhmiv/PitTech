@@ -17,19 +17,23 @@ struct NativeRelayProgress: View {
 }
 struct NativeRelayImportView: View {
     @Environment(NativeRelayCoordinator.self) private var relay
+    @FocusState private var codeFocused: Bool
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Bring a shared cook into your cookbook").font(.title2.bold())
                 Text("Enter the code from a card or paste a PitTech share link. You can preview the pack and choose individual dishes before saving.")
                 TextField("Cook Pack code or link", text: Binding(get: { relay.input }, set: { relay.input = String($0.prefix(256)) }))
-                    .textFieldStyle(.roundedBorder).textInputAutocapitalization(.characters).autocorrectionDisabled().accessibilityIdentifier("relay-code-input")
-                Button("Download & preview") { relay.download() }.buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(relay.busy || relay.input.isEmpty).accessibilityIdentifier("relay-download")
+                    .textFieldStyle(.roundedBorder).textInputAutocapitalization(.never).autocorrectionDisabled().focused($codeFocused)
+                    .submitLabel(.go).onSubmit { codeFocused = false; relay.download() }.accessibilityIdentifier("relay-code-input")
+                Button("Download & preview") { codeFocused = false; relay.download() }.buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(relay.busy || relay.input.isEmpty).accessibilityIdentifier("relay-download")
                 Text("No account required. A downloaded pack is not added to your recipes or history until you choose to save it.").font(.caption).foregroundStyle(PitTechStyle.supporting)
                 NativeRelayProgress()
             }.padding(20)
-        }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Import by code").navigationBarTitleDisplayMode(.inline)
+        }.accessibilityIdentifier("relay-import-content").scrollDismissesKeyboard(.interactively)
+            .background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Import by code").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { relay.cancel(); relay.showingImport = false } } }
+            .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { codeFocused = false } } }
             .onDisappear { relay.cancel() }
     }
 }
