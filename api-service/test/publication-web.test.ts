@@ -1,0 +1,20 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {publicPage,publicWebRoute} from '../src/publication-web.ts';
+import type {Publications} from '../src/publications.ts';
+import type {PublicationPayload} from '../src/publication-pack.ts';
+test('public cookbook HTML escapes every authored string and permits only canonical routes',async()=>{
+  const id='12345678-1234-4234-8234-123456789abc';
+  assert.equal(publicWebRoute('/c/'+id),'/c/:id');assert.equal(publicWebRoute('/p/oak_cook'),'/p/:handle');
+  for(const path of ['/c/'+id+'?token=secret','/c/%3Cscript%3E','/p/Oak','/c/'+id+'/extra','https://evil.invalid/c/'+id])assert.equal(publicWebRoute(path),undefined);
+  const payload=JSON.parse(await readFile(new URL('../../contracts/fixtures/anonymous-pork.json',import.meta.url),'utf8')) as PublicationPayload;
+  payload.title='<script>alert("secret")</script>';payload.recipes[0].description='<img src=x onerror=alert(1)>';
+  payload.recipes[0].source={itemId:id,revisionId:id,removed:true};
+  const detail={payload,credit:{displayName:'<b>Cook</b>'},likes:2,forks:3};
+  const publications={get:async()=>detail,profile:async()=>({displayName:'<b>Profile</b>',handle:'oak_cook',items:[{id}],nextCursor:null})} as unknown as Publications;
+  const html=await publicPage('/c/'+id,publications,{appleAppIds:[],androidCertificates:[]});
+  assert.ok(!html.includes('<script>'));assert.ok(!html.includes('<img src=x'));assert.ok(!html.includes('<b>Cook</b>'));
+  assert.ok(html.includes('&lt;script&gt;'));assert.ok(html.includes('Based on a removed recipe'));assert.ok(html.includes('pittech://recipe/'+id));
+  const profile=await publicPage('/p/oak_cook',publications,{appleAppIds:[],androidCertificates:[]});assert.ok(!profile.includes('<b>Profile</b>'));assert.ok(profile.includes('/c/'+id));
+});

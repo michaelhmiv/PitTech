@@ -1,0 +1,14 @@
+{
+  "valid": [
+    {"input":"https://pittech.app/c/12345678-1234-4234-8234-123456789abc","destination":"12345678-1234-4234-8234-123456789abc"},
+    {"input":"pittech://recipe/12345678-1234-4234-8234-123456789ABC","destination":"12345678-1234-4234-8234-123456789abc"},
+    {"input":"https://pittech.app/p/oak_cook","destination":"profile:oak_cook"},
+    {"input":"pittech://profile/oak_cook","destination":"profile:oak_cook"}
+  ],
+  "invalid": [
+    "http://pittech.app/p/oak_cook", "https://evil.invalid/p/oak_cook", "https://pittech.app.evil.invalid/p/oak_cook",
+    "https://pittech.app:443/p/oak_cook", "https://user@pittech.app/p/oak_cook", "https://pittech.app/p/oak_cook?token=secret",
+    "https://pittech.app/p/oak_cook#secret", "https://pittech.app/p/%6fak_cook", "https://pittech.app/p/Oak_Cook",
+    "https://pittech.app/p/oak_cook/", "pittech://recipe/not-a-uuid", "pittech://profile/oak_cook/extra", "pittech://share/oak_cook"
+  ]
+}

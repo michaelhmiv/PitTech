@@ -7,17 +7,19 @@ struct ContentView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
+    @State private var selectedTab = "meals"
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             CookListView()
-                .tabItem { Label("Meals", systemImage: "flame") }
-            NavigationStack { SavedRecipesView() }.tabItem { Label("Recipes", systemImage: "book") }
-            Group { if community.enabled { NativePublicDiscoveryView() } else { DiscoveryWelcomeView() } }.tabItem { Label("Discover", systemImage: "safari") }
+                .tabItem { Label("Meals", systemImage: "flame") }.tag("meals")
+            NavigationStack { SavedRecipesView() }.tabItem { Label("Recipes", systemImage: "book") }.tag("recipes")
+            Group { if community.enabled { NativePublicDiscoveryView() } else { DiscoveryWelcomeView() } }.tabItem { Label("Discover", systemImage: "safari") }.tag("discover")
             InsightsView()
-                .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
-            MoreView(runtime: telemetry).tabItem { Label("More", systemImage: "ellipsis") }
+                .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }.tag("insights")
+            MoreView(runtime: telemetry).tabItem { Label("More", systemImage: "ellipsis") }.tag("more")
         }
+        .onChange(of: community.linkSequence) { _, _ in selectedTab = "discover" }
         .environment(telemetry)
         .tint(PitTechStyle.accent)
         .task {

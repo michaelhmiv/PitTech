@@ -7,7 +7,7 @@ struct NativePublicDiscoveryView: View {
     @State private var sort = "liked"
     @State private var initialized = false
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: Binding(get: { community.path }, set: { community.path = $0 })) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Find your next cook").font(.title.bold())
@@ -34,7 +34,9 @@ struct NativePublicDiscoveryView: View {
                     if community.nextCursor != nil { Button("More recipes") { Task { await community.refresh(sort: community.appliedSort, food: community.appliedFood, query: community.appliedQuery, more: true) } }.disabled(community.loading) }
                 }.padding(20)
             }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
-                .navigationDestination(for: String.self) { NativePublicRecipeView(id: $0) }
+                .navigationDestination(for: String.self) { value in
+                    if value.hasPrefix("profile:") { NativePublicProfileView(handle: String(value.dropFirst(8))) } else { NativePublicRecipeView(id: value) }
+                }
                 .task { if !initialized { sort = community.appliedSort; food = community.appliedFood; query = community.appliedQuery; initialized = true }; if community.items.isEmpty { await community.refresh(sort: sort, food: food, query: query) } }
         }
     }
@@ -59,6 +61,7 @@ struct NativePublicRecipeView: View {
                     }
                     Text(detail.title).font(.title.bold()).accessibilityIdentifier("public-title")
                     Text("Shared by " + detail.credit.displayName)
+                    if let url = detail.credit.profileUrl, let destination = try? NativePublicLink.destination(url), destination.hasPrefix("profile:") { NavigationLink("View public cookbook", value: destination) }
                     Text("Your saved version stays yours. Publishing a variation is a separate choice.").font(.subheadline).foregroundStyle(.secondary)
                     HStack {
                         Button("Save recipes") { preview(detail, cook: false) }.buttonStyle(.borderedProminent).accessibilityIdentifier("public-save")

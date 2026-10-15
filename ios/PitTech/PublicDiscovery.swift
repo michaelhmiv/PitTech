@@ -15,7 +15,14 @@ enum NativePublicError: LocalizedError {
     }
 }
 struct NativePublicItem: Decodable, Identifiable {
-    struct Credit: Decodable { let displayName: String }
+    struct Credit: Decodable {
+        let displayName: String
+        let profileUrl: String?
+        func validate() throws {
+            guard displayName.utf16.count <= 160 else { throw NativePublicError.invalid }
+            if let profileUrl { guard try NativePublicLink.destination(profileUrl).hasPrefix("profile:"), profileUrl.hasPrefix("https://pittech.app/p/") else { throw NativePublicError.invalid } }
+        }
+    }
     let id: String
     let revisionId: String
     let title: String
@@ -25,6 +32,7 @@ struct NativePublicItem: Decodable, Identifiable {
     let forks: Int
     let heroAssetId: String?
     func validate() throws {
+        try credit.validate()
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, (1...160).contains(title.utf16.count), credit.displayName.utf16.count <= 160,
               ["recipe", "collection", "attempt"].contains(kind), (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks), heroAssetId.map({ UUID(uuidString: $0) != nil }) ?? true else { throw NativePublicError.invalid }
     }
@@ -48,6 +56,7 @@ struct NativePublicDetail: Decodable {
     var heroCaption: String { recipes.flatMap { $0.objectValue?["assets"]?.arrayValue ?? [] }.first { $0.objectValue?["id"]?.stringValue == hero?.id }?.objectValue?["caption"]?.stringValue ?? "" }
     var hero: Media? { media.first { $0.id == payload.objectValue?["heroAssetId"]?.stringValue } }
     func validate() throws {
+        try credit.validate()
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, (1...160).contains(title.utf16.count), credit.displayName.utf16.count <= 160,
               (1...20).contains(recipes.count), media.count <= 600, Set(media.map(\.id)).count == media.count, (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks) else { throw NativePublicError.invalid }
         for medium in media {
@@ -67,7 +76,7 @@ protocol NativePublicAPI {
 }
 struct NativePublicClient: NativePublicAPI {
     private func request(_ path: String) throws -> URLRequest {
-        guard path.hasPrefix("/v1/discover?") || path.range(of: "^/v1/recipes/[a-fA-F0-9-]{36}(/pack|/assets/[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil,
+        guard path.range(of: "^/v1/profiles/[a-z0-9_]{3,24}(\\?cursor=[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil || path.hasPrefix("/v1/discover?") || path.range(of: "^/v1/recipes/[a-fA-F0-9-]{36}(/pack|/assets/[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil,
               let url = URL(string: "https://api.pittech.app" + path), url.host == "api.pittech.app", url.fragment == nil else { throw NativePublicError.invalid }
         var request = URLRequest(url: url); request.setValue("no-store", forHTTPHeaderField: "Cache-Control"); request.setValue("application/json", forHTTPHeaderField: "Accept"); return request
     }
@@ -112,6 +121,8 @@ actor NativePublicCache {
 }
 @MainActor @Observable final class NativePublicCoordinator {
     let enabled: Bool
+    var path: [String] = []
+    var linkSequence = 0
     private let api: any NativePublicAPI
     private let cache: NativePublicCache
     private(set) var items: [NativePublicItem] = []
@@ -155,6 +166,22 @@ actor NativePublicCache {
     func detail(_ id: String) async throws -> (NativePublicDetail, Bool) {
         guard enabled, UUID(uuidString: id) != nil else { throw NativePublicError.invalid }
         let (bytes, saved) = try await cached("/v1/recipes/" + id); let detail = try JSONDecoder().decode(NativePublicDetail.self, from: bytes); try detail.validate(); guard detail.id == id else { throw NativePublicError.invalid }; return (detail, saved)
+    }
+    func profile(_ handle: String, cursor: String? = nil) async throws -> (NativePublicProfile, [NativePublicItem]) {
+        guard enabled, handle.range(of: "^[a-z0-9_]{3,24}$", options: .regularExpression) != nil, cursor.map({ UUID(uuidString: $0) != nil }) ?? true else { throw NativePublicError.invalid }
+        // Profile visibility is checked live; private/removed identity is never revived from a stale profile cache.
+        let bytes = try await api.json("/v1/profiles/" + handle + (cursor.map { "?cursor=" + $0 } ?? ""))
+        let profile = try JSONDecoder().decode(NativePublicProfile.self, from: bytes); try profile.validate(handle)
+        var items: [NativePublicItem] = []
+        for entry in profile.items {
+            do {
+                let data = try await api.json("/v1/recipes/" + entry.id)
+                let detail = try JSONDecoder().decode(NativePublicDetail.self, from: data); try detail.validate()
+                guard detail.id == entry.id, detail.payload.objectValue?["identityMode"]?.stringValue == "named" else { throw NativePublicError.invalid }
+                items.append(NativePublicItem(id: detail.id, revisionId: detail.revisionId, title: detail.title, kind: detail.payload.objectValue?["kind"]?.stringValue ?? "recipe", credit: detail.credit, likes: detail.likes, forks: detail.forks, heroAssetId: detail.payload.objectValue?["heroAssetId"]?.stringValue))
+            } catch NativePublicError.status(404) { continue }
+        }
+        return (profile, items)
     }
     func image(_ detail: NativePublicDetail) async throws -> Data? {
         guard let hero = detail.hero else { return nil }; return try await image(detail, asset: hero)
