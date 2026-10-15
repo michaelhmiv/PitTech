@@ -1,8 +1,8 @@
 # Anonymous Cook Pack relay
 
-Draft PR 06 for issue #89. This service is not deployed. Native clients do not
-upload yet; PR 07 supplies their explicit preview, owner-capability storage,
-code/link/QR and import UI. Existing feedback and privacy services remain intact.
+Draft PRs 06–07 for issue #89. This service is not deployed. Native client
+source supplies explicit preview, owner-capability storage, code/link/QR and
+import UI; installed-link and isolated staging verification remain pending. Existing feedback and privacy services remain intact.
 
 Node 22.23.3 executes the erasable TypeScript directly. Locked dependencies and
 strict typechecking are separate checks. The Docker build uses the repository
@@ -86,7 +86,15 @@ through the host secret store, never build arguments or committed files.
 Provision isolated staging/production Postgres databases, runtime/migration roles,
 private buckets and credentials. Runtime grants should cover only its relay
 tables; migrations use `MIGRATION_DATABASE_URL` separately. Run `npm run migrate`
-once as a release task. Applied migration checksums cannot silently change.
+once as a separate release task. Then apply `operations/relay-runtime-role.sql`
+with the database administrator and grant its non-login role to a dedicated API
+login. Keep the migrator/admin credential out of the API and sweeper services.
+The grant script fails on elevated roles or public-schema CREATE privileges;
+use an isolated database and review existing role memberships before rollout.
+It grants only the three runtime tables, with no migration access or future-table
+grants. Actions runs repository operations under that role and asserts DDL,
+TRUNCATE and migration-table operations fail. Applied migration checksums cannot
+silently change.
 
 Required budgets (`STORAGE_MAX_BYTES`, `DAILY_UPLOAD_MAX_BYTES`,
 `DAILY_UPLOAD_MAX_COUNT`) have no invented production defaults. Measure worst-case
