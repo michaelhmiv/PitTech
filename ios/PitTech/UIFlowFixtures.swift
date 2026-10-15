@@ -10,6 +10,13 @@ struct ScreenshotTextSize: ViewModifier {
 @MainActor extension CookStore {
     func prepareUIFlowFixture() {
         guard CommandLine.arguments.contains("--ui-test-reset") else { return }
+        // A clean automation library also needs clean owned photo files. Fixed-ID
+        // server fixtures are imported again in the enlarged-text app launch.
+        let attachments = storageURL.deletingLastPathComponent().appendingPathComponent("attachments", isDirectory: true)
+        if FileManager.default.fileExists(atPath: attachments.path) {
+            do { try FileManager.default.removeItem(at: attachments) }
+            catch { assertionFailure("The UI fixture could not reset its owned photos."); return }
+        }
         library = PitTechLibrary(); noteDrafts = []
         if CommandLine.arguments.contains("--ui-test-pack") { prepareIncomingPackFixture(); return }
         if !CommandLine.arguments.contains("--ui-test-empty") {
