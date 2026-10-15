@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { migrate } from '../src/migrate.ts';
@@ -7,14 +8,25 @@ import { PostgresRepository, type Pack } from '../src/repository.ts';
 import { LIMITS, ownerHash, newCode } from '../src/core.ts';
 import { budgets } from './helpers.ts';
 
-test('real Postgres: repeatable migrations, concurrent budgets/rates, independent pools, owner operations and cleanup leases', { skip: !process.env.TEST_DATABASE_URL && process.env.REQUIRE_DB_TESTS !== '1' }, async () => {
+test('real Postgres: repeatable migrations, concurrent budgets/rates, least-privilege runtime pools, owner operations and cleanup leases', { skip: !process.env.TEST_DATABASE_URL && process.env.REQUIRE_DB_TESTS !== '1' }, async () => {
   const url = process.env.TEST_DATABASE_URL;
   assert.ok(url, 'TEST_DATABASE_URL is required in the backend Actions gate');
   assert.match(new URL(url).pathname, /^\/pittech_test[a-z_\d]*$/i, 'Use a dedicated disposable test database');
-  const a = new Pool({ connectionString: url, max: 15 }), b = new Pool({ connectionString: url, max: 5 });
+  const a = new Pool({ connectionString: url, max: 5 });
+  let runtimeA: Pool | undefined, runtimeB: Pool | undefined;
   try {
-    await migrate(a); await migrate(a); await a.query('DELETE FROM relay.packs'); await a.query('DELETE FROM relay.daily_budgets'); await a.query('DELETE FROM relay.rate_buckets');
-    const repo = new PostgresRepository(a), other = new PostgresRepository(b), owner = randomBytes(32).toString('base64url'), now = Date.now();
+    await migrate(a); await migrate(a);
+    const grants = await readFile(new URL('../operations/relay-runtime-role.sql', import.meta.url), 'utf8');
+    await a.query(grants); await a.query(grants);
+    runtimeA = new Pool({ connectionString: url, max: 15, options: '-c role=pittech_relay_runtime' });
+    runtimeB = new Pool({ connectionString: url, max: 5, options: '-c role=pittech_relay_runtime' });
+    assert.equal((await runtimeA.query('SELECT current_user')).rows[0].current_user, 'pittech_relay_runtime');
+    for (const sql of ['CREATE TABLE relay.forbidden(id integer)', 'CREATE TABLE public.forbidden(id integer)', 'ALTER TABLE relay.packs ADD COLUMN forbidden integer', 'TRUNCATE relay.packs', 'SELECT * FROM relay.schema_migrations', "UPDATE relay.schema_migrations SET sha256='changed'"]) {
+      await assert.rejects(runtimeA.query(sql), { code: '42501' });
+    }
+    await assert.rejects(migrate(runtimeA), { code: '42501' });
+    await a.query('DELETE FROM relay.packs'); await a.query('DELETE FROM relay.daily_budgets'); await a.query('DELETE FROM relay.rate_buckets');
+    const repo = new PostgresRepository(runtimeA), other = new PostgresRepository(runtimeB), owner = randomBytes(32).toString('base64url'), now = Date.now();
     const candidate = (): Pack => ({ code: newCode(), objectKey: `relay/${randomUUID()}.pittech`, ownerHash: ownerHash(owner), idempotencyKey: randomUUID(),
       sha256: 'a'.repeat(64), bytes: 100, kind: 'recipe', dishes: 1, createdAt: now, expiresAt: now + LIMITS.life, leaseUntil: 0, state: 'uploading' });
     const outcomes = await Promise.allSettled(Array.from({ length: 12 }, () => repo.reserve(candidate(), { ...budgets, storageBytes: 100 })));
@@ -34,5 +46,6 @@ test('real Postgres: repeatable migrations, concurrent budgets/rates, independen
     const reclaimed = await other.claim(now + 300001, 1); assert.equal(reclaimed.length, 1); await other.deleted(reclaimed[0]);
     assert.equal(await repo.get(pack.code), undefined);
     await assert.rejects(repo.reserve(candidate(), { ...budgets, dailyUploads: 1 }), { code: 'relay_budget_exhausted' });
-  } finally { await Promise.all([a.end(), b.end()]); }
+    await repo.prune(now + 4 * 86400000);
+  } finally { await Promise.all([a.end(), runtimeA?.end(), runtimeB?.end()]); }
 });
