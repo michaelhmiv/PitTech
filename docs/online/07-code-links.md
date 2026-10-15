@@ -12,6 +12,8 @@ draft revision still matches the frozen upload.
   both before the first upload; do not add either to library data or Cook Packs.
 - Pending uploads keep the exact exported bytes outside cloud backup. Retrying
   sends those bytes and the same identity, including after a process restart.
+- Preparation removes confirmed-upload files and unregistered crash leftovers older
+  than one day; registered interrupted uploads and fresh preparations remain intact.
 - Keep every issued capability when a draft is edited or re-shared. A new code
   does not overwrite management access to earlier codes.
 - Cancel aborts the request. It cannot promise the server rejected bytes already

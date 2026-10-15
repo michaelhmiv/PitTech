@@ -53,6 +53,7 @@ internal class RelayVault(context: Context) {
         } finally { bytes.fill(0) }
     }
     @Synchronized fun prepare(document: String, revision: Long, title: String, source: File): RelayOwnedShare {
+        prunePending()
         val previous = load(document)
         previous?.let {
             require(previous.receipt != null || previous.revoked) { "Retry the interrupted upload before starting a different share." }
@@ -64,6 +65,15 @@ internal class RelayVault(context: Context) {
         val target = pack(value); source.inputStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
         try { save(value) } catch (e: Throwable) { target.delete(); throw e }
         return value
+    }
+    /** Keep recoverable retries; only remove confirmed uploads and old unregistered crash leftovers. */
+    @Synchronized fun prunePending(now: Long = System.currentTimeMillis()) {
+        val records = all().associateBy { it.operation }
+        directory.listFiles().orEmpty().filter { it.extension == "pittech" }.forEach { file ->
+            if (runCatching { UUID.fromString(file.nameWithoutExtension) }.isFailure) return@forEach
+            val record = records[file.nameWithoutExtension]
+            if (record?.receipt != null || (record == null && file.lastModified() > 0 && now - file.lastModified() > 86_400_000L)) file.delete()
+        }
     }
     fun finish(value: RelayOwnedShare, receipt: RelayReceipt): RelayOwnedShare = value.copy(receipt = receipt).also { save(it); pack(value).delete() }
     private fun secret(create: Boolean): SecretKey {

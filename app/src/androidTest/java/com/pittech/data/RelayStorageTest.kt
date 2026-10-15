@@ -24,6 +24,12 @@ class RelayStorageTest {
             assertEquals(43, value.owner.length)
             val restarted = RelayVault(context).load(value.document)!!
             assertEquals(value.owner, restarted.owner); assertArrayEquals(source.readBytes(), vault.pack(restarted).readBytes())
+            val oldOrphan = File(context.noBackupFilesDir, "relay-v1/${UUID.randomUUID()}.pittech").apply { writeText("incomplete export"); check(setLastModified(System.currentTimeMillis() - 172_800_000L)) }
+            val freshOrphan = File(context.noBackupFilesDir, "relay-v1/${UUID.randomUUID()}.pittech").apply { writeText("being prepared") }
+            try {
+                vault.prunePending()
+                assertFalse(oldOrphan.exists()); assertTrue(freshOrphan.exists()); assertTrue(vault.pack(value).exists())
+            } finally { oldOrphan.delete(); freshOrphan.delete() }
             val encrypted = File(context.noBackupFilesDir, "relay-v1/${value.operation}.owner")
             assertFalse(String(encrypted.readBytes(), Charsets.ISO_8859_1).contains(value.owner))
             val key = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.getKey("pittech-relay-owner-v1", null)

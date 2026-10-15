@@ -46,7 +46,22 @@ struct NativeRelayVault {
         guard UUID(uuidString: value.id) != nil else { throw NativeRelayError.message("Saved share unavailable.") }
         return try directory().appendingPathComponent(value.id + ".pittech")
     }
+    /// Preserve immutable retries. A one-day grace protects preparation running in another task.
+    func prunePending(now: Date = .now) throws {
+        let records = Dictionary(uniqueKeysWithValues: try all().map { ($0.id, $0) })
+        let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: [.contentModificationDateKey])
+        for file in files where file.pathExtension == "pittech" {
+            let id = file.deletingPathExtension().lastPathComponent
+            guard UUID(uuidString: id) != nil else { continue }
+            let record = records[id]
+            let modified = try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            if record?.receipt != nil || (record == nil && modified.map { now.timeIntervalSince($0) > 86_400 } == true) {
+                try FileManager.default.removeItem(at: file)
+            }
+        }
+    }
     func prepare(_ document: String, revision: Double, title: String, bytes: Data) throws -> NativeRelayOwnedShare {
+        try prunePending()
         if let previous = try latest(document), previous.receipt == nil && !previous.revoked { throw NativeRelayError.message("Retry the interrupted upload before starting a different share.") }
         guard (1...NativeRelayProtocol.maximumBytes).contains(Int64(bytes.count)) else { throw NativeRelayError.message("Choose fewer dishes or photos.") }
         let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: [.fileSizeKey]).filter { $0.pathExtension == "pittech" }
