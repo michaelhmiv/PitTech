@@ -14,31 +14,33 @@ import org.junit.Test
 class CookPackCrossPlatformTest {
     @Test fun actualNativeRecordedCookPreservesDatesCelsiusAndHistoryChoice(): Unit = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
-        val database = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build(); val storage = PhotoStorage(context)
-        try {
-            val repository = CookRepository(database, storage); val transfer = PitTechDataTransfer(context, repository)
-            val active = repository.startCook(NewCookDraft("Keep this meal active"))
-            val pack = instrumentation.context.assets.open("cross-platform/native-cook-pack-cook-v1.pittech").use(transfer::previewCookPack)
-            assertEquals("cook", pack.cookPack!!.getString("kind")); assertEquals(1, pack.cookCount); assertEquals(1, pack.dishCount)
-            val history = pack.recordedCookOnly()
-            repeat(2) { repository.importSnapshot(history.snapshot, history.attachments) }
-            val cooks = database.cookDao().getAllCooks()
-            assertEquals(2, cooks.size); assertEquals(CookStatus.ACTIVE, cooks.single { it.id == active }.status)
-            val completed = cooks.single { it.status == CookStatus.COMPLETED }
-            assertEquals(1792013582659L, completed.startedAtUtcMillis); assertEquals(1792013582669L, completed.endedAtUtcMillis)
-            assertEquals("Chicken", database.cookDao().getDishesForCook(completed.id).single().name)
-            val reading = database.cookDao().getAllSensorReadings().single()
-            assertEquals(74.125, reading.value, 0.0); assertEquals("°C", reading.unit)
-            assertEquals(1792013582660L, reading.measuredAtUtcMillis)
-            assertEquals(1, database.cookDao().getAllProbes().size)
-            assertTrue(database.recipeDao().recipes().isEmpty()); assertTrue(database.reminderDao().rules().isEmpty())
-            assertTrue(database.recordingDao().getAllRecordings().isEmpty())
-            val photo = database.cookDao().getAllPhotos().single(); val bytes = storage.read(photo.relativePath)!!
-            CookPackPhoto.validatePublic(bytes)
-            val image = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            assertEquals(8, image.width); assertEquals(4, image.height); image.recycle()
-        } finally {
-            database.cookDao().getAllPhotos().forEach { storage.delete(it.relativePath) }; database.close()
+        for (filename in listOf("native-cook-pack-cook-v1.pittech", "relay-native-cook-v1.pittech")) {
+            val database = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build(); val storage = PhotoStorage(context)
+            try {
+                val repository = CookRepository(database, storage); val transfer = PitTechDataTransfer(context, repository)
+                val active = repository.startCook(NewCookDraft("Keep this meal active"))
+                val pack = instrumentation.context.assets.open("cross-platform/$filename").use(transfer::previewCookPack)
+                assertEquals("cook", pack.cookPack!!.getString("kind")); assertEquals(1, pack.cookCount); assertEquals(1, pack.dishCount)
+                val history = pack.recordedCookOnly()
+                repeat(2) { repository.importSnapshot(history.snapshot, history.attachments) }
+                val cooks = database.cookDao().getAllCooks()
+                assertEquals(2, cooks.size); assertEquals(CookStatus.ACTIVE, cooks.single { it.id == active }.status)
+                val completed = cooks.single { it.status == CookStatus.COMPLETED }
+                assertEquals(1792013582659L, completed.startedAtUtcMillis); assertEquals(1792013582669L, completed.endedAtUtcMillis)
+                assertEquals("Chicken", database.cookDao().getDishesForCook(completed.id).single().name)
+                val reading = database.cookDao().getAllSensorReadings().single()
+                assertEquals(74.125, reading.value, 0.0); assertEquals("°C", reading.unit)
+                assertEquals(1792013582660L, reading.measuredAtUtcMillis)
+                assertEquals(1, database.cookDao().getAllProbes().size)
+                assertTrue(database.recipeDao().recipes().isEmpty()); assertTrue(database.reminderDao().rules().isEmpty())
+                assertTrue(database.recordingDao().getAllRecordings().isEmpty())
+                val photo = database.cookDao().getAllPhotos().single(); val bytes = storage.read(photo.relativePath)!!
+                CookPackPhoto.validatePublic(bytes)
+                val image = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                assertEquals(8, image.width); assertEquals(4, image.height); image.recycle()
+            } finally {
+                database.cookDao().getAllPhotos().forEach { storage.delete(it.relativePath) }; database.close()
+            }
         }
     }
 

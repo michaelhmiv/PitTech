@@ -1,0 +1,24 @@
+{
+  "generatedWith": "Node 22.23.3, locked sharp/libvips",
+  "verification": "Development generation; backend Actions and native consumers pending",
+  "validatorBlobSHA": "6267eaeba3c2246913fcd621dda464682e1c82ff",
+  "lockfileSHA256": "c6eb48b1d999174e7efba1f556367e2d9aa2ce47550433bee05cf9a2d7da6868",
+  "fixtures": [
+    {
+      "source": "app/src/androidTest/assets/cross-platform/native-cook-pack-cook-v1.pittech",
+      "sourceSHA256": "a220f88bcfaf11e740f6009b6aa8cdf02e4150907bf6b3006246b48062abf7d8",
+      "sourceBytes": 4699,
+      "destination": "app/src/androidTest/assets/cross-platform/relay-native-cook-v1.pittech",
+      "sha256": "9017b3484360bc58539e18b3a36e3db5c35ba685bd038926887b93d7b19ae7c2",
+      "bytes": 9648
+    },
+    {
+      "source": "ios/PitTechTests/Fixtures/android-cook-pack-cook-v1.pittech",
+      "sourceSHA256": "41ec6ebebe9600a3b81e1360a70a76b3800063ac1cbc0db1516a87152d2ea760",
+      "sourceBytes": 12278,
+      "destination": "ios/PitTechTests/Fixtures/relay-android-cook-v1.pittech",
+      "sha256": "061b1d12fd49bcc3747f31fc507d8c5eaac2c24d1a3716fe0a6cec9372b8aded",
+      "bytes": 15277
+    }
+  ]
+}

@@ -13,7 +13,8 @@ OS limitation. Completion requires both clients and CI evidence. Existing
 | Full backup limits (Android 350/300/45 MiB, 10k entries; iOS 64/64/16 MiB, 1k) | Port iOS bounded streaming | 03 | Cross-platform boundaries, peak memory and ZIP attack fixtures |
 | iOS CSV/workbook export equivalents | Port | 03 | Independent reader; units/timezones/escaping/relationships |
 | One guide toggle, per-dish reference, dashed curves | Implemented on both; Actions/visual gate pending | 04 | Pinned stories; independent visibility/reminders; negative offsets; gaps; scope-safe channel mapping |
-| Native share-card rendering and system share | Implemented on both; Actions/pixel review pending | 05 | Shared chart/photo/sparse/Unicode/relay fixtures; native PNGs; recipe/meal scope; preview and canceled share |
+| Native share-card rendering and system share | Implemented on both; exported pixels reviewed; final Actions pending | 05 | Shared chart/photo/sparse/Unicode/relay fixtures; native PNGs; recipe/meal scope; preview and canceled share |
+| Anonymous Cook Pack relay | Shared server draft; both native clients pending PR 07 | 06–07 | Six actual Android/iOS packs validate; each client consumes canonical opposite-platform cook fixtures. Backend Actions/Postgres/container and staging gates pending |
 | Code entry, Universal/App Links | Port both | 07 | Signed artifacts, installed/uninstalled fallback, cancel import |
 | Secure magic-link/code sessions and account controls | Port both | 09 | Replays, code retries, sign-out/account switch/delete |
 | Discovery/save/cook available signed out | Port both | 11 | Offline owned copy; source removed; no auth barrier |

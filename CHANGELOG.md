@@ -1,5 +1,9 @@
 # Changelog
 
+- Android and iOS post-launch draft: prepare an anonymous Cook Pack code relay
+  with explicit owner management, scoped pack validation and expiry. Sharing by
+  code remains unavailable in the apps until the client and release gates pass.
+
 Important, user-visible changes to PitTech are recorded here. GitHub Releases provide version-specific technical details; Google Play and App Store update descriptions are separately reviewed and platform-specific.
 
 This file begins with a truthful **development baseline** rather than inventing releases or historical version tags.
