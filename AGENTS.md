@@ -120,6 +120,9 @@ The owner requires iOS/Android parity going forward:
 - Native public archive builders export selected sharing drafts only. Saved public
   stories retain their public-only gap/quality/verdict contract; edited instructions
   never replace frozen measured facts. Both native writers emit CI fixtures.
+- Public writes persist the exact selected body and operation before network access,
+  retry under the initiating account only, and retain ambiguous outcomes. Named
+  credit and public cookbook visibility require separate explicit previews.
 - Public recipe/profile links navigate only; never authenticate or import on open.
   Public profile visibility is checked live; see `docs/online/12-publishing.md`.
 - Signed-out discovery uses bounded public-only caches and exact-revision Cook Pack

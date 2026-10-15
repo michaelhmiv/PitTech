@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import Observation
 
 @MainActor protocol NativePublicationSession: AnyObject {
@@ -13,9 +14,10 @@ struct NativePublicationReceipt: Codable, Equatable {
     let revisionId: String
     let revision: Int
     let url: String
+    var kind: String? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0,
-              url == "https://pittech.app/c/" + id else { throw NativePublicationError.invalid }
+              url == "https://pittech.app/c/" + id, kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true else { throw NativePublicationError.invalid }
     }
 }
 struct NativePublicationOperation: Codable {
@@ -29,6 +31,7 @@ struct NativePublicationOperation: Codable {
     let expectedRevision: String?
     let draftId: String?
     var rejected = false
+    var publicationKind: String? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: userId) != nil,
               sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
@@ -39,8 +42,9 @@ struct NativePublicationOperation: Codable {
         let recipe = item && segments.count == 4
         let like = item && segments.count == 5 && segments[4] == "like"
         let archive = method == "POST" && path == "/v1/recipes" || method == "PUT" && recipe
+        guard publicationKind.map({ archive && ["recipe", "collection", "attempt"].contains($0) }) ?? true else { throw NativePublicationError.invalid }
         guard archive && contentType == "application/zip" && bytes > 0 && (method != "PUT" || expectedRevision != nil)
-                || !archive && contentType == "application/json" && bytes <= 8192 &&
+                || !archive && draftId == nil && contentType == "application/json" && bytes <= 8192 &&
                     (path == "/v1/me/profile" && method == "PUT" || like && ["POST", "DELETE"].contains(method) || recipe && method == "DELETE" && expectedRevision != nil) else { throw NativePublicationError.invalid }
     }
 }
@@ -79,7 +83,7 @@ private struct NativePublicationState: Codable {
     }
     func pending(_ user: String) throws -> NativePublicationOperation? { try load(user).pending }
     func binding(_ user: String, draft: String) throws -> NativePublicationReceipt? { try load(user).bindings[draft] }
-    func prepare(user: String, method: String, path: String, bytes: Data, archive: Bool, expected: String? = nil, draft: String? = nil) throws -> NativePublicationOperation {
+    func prepare(user: String, method: String, path: String, bytes: Data, archive: Bool, expected: String? = nil, draft: String? = nil, kind: String? = nil) throws -> NativePublicationOperation {
         var state = try load(user); guard state.pending == nil else { throw NativePublicationError.pending }
         try prepareDirectory()
         // The app is the only writer; this main-actor transaction cannot race another writer.
@@ -96,7 +100,7 @@ private struct NativePublicationState: Codable {
             else { try FileManager.default.removeItem(at: file) }
         }
         guard used + bytes.count <= 128 * 1024 * 1024 else { throw NativePublicationError.limits }
-        let operation = NativePublicationOperation(id: UUID().uuidString.lowercased(), userId: user, method: method, path: path, contentType: archive ? "application/zip" : "application/json", sha256: NativeRelayProtocol.hash(bytes), bytes: bytes.count, expectedRevision: expected, draftId: draft)
+        let operation = NativePublicationOperation(id: UUID().uuidString.lowercased(), userId: user, method: method, path: path, contentType: archive ? "application/zip" : "application/json", sha256: NativeRelayProtocol.hash(bytes), bytes: bytes.count, expectedRevision: expected, draftId: draft, publicationKind: kind)
         try operation.validate(); let target = try body(operation)
         try bytes.write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         // An uncertain metadata failure must not delete a possibly referenced body.
@@ -119,10 +123,23 @@ private struct NativePublicationState: Codable {
     }
     func finish(_ operation: NativePublicationOperation, response: Data) throws {
         var state = try load(operation.userId); guard state.pending?.id == operation.id else { throw NativePublicationError.pending }
-        if let draft = operation.draftId {
-            let receipt = try JSONDecoder().decode(NativePublicationReceipt.self, from: response); try receipt.validate()
+        if operation.contentType == "application/zip" {
+            var receipt = try JSONDecoder().decode(NativePublicationReceipt.self, from: response); try receipt.validate(); receipt.kind = operation.publicationKind
             if operation.method == "PUT" { guard operation.path == "/v1/recipes/" + receipt.id else { throw NativePublicationError.invalid } }
-            state.bindings[draft] = receipt
+            if let draft = operation.draftId { state.bindings[draft] = receipt }
+        } else {
+            guard let value = try JSONSerialization.jsonObject(with: response) as? [String: Any] else { throw NativePublicationError.invalid }
+            func boolean(_ key: String) -> Bool? {
+                guard let number = value[key] as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }; return number.boolValue
+            }
+            if operation.path == "/v1/me/profile" {
+                guard let name = value["displayName"] as? String, name.utf16.count <= 160, boolean("isPublic") != nil,
+                      value["handle"] is NSNull || (value["handle"] as? String)?.range(of: "^[a-z0-9_]{3,24}$", options: .regularExpression) != nil else { throw NativePublicationError.invalid }
+            } else {
+                guard let id = operation.path.split(separator: "/").dropFirst(2).first, value["id"] as? String == String(id) else { throw NativePublicationError.invalid }
+                if operation.path.hasSuffix("/like") { guard boolean("liked") == (operation.method == "POST") else { throw NativePublicationError.invalid } }
+                else { guard boolean("unpublished") == true else { throw NativePublicationError.invalid } }
+            }
         }
         state.pending = nil; try write(state, user: operation.userId); try? FileManager.default.removeItem(at: body(operation))
     }
@@ -139,7 +156,9 @@ struct NativePublicationClient: NativePublicationAPI {
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control"); request.setValue("application/json", forHTTPHeaderField: "Accept"); return request
     }
     func read(_ path: String, access: String) async throws -> Data {
-        guard path == "/v1/me/profile" || path.range(of: "^/v1/me/recipes(\\?cursor=[a-f0-9-]{36})?$", options: .regularExpression) != nil else { throw NativePublicationError.invalid }
+        let ownerItem = path.split(separator: "/")
+        let exactOwner = ownerItem.count == 4 && ownerItem[0] == "v1" && ownerItem[1] == "me" && ownerItem[2] == "recipes" && UUID(uuidString: String(ownerItem[3])) != nil
+        guard exactOwner || path == "/v1/me/profile" || path.range(of: "^/v1/me/recipes(\\?cursor=[a-f0-9-]{36})?$", options: .regularExpression) != nil else { throw NativePublicationError.invalid }
         return try await NativeRelayTransport(configuration: configuration, responseError: { NativePublicError.status($0) }, maximumResponseBytes: 65536).run(request(path, access: access)).data
     }
     func write(_ operation: NativePublicationOperation, file: URL, access: String) async throws -> Data {
@@ -187,7 +206,7 @@ struct NativePublicationClient: NativePublicationAPI {
     func submit(draft: String, prepared: NativePreparedPublication, update: NativePublicationReceipt? = nil) async throws -> Data {
         guard !busy else { throw NativePublicationError.pending }; guard let userId else { throw NativePublicationError.accountChanged }
         busy = true; defer { busy = false }; try update?.validate()
-        let operation = try store.prepare(user: userId, method: update == nil ? "POST" : "PUT", path: update.map { "/v1/recipes/" + $0.id } ?? "/v1/recipes", bytes: prepared.bytes, archive: true, expected: update?.revisionId, draft: draft)
+        let operation = try store.prepare(user: userId, method: update == nil ? "POST" : "PUT", path: update.map { "/v1/recipes/" + $0.id } ?? "/v1/recipes", bytes: prepared.bytes, archive: true, expected: update?.revisionId, draft: draft, kind: prepared.payload.objectValue?["kind"]?.stringValue)
         return try await execute(operation)
     }
     func json(method: String, path: String, body: Data = Data(), expected: String? = nil) async throws -> Data {
@@ -199,6 +218,13 @@ struct NativePublicationClient: NativePublicationAPI {
     func read(_ path: String) async throws -> Data {
         guard let userId else { throw NativePublicationError.accountChanged }; let token = try await session.access(forceRefresh: false)
         guard userId == self.userId else { throw NativePublicationError.accountChanged }
-        let bytes = try await api.read(path, access: token); guard bytes.count <= 65536 else { throw NativePublicationError.invalid }; guard userId == self.userId else { throw NativePublicationError.accountChanged }; return bytes
+        let bytes: Data
+        do { bytes = try await api.read(path, access: token) }
+        catch NativePublicError.status(401) {
+            let refreshed = try await session.access(forceRefresh: true)
+            guard userId == self.userId else { throw NativePublicationError.accountChanged }; try Task.checkCancellation()
+            bytes = try await api.read(path, access: refreshed)
+        }
+        guard bytes.count <= 65536 else { throw NativePublicationError.invalid }; guard userId == self.userId else { throw NativePublicationError.accountChanged }; return bytes
     }
 }

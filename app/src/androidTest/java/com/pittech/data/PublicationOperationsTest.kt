@@ -20,14 +20,14 @@ import java.util.UUID
         val root=root()
         try {
             val store=PublicationOperationsStore(root); val session=Session(user); val api=API(); val bytes="exact selected public archive".toByteArray()
-            val op=store.prepare(user,"POST","/v1/recipes",bytes,true,draft=draft); api.loseResponse=true
+            val op=store.prepare(user,"POST","/v1/recipes",bytes,true,draft=draft,kind="attempt"); api.loseResponse=true
             try { PublicationWriter(session,store,api).recover(); fail("Expected lost response") } catch(_: IOException) { }
             assertEquals(op.id,store.pending(user)?.id)
             assertThrows(Exception::class.java) { store.discardRejected(user) }
             val restarted=PublicationOperationsStore(root); PublicationWriter(session,restarted,api).recover()
             assertEquals(1,api.effects.size); assertEquals(listOf(op.id,op.id),api.operations)
             api.bodies.forEach { assertArrayEquals(bytes,it) }
-            assertNull(restarted.pending(user)); assertEquals(api.receipt.id,restarted.binding(user,draft)?.id); assertFalse(store.body(op).exists())
+            assertNull(restarted.pending(user)); assertEquals(api.receipt.id,restarted.binding(user,draft)?.id); assertEquals("attempt",restarted.binding(user,draft)?.kind); assertFalse(store.body(op).exists())
         } finally { root.deleteRecursively() }
     }
     @Test fun accountChangeDuringAuthorizationAndCorruptBodyNeverReachServer() = runBlocking {
@@ -56,17 +56,24 @@ import java.util.UUID
             assertEquals(conflict.id,store.pending(user)?.id); assertEquals(true,store.pending(user)?.rejected)
             assertThrows(Exception::class.java) { store.prepare(user,"POST","/v1/recipes","other".toByteArray(),true) }
             store.discardRejected(user); assertNull(store.pending(user))
+            val malformed=store.prepare(user,"POST","/v1/recipes/"+api.receipt.id+"/like","{}".toByteArray(),false)
+            try { PublicationWriter(session,store,api).recover(); fail("Malformed success cleared request") } catch(_: Exception) { }
+            assertEquals(malformed.id,store.pending(user)?.id); assertEquals(false,store.pending(user)?.rejected); assertThrows(Exception::class.java) { store.discardRejected(user) }
+            api.readStatuses+=401; session.refreshes.clear()
+            PublicationWriter(session,store,api).read("/v1/me/profile")
+            assertEquals(2,api.reads); assertEquals(listOf(false,true),session.refreshes); assertEquals(malformed.id,store.pending(user)?.id)
         } finally { root.deleteRecursively() }
     }
     private class Session(var user: String?): PublicationSession {
         val refreshes=mutableListOf<Boolean>(); var onAccess: (() -> Unit)?=null
         override suspend fun userId()=user
-        override suspend fun access(forceRefresh: Boolean): String { refreshes+=forceRefresh; onAccess?.invoke(); return (if(forceRefresh)"B" else "A").repeat(43) }
+        override suspend fun access(forceRefresh: Boolean): String { refreshes+=forceRefresh; onAccess?.invoke(); return if(forceRefresh)"B".repeat(42)+"A" else "A".repeat(43) }
     }
     private class API: PublicationAPI {
         val receipt=PublicationReceipt("dddddddd-dddd-4ddd-dddd-dddddddddddd","eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee",1,"https://pittech.app/c/dddddddd-dddd-4ddd-dddd-dddddddddddd")
         val operations=mutableListOf<String>(); val bodies=mutableListOf<ByteArray>(); val effects=mutableSetOf<String>(); val statuses=mutableListOf<Int>(); var loseResponse=false
-        override suspend fun read(path: String, access: String)=JSONObject()
+        val readStatuses=mutableListOf<Int>(); var reads=0
+        override suspend fun read(path: String, access: String): JSONObject { reads++; if(readStatuses.isNotEmpty())throw AccountFailure(readStatuses.removeAt(0)); return JSONObject() }
         override suspend fun write(operation: PublicationOperation, file: File, access: String): JSONObject {
             operations+=operation.id; bodies+=file.readBytes()
             if(statuses.isNotEmpty())throw AccountFailure(statuses.removeAt(0))

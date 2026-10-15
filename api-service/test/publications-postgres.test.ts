@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import sharp from 'sharp';
-import { digest } from '../src/core.ts';
+import { digest,ApiError } from '../src/core.ts';
 import { migrate } from '../src/migrate.ts';
 import { Publications } from '../src/publications.ts';
 import { canonicalPublication,type PublicationPayload } from '../src/publication-pack.ts';
@@ -40,6 +40,8 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     const one=await prepare(),operation=randomUUID(),posted=await publications.publish(alice,operation,one.validated,one.file);
     assert.deepEqual(await publications.publish(alice,operation,one.validated,one.file),posted);
     await assert.rejects(publications.publish(alice,operation,{...one.validated,sha256:'b'.repeat(64)},one.file),{code:'retry_content_changed'});
+    const ownerMetadata=await publications.myItem(alice,posted.id);assert.equal(ownerMetadata.revisionId,posted.revisionId);assert.equal(ownerMetadata.status,'active');assert.deepEqual(Object.keys(ownerMetadata).sort(),['id','identityMode','revision','revisionId','status','title']);
+    await assert.rejects(publications.myItem(bob,posted.id),{code:'publication_unavailable'});await assert.rejects(publications.myItem(alice,randomUUID()),{code:'publication_unavailable'});
     const publicOne=await publications.get(posted.id);assert.equal(publicOne.credit.displayName,'a PitTech cook');
     assert.ok(!JSON.stringify(publicOne).includes(alice));assert.ok(!JSON.stringify(publicOne).includes('private-alice'));
     await publications.updateProfile(alice,randomUUID(),{handle:'oak_cook',displayName:'Oak Cook',isPublic:true});
@@ -94,7 +96,7 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     const served=await publications.media(photoPost.id,assetId);assert.equal(digest(served.bytes),served.sha256);assert.equal((await sharp(served.bytes).metadata()).exif,undefined);
     await publications.unpublish(alice,photoPost.id,randomUUID(),photoPost.revisionId);await assert.rejects(publications.media(photoPost.id,assetId),{code:'publication_unavailable'});
     const logs:unknown[]=[],relay=new Relay(new MemoryRepository(),storage,budgets,()=>now);
-    const auth={user:async(token:unknown)=>{if(token!=='A'.repeat(43))throw new Error('private identity rejected');return {id:bob,email:'private-bob@example.com'};}} as Authentication;
+    const auth={user:async(token:unknown)=>{if(token!=='A'.repeat(43))throw new ApiError(401,'authentication_required');return {id:bob,email:'private-bob@example.com'};}} as Authentication;
     const server=makeServer(relay,{ipKey:'x'.repeat(32),uploadsEnabled:false,publications,auth,log:x=>logs.push(x)});server.listen(0,'127.0.0.1');await once(server,'listening');
     try{
       const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
@@ -104,6 +106,9 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       const publishResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(publishResponse.status,201);const published=await publishResponse.json();
       const retryResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(retryResponse.status,201);assert.deepEqual(await retryResponse.json(),published);
       assert.equal((await fetch(origin+'/v1/recipes/'+published.id)).status,200);
+      assert.equal((await fetch(origin+'/v1/me/recipes/'+published.id)).status,401);
+      const ownerRead=await fetch(origin+'/v1/me/recipes/'+published.id,{headers:{Authorization:headers.Authorization}});assert.equal(ownerRead.status,200);assert.equal(ownerRead.headers.get('cache-control'),'no-store');assert.equal((await ownerRead.json()).revisionId,published.revisionId);
+      assert.equal((await fetch(origin+'/v1/me/recipes/'+posted.id,{headers:{Authorization:headers.Authorization}})).status,404);
       const page=await fetch(origin+'/c/'+published.id);assert.equal(page.status,200);const html=await page.text();
       assert.ok(html.includes('pittech://recipe/'+published.id));assert.ok(html.includes(raw.recipes[0].title));
       assert.ok(!html.includes(bob));assert.ok(!html.includes('private-bob'));

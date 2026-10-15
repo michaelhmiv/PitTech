@@ -66,7 +66,10 @@ import XCTest
         let recorded = measured.payload.objectValue?["recipes"]?.arrayValue?.first?.objectValue?["story"]?.objectValue?["verdict"]?.objectValue
         XCTAssertEqual(recorded?["rating"]?.numberValue, 5); XCTAssertEqual(recorded?["notes"]?.stringValue, "Frozen verdict")
         let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        try publication.bytes.write(to: folder.appendingPathComponent("pittech-native-publication.pittech"), options: .atomic)
+        let exported = folder.appendingPathComponent("pittech-native-publication.pittech")
+        try publication.bytes.write(to: exported, options: .atomic)
+        let recovered = try NativePreparedPublication.pending(file: exported)
+        XCTAssertEqual(recovered.payload, publication.payload); XCTAssertEqual(recovered.photos, publication.photos); XCTAssertEqual(recovered.bytes, publication.bytes)
     }
     func testCacheRestartsOfflineAndKnownUnavailableRecipeDoesNotReuseStaleRemotePreview() async throws {
         let (_, fixture) = try fixture(),root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -20,7 +20,7 @@ final class MealRecipeFlowsTests: XCTestCase {
                 start.press(forDuration: 0.01, thenDragTo: end)
                 continue
             }
-            if app.scrollViews["relay-import-content"].exists, let navigation {
+            if (app.scrollViews["relay-import-content"].exists || app.scrollViews["publication-content"].exists || app.scrollViews["cookbook-content"].exists || app.scrollViews["sharing-draft-content"].exists), let navigation {
                 // The modal scroll view can also report an infinite AX frame.
                 // Its finite navigation bar anchors an ordinary content-gutter swipe.
                 let top = navigation.frame.maxY + 12
@@ -73,6 +73,34 @@ final class MealRecipeFlowsTests: XCTestCase {
         }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testSelectedPublicationPreviewAndCookbookChangesRequireSeparateConfirmationsAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--publishing-ui-test"] + (large ? ["--screenshot-large-text"] : []); app.launch()
+            let open = app.buttons["sharing-publish"]; reveal(open, app: app); open.tap()
+            let prepare = app.buttons["publication-prepare"]; reveal(prepare, app: app); prepare.tap()
+            XCTAssertTrue(app.staticTexts["publication-preview-title"].waitForExistence(timeout: 15))
+            let confirm = app.buttons["publication-confirm"]; reveal(confirm, app: app); XCTAssertFalse(confirm.isEnabled)
+            capture(large ? "Native publication preview large text" : "Native publication preview")
+            let reviewed = app.switches["publication-reviewed"]; reveal(reviewed, app: app); reviewed.tap()
+            reveal(confirm, app: app); XCTAssertTrue(confirm.isEnabled); confirm.tap()
+            XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15)); capture(large ? "Native publication complete large text" : "Native publication complete")
+            app.buttons["publication-done"].tap()
+            reveal(open, app: app); open.tap(); reveal(prepare, app: app); prepare.tap()
+            reveal(confirm, app: app); XCTAssertEqual(confirm.label, "Publish this update"); XCTAssertFalse(confirm.isEnabled)
+            reveal(reviewed, app: app); reviewed.tap(); reveal(confirm, app: app); confirm.tap()
+            XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15)); app.buttons["publication-done"].tap()
+            let cookbook = app.buttons["publication-test-cookbook"]; reveal(cookbook, app: app); cookbook.tap()
+            let name = app.textFields["cookbook-name"]; reveal(name, app: app); XCTAssertTrue(name.waitForExistence(timeout: 15))
+            let publicToggle = app.switches["cookbook-public"]; reveal(publicToggle, app: app); publicToggle.tap()
+            let preview = app.buttons["cookbook-preview"]; reveal(preview, app: app); preview.tap()
+            let save = app.buttons["cookbook-save"]; reveal(save, app: app); capture(large ? "Native cookbook opt-in preview large text" : "Native cookbook opt-in preview"); save.tap()
+            let revision = app.staticTexts["Public · revision 2 · anonymous"]; reveal(revision, app: app); XCTAssertTrue(revision.waitForExistence(timeout: 15))
+            let remove = app.buttons["Remove from public access"]; reveal(remove, app: app); remove.tap()
+            let removeConfirm = app.buttons["cookbook-unpublish-confirm"]; XCTAssertTrue(removeConfirm.waitForExistence(timeout: 10)); removeConfirm.tap()
+            let removed = app.staticTexts["Removed from public access"]; reveal(removed, app: app); XCTAssertTrue(removed.waitForExistence(timeout: 15))
+            app.terminate()
+        }
+    }
     func testSignedOutDiscoverySavesPrivateCopiesAndStartsANewMealAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication();app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--discovery-ui-test"] + (large ? ["--screenshot-large-text"] : []);app.launch()

@@ -244,6 +244,12 @@ export class Publications {
     const row=(await this.pool.query('SELECT handle,display_name,is_public FROM publications.profiles WHERE user_id=$1',[user])).rows[0];
     return {handle:row?.handle??null,displayName:row?.display_name??'',isPublic:row?.is_public??false};
   }
+  async myItem(user:string,id:string){
+    if(!uuid(id))throw missing();
+    const r=(await this.pool.query('SELECT i.id,i.status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.author_id=$2 AND i.status<>\'purged\'',[id,user])).rows[0];
+    if(!r)throw missing();
+    return {id:r.id,status:r.status,revisionId:r.revision_id,revision:r.revision_no,title:r.title,identityMode:r.identity_mode};
+  }
   async myItems(user:string,cursor?:string){
     if(cursor&&!uuid(cursor))throw new ApiError(400,'invalid_cursor');
     const rows=(await this.pool.query('SELECT i.id,i.status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.author_id=$1 AND i.status<>\'purged\' AND ($2::uuid IS NULL OR i.id>$2) ORDER BY i.id LIMIT 21',[user,cursor??null])).rows;
