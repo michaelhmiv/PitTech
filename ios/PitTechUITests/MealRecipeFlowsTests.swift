@@ -12,19 +12,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let scroll = cookScroll.exists && cookScroll.isHittable ? cookScroll : app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
             if let scroll, scroll.exists && scroll.isHittable {
-                // Keep vertical scrolling outside chart scrubbing and other child gestures.
-                let viewport = scroll.frame.intersection(app.windows.firstMatch.frame)
-                let upper = max(top, viewport.minY) + 24
-                let lower = min(bottom, viewport.maxY) - 24
-                let x = viewport.minX + 8
-                let origin = app.coordinate(withNormalizedOffset: .zero)
-                let nearTop = origin.withOffset(CGVector(dx: x, dy: upper))
-                let nearBottom = origin.withOffset(CGVector(dx: x, dy: lower))
-                if element.exists && element.frame.minY < top + 8 {
-                    nearTop.press(forDuration: 0.05, thenDragTo: nearBottom)
-                } else {
-                    nearBottom.press(forDuration: 0.05, thenDragTo: nearTop)
-                }
+                if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
@@ -64,6 +52,10 @@ final class MealRecipeFlowsTests: XCTestCase {
             let charts = app.segmentedControls.buttons["Charts"]; reveal(charts, app: app); charts.tap()
             let legend = app.staticTexts["guide-chart-legend"]; reveal(legend, app: app)
             capture(large ? "Native Show guide Charts large text" : "Native Show guide Charts")
+            let plot = app.descendants(matching: .any)["temperature-plot"].firstMatch; reveal(plot, app: app)
+            plot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.45, thenDragTo: plot.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
+            let sourceTime = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Author source time · ")).firstMatch
+            XCTAssertTrue(sourceTime.waitForExistence(timeout: 10), "A deliberate hold-and-drag still selects measured source data.")
             reveal(toggle, app: app); toggle.tap(); XCTAssertEqual(toggle.value as? String, "0")
             app.terminate()
             app.launchArguments = ["--screenshot-no-ads"] + (large ? ["--screenshot-large-text"] : [])
