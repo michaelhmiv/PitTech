@@ -73,13 +73,13 @@ struct NativePublicClient: NativePublicAPI {
     }
     func json(_ path: String) async throws -> Data {
         do { return try await NativeRelayTransport(responseError: { NativePublicError.status($0) }, maximumResponseBytes: 8 * 1024 * 1024).run(request(path)).data }
-        catch let error as NativePublicError { throw error } catch is CancellationError { throw CancellationError() } catch { throw NativePublicError.network }
+        catch let error as NativePublicError { throw error }; catch is CancellationError { throw CancellationError() }; catch { throw NativePublicError.network }
     }
     func pack(_ id: String, revision: String, to file: URL) async throws -> URL {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revision) != nil else { throw NativePublicError.invalid }
         var request = try request("/v1/recipes/" + id + "/pack"); request.setValue(revision, forHTTPHeaderField: "If-Match"); request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         do { let value = try await NativeRelayTransport(responseError: { NativePublicError.status($0) }).run(request, download: file); guard let file = value.file else { throw NativePublicError.invalid }; return file }
-        catch let error as NativePublicError { throw error } catch is CancellationError { throw CancellationError() } catch { throw NativePublicError.network }
+        catch let error as NativePublicError { throw error }; catch is CancellationError { throw CancellationError() }; catch { throw NativePublicError.network }
     }
     func image(_ id: String, asset: NativePublicDetail.Media) async throws -> Data {
         var request = try request("/v1/recipes/\(id)/assets/\(asset.id)"); request.setValue(asset.mimeType, forHTTPHeaderField: "Accept")
@@ -111,6 +111,7 @@ actor NativePublicCache {
     }
 }
 @MainActor @Observable final class NativePublicCoordinator {
+    static let productionEnabled = false
     let enabled: Bool
     private let api: any NativePublicAPI
     private let cache: NativePublicCache
@@ -123,7 +124,7 @@ actor NativePublicCache {
     private(set) var appliedSort = "liked"
     private(set) var appliedFood = ""
     private(set) var appliedQuery = ""
-    init(enabled: Bool = false, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache()) { self.enabled = enabled; self.api = api; self.cache = cache }
+    init(enabled: Bool = NativePublicCoordinator.productionEnabled, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache()) { self.enabled = enabled; self.api = api; self.cache = cache }
     private func pagePath(sort: String, food: String, query: String, cursor: String? = nil) -> String {
         var parts = URLComponents(); parts.path = "/v1/discover"; parts.queryItems = [URLQueryItem(name: "sort", value: sort), URLQueryItem(name: "food", value: food), URLQueryItem(name: "q", value: query)] + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
         return parts.string!

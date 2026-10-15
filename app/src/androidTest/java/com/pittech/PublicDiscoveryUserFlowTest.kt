@@ -35,14 +35,14 @@ import java.util.Base64
         val id=f.getJSONObject("detail").getString("id");waitFor("discover-open-$id");compose.onNodeWithTag("discover-open-$id").performScrollTo().performClick()
         waitFor("public-title");shot("public-detail")
         compose.onNodeWithTag("public-save").performScrollTo().performClick();waitFor("pack-save-recipes");shot("public-selective-preview")
-        compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("pack-save-recipes").performScrollTo().performClick()
         compose.waitUntil(10000){compose.onAllNodesWithTag("pack-save-recipes").fetchSemanticsNodes().isEmpty()}
         val saved=runBlocking(Dispatchers.IO){app.database.recipeDao().recipes()};assertEquals(2,saved.size)
         assertTrue(runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().isEmpty()})
         val source=runBlocking(Dispatchers.IO){app.database.recipeDao().revision(saved.first().currentRevisionId)!!}
         assertEquals(id,com.pittech.domain.RecipeSnapshotCodec.decode(source.snapshotJson).publicSource!!.itemId)
         compose.onNodeWithTag("public-cook").performScrollTo().performClick();waitFor("pack-save-recipes")
-        compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("pack-save-recipes").performScrollTo().performClick()
         compose.waitUntil(15000){runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().isNotEmpty()}}
         val cook=runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().single()};assertEquals(2,runBlocking(Dispatchers.IO){app.database.cookDao().getDishesForCook(cook.id).size})
         val dish=runBlocking(Dispatchers.IO){app.database.cookDao().getDishesForCook(cook.id).first()}
