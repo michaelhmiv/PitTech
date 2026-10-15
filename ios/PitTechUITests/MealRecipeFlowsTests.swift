@@ -157,7 +157,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             // iOS exposes the labeled Toggle container and the actual UISwitch separately.
             // Target the small control contained by this selected recipe row.
             let controls = app.switches.allElementsBoundByIndex.filter {
-                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 && first.frame.contains($0.frame) && $0.isHittable
+                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 && first.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) && $0.isHittable
             }
             XCTAssertEqual(controls.count, 1)
             controls.first!.tap()
