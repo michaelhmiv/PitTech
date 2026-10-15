@@ -117,6 +117,9 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
+- Native public archive builders export selected sharing drafts only. Saved public
+  stories retain their public-only gap/quality/verdict contract; edited instructions
+  never replace frozen measured facts. Both native writers emit CI fixtures.
 - Public recipe/profile links navigate only; never authenticate or import on open.
   Public profile visibility is checked live; see `docs/online/12-publishing.md`.
 - Signed-out discovery uses bounded public-only caches and exact-revision Cook Pack

@@ -28,11 +28,11 @@ export async function publicationCookPack(input:{id:string;revisionId:string;pay
     const snapshot={version:1,name:recipe.title,description:recipe.description,tags:recipe.tags,
       draft:{title:recipe.title,dishes:[{name:recipe.title,foodType:recipe.foodType,cut:recipe.cut??'',weight:recipe.weightGrams===null?'':String(recipe.weightGrams/1000),weightUnit:'kg',placement:'',grade:'',thickness:'',prep:recipe.method??'',
         ingredients:recipe.ingredients.map(i=>({name:i.name,stage:'main_ingredient',brand:'',amount:'',unit:i.amount}))}]},
-      instructions:recipe.instructions.map(i=>({id:randomUUID(),title:i.title,details:i.details,method:null,action:i.action,offsetMillis:i.suggestedOffsetMillis,durationMillis:null,sourceEventId:null})),
+      instructions:recipe.instructions.map(i=>({id:randomUUID(),title:i.title,details:i.details,method:i.method??null,action:i.action,offsetMillis:i.suggestedOffsetMillis,durationMillis:null,sourceEventId:null})),
       observations,targets:[],resultNotes:story?.verdict.notes??'',rating:story?.verdict.rating??null,cookAgain:story?.verdict.cookAgain??null,
       smokingAnchorUtcMillis:anchor,preferredPitTemperatureF:null,servings:'',publicSource:{...source,relativeTiming:true}};
     const snapshotJson=stable(snapshot),savedStory={version:1,attemptId:story?.attemptId??null,anchorUtcMillis:anchor,observations,readings,
-      connectionGaps:(story?.gaps??[]).flatMap(g=>[origin+g.fromMillis,origin+g.toMillis]),results:[]};
+      connectionGaps:(story?.gaps??[]).flatMap(g=>[origin+g.fromMillis,origin+g.toMillis]),results:[],publicStory:story};
     rows('recipes').push({id:recipeId,name:recipe.title,description:recipe.description,tagsJson:JSON.stringify(recipe.tags),currentRevisionId:revisionId,createdAtUtcMillis:now,updatedAtUtcMillis:now,favorite:false});
     rows('recipeRevisions').push({id:revisionId,recipeId,revisionNumber:1,snapshotSchemaVersion:1,snapshotJson,createdAtUtcMillis:now,changeNotes:'Saved public recipe'});
     const photoIds:string[]=[];

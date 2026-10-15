@@ -22,8 +22,17 @@ Implemented foundation:
   require the exact current source revision. Item-level lineage cycles and
   over-deep/broad source graphs are rejected.
 
-Still required in this same draft: explicit public archive builders from durable
-sharing drafts, exact selected-content/identity preview, interrupted-write
+Both native archive builders now project selected durable sharing drafts into
+publication archives. Selected photo derivatives strip metadata; edited
+instructions/methods stay separate from frozen measured stories/results. Stable
+actual-attempt aliases survive later publication revisions. Saved public stories
+carry their original public-only channel/gap/quality/verdict contract so a later
+variation does not reconstruct or invent the original cook. Local outage markers
+have unknown duration and are represented as markers, without an invented end.
+Native tests export actual publication archives for subsequent server validation;
+those new native results are pending in Actions.
+
+Still required in this same draft: exact selected-content/identity preview, interrupted-write
 recovery bound to the same signed-in account, native publish/update/unpublish,
 profile editing/opt-in preview, likes, modified variations and actual-attempt
 publication, native UI tests and visual review. This foundation does not claim

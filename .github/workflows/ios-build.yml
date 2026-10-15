@@ -35,3 +35,435 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'simulator'
     runs-on: macos-26
     timeout-minutes: 120
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v6
+
+      - name: Confirm Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
+
+      - name: Build for iOS Simulator
+        run: >-
+          xcodebuild
+          -project ios/PitTech.xcodeproj
+          -scheme PitTech
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build/ios-simulator
+          CODE_SIGNING_ALLOWED=YES
+          CODE_SIGN_IDENTITY=-
+          DEVELOPMENT_TEAM=R42LWFBXBH
+          ENTITLEMENTS_REQUIRED=YES
+          build
+
+      - name: Verify local Simulator ad-hoc signing
+        run: |
+          # Xcode embeds Simulator entitlements in a Mach-O section, not the
+          # device signature's entitlement blob. The real Keychain tests below
+          # verify access, device-only accessibility, replacement and deletion.
+          codesign --verify --verbose build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
+
+      - name: Build and inspect unsigned public Simulator configuration
+        run: |
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-public CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify-ios-public-telemetry.py build/ios-public/Build/Products/Release-iphonesimulator/PitTech.app
+          find build/ios-public/SourcePackages -name Package.resolved -o -name LICENSE -o -name LICENSE.txt > build/ios-public-dependency-evidence.txt
+
+      - name: Run native compatibility tests
+        run: |
+          set -euo pipefail
+          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
+          fixture_started_at=$(date +%s)
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test
+          python3 - "$fixture_started_at" <<'PYFIXTURE'
+          import pathlib, shutil, sys
+          # Xcode may run tests on a clone and shut it down. Read the fixture from its
+          # persistent data container instead of querying a booted Simulator.
+          root = pathlib.Path.home() / "Library/Developer/CoreSimulator/Devices"
+          destination = pathlib.Path("build/portable-fixtures")
+          destination.mkdir(parents=True, exist_ok=True)
+          for name in ["pittech-native-recipe-fixture.zip", "pittech-native-publication.pittech"]:
+              candidates = [p for p in root.rglob(name) if p.stat().st_mtime >= int(sys.argv[1])]
+              if not candidates:
+                  raise SystemExit("The native writer did not produce a fresh fixture: " + name)
+              shutil.copy2(max(candidates, key=lambda p: p.stat().st_mtime), destination / name)
+          PYFIXTURE
+          xcrun simctl shutdown all || true
+
+      - name: Export native UI screenshots and retain test diagnostics
+        if: always()
+        run: |
+          if [[ -f build/ios-tests.xcresult/Info.plist ]]; then
+            mkdir -p build/native-ui-evidence
+            xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/native-test-summary.json
+            xcrun xcresulttool get test-results tests --path build/ios-tests.xcresult > build/native-test-cases.json
+            xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
+          fi
+
+      - name: Upload compact native test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-test-summary-${{ github.run_number }}
+          path: |
+            build/native-test-summary.json
+            build/native-test-cases.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload native UI and compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-test-evidence-${{ github.run_number }}
+          path: |
+            build/ios-tests.xcresult
+            build/native-ui-evidence/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload native portable recipe fixture
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-recipe-fixture
+          path: build/portable-fixtures/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Capture App Store screenshots from the Simulator app
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          mkdir -p build/app-store-screenshots
+          xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = [device for group in json.load(sys.stdin)["devices"].values() for device in group if device.get("isAvailable")]
+          def choose(family):
+              candidates = [device for device in devices if device["name"].startswith(family)]
+              if not candidates:
+                  raise SystemExit(f"No available {family} Simulator was found.")
+              def rank(device):
+                  name = device["name"]
+                  preferred = ("Pro Max" in name, "Pro" in name, "13" in name)
+                  return preferred, name
+              return sorted(candidates, key=rank, reverse=True)[0]
+          for family in ("iPhone", "iPad"):
+              device = choose(family)
+              print("|".join((family, device["udid"], device["name"])))
+          ' > "$RUNNER_TEMP/pittech-simulators.txt"
+
+          while IFS='|' read -r family device_id device_name; do
+            echo "Capturing PitTech on ${device_name} (${device_id})"
+            python3 - "$device_id" <<'PYBOOT'
+          import subprocess, sys
+          device = sys.argv[1]
+          for attempt in range(2):
+              subprocess.run(["xcrun", "simctl", "boot", device], check=False)
+              try:
+                  subprocess.run(["xcrun", "simctl", "bootstatus", device, "-b"], check=True, timeout=360)
+                  break
+              except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                  subprocess.run(["xcrun", "simctl", "shutdown", device], check=False)
+                  if attempt == 1:
+                      raise
+                  subprocess.run(["xcrun", "simctl", "erase", device], check=True)
+          PYBOOT
+            xcrun simctl install "$device_id" build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
+            app_container="$(xcrun simctl get_app_container "$device_id" com.pittech data)"
+            mkdir -p "$app_container/Documents"
+            cp ios/screenshot-fixtures/pittech.json "$app_container/Documents/pittech.json"
+            xcrun simctl ui "$device_id" appearance light
+            xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
+            sleep 4
+            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}.png"
+            xcrun simctl terminate "$device_id" com.pittech
+            xcrun simctl ui "$device_id" appearance dark
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
+            sleep 2
+            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-dark.png"
+            xcrun simctl terminate "$device_id" com.pittech
+            xcrun simctl ui "$device_id" appearance light
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads --screenshot-large-text
+            sleep 2
+            xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}-large-text.png"
+            xcrun simctl shutdown "$device_id"
+          done < "$RUNNER_TEMP/pittech-simulators.txt"
+
+      - name: Emit visual review snapshots
+        if: always()
+        run: python3 scripts/emit-ui-review-images.py build/app-store-screenshots build/native-ui-evidence
+
+      - name: Upload Simulator app
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-ios-simulator-${{ github.run_number }}
+          path: |
+            build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
+            build/app-store-screenshots/*.png
+            build/ios-tests.xcresult
+            build/ios-public/Build/Products/Release-iphonesimulator/PitTech.app
+            build/ios-public-dependency-evidence.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  app-store-ipa:
+    name: Build and upload to App Store Connect
+    if: github.event_name == 'workflow_dispatch' && inputs.build_mode == 'app-store-ipa'
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Require App Store Connect API key and iOS AdMob IDs
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IOS_ADMOB_APP_ID: ${{ vars.IOS_ADMOB_APP_ID }}
+          IOS_ADMOB_NATIVE_AD_UNIT_ID: ${{ vars.IOS_ADMOB_NATIVE_AD_UNIT_ID }}
+        run: |
+          set -euo pipefail
+          for secret_name in \
+            ASC_KEY_ID \
+            ASC_ISSUER_ID \
+            ASC_PRIVATE_KEY \
+            IOS_ADMOB_APP_ID \
+            IOS_ADMOB_NATIVE_AD_UNIT_ID; do
+            if [[ -z "${!secret_name}" ]]; then
+              echo "::error::Configure ${secret_name} in this repository's Actions secrets or variables before requesting an App Store build."
+              exit 1
+            fi
+          done
+
+      - name: Generate signing material with the App Store Connect API
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sign_dir="$RUNNER_TEMP/pittech-signing"
+          mkdir -p "$sign_dir"
+          printf '%s' "$ASC_PRIVATE_KEY" > "$sign_dir/AuthKey.p8"
+          SIGN_DIR="$sign_dir" python3 - <<'PYASC'
+          import base64, json, os, pathlib, subprocess, time
+          import urllib.request, urllib.error
+
+          sign_dir = pathlib.Path(os.environ["SIGN_DIR"])
+          key_id = os.environ["ASC_KEY_ID"]
+          issuer_id = os.environ["ASC_ISSUER_ID"]
+
+          # ES256 JWT signed with openssl + stdlib only (runner Python is
+          # externally managed, so pip installs are not an option).
+          def b64url(data):
+              return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+          now = int(time.time())
+          header = b64url(json.dumps({"alg": "ES256", "kid": key_id, "typ": "JWT"}, separators=(",", ":")).encode())
+          payload = b64url(json.dumps({"iss": issuer_id, "iat": now, "exp": now + 1200,
+                                       "aud": "appstoreconnect-v1"}, separators=(",", ":")).encode())
+          (sign_dir / "jwt-input.bin").write_bytes(f"{header}.{payload}".encode())
+          subprocess.run(["openssl", "dgst", "-sha256", "-sign", str(sign_dir / "AuthKey.p8"),
+                          "-out", str(sign_dir / "jwt-sig.der"), str(sign_dir / "jwt-input.bin")], check=True)
+          der = (sign_dir / "jwt-sig.der").read_bytes()
+          idx = 2 + (der[1] & 0x7F) if der[1] & 0x80 else 2
+
+          def read_int(buf, i):
+              length = buf[i + 1]
+              value = buf[i + 2:i + 2 + length].lstrip(b"\x00").rjust(32, b"\x00")
+              return value, i + 2 + length
+
+          r, idx = read_int(der, idx)
+          s, idx = read_int(der, idx)
+          token = f"{header}.{payload}.{b64url(r + s)}"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+          api = "https://api.appstoreconnect.apple.com/v1"
+
+          def call(method, path, payload=None):
+              data = json.dumps(payload).encode() if payload is not None else None
+              request = urllib.request.Request(api + path, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      body = response.read()
+                      return json.loads(body) if body else {}
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(f"ASC API {method} {path} failed ({error.code}): {error.read().decode()[:600]}")
+
+          # Free the distribution-certificate slot held by the previous CI run.
+          # Apple overrides the subject name on distribution certs, so the CI
+          # cert cannot be found by name; find it through the CI profile, whose
+          # name IS ours to choose, then delete the profile and revoke its cert.
+          old_profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
+          old_cert_ids = []
+          for old_profile in old_profiles:
+              linked = call("GET", f"/profiles/{old_profile['id']}/certificates").get("data", [])
+              old_cert_ids.extend(cert["id"] for cert in linked)
+          for old_profile in old_profiles:
+              call("DELETE", f"/profiles/{old_profile['id']}")
+              print(f"Deleted previous CI profile {old_profile['id']}")
+          for cert_id in dict.fromkeys(old_cert_ids):
+              call("DELETE", f"/certificates/{cert_id}")
+              print(f"Revoked previous CI certificate {cert_id}")
+
+          # Fresh key + CSR on this runner; the private key never leaves it.
+          subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
+          subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
+                          "-out", str(sign_dir / "ci.csr"), "-subj", "/CN=PitTech CI"], check=True)
+          csr = (sign_dir / "ci.csr").read_text()
+          created = call("POST", "/certificates", payload={"data": {"type": "certificates", "attributes": {
+              "certificateType": "DISTRIBUTION", "csrContent": csr}}})["data"]
+          (sign_dir / "ci.cer").write_bytes(base64.b64decode(created["attributes"]["certificateContent"]))
+          print(f"Created distribution certificate {created['id']}")
+
+          bundle_id = call("GET", "/bundleIds?filter[identifier]=com.pittech")["data"][0]["id"]
+          capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities?limit=200").get("data", [])
+          if not any(c.get("attributes", {}).get("capabilityType") == "ASSOCIATED_DOMAINS" for c in capabilities):
+              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
+                  "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
+                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+
+          profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
+          for profile in profiles:
+              call("DELETE", f"/profiles/{profile['id']}")
+              print(f"Deleted previous CI profile {profile['id']}")
+          profile = call("POST", "/profiles", payload={"data": {"type": "profiles", "attributes": {
+              "name": "PitTech App Store CI", "profileType": "IOS_APP_STORE"}, "relationships": {
+              "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
+              "certificates": {"data": [{"type": "certificates", "id": created["id"]}]}}}})["data"]
+          (sign_dir / "PitTech.mobileprovision").write_bytes(base64.b64decode(profile["attributes"]["profileContent"]))
+          print(f"Created provisioning profile {profile['id']}")
+
+          # Bundle cert + key into a .p12 for the keychain install step.
+          subprocess.run(["openssl", "x509", "-inform", "DER", "-in", str(sign_dir / "ci.cer"),
+                          "-out", str(sign_dir / "ci.pem")], check=True)
+          p12_password = subprocess.run(["uuidgen"], capture_output=True, text=True, check=True).stdout.strip()
+          subprocess.run(["openssl", "pkcs12", "-export", "-inkey", str(sign_dir / "ci.key"),
+                          "-in", str(sign_dir / "ci.pem"), "-out", str(sign_dir / "distribution.p12"),
+                          "-passout", f"pass:{p12_password}", "-name", "PitTech CI"], check=True)
+          with open(os.environ["GITHUB_ENV"], "a") as env_file:
+              env_file.write(f"PITTECH_P12_PATH={sign_dir / 'distribution.p12'}\n")
+              env_file.write(f"PITTECH_P12_PASSWORD={p12_password}\n")
+              env_file.write(f"PITTECH_PROFILE_PATH={sign_dir / 'PitTech.mobileprovision'}\n")
+          PYASC
+
+      - name: Install signing certificate and provisioning profile
+        run: |
+          set -euo pipefail
+          keychain_path="$RUNNER_TEMP/pittech-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          cp "$PITTECH_P12_PATH" "$RUNNER_TEMP/distribution.p12"
+          cp "$PITTECH_PROFILE_PATH" "$RUNNER_TEMP/PitTech.mobileprovision"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$PITTECH_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -d user -s "$keychain_path"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          security cms -D -i "$RUNNER_TEMP/PitTech.mobileprovision" > "$RUNNER_TEMP/PitTech-profile.plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/PitTech-profile.plist")
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/PitTech-profile.plist")
+          app_identifier=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/PitTech-profile.plist")
+          if [[ "$app_identifier" != "R42LWFBXBH.com.pittech" ]]; then
+            echo "::error::The provisioning profile must match team R42LWFBXBH and bundle ID com.pittech."
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/PitTech.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "PITTECH_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
+          echo "PITTECH_KEYCHAIN_PATH=$keychain_path" >> "$GITHUB_ENV"
+
+      - name: Install the App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys" "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          cp "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
+
+      - name: Archive for App Store Connect
+        env:
+          IOS_ADMOB_APP_ID: ${{ vars.IOS_ADMOB_APP_ID }}
+          IOS_ADMOB_NATIVE_AD_UNIT_ID: ${{ vars.IOS_ADMOB_NATIVE_AD_UNIT_ID }}
+        run: >-
+          xcodebuild archive
+          -project ios/PitTech.xcodeproj
+          -scheme PitTech
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          -archivePath build/PitTech.xcarchive
+          -derivedDataPath build/ios-release
+          CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+          PITTECH_ADMOB_APP_ID="$IOS_ADMOB_APP_ID"
+          PITTECH_NATIVE_AD_UNIT_ID="$IOS_ADMOB_NATIVE_AD_UNIT_ID"
+          CODE_SIGNING_KEYCHAIN="$PITTECH_KEYCHAIN_PATH"
+          CODE_SIGNING_ALLOWED=YES
+
+      - name: Export and upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>destination</key><string>upload</string>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>R42LWFBXBH</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.pittech</key><string>$PITTECH_PROFILE_NAME</string>
+            </dict>
+            <key>stripSwiftSymbols</key><true/>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.pittech $PITTECH_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive \
+            -archivePath build/PitTech.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Upload signed archive artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-ios-app-store-${{ github.run_number }}
+          path: build/PitTech.xcarchive
+          if-no-files-found: error
+          retention-days: 30

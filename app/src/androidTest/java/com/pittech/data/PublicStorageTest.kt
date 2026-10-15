@@ -27,6 +27,16 @@ class PublicStorageTest {
             val meal=repository.startRecipeMeal("My own cook",listOf(selected));assertEquals(1,database.cookDao().getDishesForCook(meal).size)
             assertEquals(1,database.recipeDao().assets().size);assertEquals(1,database.companionDao().photos().size)
             assertTrue(database.cookDao().getAllCooks().single().startedAtUtcMillis>1_700_000_000_000L)
+            val sharing=SharingRepository(database,storage,repository);val draftId=sharing.fromRecipe(selected)
+            val row=sharing.get(draftId)!!;val draft=com.pittech.domain.SharingDraftCodec.decode(row.payload);val owned=sharing.assets(draftId)
+            val value=draft.copy(identityMode="anonymous",entries=draft.entries.map { e->e.copy(includeStory=true,photoIds=owned.filter { it.action==e.id }.map { it.id }) })
+            sharing.save(draftId,value,row.updatedAtUtcMillis)
+            val publication=sharing.preparePublication(draftId,"recipe")
+            assertEquals(f.getJSONObject("detail").getString("id"),publication.payload.getJSONObject("source").getString("itemId"))
+            val frozen=publication.payload.getJSONArray("recipes").getJSONObject(0).getJSONObject("story")
+            assertEquals(f.getJSONObject("detail").getJSONObject("payload").getJSONArray("recipes").getJSONObject(0).getJSONObject("story").toString(),frozen.toString())
+            assertEquals(1,publication.photos.size);assertTrue(publication.bytes.size<64*1024*1024)
+            File(context.filesDir,"pittech-publication").apply { mkdirs() }.resolve("android-publication.pittech").writeBytes(publication.bytes)
         } finally {database.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) };database.companionDao().photos().forEach { storage.delete(it.relativePath) };database.close()}
     }
     @Test fun cachedBrowsingSurvivesRestartButAnUnavailableRecipeCannotUseStaleRemoteData() = runBlocking {

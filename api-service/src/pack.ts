@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { validPublicStory } from './public-story.ts';
 import { readFile } from 'node:fs/promises';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
@@ -176,8 +177,9 @@ export async function canonicalPack(input: Buffer): Promise<{ bytes: Buffer; sum
     requirePack(uuid(entry.id) && entry.included === true && typeof entry.includeStory === 'boolean' && entry.sourceDishId == null);
     const revision = revisions.find(r => r.id === entry.sourceRevisionId); requirePack(revision);
     const s = snapshot(entry.snapshotJson); requirePack(stable(s) === stable(snapshot(revision.snapshotJson)));
-    const story = known(entry.story, 'version attemptId anchorUtcMillis observations readings connectionGaps results');
+    const story = known(entry.story, 'version attemptId anchorUtcMillis observations readings connectionGaps results publicStory');
     requirePack(story.version === 1 && Array.isArray(story.readings));
+    if(story.publicStory != null) requirePack(validPublicStory(story.publicStory) && object(story.publicStory).attemptId === story.attemptId);
     if (story.attemptId != null) requirePack(uuid(story.attemptId));
     if (meta.kind === 'cook') requirePack(dishIds.includes(story.attemptId));
     for (const sample of array(story.readings)) measurement(sample, true);
@@ -186,7 +188,7 @@ export async function canonicalPack(input: Buffer): Promise<{ bytes: Buffer; sum
     requirePack(array(story.connectionGaps, 10000).every(utc));
     if (array(story.readings).length) requirePack(uuid(story.attemptId));
     if (!entry.includeStory) requirePack(story.attemptId == null && story.anchorUtcMillis == null &&
-      ['readings', 'observations', 'connectionGaps', 'results'].every(k => array(story[k]).length === 0) &&
+      story.publicStory == null && ['readings', 'observations', 'connectionGaps', 'results'].every(k => array(story[k]).length === 0) &&
       array(s.observations).length === 0 && s.rating == null && s.cookAgain == null && !s.resultNotes);
     const selectedPhotos = array(entry.photoIds, 100); requirePack(new Set(selectedPhotos).size === selectedPhotos.length);
     const entryPhotos = selectedPhotos.map(id => {
