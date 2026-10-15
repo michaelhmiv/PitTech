@@ -180,8 +180,17 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(foods.firstMatch, app: app)
         capture("Native composed meal")
         let reminders = app.buttons["Reminders"].firstMatch
-        for _ in 0..<6 { if reminders.exists && reminders.isHittable { break }; app.swipeDown() }
-        reveal(reminders, app: app); reminders.tap()
+        // This action is in the fixed horizontal toolbar, outside cook-content.
+        // Page scrolling cannot reveal a clipped quick action.
+        for _ in 0..<4 {
+            if reminders.exists && reminders.isHittable { break }
+            let navigation = app.navigationBars["Meal"]
+            let origin = navigation.coordinate(withNormalizedOffset: .zero)
+            let y = app.buttons["meal-log"].frame.midY - navigation.frame.minY
+            origin.withOffset(CGVector(dx: navigation.frame.width - 32, dy: y))
+                .press(forDuration: 0.01, thenDragTo: origin.withOffset(CGVector(dx: 32, dy: y)))
+        }
+        XCTAssertTrue(reminders.exists && reminders.isHittable); reminders.tap()
         let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Chicken · last time")).firstMatch
         reveal(suggestion, app: app); suggestion.tap()
         let saveReminder = app.buttons["reminder-rule-save"]
