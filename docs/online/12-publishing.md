@@ -32,8 +32,18 @@ have unknown duration and are represented as markers, without an invented end.
 Native tests export actual publication archives for subsequent server validation;
 those new native results are pending in Actions.
 
-Still required in this same draft: exact selected-content/identity preview, interrupted-write
-recovery bound to the same signed-in account, native publish/update/unpublish,
+Both clients now have device-only publication operation stores and streamed authenticated
+write clients. A body and its operation UUID are persisted before transmission, bound
+to the initiating account, checked for corruption, and reused after an ambiguous
+response. A 401 permits one refresh with the same request. Definite rejected writes
+require an explicit review/discard; ambiguous writes cannot be discarded automatically.
+No access or refresh credentials enter these stores. Matching native tests cover
+response-loss recovery, account switching, corruption, refresh and revision conflicts;
+Actions verification for this increment is pending. The stores are not yet wired
+to user-facing publishing controls.
+
+Still required in this same draft: exact selected-content/identity preview,
+native publish/update/unpublish,
 profile editing/opt-in preview, likes, modified variations and actual-attempt
 publication, native UI tests and visual review. This foundation does not claim
 that those publishing flows already exist.
