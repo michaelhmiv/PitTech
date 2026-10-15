@@ -12,7 +12,7 @@ remain separate. No online phase is released until its complete parity gate pass
 | 03 | Cook Packs and exports | Draft PR #97 | Required Android API 36 font 1.15/1.5 and complete iOS workflow passed at `8592689` (runs 38648389211 / 38648389206). Actual reciprocal recorded-cook imports and accessible selective-save/history UI passed; exported workbooks and PNGs reviewed. Native 72 MiB import: 0.14–0.20s, ~70.7 MB peak process physical memory; raw Actions metrics retained |
 | 04 | Shared guide presentation | Draft PR #100 | Both clients pin independently owned recipe stories, share one saved visibility/scope setting across Live/Timeline/Charts, pair semantic actions and overlay distinct reference channels. Required Android API 36 lanes pass at `ad67275`; actual reciprocal guide fixtures pass their native consumers. Latest iOS run 38715355029 built successfully but failed the native compatibility-test step; investigation remains open |
 | 05 | Native share cards | Draft PR #101 | Both native renderers and data tests pass; iOS and Android exported pixels reviewed at `ceefb36`. Required Android API 36 font 1.15/1.5 lanes pass at `e53192b`; latest iOS run 38715368055 built successfully but failed the native compatibility-test step; investigation remains open |
-| 06 | API/relay | Draft PR #102 | Node 22 TypeScript relay, private storage adapters, migration, bounded validation/canonicalization, 64-bit codes, independent hashed owner capabilities, durable quotas/cleanup and native canonical fixture consumers. 22 local Node 22 tests pass, 1 Postgres test explicitly skipped; runtime audit clean. Real Postgres, container, backend Actions and isolated staging remain pending |
+| 06 | API/relay | Draft PR #102 | Node 22 TypeScript relay, private storage adapters, migration, bounded validation/canonicalization, 64-bit codes, independent hashed owner capabilities, durable quotas/cleanup and native canonical fixture consumers. Backend Actions run 38723450831 passes at `ed79b04`: 23 tests pass, zero skips, including real Postgres 16; strict typecheck, runtime audit, canonical fixture comparison, Docker build, six actual native packs in the production image and fail-closed startup all pass. Android passes at `fc1b8cb`; iOS run 38715388629 built successfully but failed compatibility tests. Isolated staging remains pending |
 | 07 | Code/link import | Pending | |
 | 08 | Resend and backend auth | Pending | |
 | 09 | Native account flow | Pending | |
@@ -35,8 +35,8 @@ Postgres migration/integration tests, bounded pack/security/authorization tests,
 sync conflict fixtures, subscription provider fixtures and aggregate isolation.
 
 The GitHub connection successfully installed `.github/workflows/online-services.yml`
-on October 15 at `06be197`. Run 38723114227 started and exposed a PostgreSQL
-service health-command quoting error; its correction requires a passing rerun.
+on October 15. Backend Actions run [38723450831](https://github.com/michaelhmiv/PitTech/actions/runs/38723450831)
+passes at `ed79b04`, including real Postgres 16 and production-container validation.
 The review copy and addition patch remain in `ci-proposals/`.
 Do not call local checks Actions proof.
 Physical provider, store-purchase and installed deep-link checks require their
