@@ -40,7 +40,7 @@ final class NativeCookPackProjection {
         result.smokingAnchorUtcMillis = story.objectValue?["anchorUtcMillis"]?.numberValue.map(Int64.init)
         if !entry.includeStory { result.rating = nil; result.cookAgain = nil; result.resultNotes = "" }
         result.instructions = result.instructions.map { value in
-            var row = known(value, ["title", "details", "method", "offsetMillis", "durationMillis"])
+            var row = known(value, ["title", "details", "method", "offsetMillis", "durationMillis", "action"])
             row["id"] = alias(value.objectValue?["id"]); row["sourceEventId"] = alias(value.objectValue?["sourceEventId"])
             return .object(row)
         }

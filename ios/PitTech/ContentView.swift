@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(CookStore.self) private var store
+    @Environment(NativePublicCoordinator.self) private var community
     @Environment(NativeRelayCoordinator.self) private var relay
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(\.scenePhase) private var scenePhase
@@ -12,7 +13,7 @@ struct ContentView: View {
             CookListView()
                 .tabItem { Label("Meals", systemImage: "flame") }
             NavigationStack { SavedRecipesView() }.tabItem { Label("Recipes", systemImage: "book") }
-            DiscoveryWelcomeView().tabItem { Label("Discover", systemImage: "safari") }
+            Group { if community.enabled { NativePublicDiscoveryView() } else { DiscoveryWelcomeView() } }.tabItem { Label("Discover", systemImage: "safari") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
             MoreView(runtime: telemetry).tabItem { Label("More", systemImage: "ellipsis") }
@@ -43,7 +44,9 @@ struct ContentView: View {
         }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
         .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 })) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
         .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
-            store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil
+            if let destination = store.publicCookDestination {
+                store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
+            } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
         }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
         .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
             Button("OK", role: .cancel) { store.archiveMessage = nil }

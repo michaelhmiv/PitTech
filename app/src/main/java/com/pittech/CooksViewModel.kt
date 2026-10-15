@@ -42,6 +42,19 @@ class CooksViewModel(
     private val dataTransfer: PitTechDataTransfer,
     private val context: Context,
 ) : ViewModel() {
+    private suspend fun previewPublicCookPack(file: File, cook: Boolean, id: String, revision: String) {
+        val prepared = withContext(Dispatchers.IO) { file.inputStream().buffered().use(dataTransfer::previewCookPack) }
+        val source = prepared.cookPack?.optJSONObject("source")
+        require(source != null && source.optString("itemId") == id && source.optString("revisionId") == revision) { "This download doesn't match the recipe preview." }
+        _importPreview.value = prepared.copy(publicCookOnSave = cook)
+    }
+    internal var publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack)
+        private set
+    internal fun installPublicTestAPI(api: com.pittech.data.PublicAPI) {
+        check(BuildConfig.DEBUG)
+        publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack, api = api, enabled = true,
+            cache = com.pittech.data.PublicCache(context, "test-" + java.util.UUID.randomUUID().toString()))
+    }
     internal val account = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope)
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing
@@ -730,6 +743,7 @@ class CooksViewModel(
             val draft = source.selectCookPackRecipes(revisions)
             withContext(Dispatchers.IO) { dataTransfer.import(draft) }
             _importPreview.value = null
+            if (source.publicCookOnSave) openCook(repository.startRecipeMeal(source.snapshot.companionRecords.firstOrNull()?.title ?: "New meal", revisions.sorted()))
             _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
         }
     }

@@ -398,6 +398,7 @@ class PitTechDataTransfer(
         val archiveVersion: Int,
         val exportedAtUtc: String?,
         val cookPack: JSONObject? = null,
+        val publicCookOnSave: Boolean = false,
     ) {
         val cookCount: Int get() = snapshot.cooks.size
         val dishCount: Int get() = snapshot.dishes.size

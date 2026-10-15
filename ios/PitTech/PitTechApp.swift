@@ -5,6 +5,7 @@ import UserNotifications
 struct PitTechApp: App {
     @State private var store = CookStore()
     @State private var relay = NativeRelayCoordinator()
+    @State private var community = NativePublicCoordinator.forApp()
     #if DEBUG
     @State private var account = NativeAccountUITestSupport.make()
     #else
@@ -16,6 +17,7 @@ struct PitTechApp: App {
             ContentView()
                 .environment(store)
                 .environment(relay)
+                .environment(community)
                 .environment(account)
                 .environment(AdsConsentManager.shared)
                 .tint(PitTechStyle.accent)

@@ -90,6 +90,8 @@ targets:
         buildPhase: resources
       - path: ../contracts/fixtures/auth-native-v1.json
         buildPhase: resources
+      - path: ../contracts/fixtures/public-native-v1.json
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:
