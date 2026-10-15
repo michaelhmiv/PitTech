@@ -27,10 +27,11 @@ class CookPackProjection {
     })
     fun story(entry: SharingEntry): JSONObject {
         val raw = JSONObject(entry.storyJson)
-        return JSONObject().put("version", 1).put("attemptId", if (entry.includeStory) alias(raw.opt("attemptId")) else JSONObject.NULL)
+        return JSONObject().put("version", 1).put("attemptId", if (entry.includeStory) raw.optJSONObject("publicStory")?.opt("attemptId") ?: alias(raw.opt("attemptId")) else JSONObject.NULL)
             .put("anchorUtcMillis", if (entry.includeStory) raw.opt("anchorUtcMillis") ?: JSONObject.NULL else JSONObject.NULL)
             .put("observations", if (entry.includeStory) observations(raw.optJSONArray("observations") ?: JSONArray()) else JSONArray())
             .put("readings", if (entry.includeStory) measurements(raw.getJSONArray("readings")) else JSONArray())
+            .put("publicStory", if(entry.includeStory) raw.opt("publicStory") ?: JSONObject.NULL else JSONObject.NULL)
             .put("connectionGaps", if (entry.includeStory) raw.optJSONArray("connectionGaps") ?: JSONArray() else JSONArray())
             .put("results", JSONArray(if (entry.includeStory) objects(raw.optJSONArray("results") ?: JSONArray()).map { known(it, setOf("type", "numericValue", "textValue", "unit")) } else emptyList<JSONObject>()))
     }
@@ -39,7 +40,7 @@ class CookPackProjection {
         value.put("observations", story.getJSONArray("observations")).put("smokingAnchorUtcMillis", story.opt("anchorUtcMillis") ?: JSONObject.NULL)
         if (!entry.includeStory) value.put("rating", JSONObject.NULL).put("cookAgain", JSONObject.NULL).put("resultNotes", "")
         value.put("instructions", JSONArray(objects(value.getJSONArray("instructions")).map { instruction ->
-            known(instruction, setOf("title", "details", "method", "offsetMillis", "durationMillis")).put("id", alias(instruction.opt("id"))).put("sourceEventId", alias(instruction.opt("sourceEventId")))
+            known(instruction, setOf("title", "details", "method", "offsetMillis", "durationMillis", "action")).put("id", alias(instruction.opt("id"))).put("sourceEventId", alias(instruction.opt("sourceEventId")))
         }))
         return RecipeSnapshotCodec.decode(value.toString())
     }

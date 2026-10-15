@@ -29,6 +29,45 @@ import XCTest
         let meal = try XCTUnwrap(store.publicCookDestination)
         XCTAssertNotEqual(meal, oldCook);XCTAssertEqual(store.dishRecords(meal).count, 2);XCTAssertTrue(store.library.cooks.contains { $0.id == oldCook })
     }
+    func testNativePublicationWriterRetainsPinnedFrozenStoryAndOnlySelectedOwnedContent() async throws {
+        let (_, fixture) = try fixture(), root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = try XCTUnwrap(Data(base64Encoded: fixture["packBase64"] as! String)), store = CookStore(directory: root)
+        let file = root.appendingPathComponent("input.pittech"); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); try bytes.write(to: file)
+        await store.receiveArchive(at: file, cookPackOnly: true)
+        let intake = try XCTUnwrap(store.archiveIntake), selected = try XCTUnwrap(intake.recipes.first { $0.title.contains("pork") }?.id)
+        try await store.importSelectedRecipes(intake, selected: [selected]); store.discardArchiveIntake()
+        let id = try store.createRecipeSharingDraft(selected), updated = try XCTUnwrap(store.sharingRecord(id)?["updated"]?.numberValue)
+        var document = try store.sharingDocument(id)
+        document.identityMode = "anonymous"
+        document.entries[0].includeStory = true
+        document.entries[0].photoIds = store.sharingPhotos(id).compactMap { $0["id"]?.stringValue }
+        try store.saveSharingDraft(id, document: document, expectedUpdated: updated)
+        let publication = try await store.preparePublication(id, kind: "recipe")
+        let detail = fixture["detail"] as! [String: Any]
+        XCTAssertEqual(publication.payload.objectValue?["source"]?.objectValue?["itemId"]?.stringValue, detail["id"] as? String)
+        let expected = try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: (detail["payload"] as! [String: Any])["recipes"] as! [[String: Any]]))
+        let recipe = try XCTUnwrap(publication.payload.objectValue?["recipes"]?.arrayValue?.first?.objectValue)
+        XCTAssertEqual(recipe["story"], expected.arrayValue?.first?.objectValue?["story"])
+        XCTAssertEqual(publication.photos.count, 1)
+        var actual = document
+        actual.sourceCookId = "local-new-meal"
+        actual.heroPhotoId = nil; actual.entries[0].photoIds = []
+        var story = try XCTUnwrap(actual.entries[0].story.objectValue)
+        story["publicStory"] = nil; story["attemptId"] = .string("local-new-dish")
+        story["results"] = .array([.object(["type": .string("overall_rating"), "numericValue": .number(5)]), .object(["type": .string("result_notes"), "textValue": .string("Frozen verdict")])])
+        actual.entries[0].story = .object(story)
+        var edited = try actual.entries[0].snapshot; edited.rating = 1; edited.resultNotes = "Editable recipe note"
+        actual.entries[0].snapshotJson = try recipeJSON(edited)
+        let measured = try NativePublicationProjection.build(actual, updated: 1, photos: [], kind: "attempt")
+        actual.identityMode = "named"
+        let revision = try NativePublicationProjection.build(actual, updated: 2, photos: [], kind: "attempt")
+        XCTAssertEqual(measured.payload.objectValue?["measuredAttemptId"], revision.payload.objectValue?["measuredAttemptId"])
+        let recorded = measured.payload.objectValue?["recipes"]?.arrayValue?.first?.objectValue?["story"]?.objectValue?["verdict"]?.objectValue
+        XCTAssertEqual(recorded?["rating"]?.numberValue, 5); XCTAssertEqual(recorded?["notes"]?.stringValue, "Frozen verdict")
+        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try publication.bytes.write(to: folder.appendingPathComponent("pittech-native-publication.pittech"), options: .atomic)
+    }
     func testCacheRestartsOfflineAndKnownUnavailableRecipeDoesNotReuseStaleRemotePreview() async throws {
         let (_, fixture) = try fixture(),root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

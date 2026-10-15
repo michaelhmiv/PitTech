@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { publicationCookPack } from '../src/publication-cook-pack.ts';
 import { canonicalPack } from '../src/pack.ts';
 import { digest } from '../src/core.ts';
-import { readZip } from '../src/zip.ts';
+import { writeZip,readZip } from '../src/zip.ts';
 test('actual server writer produces bounded independent native recipes with pinned public credit, relative timing and action semantics',async()=>{
   const fixture=JSON.parse(await readFile(new URL('../../contracts/fixtures/public-native-v1.json',import.meta.url),'utf8'));
   const photo=Buffer.from(fixture.imageBase64,'base64'),result=await publicationCookPack(fixture.detail,new Map([[fixture.detail.media[0].id,photo]]));
@@ -16,6 +16,9 @@ test('actual server writer produces bounded independent native recipes with pinn
   assert.equal(snapshot.instructions[0].action,'wrap');assert.equal(snapshot.instructions[0].method,null);assert.equal(snapshot.draft.dishes[0].ingredients[0].unit,'To taste');
   assert.ok(snapshot.observations.some((o:{action:string})=>o.action==='food_on'));assert.ok(snapshot.observations.some((o:{action:string})=>o.action==='remove'));
   assert.notEqual(root.recipes[0].id,fixture.detail.payload.recipes[0].id);assert.equal(root.companionRecords[0].payload.entries[0].story.attemptId,fixture.detail.payload.recipes[0].story.attemptId);
+  assert.deepEqual(root.companionRecords[0].payload.entries[0].story.publicStory,fixture.detail.payload.recipes[0].story);
+  const forged=new Map(files);root.companionRecords[0].payload.entries[0].story.publicStory.privateEmail='private@example.com';
+  forged.set('data/pittech.json',Buffer.from(JSON.stringify(root)));await assert.rejects(canonicalPack(writeZip(forged)),{code:'invalid_pack'});
   assert.equal(root.recipeAssets.length,1);assert.equal(root.companionPhotos.length,1);
   const captured=Buffer.from(fixture.packBase64,'base64');assert.equal(digest(captured),fixture.packSha256);await canonicalPack(captured);
 });

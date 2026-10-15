@@ -146,6 +146,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "method": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [

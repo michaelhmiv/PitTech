@@ -71,6 +71,12 @@ struct NativePublicRecipeView: View {
                     ForEach(detail.recipes.indices, id: \.self) { index in
                         let recipe = detail.recipes[index].objectValue ?? [:]
                         Text(recipe["title"]?.stringValue ?? "Recipe").font(.title2.bold())
+                        if let source = recipe["source"]?.objectValue {
+                            if source["removed"]?.boolValue == true { Text("Based on a removed recipe").font(.subheadline).foregroundStyle(.secondary) }
+                            else if let item = source["itemId"]?.stringValue, UUID(uuidString: item) != nil {
+                                NavigationLink("Based on a recipe shared by " + (source["displayName"]?.stringValue ?? "a PitTech cook"), value: item).font(.subheadline)
+                            }
+                        }
                         Text(recipe["description"]?.stringValue ?? "")
                         if let grams = recipe["weightGrams"]?.numberValue { Text("Recorded weight · \(grams / 1000, specifier: "%.2f") kg") }
                         let ingredients = recipe["ingredients"]?.arrayValue ?? []
@@ -81,7 +87,9 @@ struct NativePublicRecipeView: View {
                         let instructions = recipe["instructions"]?.arrayValue ?? []
                         ForEach(instructions.indices, id: \.self) { step in
                             let row = instructions[step].objectValue ?? [:]
-                            Text(row["title"]?.stringValue ?? "Step").font(.headline); Text(row["details"]?.stringValue ?? "")
+                            Text(row["title"]?.stringValue ?? "Step").font(.headline)
+                            if let method = row["method"]?.stringValue, !method.isEmpty { Text("Method · " + method).font(.subheadline) }
+                            Text(row["details"]?.stringValue ?? "")
                         }
                         if let story = recipe["story"]?.objectValue { NativePublicStoryView(story: story) }
                         let assets = recipe["assets"]?.arrayValue ?? []

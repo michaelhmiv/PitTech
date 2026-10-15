@@ -10,7 +10,7 @@ import { publicationCookPack } from './publication-cook-pack.ts';
 export type Source = { itemId: string; revisionId: string; removed: boolean; displayName?: string };
 export type Asset = { id: string; path: string; mimeType: string; sha256: string; caption: string };
 export type PublicationRecipe = { id: string; revisionId: string; title: string; description: string; foodType: string; cut: string | null;
-  weightGrams: number | null; method: string | null; ingredients: {name:string;amount:string}[]; instructions: {id:string;title:string;details:string;action:string|null;suggestedOffsetMillis:number|null}[]; tags: string[];
+  weightGrams: number | null; method: string | null; ingredients: {name:string;amount:string}[]; instructions: {id:string;title:string;details:string;method?:string|null;action:string|null;suggestedOffsetMillis:number|null}[]; tags: string[];
   story: {attemptId:string;foodOnOffsetMillis:number|null;foodOffOffsetMillis:number|null;channels:{id:string;role:string;label:string}[];measurements:{channelId:string;role:string;offsetMillis:number;valueCelsius:number;quality:string}[];milestones:{id:string;offsetMillis:number;action:string|null;text:string}[];verdict:{rating:number|null;cookAgain:boolean|null;notes:string};gaps:{channelId:string;fromMillis:number;toMillis:number}[]} | null;
   assets: Asset[]; source: Source | null };
 export type PublicationPayload = { contractVersion: 1; kind: 'recipe'|'collection'|'attempt'; identityMode: 'named'|'anonymous'; title: string;
@@ -34,7 +34,7 @@ export async function canonicalPublication(bytes: Buffer) {
   const attempts = new Set<string>();
   const offset=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=-604800000&&v<=2592000000;
   for(const recipe of payload.recipes) {
-    if(recipe.title.length>160||recipe.description.length>2000||recipe.foodType.length>160||(recipe.cut?.length??0)>160||(recipe.method?.length??0)>160||recipe.tags.some(t=>t.length>40)||recipe.ingredients.some(i=>i.name.length>160||i.amount.length>2000)||recipe.instructions.some(i=>i.title.length>160||i.details.length>2000||(i.action?.length??0)>80)||recipe.assets.some(a=>a.caption.length>2000))throw invalid();
+    if(recipe.title.length>160||recipe.description.length>2000||recipe.foodType.length>160||(recipe.cut?.length??0)>160||(recipe.method?.length??0)>160||recipe.tags.some(t=>t.length>40)||recipe.ingredients.some(i=>i.name.length>160||i.amount.length>2000)||recipe.instructions.some(i=>i.title.length>160||i.details.length>2000||(i.action?.length??0)>80||(i.method?.length??0)>160)||recipe.assets.some(a=>a.caption.length>2000))throw invalid();
     if(recipe.ingredients.some(i=>!i.name.trim())||recipe.instructions.some(i=>!i.title.trim()))throw invalid();
     unique(recipe.instructions.map(i=>i.id));
     if(recipe.instructions.some(i=>i.suggestedOffsetMillis!==null&&!offset(i.suggestedOffsetMillis)))throw invalid();

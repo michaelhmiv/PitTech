@@ -27,11 +27,12 @@ final class NativeCookPackProjection {
     }
     func story(_ entry: NativeSharingEntry) -> JSONValue {
         let source = entry.story.objectValue ?? [:]
-        return .object(["version": .number(1), "attemptId": entry.includeStory ? alias(source["attemptId"]) : .null,
+        return .object(["version": .number(1), "attemptId": entry.includeStory ? source["publicStory"]?.objectValue?["attemptId"] ?? alias(source["attemptId"]) : .null,
             "anchorUtcMillis": entry.includeStory ? source["anchorUtcMillis"] ?? .null : .null,
             "observations": .array(entry.includeStory ? observations(source["observations"]?.arrayValue ?? []) : []),
             "readings": .array(entry.includeStory ? measurements(source["readings"]?.arrayValue ?? []) : []),
             "connectionGaps": .array(entry.includeStory ? source["connectionGaps"]?.arrayValue ?? [] : []),
+            "publicStory": entry.includeStory ? source["publicStory"] ?? .null : .null,
             "results": .array(entry.includeStory ? (source["results"]?.arrayValue ?? []).map { .object(known($0, ["type", "numericValue", "textValue", "unit"])) } : [])])
     }
     func recipe(_ entry: NativeSharingEntry, story: JSONValue) throws -> RecipeSnapshot {

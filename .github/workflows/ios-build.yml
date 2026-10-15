@@ -93,12 +93,13 @@ jobs:
           # Xcode may run tests on a clone and shut it down. Read the fixture from its
           # persistent data container instead of querying a booted Simulator.
           root = pathlib.Path.home() / "Library/Developer/CoreSimulator/Devices"
-          candidates = [p for p in root.rglob("pittech-native-recipe-fixture.zip") if p.stat().st_mtime >= int(sys.argv[1])]
-          if not candidates:
-              raise SystemExit("The native writer did not produce a fresh portable fixture.")
           destination = pathlib.Path("build/portable-fixtures")
           destination.mkdir(parents=True, exist_ok=True)
-          shutil.copy2(max(candidates, key=lambda p: p.stat().st_mtime), destination / "pittech-native-recipe-fixture.zip")
+          for name in ["pittech-native-recipe-fixture.zip", "pittech-native-publication.pittech"]:
+              candidates = [p for p in root.rglob(name) if p.stat().st_mtime >= int(sys.argv[1])]
+              if not candidates:
+                  raise SystemExit("The native writer did not produce a fresh fixture: " + name)
+              shutil.copy2(max(candidates, key=lambda p: p.stat().st_mtime), destination / name)
           PYFIXTURE
           xcrun simctl shutdown all || true
 
@@ -138,7 +139,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: pittech-native-recipe-fixture
-          path: build/portable-fixtures/pittech-native-recipe-fixture.zip
+          path: build/portable-fixtures/*
           if-no-files-found: error
           retention-days: 14
 

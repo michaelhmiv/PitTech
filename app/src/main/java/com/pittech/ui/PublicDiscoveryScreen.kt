@@ -44,10 +44,18 @@ import org.json.JSONObject
                 if(state.preparing) { CircularProgressIndicator();TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
                     Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge)
+                    recipe.optJSONObject("source")?.let { source->
+                        if(source.optBoolean("removed"))Text("Based on a removed recipe",style=MaterialTheme.typography.bodySmall)
+                        else TextButton(onClick={manager.open(source.getString("itemId"))}) { Text("Based on a recipe shared by "+source.optString("displayName","a PitTech cook")) }
+                    }
                     Text(recipe.optString("description"))
                     if(!recipe.isNull("weightGrams"))Text("Recorded weight · ${recipe.getDouble("weightGrams")/1000} kg")
                     recipe.rows("ingredients").forEach { Text(it.optString("name")+" · "+it.optString("amount")) }
-                    recipe.rows("instructions").forEach { Text(it.optString("title"),style=MaterialTheme.typography.titleMedium);Text(it.optString("details")) }
+                    recipe.rows("instructions").forEach { step->
+                        Text(step.optString("title"),style=MaterialTheme.typography.titleMedium)
+                        if(!step.isNull("method") && step.getString("method").isNotEmpty())Text("Method · "+step.getString("method"),style=MaterialTheme.typography.bodySmall)
+                        Text(step.optString("details"))
+                    }
                     if(!recipe.isNull("story"))PublicStoryView(recipe.getJSONObject("story"),temperatureUnit)
                     recipe.rows("assets").forEach { photo->detail.media.firstOrNull { it.getString("id")==photo.getString("id") }?.let { asset->
                         if(asset.getString("id")!=detail.hero?.getString("id"))PublicAdditionalPhoto(manager,detail,asset,photo.optString("caption"))

@@ -395,6 +395,7 @@ for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"
 done
 mkdir -p "$output_dir/portable-fixtures"
+timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-publication/android-publication.pittech > "$output_dir/portable-fixtures/android-publication.pittech"
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
 
 companion_test_output="$output_dir/companion-tests.txt"

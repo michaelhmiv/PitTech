@@ -29,6 +29,18 @@ class PublicProtocolTest {
         val forged=JSONObject(f.getJSONObject("detail").toString());forged.getJSONArray("media").getJSONObject(0).put("url","https://foreign.invalid/private")
         assertThrows(Exception::class.java) { PublicDetail.parse(forged) }
     }
+    @Test fun actualAttemptIdentitySurvivesPublicationRevisionsAndEditableNotesNeverReplaceRecordedVerdicts() {
+        val f=fixture();var root: JSONObject?=null
+        ZipInputStream(ByteArrayInputStream(Base64.getDecoder().decode(f.getString("packBase64")))).use { zip->while(true){val entry=zip.nextEntry ?: break;if(entry.name=="data/pittech.json")root=JSONObject(String(zip.readBytes(),Charsets.UTF_8));zip.closeEntry()} }
+        val payload=root!!.getJSONArray("companionRecords").getJSONObject(0).getJSONObject("payload")
+        val source=com.pittech.domain.SharingDraftCodec.decode(payload.toString());val original=source.entries.first()
+        val story=JSONObject(original.storyJson).apply { remove("publicStory");put("attemptId","local-new-dish");put("results",org.json.JSONArray().put(JSONObject().put("type","overall_rating").put("numericValue",5)).put(JSONObject().put("type","result_notes").put("textValue","Frozen verdict"))) }
+        val document=source.copy(sourceCookId="local-new-meal",heroPhotoId=null,entries=listOf(original.copy(photoIds=emptyList(),includeStory=true,storyJson=story.toString(),snapshot=original.snapshot.copy(rating=1.0,resultNotes="Editable recipe note"))))
+        val one=PublicationProjection.build(document,1,emptyList(),"attempt");val two=PublicationProjection.build(document.copy(identityMode="named"),2,emptyList(),"attempt")
+        assertEquals(one.payload.getString("measuredAttemptId"),two.payload.getString("measuredAttemptId"))
+        val verdict=one.payload.getJSONArray("recipes").getJSONObject(0).getJSONObject("story").getJSONObject("verdict")
+        assertEquals(5,verdict.getInt("rating"));assertEquals("Frozen verdict",verdict.getString("notes"))
+    }
     @Test fun anonymousTransportPinsOriginAndRevisionAndRejectsCorruptionAndRedirects() = runBlocking {
         val f=fixture();val bytes=Base64.getDecoder().decode(f.getString("packBase64"));val detail=PublicDetail.parse(f.getJSONObject("detail"))
         for(status in listOf(200,302)) {
