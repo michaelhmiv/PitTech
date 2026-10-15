@@ -37,7 +37,7 @@ struct ContentView: View {
             if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
             if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
         } }
-        .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
+        .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) }.environment(telemetry) } }
         .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {
             if let file = relay.downloaded {
                 relay.downloaded = nil

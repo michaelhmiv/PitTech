@@ -34,7 +34,7 @@ class PublicStorageTest {
             val publication=sharing.preparePublication(draftId,"recipe")
             assertEquals(f.getJSONObject("detail").getString("id"),publication.payload.getJSONObject("source").getString("itemId"))
             val frozen=publication.payload.getJSONArray("recipes").getJSONObject(0).getJSONObject("story")
-            assertEquals(f.getJSONObject("detail").getJSONObject("payload").getJSONArray("recipes").getJSONObject(0).getJSONObject("story").toString(),frozen.toString())
+            assertTrue(com.pittech.domain.SharingDraftCodec.sameStory(f.getJSONObject("detail").getJSONObject("payload").getJSONArray("recipes").getJSONObject(0).getJSONObject("story").toString(),frozen.toString()))
             assertEquals(1,publication.photos.size);assertTrue(publication.bytes.size<64*1024*1024)
             File(context.filesDir,"pittech-publication").apply { mkdirs() }.resolve("android-publication.pittech").writeBytes(publication.bytes)
         } finally {database.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) };database.companionDao().photos().forEach { storage.delete(it.relativePath) };database.close()}
