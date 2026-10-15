@@ -60,6 +60,7 @@ android {
     sourceSets.getByName("debug").kotlin.srcDir("src/internal/java")
     sourceSets.getByName("dev").kotlin.srcDir("src/internal/java")
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    sourceSets.getByName("test").resources.srcDir("$rootDir/contracts/fixtures")
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true

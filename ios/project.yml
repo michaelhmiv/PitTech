@@ -86,6 +86,8 @@ targets:
         buildPhase: resources
       - path: PitTechTests/Fixtures/share-card-v1.json
         buildPhase: resources
+      - path: ../contracts/fixtures/relay-links-v1.json
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

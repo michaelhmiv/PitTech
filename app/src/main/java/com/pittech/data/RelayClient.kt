@@ -16,7 +16,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal class RelayClient(private val base: String = RelayProtocol.API, private val client: OkHttpClient = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).callTimeout(30, TimeUnit.SECONDS).build()) {
+internal class RelayClient(private val base: String = RelayProtocol.API, client: OkHttpClient = OkHttpClient()) {
+    private val client = client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(okhttp3.CookieJar.NO_COOKIES).cache(null).callTimeout(30, TimeUnit.SECONDS).build()
     private suspend fun <T> perform(request: Request, read: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
         val call = client.newCall(request); continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {

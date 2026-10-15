@@ -5,6 +5,8 @@ struct NativeRelayResponse { let data: Data; let file: URL? }
 
 /// One bounded request per instance; no cookies, cache, cross-host redirects or URL logging.
 final class NativeRelayTransport: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+    private let configuration: URLSessionConfiguration?
+    init(configuration: URLSessionConfiguration? = nil) { self.configuration = configuration; super.init() }
     private var session: URLSession?
     private var task: URLSessionTask?
     private let lock = NSLock()
@@ -25,7 +27,7 @@ final class NativeRelayTransport: NSObject, URLSessionDataDelegate, URLSessionTa
         return try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 self.continuation = continuation
-                let configuration = URLSessionConfiguration.ephemeral
+                let configuration = self.configuration ?? URLSessionConfiguration.ephemeral
                 configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false; configuration.urlCache = nil
                 configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
                 configuration.timeoutIntervalForRequest = 30; configuration.timeoutIntervalForResource = 30

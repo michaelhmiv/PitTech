@@ -14,7 +14,9 @@ struct NativeRelayOwnedShare: Codable, Sendable, Identifiable {
 }
 
 struct NativeRelayVault {
-    private let service = "com.pittech.relay.owner.v1"
+    private let service: String
+    private let root: URL?
+    init(service: String = "com.pittech.relay.owner.v1", directory: URL? = nil) { self.service = service; self.root = directory }
     func all() throws -> [NativeRelayOwnedShare] {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
             kSecAttrSynchronizable as String: false, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
@@ -35,7 +37,7 @@ struct NativeRelayVault {
         else if status != errSecSuccess { throw NativeRelayError.message("The sharing capability could not be secured on this device.") }
     }
     func directory() throws -> URL {
-        var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("RelayPending", isDirectory: true)
+        var url = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("RelayPending", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         var values = URLResourceValues(); values.isExcludedFromBackup = true; try url.setResourceValues(values)
         return url

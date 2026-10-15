@@ -23,10 +23,11 @@ internal class RelayManager(private val context: Context, private val scope: Cor
     private val _state = MutableStateFlow(RelayState())
     val state = _state.asStateFlow()
     private var job: Job? = null
+    private val generation = java.util.concurrent.atomic.AtomicLong()
     fun openImport(input: String = "") { _state.update { it.copy(showingImport = true, input = input, message = null) } }
     fun input(value: String) { _state.update { it.copy(input = value.take(256)) } }
     fun closeImport() { cancel(); _state.update { it.copy(showingImport = false) } }
-    fun cancel() { job?.cancel() }
+    fun cancel() { generation.incrementAndGet(); job?.cancel() }
     fun refresh() { scope.launch(Dispatchers.IO) { reload() } }
     private fun reload() {
         try {
@@ -37,6 +38,7 @@ internal class RelayManager(private val context: Context, private val scope: Cor
     private fun run(label: String, action: suspend () -> Unit) {
         if (_state.value.busy) return
         _state.update { it.copy(busy = true, progress = 0f, label = label, message = null) }
+        generation.incrementAndGet()
         job = scope.launch(Dispatchers.IO) {
             try { action(); coroutineContext.ensureActive() }
             catch (e: CancellationException) { _state.update { it.copy(message = "Canceled. Your local draft and any saved upload retry are unchanged.") }; throw e }
@@ -44,7 +46,10 @@ internal class RelayManager(private val context: Context, private val scope: Cor
             finally { _state.update { it.copy(busy = false) }; reload() }
         }
     }
-    private fun progress(done: Long, total: Long) { _state.update { it.copy(progress = if (total > 0) (done.toDouble() / total).toFloat().coerceIn(0f, 1f) else 0f) } }
+    private fun progressCallback(): (Long, Long) -> Unit {
+        val token = generation.get()
+        return { done, total -> if (generation.get() == token) _state.update { it.copy(progress = if (total > 0) (done.toDouble() / total).toFloat().coerceIn(0f, 1f) else 0f) } }
+    }
     fun upload(document: String, history: Boolean) = run("Preparing the selected Cook Pack") {
         val source = File.createTempFile("relay-prepare-", ".pittech", context.cacheDir)
         val value = try { val (revision, title) = prepare(document, history, source); coroutineContext.ensureActive(); vault.prepare(document, revision, title, source) } finally { source.delete() }
@@ -53,14 +58,14 @@ internal class RelayManager(private val context: Context, private val scope: Cor
     fun retry(value: RelayOwnedShare) = run("Retrying the same saved upload") { send(value) }
     private suspend fun send(value: RelayOwnedShare) {
         _state.update { it.copy(label = "Uploading the selected Cook Pack") }
-        val receipt = client.upload(value, vault.pack(value), ::progress); coroutineContext.ensureActive()
+        val receipt = client.upload(value, vault.pack(value), progressCallback()); coroutineContext.ensureActive()
         vault.finish(value, receipt)
         _state.update { it.copy(message = "Your code is ready. Anyone with it can access this selected pack.") }
     }
     fun download() = run("Downloading for preview") {
         val code = RelayProtocol.code(_state.value.input)
         val file = File.createTempFile("relay-download-", ".pittech", context.cacheDir)
-        try { client.download(code, file, ::progress); coroutineContext.ensureActive(); preview(file); _state.update { it.copy(showingImport = false) } }
+        try { client.download(code, file, progressCallback()); coroutineContext.ensureActive(); preview(file); _state.update { it.copy(showingImport = false) } }
         finally { file.delete() }
     }
     fun renew(value: RelayOwnedShare) = run("Renewing this code") {

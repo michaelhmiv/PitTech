@@ -28,6 +28,19 @@ class MealRecipeUserFlowsTest {
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
     }
     private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    @Test fun codeImportRejectsForeignLinksWithoutChangingTheLocalLibrary() {
+        runBlocking(Dispatchers.IO) { app.database.clearAllTables() }
+        compose.activityRule.scenario.recreate()
+        waitFor("nav-more"); compose.onNodeWithTag("nav-more").performClick()
+        waitFor("more-relay-import"); compose.onNodeWithTag("more-relay-import").performScrollTo().performClick()
+        waitFor("relay-code-input"); compose.onNodeWithTag("relay-code-input").performTextReplacement("https://foreign.invalid/s/ABCD-1234-5678-9EF0")
+        compose.onNodeWithTag("relay-download").performScrollTo().performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Only PitTech share links are supported.").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Only PitTech share links are supported.").performScrollTo().assertIsDisplayed()
+        shot("relay-import-invalid")
+        assertTrue(runBlocking(Dispatchers.IO) { app.cookRepository.observeCooks().first().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.companionDao().observeAll().first().isEmpty() })
+    }
     @Test fun savedRecipeCardPreviewAndCanceledShareKeepTheDraftAndSource() {
         val recipe = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()

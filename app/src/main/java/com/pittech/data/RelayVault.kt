@@ -38,7 +38,8 @@ internal class RelayVault(context: Context) {
         UUID.fromString(operation)
         val file = recordFile(operation)
         require(file.length() in 29..32768) { "The saved sharing capability is unavailable." }
-        val bytes = AtomicFile(file).readFully(), cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val bytes = AtomicFile(file).readFully()
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, secret(false), GCMParameterSpec(128, bytes.copyOfRange(0, 12))); cipher.updateAAD(operation.toByteArray())
         val plain = cipher.doFinal(bytes, 12, bytes.size - 12)
         return try { RelayOwnedShare.parse(JSONObject(String(plain, Charsets.UTF_8))) } finally { plain.fill(0) }
@@ -52,13 +53,14 @@ internal class RelayVault(context: Context) {
         } finally { bytes.fill(0) }
     }
     @Synchronized fun prepare(document: String, revision: Long, title: String, source: File): RelayOwnedShare {
-        load(document)?.let { previous ->
+        val previous = load(document)
+        previous?.let {
             require(previous.receipt != null || previous.revoked) { "Retry the interrupted upload before starting a different share." }
         }
         require(source.length() in 1..RelayProtocol.MAX_BYTES) { "Choose fewer dishes or photos." }
         require(directory.listFiles().orEmpty().filter { it.extension == "pittech" }.sumOf { it.length() } + source.length() <= 2 * RelayProtocol.MAX_BYTES) { "Resolve an interrupted share before preparing another pack." }
         val random = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val value = try { RelayOwnedShare(UUID.randomUUID().toString(), document, revision, Base64.getUrlEncoder().withoutPadding().encodeToString(random), RelayProtocol.hash(source), title.take(160)) } finally { random.fill(0) }
+        val value = try { RelayOwnedShare(UUID.randomUUID().toString(), document, revision, Base64.getUrlEncoder().withoutPadding().encodeToString(random), RelayProtocol.hash(source), title.take(160), createdAt = maxOf(System.currentTimeMillis(), (previous?.createdAt ?: 0) + 1)) } finally { random.fill(0) }
         val target = pack(value); source.inputStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
         try { save(value) } catch (e: Throwable) { target.delete(); throw e }
         return value
