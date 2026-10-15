@@ -139,3 +139,11 @@ Do not merge or deploy this draft until the backend workflow passes,
 native canonical imports pass, actual private storage/restart/deletion
 and proxy behavior pass in isolated staging, and the complete phase-1 parity
 and privacy gates pass. All issue #89 PRs remain draft.
+
+## Public publication draft
+
+Public API routes and storage remain disabled by default. See
+[`10-public-api.md`](../docs/online/10-public-api.md) for archive, anonymity,
+independent forks, runtime budgets and moderation/deletion release gates.
+Apply `operations/publications-runtime-role.sql` after migrations with the
+isolated administrator; the runtime role cannot read auth or private sync.

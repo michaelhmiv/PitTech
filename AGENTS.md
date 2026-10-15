@@ -12,7 +12,7 @@ GitHub issues; this file holds the durable rules of the road.
 - `privacy-site/` — the hosted privacy policy (Railway).
 - `feedback-service/` — Android feedback relay (Railway → GitHub issues).
 - `api-service/` — draft anonymous Cook Pack relay and optional passwordless
-  auth; separate `relay` / `auth` Postgres schemas and private object storage. `online-services.yml` verifies the backend;
+  auth and public publications; separate `relay` / `auth` / `publications` Postgres schemas and private object storage. `online-services.yml` verifies the backend;
   its review copy/application patch lives in `ci-proposals/`.
 - `store-assets/`, `distribution/` — store listing material.
 

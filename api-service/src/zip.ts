@@ -25,7 +25,7 @@ export function writeZip(files: Map<string, Buffer>): Buffer {
   end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
   const result = Buffer.concat([...bodies, directory, end]); requirePack(result.length <= LIMITS.compressed); return result;
 }
-export async function readZip(input: Buffer): Promise<Map<string, Buffer>> {
+export async function readZip(input: Buffer, kind: 'cook'|'publication' = 'cook'): Promise<Map<string, Buffer>> {
   requirePack(input.length >= 22 && input.length <= LIMITS.compressed);
   let eocd = -1;
   for (let i = input.length - 22; i >= Math.max(0, input.length - 65557); i--) {
@@ -33,7 +33,7 @@ export async function readZip(input: Buffer): Promise<Map<string, Buffer>> {
   }
   requirePack(eocd >= 0 && input.readUInt16LE(eocd + 4) === 0 && input.readUInt16LE(eocd + 6) === 0);
   const count = input.readUInt16LE(eocd + 10), directory = input.readUInt32LE(eocd + 16);
-  requirePack(count >= 2 && count <= LIMITS.entries && input.readUInt16LE(eocd + 8) === count &&
+  requirePack(count >= (kind === 'publication' ? 1 : 2) && count <= LIMITS.entries && input.readUInt16LE(eocd + 8) === count &&
     directory + input.readUInt32LE(eocd + 12) === eocd);
   const zip = await new Promise<yauzl.ZipFile>((resolve, reject) => yauzl.fromBuffer(input,
     { lazyEntries: true, validateEntrySizes: true, strictFileNames: true }, (error, value) => error ? reject(error) : resolve(value!)));
@@ -43,8 +43,9 @@ export async function readZip(input: Buffer): Promise<Map<string, Buffer>> {
       zip.on('error', reject); zip.on('end', resolve);
       zip.on('entry', (entry: yauzl.Entry) => { void (async () => {
         const name = entry.fileName;
-        requirePack(!files.has(name) && (/^(manifest\.json|README\.txt|data\/pittech\.json)$/.test(name) ||
-          /^attachments\/[a-f\d-]{36}\.jpg$/i.test(name) || /^csv\/[a-z_]+\.csv$/.test(name)));
+        requirePack(!files.has(name) && (kind === 'publication'
+          ? name === 'publication.json' || /^attachments\/[a-zA-Z0-9_-]+\.(jpg|png|webp)$/.test(name)
+          : /^(manifest\.json|README\.txt|data\/pittech\.json)$/.test(name) || /^attachments\/[a-f\d-]{36}\.jpg$/i.test(name) || /^csv\/[a-z_]+\.csv$/.test(name)));
         requirePack(entry.uncompressedSize <= LIMITS.entry && entry.compressedSize <= LIMITS.compressed &&
           !(entry.generalPurposeBitFlag & 65) && [0, 8].includes(entry.compressionMethod) &&
           entry.versionNeededToExtract <= 20 && !entry.extraFields.some(f => f.id === 1) &&

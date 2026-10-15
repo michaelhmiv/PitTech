@@ -12,9 +12,11 @@ import { association, landing, type LinkConfig } from './web.ts';
 import type { Authentication } from './auth.ts';
 import type { Relay } from './relay.ts';
 import { validate } from './validation.ts';
+import { publicationRoute, handlePublication } from './publication-http.ts';
+import type { Publications } from './publications.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; publications?: Publications; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -28,7 +30,7 @@ export function makeServer(relay: Relay, options: Options) {
   const trust = proxyaddr.compile(options.trustedProxies ?? []); let active = 0, uploading = false;
   const root = options.tempRoot ?? tempRoot;
   const server = createServer({ maxHeaderSize: 8192 }, async (req, res) => {
-    const requestId = randomUUID(), method = ['GET', 'POST', 'DELETE'].includes(req.method ?? '') ? req.method! : 'OTHER';
+    const requestId = randomUUID(), method = ['GET', 'POST', 'PUT', 'DELETE'].includes(req.method ?? '') ? req.method! : 'OTHER';
     let route = 'unknown', directory: string | undefined, counted = false, upload = false;
     const release = () => { if (counted) { active--; counted = false; } };
     res.once('finish', release); res.once('close', release);
@@ -65,6 +67,16 @@ export function makeServer(relay: Relay, options: Options) {
         else if (authRoute === '/v1/auth/refresh') json(200, await options.auth.refresh(body.refreshToken, body.idempotencyId));
         else { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
         return;
+      }
+      const publicRoute=publicationRoute(req.url??'',method);
+      if(publicRoute&&options.publications){
+        route=publicRoute;
+        if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const now=relay.clock(),bucket=Math.floor(now/3600000),category=method==='GET'?'public-read':'public-write';
+        const key=category+':'+rateIdentity(options.ipKey,proxyaddr(req,trust),category+':'+bucket);
+        if(!await relay.repository.rate(key,method==='GET'?120:60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handlePublication(req,res,publicRoute,options.publications,options.auth,{root,
+          claimUpload:()=>{if(uploading)return false;uploading=true;return true;},releaseUpload:()=>{uploading=false;}});return;
       }
       const links = options.links ?? { appleAppIds: [], androidCertificates: [] };
       if (method === 'GET' && ['/.well-known/apple-app-site-association', '/.well-known/assetlinks.json'].includes(req.url ?? '')) {

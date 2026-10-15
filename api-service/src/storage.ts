@@ -5,20 +5,22 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { LIMITS } from './core.ts';
 
 export interface Storage { put(key: string, file: string): Promise<void>; get(key: string): Promise<Buffer>; delete(key: string): Promise<void> }
-function validKey(key: string): void { if (!/^relay\/[a-f\d-]{36}\.pittech$/i.test(key)) throw new Error('Invalid object key'); }
+function validKey(key: string): void { if (!/^(relay|publications)\/[a-f\d-]{36}\.pittech$/i.test(key)) throw new Error('Invalid object key'); }
 export class FileStorage implements Storage {
   root: string;
   constructor(root: string) { this.root = root; }
   path(key: string) { validKey(key); return join(this.root, key); }
   async put(key: string, file: string) {
-    const path = this.path(key), temporary = path + '.partial'; await mkdir(join(this.root, 'relay'), { recursive: true, mode: 0o700 });
+    const path = this.path(key), temporary = path + '.partial'; await mkdir(join(this.root, key.split('/')[0]), { recursive: true, mode: 0o700 });
     try { await copyFile(file, temporary); await chmod(temporary, 0o600); await rename(temporary, path); } finally { await rm(temporary, { force: true }); }
   }
   async get(key: string) { const p = this.path(key); if ((await stat(p)).size > LIMITS.compressed) throw new Error('Oversize object'); return readFile(p); }
   async delete(key: string) { await rm(this.path(key), { force: true }); }
   async prune(now: number) {
-    const root = join(this.root, 'relay'); for (const item of await readdir(root).catch(() => [])) if (item.endsWith('.partial')) {
+    for (const namespace of ['relay','publications']) {
+    const root = join(this.root, namespace); for (const item of await readdir(root).catch(() => [])) if (item.endsWith('.partial')) {
       const p = join(root, item); if ((await stat(p)).mtimeMs < now - 30 * 60000) await rm(p, { force: true });
+    }
     }
   }
 }
