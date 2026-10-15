@@ -332,6 +332,11 @@ jobs:
           print(f"Created distribution certificate {created['id']}")
 
           bundle_id = call("GET", "/bundleIds?filter[identifier]=com.pittech")["data"][0]["id"]
+          capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities?limit=200").get("data", [])
+          if not any(c.get("attributes", {}).get("capabilityType") == "ASSOCIATED_DOMAINS" for c in capabilities):
+              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
+                  "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
+                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
 
           profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:

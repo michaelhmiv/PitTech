@@ -136,6 +136,9 @@ fun PitTechApp(
     val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
+    var sharedCodes by rememberSaveable { mutableStateOf(false) }
+    RelayImportDialog(viewModel)
+    if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("pittech-preferences", 0) }
@@ -339,7 +342,7 @@ fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
-            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" })
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true })
             }
         }
     }

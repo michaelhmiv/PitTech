@@ -105,7 +105,7 @@ object ShareCardContent {
     }
 }
 
-suspend fun SharingRepository.prepareShareCard(id: String): PreparedShareCard {
+suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay? = null): PreparedShareCard {
     val record = get(id) ?: error("This sharing draft is unavailable."); val document = SharingDraftCodec.decode(record.payload)
     val photo = if (document.card.hero == "photo") {
         val hero = document.heroPhotoId ?: error("Choose an included cover photo.")
@@ -114,5 +114,5 @@ suspend fun SharingRepository.prepareShareCard(id: String): PreparedShareCard {
         val asset = assets(id).firstOrNull { it.id == hero } ?: error("This cover photo is unavailable.")
         CookPackPhoto.derivative(photoBytes(asset.relativePath) ?: error("This selected photo is unavailable."))
     } else null
-    return ShareCardContent.build(document, photo)
+    return ShareCardContent.build(document, photo, relay)
 }

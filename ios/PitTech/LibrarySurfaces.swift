@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MoreView: View {
+    @Environment(NativeRelayCoordinator.self) private var relay
     let runtime: NativeTelemetryRuntime
     var body: some View {
         NavigationStack {
@@ -19,6 +20,12 @@ struct MoreView: View {
                     NavigationLink { SettingsView() } label: {
                         MoreDestinationLabel(title: "Settings & support", subtitle: "Appearance, units, data and feedback", symbol: "gearshape")
                     }.accessibilityIdentifier("more-settings")
+                    Button { relay.showingImport = true; relay.message = nil } label: {
+                        MoreDestinationLabel(title: "Import by code", subtitle: "Preview a shared Cook Pack without an account", symbol: "qrcode")
+                    }.accessibilityIdentifier("more-relay-import")
+                    NavigationLink { NativeSharedCodesView() } label: {
+                        MoreDestinationLabel(title: "My shared codes", subtitle: "Renew or revoke codes created on this device", symbol: "square.and.arrow.up")
+                    }.accessibilityIdentifier("more-relay-owned")
                 }.padding(20)
             }.background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("More").navigationBarTitleDisplayMode(.inline)

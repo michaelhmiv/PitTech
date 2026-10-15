@@ -60,6 +60,8 @@ GitHub issues; this file holds the durable rules of the road.
    profile via the App Store Connect API on every run. Never add steps that
    assume local keychains, exported .p12 files, or manually created
    certificates/profiles.
+   It enables Associated Domains before creating the profile. The app's
+   `PitTech.entitlements` and the final HTTPS association files must match.
 3. **Workflow files:** editing `.github/workflows/*` requires the GitHub App's
    Workflows repository permission. This connection successfully installed the
    backend workflow on October 15. Verify the actual write and Actions result;
@@ -115,6 +117,9 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
+- Code/link sharing keeps owner capabilities in device-only Keychain/Keystore
+  storage outside library exports. Incoming links open a preview flow; they
+  never import or create an account automatically. See `docs/online/07-code-links.md`.
 - The [connection parity matrix](docs/CONNECTION_PLATFORM_PARITY.md) records
   store availability on both clients and explicit port/platform decisions
   for provider history and background monitoring differences.

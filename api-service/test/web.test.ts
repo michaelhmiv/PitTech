@@ -1,0 +1,38 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { makeServer } from '../src/http.ts';
+import { Relay } from '../src/relay.ts';
+import { association, linkConfig } from '../src/web.ts';
+import { MemoryRepository, budgets } from './helpers.ts';
+
+test('association configuration requires genuine certificate shapes and exact app identities', () => {
+  const config = linkConfig({ APPLE_APP_IDS: 'ABCDEFGHIJ.com.pittech', ANDROID_APP_LINK_CERTIFICATES: Array(32).fill('AB').join(':') });
+  assert.ok(association('/.well-known/apple-app-site-association', config));
+  assert.ok(association('/.well-known/assetlinks.json', config));
+  assert.equal(association('/.well-known/assetlinks.json', linkConfig({})), undefined);
+  for (const env of [{ APPLE_APP_IDS: '*.com.pittech' }, { ANDROID_APP_LINK_CERTIFICATES: 'upload-certificate-placeholder' }, { APPLE_APP_STORE_URL: 'https://attacker.invalid' }]) assert.throws(() => linkConfig(env));
+});
+test('web sharing never downloads an object, renews a code, reveals owner metadata or logs bearer codes', async t => {
+  const repository = new MemoryRepository(), logs: unknown[] = []; let downloads = 0, now = Date.now();
+  const relay = new Relay(repository, { put: async () => {}, get: async () => { downloads++; return Buffer.alloc(0); }, delete: async () => {} }, budgets, () => now);
+  const owner = randomBytes(32).toString('base64url');
+  const pack = await relay.upload('unused', { kind: 'collection', dishes: 2, bytes: 10, sha256: 'a'.repeat(64) }, owner, randomUUID());
+  const server = makeServer(relay, { ipKey: 'x'.repeat(32), uploadsEnabled: false, log: x => logs.push(x) });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const response = await fetch(origin + '/s/' + pack.code.toLowerCase()); assert.equal(response.status, 200);
+  const html = await response.text(); assert.match(html, /2 selected dishes/); assert.ok(html.includes('pittech://share/' + pack.code));
+  assert.match(html, /does not automatically import/); assert.ok(!html.includes(owner)); assert.ok(!html.includes('/packs/'));
+  assert.match(response.headers.get('content-security-policy')!, /default-src 'none'/); assert.match(response.headers.get('cache-control')!, /no-store/);
+  assert.equal(downloads, 0); assert.equal((await repository.get(pack.code))!.expiresAt, new Date(pack.expiresAt).getTime());
+  const missing = await fetch(origin + '/s/0000-0000-0000-0000'); assert.equal(missing.status, 404); const unavailable = await missing.text();
+  assert.equal((await fetch(origin + '/s/%3Cscript%3E')).status, 404);
+  now = new Date(pack.expiresAt).getTime() + 1;
+  const expired = await fetch(origin + '/s/' + pack.code); assert.equal(expired.status, 404); assert.equal(await expired.text(), unavailable);
+  assert.equal((await fetch(origin + '/.well-known/assetlinks.json')).status, 503);
+  for (let i = 0; i < 119; i++) assert.equal((await fetch(origin + '/s/0000-0000-0000-0000')).status, 404);
+  assert.equal((await fetch(origin + '/s/0000-0000-0000-0000')).status, 429);
+  const log = JSON.stringify(logs); assert.ok(!log.includes(pack.code)); assert.ok(!log.includes(owner));
+});

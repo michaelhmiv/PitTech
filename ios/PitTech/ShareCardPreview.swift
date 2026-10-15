@@ -44,6 +44,7 @@ struct NativeShareCardPreview: View {
     @Environment(CookStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let id: String
+    var relay: ShareCardRelay? = nil
     var onPack: () -> Void
     @State private var bytes: Data?
     @State private var error: String?
@@ -67,7 +68,7 @@ struct NativeShareCardPreview: View {
             .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Done") { dismiss() } } }
             .task(id:retry) {
                 working = true;error = nil
-                do { let prepared = try await store.prepareShareCard(id);try Task.checkCancellation();bytes = try NativeShareCardRenderer.render(prepared) }
+                do { let prepared = try await store.prepareShareCard(id, relay: relay);try Task.checkCancellation();bytes = try NativeShareCardRenderer.render(prepared) }
                 catch is CancellationError { }
                 catch { self.error = error.localizedDescription }
                 working = false

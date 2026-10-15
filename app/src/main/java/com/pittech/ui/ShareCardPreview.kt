@@ -73,16 +73,16 @@ internal object ShareCardFiles {
     }
 }
 
-@Composable internal fun ShareCardPreview(id: String, viewModel: CooksViewModel, onPack: () -> Unit, onClose: () -> Unit) {
+@Composable internal fun ShareCardPreview(id: String, viewModel: CooksViewModel, onPack: () -> Unit, onClose: () -> Unit, relay: com.pittech.data.ShareCardRelay? = null) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var bytes by remember(id) { mutableStateOf<ByteArray?>(null) }; var error by remember(id) { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }; var working by remember { mutableStateOf(true) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         if (uri != null) bytes?.let { image -> scope.launch { runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri,"w")?.use { it.write(image) } ?: kotlin.error("This image could not be saved.") } }.onFailure { error = it.message } } }
     }
-    LaunchedEffect(id,retry) {
+    LaunchedEffect(id,retry,relay?.code) {
         working = true; error = null
-        try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id)) } }
+        try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id, relay)) } }
         catch (e: Exception) { error = e.message }
         finally { working = false }
     }

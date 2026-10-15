@@ -1,0 +1,126 @@
+import SwiftUI
+import UIKit
+import CoreImage.CIFilterBuiltins
+
+struct NativeRelayProgress: View {
+    @Environment(NativeRelayCoordinator.self) private var relay
+    var body: some View {
+        if relay.busy {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(relay.operationLabel).font(.subheadline)
+                ProgressView(value: relay.progress).accessibilityLabel(relay.operationLabel)
+                Button("Cancel request") { relay.cancel() }.frame(minHeight: 44)
+            }
+        }
+        if let message = relay.message { Text(message).font(.subheadline).accessibilityIdentifier("relay-message") }
+    }
+}
+struct NativeRelayImportView: View {
+    @Environment(NativeRelayCoordinator.self) private var relay
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Bring a shared cook into your cookbook").font(.title2.bold())
+                Text("Enter the code from a card or paste a PitTech share link. You can preview the pack and choose individual dishes before saving.")
+                TextField("Cook Pack code or link", text: Binding(get: { relay.input }, set: { relay.input = String($0.prefix(256)) }))
+                    .textFieldStyle(.roundedBorder).textInputAutocapitalization(.characters).autocorrectionDisabled().accessibilityIdentifier("relay-code-input")
+                Button("Download & preview") { relay.download() }.buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(relay.busy || relay.input.isEmpty).accessibilityIdentifier("relay-download")
+                Text("No account required. A downloaded pack is not added to your recipes or history until you choose to save it.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                NativeRelayProgress()
+            }.padding(20)
+        }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Import by code").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { relay.cancel(); relay.showingImport = false } } }
+            .onDisappear { relay.cancel() }
+    }
+}
+struct NativeRelayShareView: View {
+    @Environment(CookStore.self) private var store
+    @Environment(NativeRelayCoordinator.self) private var relay
+    @Environment(\.dismiss) private var dismiss
+    let id: String
+    let includeHistory: Bool
+    @State private var previewCard = false
+    private var document: NativeSharingDocument? { try? store.sharingDocument(id) }
+    private var revision: Double { store.sharingRecord(id)?["updated"]?.numberValue ?? 0 }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let document {
+                    Text(document.title).font(.title2.bold())
+                    Text("Review the selected pack").font(.headline)
+                    ForEach(document.entries.filter(\.included)) { entry in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text((try? entry.snapshot.name) ?? "Selected dish").font(.headline)
+                            Text("\(entry.photoIds.count) selected photos · " + (entry.includeStory ? "Recorded story included" : "Instructions only")).font(.caption)
+                        }
+                    }
+                    Text(includeHistory ? "Includes this recorded meal; recipients can choose whether to add it to history." : "Recipients can save the selected recipes without importing your meal history.").font(.subheadline)
+                    Text("Anyone with the code can download this selected pack for 180 days. It is not listed publicly. Reading the code does not renew it. Renewal and revocation are controlled from this device.").font(.subheadline)
+                    Button("Upload selected pack") { relay.upload(id, includeHistory: includeHistory, store: store) }.buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(relay.busy).accessibilityIdentifier("relay-upload")
+                    if let card = relay.card(id, revision: revision) {
+                        Button("Preview card with this code") { previewCard = true }.buttonStyle(.bordered).frame(minHeight: 44)
+                        Text("The code refers to this frozen upload. Later recipe edits do not change its contents.").font(.caption)
+                        ShareLink(item: URL(string: card.url)!) { Label("Share link", systemImage: "square.and.arrow.up") }.frame(minHeight: 44)
+                    }
+                }
+                NativeRelayProgress()
+                ForEach(relay.shares.filter { $0.document == id }) { NativeOwnedRelayRow(value: $0) }
+                Button("Back to share a file or image") { dismiss() }.frame(minHeight: 44)
+            }.padding(20)
+        }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Share by code").navigationBarTitleDisplayMode(.inline)
+            .onAppear { relay.refresh() }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .sheet(isPresented: $previewCard) {
+                NavigationStack { NativeShareCardPreview(id: id, relay: relay.card(id, revision: revision)) { previewCard = false; dismiss() } }.modifier(ScreenshotTextSize())
+            }
+    }
+}
+struct NativeSharedCodesView: View {
+    @Environment(NativeRelayCoordinator.self) private var relay
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Codes created on this device").font(.title2.bold())
+                Text("Your management capability stays on this device. Revocation stops new downloads; recipients keep copies they already saved.").font(.subheadline)
+                NativeRelayProgress()
+                if relay.shares.isEmpty { Text("No shared codes yet. Open a saved recipe or meal, choose Share, then Share by code.") }
+                ForEach(relay.shares) { NativeOwnedRelayRow(value: $0) }
+            }.padding(20)
+        }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("My shared codes").navigationBarTitleDisplayMode(.inline).onAppear { relay.refresh() }
+    }
+}
+private struct NativeOwnedRelayRow: View {
+    @Environment(NativeRelayCoordinator.self) private var relay
+    let value: NativeRelayOwnedShare
+    @State private var confirmingRevoke = false
+    @State private var showingQR = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(value.title).font(.headline)
+            if let receipt = value.receipt {
+                Text(receipt.code).font(.system(.headline, design: .monospaced)).textSelection(.enabled).accessibilityIdentifier("relay-owned-code")
+                Text(value.revoked ? "Revoked" : receipt.expired ? "Expired" : "Available until " + receipt.expiry.formatted(date: .abbreviated, time: .omitted)).font(.caption)
+                if !value.revoked && !receipt.expired {
+                    Button(showingQR ? "Hide QR code" : "Show QR code") { showingQR.toggle() }.frame(minHeight: 44)
+                    if showingQR, let image = Self.qr("https://pittech.app/s/" + receipt.code) { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 240).padding(32).background(Color.white).accessibilityLabel("QR code for this Cook Pack") }
+                    ShareLink(item: URL(string: "https://pittech.app/s/" + receipt.code)!) { Label("Share link", systemImage: "square.and.arrow.up") }.frame(minHeight: 44)
+                    Button("Copy code") { UIPasteboard.general.string = receipt.code }.frame(minHeight: 44)
+                    Button("Renew for 180 days") { relay.renew(value) }.frame(minHeight: 44).disabled(relay.busy)
+                    Button("Revoke code", role: .destructive) { confirmingRevoke = true }.frame(minHeight: 44).disabled(relay.busy)
+                }
+            } else {
+                Text("Upload not confirmed. Retry the saved bytes to recover the same code if the server already accepted them.").font(.subheadline)
+                Button("Retry saved upload") { relay.retry(value) }.frame(minHeight: 44).disabled(relay.busy)
+            }
+        }.padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .confirmationDialog("Stop new downloads for this code?", isPresented: $confirmingRevoke) {
+                Button("Revoke code", role: .destructive) { relay.revoke(value) }
+                Button("Cancel", role: .cancel) { }
+            } message: { Text("Copies already saved by recipients remain available to them.") }
+    }
+    private static func qr(_ value: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator(); filter.message = Data(value.utf8); filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)), let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: image)
+    }
+}

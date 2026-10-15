@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(CookStore.self) private var store
+    @Environment(NativeRelayCoordinator.self) private var relay
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
 
@@ -33,6 +34,12 @@ struct ContentView: View {
             if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
         } }
         .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) } } }
+        .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {
+            if let file = relay.downloaded {
+                relay.downloaded = nil
+                Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
+            }
+        }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
         .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
             store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil
         }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }

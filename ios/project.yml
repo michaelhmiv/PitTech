@@ -52,6 +52,7 @@ targets:
         PITTECH_ADMOB_APP_ID: "ca-app-pub-3940256099942544~1458002511"
         PITTECH_NATIVE_AD_UNIT_ID: "ca-app-pub-3940256099942544/3986624511"
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: PitTech/PitTech.entitlements
       configs:
         Release:
           # App Store builds sign manually with the CI-generated profile.

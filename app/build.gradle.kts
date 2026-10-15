@@ -93,6 +93,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
 
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.google.zxing:core:3.5.4")
 
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")

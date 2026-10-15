@@ -58,7 +58,7 @@ enum NativeArchiveIntakeReader {
 }
 
 @MainActor extension CookStore {
-    func receiveArchive(at source: URL) async {
+    func receiveArchive(at source: URL, cookPackOnly: Bool = false) async {
         guard source.isFileURL else { return }
         let request = UUID().uuidString
         archiveIntakeRequest = request
@@ -67,6 +67,7 @@ enum NativeArchiveIntakeReader {
         let preparation = Task.detached(priority: .userInitiated) { try NativeArchiveIntakeReader.prepare(source) }
         do {
             let intake = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
+            if cookPackOnly && intake.preview.cookPack == nil { try? FileManager.default.removeItem(at: intake.url); throw PitTechArchiveError.invalidArchive }
             guard !Task.isCancelled, archiveIntakeRequest == request else { try? FileManager.default.removeItem(at: intake.url); return }
             discardArchiveIntake(); archiveIntake = intake; archiveMessage = nil
         } catch is CancellationError { }
