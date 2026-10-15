@@ -118,6 +118,7 @@ export async function canonicalPack(input: Buffer): Promise<{ bytes: Buffer; sum
     manifest.format === 'PitTech complete cook archive' && validateMeta(manifest.cookPack));
   requirePack(string(manifest.exportedAtUtc, 128) && Number.isFinite(Date.parse(manifest.exportedAtUtc)) && (manifest.appVersion == null || string(manifest.appVersion, 64)));
   const meta = object(manifest.cookPack), selected = array(meta.recipeRevisionIds, 20), dishIds = array(meta.dishIds, 20);
+  if (meta.kind === 'recipe') requirePack(selected.length === 1);
   for (const table of emptyTables) requirePack(array(data[table]).length === 0);
   for (const [table, names] of Object.entries(fields)) {
     const ids = new Set();
@@ -196,6 +197,7 @@ export async function canonicalPack(input: Buffer): Promise<{ bytes: Buffer; sum
   if (meta.kind === 'cook') {
     requirePack(cooks.length === 1 && cooks[0].status === 'completed' && utc(cooks[0].startedAtUtcMillis) && utc(cooks[0].endedAtUtcMillis) && cooks[0].endedAtUtcMillis >= cooks[0].startedAtUtcMillis &&
       dishes.length === dishIds.length && dishes.length === entries.length && dishIds.every(id => dishes.some(d => d.id === id)) && entries.every(e => e.includeStory));
+    requirePack(new Set(entries.map(e => object(e.story).attemptId)).size === dishIds.length);
   } else requirePack(Object.keys(fields).filter(k => !['recipes', 'recipeRevisions', 'recipeAssets', 'companionRecords', 'companionPhotos'].includes(k)).every(k => rows(data, k).length === 0));
   for (const table of ['dishes', 'ingredients', 'events', 'readings', 'targets', 'results', 'probes', 'photos', 'lifecycles', 'targetHistory']) for (const row of rows(data, table)) {
     requirePack(cooks.some(c => c.id === row.cookId));

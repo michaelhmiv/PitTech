@@ -6,6 +6,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import proxyaddr from 'proxy-addr';
+import { get } from 'node:http';
 import { makeServer } from '../src/http.ts';
 import { digest } from '../src/core.ts';
 import { Relay } from '../src/relay.ts';
@@ -67,4 +68,17 @@ test('pausing uploads leaves download and owner revocation available', async t =
   const r = await relay.upload('unused', { kind: 'recipe', dishes: 1, bytes: body.length, sha256: hash }, owner, randomUUID());
   assert.equal((await fetch(base + '/packs/' + r.code)).status, 200);
   assert.equal((await fetch(base + '/packs/' + r.code, { method: 'DELETE', headers: { Authorization: 'Bearer ' + owner } })).status, 204);
+});
+
+test('slow downloads retain their concurrency slots until the response closes', async t => {
+  const body = Buffer.alloc(8 * 1024 ** 2), repository = new MemoryRepository();
+  const relay = new Relay(repository, { put: async () => {}, get: async () => body, delete: async () => {} }, budgets);
+  const r = await relay.upload('unused', { kind: 'recipe', dishes: 1, bytes: body.length, sha256: digest(body) }, randomBytes(32).toString('base64url'), randomUUID());
+  const server = makeServer(relay, { ipKey: 'x'.repeat(32), uploadsEnabled: false }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); }); const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  for (let i = 0; i < 2; i++) await new Promise<void>((resolve, reject) => {
+    const client = get(base + '/packs/' + r.code, response => { response.pause(); t.after(() => { response.destroy(); client.destroy(); }); resolve(); });
+    client.on('error', reject);
+  });
+  assert.equal((await fetch(base + '/packs/' + r.code)).status, 503);
 });

@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import sharp from 'sharp';
+import { deflateRawSync } from 'node:zlib';
 import { canonicalPack, stable } from '../src/pack.ts';
-import { readZip, writeZip } from '../src/zip.ts';
+import { readZip, writeZip, crc32 } from '../src/zip.ts';
 import { digest, LIMITS } from '../src/core.ts';
 import { golden, alter } from './helpers.ts';
 
@@ -55,6 +56,15 @@ test('unsafe ZIP paths, duplicates, bad CRC, local-header mismatch, encryption, 
   const symlink = Buffer.from(stored), directory = symlink.readUInt32LE(symlink.length - 6); symlink.writeUInt32LE((0xA000 << 16) >>> 0, directory + 38); await assert.rejects(readZip(symlink));
   const tooMany = new Map(Array.from({ length: LIMITS.entries + 1 }, (_, i) => [`csv/${'a'.repeat(i + 1)}.csv`, Buffer.alloc(0)])); await assert.rejects(readZip(writeZip(tooMany)));
   const large = new Map([['README.txt', Buffer.alloc(LIMITS.entry + 1)], ['manifest.json', Buffer.from('{}')]]); await assert.rejects(readZip(writeZip(large)));
+  // The compressed stream expands beyond its declared size, while header sizes stay below every cap.
+  const original = writeZip(new Map([['README.txt', Buffer.from('x')], ['manifest.json', Buffer.from('{}')]]));
+  const expanded = Buffer.alloc(32768), compressed = deflateRawSync(expanded), delta = compressed.length - 1;
+  const forged = Buffer.concat([original.subarray(0, 40), compressed, original.subarray(41)]), end = forged.length - 22;
+  const dir = original.readUInt32LE(original.length - 6) + delta; forged.writeUInt32LE(dir, end + 16);
+  forged.writeUInt16LE(8, 8); forged.writeUInt32LE(crc32(expanded), 14); forged.writeUInt32LE(compressed.length, 18);
+  forged.writeUInt16LE(8, dir + 10); forged.writeUInt32LE(crc32(expanded), dir + 16); forged.writeUInt32LE(compressed.length, dir + 20);
+  forged.writeUInt32LE(original.readUInt32LE(original.readUInt32LE(original.length - 6) + 56 + 42) + delta, dir + 56 + 42);
+  await assert.rejects(readZip(forged));
   await assert.rejects(readZip(input.subarray(0, input.length - 10)));
 });
 test('corrupt media and unrelated attachment bytes never enter storage', async () => {

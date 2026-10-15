@@ -143,6 +143,7 @@ struct CookTemperatureChart: View {
             controls
             if store.guideState(cookId).visible && guideData.flatMap(\.readings).isEmpty { Text("Guide curves wait for actual Food on. Sources without temperatures show instructions only.").font(.caption) }
             temperaturePlot
+            Text("Touch and hold the chart to scrub; swipe to scroll. The slider also selects recorded temperatures.").font(.caption).foregroundStyle(.secondary)
             Text(comparing ? "Time since \(CookStore.actionLabel(alignment)) (min)" : clockMode ? "Clock time · local date and time" : store.timingMode(cookId) == "explicit_phases" && store.library.actions(for: cookId).contains(where: { $0.action == "food_on" }) ? "Time since Food on (min) · negative time is preparation" : "Time since session start (min)").font(.caption).accessibilityIdentifier("chart-x-axis")
             channelControls
             if !referenceTimes.isEmpty { Text("Author curves are dashed. Manual source measurements remain individual points. Each guide is aligned to that dish's actual Food on.").font(.caption).accessibilityIdentifier("guide-chart-legend") }
@@ -203,7 +204,15 @@ struct CookTemperatureChart: View {
             .chartXAxis { AxisMarks(values: .automatic(desiredCount: 5)) { value in AxisGridLine(); AxisTick(); AxisValueLabel { if let number = value.as(Double.self) { Text(clockMode && !comparing ? Date(timeIntervalSince1970: number * 60).formatted(date: .abbreviated, time: .shortened) : number.formatted(.number.precision(.fractionLength(0...1)))) } } } }
             .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in AxisGridLine(); AxisTick(); AxisValueLabel { if let number = value.as(Double.self) { Text(number.formatted(.number.precision(.fractionLength(0)))) } } } }
             .chartXSelection(value: $selected).chartScrollableAxes(.horizontal).chartXVisibleDomain(length: span).chartScrollPosition(x: $scrollStart)
-            .frame(height: 300).accessibilityLabel("Time and temperature axes, recorded samples with gaps, targets and cook notes")
+            .chartGesture { chart in
+                // A page swipe can begin immediately. Selection starts only after an explicit hold.
+                LongPressGesture(minimumDuration: 0.3)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .onChanged { phase in
+                        if case .second(true, let drag?) = phase { chart.selectXValue(at: drag.location.x) }
+                    }
+            }
+            .frame(height: 300).accessibilityLabel("Time and temperature axes, recorded samples with gaps, targets and cook notes").accessibilityIdentifier("temperature-plot")
     }
     private var channelControls: some View {
         VStack(alignment: .leading) {

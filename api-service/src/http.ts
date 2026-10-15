@@ -28,6 +28,9 @@ export function makeServer(relay: Relay, options: Options) {
   const server = createServer({ maxHeaderSize: 8192 }, async (req, res) => {
     const requestId = randomUUID(), method = ['GET', 'POST', 'DELETE'].includes(req.method ?? '') ? req.method! : 'OTHER';
     let route = 'unknown', directory: string | undefined, counted = false, upload = false;
+    const release = () => { if (counted) { active--; counted = false; } };
+    res.once('finish', release); res.once('close', release);
+    res.setTimeout(30000, () => res.destroy());
     res.setHeader('X-Request-Id', requestId); res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Content-Type-Options', 'nosniff');
     res.on('finish', () => options.log?.({ requestId, method, route, status: res.statusCode }));
@@ -83,7 +86,7 @@ export function makeServer(relay: Relay, options: Options) {
         };
         json(error.status, { error: { code: error.code, message: messages[error.code] ?? 'Please try again later. Your local draft is unchanged.' }, requestId });
       }
-    } finally { if (directory) await rm(directory, { force: true, recursive: true }); if (counted) active--; if (upload) uploading = false; }
+    } finally { if (directory) await rm(directory, { force: true, recursive: true }); if (res.destroyed) release(); if (upload) uploading = false; }
   });
   server.requestTimeout = 30000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
   return server;
