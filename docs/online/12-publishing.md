@@ -69,7 +69,11 @@ fixed-footer discovery test failure. The actual Android publication archive from
 Actions 38799334048 passes the canonical backend validator and is retained as
 `native-publication-android-v1.json` with producer/digest metadata. A backend
 regression test verifies its selected frozen story, source revision and photo.
-The complete native runtime suites at that head are not yet green.
+iOS Actions 38799333789 passes 92/93 tests, zero skips, including all three
+queue tests and the standard-size discovery Save/Cook flow. The enlarged
+automation launch reset library metadata but retained fixed-ID photo files;
+the DEBUG-only reset now clears its owned attachments too. Complete native
+runtime/visual verification remains pending.
 
 Still required in this same draft: finish native CI and visual review, validate
 both actual native publication archives through the canonical backend validator,
