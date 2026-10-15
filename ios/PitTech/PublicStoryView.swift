@@ -15,6 +15,13 @@ struct NativePublicStoryView: View {
         return all.enumerated().filter { $0.offset % stride == 0 || $0.offset == all.count - 1 || $0.offset == minimum || $0.offset == maximum }.map(\.element)
     }
     private func time(_ offset: Double) -> String { RecipeReferenceTimeline.relative(offset - (story["foodOnOffsetMillis"]?.numberValue ?? 0)) }
+    private func valueDescription(_ point: [String: JSONValue]) -> String {
+        let celsius = point["valueCelsius"]?.numberValue ?? 0
+        let value = store.temperatureUnit == "C" ? celsius : celsius * 9 / 5 + 32
+        let unit = store.temperatureUnit == "C" ? " °C · " : " °F · "
+        let quality = point["quality"]?.stringValue ?? "recorded"
+        return time(point["offsetMillis"]?.numberValue ?? 0) + " · " + String(format: "%.1f", value) + unit + quality
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recorded cook story").font(.title3.bold())
@@ -27,19 +34,11 @@ struct NativePublicStoryView: View {
                     }
                 }
                 if !points.isEmpty {
-                    Chart {
-                        ForEach(points.indices, id: \.self) { index in
-                            let point = points[index], celsius = point["valueCelsius"]?.numberValue ?? 0
-                            PointMark(x: .value("Hours", ((point["offsetMillis"]?.numberValue ?? 0) - (story["foodOnOffsetMillis"]?.numberValue ?? 0)) / 3_600_000),
-                                      y: .value(store.temperatureUnit == "C" ? "°C" : "°F", store.temperatureUnit == "C" ? celsius : celsius * 9 / 5 + 32))
-                                .symbol(by: .value("Source", point["quality"]?.stringValue == "manual" ? "Manual" : "Recorded"))
-                        }
-                    }.frame(height: 220).chartXAxisLabel(story["foodOnOffsetMillis"]?.numberValue == nil ? "Shared timeline · hours" : "Hours from Food on").chartYAxisLabel(store.temperatureUnit == "C" ? "°C" : "°F")
+                    NativePublicSampleChart(points: points, anchor: story["foodOnOffsetMillis"]?.numberValue, unit: store.temperatureUnit)
                     Text("\(samples.count) recorded samples. Points show measurements; gaps aren't filled.").font(.caption)
                     DisclosureGroup("View recorded values") {
                         ForEach(points.indices, id: \.self) { index in
-                            let point = points[index], celsius = point["valueCelsius"]?.numberValue ?? 0
-                            Text(time(point["offsetMillis"]?.numberValue ?? 0) + " · " + String(format: "%.1f", store.temperatureUnit == "C" ? celsius : celsius * 9 / 5 + 32) + (store.temperatureUnit == "C" ? " °C · " : " °F · ") + (point["quality"]?.stringValue ?? "recorded"))
+                            Text(valueDescription(points[index]))
                         }
                     }
                     if points.count < samples.count { Text("Showing \(points.count) original points for readability.").font(.caption) }
@@ -70,5 +69,35 @@ struct NativePublicAdditionalPhoto: View {
             else { Text("Photograph unavailable") }
             if !caption.isEmpty { Text(caption).font(.caption) }
         }.task(id: asset.sha256) { bytes = try? await community.image(detail, asset: asset) }
+    }
+}
+
+private struct NativePublicSampleChart: View {
+    let points: [[String: JSONValue]]
+    let anchor: Double?
+    let unit: String
+    private struct Sample: Identifiable {
+        let id: Int
+        let hours: Double
+        let temperature: Double
+        let source: String
+    }
+    private var samples: [Sample] {
+        points.enumerated().map { index, point in
+            let celsius = point["valueCelsius"]?.numberValue ?? 0
+            let offset = point["offsetMillis"]?.numberValue ?? 0
+            let temperature = unit == "C" ? celsius : celsius * 9 / 5 + 32
+            return Sample(id: index, hours: (offset - (anchor ?? 0)) / 3_600_000,
+                          temperature: temperature, source: point["quality"]?.stringValue == "manual" ? "Manual" : "Recorded")
+        }
+    }
+    var body: some View {
+        Chart(samples) { sample in
+            PointMark(x: .value("Hours", sample.hours), y: .value("Temperature", sample.temperature))
+                .symbol(by: .value("Source", sample.source))
+        }
+        .frame(height: 220)
+        .chartXAxisLabel(anchor == nil ? "Shared timeline · hours" : "Hours from Food on")
+        .chartYAxisLabel(unit == "C" ? "°C" : "°F")
     }
 }
