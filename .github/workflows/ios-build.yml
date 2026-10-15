@@ -34,7 +34,7 @@ jobs:
     name: Build iOS app for Simulator
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'simulator'
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Check out candidate
         uses: actions/checkout@v6

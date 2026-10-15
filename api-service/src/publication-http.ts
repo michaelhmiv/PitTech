@@ -24,6 +24,7 @@ export function publicationRoute(raw:string,method:string){
   if(method==='GET'&&/^\/v1\/profiles\/[a-z0-9_]{3,24}(?:\?cursor=[a-f\d-]{36})?$/.test(raw))return '/v1/profiles/:handle';
   if(raw==='/v1/recipes'&&method==='POST')return '/v1/recipes';
   if(/^\/v1\/recipes\/[a-f\d-]{36}$/.test(raw)&&['GET','PUT','DELETE'].includes(method))return '/v1/recipes/:id';
+  if(/^\/v1\/recipes\/[a-f\d-]{36}\/pack$/.test(raw)&&method==='GET')return '/v1/recipes/:id/pack';
   if(/^\/v1\/recipes\/[a-f\d-]{36}\/fork$/.test(raw)&&method==='POST')return '/v1/recipes/:id/fork';
   if(/^\/v1\/recipes\/[a-f\d-]{36}\/like$/.test(raw)&&['POST','DELETE'].includes(method))return '/v1/recipes/:id/like';
   if(/^\/v1\/recipes\/[a-f\d-]{36}\/assets\/[a-f\d-]{36}$/.test(raw)&&method==='GET')return '/v1/recipes/:id/assets/:assetId';
@@ -44,6 +45,10 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
     if(route==='/v1/me/recipes'){json(200,await publications.myItems(user.id,new URL(raw,'https://api.pittech.app').searchParams.get('cursor')??undefined));return;}
     if(method==='GET'){json(200,await publications.myProfile(user.id));return;}
     const input=await body(req);json(200,await publications.updateProfile(user.id,idempotency(req),{handle:input.handle,displayName:input.displayName,isPublic:input.isPublic}));return;
+  }
+  if(route.endsWith('/pack')){
+    if(!gate.claimUpload())throw new ApiError(503,'publication_busy');
+    try{const pack=await publications.cookPack(id,String(req.headers['if-match']??''));res.setHeader('Content-Type','application/octet-stream');res.setHeader('Content-Disposition','attachment; filename="PitTech.pittech"');res.setHeader('Content-Length',pack.bytes.length);res.setHeader('X-Content-SHA256',pack.sha256);res.end(pack.bytes);}finally{gate.releaseUpload();}return;
   }
   if(method==='GET'){
     if(route.endsWith('/assets/:assetId')){const media=await publications.media(id,path[5]);res.setHeader('Content-Type',media.mimeType);res.setHeader('Content-Length',media.bytes.length);res.setHeader('X-Content-SHA256',media.sha256);res.end(media.bytes);}

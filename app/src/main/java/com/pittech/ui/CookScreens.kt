@@ -304,7 +304,7 @@ fun PitTechApp(
             MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SavedRecipesLibrary(viewModel, standalone = true)
             }
-            MainSection.DISCOVER -> DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
+            MainSection.DISCOVER -> if (viewModel.publicDiscovery.enabled) PublicDiscoveryScreen(viewModel.publicDiscovery, Modifier.padding(padding), temperatureUnit) else DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
             MainSection.INSIGHTS -> InsightsScreen(
                 data = insights,
                 onOpenCook = viewModel::openCook,

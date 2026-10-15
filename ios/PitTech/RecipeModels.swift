@@ -1,5 +1,17 @@
 import Foundation
 
+struct PublicRecipeSource: Codable, Equatable {
+    let itemId: String
+    let revisionId: String
+    let displayName: String
+    var removed = false
+    var relativeTiming = true
+    var url: URL { URL(string: "https://pittech.app/c/" + itemId)! }
+    func validate() throws {
+        guard UUID(uuidString: itemId) != nil, UUID(uuidString: revisionId) != nil, displayName.utf16.count <= 160 else { throw PitTechArchiveError.invalidArchive }
+    }
+}
+
 /// The draft is the same portable one-dish setup used by Android; unknown optional fields survive edits.
 struct RecipeSnapshot: Codable {
     var version: Int
@@ -16,6 +28,7 @@ struct RecipeSnapshot: Codable {
     var preferredPitTemperatureF: Double?
     var servings: String
     var cookAgain: Bool? = nil
+    var publicSource: PublicRecipeSource? = nil
 
     static func decode(_ raw: String) throws -> RecipeSnapshot {
         guard let bytes = raw.data(using: .utf8) else { throw PitTechArchiveError.invalidArchive }
@@ -24,6 +37,7 @@ struct RecipeSnapshot: Codable {
         return snapshot
     }
     func validate() throws {
+        try publicSource?.validate()
         guard version == 1, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               name.count <= 200, tags.count <= 100, instructions.count <= 500, observations.count <= 5000,
               case .array(let dishes)? = draft.objectValue?["dishes"], dishes.count == 1,
@@ -54,7 +68,7 @@ struct RecipeSnapshot: Codable {
         for row in instructions {
             guard let o = row.objectValue, let id = o["id"]?.stringValue, seen.insert(id).inserted,
                   let title = o["title"]?.stringValue, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  (o["durationMillis"]?.numberValue ?? 0) >= 0 else { throw PitTechArchiveError.invalidArchive }
+                  (o["durationMillis"]?.numberValue ?? 0) >= 0, (o["action"]?.stringValue?.utf16.count ?? 0) <= 80 else { throw PitTechArchiveError.invalidArchive }
         }
         guard targets.allSatisfy({ $0.objectValue?["dish"]?.numberValue == 0 && $0.objectValue?["value"]?.numberValue?.isFinite == true && ["°F", "°C"].contains($0.objectValue?["unit"]?.stringValue ?? "") }),
               rating?.isFinite != false, preferredPitTemperatureF?.isFinite != false else { throw PitTechArchiveError.invalidArchive }

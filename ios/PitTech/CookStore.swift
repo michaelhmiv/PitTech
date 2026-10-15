@@ -12,6 +12,7 @@ final class CookStore {
     var deletedNote: DeletedNativeNote?
     var reminderMessage: String?
     var notificationCookId: String?
+    var publicCookDestination: String?
     var archiveIntake: NativeArchiveIntake?
     var archiveMessage: String?
     var archiveCompletionMessage: String?

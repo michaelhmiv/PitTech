@@ -60,6 +60,24 @@ final class MealRecipeFlowsTests: XCTestCase {
         }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testSignedOutDiscoverySavesPrivateCopiesAndStartsANewMealAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication();app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--discovery-ui-test"] + (large ? ["--screenshot-large-text"] : []);app.launch()
+            app.tabBars.buttons["Discover"].tap()
+            let item = app.buttons["discover-open-12345678-1234-4234-8234-123456789abc"];reveal(item, app: app);item.tap()
+            let title = app.staticTexts["public-title"];XCTAssertTrue(title.waitForExistence(timeout: 15));capture(large ? "Native public detail large text" : "Native public detail")
+            let save = app.buttons["public-save"];reveal(save, app: app);save.tap()
+            let confirm = app.buttons["pack-save-recipes"];XCTAssertTrue(confirm.waitForExistence(timeout: 20));reveal(confirm, app: app);XCTAssertEqual(confirm.label, "Save 2 recipes")
+            capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
+            XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
+            app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
+            app.tabBars.buttons["Discover"].tap()
+            let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
+            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");start.tap()
+            let food = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"));XCTAssertTrue(food.firstMatch.waitForExistence(timeout: 20))
+            capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
+        }
+    }
     func testAccountCodeFlowAndSignOutKeepLocalCookbookAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication()

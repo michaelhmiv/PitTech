@@ -33,12 +33,12 @@ struct RecipeReferenceView: View {
                         Text("Previous target · \(target["type"]?.stringValue ?? ""): \(target["value"]?.numberValue ?? 0) \(target["unit"]?.stringValue ?? "")")
                     }
                     ForEach(RecipeReferenceTimeline.heating(snapshot).indices, id: \.self) { index in let interval = RecipeReferenceTimeline.heating(snapshot)[index]
-                        Text("Heating interval \(index + 1) · \(RecipeReferenceTimeline.time(interval.startedAt)) → \(interval.endedAt.map { RecipeReferenceTimeline.time($0) } ?? "end not recorded")")
+                        Text("Heating interval \(index + 1) · \(referenceTime(interval.startedAt, snapshot: snapshot)) → \(interval.endedAt.map { referenceTime($0, snapshot: snapshot) } ?? "end not recorded")")
                     }
                     Toggle("Major actions only", isOn: $actionsOnly)
                     let events = RecipeReferenceTimeline.events(snapshot).filter { !actionsOnly || CookNoteMetadata.actions.contains($0.objectValue?["action"]?.stringValue ?? "") }
                     if events.isEmpty { Text("No saved observations in this filter.") }
-                    ForEach(events.indices, id: \.self) { index in HistoricalObservationView(event: events[index]) }
+                    ForEach(events.indices, id: \.self) { index in HistoricalObservationView(event: events[index], relativeTiming: snapshot.publicSource?.relativeTiming == true, anchor: snapshot.smokingAnchorUtcMillis.map(Double.init)) }
                     RecipeAssetGallery(revisionId: revisionId)
                     if let original = store.recipeRevision(revisionId)?["sourceCookId"]?.stringValue, store.library.cooks.contains(where: { $0.id == original }) {
                         NavigationLink("Open original meal context") { CookDetailView(cookId: original) }
@@ -62,12 +62,19 @@ struct RecipeReferenceView: View {
         }.navigationTitle("Previous and this cook").onAppear { if revisionId.isEmpty { revisionId = source?["recipeRevisionId"]?.stringValue ?? "" } }
     }
 }
+private func referenceTime(_ at: Double, snapshot: RecipeSnapshot) -> String {
+    snapshot.publicSource?.relativeTiming == true ? RecipeReferenceTimeline.relative(snapshot.smokingAnchorUtcMillis.map { at - Double($0) }) : RecipeReferenceTimeline.time(at)
+}
+
 private struct HistoricalObservationView: View {
     let event: JSONValue
+    var relativeTiming = false
+    var anchor: Double? = nil
+    private func time(_ at: Double?, zone: String?) -> String { relativeTiming ? RecipeReferenceTimeline.relative(at.flatMap { at in anchor.map { at - $0 } }) : RecipeReferenceTimeline.time(at, zone: zone) }
     private var o: [String: JSONValue] { event.objectValue ?? [:] }
     var body: some View {
         DisclosureGroup("\(RecipeReferenceTimeline.relative(o["offsetMillis"]?.numberValue)) · \(o["title"]?.stringValue ?? "Note")") {
-            Text(RecipeReferenceTimeline.time(o["occurredAtUtcMillis"]?.numberValue, zone: o["timeZoneId"]?.stringValue))
+            Text(time(o["occurredAtUtcMillis"]?.numberValue, zone: o["timeZoneId"]?.stringValue))
             Text(o["details"]?.stringValue ?? "")
             if let metadata = o["noteMetadataJson"]?.stringValue.flatMap({ try? JSONDecoder().decode(CookNoteMetadata.self, from: Data($0.utf8)) }) {
                 if let method = metadata.method { Text("Method · " + (CookingMethod.labels[method] ?? method)) }
@@ -77,7 +84,7 @@ private struct HistoricalObservationView: View {
             }
             let readings = o["recordedTemperatures"]?.arrayValue ?? []
             ForEach(readings.indices, id: \.self) { index in let r = readings[index].objectValue ?? [:]
-                Text("\(r["probeName"]?.stringValue ?? "") · \(r["measurementType"]?.stringValue ?? "") · \(r["value"]?.numberValue ?? 0) \(r["unit"]?.stringValue ?? "") · \(RecipeReferenceTimeline.time(r["measuredAtUtcMillis"]?.numberValue, zone: r["timeZoneId"]?.stringValue))")
+                Text("\(r["probeName"]?.stringValue ?? "") · \(r["measurementType"]?.stringValue ?? "") · \(r["value"]?.numberValue ?? 0) \(r["unit"]?.stringValue ?? "") · \(time(r["measuredAtUtcMillis"]?.numberValue, zone: r["timeZoneId"]?.stringValue))")
             }
         }
     }

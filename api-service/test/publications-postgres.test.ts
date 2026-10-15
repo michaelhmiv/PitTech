@@ -90,6 +90,9 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       const publishResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(publishResponse.status,201);const published=await publishResponse.json();
       const retryResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(retryResponse.status,201);assert.deepEqual(await retryResponse.json(),published);
       assert.equal((await fetch(origin+'/v1/recipes/'+published.id)).status,200);
+      assert.equal((await fetch(origin+'/v1/recipes/'+published.id+'/pack')).status,400);
+      const pack=await fetch(origin+'/v1/recipes/'+published.id+'/pack',{headers:{'If-Match':published.revisionId}});assert.equal(pack.status,200);const packBytes=Buffer.from(await pack.arrayBuffer());assert.equal(digest(packBytes),pack.headers.get('x-content-sha256'));
+      assert.equal((await fetch(origin+'/v1/recipes/'+published.id+'/pack',{headers:{'If-Match':randomUUID()}})).status,409);
       assert.equal((await fetch(origin+'/v1/recipes/'+published.id+'/fork',{method:'POST',headers:{...headers,'Idempotency-Key':randomUUID(),'Content-Type':'application/json'},body:JSON.stringify({expectedRevisionId:published.revisionId,identityMode:'anonymous'})})).status,422,'A private save could implicitly publish a fork');
       const own=await fetch(origin+'/v1/me/recipes',{headers:{Authorization:'Bearer '+'A'.repeat(43)}});assert.equal(own.status,200);assert.ok((await own.json()).items.every((item:{id:string})=>item.id!==posted.id));
       const noAuth=await fetch(origin+'/v1/me/recipes');assert.notEqual(noAuth.status,200);

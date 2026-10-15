@@ -15,6 +15,7 @@ struct NativeArchiveIntake: Identifiable, Sendable {
     let preview: PitTechImportPreview
     let library: PitTechLibrary
     let recipes: [NativeArchiveRecipePreview]
+    var publicCookOnSave = false
 }
 
 enum NativeArchiveIntakeReader {
@@ -58,7 +59,7 @@ enum NativeArchiveIntakeReader {
 }
 
 @MainActor extension CookStore {
-    func receiveArchive(at source: URL, cookPackOnly: Bool = false) async {
+    func receiveArchive(at source: URL, cookPackOnly: Bool = false, expectedPublicSource: (item: String, revision: String)? = nil, cookOnSave: Bool = false) async {
         guard source.isFileURL else { return }
         let request = UUID().uuidString
         archiveIntakeRequest = request
@@ -66,8 +67,15 @@ enum NativeArchiveIntakeReader {
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         let preparation = Task.detached(priority: .userInitiated) { try NativeArchiveIntakeReader.prepare(source) }
         do {
-            let intake = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
+            var intake = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
             if cookPackOnly && intake.preview.cookPack == nil { try? FileManager.default.removeItem(at: intake.url); throw PitTechArchiveError.invalidArchive }
+            if let expectedPublicSource {
+                let source = intake.preview.cookPack?.objectValue?["source"]?.objectValue
+                guard source?["itemId"]?.stringValue == expectedPublicSource.item, source?["revisionId"]?.stringValue == expectedPublicSource.revision else {
+                    try? FileManager.default.removeItem(at: intake.url); throw PitTechArchiveError.invalidArchive
+                }
+            }
+            intake.publicCookOnSave = cookOnSave
             guard !Task.isCancelled, archiveIntakeRequest == request else { try? FileManager.default.removeItem(at: intake.url); return }
             discardArchiveIntake(); archiveIntake = intake; archiveMessage = nil
         } catch is CancellationError { }
@@ -85,6 +93,7 @@ enum NativeArchiveIntakeReader {
         let data = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
         try Task.checkCancellation()
         _ = try importArchive(data)
+        if source.publicCookOnSave { publicCookDestination = try startRecipeMeal(title: source.library.companionRecords.first?.objectValue?["title"]?.stringValue ?? "New meal", revisionIds: selected.sorted()) }
         archiveCompletionMessage = "Saved \(selected.count) \(selected.count == 1 ? "recipe" : "recipes"). Find them in Recipes."
     }
     func importRecordedCook(_ source: NativeArchiveIntake) async throws {
