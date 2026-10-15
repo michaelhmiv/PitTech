@@ -117,6 +117,8 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
+- Public recipe/profile links navigate only; never authenticate or import on open.
+  Public profile visibility is checked live; see `docs/online/12-publishing.md`.
 - Signed-out discovery uses bounded public-only caches and exact-revision Cook Pack
   previews. Saved recipes pin public credit and mark relative-only story timing;
   see `docs/online/11-discovery.md`. Never display that coordinate origin as a

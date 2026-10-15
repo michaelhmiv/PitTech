@@ -23,9 +23,9 @@ import org.json.JSONObject
     var food by rememberSaveable { mutableStateOf(state.appliedFood) }
     var sort by rememberSaveable { mutableStateOf(state.appliedSort) }
     LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery) }
-    BackHandler(state.detailId != null) { manager.back() }
+    BackHandler(state.detailId != null || state.profileHandle != null) { manager.back() }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        if(state.detailId != null) {
+        if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
             if(state.detailLoading) CircularProgressIndicator()
             state.detail?.let { detail ->
@@ -37,6 +37,7 @@ import org.json.JSONObject
                 }
                 Text(detail.title,Modifier.testTag("public-title"),style=MaterialTheme.typography.headlineMedium)
                 Text("Shared by ${detail.credit}")
+                detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.")
                 Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }

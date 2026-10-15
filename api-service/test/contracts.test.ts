@@ -18,3 +18,8 @@ test('all four shared contracts compile and actual Cook Pack, publication and ca
     if (name === 'share-card') assert.ok(validate(JSON.parse(await readFile(new URL('fixtures/share-card-v1.json', root), 'utf8'))), JSON.stringify(validate.errors));
   }
 });
+
+test('public navigation vectors are identical for both native consumers',async()=>{
+  const shared=await readFile(new URL('../../contracts/fixtures/public-links-v1.json',import.meta.url),'utf8');
+  assert.equal(await readFile(new URL('../../app/src/test/resources/public-links-v1.json',import.meta.url),'utf8'),shared);
+});

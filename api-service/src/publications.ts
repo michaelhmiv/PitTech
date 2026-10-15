@@ -98,17 +98,40 @@ export class Publications {
         if(!source)return null;
         if(!uuid(source.itemId)||!uuid(source.revisionId)||source.itemId===update?.id)throw new ApiError(422,'invalid_lineage');
         const p=(await c.query<ItemRow>('SELECT * FROM publications.items WHERE id=$1 FOR SHARE',[source.itemId])).rows[0];
-        if(!p||p.status!=='active'){
-          if(old?.itemId===source.itemId&&old.revisionId===source.revisionId)return {itemId:source.itemId,revisionId:source.revisionId,removed:true};
-          throw missing();
+        const retained=old?.itemId===source.itemId&&old.revisionId===source.revisionId;
+        if(!p)throw missing();
+        if(p.status==='taken_down'){
+          if(retained)return {itemId:source.itemId,revisionId:source.revisionId,removed:true};
+          throw new ApiError(403,'publication_under_review');
         }
-        if(p.current_revision_id!==source.revisionId&&!(old?.itemId===source.itemId&&old.revisionId===source.revisionId))throw new ApiError(409,'source_revision_changed');
+        // A saved copy pins its source revision. Later upstream edits never force
+        // the owner to republish newer instructions or discard independently owned media.
+        const pinned=(await c.query<RevisionRow>('SELECT * FROM publications.revisions WHERE id=$1 AND item_id=$2',[source.revisionId,source.itemId])).rows[0];
+        if(!pinned&&p.status!=='purged')throw new ApiError(422,'invalid_lineage');
+        if(parent&&source.itemId===parent.id&&(p.status!=='active'||p.current_revision_id!==parent.revisionId))throw new ApiError(409,'source_revision_changed');
+        if(p.status!=='active')return {itemId:source.itemId,revisionId:source.revisionId,removed:true};
         return {itemId:source.itemId,revisionId:source.revisionId,removed:false};
       };
       payload.source=await validateSource(selectedRoot,previous?.source??null);
       for(const r of payload.recipes){
         const old=previous?.recipes.find(p=>p.id===r.id)?.source??null;
         r.source=await validateSource(r.source??payload.source,old??previous?.source??null);
+      }
+      // Bound the complete pinned lineage, including collection members. Reject
+      // an item-level cycle even when immutable revision IDs would terminate it.
+      let frontier=[payload.source,...payload.recipes.map(r=>r.source)].filter(s=>s!==null),depth=0;
+      const seen=new Set<string>();
+      while(frontier.length){
+        if(++depth>32)throw new ApiError(422,'lineage_too_deep');
+        const next:NonNullable<PublicationPayload['source']>[]=[];
+        for(const source of frontier){
+          if(source.itemId===(item?.id??object.id))throw new ApiError(422,'invalid_lineage');
+          const key=source.itemId+':'+source.revisionId;if(seen.has(key))continue;
+          seen.add(key);if(seen.size>200)throw new ApiError(422,'lineage_too_deep');
+          const revision=(await c.query<RevisionRow>('SELECT * FROM publications.revisions WHERE id=$1 AND item_id=$2',[source.revisionId,source.itemId])).rows[0];
+          if(revision)for(const parent of [revision.payload.source,...revision.payload.recipes.map(r=>r.source)])if(parent)next.push(parent);
+        }
+        frontier=next;
       }
       const id=item?.id??object.id,revisionId=randomUUID();
       const revision=item?Number((await c.query('SELECT max(revision_no) AS n FROM publications.revisions WHERE item_id=$1',[id])).rows[0].n)+1:1;

@@ -135,6 +135,8 @@ fun PitTechApp(
     val restoredPreferences by viewModel.restoredPreferences.collectAsStateWithLifecycle()
     val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
+    val publicLinkSequence by viewModel.publicDiscovery.linkSequence.collectAsStateWithLifecycle()
+    LaunchedEffect(publicLinkSequence) { if(publicLinkSequence>0)selectedSection=MainSection.DISCOVER.name }
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var sharedCodes by rememberSaveable { mutableStateOf(false) }
     RelayImportDialog(viewModel)

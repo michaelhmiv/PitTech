@@ -11,7 +11,7 @@ test('association configuration requires genuine certificate shapes and exact ap
   const config = linkConfig({ APPLE_APP_IDS: 'ABCDEFGHIJ.com.pittech', ANDROID_APP_LINK_CERTIFICATES: Array(32).fill('AB').join(':') });
   const apple = association('/.well-known/apple-app-site-association', config);
   assert.ok(apple && 'applinks' in apple);
-  assert.deepEqual(apple.applinks.details[0].components, [{ '/': '/s/*' }, { '/': '/auth' }]);
+  assert.deepEqual(apple.applinks.details[0].components, [{ '/': '/s/*' }, { '/': '/auth' }, { '/': '/c/*' }, { '/': '/p/*' }]);
   assert.ok(association('/.well-known/assetlinks.json', config));
   assert.equal(association('/.well-known/assetlinks.json', linkConfig({})), undefined);
   for (const env of [{ APPLE_APP_IDS: '*.com.pittech' }, { ANDROID_APP_LINK_CERTIFICATES: 'upload-certificate-placeholder' }, { APPLE_APP_STORE_URL: 'https://attacker.invalid' }]) assert.throws(() => linkConfig(env));

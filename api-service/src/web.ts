@@ -13,7 +13,7 @@ export function linkConfig(env: NodeJS.ProcessEnv): LinkConfig {
 }
 export function association(path: string, config: LinkConfig) {
   if (path === '/.well-known/apple-app-site-association') return config.appleAppIds.length ? {
-    applinks: { details: [{ appIDs: config.appleAppIds, components: [{ '/': '/s/*' }, { '/': '/auth' }] }] },
+    applinks: { details: [{ appIDs: config.appleAppIds, components: [{ '/': '/s/*' }, { '/': '/auth' }, { '/': '/c/*' }, { '/': '/p/*' }] }] },
   } : undefined;
   if (path === '/.well-known/assetlinks.json') return config.androidCertificates.length ? [{
     relation: ['delegate_permission/common.handle_all_urls'],
