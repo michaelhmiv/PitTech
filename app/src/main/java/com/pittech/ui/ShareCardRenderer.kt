@@ -101,6 +101,7 @@ object ShareCardRenderer {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2f }
         repeat(3) { i -> val v = y0 + (y1 - y0) * i / 2; paint.color = Color.rgb(226,217,205); canvas.drawLine(p.left, y(v), p.right, y(v), paint); text(String.format(Locale.US,"%.0f",v),rect.left,y(v)-12,62f,18f,1,supporting,false) }
         text(root.getString("unit"), rect.left, rect.top - 8, 62f, 18f, 1, supporting, false)
+        text("Simplified trace · ${curves.size} of ${root.getInt("channelCount")} channels",rect.right-370,rect.top-8,370f,18f,1,supporting,false)
         text("${String.format(Locale.US,"%.0f",x0)} → ${String.format(Locale.US,"%.0f",x1)} min since each dish's Food on", p.left, p.bottom + 8, p.width(), 19f, 1, supporting, false)
         curves.forEachIndexed { i, curve ->
             paint.color = palette[i % palette.size]; paint.strokeWidth = 4f

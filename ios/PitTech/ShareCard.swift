@@ -85,11 +85,23 @@ enum NativeShareCardContent {
                     current.append(row)
                 }
                 flush()
-                let points: [JSONValue] = segments.map { segment in
+                var retained = segments
+                if segments.count > 50 {
+                    var indices = Set([0,segments.count-1])
+                    let ranges = segments.map { segment in segment.reduce((Double.infinity,-Double.infinity)) { range,row in
+                        let value = temperature(row);return (min(range.0,value),max(range.1,value))
+                    } }
+                    if let low = segments.indices.min(by:{ ranges[$0].0 < ranges[$1].0 }) { indices.insert(low) }
+                    if let high = segments.indices.max(by:{ ranges[$0].1 < ranges[$1].1 }) { indices.insert(high) }
+                    for n in 0...45 { indices.insert(n*(segments.count-1)/45) }
+                    retained = indices.sorted().map { segments[$0] }
+                }
+                let budget = 200 / max(1,retained.count)
+                let points: [JSONValue] = retained.map { segment in
                     var selected = segment
-                    if segment.count > 200 {
+                    if segment.count > budget {
                         selected = [segment[0], segment[segment.count - 1]]
-                        let size = (segment.count + 98) / 99
+                        let buckets = max(1,(budget-2)/2), size = (segment.count+buckets-1)/buckets
                         for start in stride(from: 0, to: segment.count, by: size) {
                             let bucket = segment[start..<min(start + size, segment.count)]
                             if let low = bucket.min(by: { temperature($0) < temperature($1) }), let high = bucket.max(by: { temperature($0) < temperature($1) }) { selected += [low, high] }

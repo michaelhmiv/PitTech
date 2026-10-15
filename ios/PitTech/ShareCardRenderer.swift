@@ -127,6 +127,7 @@ private struct ShareCardChart: View {
                 text(String(format:"%.0f",v),0,at-12,18)
             }
             text(root["unit"]?.stringValue ?? "",0,-8,18)
+            text("Simplified trace · \(curves.count) of \(Int(root["channelCount"]?.numberValue ?? Double(curves.count))) channels",size.width-370,-8,18)
             text(String(format:"%.0f → %.0f min since each dish's Food on",x0,x1),p.minX,p.maxY+8,19)
             for (i,curve) in curves.enumerated() {
                 let color = NativeShareCardRenderer.palette[i % NativeShareCardRenderer.palette.count]

@@ -59,5 +59,11 @@ class ShareCardIntegrationTest {
         assertEquals(long,SharingDraftCodec.decode(SharingDraftCodec.encode(long)))
         val code = ShareCardContent.build(full,null,ShareCardRelay("EMBER-OAK-7","https://pittech.app/s/EMBER-OAK-7"))
         assertEquals("EMBER-OAK-7",JSONObject(code.content).getJSONObject("relay").getString("code"))
+        val dense = JSONArray((0 until 10000).map { i -> JSONObject(story.getJSONArray("readings").getJSONObject(0).toString()).put("id","dense-$i").put("probeId","one").put("measuredAtUtcMillis",anchor+i*15000L).put("value",when(i){1234->120.0;7654->-10.0;else->74.125}) })
+        val denseStory = JSONObject(story.toString()).put("readings",dense)
+        val chart = JSONObject(ShareCardContent.build(full.copy(entries=listOf(entry.copy(includeStory=true,storyJson=denseStory.toString()))),null).content).getJSONArray("curves").getJSONObject(0).getJSONArray("segments")
+        val values = (0 until chart.length()).flatMap { s -> val points=chart.getJSONArray(s);(0 until points.length()).map { points.getJSONObject(it).getDouble("y") } }
+        assertTrue("Fragmented recordings must stay bounded in an image",values.size<=200)
+        assertEquals(120.0,values.max(),0.0);assertEquals(-10.0,values.min(),0.0)
     }
 }

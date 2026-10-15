@@ -66,10 +66,16 @@ object ShareCardContent {
                     current += row
                 }
                 flush()
-                val points = segments.map { segment ->
+                val retained = if (segments.size <= 50) segments else {
+                    val indices = linkedSetOf(0,segments.lastIndex,segments.indices.minBy { s -> segments[s].minOf(::temperature) },segments.indices.maxBy { s -> segments[s].maxOf(::temperature) })
+                    for (n in 0..45) indices += (n.toLong()*segments.lastIndex/45).toInt()
+                    indices.sorted().map(segments::get)
+                }
+                val budget = 200 / retained.size.coerceAtLeast(1)
+                val points = retained.map { segment ->
                     // Extrema preserve short spikes; inspection/full precision stays in the Cook Pack.
-                    val size = (segment.size + 98) / 99
-                    val reduced = if (segment.size <= 200) segment else (listOf(segment.first(), segment.last()) + segment.chunked(size).flatMap { bucket -> listOf(bucket.minBy(::temperature), bucket.maxBy(::temperature)) }).distinctBy { it.getString("id") }.sortedBy { it.getLong("measuredAtUtcMillis") }
+                    val buckets = ((budget-2)/2).coerceAtLeast(1); val size = (segment.size+buckets-1)/buckets
+                    val reduced = if (segment.size <= budget) segment else (listOf(segment.first(), segment.last()) + segment.chunked(size).flatMap { bucket -> listOf(bucket.minBy(::temperature), bucket.maxBy(::temperature)) }).distinctBy { it.getString("id") }.sortedBy { it.getLong("measuredAtUtcMillis") }
                     JSONArray(reduced.map { JSONObject().put("x", (it.getLong("measuredAtUtcMillis") - anchor) / 60000.0).put("y", temperature(it)) })
                 }
                 if (points.isNotEmpty()) curves += JSONObject().put("label", "${entries[i].snapshot.name} · ${rows.first().getString("probeName")} · ${rows.first().getString("measurementType")}")

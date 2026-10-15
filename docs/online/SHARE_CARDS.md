@@ -17,8 +17,9 @@ results, not edited recipe ratings. The card remains free without an account.
 The Chart option uses only enabled public story projections. Channels retain
 logical probe identity even when labels match, and each dish retains its own
 Food on anchor. Invalid readings, manual samples, explicit connection gaps and
-cadence breaks remain separate segments. Each segment is reduced to at most
-200 extrema-preserving points. Original precise readings remain in the pack.
+cadence breaks remain separate segments. Each channel is reduced to at most
+200 observed points across at most 50 retained segments. Segment boundaries and
+selected extrema are preserved; the image labels the trace as simplified. Original precise readings remain in the pack.
 The renderer labels a single chosen display unit and retains negative offsets.
 No source measurements means no chart hero. No duration, weight or verdict is
 invented. Photo crop/zoom is explicit and uses an orientation-correct,

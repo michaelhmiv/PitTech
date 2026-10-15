@@ -51,5 +51,13 @@ import UIKit
         XCTAssertEqual(roundTrip,doc)
         let relay = try NativeShareCardContent.build(doc,photo:nil,relay:ShareCardRelay(code:"EMBER-OAK-7",url:"https://pittech.app/s/EMBER-OAK-7"))
         XCTAssertEqual(relay.content.objectValue?["relay"]?.objectValue?["code"]?.stringValue,"EMBER-OAK-7")
+        let denseValues:[JSONValue] = (0..<10000).map { i in
+            var row = sample("dense-\(i)").objectValue!;row["probeId"] = .string("one");row["measuredAtUtcMillis"] = .number(1000000+Double(i)*15000)
+            row["value"] = .number(i == 1234 ? 120 : i == 7654 ? -10 : 74.125);return .object(row)
+        }
+        var denseStory = story.objectValue!;denseStory["readings"] = .array(denseValues);doc.entries[0].story = .object(denseStory)
+        let denseCard = try NativeShareCardContent.build(doc,photo:nil)
+        let values = denseCard.content.objectValue?["curves"]?.arrayValue?.first?.objectValue?["segments"]?.arrayValue?.flatMap { $0.arrayValue ?? [] }.compactMap { $0.objectValue?["y"]?.numberValue } ?? []
+        XCTAssertLessThanOrEqual(values.count,200);XCTAssertEqual(values.max(),120);XCTAssertEqual(values.min(),-10)
     }
 }
