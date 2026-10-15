@@ -40,7 +40,12 @@ class MealRecipeUserFlowsTest {
         waitFor("sharing-preview-card");compose.onNodeWithTag("sharing-preview-card").performScrollTo().performClick()
         waitFor("share-card-preview");shot("share-card-preview")
         compose.onNodeWithTag("card-share").performScrollTo().performClick()
-        androidx.test.espresso.Espresso.pressBack()
+        // Espresso requires our Activity to be resumed; the system chooser owns focus here.
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        compose.waitUntil(10000) {
+            automation.rootInActiveWindow?.packageName?.toString()?.let { it != app.packageName } == true
+        }
+        assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
         waitFor("card-close");compose.onNodeWithTag("card-close").performScrollTo().performClick()
         waitFor("sharing-title")
         val record = runBlocking(Dispatchers.IO) { app.database.companionDao().observeAll().first().single { it.kind == SharingDraftCodec.DRAFT } }

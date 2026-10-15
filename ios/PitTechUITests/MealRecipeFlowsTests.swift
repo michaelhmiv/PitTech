@@ -12,7 +12,19 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let scroll = cookScroll.exists && cookScroll.isHittable ? cookScroll : app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
             if let scroll, scroll.exists && scroll.isHittable {
-                if element.exists && element.frame.maxY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
+                // Keep vertical scrolling outside chart scrubbing and other child gestures.
+                let viewport = scroll.frame.intersection(app.windows.firstMatch.frame)
+                let upper = max(top, viewport.minY) + 24
+                let lower = min(bottom, viewport.maxY) - 24
+                let x = viewport.minX + 8
+                let origin = app.coordinate(withNormalizedOffset: .zero)
+                let nearTop = origin.withOffset(CGVector(dx: x, dy: upper))
+                let nearBottom = origin.withOffset(CGVector(dx: x, dy: lower))
+                if element.exists && element.frame.minY < top + 8 {
+                    nearTop.press(forDuration: 0.05, thenDragTo: nearBottom)
+                } else {
+                    nearBottom.press(forDuration: 0.05, thenDragTo: nearTop)
+                }
             } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
