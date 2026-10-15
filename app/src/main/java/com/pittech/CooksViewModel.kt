@@ -42,6 +42,7 @@ class CooksViewModel(
     private val dataTransfer: PitTechDataTransfer,
     private val context: Context,
 ) : ViewModel() {
+    internal val account = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope)
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing
     internal val relay = com.pittech.data.RelayManager(context, viewModelScope, prepare = { id, history, file ->

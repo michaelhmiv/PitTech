@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.*
@@ -29,7 +30,7 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-@Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}) {
+@Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
             }
         }
         MoreDestination("Devices & connections", "Read-only monitoring and saved equipment", Icons.Filled.Thermostat, "more-devices", onDevices)
+        if (onAccount != null) MoreDestination("Account", "Optional email sign-in and this device’s session", Icons.Filled.Person, "more-account", onAccount)
         MoreDestination("Settings & support", "Appearance, units, data and feedback", Icons.Filled.Settings, "more-settings", onSettings)
         MoreDestination("Import by code", "Preview a shared Cook Pack without an account", Icons.Filled.Explore, "more-relay-import", onImportCode)
         MoreDestination("My shared codes", "Renew or revoke codes created on this device", Icons.Filled.Explore, "more-relay-owned", onSharedCodes)

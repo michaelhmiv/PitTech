@@ -7,6 +7,9 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Android and iOS post-launch draft: prepare optional email sign-in, secure
+  session recovery and sign-out while keeping the local cookbook. Account
+  access stays disabled until community recipes, private sync and deletion are ready.
 - iOS draft: submit a shared code or link from the keyboard and dismiss the
   keyboard to reach import actions and errors at enlarged text.
 - Backend post-launch draft: prepare optional email code/link sign-in, secure

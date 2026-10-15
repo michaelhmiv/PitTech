@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MoreView: View {
     @Environment(NativeRelayCoordinator.self) private var relay
+    @Environment(NativeAccountCoordinator.self) private var account
     let runtime: NativeTelemetryRuntime
     var body: some View {
         NavigationStack {
@@ -17,6 +18,11 @@ struct MoreView: View {
                     NavigationLink { NativeTelemetryConnectionsView(runtime: runtime, embedded: true) } label: {
                         MoreDestinationLabel(title: "Devices & connections", subtitle: "Read-only monitoring and saved equipment", symbol: "thermometer")
                     }.accessibilityIdentifier("more-devices")
+                    if account.enabled {
+                        Button { account.showingAccount = true } label: {
+                            MoreDestinationLabel(title: "Account", subtitle: "Optional email sign-in and this device’s session", symbol: "person.crop.circle")
+                        }.accessibilityIdentifier("more-account")
+                    }
                     NavigationLink { SettingsView() } label: {
                         MoreDestinationLabel(title: "Settings & support", subtitle: "Appearance, units, data and feedback", symbol: "gearshape")
                     }.accessibilityIdentifier("more-settings")

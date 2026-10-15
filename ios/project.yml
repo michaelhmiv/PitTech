@@ -88,6 +88,8 @@ targets:
         buildPhase: resources
       - path: ../contracts/fixtures/relay-links-v1.json
         buildPhase: resources
+      - path: ../contracts/fixtures/auth-native-v1.json
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

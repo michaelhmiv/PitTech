@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(CookStore.self) private var store
     @Environment(NativeRelayCoordinator.self) private var relay
+    @Environment(NativeAccountCoordinator.self) private var account
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
 
@@ -40,6 +41,7 @@ struct ContentView: View {
                 Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
             }
         }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
+        .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 })) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
         .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
             store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil
         }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }

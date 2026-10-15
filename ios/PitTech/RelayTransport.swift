@@ -5,8 +5,10 @@ struct NativeRelayResponse { let data: Data; let file: URL? }
 
 /// One bounded request per instance; no cookies, cache, cross-host redirects or URL logging.
 final class NativeRelayTransport: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+    private let maximumResponseBytes: Int64
+    private let responseError: ((Int) -> Error)?
     private let configuration: URLSessionConfiguration?
-    init(configuration: URLSessionConfiguration? = nil) { self.configuration = configuration; super.init() }
+    init(configuration: URLSessionConfiguration? = nil, responseError: ((Int) -> Error)? = nil, maximumResponseBytes: Int64 = 65536) { self.maximumResponseBytes = maximumResponseBytes; self.configuration = configuration; self.responseError = responseError; super.init() }
     private var session: URLSession?
     private var task: URLSessionTask?
     private let lock = NSLock()
@@ -45,7 +47,8 @@ final class NativeRelayTransport: NSObject, URLSessionDataDelegate, URLSessionTa
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) { progress?(totalBytesSent, totalBytesExpectedToSend) }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            failure = NativeRelayError.message(Self.message((response as? HTTPURLResponse)?.statusCode ?? 0)); completionHandler(.cancel); return
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            failure = responseError?(status) ?? NativeRelayError.message(Self.message(status)); completionHandler(.cancel); return
         }
         if let target {
             total = response.expectedContentLength; expectedHash = http.value(forHTTPHeaderField: "X-Content-SHA256") ?? ""
@@ -61,7 +64,7 @@ final class NativeRelayTransport: NSObject, URLSessionDataDelegate, URLSessionTa
     }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive bytes: Data) {
         received += Int64(bytes.count)
-        let limit = target == nil ? Int64(65536) : min(total, NativeRelayProtocol.maximumBytes)
+        let limit = target == nil ? maximumResponseBytes : min(total, NativeRelayProtocol.maximumBytes)
         guard received <= limit else { failure = NativeRelayError.message("The relay response exceeded its supported size."); dataTask.cancel(); return }
         do {
             if let file { try file.write(contentsOf: bytes); hasher.update(data: bytes); progress?(received, total) }

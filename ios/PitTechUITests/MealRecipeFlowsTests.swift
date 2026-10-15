@@ -57,6 +57,29 @@ final class MealRecipeFlowsTests: XCTestCase {
         }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testAccountCodeFlowAndSignOutKeepLocalCookbookAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10)); email.tap(); email.typeText("cook@example.com")
+            app.buttons["Hide keyboard"].tap()
+            let start = app.buttons["account-start"]; reveal(start, app: app); start.tap()
+            let code = app.textFields["account-code"]; XCTAssertTrue(code.waitForExistence(timeout: 10)); reveal(code, app: app); code.tap(); code.typeText("123456")
+            app.buttons["Hide keyboard"].tap()
+            let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
+            XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
+            capture(large ? "Native account signed in large text" : "Native account signed in")
+            app.buttons["Sign out"].tap()
+            let confirm = app.buttons["Sign out"].allElementsBoundByIndex.last!; confirm.tap()
+            XCTAssertTrue(app.buttons["account-start"].waitForExistence(timeout: 10))
+            capture(large ? "Native account signed out large text" : "Native account signed out")
+            app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
+            XCTAssertFalse(app.staticTexts["Signed in"].exists)
+            app.terminate()
+        }
+    }
     func testCodeImportRejectsForeignLinksBeforeAnyImportAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty"] + (large ? ["--screenshot-large-text"] : []); app.launch()
