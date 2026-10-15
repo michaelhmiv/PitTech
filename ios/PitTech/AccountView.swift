@@ -55,7 +55,7 @@ struct NativeAccountView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .confirmationDialog("Sign out on this device?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
-            Button("Sign out", role: .destructive) { Task { await account.signOut() } }
+            Button("Sign out", role: .destructive) { Task { await account.signOut() } }.accessibilityIdentifier("account-confirm-signout")
         } message: { Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.") }
     }
 }

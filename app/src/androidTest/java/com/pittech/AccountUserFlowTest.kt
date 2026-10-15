@@ -47,7 +47,7 @@ import android.graphics.Bitmap
             compose.onNodeWithTag("account-signed-in").assertIsDisplayed(); assertEquals(1,emails)
             screenshot("account-signed-in")
             compose.onNodeWithText("Sign out").performScrollTo().performClick()
-            compose.onAllNodesWithText("Sign out").onLast().performClick()
+            compose.onNodeWithTag("account-confirm-signout").performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("account-start").fetchSemanticsNodes().isNotEmpty() }
             assertNull(storage.value.session); screenshot("account-signed-out")
         } finally { scope.cancel() }

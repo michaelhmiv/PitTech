@@ -72,7 +72,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
             capture(large ? "Native account signed in large text" : "Native account signed in")
             app.buttons["Sign out"].tap()
-            let confirm = app.buttons["Sign out"].allElementsBoundByIndex.last!; confirm.tap()
+            let confirm = app.buttons["account-confirm-signout"]; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
             XCTAssertTrue(app.buttons["account-start"].waitForExistence(timeout: 10))
             capture(large ? "Native account signed out large text" : "Native account signed out")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()

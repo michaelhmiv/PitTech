@@ -28,9 +28,9 @@ internal class AccountVault(context: Context, private val namespace: String = "p
     }
     @Synchronized override fun load(): AccountState {
         val atomic = AtomicFile(file)
-        if (!atomic.exists()) return AccountState()
-        require(file.length() in 29..16412)
-        val bytes = atomic.readFully(); require(bytes.size in 29..16412)
+        if (!file.exists() && !File(file.path + ".bak").exists()) return AccountState()
+        val bytes = atomic.openRead().use { input -> require(input.channel.size() in 29..16412); input.readBytes() }
+        require(bytes.size in 29..16412)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE,key(false),GCMParameterSpec(128,bytes.copyOfRange(0,12))); cipher.updateAAD(alias.toByteArray())
         val plain = cipher.doFinal(bytes,12,bytes.size-12)

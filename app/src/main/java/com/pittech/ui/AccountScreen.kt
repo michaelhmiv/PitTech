@@ -63,5 +63,5 @@ import kotlinx.coroutines.delay
         if(state.busy) CircularProgressIndicator()
         state.message?.let { Text(it,Modifier.testTag("account-message")) }
     }
-    if(confirm) AlertDialog(onDismissRequest={ confirm=false },title={ Text("Sign out on this device?") },text={ Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.") },confirmButton={ TextButton(onClick={ confirm=false; account.signOut() }) { Text("Sign out") } },dismissButton={ TextButton(onClick={ confirm=false }) { Text("Cancel") } })
+    if(confirm) AlertDialog(onDismissRequest={ confirm=false },title={ Text("Sign out on this device?") },text={ Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.") },confirmButton={ TextButton(onClick={ confirm=false; account.signOut() },modifier=Modifier.testTag("account-confirm-signout")) { Text("Sign out") } },dismissButton={ TextButton(onClick={ confirm=false }) { Text("Cancel") } })
 }

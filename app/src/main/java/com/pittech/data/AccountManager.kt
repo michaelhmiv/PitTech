@@ -24,7 +24,8 @@ internal class AccountManager(private val storage: AccountStorage, private val s
     fun open() { _showing.value = true }
     fun close() { _showing.value = false }
     fun tick() { _presentation.value = _presentation.value.copy(canResend=state.challenge?.let { now()-it.created >= 60000 } ?: true) }
-    init { try { state = storage.load(); if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null)); publish() } catch (_: Exception) { storageReady = false; publish(message="This device's account storage is unavailable. Your local cookbook is unchanged.") } }
+    init { try { state = storage.load(); if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null));
+        state.session?.let { it.validate(); if(Instant.parse(it.sessionExpiresAt).toEpochMilli() <= now()) save(AccountState(logoutToken=it.refreshToken)) }; publish() } catch (_: Exception) { storageReady = false; publish(message="This device's account storage is unavailable. Your local cookbook is unchanged.") } }
     private fun publish(busy: Boolean = false, message: String? = null) {
         _presentation.value = AccountPresentation(state.session != null,state.challenge?.email,state.challenge?.let { now()-it.created >= 60000 } ?: true,state.challenge?.operation != null,link != null,busy,message)
     }

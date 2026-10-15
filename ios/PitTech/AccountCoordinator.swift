@@ -21,6 +21,12 @@ import Observation
         do {
             state = try vault.load()
             if let challenge = state.challenge, Date().timeIntervalSince(challenge.created) >= 900 { state.challenge = nil; try vault.save(state) }
+            if let session = state.session {
+                try session.validate()
+                if try NativeAccountProtocol.date(session.sessionExpiresAt) <= Date() {
+                    state = NativeAccountState(logoutToken: session.refreshToken); try vault.save(state)
+                }
+            }
         } catch { storageReady = false; message = "This device's account storage is unavailable. Your local cookbook is unchanged." }
     }
     private func save(_ next: NativeAccountState) throws { try vault.save(next); state = next }
