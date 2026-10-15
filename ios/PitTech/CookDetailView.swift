@@ -100,7 +100,7 @@ struct CookDetailView: View {
     private var shortcutBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }
+                Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }.accessibilityIdentifier("meal-log")
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer").frame(minHeight: 44) }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera").frame(minHeight: 44) }
                 Button { showingReminders = true } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }

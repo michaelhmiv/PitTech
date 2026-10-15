@@ -107,8 +107,21 @@ jobs:
         run: |
           if [[ -f build/ios-tests.xcresult/Info.plist ]]; then
             mkdir -p build/native-ui-evidence
+            xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/native-test-summary.json
+            xcrun xcresulttool get test-results tests --path build/ios-tests.xcresult > build/native-test-cases.json
             xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
           fi
+
+      - name: Upload compact native test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-test-summary-${{ github.run_number }}
+          path: |
+            build/native-test-summary.json
+            build/native-test-cases.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload native UI and compatibility evidence
         if: always()
