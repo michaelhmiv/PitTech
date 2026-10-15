@@ -14,7 +14,13 @@ struct PitTechApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                #if DEBUG
+                if NativePublicationUITestSupport.active { NativePublicationUITestHost() } else { ContentView() }
+                #else
+                ContentView()
+                #endif
+            }
                 .environment(store)
                 .environment(relay)
                 .environment(community)

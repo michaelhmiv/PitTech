@@ -119,3 +119,25 @@ internal suspend fun SharingRepository.preparePublication(id: String,kind: Strin
     }
     coroutineContext.ensureActive();PublicationProjection.build(document,row.updatedAtUtcMillis,photos,kind)
 }
+
+/** Exact preview of a verified device-owned pending request, with bounded ZIP reads. */
+internal fun pendingPublication(file: java.io.File): PreparedPublication = java.util.zip.ZipFile(file).use { zip ->
+    fun read(path: String, limit: Int): ByteArray {
+        val entry=zip.getEntry(path) ?: error("Saved public preview is unavailable."); require(!entry.isDirectory && entry.size in 0..limit.toLong())
+        val bytes=zip.getInputStream(entry).use { input ->
+            val output=ByteArrayOutputStream(); val buffer=ByteArray(8192)
+            while(true) { val count=input.read(buffer,0,minOf(buffer.size,limit+1-output.size())); if(count<0)break; output.write(buffer,0,count); require(output.size()<=limit) }; output.toByteArray()
+        }
+        val crc=java.util.zip.CRC32().apply { update(bytes) }; require(crc.value==entry.crc); return bytes
+    }
+    val payload=JSONObject(String(read("publication.json",8*1024*1024),Charsets.UTF_8)); val recipes=payload.getJSONArray("recipes"); require(recipes.length() in 1..20)
+    val photos=linkedMapOf<String,ByteArray>()
+    for(index in 0 until recipes.length()) {
+        val assets=recipes.getJSONObject(index).getJSONArray("assets")
+        for(a in 0 until assets.length()) {
+            val asset=assets.getJSONObject(a); val id=asset.getString("id"); require(publicationUuid(id) && asset.getString("path")=="attachments/$id.jpg")
+            val bytes=read("attachments/$id.jpg",16*1024*1024); require(RelayProtocol.hash(bytes)==asset.getString("sha256")); photos[id]=bytes
+        }
+    }
+    PreparedPublication(payload,file.readBytes(),photos)
+}

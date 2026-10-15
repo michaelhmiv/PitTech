@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SharingDraftView: View {
     @Environment(CookStore.self) private var store
+    @Environment(NativePublicCoordinator.self) private var community
+    @Environment(NativeAccountCoordinator.self) private var account
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     let id: String
@@ -18,6 +20,7 @@ struct SharingDraftView: View {
     @State private var cardSettings = false
     @State private var cardPreview = false
     @State private var relayShare = false
+    @State private var publishing = false
     @State private var cardPackRequested = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
     @State private var exportTask: Task<Void, Never>?
@@ -72,13 +75,16 @@ struct SharingDraftView: View {
                     Button { prepareExport() } label: { Label("Share Cook Pack file", systemImage: "square.and.arrow.up") }
                         .buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-export-pack")
                     Button("Share by code") { act { try persist(); relayShare = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-relay")
+                    if community.enabled && account.enabled {
+                        Button("Preview public publication") { act { try persist(); publishing = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-publish")
+                    }
                     Button("Save meal collection") { act { try persist(); _ = try store.copySharingDocument(id, asCollection: true); try store.discardSharingDraft(id); document = nil; dismiss() } }
                         .buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(!current.entries.contains { $0.included })
                     Button("Discard draft", role: .destructive) { act { saveTask?.cancel(); try store.discardSharingDraft(id); document = nil; dismiss() } }.frame(minHeight: 44)
                 }
                 if let error { Text(error).foregroundStyle(.red) }
             }.padding(20)
-        }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Sharing draft").navigationBarTitleDisplayMode(.inline)
+        }.accessibilityIdentifier("sharing-draft-content").background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Sharing draft").navigationBarTitleDisplayMode(.inline)
             .onAppear { act { try reload() } }
             .onChange(of: document) { _, value in
                 if let value, !canIncludeHistory(value) { includeRecordedCook = false }
@@ -96,6 +102,7 @@ struct SharingDraftView: View {
                 exportDocument = PitTechArchiveDocument(data: Data())
             }
             .sheet(item: $editor, onDismiss: { act { try reload() } }) { NativeRecipeEditor(request: $0) }
+            .sheet(isPresented: $publishing, onDismiss: { act { try reload() } }) { NavigationStack { NativePublicationView(draft: id) }.modifier(ScreenshotTextSize()) }
             .sheet(isPresented: $relayShare) { NavigationStack { NativeRelayShareView(id: id, includeHistory: includeRecordedCook) }.modifier(ScreenshotTextSize()) }
             .sheet(isPresented:$cardPreview,onDismiss:{ if cardPackRequested { cardPackRequested = false;prepareExport() } }) {
                 NavigationStack { NativeShareCardPreview(id:id) { cardPackRequested = true;cardPreview = false } }.modifier(ScreenshotTextSize())

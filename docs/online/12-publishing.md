@@ -42,11 +42,41 @@ response-loss recovery, account switching, corruption, refresh and revision conf
 Actions verification for this increment is pending. The stores are not yet wired
 to user-facing publishing controls.
 
-Still required in this same draft: exact selected-content/identity preview,
-native publish/update/unpublish,
-profile editing/opt-in preview, likes, modified variations and actual-attempt
-publication, native UI tests and visual review. This foundation does not claim
-that those publishing flows already exist.
+Both native sharing draft editors now open a separate publication flow. It shows
+selected recipes, ingredients, instructions, methods/actions, photo derivatives,
+cover choice, pinned credit and frozen recorded stories before an explicit review
+and publish confirmation. Credit can be named or anonymous; sign-in returns to
+the task without sending it. The durable draft-to-publication binding supports
+revision-pinned updates from that draft, retaining the chosen publication kind
+so reopening an actual-cook draft does not silently convert it into a recipe. An authenticated, metadata-only owner
+read (`GET /v1/me/recipes/:id`) refreshes the exact base revision before the
+update preview; it returns no payload, credentials or account identity. The
+preview explains replacement or republication after voluntary removal. My cookbook previews display-name/handle
+and visibility changes, lists owned publications and confirms removal. Likes and
+unlikes are explicit signed-in operations. Interrupted writes reopen their exact
+saved archive or profile/action preview; malformed success responses retain the
+request instead of clearing it.
+
+Matching synthetic native UI flows cover preview-before-confirmation, anonymous
+publication, a revision-pinned update, cookbook opt-in and confirmed removal. They use memory APIs and never
+send mail or call a deployed service. Photo previews decode one bounded thumbnail per recipe and let the user step
+through every selected photo, avoiding simultaneous full-size bitmap decoding.
+Normal and enlarged text captures, native archive recovery round trips and transport/revision/cookie/redirect bounds are
+included in the next Actions increment; full verification and visual review are
+pending. Core upload code compiled on both platforms at eeb4e78. Both required Android
+lanes pass all 29 core tests, including queue recovery, before the separate
+fixed-footer discovery test failure. The actual Android publication archive from
+Actions 38799334048 passes the canonical backend validator and is retained as
+`native-publication-android-v1.json` with producer/digest metadata. A backend
+regression test verifies its selected frozen story, source revision and photo.
+The complete native runtime suites at that head are not yet green.
+
+Still required in this same draft: finish native CI and visual review, validate
+both actual native publication archives through the canonical backend validator,
+review update/fork and actual-attempt flows end to end, and support editing an
+owned publication when its originating local sharing draft is unavailable. A
+saved copy must not be blindly uploaded as an update to itself: that would create
+self-lineage and lose the original member/source relationships.
 
 The server remains gated by moderation/deletion readiness and normal clients
 keep community/account entry disabled. PR 13 supplies reporting, blocking,
@@ -54,3 +84,11 @@ moderation propagation and deletion; PR 14 supplies private sync. Native build
 and runtime evidence comes only from Actions. Real installed App/Universal Links,
 release certificate association and final-host routing require separate staging
 and physical-device evidence.
+
+The simulator test step has a 35-minute bound (75 minutes for the complete job)
+to accommodate the expanded two-size publication/update/cookbook UI flows. This
+changes CI time limits only; store upload jobs are unchanged.
+
+Fresh native writer exports are collected independently of later UI success,
+including failed/cancelled test runs, with the same per-run timestamp checks.
+A retained export proves its writer output only; it does not make a failed run green.

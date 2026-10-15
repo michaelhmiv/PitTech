@@ -36,7 +36,10 @@ class PublicStorageTest {
             val frozen=publication.payload.getJSONArray("recipes").getJSONObject(0).getJSONObject("story")
             assertTrue(com.pittech.domain.SharingDraftCodec.sameStory(f.getJSONObject("detail").getJSONObject("payload").getJSONArray("recipes").getJSONObject(0).getJSONObject("story").toString(),frozen.toString()))
             assertEquals(1,publication.photos.size);assertTrue(publication.bytes.size<64*1024*1024)
-            File(context.filesDir,"pittech-publication").apply { mkdirs() }.resolve("android-publication.pittech").writeBytes(publication.bytes)
+            val exported=File(context.filesDir,"pittech-publication").apply { mkdirs() }.resolve("android-publication.pittech"); exported.writeBytes(publication.bytes)
+            val recovered=pendingPublication(exported)
+            assertTrue(com.pittech.domain.SharingDraftCodec.sameStory(publication.payload.toString(),recovered.payload.toString())); assertArrayEquals(publication.bytes,recovered.bytes)
+            assertEquals(publication.photos.keys,recovered.photos.keys); publication.photos.forEach { (id,bytes) -> assertArrayEquals(bytes,recovered.photos[id]) }
         } finally {database.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) };database.companionDao().photos().forEach { storage.delete(it.relativePath) };database.close()}
     }
     @Test fun cachedBrowsingSurvivesRestartButAnUnavailableRecipeCannotUseStaleRemoteData() = runBlocking {

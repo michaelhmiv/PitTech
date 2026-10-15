@@ -40,7 +40,10 @@ still requires staging/domain association and physical-device evidence.
 
 ## Verification
 
-Draft source only until Actions proves native builds/tests. Native tests exercise
+At `048705f`, iOS Actions 38770804764 passes all 83 tests, zero failures
+or skips, and both required Android API 36 lanes pass in 38770804862.
+The iOS signed-in/out captures at normal and enlarged text sizes were inspected.
+Native tests exercise
 lost responses across restart, wrong-code correction, proof-bound link receipt,
 serialized refresh, rejection, offline logout, secure storage and disabled gates.
 Native UI tests use local synthetic responses, never Resend or a deployed API,

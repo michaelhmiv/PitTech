@@ -3,6 +3,7 @@ import SwiftUI
 struct MoreView: View {
     @Environment(NativeRelayCoordinator.self) private var relay
     @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(NativePublicCoordinator.self) private var community
     let runtime: NativeTelemetryRuntime
     var body: some View {
         NavigationStack {
@@ -22,6 +23,9 @@ struct MoreView: View {
                         Button { account.showingAccount = true } label: {
                             MoreDestinationLabel(title: "Account", subtitle: "Optional email sign-in and this device’s session", symbol: "person.crop.circle")
                         }.accessibilityIdentifier("more-account")
+                    }
+                    if account.enabled && community.enabled {
+                        NavigationLink { NativeMyCookbookView() } label: { MoreDestinationLabel(title: "My cookbook", subtitle: "Public identity, publications and interrupted changes", symbol: "book.closed") }.accessibilityIdentifier("more-cookbook")
                     }
                     NavigationLink { SettingsView() } label: {
                         MoreDestinationLabel(title: "Settings & support", subtitle: "Appearance, units, data and feedback", symbol: "gearshape")

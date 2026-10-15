@@ -34,7 +34,7 @@ jobs:
     name: Build iOS app for Simulator
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'simulator'
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - name: Check out candidate
         uses: actions/checkout@v6
@@ -83,11 +83,21 @@ jobs:
           find build/ios-public/SourcePackages -name Package.resolved -o -name LICENSE -o -name LICENSE.txt > build/ios-public-dependency-evidence.txt
 
       - name: Run native compatibility tests
+        id: native-tests
+        timeout-minutes: 35
         run: |
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
           fixture_started_at=$(date +%s)
+          echo "$fixture_started_at" > build/native-fixture-start
           xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test
+
+      - name: Collect fresh native writer exports
+        id: portable-fixtures
+        if: always() && steps.native-tests.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          fixture_started_at=$(cat build/native-fixture-start)
           python3 - "$fixture_started_at" <<'PYFIXTURE'
           import pathlib, shutil, sys
           # Xcode may run tests on a clone and shut it down. Read the fixture from its
@@ -136,6 +146,7 @@ jobs:
           retention-days: 14
 
       - name: Upload native portable recipe fixture
+        if: always() && steps.portable-fixtures.outcome == 'success'
         uses: actions/upload-artifact@v6
         with:
           name: pittech-native-recipe-fixture

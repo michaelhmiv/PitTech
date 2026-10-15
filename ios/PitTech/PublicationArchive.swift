@@ -170,3 +170,30 @@ enum NativePublicationProjection {
         return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
 }
+
+extension NativePreparedPublication {
+    /// Read only a verified, device-owned pending archive for its exact retry preview.
+    static func pending(file: URL) throws -> NativePreparedPublication {
+        let archive = try Archive(url: file, accessMode: .read)
+        func read(_ path: String, limit: Int) throws -> Data {
+            guard let entry = archive[path], entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw NativePublicationError.invalid }
+            var bytes = Data()
+            let crc = try archive.extract(entry) { chunk in
+                guard bytes.count + chunk.count <= limit else { throw NativePublicationError.limits }; bytes.append(chunk)
+            }
+            guard crc == entry.checksum else { throw NativePublicationError.invalid }; return bytes
+        }
+        let payload = try JSONDecoder().decode(JSONValue.self, from: read("publication.json", limit: 8 * 1024 * 1024))
+        guard let recipes = payload.objectValue?["recipes"]?.arrayValue, (1...20).contains(recipes.count) else { throw NativePublicationError.invalid }
+        var photos: [String: Data] = [:]
+        for recipe in recipes {
+            for asset in recipe.objectValue?["assets"]?.arrayValue ?? [] {
+                guard let row = asset.objectValue, let id = row["id"]?.stringValue, UUID(uuidString: id) != nil,
+                      row["path"]?.stringValue == "attachments/" + id + ".jpg" else { throw NativePublicationError.invalid }
+                let bytes = try read("attachments/" + id + ".jpg", limit: 16 * 1024 * 1024)
+                guard NativeRelayProtocol.hash(bytes) == row["sha256"]?.stringValue else { throw NativePublicationError.invalid }; photos[id] = bytes
+            }
+        }
+        return NativePreparedPublication(payload: payload, bytes: try Data(contentsOf: file), photos: photos)
+    }
+}

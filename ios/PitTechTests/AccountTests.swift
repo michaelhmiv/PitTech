@@ -83,6 +83,14 @@ import Security
         let values = try await [first, second]
         XCTAssertEqual(values[0], values[1]); XCTAssertEqual(calls, 2); XCTAssertNil(memory.value.refreshOperation)
     }
+    func testForcedRefreshReplacesAnOtherwiseUnexpiredAccessCredential() async throws {
+        let memory = Memory(); memory.value.session = session(); var calls = 0
+        let result = try JSONEncoder().encode(session(rotated: true))
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: API { _, path in calls += 1; XCTAssertEqual(path, "/v1/auth/refresh"); return result })
+        let cached = try await account.access(); XCTAssertEqual(cached, token); XCTAssertEqual(calls, 0)
+        let refreshed = try await account.access(forceRefresh: true); XCTAssertNotEqual(refreshed, token); XCTAssertEqual(calls, 1)
+        let latest = try await account.access(); XCTAssertEqual(latest, refreshed); XCTAssertEqual(calls, 1)
+    }
     func testRefreshRejectionRemovesActiveAccount() async throws {
         let memory = Memory(); memory.value.session = session(expired: true)
         let account = NativeAccountCoordinator(enabled: true, vault: memory, api: API { _, _ in throw NativeAccountError.status(401) })

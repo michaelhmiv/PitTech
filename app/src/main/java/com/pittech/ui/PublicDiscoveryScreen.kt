@@ -17,7 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.PublicManager
 import org.json.JSONObject
 
-@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F") {
+@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null) {
     val state by manager.state.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.appliedQuery) }
     var food by rememberSaveable { mutableStateOf(state.appliedFood) }
@@ -38,6 +38,7 @@ import org.json.JSONObject
                 Text(detail.title,Modifier.testTag("public-title"),style=MaterialTheme.typography.headlineMedium)
                 Text("Shared by ${detail.credit}")
                 detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
+                if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.")
                 Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }

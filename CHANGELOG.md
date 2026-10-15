@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Draft iOS and Android publishing: review selected public content and credit, recover interrupted uploads, preview cookbook visibility changes, and confirm publication removal. These controls remain disabled pending the complete community phase.
 - Draft community work: public recipe and cookbook links open native previews on both platforms; saved variations keep their pinned source after upstream edits or removal. Community access remains disabled pending the complete phase.
 - Android and iOS post-launch draft: browse community recipes without signing
   in, inspect selected photos and recorded measurements, and preview recipes
