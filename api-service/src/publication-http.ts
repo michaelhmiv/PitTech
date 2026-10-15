@@ -62,7 +62,7 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
   if(!['application/zip','application/octet-stream'].includes(req.headers['content-type']??'')||![undefined,'identity'].includes(req.headers['content-encoding']))throw new ApiError(415,'publication_archive_required');
   if(Number(req.headers['content-length']??0)>LIMITS.compressed)throw new ApiError(413,'request_too_large');
   if(!gate.claimUpload())throw new ApiError(503,'publication_busy');
-  let directory:string|undefined;
+  let directory:string|undefined,held=true;
   try{
     await mkdir(gate.root,{recursive:true,mode:0o700});directory=await mkdtemp(join(gate.root,'upload-'));
     const input=join(directory,'publication.zip'),output=join(directory,'accepted.zip');let size=0;
@@ -70,6 +70,8 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
     const validated=await validatePublication(input,output);
     if(res.destroyed)throw new ApiError(400,'request_interrupted');
     const result=await publications.publish(user.id,operation,validated,output,method==='PUT'?{id,base}:undefined);
+    // Release the staging file and shared slot before the client can retry the 201.
+    await rm(directory,{recursive:true,force:true});directory=undefined;gate.releaseUpload();held=false;
     json(method==='PUT'?200:201,result);
-  }finally{if(directory)await rm(directory,{recursive:true,force:true});gate.releaseUpload();}
+  }finally{if(directory)await rm(directory,{recursive:true,force:true});if(held)gate.releaseUpload();}
 }

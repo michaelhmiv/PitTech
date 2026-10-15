@@ -43,6 +43,8 @@ are recalculated for accepted bytes. Uploaded display-credit strings are removed
 actual attribution comes from verified source records and visibility rules.
 No remote URL is fetched. Workers have a 15-second deadline and 256 MiB JS heap;
 only one relay/public upload or public fork occupies the process upload slot.
+Staging cleanup releases that slot before a successful response is sent, so an
+immediate exact retry can recover its committed result.
 
 Private object storage keys use a separate publications prefix. Reservations
 precede storage writes, preserve exact retries and count failed/interrupted
