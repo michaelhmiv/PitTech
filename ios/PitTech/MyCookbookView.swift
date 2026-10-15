@@ -13,7 +13,8 @@ struct NativeMyCookbookView: View {
     @State private var loadedUser: String?
     @State private var items: [NativeCookbookItem] = []
     @State private var cursor: String?
-    @State private var handle = "", name = ""
+    @State private var handle = ""
+    @State private var name = ""
     @State private var isPublic = false
     @State private var profilePreview: NativeCookbookProfile?
     @State private var removing: NativeCookbookItem?

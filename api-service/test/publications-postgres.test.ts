@@ -107,7 +107,7 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       const retryResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(retryResponse.status,201);assert.deepEqual(await retryResponse.json(),published);
       assert.equal((await fetch(origin+'/v1/recipes/'+published.id)).status,200);
       assert.equal((await fetch(origin+'/v1/me/recipes/'+published.id)).status,401);
-      const ownerRead=await fetch(origin+'/v1/me/recipes/'+published.id,{headers:{Authorization:headers.Authorization}});assert.equal(ownerRead.status,200);assert.equal(ownerRead.headers.get('cache-control'),'no-store');assert.equal((await ownerRead.json()).revisionId,published.revisionId);
+      const ownerRead=await fetch(origin+'/v1/me/recipes/'+published.id,{headers:{Authorization:headers.Authorization}});assert.equal(ownerRead.status,200);assert.equal(ownerRead.headers.get('cache-control'),'private, no-store');assert.equal((await ownerRead.json()).revisionId,published.revisionId);
       assert.equal((await fetch(origin+'/v1/me/recipes/'+posted.id,{headers:{Authorization:headers.Authorization}})).status,404);
       const page=await fetch(origin+'/c/'+published.id);assert.equal(page.status,200);const html=await page.text();
       assert.ok(html.includes('pittech://recipe/'+published.id));assert.ok(html.includes(raw.recipes[0].title));
