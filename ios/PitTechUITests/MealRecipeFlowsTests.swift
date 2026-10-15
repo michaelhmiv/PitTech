@@ -10,7 +10,10 @@ final class MealRecipeFlowsTests: XCTestCase {
             if app.scrollViews["relay-import-content"].exists, let navigation {
                 // The modal scroll view can also report an infinite AX frame.
                 // Its finite navigation bar anchors an ordinary content-gutter swipe.
-                if element.waitForExistence(timeout: 1), element.isHittable { return }
+                let top = navigation.frame.maxY + 12
+                let bottom = app.windows.firstMatch.frame.maxY - 24
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
                 let down = element.exists && element.frame.minY < navigation.frame.maxY + 8
                 let origin = navigation.coordinate(withNormalizedOffset: .zero)
                 let start = origin.withOffset(CGVector(dx: 32, dy: down ? navigation.frame.height + 24 : navigation.frame.height + 324))
@@ -72,7 +75,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
             capture(large ? "Native account signed in large text" : "Native account signed in")
             app.buttons["Sign out"].tap()
-            let confirm = app.buttons["account-confirm-signout"]; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+            let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
             XCTAssertTrue(app.buttons["account-start"].waitForExistence(timeout: 10))
             capture(large ? "Native account signed out large text" : "Native account signed out")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
@@ -151,7 +154,13 @@ final class MealRecipeFlowsTests: XCTestCase {
             let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
             XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
             let first = choices.firstMatch; reveal(first, app: app)
-            first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            // iOS exposes the labeled Toggle container and the actual UISwitch separately.
+            // Target the small control contained by this selected recipe row.
+            let controls = app.switches.allElementsBoundByIndex.filter {
+                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 && first.frame.contains($0.frame) && $0.isHittable
+            }
+            XCTAssertEqual(controls.count, 1)
+            controls.first!.tap()
             XCTAssertTrue(NSPredicate(format: "value == %@", "0").evaluate(with: first) || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: first)], timeout: 5) == .completed)
             let save = app.buttons["pack-save-recipes"]; reveal(save, app: app)
             XCTAssertEqual(save.label, "Save 1 recipe")
