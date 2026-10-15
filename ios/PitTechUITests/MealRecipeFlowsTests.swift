@@ -7,6 +7,19 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
+            if let navigation, navigation.identifier == "Account" {
+                // Form rows are virtualized: an off-screen field may not exist yet.
+                // Scroll the foreground Form before waiting for that row's AX node.
+                let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
+                let down = element.exists && element.frame.minY < top
+                let origin = navigation.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 32 : navigation.frame.height + 400))
+                let end = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 400 : navigation.frame.height + 32))
+                start.press(forDuration: 0.01, thenDragTo: end)
+                continue
+            }
             if app.scrollViews["relay-import-content"].exists, let navigation {
                 // The modal scroll view can also report an infinite AX frame.
                 // Its finite navigation bar anchors an ordinary content-gutter swipe.
@@ -87,14 +100,14 @@ final class MealRecipeFlowsTests: XCTestCase {
             let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10)); email.tap(); email.typeText("cook@example.com")
             app.buttons["Hide keyboard"].tap()
             let start = app.buttons["account-start"]; reveal(start, app: app); start.tap()
-            let code = app.textFields["account-code"]; XCTAssertTrue(code.waitForExistence(timeout: 10)); reveal(code, app: app); code.tap(); code.typeText("123456")
+            let code = app.textFields["account-code"]; reveal(code, app: app); XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("123456")
             app.buttons["Hide keyboard"].tap()
             let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
-            XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
+            let signedIn = app.staticTexts["account-signed-in"]; reveal(signedIn, app: app); XCTAssertTrue(signedIn.waitForExistence(timeout: 10))
             capture(large ? "Native account signed in large text" : "Native account signed in")
-            app.buttons["Sign out"].tap()
+            let signOut = app.buttons["Sign out"]; reveal(signOut, app: app); signOut.tap()
             let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
-            XCTAssertTrue(app.buttons["account-start"].waitForExistence(timeout: 10))
+            reveal(start, app: app); XCTAssertTrue(start.waitForExistence(timeout: 10))
             capture(large ? "Native account signed out large text" : "Native account signed out")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
             XCTAssertFalse(app.staticTexts["Signed in"].exists)
