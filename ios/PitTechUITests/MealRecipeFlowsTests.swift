@@ -3,19 +3,47 @@ import XCTest
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<12 {
+        for _ in 0..<18 {
+            let cookScroll = app.scrollViews["cook-content"]
+            let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
+            let log = app.buttons["meal-log"]
+            if cookScroll.exists, let navigation, log.exists, log.isHittable, log.frame.minY.isFinite {
+                // SwiftUI can expose this scroll container with an infinite AX frame.
+                // Anchor to the finite navigation bar and stay inside the content gutter,
+                // above the fixed quick actions and away from the chart/slider gestures.
+                let top = navigation.frame.maxY + 10
+                let bottom = log.frame.minY - 20
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
+                let down = element.exists && element.frame.minY < top
+                let span = max(60, (bottom - top) * 0.55)
+                let distance = element.exists ? (down ? top - element.frame.minY : element.frame.maxY - bottom) + 24 : span
+                let travel = min(span, max(60, distance))
+                let startY = down ? top + 24 : bottom - 24
+                let endY = down ? startY + travel : startY - travel
+                let origin = navigation.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 32, dy: startY - navigation.frame.minY))
+                let end = origin.withOffset(CGVector(dx: 32, dy: endY - navigation.frame.minY))
+                start.press(forDuration: 0.01, thenDragTo: end)
+                continue
+            }
             let top = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable })?.frame.maxY ?? app.windows.firstMatch.frame.minY
             let bottom = app.tabBars.allElementsBoundByIndex.first(where: { $0.isHittable })?.frame.minY ?? app.windows.firstMatch.frame.maxY
             if element.waitForExistence(timeout: 1) && element.isHittable {
                 if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
             }
-            let cookScroll = app.scrollViews["cook-content"]
             let scroll = cookScroll.exists && cookScroll.isHittable ? cookScroll : app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
             if let scroll, scroll.exists && scroll.isHittable {
                 if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
+        let log = app.buttons["meal-log"]
+        if app.scrollViews["cook-content"].exists, log.exists, log.isHittable,
+           let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }) {
+            XCTAssertGreaterThanOrEqual(element.frame.minY, navigation.frame.maxY + 10)
+            XCTAssertLessThanOrEqual(element.frame.maxY, log.frame.minY - 20)
+        }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
     func testSavedRecipeCardPreviewAndCanceledShareKeepDraftAtBothTextSizes() {
