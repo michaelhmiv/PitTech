@@ -120,15 +120,14 @@ IP/global budgets, idempotency, restart, expiry, renewal/revocation and cleanup.
 Both native suites consume the server's canonical recorded-cook fixtures as
 well as original app exports; native builds run only in Actions.
 
-The current GitHub App cannot modify workflow files (AGENTS.md rule 3).
-`ci-proposals/online-services.yml` and `online-services-workflow.patch` are a
-reviewable exact addition for a workflow-capable owner/connection. Apply from
-the repository root with `git apply ci-proposals/online-services-workflow.patch`.
-The proposed gate includes Node 22, real Postgres 16, strict checks, audit,
-deterministic fixtures and production-container validation. It has no production
+`.github/workflows/online-services.yml` is installed on this draft branch.
+`ci-proposals/online-services.yml` and `online-services-workflow.patch` retain
+the review copy and exact addition. The gate includes Node 22, real Postgres 16,
+strict checks, audit, deterministic fixtures and production-container validation.
+It has no production
 credentials or deployments. Local smoke checks are not Actions verification.
 
-Do not merge or deploy this draft until the backend workflow is applied and
-passes, native canonical imports pass, actual private storage/restart/deletion
+Do not merge or deploy this draft until the backend workflow passes,
+native canonical imports pass, actual private storage/restart/deletion
 and proxy behavior pass in isolated staging, and the complete phase-1 parity
 and privacy gates pass. All issue #89 PRs remain draft.

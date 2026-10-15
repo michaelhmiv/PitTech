@@ -30,7 +30,7 @@ new file mode 100644
 +          POSTGRES_PASSWORD: pittech_ci_only
 +        ports: ['5432:5432']
 +        options: >-
-+          --health-cmd 'pg_isready -U pittech_ci -d pittech_test_relay'
++          --health-cmd "pg_isready -U pittech_ci -d pittech_test_relay"
 +          --health-interval 5s --health-timeout 5s --health-retries 10
 +    env:
 +      TEST_DATABASE_URL: postgres://pittech_ci:pittech_ci_only@127.0.0.1:5432/pittech_test_relay
