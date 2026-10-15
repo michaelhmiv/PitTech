@@ -25,15 +25,18 @@ ceilings, not measured production capacity or pricing commitments.
 
 ## Resolve before any apply
 
-The volume was staged with the legacy `us-east4-eqdc4a` region from the skill's
-reference, but current service configuration accepts `iad`. The connector could
-correct service regions but cannot edit a pending volume's region: delete reports
-it is not provisioned, while creating its replacement reports a volume is already
-attached. Resolve/cancel and restage that pending volume in `iad` in Railway before
-committing this patch. No volume was provisioned or deleted during these attempts.
-Resource-limit updates also require a live service instance in the connector;
-set and verify explicit CPU/memory limits before applying, rather than relying
-on unverified defaults. This patch is **not deploy-ready**.
+The volume's invalid legacy region override was removed through Railway's
+staged-change review on October 15. Read-back confirms the override is absent,
+the mount and 1,024 MB size remain, and the volume follows its attached
+Postgres service in `iad`. No volume or data was deleted. The connector's
+pending-volume limitation is resolved without applying the patch.
+
+Both API and Postgres now have reviewed, staged ceilings of one vCPU and
+1,000,000,000 bytes RAM per replica, verified through service configuration
+read-back. These are bounded staging allocations, not measured production
+requirements. The patch now contains 36 pending changes; no deployment exists.
+It is still **not deploy-ready** because runtime credentials, migration/bootstrap,
+private storage wiring and the operational gates below remain incomplete.
 
 Finish database bootstrap and least-privilege migration/runtime role setup using
 the reviewed operations SQL. Keep the admin/migrator credential out of API and

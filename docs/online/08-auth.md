@@ -71,8 +71,9 @@ nor migrator credentials belong in the API or its cleanup workers.
 
 `auth.pittech.app` was created in the connected account, ID
 `5a3168c5-b22b-42c9-b0d3-d9be49906f0f`. Tracking is disabled and TLS enforced.
-It is unverified; its returned DNS records have not been applied. No email has
-been sent and no API key created. `auth-staging.pittech.app` is reserved in the
+All four returned DNS records were applied in Railway on October 15 with
+300-second TTLs. Resend now reports the domain and DKIM, MX, SPF TXT and CNAME
+records **verified**. No email has been sent and no API key created. `auth-staging.pittech.app` is reserved in the
 adapter contract but has not been created or verified. Use separate sending-only
 keys scoped to each verified domain. Existing Sportfolio domains/keys remain
 until verified PitTech replacement delivery succeeds; unrelated apps are outside
@@ -80,10 +81,13 @@ this migration.
 
 ## Acceptance still required
 
-Actions must pass real-Postgres role isolation, durable attempts, concurrent
-consumption, delivery leases, retry/replay, expiry, HTTP bounds/redaction and
-all existing relay gates. Local tests are not database proof. Verify actual
-DNS, sender authentication, tracking settings, bounce/complaint handling,
+Backend Actions run 38744834515 passes at `1572488`: all 29 tests pass with
+zero skips, including real Postgres role isolation, durable attempts, concurrent
+consumption, delivery leases, retry/replay, expiry and actual HTTP bounds/redaction.
+Strict typecheck, zero-vulnerability runtime audit, deterministic fixtures,
+production Docker validation of six native packs and fail-closed startup pass.
+Native and operational gates are separate. DNS and sender authentication are
+now verified; still verify bounce/complaint handling,
 suppression policy, least-privilege keys, host logs, budget alerts and delivery
 before enabling auth. PR 09 supplies both native account/session flows. Account
 deletion, public-content purge and private-data removal remain a launch gate in

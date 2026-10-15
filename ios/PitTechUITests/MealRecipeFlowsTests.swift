@@ -7,6 +7,17 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
+            if app.scrollViews["relay-import-content"].exists, let navigation {
+                // The modal scroll view can also report an infinite AX frame.
+                // Its finite navigation bar anchors an ordinary content-gutter swipe.
+                if element.waitForExistence(timeout: 1), element.isHittable { return }
+                let down = element.exists && element.frame.minY < navigation.frame.maxY + 8
+                let origin = navigation.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 32, dy: down ? navigation.frame.height + 24 : navigation.frame.height + 324))
+                let end = origin.withOffset(CGVector(dx: 32, dy: down ? navigation.frame.height + 324 : navigation.frame.height + 24))
+                start.press(forDuration: 0.01, thenDragTo: end)
+                continue
+            }
             if cookScroll.exists, let navigation, log.exists, log.isHittable, log.frame.minY.isFinite {
                 // SwiftUI can expose this scroll container with an infinite AX frame.
                 // Anchor to the finite navigation bar and stay inside the content gutter,
@@ -52,7 +63,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.tabBars.buttons["More"].tap()
             let open = app.buttons["more-relay-import"]; reveal(open, app: app); open.tap()
             let input = app.textFields["relay-code-input"]; XCTAssertTrue(input.waitForExistence(timeout: 10)); input.tap(); input.typeText("https://foreign.invalid/s/ABCD-1234-5678-9EF0")
-            let download = app.buttons["relay-download"]; reveal(download, app: app); download.tap()
+            let submit = app.keyboards.buttons["Go"]; XCTAssertTrue(submit.waitForExistence(timeout: 5)); submit.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
             let message = app.staticTexts["relay-message"]; XCTAssertTrue(message.waitForExistence(timeout: 10)); reveal(message, app: app)
             XCTAssertEqual(message.label, "Only PitTech share links are supported.")
             XCTAssertFalse(app.navigationBars["Cook Pack"].exists)
