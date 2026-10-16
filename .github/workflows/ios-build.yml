@@ -84,13 +84,13 @@ jobs:
 
       - name: Run native compatibility tests
         id: native-tests
-        timeout-minutes: 40
+        timeout-minutes: 50
         run: |
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
           fixture_started_at=$(date +%s)
           echo "$fixture_started_at" > build/native-fixture-start
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/native-tests.log
 
       - name: Collect fresh native writer exports
         id: portable-fixtures
@@ -121,6 +121,11 @@ jobs:
             xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/native-test-summary.json
             xcrun xcresulttool get test-results tests --path build/ios-tests.xcresult > build/native-test-cases.json
             xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
+            # Upload a closed archive, never a live Staging directory that Xcode
+            # can rename while upload-artifact enumerates it after a timeout.
+            ditto -c -k --keepParent build/ios-tests.xcresult build/native-tests.xcresult.zip
+          else
+            echo "The result bundle did not finalize; retaining the test log and fresh writer exports."
           fi
 
       - name: Upload compact native test results
@@ -140,7 +145,8 @@ jobs:
         with:
           name: pittech-native-test-evidence-${{ github.run_number }}
           path: |
-            build/ios-tests.xcresult
+            build/native-tests.xcresult.zip
+            build/native-tests.log
             build/native-ui-evidence/**
           if-no-files-found: warn
           retention-days: 14
