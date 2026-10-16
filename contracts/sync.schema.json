@@ -22,67 +22,42 @@
     "records": {
       "type": "array",
       "items": {
+        "$ref": "#/$defs/record"
+      },
+      "maxItems": 100000
+    },
+    "conflicts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "recordType": {
+          "id": {
             "type": "string",
-            "maxLength": 40
+            "pattern": "^[a-f0-9]{64}$"
           },
-          "recordId": {
-            "type": "string",
-            "format": "uuid"
+          "winner": {
+            "$ref": "#/$defs/record"
           },
-          "version": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "counter": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "clientId": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "required": [
-              "counter",
-              "clientId"
+          "loser": {
+            "$ref": "#/$defs/record"
+          },
+          "reason": {
+            "enum": [
+              "edit_edit",
+              "delete_edit",
+              "immutable_identity"
             ]
-          },
-          "deleted": {
-            "type": "boolean"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "assetIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "maxItems": 100
           }
         },
         "required": [
-          "recordType",
-          "recordId",
-          "version",
-          "deleted",
-          "payload",
-          "assetIds"
+          "id",
+          "winner",
+          "loser",
+          "reason"
         ]
-      },
-      "maxItems": 100000
+      }
     }
   },
   "required": [
@@ -90,6 +65,125 @@
     "baseVersion",
     "mutationId",
     "clientId",
-    "records"
-  ]
+    "records",
+    "conflicts"
+  ],
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recordType": {
+          "enum": [
+            "cooks",
+            "dishes",
+            "ingredients",
+            "events",
+            "readings",
+            "targets",
+            "results",
+            "devices",
+            "probes",
+            "photos",
+            "recipes",
+            "recipeRevisions",
+            "recipeAssets",
+            "companionRecords",
+            "companionPhotos",
+            "mealPresets",
+            "dishRecipeSources",
+            "lifecycles",
+            "targetHistory",
+            "logReadingLinks",
+            "reminderRules"
+          ]
+        },
+        "recordId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "not": {
+            "pattern": "[^A-Za-z0-9:_-]"
+          }
+        },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "counter": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740990
+            },
+            "clientId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "counter",
+            "clientId"
+          ]
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assetIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "maxItems": 100,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "recordType",
+        "recordId",
+        "version",
+        "deleted",
+        "payload",
+        "assetIds"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "deleted": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "null"
+              },
+              "assetIds": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "payload": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }
