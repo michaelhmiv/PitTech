@@ -52,4 +52,13 @@ class RecipeExtractionTest {
         assertEquals("Make sauce", merged.instructions.last().title)
         assertTrue(merged.observations.isEmpty())
     }
+    @Test fun inheritedFreeTextQuantitySurvivesNumericOnlyCookStorageButNewQuantitiesWin() {
+        val original=RecipeSnapshot("Pork",DishDraft("Pork","Pork",preparationItems=listOf(IngredientDraft("Salt",amountUnit="To taste"))))
+        val recorded=original.copy(dish=original.dish.copy(preparationItems=listOf(IngredientDraft("Salt",amountUnit="count"))))
+        assertEquals("To taste",RecipeExtraction.mergeAttempt(original,recorded).dish.preparationItems.single().amountUnit)
+        val measured=recorded.copy(dish=recorded.dish.copy(preparationItems=listOf(IngredientDraft("Salt",amountText="2",amountUnit="tsp"))))
+        assertEquals("2",RecipeExtraction.mergeAttempt(original,measured).dish.preparationItems.single().amountText)
+        assertEquals("tsp",RecipeExtraction.mergeAttempt(original,measured).dish.preparationItems.single().amountUnit)
+    }
+
 }

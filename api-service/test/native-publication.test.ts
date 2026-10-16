@@ -25,3 +25,20 @@ for(const platform of ['android','ios'])test(`actual ${platform} owner update pr
   assert.deepEqual(b.story,a.story);assert.equal(b.instructions[0].id,a.instructions[0].id);assert.equal(b.assets[0].id,a.assets[0].id);
   assert.equal(b.description,'My revised instructions');assert.equal(b.method,'Smoke');assert.equal(b.instructions[0].details,'Change the method, not the recorded result.');
 });
+
+for(const platform of ['android','ios'])for(const kind of ['variant','collection','attempt'])test(`actual ${platform} ${kind} archive retains selected credit and its own measured story`,async()=>{
+  const fixture=JSON.parse(await readFile(new URL(`../../contracts/fixtures/native-${kind}-${platform}-v1.json`,import.meta.url),'utf8'));
+  const bytes=Buffer.from(fixture.archiveBase64,'base64');assert.equal(digest(bytes),fixture.archiveSha256);
+  const result=await canonicalPublication(bytes);assert.equal(result.sha256,fixture.canonicalSha256);
+  const payload=result.payload;assert.equal(payload.kind,kind==='variant'?'recipe':kind);assert.equal(payload.identityMode,kind==='collection'?'named':'anonymous');
+  assert.equal(payload.recipes.length,kind==='collection'?2:1);
+  assert.equal(payload.source!.itemId,'12345678-1234-4234-8234-123456789abc');assert.equal(payload.source!.revisionId,'12345678-1234-4234-8234-123456789abd');
+  const recipe=payload.recipes[0],story=recipe.story!;assert.deepEqual(recipe.source,payload.source);
+  assert.ok(recipe.ingredients.some(i=>i.name==='Extra pepper'&&i.amount==='2 tsp'));assert.equal(recipe.description,'My pepper variation');
+  assert.notEqual(story.attemptId,'00000000-0000-4000-8000-000000000004');assert.equal(story.measurements.length,1);
+  assert.equal(story.measurements[0].valueCelsius,75);assert.equal(story.measurements[0].quality,'manual');assert.equal(story.measurements[0].role,'food');
+  assert.equal(story.verdict.rating,4.5);assert.equal(story.verdict.cookAgain,true);assert.equal(story.verdict.notes,'My recorded verdict');
+  assert.equal(story.foodOnOffsetMillis,0);assert.ok(story.foodOffOffsetMillis!>=story.measurements[0].offsetMillis);assert.deepEqual(story.gaps,[]);
+  assert.equal(payload.measuredAttemptId,kind==='attempt'?story.attemptId:null);
+  if(kind==='collection'){assert.equal(payload.recipes[1].title,'Smoked potatoes');assert.equal(payload.recipes[1].story,null);assert.deepEqual(payload.recipes[1].source,payload.source);}
+});
