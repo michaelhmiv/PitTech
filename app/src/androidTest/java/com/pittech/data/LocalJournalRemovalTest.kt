@@ -38,7 +38,8 @@ import java.util.UUID
             val cook = populatedCook(db, photos)
             photos.writeImported(photo, byteArrayOf(4, 5, 6))
             assertEquals(1, db.cookDao().getAllCooks().size)
-            assertEquals(1, db.cookDao().getTimelineEventsForCook(cook).size)
+            // startCook seeds a "cook_started" timeline event; populatedCook adds the note event.
+            assertEquals(2, db.cookDao().getTimelineEventsForCook(cook).size)
             assertEquals(1, db.activityTimerDao().all().size)
             assertEquals(1, db.reminderDao().rules().size)
             assertTrue(File(context.filesDir, photo).isFile); assertTrue(draft.isFile)
