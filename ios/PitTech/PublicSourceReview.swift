@@ -27,8 +27,8 @@ enum NativeSourceComparison {
             let r = value.objectValue ?? [:]
             var fields = try [text(r["title"], 160), text(r["details"], 2000), text(r["method"], 160), text(r["action"], 80)].filter { !$0.isEmpty }
             if let offset = r[shared ? "suggestedOffsetMillis" : "offsetMillis"]?.numberValue {
-                guard offset.isFinite, offset.rounded() == offset else { throw NativePublicError.invalid }
-                fields.append("Suggested offset · " + RecipeReferenceTimeline.relative(offset))
+                guard offset.isFinite, (-604_800_000...2_592_000_000).contains(offset.rounded()) else { throw NativePublicError.invalid }
+                fields.append("Suggested offset · " + RecipeReferenceTimeline.relative(offset.rounded()))
             }
             return fields.joined(separator: " · ")
         }

@@ -12,9 +12,10 @@ import XCTest
         let intake = try XCTUnwrap(store.archiveIntake); try await store.importSelectedRecipes(intake, selected: Set(intake.recipes.map(\.id))); store.discardArchiveIntake()
         let meal = try store.startRecipeMeal(title: "My new pork and potatoes cook", revisionIds: intake.recipes.map(\.id))
         let dishes = store.dishRecords(meal), pork = try XCTUnwrap(dishes.first { $0.name.lowercased().contains("pork") })
-        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "My food on"))
-        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, title: "My measured temperature", temperatures: [NoteTemperatureDraft(valueText: "167", unit: "°F", dishId: pork.id)]))
-        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, metadata: CookNoteMetadata(category: "action", action: "remove"), title: "My food off"))
+        let at = (Date.now.timeIntervalSince1970 * 1000).rounded(.down) - 120000
+        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "My food on", occurredAt: at + 0.25))
+        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, title: "My measured temperature", occurredAt: at + 60000.75, temperatures: [NoteTemperatureDraft(valueText: "167", unit: "°F", measuredAt: at + 60000.75, dishId: pork.id)]))
+        try store.saveNote(CookNoteDraft(cookId: meal, dishId: pork.id, metadata: CookNoteMetadata(category: "action", action: "remove"), title: "My food off", occurredAt: at + 90000.75))
         store.finishCook(meal); try store.saveDishVerdict(cookId: meal, dishId: pork.id, rating: 4.5, again: true, notes: "My recorded verdict")
         let journal = store.library, draft = try store.createSharingDraft(cookId: meal, dishIds: Set(dishes.map(\.id)))
         var document = try store.sharingDocument(draft)
@@ -31,6 +32,7 @@ import XCTest
         let variation = try await store.preparePublication(draft, kind: "recipe"), actual = try await store.preparePublication(draft, kind: "attempt")
         let recipe = try XCTUnwrap(actual.payload.objectValue?["recipes"]?.arrayValue?.first?.objectValue), story = try XCTUnwrap(recipe["story"]?.objectValue)
         XCTAssertEqual(story["verdict"]?.objectValue?["rating"]?.numberValue, 4.5); XCTAssertEqual(story["verdict"]?.objectValue?["notes"]?.stringValue, "My recorded verdict")
+        XCTAssertEqual(story["measurements"]?.arrayValue?.first?.objectValue?["offsetMillis"]?.numberValue, 60001)
         XCTAssertEqual(story["measurements"]?.arrayValue?.count, 1); XCTAssertEqual(try XCTUnwrap(story["measurements"]?.arrayValue?.first?.objectValue?["valueCelsius"]?.numberValue), 75, accuracy: 0.0001)
         let detail = object["detail"] as! [String: Any], source = (detail["payload"] as! [String: Any])["recipes"] as! [[String: Any]]
         XCTAssertNotEqual(story["attemptId"]?.stringValue, (source[0]["story"] as! [String: Any])["attemptId"] as? String)

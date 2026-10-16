@@ -11,6 +11,9 @@ final class SourceComparisonTests: XCTestCase {
         XCTAssertTrue(sections[1].saved[0].contains("Wrap")); XCTAssertTrue(sections[1].shared[0].contains("Finish"))
         var malformed = try XCTUnwrap(shared.objectValue); malformed["ingredients"] = .array([.object(["name": .string(String(repeating: "x", count: 161)), "amount": .string("")])])
         XCTAssertThrowsError(try NativeSourceComparison.sections(snapshot, recipe: .object(malformed)))
+        var hugeOffset = try XCTUnwrap(shared.objectValue), steps = try XCTUnwrap(shared.objectValue?["instructions"]?.arrayValue), step = try XCTUnwrap(steps[0].objectValue)
+        step["suggestedOffsetMillis"] = .number(1e15); steps[0] = .object(step); hugeOffset["instructions"] = .array(steps)
+        XCTAssertThrowsError(try NativeSourceComparison.sections(snapshot, recipe: .object(hugeOffset)))
         XCTAssertEqual(snapshot.instructions.first?.objectValue?["title"]?.stringValue, "Wrap")
     }
 }

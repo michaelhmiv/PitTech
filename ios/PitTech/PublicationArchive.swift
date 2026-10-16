@@ -35,7 +35,11 @@ enum NativePublicationProjection {
     }
     private static func optional(_ value: String?, _ max: Int) throws -> JSONValue { try value.map { try text($0, max) } ?? .null }
     private static func offset(_ value: Double) throws -> JSONValue {
-        guard value.isFinite, value.rounded() == value, (-604_800_000...2_592_000_000).contains(value) else { throw NativePublicationError.invalid }; return .number(value)
+        guard value.isFinite else { throw NativePublicationError.invalid }
+        // Native Date timestamps can contain fractional milliseconds. The public
+        // contract uses whole milliseconds; normalize only this projection.
+        let milliseconds = value.rounded()
+        guard (-604_800_000...2_592_000_000).contains(milliseconds) else { throw NativePublicationError.invalid }; return .number(milliseconds)
     }
     private static func source(_ value: PublicRecipeSource?) -> JSONValue {
         guard let value else { return .null }
