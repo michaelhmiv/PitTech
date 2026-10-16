@@ -22,8 +22,9 @@ struct NativeDeletionRecord: Codable {
     let operationId: String
     var verifier: String?
     var receipt: NativeDeletionReceipt?
+    var cleanupUserId: String? = nil
     func validate() throws {
-        guard UUID(uuidString: operationId) != nil, userId.map({ UUID(uuidString: $0) != nil }) ?? true,
+        guard cleanupUserId.map({ UUID(uuidString: $0) != nil }) ?? true, UUID(uuidString: operationId) != nil, userId.map({ UUID(uuidString: $0) != nil }) ?? true,
               verifier.map(NativeAccountProtocol.credential) ?? (receipt?.state == "complete"), receipt != nil || userId != nil else { throw NativeAccountError.invalid }
         try receipt?.validate()
     }

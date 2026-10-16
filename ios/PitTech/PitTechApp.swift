@@ -10,7 +10,7 @@ struct PitTechApp: App {
     #if DEBUG
     @State private var account = NativeAccountUITestSupport.make()
     #else
-    @State private var account = NativeAccountCoordinator()
+    @State private var account = NativeAccountCoordinator(cleanup: NativeAccountLocalCleanup.run)
     #endif
 
     var body: some Scene {
@@ -29,6 +29,7 @@ struct PitTechApp: App {
                 .environment(account)
                 .environment(AdsConsentManager.shared)
                 .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
+                .onChange(of: account.deletionRecord?.receipt?.deletionId) { _, _ in communityControls.reload(); community.controlsChanged() }
                 .tint(PitTechStyle.accent)
                 .modifier(ScreenshotTextSize())
                 .onOpenURL { url in
@@ -45,6 +46,7 @@ struct PitTechApp: App {
                     }
                 }
                 .task {
+                    communityControls.reload()
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()
                     store.save()

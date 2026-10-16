@@ -29,7 +29,7 @@ import Foundation
             return NativeAccountCoordinator(enabled: true, vault: vault, api: API())
         }
         if CommandLine.arguments.contains("--account-ui-test") { return NativeAccountCoordinator(enabled: true, vault: Memory(), api: API()) }
-        return NativeAccountCoordinator()
+        return NativeAccountCoordinator(cleanup: NativeAccountLocalCleanup.run)
     }
 }
 #endif

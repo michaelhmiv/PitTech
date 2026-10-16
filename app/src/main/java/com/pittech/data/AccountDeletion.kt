@@ -15,11 +15,11 @@ internal data class DeletionReceipt(val deletionId: String,val statusToken: Stri
     companion object {fun parse(o:JSONObject)=DeletionReceipt(o.getString("deletionId"),o.getString("statusToken"),o.getString("state")).also{it.validate()}}
 }
 /** Device-only proof and receipt. Never included in journal exports or private sync. */
-internal data class DeletionRecord(val userId:String?,val operationId:String,val verifier:String?,val receipt:DeletionReceipt?=null){
+internal data class DeletionRecord(val userId:String?,val operationId:String,val verifier:String?,val receipt:DeletionReceipt?=null,val cleanupUserId:String?=null){
     override fun toString()="DeletionRecord(redacted)"
-    fun validate(){require(deletionUUID(operationId) && (userId==null || deletionUUID(userId)) && (verifier?.let(AccountProtocol::credential) ?: (receipt?.state=="complete")) && (receipt!=null || userId!=null));receipt?.validate()}
+    fun validate(){require((cleanupUserId==null || deletionUUID(cleanupUserId)) && deletionUUID(operationId) && (userId==null || deletionUUID(userId)) && (verifier?.let(AccountProtocol::credential) ?: (receipt?.state=="complete")) && (receipt!=null || userId!=null));receipt?.validate()}
     fun request()=JSONObject().put("operationId",operationId).put("proofChallenge",AccountProtocol.proof(requireNotNull(verifier))).put("confirm","delete-account").put("policyVersion","account-deletion-v1")
-    fun json()=JSONObject().put("userId",userId?:JSONObject.NULL).put("operationId",operationId).put("verifier",verifier?:JSONObject.NULL).put("receipt",receipt?.json()?:JSONObject.NULL)
-    companion object {fun parse(o:JSONObject)=DeletionRecord(if(o.isNull("userId"))null else o.getString("userId"),o.getString("operationId"),if(o.isNull("verifier"))null else o.getString("verifier"),o.optJSONObject("receipt")?.let(DeletionReceipt::parse)).also{it.validate()}}
+    fun json()=JSONObject().put("userId",userId?:JSONObject.NULL).put("operationId",operationId).put("verifier",verifier?:JSONObject.NULL).put("receipt",receipt?.json()?:JSONObject.NULL).put("cleanupUserId",cleanupUserId?:JSONObject.NULL)
+    companion object {fun parse(o:JSONObject)=DeletionRecord(if(o.isNull("userId"))null else o.getString("userId"),o.getString("operationId"),if(o.isNull("verifier"))null else o.getString("verifier"),o.optJSONObject("receipt")?.let(DeletionReceipt::parse),o.optString("cleanupUserId").takeIf{it.isNotEmpty() && it!="null"}).also{it.validate()}}
 }
 private fun deletionUUID(value:String)=value.matches(Regex("[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"))

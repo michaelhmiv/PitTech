@@ -99,7 +99,7 @@ class AccountTest {
             if(path.endsWith("challenges")) { starts++; JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900) }
             else { verifies++; proof+=body!!.getString("verifier"); if(verifies == 1) throw AccountFailure(401); session().json() }
         }
-        val manager=AccountManager(memory,this,api,true) { clock }; manager.start("cook@example.com"); yield()
+        val manager=AccountManager(memory,this,api,true,now={ clock }); manager.start("cook@example.com"); yield()
         manager.start("cook@example.com",true); yield(); assertEquals(1,starts)
         manager.verify("111111"); yield(); manager.verify("222222"); yield(); assertEquals(2,verifies); assertEquals(proof[0],proof[1])
         assertTrue(manager.presentation.value.signedIn)
@@ -131,6 +131,15 @@ class AccountTest {
         memory.fail=false;account.requestDeletion();yield();assertEquals(1,calls);assertNotNull(memory.value.deletion!!.verifier);assertNull(memory.value.deletion!!.receipt);assertNotNull(memory.value.session)
         assertThrows(Exception::class.java){DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"unknown").validate()}
         assertNull(AccountState.parse(JSONObject()).deletion)
+    }
+    @Test fun acceptedDeletionRetainsCleanupOwnerAfterFailureAndRetriesOnRestart()=runBlocking {
+        val memory=Memory(AccountState(session=session()));val user=memory.value.session!!.userId;var attempts=0
+        val receipt=DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"complete")
+        val api=AccountAPI{_,_,_->receipt.json()}
+        val first=AccountManager(memory,this,api,true,cleanup={owner->assertEquals(user,owner);assertNull(memory.value.session);assertNotNull(memory.value.deletion!!.receipt);attempts++;error("Synthetic storage interruption")})
+        first.requestDeletion();yield();assertEquals(1,attempts);assertNull(memory.value.session);assertEquals(user,memory.value.deletion!!.cleanupUserId);assertNull(memory.value.deletion!!.userId)
+        val restarted=AccountManager(memory,this,api,true,cleanup={owner->assertEquals(user,owner);attempts++})
+        assertEquals(2,attempts);assertNull(memory.value.deletion!!.cleanupUserId);restarted.dismissCompletedDeletion();yield();assertNull(memory.value.deletion)
     }
     @Test fun deletionRetries401OnceWithoutChangingBodyOrAccount()=runBlocking {
         val memory=Memory(AccountState(session=session()));var calls=0;var refreshed=0;var request:String?=null

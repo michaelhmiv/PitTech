@@ -46,6 +46,10 @@ internal class CommunityVault(context:Context):CommunityStorage{
     private val accountVault=AccountVault(context)
     override fun load():CommunityControlsState?{val bytes=vault.loadBytes()?:return null;return try{CommunityControlsState.parse(JSONObject(String(bytes,Charsets.UTF_8)))}finally{bytes.fill(0)}}
     override fun save(value:CommunityControlsState){value.validate();val bytes=value.json().toString().toByteArray();try{vault.saveBytes(bytes)}finally{bytes.fill(0)}}
+    fun purgeAccount(user:String){
+        val old=load()?:return
+        save(old.copy(pending=old.pending?.takeUnless{it.userId==user},reports=old.reports.filterNot{it.userId==user},generation=UUID.randomUUID().toString()))
+    }
     fun aliases()=load()?.blocks?.map{it.alias}?.sorted()?:emptyList()
     fun publicAccount():AccountSession?{val state=accountVault.load();if(state.deletion!=null)return null;val session=state.session?:return null;session.validate();val now=java.time.Instant.now();if(java.time.Instant.parse(session.sessionExpiresAt)<=now)throw PublicFailure(401);return session}
     fun audience()=(load()?.generation?:"empty")+"|"+(publicAccount()?.userId?:"anonymous")
@@ -70,6 +74,7 @@ internal class CommunityControls(private val storage:CommunityStorage,private va
     private var state:CommunityControlsState?=null;private var ready=true
     private val _presentation=MutableStateFlow(CommunityPresentation());val presentation=_presentation.asStateFlow()
     init{try{state=storage.load();state?.validate();publish()}catch(_:Exception){ready=false;publish(message="This device's community controls are unavailable. Try again before browsing.")}}
+    fun reload(){try{state=storage.load();state?.validate();ready=true;publish(busy=_presentation.value.busy)}catch(_:Exception){ready=false;publish(message="This device's community controls could not be reloaded.")}}
     private fun publish(busy:Boolean=false,message:String?=null){_presentation.value=CommunityPresentation(state?.blocks?:emptyList(),state?.pending,state?.reports?:emptyList(),busy,message)}
     private fun current():CommunityControlsState{check(ready);return state?:CommunityControlsState(AccountProtocol.verifier()).also{save(it)}}
     private fun save(value:CommunityControlsState){value.validate();require(value.json().toString().toByteArray().size<=16384);storage.save(value);state=value}
@@ -90,8 +95,8 @@ internal class CommunityControls(private val storage:CommunityStorage,private va
         var old=current();val pending=requireNotNull(old.pending);check(!pending.rejected);pending.validate()
         val path=if(pending.kind=="report")"/v1/reports" else "/v1/me/blocks"
         val access=pending.userId?.let{check(account.publicationUserId()==it);account.access().also{check(account.publicationUserId()==pending.userId)}}
-        val result=try{try{api.call(path,pending.body,access,old.session)}catch(e:PublicFailure){if(e.status!=401)throw e;val user=requireNotNull(pending.userId);check(account.publicationUserId()==user);val refreshed=account.access(true);check(account.publicationUserId()==user);api.call(path,pending.body,refreshed,old.session)}}catch(e:PublicFailure){if(e.status in setOf(400,403,404,409,413,415,422)){old=old.copy(pending=pending.copy(rejected=true));save(old)};throw e}
-        check(pending.userId==null || pending.userId==account.publicationUserId())
+        val result=try{try{api.call(path,pending.body,access,old.session)}catch(e:PublicFailure){if(e.status!=401)throw e;val user=requireNotNull(pending.userId);check(account.publicationUserId()==user);val refreshed=account.access(true);check(account.publicationUserId()==user);api.call(path,pending.body,refreshed,old.session)}}catch(e:PublicFailure){if(e.status in setOf(400,403,404,409,413,415,422) && storage.load()?.pending?.operationId==pending.operationId){val saved=requireNotNull(storage.load());save(saved.copy(pending=pending.copy(rejected=true)))};throw e}
+        old=requireNotNull(storage.load());check(old.pending?.operationId==pending.operationId);check(pending.userId==null || pending.userId==account.publicationUserId())
         if(pending.kind=="report"){
             val id=result.getString("reportId");require(publicationUuid(id) && result.getString("status")=="received")
             old=old.copy(reports=(listOf(CommunityReportReceipt(id,"received",pending.userId))+old.reports.filterNot{it.id==id}).take(20));publish(busy=true,message="Report received. Moderator notes and account identities stay private.")
@@ -103,7 +108,7 @@ internal class CommunityControls(private val storage:CommunityStorage,private va
         val result=api.call("/v1/reports/"+receipt.id,null,access,old.session)
         check(receipt.userId==null || receipt.userId==account.publicationUserId());require(result.getString("reportId")==receipt.id)
         val status=result.getString("status");require(status in setOf("open","reviewing","resolved","dismissed"))
-        save(old.copy(reports=old.reports.map{if(it.id==receipt.id)it.copy(status=status) else it}));publish(busy=true,message="Report status updated.")
+        val saved=requireNotNull(storage.load());check(saved.reports.any{it.id==receipt.id && it.userId==receipt.userId});save(saved.copy(reports=saved.reports.map{if(it.id==receipt.id)it.copy(status=status) else it}));publish(busy=true,message="Report status updated.")
     }
     fun retry(account:AccountManager)=perform{send(account)}
     fun discardRejected(){if(_presentation.value.busy)return;val old=state?:return;if(old.pending?.rejected!=true)return;try{save(old.copy(pending=null));publish(message="Rejected request discarded. Device blocks are unchanged.")}catch(_:Exception){publish(message="The saved request could not be cleared.")}}

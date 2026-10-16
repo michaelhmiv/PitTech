@@ -183,6 +183,22 @@ import Security
         XCTAssertThrowsError(try NativeDeletionReceipt(deletionId: UUID().uuidString, statusToken: token, state: "unknown").validate())
         let legacy = try JSONDecoder().decode(NativeAccountState.self, from: Data("{}".utf8)); XCTAssertNil(legacy.deletion)
     }
+    func testAcceptedDeletionKeepsCleanupOwnerAfterFailureAndRetriesOnRestart() async throws {
+        let memory = Memory(); memory.value.session = session()
+        let user = memory.value.session!.userId
+        let bytes = try JSONEncoder().encode(NativeDeletionReceipt(deletionId: UUID().uuidString.lowercased(), statusToken: token, state: "complete"))
+        let api = API { _, _ in bytes }
+        var attempts = 0
+        let first = NativeAccountCoordinator(enabled: true, vault: memory, api: api, cleanup: { owner in
+            XCTAssertEqual(owner, user); XCTAssertNil(memory.value.session); XCTAssertNotNil(memory.value.deletion?.receipt)
+            attempts += 1; throw NativeAccountError.invalid
+        })
+        await first.requestDeletion(); XCTAssertEqual(attempts, 1); XCTAssertNil(memory.value.session)
+        XCTAssertEqual(memory.value.deletion?.cleanupUserId, user); XCTAssertNil(memory.value.deletion?.userId)
+        let restarted = NativeAccountCoordinator(enabled: true, vault: memory, api: api, cleanup: { owner in XCTAssertEqual(owner, user); attempts += 1 })
+        XCTAssertEqual(attempts, 2); XCTAssertNil(restarted.deletionRecord?.cleanupUserId)
+        restarted.dismissCompletedDeletion(); XCTAssertNil(memory.value.deletion)
+    }
     func testDeletionRetries401OnceWithSameOperationAndRotatedAccount() async throws {
         let memory = Memory(); memory.value.session = session()
         var calls = 0, refreshed = 0; var request: [String: String]?

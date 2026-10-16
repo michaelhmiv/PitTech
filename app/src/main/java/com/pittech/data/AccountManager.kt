@@ -12,7 +12,7 @@ import java.time.Instant
 import java.util.UUID
 
 internal data class AccountPresentation(val signedIn: Boolean = false, val challengeEmail: String? = null, val canResend: Boolean = true, val interruptedVerification: Boolean = false, val pendingLink: Boolean = false, val busy: Boolean = false, val message: String? = null, val deletion: DeletionRecord? = null)
-internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis) {
+internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis, private val cleanup: (String) -> Unit = {}) {
     private var state = AccountState()
     private var storageReady = true
     private val mutex = Mutex()
@@ -24,7 +24,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
     fun open() { _showing.value = true }
     fun close() { _showing.value = false }
     fun tick() { _presentation.value = _presentation.value.copy(canResend=state.challenge?.let { now()-it.created >= 60000 } ?: true) }
-    init { try { state = storage.load(); state.deletion?.validate(); if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null));
+    init { try { state = storage.load(); state.deletion?.validate(); if(state.deletion?.receipt!=null)runCatching{cleanupAcceptedDeletion()}; if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null));
         state.session?.let { it.validate(); if(Instant.parse(it.sessionExpiresAt).toEpochMilli() <= now()) save(AccountState(logoutToken=it.refreshToken,deletion=state.deletion)) }; publish() } catch (_: Exception) { storageReady = false; publish(message="This device's account storage is unavailable. Your local cookbook is unchanged.") } }
     private fun publish(busy: Boolean = false, message: String? = null) {
         _presentation.value = AccountPresentation(state.session != null,state.challenge?.email,state.challenge?.let { now()-it.created >= 60000 } ?: true,state.challenge?.operation != null,link != null,busy,message,state.deletion)
@@ -127,9 +127,15 @@ internal class AccountManager(private val storage: AccountStorage, private val s
     private fun acceptDeletion(receipt:DeletionReceipt){
         receipt.validate();val record=requireNotNull(state.deletion)
         record.receipt?.let{require(it.deletionId==receipt.deletionId && it.statusToken==receipt.statusToken)}
-        save(AccountState(deletion=record.copy(userId=null,verifier=if(receipt.state=="complete")null else record.verifier,receipt=receipt)));link=null
-        publish(busy=true,message=receipt.description)
+        save(AccountState(deletion=record.copy(userId=null,cleanupUserId=record.cleanupUserId?:record.userId,verifier=if(receipt.state=="complete")null else record.verifier,receipt=receipt)));link=null
+        try{cleanupAcceptedDeletion();publish(busy=true,message=receipt.description)}
+        catch(_:Exception){publish(busy=true,message="Server deletion was accepted. Device account metadata cleanup needs a retry. Your journal is unchanged.")}
     }
+    private fun cleanupAcceptedDeletion(){
+        val record=state.deletion?:return;if(record.receipt==null)return;val user=record.cleanupUserId?:return
+        cleanup(user);save(AccountState(deletion=record.copy(cleanupUserId=null)))
+    }
+    fun retryDeviceCleanup()=perform{cleanupAcceptedDeletion();publish(busy=true,message=state.deletion?.receipt?.description)}
     fun requestDeletion()=perform {
         val user=state.session?.userId ?: throw AccountFailure(401)
         state.deletion?.let{require(it.userId==user && it.receipt==null)} ?: save(state.copy(deletion=DeletionRecord(user,UUID.randomUUID().toString(),AccountProtocol.verifier())))
@@ -155,7 +161,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         acceptDeletion(receipt.copy(state=result.getString("state")))
     }
     fun dismissCompletedDeletion()=perform {
-        require(state.deletion?.receipt?.state=="complete");save(AccountState());publish(message="Account deletion is complete. Your local journal stays on this device.")
+        require(state.deletion?.receipt?.state=="complete");cleanupAcceptedDeletion();save(AccountState());publish(message="Account deletion is complete. Your local journal stays on this device.")
     }
 
 }

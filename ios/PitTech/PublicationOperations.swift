@@ -86,6 +86,16 @@ private struct NativePublicationState: Codable {
         guard bytes.count <= 8 * 1024 * 1024 else { throw NativePublicationError.limits }
         try bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func purgeAccount(_ user: String) throws {
+        // Keep the metadata reference until its body is gone, so interrupted cleanup retries.
+        let pending = try load(user).pending
+        if let pending {
+            let file = try body(pending)
+            if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+        }
+        let file = try stateFile(user)
+        if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+    }
     func pending(_ user: String) throws -> NativePublicationOperation? { try load(user).pending }
     func binding(_ user: String, draft: String) throws -> NativePublicationReceipt? { try load(user).bindings[draft] }
     func editContext(_ user: String, draft: String) throws -> NativePublicationEditContext? { try load(user).editContexts?[draft] }

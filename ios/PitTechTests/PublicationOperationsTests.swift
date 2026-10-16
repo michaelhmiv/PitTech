@@ -5,6 +5,15 @@ import XCTest
     private let user = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
     private let draft = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
     private func directory() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString) }
+    func testAccountPurgeRemovesOnlyItsPrivateMetadataAndBodyAndRetriesIdempotently() throws {
+        let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let store = NativePublicationOperationsStore(directory: root), other = UUID().uuidString.lowercased()
+        let a = try store.prepare(user: user, method: "POST", path: "/v1/recipes", bytes: Data("Alice selected public draft".utf8), archive: true)
+        let b = try store.prepare(user: other, method: "POST", path: "/v1/recipes", bytes: Data("Bob selected public draft".utf8), archive: true)
+        try store.purgeAccount(user); try store.purgeAccount(user)
+        XCTAssertNil(try store.pending(user)); XCTAssertFalse(FileManager.default.fileExists(atPath: try store.body(a).path))
+        XCTAssertEqual(try store.pending(other)?.id, b.id); XCTAssertEqual(try Data(contentsOf: store.verify(b)), Data("Bob selected public draft".utf8))
+    }
     func testArchiveTransportPinsRevisionAndNeverFollowsRedirectsOrLeaksDiagnostics() async throws {
         let root = directory(); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
         let bytes = Data("selected public bytes".utf8), file = root.appendingPathComponent("body"); try bytes.write(to: file)

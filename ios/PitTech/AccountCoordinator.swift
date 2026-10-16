@@ -5,6 +5,7 @@ import Observation
     let enabled: Bool
     private let vault: any NativeAccountStorage
     private let api: any NativeAccountAPI
+    private let cleanup: (String) throws -> Void
     private var state = NativeAccountState()
     private var storageReady = true
     private var refreshTask: Task<String, Error>?
@@ -18,10 +19,11 @@ import Observation
     var deletionRecord: NativeDeletionRecord? { state.deletion }
     var canResend: Bool { state.challenge.map { Date().timeIntervalSince($0.created) >= 60 } ?? true }
     var interruptedVerification: Bool { state.challenge?.operation != nil }
-    init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient()) {
-        self.enabled = enabled; self.vault = vault; self.api = api
+    init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient(), cleanup: @escaping (String) throws -> Void = { _ in }) {
+        self.enabled = enabled; self.vault = vault; self.api = api; self.cleanup = cleanup
         do {
             state = try vault.load(); try state.deletion?.validate()
+            if state.deletion?.receipt != nil { do { try cleanupAcceptedDeletion() } catch { message = "Device account metadata cleanup needs a retry. Your journal is unchanged." } }
             if let challenge = state.challenge, Date().timeIntervalSince(challenge.created) >= 900 { state.challenge = nil; try vault.save(state) }
             if let session = state.session {
                 try session.validate()
@@ -173,10 +175,22 @@ import Observation
         guard var record = state.deletion else { throw NativeAccountError.invalid }
         let receipt = try JSONDecoder().decode(NativeDeletionReceipt.self, from: bytes); try receipt.validate()
         if let previous = record.receipt { guard previous.deletionId == receipt.deletionId, previous.statusToken == receipt.statusToken else { throw NativeAccountError.invalid } }
+        record.cleanupUserId = record.cleanupUserId ?? record.userId
         record.receipt = receipt; record.userId = nil
         if receipt.state == "complete" { record.verifier = nil }
         try save(NativeAccountState(deletion: record)); pendingLink = nil
-        message = receipt.description
+        do { try cleanupAcceptedDeletion(); message = receipt.description }
+        catch { message = "Server deletion was accepted. Device account metadata cleanup needs a retry. Your journal is unchanged." }
+    }
+    private func cleanupAcceptedDeletion() throws {
+        guard var record = state.deletion, record.receipt != nil, let user = record.cleanupUserId else { return }
+        try cleanup(user)
+        record.cleanupUserId = nil; try save(NativeAccountState(deletion: record))
+    }
+    func retryDeviceCleanup() {
+        guard !busy else { return }
+        do { try cleanupAcceptedDeletion(); message = state.deletion?.receipt?.description }
+        catch { message = "Device account metadata could not be cleared. Retry on this device. Your journal is unchanged." }
     }
     func recoverDeletion() async {
         await perform {
@@ -195,7 +209,7 @@ import Observation
     }
     func dismissCompletedDeletion() {
         guard !busy, state.deletion?.receipt?.state == "complete" else { return }
-        do { try save(NativeAccountState()); message = "Account deletion is complete. Your local journal stays on this device." }
+        do { try cleanupAcceptedDeletion(); try save(NativeAccountState()); message = "Account deletion is complete. Your local journal stays on this device." }
         catch { message = "This device could not clear its recovery record. Try again." }
     }
 

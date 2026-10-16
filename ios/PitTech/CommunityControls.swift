@@ -92,6 +92,10 @@ struct NativeCommunityClient: NativeCommunityAPI {
         self.storage = storage; self.api = api
         do { state = try storage.load(); try state?.validate() } catch { ready = false; message = "This device's community controls are unavailable. Try again before browsing." }
     }
+    func reload() {
+        do { state = try storage.load(); try state?.validate(); ready = true }
+        catch { ready = false; message = "This device's community controls could not be reloaded." }
+    }
     private func current() throws -> NativeCommunityControlsState {
         guard ready else { throw NativePublicError.invalid }
         if let state { return state }
@@ -141,11 +145,12 @@ struct NativeCommunityClient: NativeCommunityAPI {
                 bytes = try await api.call(path, body: pending.body, access: token, session: next.session)
             }
         } catch let error as NativePublicError {
-            if case .status(let status) = error, [400,403,404,409,413,415,422].contains(status) { next.pending?.rejected = true; try save(next) }
+            if case .status(let status) = error, [400,403,404,409,413,415,422].contains(status), var saved = try storage.load(), saved.pending?.operationId == pending.operationId { saved.pending?.rejected = true; try save(saved) }
             throw error
         }
-        guard pending.userId == nil || pending.userId == account.stateUserId,
+        guard let saved = try storage.load(), saved.pending?.operationId == pending.operationId, pending.userId == nil || pending.userId == account.stateUserId,
               let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw NativePublicError.invalid }
+        next = saved
         if pending.kind == "report" {
             guard let id = value["reportId"] as? String, UUID(uuidString: id) != nil, value["status"] as? String == "received" else { throw NativePublicError.invalid }
             next.reports.removeAll { $0.id == id }; next.reports.insert(NativeCommunityReportReceipt(id: id, status: "received", userId: pending.userId), at: 0); next.reports = Array(next.reports.prefix(20))
@@ -165,7 +170,8 @@ struct NativeCommunityClient: NativeCommunityAPI {
             guard receipt.userId == nil || receipt.userId == account.stateUserId,
                   let value = try JSONSerialization.jsonObject(with: bytes) as? [String: String], value["reportId"] == receipt.id,
                   let status = value["status"], ["open", "reviewing", "resolved", "dismissed"].contains(status),
-                  let index = next.reports.firstIndex(where: { $0.id == receipt.id }) else { throw NativePublicError.invalid }
+                  let saved = try self.storage.load(), let index = saved.reports.firstIndex(where: { $0.id == receipt.id }) else { throw NativePublicError.invalid }
+            next = saved
             next.reports[index] = NativeCommunityReportReceipt(id: receipt.id, status: status, userId: receipt.userId); try self.save(next); self.message = "Report status updated."
         }
     }

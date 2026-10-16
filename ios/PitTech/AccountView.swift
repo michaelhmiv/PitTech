@@ -18,6 +18,7 @@ struct NativeAccountView: View {
                 Section("Account deletion") {
                     Text(deletion.receipt?.description ?? "The deletion response was not confirmed. Recover the request before retrying.").accessibilityIdentifier("account-deletion-status")
                     Text("Your local journal stays available on this device. Deletion does not stop your local cooking.")
+                    if deletion.cleanupUserId != nil { Button("Retry device account cleanup") { account.retryDeviceCleanup() }.disabled(account.busy) }
                     if deletion.receipt?.state == "complete" {
                         Button("Close completed request") { account.dismissCompletedDeletion() }.disabled(account.busy)
                     } else {

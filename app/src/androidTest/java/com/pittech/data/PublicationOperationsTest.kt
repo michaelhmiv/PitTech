@@ -16,6 +16,17 @@ import java.util.UUID
     private val user="aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
     private val draft="bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
     private fun root()=File(ApplicationProvider.getApplicationContext<Context>().noBackupFilesDir,"publication-test-"+UUID.randomUUID())
+    @Test fun accountPurgeRemovesOnlyItsPrivateMetadataAndBodyAndIsIdempotent() {
+        val root=root()
+        try {
+            val store=PublicationOperationsStore(root);val other=UUID.randomUUID().toString()
+            val a=store.prepare(user,"POST","/v1/recipes","Alice selected public draft".toByteArray(),true)
+            val b=store.prepare(other,"POST","/v1/recipes","Bob selected public draft".toByteArray(),true)
+            store.purgeAccount(user);store.purgeAccount(user)
+            assertNull(store.pending(user));assertFalse(store.body(a).exists());assertEquals(b.id,store.pending(other)?.id)
+            assertEquals("Bob selected public draft",store.verify(b).readText())
+        }finally{root.deleteRecursively()}
+    }
     @Test fun lostResponseRecoversIdenticalBodyAndOperationAfterRestartWithoutDuplicatePublication() = runBlocking {
         val root=root()
         try {

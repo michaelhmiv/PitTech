@@ -97,3 +97,15 @@ run. iOS deletion results and the newly added report/block paths remain pending.
 Account-scoped native outbox cleanup, local-journal removal, operator-facing review
 usability and private-sync cleanup remain open gates. No full lifecycle release
 claim is made.
+
+Accepted native deletion now persists a separate cleanup owner before clearing
+credentials. Production adapters remove only that account's exact publication
+body, bindings/editing metadata and bound report request/receipts; anonymous device
+reports and blocks remain separate. Body removal precedes metadata removal so a
+failed cleanup retains its retry reference. A durable owner marker retries on
+restart or an explicit action and must clear before dismissing a completed request.
+The journal is never opened by this adapter. In-flight community responses re-read
+current durable state before saving, so cleanup cannot be undone by an old reply.
+Matching native tests cover failed cleanup/restart, metadata/body account isolation
+and idempotent cleanup. These additions require fresh Actions evidence. Local
+journal removal remains a distinct unfinished control.
