@@ -27,6 +27,10 @@ remain separate. No online phase is released until its complete parity gate pass
 | 18 | Personal Pro/customization | Pending | |
 | 19 | Complete release verification | Pending | |
 
+## October 16 validation checkpoint
+
+Cumulative draft PR #110: `e172754` passed the telemetry public release audit, Play App Bundle and feedback relay gates. Its online services test failed when PostgreSQL forcibly terminated a connection during the isolated publications database teardown. Commit `81f41b1` removes `DROP DATABASE ... WITH (FORCE)` and closes pools before ordinary database removal; online services and feedback relay checks pass on the new commit. Native Android large-text/API 37 and iOS gates are still outstanding; no cloud feature is enabled or released. Staging remains unapplied, and the Resend staging domain awaits DNS verification.
+
 ## CI requirements
 
 Keep existing Android API 36 font-scale gates, upgrade tests, advisory API 37,
