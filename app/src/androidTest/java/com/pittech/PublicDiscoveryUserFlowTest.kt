@@ -46,7 +46,7 @@ import java.util.Base64
         waitFor("source-review-open");compose.onNodeWithTag("source-review-open").performScrollTo().performClick()
         waitFor("source-review-check");compose.onNodeWithTag("source-review-check").performScrollTo().performClick()
         waitFor("source-review-member-0");compose.onNodeWithTag("source-review-member-0").performScrollTo().performClick()
-        compose.onNodeWithText("Ingredients · unchanged").performScrollTo().assertIsDisplayed();shot("source-change-review")
+        compose.onNodeWithText("Ingredients · unchanged").performScrollTo().assertIsDisplayed();compose.onAllNodesWithText("1. Salt and pepper · To taste").onFirst().performScrollTo().assertIsDisplayed();shot("source-change-review")
         compose.onNodeWithTag("source-review-done").performScrollTo().performClick();compose.onNodeWithTag("recipe-details-close").performClick()
         compose.onNodeWithTag("nav-discover").performClick()
         compose.onNodeWithTag("public-cook").performScrollTo().performClick();waitFor("pack-save-recipes")
@@ -58,5 +58,5 @@ import java.util.Base64
         assertTrue(runBlocking(Dispatchers.IO){app.database.reminderDao().rules().isEmpty()});shot("public-cook")
     }
     private fun waitFor(tag: String){compose.waitUntil(20000){compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
-    private fun shot(name: String){val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot();val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() };file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) };image.recycle()}
+    private fun shot(name: String){compose.waitForIdle();InstrumentationRegistry.getInstrumentation().waitForIdleSync();val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot();val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() };file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) };image.recycle()}
 }

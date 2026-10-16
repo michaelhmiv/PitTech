@@ -521,7 +521,6 @@ if (( api_level == 36 )); then
   pull_app_screenshot publication-cookbook
   pull_app_screenshot publication-owner-edit-preview
   pull_app_screenshot publication-owner-update-preview
-  pull_app_screenshot publication-failure
   pull_app_screenshot source-change-review
 fi
 

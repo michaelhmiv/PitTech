@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Draft Android publishing fix: keep inherited free-text ingredient quantities when starting another cook from a saved recipe. iOS already preserves this information.
 - Draft iOS and Android community work: review public-copy terms before publishing, compare a saved recipe with its shared source, and preserve fractional recorded ratings. Community controls remain disabled.
 - Draft iOS and Android owner editing: preview a private editing copy of your publication, revise instructions, and confirm a new public revision while preserving recorded results and source credit. Community controls remain disabled.
 - Draft iOS and Android publishing: review selected public content and credit, recover interrupted uploads, preview cookbook visibility changes, and confirm publication removal. These controls remain disabled pending the complete community phase.

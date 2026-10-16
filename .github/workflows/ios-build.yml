@@ -136,6 +136,7 @@ jobs:
           path: |
             build/native-test-summary.json
             build/native-test-cases.json
+            build/native-tests.log
           if-no-files-found: warn
           retention-days: 14
 

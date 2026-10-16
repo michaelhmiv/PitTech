@@ -72,6 +72,24 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertLessThanOrEqual(element.frame.maxY, log.frame.minY - 20)
         }
     }
+    private func setSwitch(_ element: XCUIElement, on: Bool, app: XCUIApplication) {
+        let expected = on ? "1" : "0"
+        reveal(element, app: app)
+        for _ in 0..<2 {
+            if element.value as? String == expected { return }
+            // SwiftUI exposes both a row and its contained UISwitch. Tap the
+            // finite control, then verify state before any conditional retry.
+            let control = app.switches.allElementsBoundByIndex.first {
+                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 &&
+                element.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) && $0.isHittable
+            } ?? element
+            control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", expected), object: element)
+            if XCTWaiter.wait(for: [changed], timeout: 3) == .completed { return }
+            reveal(element, app: app)
+        }
+        XCTAssertEqual(element.value as? String, expected)
+    }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
     func testSelectedPublicationPreviewAndCookbookChangesRequireSeparateConfirmationsAtBothTextSizes() {
         for large in [false, true] {
@@ -228,14 +246,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
             XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
             let first = choices.firstMatch; reveal(first, app: app)
-            // iOS exposes the labeled Toggle container and the actual UISwitch separately.
-            // Target the small control contained by this selected recipe row.
-            let controls = app.switches.allElementsBoundByIndex.filter {
-                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 && first.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) && $0.isHittable
-            }
-            XCTAssertEqual(controls.count, 1)
-            controls.first!.tap()
-            XCTAssertTrue(NSPredicate(format: "value == %@", "0").evaluate(with: first) || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: first)], timeout: 5) == .completed)
+            setSwitch(first, on: false, app: app)
             let save = app.buttons["pack-save-recipes"]; reveal(save, app: app)
             XCTAssertEqual(save.label, "Save 1 recipe")
             capture(large ? "Native Cook Pack selective preview large text" : "Native Cook Pack selective preview")

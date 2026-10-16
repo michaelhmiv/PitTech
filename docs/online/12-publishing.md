@@ -190,3 +190,28 @@ workflow failed another lane. These exports do not make either latest PR gate
 green. Their comparison exposed an Android free-text ingredient loss through the
 numeric-only cook table. The next native run must prove its preservation fix and
 provide replacement exports before ingredient parity is closed.
+
+At `83706ab`, both required Android API 36 text-size lanes pass their actual test
+suites (31 core, 19 companion, plus the provider/recording/instrumentation suites).
+The workflow still fails because a newly added failure-only diagnostic image was
+incorrectly required even on success. That collection mistake is corrected;
+the script keeps collecting a failure image when one actually exists. Screenshots
+now wait for native UI idleness, and source comparison captures the selected
+ingredient row rather than a preceding frame. Fresh complete workflow/visual
+verification is still required.
+
+Replacement Android variation/collection/attempt exports from required large-text
+job 116930170028 (run 38887941305, artifact 12041531267) validate their pinned
+credit, own measurements/verdict and inherited “To taste” quantity. Both platforms'
+retained exports now assert that quantity in backend regression tests. The producer
+job's test suites passed, but its diagnostic collection failed; it is not described
+as a green workflow. Android enlarged-text owner update preview has been inspected;
+its terms, confirmation and text reflow are readable without horizontal clipping.
+
+October 16 follow-up: iOS run 264 passed 100/101; its selective-import test
+failed when a switch tap left the value unchanged. The test now targets the
+contained control and verifies its state before continuing. Public detail now
+presents its hero and actions together to prevent a late photo shifting a tap
+target. Compact CI diagnostics now include the text log, since a failed run's
+full xcresult archive can exceed the connector's 512 MiB download limit. Fresh
+native results are required; these changes do not close the acceptance gate.
