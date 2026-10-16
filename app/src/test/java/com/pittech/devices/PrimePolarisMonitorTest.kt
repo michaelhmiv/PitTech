@@ -4,6 +4,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -155,7 +156,9 @@ class PrimePolarisMonitorTest {
         val backend = Backend()
         // Keep monitor actions on the test event loop. Unconfined resumes the
         // discovery save on IO and races the test's immediate Refresh action.
-        val monitor = PrimePolarisMonitor(backend, Store(), this, now = { 1_000_000L })
+        // The monitor owns and cancels its scope; isolate it from runBlocking.
+        val monitorScope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job]))
+        val monitor = PrimePolarisMonitor(backend, Store(), monitorScope, now = { 1_000_000L })
         try {
             monitor.setForeground(true)
             waitFor { monitor.state.value.latest != null }

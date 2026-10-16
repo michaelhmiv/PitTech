@@ -124,6 +124,10 @@ The owner requires iOS/Android parity going forward:
   account-bound edit context preserves public identities/source credit without
   entering exports. Recorded facts stay frozen; stale owner drafts must reopen
   the current revision. See `docs/online/12-publishing.md`.
+- Lifecycle moderation and deletion live in separate `moderation` / account-control
+  tables and a dedicated runtime pool. Public user tokens never grant operator
+  authority. Deletion storage cleanup must preserve create-only fences against late
+  uploads; see `docs/online/13-lifecycle.md`. Community/account entry remain disabled.
 - Public publication/fork writes require explicit versioned public-copy consent.
   Acknowledgments stay in the private operation/account domain, never public
   archives. Source-update review is read-only and active meals remain pinned.

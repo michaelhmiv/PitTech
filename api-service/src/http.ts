@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,randomBytes } from 'node:crypto';
+import { deletionPage } from './lifecycle-web.ts';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,10 +15,13 @@ import type { Relay } from './relay.ts';
 import { validate } from './validation.ts';
 import { publicationRoute, handlePublication } from './publication-http.ts';
 import type { Publications } from './publications.ts';
+import { lifecycleRoute,handleLifecycle,requestAudience } from './lifecycle-http.ts';
+import type { AccountDeletion } from './account-deletion.ts';
+import type { CommunityLifecycle } from './community-lifecycle.ts';
 import { publicWebRoute, publicPage } from './publication-web.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; publications?: Publications; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -48,6 +52,12 @@ export function makeServer(relay: Relay, options: Options) {
         res.setHeader('X-Robots-Tag', 'noindex, nofollow');
         res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PitTech sign in</title><h1>Sign in to PitTech</h1><p>Open PitTech on the device where you requested this email. If the app did not open, enter the six-digit code from your email there.</p><p>This page does not sign you in or use your link. Your local library is unchanged.</p></html>'); return;
       }
+      if(req.url==='/delete-account'&&method==='GET'&&options.deletion){
+        route='/delete-account';const nonce=randomBytes(16).toString('hex');
+        res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('X-Robots-Tag','noindex, nofollow');
+        res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+        res.end(deletionPage(nonce));return;
+      }
       const authRoute = ['/v1/auth/challenges', '/v1/auth/verify', '/v1/auth/refresh', '/v1/auth/logout', '/v1/me'].includes(req.url ?? '') ? req.url! : undefined;
       if (authRoute && options.auth && (method === 'POST' && authRoute !== '/v1/me' || method === 'GET' && authRoute === '/v1/me')) {
         route = authRoute;
@@ -69,6 +79,13 @@ export function makeServer(relay: Relay, options: Options) {
         else { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
         return;
       }
+      const lifecycle=lifecycleRoute(req.url??'',method);
+      if(lifecycle&&options.deletion&&options.community){
+        route=lifecycle;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const bucket=Math.floor(relay.clock()/3600000),key='lifecycle:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'lifecycle:'+bucket);
+        if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handleLifecycle(req,res,lifecycle,options.auth,options.deletion,options.community);return;
+      }
       const pageRoute=method==='GET'?publicWebRoute(req.url??''):undefined;
       const publicRoute=publicationRoute(req.url??'',method);
       if((publicRoute||pageRoute)&&options.publications){
@@ -81,10 +98,10 @@ export function makeServer(relay: Relay, options: Options) {
           res.setHeader('Content-Type','text/html; charset=utf-8');
           res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; img-src https://api.pittech.app; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
           res.setHeader('X-Robots-Tag','noindex, nofollow');
-          res.end(await publicPage(req.url!,options.publications,options.links??{appleAppIds:[],androidCertificates:[]}));return;
+          res.end(await publicPage(req.url!,options.publications,options.links??{appleAppIds:[],androidCertificates:[]},await requestAudience(req,options.auth,options.community)));return;
         }
         await handlePublication(req,res,publicRoute!,options.publications,options.auth,{root,
-          claimUpload:()=>{if(uploading)return false;uploading=true;return true;},releaseUpload:()=>{uploading=false;}});return;
+          claimUpload:()=>{if(uploading)return false;uploading=true;return true;},releaseUpload:()=>{uploading=false;}},options.community);return;
       }
       const links = options.links ?? { appleAppIds: [], androidCertificates: [] };
       if (method === 'GET' && ['/.well-known/apple-app-site-association', '/.well-known/assetlinks.json'].includes(req.url ?? '')) {
