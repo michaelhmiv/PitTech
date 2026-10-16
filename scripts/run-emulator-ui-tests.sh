@@ -47,7 +47,7 @@ collect_evidence_and_stop() {
     done
   fi
   timeout 20 adb exec-out screencap -p > "$output_dir/final-emulator-screen.png" 2>/dev/null
-  python3 scripts/emit-ui-review-images.py "$output_dir/recipe-composed-live.png" "$output_dir/meal-finished-recipe-choice.png"
+  # Preserve the exact failed shell command/line in CI logs and the artifact.\n  if (( result != 0 )); then\n    printf "Emulator script failed: exit=%s line=%s command=%s\\n" "$result" "${BASH_LINENO[0]:-unknown}" "${BASH_COMMAND:-unknown}" | tee "$output_dir/failure-context.txt" >&2\n  fi\n  python3 scripts/emit-ui-review-images.py "$output_dir/recipe-composed-live.png" "$output_dir/meal-finished-recipe-choice.png"
   if [[ -n "$emulator_pid" ]]; then
     adb emu kill >/dev/null 2>&1
     wait "$emulator_pid" >/dev/null 2>&1
