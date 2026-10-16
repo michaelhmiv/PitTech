@@ -55,7 +55,7 @@ import XCTest
         actual.heroPhotoId = nil; actual.entries[0].photoIds = []
         var story = try XCTUnwrap(actual.entries[0].story.objectValue)
         story["publicStory"] = nil; story["attemptId"] = .string("local-new-dish")
-        story["results"] = .array([.object(["type": .string("overall_rating"), "numericValue": .number(5)]), .object(["type": .string("result_notes"), "textValue": .string("Frozen verdict")])])
+        story["results"] = .array([.object(["type": .string("overall_rating"), "numericValue": .number(4.5)]), .object(["type": .string("result_notes"), "textValue": .string("Frozen verdict")])])
         actual.entries[0].story = .object(story)
         var edited = try actual.entries[0].snapshot; edited.rating = 1; edited.resultNotes = "Editable recipe note"
         actual.entries[0].snapshotJson = try recipeJSON(edited)
@@ -64,7 +64,7 @@ import XCTest
         let revision = try NativePublicationProjection.build(actual, updated: 2, photos: [], kind: "attempt")
         XCTAssertEqual(measured.payload.objectValue?["measuredAttemptId"], revision.payload.objectValue?["measuredAttemptId"])
         let recorded = measured.payload.objectValue?["recipes"]?.arrayValue?.first?.objectValue?["story"]?.objectValue?["verdict"]?.objectValue
-        XCTAssertEqual(recorded?["rating"]?.numberValue, 5); XCTAssertEqual(recorded?["notes"]?.stringValue, "Frozen verdict")
+        XCTAssertEqual(recorded?["rating"]?.numberValue, 4.5); XCTAssertEqual(recorded?["notes"]?.stringValue, "Frozen verdict")
         let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let exported = folder.appendingPathComponent("pittech-native-publication.pittech")
         try publication.bytes.write(to: exported, options: .atomic)

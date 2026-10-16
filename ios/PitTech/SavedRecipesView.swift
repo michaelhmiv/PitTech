@@ -192,6 +192,7 @@ private struct SavedRecipeCardContent: View {
 }
 
 struct SavedRecipeDetailView: View {
+    @Environment(NativePublicCoordinator.self) private var community
     @Environment(CookStore.self) private var store
     @State private var selectedRevision = ""
     @State private var duplicateName = ""
@@ -210,7 +211,9 @@ struct SavedRecipeDetailView: View {
             if let snapshot = try? store.recipeSnapshot(revisionId) {
                 if let source = snapshot.publicSource {
                     Text(source.removed ? "Saved from a removed recipe" : "Saved from " + source.displayName)
-                    if !source.removed { Link("View shared source", destination: source.url) }
+                    if !source.removed { Link("View shared source", destination: source.url)
+                        if community.enabled { NavigationLink("Review shared changes") { NativePublicSourceReview(snapshot: snapshot) }.accessibilityIdentifier("source-review-open") }
+                    }
                     Text("This saved version is yours. Changes to the public recipe don't replace it.").font(.caption)
                 }
                 Text(snapshot.description)

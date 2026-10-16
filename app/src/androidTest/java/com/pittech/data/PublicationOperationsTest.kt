@@ -20,9 +20,9 @@ import java.util.UUID
         val root=root()
         try {
             val store=PublicationOperationsStore(root); val session=Session(user); val api=API(); val bytes="exact selected public archive".toByteArray()
-            val op=store.prepare(user,"POST","/v1/recipes",bytes,true,draft=draft,kind="attempt"); api.loseResponse=true
+            val op=store.prepare(user,"POST","/v1/recipes",bytes,true,draft=draft,kind="attempt",termsVersion=PublicationTerms.version); api.loseResponse=true
             try { PublicationWriter(session,store,api).recover(); fail("Expected lost response") } catch(_: IOException) { }
-            assertEquals(op.id,store.pending(user)?.id)
+            assertEquals(PublicationTerms.version,store.pending(user)?.termsVersion);assertEquals(op.id,store.pending(user)?.id)
             assertThrows(Exception::class.java) { store.discardRejected(user) }
             val restarted=PublicationOperationsStore(root); PublicationWriter(session,restarted,api).recover()
             assertEquals(1,api.effects.size); assertEquals(listOf(op.id,op.id),api.operations)

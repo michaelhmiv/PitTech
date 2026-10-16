@@ -97,6 +97,7 @@ import java.util.UUID
         override suspend fun write(operation: PublicationOperation,file: File,access: String): JSONObject {
             replies[operation.id]?.let { return it }
             val response=if(operation.contentType=="application/zip") {
+                require(operation.termsVersion==PublicationTerms.version)
                 val preview=pendingPublication(file)
                 if(item!=null) { require(operation.method=="PUT" && operation.expectedRevision==item!!.getString("revisionId")); require(operation.path=="/v1/recipes/"+item!!.getString("id")) }
                 val number=(item?.getInt("revision") ?: 0)+1; val id="dddddddd-dddd-4ddd-dddd-dddddddddddd"; val revision=UUID.randomUUID().toString()

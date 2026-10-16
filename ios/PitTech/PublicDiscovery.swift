@@ -8,6 +8,7 @@ enum NativePublicError: LocalizedError {
         switch self {
         case .status(404): return "This public recipe is unavailable. Any copy you already saved stays in your cookbook."
         case .status(409): return "This recipe changed. Refresh its preview before saving."
+        case .status(428): return "Review the current public-copy terms before publishing a new request."
         case .status(429): return "Too many requests. Wait a minute, then refresh."
         case .invalid: return "This public recipe couldn't be read safely. Try again later."
         default: return "Couldn't reach community recipes. Your local cookbook is available offline."

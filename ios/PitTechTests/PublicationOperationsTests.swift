@@ -8,7 +8,7 @@ import XCTest
     func testArchiveTransportPinsRevisionAndNeverFollowsRedirectsOrLeaksDiagnostics() async throws {
         let root = directory(); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
         let bytes = Data("selected public bytes".utf8), file = root.appendingPathComponent("body"); try bytes.write(to: file)
-        let operation = NativePublicationOperation(id: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", userId: user, method: "PUT", path: "/v1/recipes/cccccccc-cccc-4ccc-cccc-cccccccccccc", contentType: "application/zip", sha256: NativeRelayProtocol.hash(bytes), bytes: bytes.count, expectedRevision: "dddddddd-dddd-4ddd-dddd-dddddddddddd", draftId: draft)
+        let operation = NativePublicationOperation(id: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", userId: user, method: "PUT", path: "/v1/recipes/cccccccc-cccc-4ccc-cccc-cccccccccccc", contentType: "application/zip", sha256: NativeRelayProtocol.hash(bytes), bytes: bytes.count, expectedRevision: "dddddddd-dddd-4ddd-dddd-dddddddddddd", draftId: draft, termsVersion: NativePublicationTerms.version)
         for status in [200, 302, 401, 409, 999] {
             let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [PublicationURLProtocol.self]; configuration.httpAdditionalHeaders = ["X-Publication-Test": String(status)]
             do { _ = try await NativePublicationClient(configuration: configuration).write(operation, file: file, access: String(repeating: "A", count: 43)); XCTAssertEqual(status, 200) }
@@ -30,10 +30,11 @@ import XCTest
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
         let store = NativePublicationOperationsStore(directory: root), session = PublicationTestSession(user), api = PublicationTestAPI()
         let bytes = Data("exact selected public archive".utf8)
-        let operation = try store.prepare(user: user, method: "POST", path: "/v1/recipes", bytes: bytes, archive: true, draft: draft, kind: "attempt")
+        let operation = try store.prepare(user: user, method: "POST", path: "/v1/recipes", bytes: bytes, archive: true, draft: draft, kind: "attempt", termsVersion: NativePublicationTerms.version)
         api.loseResponse = true
         let first = NativePublicationWriter(session: session, store: store, api: api)
         do { _ = try await first.recover(); XCTFail("Expected lost response") } catch { }
+        XCTAssertEqual(try store.pending(user)?.termsVersion, NativePublicationTerms.version)
         XCTAssertEqual(try store.pending(user)?.id, operation.id)
         XCTAssertThrowsError(try store.discardRejected(user))
         let restartedStore = NativePublicationOperationsStore(directory: root)
@@ -123,6 +124,7 @@ private final class PublicationURLProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(request.httpMethod, "PUT"); XCTAssertEqual(request.value(forHTTPHeaderField: "Idempotency-Key"), "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa")
         XCTAssertEqual(request.value(forHTTPHeaderField: "If-Match"), "dddddddd-dddd-4ddd-dddd-dddddddddddd")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "A", count: 43)); XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-PitTech-Publication-Terms"), NativePublicationTerms.version)
         XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/zip")
         let status = Int(request.value(forHTTPHeaderField: "X-Publication-Test") ?? "401") ?? 401
         let bytes = status == 999 ? Data(repeating: 120, count: 8193) : Data((status == 200 ? "{}" : "private-provider-diagnostic").utf8)

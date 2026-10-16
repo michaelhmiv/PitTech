@@ -85,7 +85,7 @@ enum NativePublicationProjection {
         let rating = results.first { ["overall_rating", "overall"].contains($0["type"]?.stringValue ?? "") }?["numericValue"]?.numberValue
         let again = results.first { $0["type"]?.stringValue == "cook_again" }?["numericValue"]?.numberValue
         let notes = results.compactMap { $0["textValue"]?.stringValue }.joined(separator: "\n")
-        guard rating.map({ (1...5).contains($0) && $0.rounded() == $0 }) ?? true else { throw NativePublicationError.invalid }
+        guard rating.map({ (1...5).contains($0) }) ?? true else { throw NativePublicationError.invalid }
         let attemptId = snapshot.publicSource != nil && !actualMeal ? attempt : id("attempt:" + attempt)
         guard UUID(uuidString: attemptId) != nil else { throw NativePublicationError.invalid }
         let markers = raw["connectionGaps"]?.arrayValue ?? []

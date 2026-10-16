@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-update-preview source-change-review; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -387,9 +387,9 @@ fi
 recipe_test_output="$output_dir/recipe-preparation-tests.txt"
 echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest' \
+  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest,com.pittech.data.PublicationAcceptanceTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (30 tests)' "$recipe_test_output"
+grep -q 'OK (31 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"
@@ -397,6 +397,9 @@ done
 mkdir -p "$output_dir/portable-fixtures"
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-publication/android-publication.pittech > "$output_dir/portable-fixtures/android-publication.pittech"
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-publication/android-owned-update.pittech > "$output_dir/portable-fixtures/android-owned-update.pittech"
+for kind in variant collection attempt; do
+  timeout 20 adb exec-out run-as com.pittech.debug cat "files/pittech-publication/android-publication-$kind.pittech" > "$output_dir/portable-fixtures/android-publication-$kind.pittech"
+done
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
 
 companion_test_output="$output_dir/companion-tests.txt"
@@ -516,6 +519,9 @@ if (( api_level == 36 )); then
   pull_app_screenshot publication-preview
   pull_app_screenshot publication-complete
   pull_app_screenshot publication-cookbook
+  pull_app_screenshot publication-owner-edit-preview
+  pull_app_screenshot publication-owner-update-preview
+  pull_app_screenshot source-change-review
 fi
 
 if (( api_level >= 37 )); then

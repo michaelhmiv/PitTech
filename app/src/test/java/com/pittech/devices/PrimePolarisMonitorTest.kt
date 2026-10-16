@@ -153,7 +153,9 @@ class PrimePolarisMonitorTest {
 
     @Test fun readFailureRetainsPriorValuesAndRecoveryClearsStaleFlag() = runBlocking {
         val backend = Backend()
-        val monitor = monitor(backend)
+        // Keep monitor actions on the test event loop. Unconfined resumes the
+        // discovery save on IO and races the test's immediate Refresh action.
+        val monitor = PrimePolarisMonitor(backend, Store(), this, now = { 1_000_000L })
         try {
             monitor.setForeground(true)
             waitFor { monitor.state.value.latest != null }

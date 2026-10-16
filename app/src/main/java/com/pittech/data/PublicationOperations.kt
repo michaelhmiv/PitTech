@@ -36,18 +36,19 @@ internal data class PublicationReceipt(val id: String, val revisionId: String, v
     fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL)
     companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind")).also { it.validate() } }
 }
-internal data class PublicationOperation(val id: String, val userId: String, val method: String, val path: String, val contentType: String, val sha256: String, val bytes: Int, val expectedRevision: String? = null, val draftId: String? = null, val rejected: Boolean = false, val publicationKind: String? = null) {
+internal data class PublicationOperation(val id: String, val userId: String, val method: String, val path: String, val contentType: String, val sha256: String, val bytes: Int, val expectedRevision: String? = null, val draftId: String? = null, val rejected: Boolean = false, val publicationKind: String? = null, val termsVersion: String? = null) {
     fun validate() {
         require(publicationUuid(id) && publicationUuid(userId) && sha256.matches(Regex("[a-f0-9]{64}")) && bytes in 0..64*1024*1024 && (expectedRevision == null || publicationUuid(expectedRevision)) && (draftId == null || publicationUuid(draftId)))
         val parts=path.split('/'); val item=parts.size>=4 && parts[0]=="" && parts[1]=="v1" && parts[2]=="recipes" && publicationUuid(parts[3])
         val recipe=item && parts.size==4; val like=item && parts.size==5 && parts[4]=="like"
         val archive=method=="POST" && path=="/v1/recipes" || method=="PUT" && recipe
+        require(termsVersion==null || archive && termsVersion.matches(Regex("[a-z0-9-]{1,64}")))
         require(publicationKind==null || archive && publicationKind in setOf("recipe","collection","attempt"))
         require(archive && contentType=="application/zip" && bytes>0 && (method!="PUT" || expectedRevision!=null) || !archive && draftId==null && contentType=="application/json" && bytes<=8192 && (path=="/v1/me/profile" && method=="PUT" || like && method in setOf("POST","DELETE") || recipe && method=="DELETE" && expectedRevision!=null))
     }
-    fun json() = JSONObject().put("id",id).put("userId",userId).put("method",method).put("path",path).put("contentType",contentType).put("sha256",sha256).put("bytes",bytes).put("expectedRevision",expectedRevision ?: JSONObject.NULL).put("draftId",draftId ?: JSONObject.NULL).put("rejected",rejected).put("publicationKind",publicationKind ?: JSONObject.NULL)
+    fun json() = JSONObject().put("id",id).put("userId",userId).put("method",method).put("path",path).put("contentType",contentType).put("sha256",sha256).put("bytes",bytes).put("expectedRevision",expectedRevision ?: JSONObject.NULL).put("draftId",draftId ?: JSONObject.NULL).put("rejected",rejected).put("publicationKind",publicationKind ?: JSONObject.NULL).put("termsVersion",termsVersion ?: JSONObject.NULL)
     companion object {
-        fun parse(o: JSONObject) = PublicationOperation(o.getString("id"),o.getString("userId"),o.getString("method"),o.getString("path"),o.getString("contentType"),o.getString("sha256"),o.getInt("bytes"),if(o.isNull("expectedRevision"))null else o.getString("expectedRevision"),if(o.isNull("draftId"))null else o.getString("draftId"),o.getBoolean("rejected"),if(o.isNull("publicationKind"))null else o.getString("publicationKind")).also { it.validate() }
+        fun parse(o: JSONObject) = PublicationOperation(o.getString("id"),o.getString("userId"),o.getString("method"),o.getString("path"),o.getString("contentType"),o.getString("sha256"),o.getInt("bytes"),if(o.isNull("expectedRevision"))null else o.getString("expectedRevision"),if(o.isNull("draftId"))null else o.getString("draftId"),o.getBoolean("rejected"),if(o.isNull("publicationKind"))null else o.getString("publicationKind"),if(o.isNull("termsVersion"))null else o.getString("termsVersion")).also { it.validate() }
     }
 }
 /** Device-only, one durable exact request per account. Credentials are never persisted here. */
@@ -84,7 +85,7 @@ internal class PublicationOperationsStore(val directory: File) {
         context.validate();require(publicationUuid(draft));val state=load(user);check(state.isNull("pending") && !state.getJSONObject("bindings").has(draft))
         state.getJSONObject("bindings").put(draft,context.receipt.json());val edits=state.optJSONObject("editContexts") ?: JSONObject();edits.put(draft,context.json());state.put("editContexts",edits);save(user,state)
     }
-    fun prepare(user: String, method: String, path: String, bytes: ByteArray, archive: Boolean, expected: String? = null, draft: String? = null, kind: String? = null): PublicationOperation = synchronized(lock) {
+    fun prepare(user: String, method: String, path: String, bytes: ByteArray, archive: Boolean, expected: String? = null, draft: String? = null, kind: String? = null, termsVersion: String? = null): PublicationOperation = synchronized(lock) {
         val state=load(user); check(state.isNull("pending")) { "Recover the previous publication before starting another." }
         check(directory.isDirectory || directory.mkdirs())
         // Count all accounts; clean only bodies with no durable pending reference.
@@ -97,7 +98,7 @@ internal class PublicationOperationsStore(val directory: File) {
         var used=0L
         for(file in files.filter { it.extension=="body" }) { if(file.name in referenced)used+=file.length() else check(file.delete()) }
         require(used+bytes.size<=128*1024*1024)
-        val op=PublicationOperation(UUID.randomUUID().toString(),user,method,path,if(archive)"application/zip" else "application/json",RelayProtocol.hash(bytes),bytes.size,expected,draft,publicationKind=kind); op.validate()
+        val op=PublicationOperation(UUID.randomUUID().toString(),user,method,path,if(archive)"application/zip" else "application/json",RelayProtocol.hash(bytes),bytes.size,expected,draft,publicationKind=kind,termsVersion=termsVersion); op.validate()
         val target=body(op); write(target,bytes)
         // Keep the body if metadata persistence has an ambiguous failure; orphan cleanup is safe on the next prepare.
         state.put("pending",op.json()); save(user,state); op
@@ -177,6 +178,7 @@ internal class PublicationClient(client: OkHttpClient = OkHttpClient()): Publica
     }
     override suspend fun write(operation: PublicationOperation, file: File, access: String): JSONObject {
         operation.validate(); val request=request(operation.path,access).header("Idempotency-Key",operation.id).method(operation.method,file.asRequestBody(operation.contentType.toMediaType()))
+        operation.termsVersion?.let { request.header("X-PitTech-Publication-Terms",it) }
         operation.expectedRevision?.let { request.header("If-Match",it) }; return call(request.build(),8192)
     }
     private suspend fun call(request: Request, limit: Int): JSONObject = suspendCancellableCoroutine { continuation ->
@@ -215,12 +217,12 @@ internal class PublicationWriter(private val session: PublicationSession, val st
         check(session.userId()==op.userId); return response
     }
     private suspend fun execute(op: PublicationOperation): JSONObject = try { perform(op) } catch(e: AccountFailure) {
-        if(e.status in setOf(400,403,404,409,413,415,422))store.reject(op); throw e
+        if(e.status in setOf(400,403,404,409,413,415,422,428))store.reject(op); throw e
     }
     suspend fun recover(): JSONObject? = mutex.withLock { withContext(Dispatchers.IO) { pending()?.let { execute(it) } } }
-    suspend fun submit(draft: String, prepared: PreparedPublication, update: PublicationReceipt? = null): JSONObject = mutex.withLock { withContext(Dispatchers.IO) {
-        val user=checkNotNull(session.userId()); update?.validate()
-        execute(store.prepare(user,if(update==null)"POST" else "PUT",update?.let { "/v1/recipes/"+it.id } ?: "/v1/recipes",prepared.bytes,true,update?.revisionId,draft,prepared.payload.getString("kind")))
+    suspend fun submit(draft: String, prepared: PreparedPublication, update: PublicationReceipt? = null, acceptedTerms: String): JSONObject = mutex.withLock { withContext(Dispatchers.IO) {
+        require(acceptedTerms==PublicationTerms.version);val user=checkNotNull(session.userId()); update?.validate()
+        execute(store.prepare(user,if(update==null)"POST" else "PUT",update?.let { "/v1/recipes/"+it.id } ?: "/v1/recipes",prepared.bytes,true,update?.revisionId,draft,prepared.payload.getString("kind"),acceptedTerms))
     } }
     suspend fun json(method: String, path: String, body: JSONObject = JSONObject(), expected: String? = null): JSONObject = mutex.withLock { withContext(Dispatchers.IO) {
         execute(store.prepare(checkNotNull(session.userId()),method,path,body.toString().toByteArray(),false,expected))

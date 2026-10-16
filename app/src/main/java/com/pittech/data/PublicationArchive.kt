@@ -59,7 +59,7 @@ internal object PublicationProjection {
         val results=rows(raw,"results");val rating=results.firstOrNull { it.optString("type") in setOf("overall_rating","overall") }?.takeUnless { it.isNull("numericValue") }?.getDouble("numericValue")
         val again=results.firstOrNull { it.optString("type")=="cook_again" }?.takeUnless { it.isNull("numericValue") }?.getDouble("numericValue")
         val notes=results.mapNotNull { optional(it,"textValue") }.joinToString("\n")
-        require(rating==null || rating in 1.0..5.0 && rating.toInt().toDouble()==rating)
+        require(rating==null || rating.isFinite() && rating in 1.0..5.0)
         val attemptId=if(entry.snapshot.publicSource!=null && !actualMeal)attempt else id("attempt:$attempt")
         val markers=raw.optJSONArray("connectionGaps") ?: JSONArray();require(markers.length()*channels.size<=1000)
         val gaps=channels.flatMap { channel->(0 until markers.length()).map { i->

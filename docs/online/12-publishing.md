@@ -110,10 +110,57 @@ and runtime evidence comes only from Actions. Real installed App/Universal Links
 release certificate association and final-host routing require separate staging
 and physical-device evidence.
 
-The simulator test step has a 35-minute bound (75 minutes for the complete job)
+The simulator test step has a 40-minute bound (90 minutes for the complete job)
 to accommodate the expanded two-size publication/update/cookbook UI flows. This
 changes CI time limits only; store upload jobs are unchanged.
 
 Fresh native writer exports are collected independently of later UI success,
 including failed/cancelled test runs, with the same per-run timestamp checks.
 A retained export proves its writer output only; it does not make a failed run green.
+
+The next acceptance increment adds the versioned public-copy acknowledgment shown
+on both confirmation screens. The exact request stores its accepted version and
+sends it separately from the public archive. Migration 004 adds a private
+per-user/operation/revision acknowledgment with server time; public responses and
+exports never include it. New writes without current consent fail with 428 before
+object reservation. Exact already-applied legacy requests still recover their
+old receipt without inventing a past acknowledgment. Rejected new requests require
+review/discard. Direct server-copy forks enforce the same contract. Migration/role
+and native checks are still pending for this increment.
+
+A signed-out, read-only shared-source review is available from saved recipes on
+both clients. It shows the saved/shared references and ordered ingredients and
+instructions, with explicit dish selection for collections. It compares the
+user's saved copy (which may contain edits), never claims to reconstruct the
+original source, and never replaces an active meal or saved recipe. Cached
+previews are labeled as such; a known 404 evicts the shared preview. A common
+fixture checks equivalent ingredient quantities and instruction reordering.
+Both synthetic discovery UI flows now open this review, explicitly choose the source dish, and capture normal/enlarged text. Their fresh Actions/visual results remain pending.
+
+The native acceptance tests create a real local new cook from independently saved
+public recipes, record its own temperature and fractional verdict, and export a
+selected pepper variation, a whole named collection and an actual-cook publication.
+They verify that source measurements are not mistaken for the new cook, edited
+recipe notes/ratings do not replace frozen results, and publishing leaves the
+journal unchanged. Both native jobs retain all three actual outputs for backend
+validation. Fractional saved ratings within 1–5 are retained and displayed rather
+than rejected, rounded or truncated; the pre-release public contract widens this
+number field without changing library or archive versions.
+
+A pre-existing Polaris JVM test raced an Unconfined discovery continuation against
+an immediate test Refresh. Its monitor now runs on the test event loop; this
+changes test scheduling only, and requires fresh Actions evidence.
+
+Owner archives are rebuilt from the committed revision payload and checksum-verified
+owned media, so even an older server-copy fork cannot regain its original source's
+lineage by downloading the old blob JSON. New direct forks also store their own
+updated publication JSON. Postgres regression cases cover editing both new forks
+and an intentionally reproduced legacy fork/blob mismatch.
+
+At `991642b`, Android's required API 36 enlarged-text lane passes all suites,
+including 30 core tests, owner context/actual-attempt checks and the separate
+owner UI republication flow. Its actual owned-update writer output also passes
+canonical backend validation (`native-owned-update-android-v1.json`). The normal
+lane stopped in the pre-existing Polaris JVM race before native tests, and the
+advisory API 37 emulator crashed. iOS Debug/Release compilation passes; its
+99-test native runtime result is still pending at this writing.
