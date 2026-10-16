@@ -541,3 +541,14 @@ The owner can seed public recipes and collections through the same publish flow.
 - [Google Play subscription lifecycle](https://developer.android.com/google/play/billing/lifecycle/subscriptions), [Play RTDN reference](https://developer.android.com/google/play/billing/rtdn-reference), [Apple subscriptions](https://developer.apple.com/app-store/subscriptions/), and [App Store Server Notifications](https://developer.apple.com/documentation/appstoreservernotifications): lifecycle/review planning. Play state-change notifications require authoritative status retrieval. SDK/API versions and store-specific mechanics must be rechecked during PR 16 implementation.
 
 All layouts, PR boundaries, data models, algorithm defaults, quotas, and operational choices in this document are engineering proposals derived from the settled product decisions and inspected source. They are not claims that the current application or infrastructure already implements them.
+
+## Execution efficiency — approved October 16
+
+Work primarily on the newest cumulative draft and backport shared fixes at
+reviewable checkpoints. Batch related edits and focused checks before pushing;
+reserve complete native/platform gates for coherent increments and final phase
+acceptance. Read compact summaries and relevant failure sections before large
+artifacts. Check CI at useful checkpoints rather than repeatedly polling. Retry
+only failed jobs for diagnosed infrastructure failures on unchanged code; a rerun
+uses the original commit and cannot verify a code fix. Preserve all existing
+security, migration, two-platform, visual and release gates.

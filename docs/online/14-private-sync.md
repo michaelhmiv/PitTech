@@ -90,3 +90,37 @@ skips, including the real-Postgres private-sync cleanup/isolation test and
 production-container validation. The test now performs the final deletion sweep
 after generic notice delivery before expecting complete status, and closes pools
 without forced database termination. No external database was changed.
+
+## Encrypted snapshot storage boundary
+
+`PrivateSnapshots` implements owner-scoped reads, exact mutation receipts and a
+versioned compare-and-swap commit over encrypted objects. It is internal only: no
+HTTP route, production projector, real key/configuration or native upload calls
+are connected. A required projection callback must eventually validate the exact
+native library vocabulary and relationships; generic metadata validation is only
+the synthetic test adapter. Asset references are explicitly rejected until the
+owned resumable-photo path is complete. This remains an incomplete sync feature.
+
+A short account-locked transaction reserves metadata and quota before object I/O.
+The ciphertext is written create-only and read back with authenticated owner/object
+context and plaintext checksum verification. A retry may adopt an existing valid
+ciphertext with a different nonce, but cannot replace mismatched bytes or a cleanup
+marker. A second transaction rechecks deletion, current version and the pending
+operation before advancing the head. Conflicting reservations remain charged until
+fenced cleanup. Exact old committed retries return their original receipt without
+restoring an old head, even after its retired bytes are removed.
+
+Reads verify stored ciphertext digest, authenticated metadata, canonical envelope
+and current owner/head after I/O. Deletion during a read prevents returning that
+read. A publishing suspension does not deny private-journal access; deletion does.
+Owner/global storage and daily byte/count budgets include reserved/deleting objects,
+with serialized quota reservations. Bounded owner operation receipts are retained;
+there is no implicit receipt pruning or stale-operation reuse. Normal cleanup
+retires abandoned uploads/old heads under leases and permanent empty markers.
+Account deletion continues through the separately restricted lifecycle adapter.
+
+New real-Postgres cases cover exact old replay, changed-body rejection, interrupted
+upload/restart with different nonces, simultaneous commits, concurrent quotas,
+failed cleanup accounting, tampered/substituted reads and deletion during reads or
+paused uploads. Fresh Actions results are required for this increment. No generic
+helper or storage service is exposed as working cloud backup.
