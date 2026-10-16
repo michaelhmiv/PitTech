@@ -59,5 +59,5 @@ import java.util.UUID
             compose.onNodeWithText("Done").performClick();compose.onNodeWithTag("discover-search").performScrollTo().performClick();compose.waitUntil(10000){manager.state.value.items.isNotEmpty()};assertNull(accountStorage.value.session)
         }finally{scope.cancel();File(context.noBackupFilesDir,"public-browsing-$namespace-v1").deleteRecursively()}
     }
-    private fun shot(name:String){val instrumentation=InstrumentationRegistry.getInstrumentation();val image=instrumentation.uiAutomation.takeScreenshot();val file=File(instrumentation.targetContext.filesDir,"pittech-ui-test/$name.png").apply{parentFile!!.mkdirs()};file.outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)};image.recycle()}
+    private fun shot(name:String){compose.waitForIdle();val instrumentation=InstrumentationRegistry.getInstrumentation();instrumentation.waitForIdleSync();val image=instrumentation.uiAutomation.takeScreenshot();val file=File(instrumentation.targetContext.filesDir,"pittech-ui-test/$name.png").apply{parentFile!!.mkdirs()};file.outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)};image.recycle()}
 }

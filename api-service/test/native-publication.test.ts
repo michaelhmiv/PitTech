@@ -34,7 +34,7 @@ for(const platform of ['android','ios'])for(const kind of ['variant','collection
   assert.equal(payload.recipes.length,kind==='collection'?2:1);
   assert.equal(payload.source!.itemId,'12345678-1234-4234-8234-123456789abc');assert.equal(payload.source!.revisionId,'12345678-1234-4234-8234-123456789abd');
   const recipe=payload.recipes[0],story=recipe.story!;assert.deepEqual(recipe.source,payload.source);
-  assert.ok(recipe.ingredients.some(i=>i.name==='Extra pepper'&&i.amount==='2 tsp'));assert.equal(recipe.description,'My pepper variation');
+  assert.ok(recipe.ingredients.some(i=>i.name==='Extra pepper'&&i.amount==='2 tsp'));assert.ok(recipe.ingredients.some(i=>i.name==='Salt and pepper'&&i.amount==='To taste'));assert.equal(recipe.description,'My pepper variation');
   assert.notEqual(story.attemptId,'00000000-0000-4000-8000-000000000004');assert.equal(story.measurements.length,1);
   assert.equal(story.measurements[0].valueCelsius,75);assert.equal(story.measurements[0].quality,'manual');assert.equal(story.measurements[0].role,'food');
   assert.equal(story.verdict.rating,4.5);assert.equal(story.verdict.cookAgain,true);assert.equal(story.verdict.notes,'My recorded verdict');

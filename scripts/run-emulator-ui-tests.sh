@@ -389,7 +389,7 @@ echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest,com.pittech.data.PublicationAcceptanceTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (31 tests)' "$recipe_test_output"
+grep -q 'OK (32 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"
@@ -407,7 +407,7 @@ echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (23 tests)' "$companion_test_output"
+grep -q 'OK (22 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -526,7 +526,6 @@ if (( api_level == 36 )); then
   pull_app_screenshot publication-cookbook
   pull_app_screenshot publication-owner-edit-preview
   pull_app_screenshot publication-owner-update-preview
-  pull_app_screenshot publication-failure
   pull_app_screenshot source-change-review
 fi
 

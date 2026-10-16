@@ -115,9 +115,13 @@ struct NativePublicRecipeView: View {
     private func load() async {
         loading = true; defer { loading = false }
         do {
-            let (value, saved) = try await community.detail(id); detail = value
+            let (value, saved) = try await community.detail(id)
+            let loadedImage = try? await community.image(value)
+            // Present the hero and actions together so a late photo cannot move
+            // the save/cook controls underneath an in-progress tap.
+            try Task.checkCancellation()
+            detail = value; image = loadedImage
             message = saved ? "Showing a saved preview. Connect to check for updates." : nil
-            image = try? await community.image(value)
         } catch { detail = nil; image = nil; message = (error as? NativePublicError)?.localizedDescription ?? "This recipe couldn't be read safely. Try refreshing." }
     }
     private func preview(_ detail: NativePublicDetail, cook: Bool) { task = Task { await community.preview(detail, cook: cook, store: store) } }
