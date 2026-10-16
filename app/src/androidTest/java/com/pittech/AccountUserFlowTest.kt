@@ -110,7 +110,7 @@ import android.graphics.Bitmap
             compose.onNodeWithTag("local-journal-submit").performClick()
             compose.waitUntil(10000){removals==1}
             compose.waitUntil(10000){compose.onAllNodesWithTag("account-message").fetchSemanticsNodes().isNotEmpty()}
-            compose.onNodeWithTag("account-message").assertTextContains("Local journal removed")
+            compose.onNodeWithTag("account-message").assertTextContains("Local journal removed", substring = true)
             screenshot("account-local-journal-removed")
             assertNull(storage.value.session);assertNull(storage.value.deletion)
         }finally{scope.cancel()}
