@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { randomUUID,randomBytes } from 'node:crypto';
-import { deletionPage } from './lifecycle-web.ts';
+import { deletionPage, operatorPage } from './lifecycle-web.ts';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -57,6 +57,12 @@ export function makeServer(relay: Relay, options: Options) {
         res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('X-Robots-Tag','noindex, nofollow');
         res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
         res.end(deletionPage(nonce));return;
+      }
+      if(req.url==='/operator'&&method==='GET'&&options.deletion){
+        route='/operator';const nonce=randomBytes(16).toString('hex');
+        res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('X-Robots-Tag','noindex, nofollow');
+        res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+        res.end(operatorPage(nonce));return;
       }
       const authRoute = ['/v1/auth/challenges', '/v1/auth/verify', '/v1/auth/refresh', '/v1/auth/logout', '/v1/me'].includes(req.url ?? '') ? req.url! : undefined;
       if (authRoute && options.auth && (method === 'POST' && authRoute !== '/v1/me' || method === 'GET' && authRoute === '/v1/me')) {

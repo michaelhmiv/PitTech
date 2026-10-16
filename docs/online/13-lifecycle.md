@@ -94,8 +94,7 @@ The normal lane now passes source comparison but times out opening an owner
 editing draft; the advisory API 37 emulator reports a system crash. A full-height
 cookbook sheet and extra button visibility diagnostics are queued for the next
 run. iOS deletion results and the newly added report/block paths remain pending.
-Account-scoped native outbox cleanup, local-journal removal, operator-facing review
-usability and private-sync cleanup remain open gates. No full lifecycle release
+Account-scoped native outbox cleanup, local-journal removal and private-sync cleanup remain open gates. No full lifecycle release
 claim is made.
 
 Accepted native deletion now persists a separate cleanup owner before clearing
@@ -128,3 +127,12 @@ failed the deletion-review and public-save UI flows; report recovery/blocking
 passed. The deletion test now verifies the acknowledgment switch and enabled
 submit button before submitting. The public preview layout is stabilized in
 the publishing layer. These are pending fresh Actions verification.
+
+Operator review now has a usable page at `GET /operator`, served only when the
+lifecycle surface is configured and carrying the same nonce CSP, robots and
+no-store hardening as `/delete-account`. The operator token lives only in page
+memory and is never written to storage, cookies or the URL. Queue loads and item
+reads use the existing operator endpoints and never mutate; authored text renders
+as text only, and review images load through authenticated `fetch` calls shown as
+blob object URLs because an `img` tag cannot send the header. Operator usability
+is therefore done; its Actions and visual evidence remain pending.
