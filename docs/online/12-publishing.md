@@ -110,7 +110,7 @@ and runtime evidence comes only from Actions. Real installed App/Universal Links
 release certificate association and final-host routing require separate staging
 and physical-device evidence.
 
-The simulator test step has a 40-minute bound (90 minutes for the complete job)
+The simulator test step has a 50-minute bound (120 minutes for the complete job)
 to accommodate the expanded two-size publication/update/cookbook UI flows. This
 changes CI time limits only; store upload jobs are unchanged.
 
@@ -162,5 +162,11 @@ including 30 core tests, owner context/actual-attempt checks and the separate
 owner UI republication flow. Its actual owned-update writer output also passes
 canonical backend validation (`native-owned-update-android-v1.json`). The normal
 lane stopped in the pre-existing Polaris JVM race before native tests, and the
-advisory API 37 emulator crashed. iOS Debug/Release compilation passes; its
-99-test native runtime result is still pending at this writing.
+advisory API 37 emulator crashed. iOS Debug/Release compilation passes and its log reports 88 unit plus 11 UI tests
+passing with zero failures. The workflow nevertheless fails: final result-bundle
+creation outlasted the 35-minute step and the subsequent upload raced a changing
+Staging directory. This is not a green native gate. The next increment allows a
+bounded 50-minute test step, records the native console log and uploads only a
+finalized, closed xcresult ZIP; a fresh complete run remains required.
+Both actual owned-update writers pass canonical backend validation, retained as
+`native-owned-update-android-v1.json` and `native-owned-update-ios-v1.json`.

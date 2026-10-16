@@ -16,8 +16,8 @@ for(const platform of ['android','ios'])test(`actual ${platform} Actions publica
   assert.equal(result.payload.recipes[0].assets.length,1);
 });
 
-test('actual native owner update preserves public identities and frozen facts while revising instructions',async()=>{
-  const fixture=JSON.parse(await readFile(new URL('../../contracts/fixtures/native-owned-update-android-v1.json',import.meta.url),'utf8'));
+for(const platform of ['android','ios'])test(`actual ${platform} owner update preserves public identities and frozen facts while revising instructions`,async()=>{
+  const fixture=JSON.parse(await readFile(new URL(`../../contracts/fixtures/native-owned-update-${platform}-v1.json`,import.meta.url),'utf8'));
   const original=JSON.parse(await readFile(new URL('../../contracts/fixtures/native-publication-android-v1.json',import.meta.url),'utf8'));
   const bytes=Buffer.from(fixture.archiveBase64,'base64');assert.equal(digest(bytes),fixture.archiveSha256);
   const update=await canonicalPublication(bytes),source=await canonicalPublication(Buffer.from(original.archiveBase64,'base64'));assert.equal(update.sha256,fixture.canonicalSha256);
