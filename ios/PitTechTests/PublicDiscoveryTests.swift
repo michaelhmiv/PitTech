@@ -85,7 +85,7 @@ import XCTest
         XCTAssertEqual(restarted.items.count, 1);XCTAssertTrue(restarted.message?.contains("saved") == true)
         await api.setStatus(404)
         do { _ = try await restarted.detail(id);XCTFail("Unavailable recipe reused its stale preview") } catch { }
-        let cached = try await cache.read("/v1/recipes/" + id);XCTAssertNil(cached)
+        let cached = try await cache.read((try NativeCommunityVault.cacheAudience()) + "|/v1/recipes/" + id);XCTAssertNil(cached)
         let values = try root.resourceValues(forKeys: [.isExcludedFromBackupKey]);XCTAssertEqual(values.isExcludedFromBackup, true)
     }
     func testForeignMediaAndDisabledDiscoveryNeverBecomeNetworkOrImportActions() async throws {
@@ -97,6 +97,21 @@ import XCTest
         media[0]["url"] = "https://foreign.invalid/private";detail["media"] = media
         let parsed = try JSONDecoder().decode(NativePublicDetail.self, from: JSONSerialization.data(withJSONObject: detail));XCTAssertThrowsError(try parsed.validate())
     }
+    func testChangingBlocksCannotReuseThePreviousAudienceOfflineCache() async throws {
+        let (_, fixture) = try fixture(), root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var audience = "before"
+        let api = PublicTestAPI(fixture: fixture), cache = NativePublicCache(directory: root)
+        let community = NativePublicCoordinator(enabled: true, api: api, cache: cache, audience: { audience })
+        await community.refresh(sort: "liked", food: "", query: ""); XCTAssertEqual(community.items.count, 1)
+        await api.setStatus(0); audience = "after"; community.controlsChanged()
+        await community.refresh(sort: "liked", food: "", query: ""); XCTAssertTrue(community.items.isEmpty)
+        // Reverting a block also uses a fresh generation, rather than reviving an
+        // earlier audience's cached result while the source cannot be checked.
+        audience = "after-unblock"; community.controlsChanged()
+        await community.refresh(sort: "liked", food: "", query: ""); XCTAssertTrue(community.items.isEmpty)
+    }
+
 }
 private actor PublicTestAPI: NativePublicAPI {
     let fixture: [String: Any]

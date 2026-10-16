@@ -8,3 +8,7 @@ export const SOURCE_REFERENCE_SQL=`(
 export const SOURCE_REVIEW_REQUIRED_SQL=`EXISTS(SELECT 1 FROM publications.source_flags f
   WHERE ${SOURCE_REFERENCE_SQL} AND NOT EXISTS(SELECT 1 FROM publications.source_clearances clearance
     WHERE clearance.item_id=i.id AND clearance.revision_id=r.id AND clearance.incident_id=f.incident_id))`;
+
+export const BLOCKED_PUBLIC_ASSET_SQL=`EXISTS(SELECT 1 FROM jsonb_array_elements(r.payload->'recipes') AS recipe(value)
+  CROSS JOIN LATERAL jsonb_array_elements(recipe.value->'assets') AS asset(value)
+  JOIN publications.blocked_assets b ON b.sha256=asset.value->>'sha256')`;

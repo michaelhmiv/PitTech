@@ -52,6 +52,7 @@ struct NativePublicDetail: Decodable {
     let likes: Int
     let forks: Int
     let media: [Media]
+    var publisherAlias: String? = nil
     var title: String { payload.objectValue?["title"]?.stringValue ?? "Recipe" }
     var recipes: [JSONValue] { payload.objectValue?["recipes"]?.arrayValue ?? [] }
     var heroCaption: String { recipes.flatMap { $0.objectValue?["assets"]?.arrayValue ?? [] }.first { $0.objectValue?["id"]?.stringValue == hero?.id }?.objectValue?["caption"]?.stringValue ?? "" }
@@ -59,7 +60,7 @@ struct NativePublicDetail: Decodable {
     func validate() throws {
         try credit.validate()
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, (1...160).contains(title.utf16.count), credit.displayName.utf16.count <= 160,
-              (1...20).contains(recipes.count), media.count <= 600, Set(media.map(\.id)).count == media.count, (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks) else { throw NativePublicError.invalid }
+              publisherAlias.map({ UUID(uuidString: $0) != nil }) ?? true, (1...20).contains(recipes.count), media.count <= 600, Set(media.map(\.id)).count == media.count, (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks) else { throw NativePublicError.invalid }
         for medium in media {
             guard UUID(uuidString: medium.id) != nil, medium.url == "https://api.pittech.app/v1/recipes/\(id)/assets/\(medium.id)",
                   medium.sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil, ["image/jpeg", "image/png", "image/webp"].contains(medium.mimeType) else { throw NativePublicError.invalid }
@@ -79,7 +80,7 @@ struct NativePublicClient: NativePublicAPI {
     private func request(_ path: String) throws -> URLRequest {
         guard path.range(of: "^/v1/profiles/[a-z0-9_]{3,24}(\\?cursor=[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil || path.hasPrefix("/v1/discover?") || path.range(of: "^/v1/recipes/[a-fA-F0-9-]{36}(/pack|/assets/[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil,
               let url = URL(string: "https://api.pittech.app" + path), url.host == "api.pittech.app", url.fragment == nil else { throw NativePublicError.invalid }
-        var request = URLRequest(url: url); request.setValue("no-store", forHTTPHeaderField: "Cache-Control"); request.setValue("application/json", forHTTPHeaderField: "Accept"); return request
+        var request = URLRequest(url: url); request.setValue("no-store", forHTTPHeaderField: "Cache-Control"); request.setValue("application/json", forHTTPHeaderField: "Accept"); let aliases = try NativeCommunityVault.aliases(); if !aliases.isEmpty { request.setValue(aliases.joined(separator: ","), forHTTPHeaderField: "X-PitTech-Blocks") }; if let session = try NativeCommunityVault.publicAccount() { request.setValue("Bearer " + session.accessToken, forHTTPHeaderField: "Authorization") }; return request
     }
     func json(_ path: String) async throws -> Data {
         do { return try await NativeRelayTransport(responseError: { NativePublicError.status($0) }, maximumResponseBytes: 8 * 1024 * 1024).run(request(path)).data }
@@ -126,50 +127,58 @@ actor NativePublicCache {
     var linkSequence = 0
     private let api: any NativePublicAPI
     private let cache: NativePublicCache
+    private let audience: () throws -> String
     private(set) var items: [NativePublicItem] = []
     private(set) var nextCursor: String?
     private(set) var loading = false
     private(set) var preparing = false
     private(set) var message: String?
     private var currentKey = ""
+    private var controlsGeneration = 0
     private(set) var appliedSort = "liked"
     private(set) var appliedFood = ""
     private(set) var appliedQuery = ""
-    init(enabled: Bool = false, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache()) { self.enabled = enabled; self.api = api; self.cache = cache }
+    init(enabled: Bool = false, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache(), audience: @escaping () throws -> String = NativeCommunityVault.cacheAudience) { self.enabled = enabled; self.api = api; self.cache = cache; self.audience = audience }
     private func pagePath(sort: String, food: String, query: String, cursor: String? = nil) -> String {
         var parts = URLComponents(); parts.path = "/v1/discover"; parts.queryItems = [URLQueryItem(name: "sort", value: sort), URLQueryItem(name: "food", value: food), URLQueryItem(name: "q", value: query)] + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
         return parts.string!
     }
     private func cached(_ path: String) async throws -> (Data, Bool) {
+        let audience = try self.audience(), key = audience + "|" + path
         do {
             let data = try await api.json(path)
+            guard try self.audience() == audience else { throw CancellationError() }
             if path.hasPrefix("/v1/discover?") { try JSONDecoder().decode(NativePublicPage.self, from: data).validate() }
             else { let detail = try JSONDecoder().decode(NativePublicDetail.self, from: data); try detail.validate(); guard path == "/v1/recipes/" + detail.id else { throw NativePublicError.invalid } }
-            try? await cache.save(path, bytes: data); return (data, false)
+            try? await cache.save(key, bytes: data); guard try self.audience() == audience else { throw CancellationError() }; return (data, false)
         }
-        catch NativePublicError.status(404) { await cache.remove(path); throw NativePublicError.status(404) }
+        catch NativePublicError.status(404) { await cache.remove(key); throw NativePublicError.status(404) }
         catch is CancellationError { throw CancellationError() }
-        catch { if let data = try? await cache.read(path) { return (data, true) }; throw error }
+        catch { guard try self.audience() == audience else { throw CancellationError() }; if let data = try? await cache.read(key) { guard try self.audience() == audience else { throw CancellationError() }; return (data, true) }; throw error }
     }
     func refresh(sort: String, food: String, query: String, more: Bool = false) async {
         guard enabled, !loading, ["liked", "forked"].contains(sort), food.count <= 80, query.count <= 80 else { return }
         let key = pagePath(sort: sort, food: food, query: query); guard !more || currentKey == key && nextCursor != nil else { return }
         if !more && currentKey != key { items = []; nextCursor = nil }
         appliedSort = sort; appliedFood = food; appliedQuery = query
+        let generation = controlsGeneration
         loading = true; defer { loading = false }
         do {
             let (bytes, saved) = try await cached(pagePath(sort: sort, food: food, query: query, cursor: more ? nextCursor : nil))
+            guard generation == controlsGeneration else { throw CancellationError() }
             let page = try JSONDecoder().decode(NativePublicPage.self, from: bytes); try page.validate()
             if more { let known = Set(items.map(\.id)); items += page.items.filter { !known.contains($0.id) } } else { items = page.items }
             nextCursor = page.nextCursor; currentKey = key; message = saved ? "Showing saved browsing results. Refresh when you can connect." : nil
-        } catch { message = error.localizedDescription }
+        } catch { if generation == controlsGeneration { message = error.localizedDescription } }
     }
+    func controlsChanged(dismissPublic: Bool = true) { controlsGeneration += 1; items = []; nextCursor = nil; currentKey = ""; if dismissPublic { path = [] }; message = "Community controls changed. Refresh to browse with your current blocks." }
     func detail(_ id: String) async throws -> (NativePublicDetail, Bool) {
         guard enabled, UUID(uuidString: id) != nil else { throw NativePublicError.invalid }
         let (bytes, saved) = try await cached("/v1/recipes/" + id); let detail = try JSONDecoder().decode(NativePublicDetail.self, from: bytes); try detail.validate(); guard detail.id == id else { throw NativePublicError.invalid }; return (detail, saved)
     }
     func profile(_ handle: String, cursor: String? = nil) async throws -> (NativePublicProfile, [NativePublicItem]) {
         guard enabled, handle.range(of: "^[a-z0-9_]{3,24}$", options: .regularExpression) != nil, cursor.map({ UUID(uuidString: $0) != nil }) ?? true else { throw NativePublicError.invalid }
+        let audience = try self.audience()
         // Profile visibility is checked live; private/removed identity is never revived from a stale profile cache.
         let bytes = try await api.json("/v1/profiles/" + handle + (cursor.map { "?cursor=" + $0 } ?? ""))
         let profile = try JSONDecoder().decode(NativePublicProfile.self, from: bytes); try profile.validate(handle)
@@ -182,22 +191,24 @@ actor NativePublicCache {
                 items.append(NativePublicItem(id: detail.id, revisionId: detail.revisionId, title: detail.title, kind: detail.payload.objectValue?["kind"]?.stringValue ?? "recipe", credit: detail.credit, likes: detail.likes, forks: detail.forks, heroAssetId: detail.payload.objectValue?["heroAssetId"]?.stringValue))
             } catch NativePublicError.status(404) { continue }
         }
-        return (profile, items)
+        guard try self.audience() == audience else { throw CancellationError() }; return (profile, items)
     }
     func image(_ detail: NativePublicDetail) async throws -> Data? {
         guard let hero = detail.hero else { return nil }; return try await image(detail, asset: hero)
     }
     func image(_ detail: NativePublicDetail, asset hero: NativePublicDetail.Media) async throws -> Data {
-        let key = "image:" + hero.sha256
-        if let bytes = try? await cache.read(key, limit: 16 * 1024 * 1024), NativeRelayProtocol.hash(bytes) == hero.sha256 { return bytes }
-        let bytes = try await api.image(detail.id, asset: hero); try? await cache.save(key, bytes: bytes); return bytes
+        let audience = try self.audience(), key = audience + "|image:" + hero.sha256
+        if let bytes = try? await cache.read(key, limit: 16 * 1024 * 1024), NativeRelayProtocol.hash(bytes) == hero.sha256 { guard try self.audience() == audience else { throw CancellationError() }; return bytes }
+        let bytes = try await api.image(detail.id, asset: hero); guard try self.audience() == audience else { throw CancellationError() }; try? await cache.save(key, bytes: bytes); guard try self.audience() == audience else { throw CancellationError() }; return bytes
     }
     func preview(_ detail: NativePublicDetail, cook: Bool, store: CookStore) async {
         guard enabled, !preparing else { return }; preparing = true; defer { preparing = false }
+        let audience = try? self.audience()
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pittech")
         defer { try? FileManager.default.removeItem(at: file) }
         do {
-            let downloaded = try await api.pack(detail.id, revision: detail.revisionId, to: file); try Task.checkCancellation()
+            guard let audience else { throw NativePublicError.invalid }
+            let downloaded = try await api.pack(detail.id, revision: detail.revisionId, to: file); try Task.checkCancellation(); guard try self.audience() == audience else { throw CancellationError() }
             await store.receiveArchive(at: downloaded, cookPackOnly: true, expectedPublicSource: (detail.id, detail.revisionId), cookOnSave: cook)
         } catch { message = error.localizedDescription }
     }

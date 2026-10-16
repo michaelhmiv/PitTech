@@ -64,12 +64,15 @@ test('real Postgres lifecycle: reviewed anonymous/named content, scoped reports/
     await approve(original);const publicOriginal=await publications.get(original.id);assert.equal(publicOriginal.credit.displayName,'a PitTech cook');assert.ok(publicOriginal.publisherAlias);assert.ok(!JSON.stringify(publicOriginal).includes(alice.userId));
     await publications.updateProfile(alice.userId,randomUUID(),{handle:'synthetic_oak',displayName:'Synthetic Oak',isPublic:true});await assert.rejects(publications.profile('synthetic_oak'),{status:404});
     const profileReview=(await community.queue(token,'profiles')).items[0];await community.decideProfile(token,{operationId:randomUUID(),reviewId:profileReview.id,action:'approve',reviewedText:true});assert.equal((await publications.profile('synthetic_oak')).displayName,'Synthetic Oak');assert.equal((await publications.get(original.id)).credit.displayName,'a PitTech cook');
+    const namedPayload=structuredClone(raw);namedPayload.identityMode='named';namedPayload.title='Named synthetic reference';
+    const named=await publish(alice.userId,namedPayload,new Map([[path,photo]]));await approve(named);assert.equal((await publications.get(named.id)).credit.displayName,'Synthetic Oak');
+    const namedReportSession=credential();const namedReport=await community.report(undefined,namedReportSession,{operationId:randomUUID(),itemId:named.id,kind:'publisher',reason:'spam',details:'Synthetic named-publisher review'});assert.equal(namedReport.status,'received');
     const reportSession=credential(),report={operationId:randomUUID(),itemId:original.id,kind:'content',reason:'privacy',details:'Synthetic report, never email this text'};
     const receipt=await community.report(undefined,reportSession,report);assert.deepEqual(await community.report(undefined,reportSession,report),receipt);
     await assert.rejects(community.report(undefined,reportSession,{...report,details:'Changed'}),{code:'retry_content_changed'});await assert.rejects(community.reportStatus(undefined,credential(),receipt.reportId),{status:404});
     await community.setReport(token,{operationId:randomUUID(),reportId:receipt.reportId,status:'reviewing',note:'Synthetic private operator note'});assert.deepEqual(await community.reportStatus(undefined,reportSession,receipt.reportId),{reportId:receipt.reportId,status:'reviewing'});
     await community.block(bob.userId,randomUUID(),publicOriginal.publisherAlias,true);assert.deepEqual((await community.blocks(bob.userId)).aliases,[publicOriginal.publisherAlias]);
-    const audience=await community.audience(bob.userId,[]);await assert.rejects(publications.get(original.id,audience.blockedPublishers),{status:404});await assert.rejects(publications.media(original.id,assetId,audience.blockedPublishers),{status:404});
+    const audience=await community.audience(bob.userId,[]);await assert.rejects(publications.get(named.id,audience.blockedPublishers),{status:404});await assert.rejects(publications.get(original.id,audience.blockedPublishers),{status:404});await assert.rejects(publications.media(original.id,assetId,audience.blockedPublishers),{status:404});
     const logs:unknown[]=[],server=makeServer(new Relay(new MemoryRepository(),storage,budgets,()=>now),{ipKey:'synthetic-lifecycle-ip-key',uploadsEnabled:false,publications,auth,community,deletion,log:row=>logs.push(row)});
     server.listen(0,'127.0.0.1');await once(server,'listening');
     try{
@@ -88,7 +91,7 @@ test('real Postgres lifecycle: reviewed anonymous/named content, scoped reports/
     const copied=await publications.fork(bob.userId,original.id,randomUUID(),original.revisionId,'anonymous',{version:PUBLICATION_TERMS_VERSION});await approve(copied);
     assert.notEqual((await publications.get(copied.id)).publisherAlias,publicOriginal.publisherAlias);
     await community.decideContent(token,{operationId:randomUUID(),itemId:original.id,revisionId:original.revisionId,action:'takedown',note:'Synthetic violation',violatingAssetIds:[assetId]});
-    await assert.rejects(publications.get(original.id),{status:404});await assert.rejects(publications.get(copied.id),{status:404});assert.equal((await publications.myItem(bob.userId,copied.id)).status,'pending_review');
+    await assert.rejects(publications.get(original.id),{status:404});await assert.rejects(publications.get(named.id),{status:404});assert.equal((await publications.myItem(alice.userId,named.id)).status,'pending_review');await assert.rejects(publications.get(copied.id),{status:404});assert.equal((await publications.myItem(bob.userId,copied.id)).status,'pending_review');
     await assert.rejects(approve(copied),{code:'content_under_review'});
     const variant=(await community.review(token,copied.id)).payload;variant.heroAssetId=null;variant.recipes[0].assets=[];variant.title='Independent safe variant';
     const changed=await publish(bob.userId,variant,new Map(),{id:copied.id,base:copied.revisionId});await approve(changed);assert.equal((await publications.get(changed.id)).payload.source!.removed,true);

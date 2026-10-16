@@ -72,7 +72,7 @@ import java.util.UUID
             assertTrue(api.profile.getBoolean("isPublic")); assertEquals("unpublished",api.item!!.getString("status"))
             compose.onNodeWithTag("cookbook-edit-dddddddd-dddd-4ddd-dddd-dddddddddddd").performScrollTo().performClick()
             waitFor("cookbook-create-editing-draft"); compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo(); screenshot("publication-owner-edit-preview")
-            compose.onNodeWithTag("cookbook-create-editing-draft").performClick();waitFor("sharing-title")
+            compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick();waitFor("sharing-title")
             compose.onNodeWithTag("sharing-title").performScrollTo().performTextReplacement("Owner revised title")
             compose.onNodeWithTag("sharing-publish").performScrollTo().performClick();waitFor("publication-prepare")
             compose.onNodeWithTag("publication-prepare").performScrollTo().performClick();waitFor("publication-confirm")
@@ -82,7 +82,10 @@ import java.util.UUID
             assertEquals("anonymous",api.item!!.getString("identityMode")); assertTrue(runBlocking(Dispatchers.IO) { database.cookDao().getAllCooks().isEmpty() })
         } finally { scope.cancel(); runBlocking(Dispatchers.IO) { database.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; database.companionDao().photos().forEach { storage.delete(it.relativePath) } }; database.close(); root.deleteRecursively() }
     }
-    private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() } }
+    private fun waitFor(tag: String) {
+        try { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() } }
+        catch(error: Throwable) { compose.onRoot(useUnmergedTree=true).printToLog("PublicationFailure"); screenshot("publication-failure"); throw error }
+    }
     private fun screenshot(name: String) { val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot(); val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }; file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle() }
     private class API: PublicationAPI {
         @Volatile var writes=0

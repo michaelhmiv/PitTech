@@ -1,7 +1,7 @@
 import type { Storage } from './storage.ts';
 import { readZip } from './zip.ts';
 import type { PublicationPayload } from './publication-pack.ts';
-import { SOURCE_REFERENCE_SQL,SOURCE_REVIEW_REQUIRED_SQL } from './publication-policy.ts';
+import { SOURCE_REFERENCE_SQL,SOURCE_REVIEW_REQUIRED_SQL,BLOCKED_PUBLIC_ASSET_SQL } from './publication-policy.ts';
 import { randomUUID } from 'node:crypto';
 import type { Pool,PoolClient } from 'pg';
 import { ApiError,digest } from './core.ts';
@@ -83,10 +83,10 @@ export class CommunityLifecycle {
   async queue(token:unknown,kind:'content'|'reports'|'profiles',cursor?:string){
     await this.operator(token);if(cursor!==undefined&&!uuid(cursor))throw new ApiError(400,'invalid_cursor');
     if(kind==='content'){
-      const rows=(await this.pool.query(`SELECT COALESCE(q.id,i.id) AS id,i.id AS "itemId",r.id AS "revisionId",COALESCE(q.reason,'source_takedown') AS reason,r.payload->>'title' AS title,r.payload->>'kind' AS kind,r.identity_mode AS "identityMode"
+      const rows=(await this.pool.query(`SELECT COALESCE(q.id,i.id) AS id,i.id AS "itemId",r.id AS "revisionId",COALESCE(q.reason,CASE WHEN ${BLOCKED_PUBLIC_ASSET_SQL} THEN 'known_asset' ELSE 'source_takedown' END) AS reason,r.payload->>'title' AS title,r.payload->>'kind' AS kind,r.identity_mode AS "identityMode"
         FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id
         LEFT JOIN moderation.reviews q ON q.revision_id=r.id AND q.state='pending'
-        WHERE ((i.status='pending_review' AND q.id IS NOT NULL) OR (i.status='active' AND (${SOURCE_REVIEW_REQUIRED_SQL})))
+        WHERE ((i.status='pending_review' AND q.id IS NOT NULL) OR (i.status='active' AND ((${SOURCE_REVIEW_REQUIRED_SQL}) OR (${BLOCKED_PUBLIC_ASSET_SQL}))))
         AND ($1::uuid IS NULL OR COALESCE(q.id,i.id)>$1) ORDER BY COALESCE(q.id,i.id) LIMIT 21`,[cursor??null])).rows;
       return {items:rows.slice(0,20),nextCursor:rows.length>20?rows[19].id:null};
     }
@@ -103,8 +103,8 @@ export class CommunityLifecycle {
   }
   async review(token:unknown,itemId:string){
     await this.operator(token);if(!uuid(itemId))throw new ApiError(404,'review_unavailable');
-    const row=(await this.pool.query<{revision_id:string;payload:PublicationPayload}>('SELECT r.id AS revision_id,r.payload FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.status<>\'purged\'',[itemId])).rows[0];if(!row)throw new ApiError(404,'review_unavailable');
-    return {itemId,revisionId:row.revision_id,payload:row.payload,assets:row.payload.recipes.flatMap(recipe=>recipe.assets).map(asset=>({id:asset.id,url:'/v1/operator/items/'+itemId+'/assets/'+asset.id}))};
+    const row=(await this.pool.query<{revision_id:string;payload:PublicationPayload;publisher_alias:string}>('SELECT r.id AS revision_id,r.payload,a.alias AS publisher_alias FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id JOIN publications.publisher_aliases a ON a.item_id=i.id WHERE i.id=$1 AND i.status<>\'purged\'',[itemId])).rows[0];if(!row)throw new ApiError(404,'review_unavailable');
+    return {itemId,revisionId:row.revision_id,publisherAlias:row.publisher_alias,payload:row.payload,assets:row.payload.recipes.flatMap(recipe=>recipe.assets).map(asset=>({id:asset.id,url:'/v1/operator/items/'+itemId+'/assets/'+asset.id}))};
   }
   async reviewMedia(token:unknown,itemId:string,assetId:string){
     await this.operator(token);if(!uuid(itemId)||!uuid(assetId)||!this.storage)throw new ApiError(404,'review_unavailable');
@@ -128,7 +128,7 @@ export class CommunityLifecycle {
       const prior=(await client.query('SELECT request_hash,response FROM moderation.operations WHERE principal_id=$1 AND operation_id=$2',[operator.id,row.operationId])).rows[0];if(prior){if(prior.request_hash!==hash)throw new ApiError(409,'retry_content_changed');return prior.response;}
       const owner=(await client.query('SELECT author_id FROM publications.items WHERE id=$1',[row.itemId])).rows[0]?.author_id;if(!owner)throw new ApiError(404,'review_unavailable');
       await this.account(client,owner);
-      const item=(await client.query<{status:string;revision_id:string;payload:PublicationPayload;flagged:boolean}>(`SELECT i.status,r.id AS revision_id,r.payload,(${SOURCE_REVIEW_REQUIRED_SQL}) AS flagged FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.author_id=$2 FOR UPDATE OF i`,[row.itemId,owner])).rows[0];
+      const item=(await client.query<{status:string;revision_id:string;payload:PublicationPayload;flagged:boolean}>(`SELECT i.status,r.id AS revision_id,r.payload,((${SOURCE_REVIEW_REQUIRED_SQL}) OR (${BLOCKED_PUBLIC_ASSET_SQL})) AS flagged FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.author_id=$2 FOR UPDATE OF i`,[row.itemId,owner])).rows[0];
       if(!item||item.revision_id!==row.revisionId)throw new ApiError(409,'review_changed');
       const assets=item.payload.recipes.flatMap(recipe=>recipe.assets),assetIds=assets.map(asset=>asset.id.toLowerCase()).sort();
       if(violating.some(id=>!assetIds.includes(id)))throw new ApiError(422,'invalid_review');

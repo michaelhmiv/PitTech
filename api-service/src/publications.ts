@@ -1,4 +1,4 @@
-import { SOURCE_REVIEW_REQUIRED_SQL } from './publication-policy.ts';
+import { SOURCE_REVIEW_REQUIRED_SQL,BLOCKED_PUBLIC_ASSET_SQL } from './publication-policy.ts';
 import { lockAccount } from './lifecycle-contract.ts';
 import { PUBLICATION_TERMS_VERSION,type PublicationAcknowledgment } from './publication-terms.ts';
 import { randomUUID } from 'node:crypto';
@@ -64,9 +64,7 @@ export class Publications {
     const row=(await c.query<ItemRow>(`SELECT i.* FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id
       LEFT JOIN publications.publisher_controls c ON c.user_id=i.author_id
       WHERE i.id=$1 AND i.status='active' AND NOT COALESCE(c.deleting OR c.suspended,false) AND NOT(i.author_id=ANY($2::uuid[]))
-      AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(r.payload->'recipes') AS recipe(value)
-        CROSS JOIN LATERAL jsonb_array_elements(recipe.value->'assets') AS asset(value)
-        JOIN publications.blocked_assets b ON b.sha256=asset.value->>'sha256') AND NOT(${SOURCE_REVIEW_REQUIRED_SQL}) FOR SHARE OF i`,[id,blocked])).rows[0];
+      AND NOT(${BLOCKED_PUBLIC_ASSET_SQL}) AND NOT(${SOURCE_REVIEW_REQUIRED_SQL}) FOR SHARE OF i`,[id,blocked])).rows[0];
     if(!row)throw missing();return row;
   }
   private async reserve(user:string,operation:string,hash:string,bytes:number,sha256:string,acknowledgment:PublicationAcknowledgment) {
@@ -292,13 +290,13 @@ export class Publications {
 
   async myItem(user:string,id:string){
     if(!uuid(id))throw missing();
-    const r=(await this.pool.query(`SELECT i.id,CASE WHEN i.status='active' AND (${SOURCE_REVIEW_REQUIRED_SQL}) THEN 'pending_review' ELSE i.status END AS status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.author_id=$2 AND i.status<>\'purged\'`,[id,user])).rows[0];
+    const r=(await this.pool.query(`SELECT i.id,CASE WHEN i.status='active' AND ((${SOURCE_REVIEW_REQUIRED_SQL}) OR (${BLOCKED_PUBLIC_ASSET_SQL})) THEN 'pending_review' ELSE i.status END AS status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.author_id=$2 AND i.status<>\'purged\'`,[id,user])).rows[0];
     if(!r)throw missing();
     return {id:r.id,status:r.status,revisionId:r.revision_id,revision:r.revision_no,title:r.title,identityMode:r.identity_mode};
   }
   async myItems(user:string,cursor?:string){
     if(cursor&&!uuid(cursor))throw new ApiError(400,'invalid_cursor');
-    const rows=(await this.pool.query(`SELECT i.id,CASE WHEN i.status='active' AND (${SOURCE_REVIEW_REQUIRED_SQL}) THEN 'pending_review' ELSE i.status END AS status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.author_id=$1 AND i.status<>\'purged\' AND ($2::uuid IS NULL OR i.id>$2) ORDER BY i.id LIMIT 21`,[user,cursor??null])).rows;
+    const rows=(await this.pool.query(`SELECT i.id,CASE WHEN i.status='active' AND ((${SOURCE_REVIEW_REQUIRED_SQL}) OR (${BLOCKED_PUBLIC_ASSET_SQL})) THEN 'pending_review' ELSE i.status END AS status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.author_id=$1 AND i.status<>\'purged\' AND ($2::uuid IS NULL OR i.id>$2) ORDER BY i.id LIMIT 21`,[user,cursor??null])).rows;
     return {items:rows.slice(0,20).map(r=>({id:r.id,status:r.status,revisionId:r.revision_id,revision:r.revision_no,title:r.title,identityMode:r.identity_mode})),nextCursor:rows.length>20?rows[19].id:null};
   }
   async updateProfile(user:string,operation:string,input:{handle:unknown;displayName:unknown;isPublic:unknown}){

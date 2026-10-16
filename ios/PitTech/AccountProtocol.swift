@@ -88,14 +88,21 @@ struct NativeAccountVault: NativeAccountStorage {
     var service = "com.pittech.account.production.v1"
     private var key: [String: Any] { [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "state", kSecAttrSynchronizable as String: false] }
     func load() throws -> NativeAccountState {
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(key.merging([kSecReturnData as String: true]) { _, b in b } as CFDictionary, &result)
-        if status == errSecItemNotFound { return NativeAccountState() }
-        guard status == errSecSuccess, let bytes = result as? Data, bytes.count <= 16384 else { throw NativeAccountError.invalid }
+        guard let bytes = try loadBytes() else { return NativeAccountState() }
         return try JSONDecoder().decode(NativeAccountState.self, from: bytes)
     }
+    func loadBytes() throws -> Data? {
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(key.merging([kSecReturnData as String: true]) { _, b in b } as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let bytes = result as? Data, bytes.count <= 16384 else { throw NativeAccountError.invalid }
+        return bytes
+    }
     func save(_ value: NativeAccountState) throws {
-        let bytes = try JSONEncoder().encode(value); guard bytes.count <= 16384 else { throw NativeAccountError.invalid }
+        try saveBytes(JSONEncoder().encode(value))
+    }
+    func saveBytes(_ bytes: Data) throws {
+        guard bytes.count <= 16384 else { throw NativeAccountError.invalid }
         let attrs: [String: Any] = [kSecValueData as String: bytes, kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
         let status = SecItemUpdate(key as CFDictionary, attrs as CFDictionary)
         if status == errSecItemNotFound {

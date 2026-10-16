@@ -3,17 +3,17 @@ import XCTest
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<18 {
+        for attempt in 0..<18 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, ["Account", "Delete account"].contains(navigation.identifier) {
+            if let navigation, ["Account", "Delete account", "Report publication", "Report publisher", "Community controls"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
                 if element.waitForExistence(timeout: 1), element.isHittable,
                    element.frame.minY >= top, element.frame.maxY <= bottom { return }
-                let down = element.exists && element.frame.minY < top
+                let down = element.exists && element.frame.minY < top || !element.exists && attempt >= 9
                 let origin = navigation.coordinate(withNormalizedOffset: .zero)
                 let start = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 32 : navigation.frame.height + 400))
                 let end = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 400 : navigation.frame.height + 32))
@@ -184,6 +184,34 @@ final class MealRecipeFlowsTests: XCTestCase {
             let finished = app.buttons["Close completed request"]; reveal(finished, app: app)
             capture(large ? "Account deletion complete large text" : "Account deletion complete")
             finished.tap(); XCTAssertTrue(app.textFields["account-email"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
+    func testAnonymousReportRecoveryAndPublisherBlockAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--community-controls-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["Discover"].tap()
+            let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discover-open-")).firstMatch
+            XCTAssertTrue(source.waitForExistence(timeout: 10)); reveal(source, app: app); source.tap()
+            let report = app.buttons["public-report"]; reveal(report, app: app); report.tap()
+            let details = app.textViews["report-details"]; reveal(details, app: app); details.tap(); details.typeText("Synthetic private review request")
+            app.buttons["Hide keyboard"].tap(); let submit = app.buttons["report-submit"]; reveal(submit, app: app); submit.tap()
+            let saved = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Recover or review the saved request")).firstMatch
+            XCTAssertTrue(saved.waitForExistence(timeout: 10)); reveal(saved, app: app)
+            capture(large ? "Community report saved large text" : "Community report saved")
+            app.navigationBars["Report publication"].buttons["Cancel"].tap()
+            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app); manage.tap()
+            let retry = app.buttons["community-retry"]; reveal(retry, app: app); retry.tap()
+            let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app); status.tap()
+            let reviewing = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch; XCTAssertTrue(reviewing.waitForExistence(timeout: 10)); reveal(reviewing, app: app)
+            capture(large ? "Community report status large text" : "Community report status")
+            app.tabBars.buttons["Discover"].tap(); let block = app.buttons["public-block"]; reveal(block, app: app); block.tap()
+            let search = app.buttons["discover-search"]; reveal(search, app: app); search.tap()
+            XCTAssertTrue(app.staticTexts["discover-empty"].waitForExistence(timeout: 10))
+            capture(large ? "Publisher blocked large text" : "Publisher blocked")
+            app.tabBars.buttons["More"].tap(); let unblock = app.buttons["Unblock publisher"].firstMatch; reveal(unblock, app: app); unblock.tap()
+            app.tabBars.buttons["Discover"].tap(); reveal(search, app: app); search.tap(); XCTAssertTrue(source.waitForExistence(timeout: 10))
             app.terminate()
         }
     }

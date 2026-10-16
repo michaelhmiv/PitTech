@@ -55,6 +55,7 @@ class CooksViewModel(
         publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack, api = api, enabled = true,
             cache = com.pittech.data.PublicCache(context, "test-" + java.util.UUID.randomUUID().toString()))
     }
+    internal val communityControls = com.pittech.data.CommunityControls(com.pittech.data.CommunityVault(context),viewModelScope)
     internal val account = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope)
     internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes

@@ -73,3 +73,27 @@ required serialization. The second run completed original/private/media purge an
 survivor checks, then hit a test-only expired access token after advancing the
 clock. The survivor assertion now refreshes that separate user's session. A green
 full database/container run is still required.
+
+Native reports and blocks now have matching implementation and synthetic tests.
+Reports persist exact private request bytes, a random device reporting capability
+and the initiating account before HTTP. Lost responses retry the same request;
+account changes cannot take it over, and definite rejection requires explicit
+review/discard. Successful receipts retain status references, not authored details.
+Signed-out blocks are device-only; signed-in blocks additionally submit an exact
+account operation. Local filtering commits before transmission. Both clients send
+only random publisher aliases and scope bounded public caches by a fresh controls
+generation and account context, checking that context after network/cache awaits.
+Blocking clears visible browsing and cannot replay an earlier offline audience.
+Expired credentials never silently downgrade an existing account to anonymous
+public reads. Private journals and already saved independent copies are untouched.
+
+At `6467867`, backend Actions passes all 47 tests, including real Postgres roles,
+auth/deletion races, cleanup fences and surviving independently owned copies.
+Android API 36 large text passes all suites (31 core and 20 companion tests).
+The normal lane now passes source comparison but times out opening an owner
+editing draft; the advisory API 37 emulator reports a system crash. A full-height
+cookbook sheet and extra button visibility diagnostics are queued for the next
+run. iOS deletion results and the newly added report/block paths remain pending.
+Account-scoped native outbox cleanup, local-journal removal, operator-facing review
+usability and private-sync cleanup remain open gates. No full lifecycle release
+claim is made.

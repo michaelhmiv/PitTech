@@ -177,3 +177,16 @@ private timestamps and measurements untouched. The actual-cook acceptance case
 uses explicit fractional source timestamps and checks the projected offset. Both
 source-review parsers also bound offsets before formatting, preventing an invalid
 remote value from overflowing a duration label. Fresh native verification is open.
+
+Actual Actions exports for a pepper variation, a whole two-recipe collection and
+an independently recorded actual cook now pass canonical backend validation on
+both platforms. The six `native-{variant,collection,attempt}-{ios,android}-v1.json`
+fixtures retain producer commit/run/job/artifact and raw/canonical SHA-256 evidence.
+They verify selected membership, pinned credit, distinct new attempt identity,
+own manual 75 °C reading and frozen 4.5 verdict, without inventing another dish's
+story. iOS producer `0d56a83` passed the complete 101-test native workflow.
+Android producer `6c76948` passed its required API 36 large-text job; the overall
+workflow failed another lane. These exports do not make either latest PR gate
+green. Their comparison exposed an Android free-text ingredient loss through the
+numeric-only cook table. The next native run must prove its preservation fix and
+provide replacement exports before ingredient parity is closed.
