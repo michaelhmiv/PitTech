@@ -115,3 +115,16 @@ account receipts removed during cleanup. Android public read context checks also
 run inside the managed asynchronous job, so corrupt credential/control storage
 shows a recoverable browsing error instead of throwing from a UI action. Native
 verification remains pending.
+
+At `651d29e`, backend Actions passes 53 tests with zero skips. Required Android
+lanes pass 32 core tests, then stop because the script still expected 31; the
+report/block companion selector contains 22 tests, not 23. The corrected totals
+match the explicitly selected source classes. No assertion was weakened and no
+native lifecycle UI pass is inferred from this early script failure. iOS and
+corrected complete native evidence remain pending.
+
+iOS runs 263/265 passed 112/114 and 113/115 respectively, with no skips. Both
+failed the deletion-review and public-save UI flows; report recovery/blocking
+passed. The deletion test now verifies the acknowledgment switch and enabled
+submit button before submitting. The public preview layout is stabilized in
+the publishing layer. These are pending fresh Actions verification.

@@ -37,6 +37,7 @@ export function mergeSync(baseInput:unknown,localInput:unknown,remoteInput:unkno
  for(const id of [...new Set([...base.keys(),...local.keys(),...remote.keys()])].sort()){
   const old=base.get(id),a=local.get(id),b=remote.get(id);if(old&&(!a||!b))throw invalid('explicit_tombstone_required');
   for(const r of [a,b])if(old&&r&&!equal(r,old)){if(r.version.counter<=old.version.counter)throw invalid('sync_clock_not_advanced');if(old.deleted&&!r.deleted)throw invalid('sync_restore_requires_new_identity');}
+  if(a&&b&&!equal(a,b)&&order(a,b)===0)throw invalid('sync_stamp_reused');
   if(old&&!old.deleted&&immutable.has(old.recordType)){
    const bad=[a!,b!].filter(r=>!r.deleted&&content(r)!==content(old));if(bad.length){records.push(old);for(const r of [...new Map(bad.map(r=>[stable(r),r])).values()].sort(order))conflict(old,r,'immutable_identity');continue;}
   }

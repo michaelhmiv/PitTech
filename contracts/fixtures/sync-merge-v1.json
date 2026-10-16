@@ -554,6 +554,61 @@
       }
     },
     {
+      "name": "immutable stamp reuse cannot hide divergent bytes",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Alice",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Bob",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
       "name": "concurrent recipe revision branches",
       "base": [],
       "local": [

@@ -58,6 +58,7 @@ internal object PrivateSyncMerge {
         for(key in (base.keys+local.keys+remote.keys).sorted()){
             val old=base[key];val a=local[key];val b=remote[key]
             if(old!=null){require(a!=null && b!=null);for(r in listOf(a,b))if(!r.same(old)){require(r.counter>old.counter && (!old.deleted || r.deleted))}
+                require(order.compare(a,b)!=0 || a.same(b))
                 if(!old.deleted && old.type in immutable){val bad=listOf(a,b).filter{!it.deleted && it.content()!=old.content()}.distinctBy{stable(it.json())}.sortedWith(order);if(bad.isNotEmpty()){records+=old;bad.forEach{conflict(old,it,"immutable_identity")};continue}}
             }
             if(a==null || b==null){records+=checkNotNull(a?:b);continue};if(a.same(b)){records+=a;continue};require(order.compare(a,b)!=0)

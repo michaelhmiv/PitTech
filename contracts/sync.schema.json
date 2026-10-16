@@ -9,7 +9,8 @@
     },
     "baseVersion": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 9007199254740990
     },
     "mutationId": {
       "type": "string",
@@ -57,6 +58,15 @@
           "loser",
           "reason"
         ]
+      }
+    },
+    "resolvedConflictIds": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
       }
     }
   },

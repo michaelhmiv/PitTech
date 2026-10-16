@@ -45,7 +45,7 @@ Real key provisioning, configuration, database/object ownership, ciphertext
 storage and rotation/re-encryption verification remain unimplemented gates.
 No real keys or cloud resources have been created.
 
-Ten identical shared cases cover independent notes, clock skew, recoverable
+Eleven identical shared cases cover independent notes, clock skew, recoverable
 same-note conflicts, offline edit/deletion, immutable identity collisions,
 concurrent recipe branches, equivalent content and rejected omissions/replays.
 Backend unit checks pass locally; new native implementations/tests require
@@ -58,3 +58,28 @@ account-bound native outboxes/association; conflict review/restore UI; inactive
 rule import; lifecycle purge adapter; supported background opportunities; full
 two-device Android↔iOS and real Postgres ownership/race evidence. No backup success
 or completed sync claim is made by this draft.
+
+Migration 006 adds an isolated private metadata ledger (account head/version,
+opaque encrypted-object ownership/hash/leases, operation receipts and anonymous
+global budgets). It contains no authored library payload. The private-sync runtime
+role cannot read authentication identities, relay or public publication payloads;
+public roles cannot read private tables. Cleanup has only explicit metadata
+read/delete and lease/head updates. Apply `private-sync-runtime-role.sql` after
+the lifecycle role script; lifecycle startup checks those grants before serving.
+No infrastructure migration has been applied outside CI by this work.
+
+The lifecycle adapter refuses an unknown private table and requires an accepted
+server deletion. It clears head/operation references, fences owned storage keys,
+retains failed objects and leases, and removes the private account row only after
+every object is gone. It never decrypts private objects. File/S3 unit races now
+cover the private namespace, including cleanup before a late upload. A new real
+Postgres test covers forbidden role access, late writes after deletion, unknown
+schema fail-closed behavior, storage outage/retry, retained independent owner data
+and generic completion mail. That test requires Actions before claiming success.
+
+Snapshot metadata transition validation preserves explicit tombstones and existing
+recovery copies. Dropping a saved conflict requires its explicit resolution ID;
+rewriting that copy is rejected. A concurrent tombstone may supersede a greater
+logical-clock edit only with the exact retained losing edit. These generic helpers
+remain unexposed: strict native projection/relationships, encrypted snapshot and
+photo API, durable application and conflict UI are still required.

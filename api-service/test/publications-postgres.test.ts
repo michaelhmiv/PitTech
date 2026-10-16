@@ -33,7 +33,7 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     await migrate(admin);await migrate(admin);
     const grant=await readFile(new URL('../operations/publications-runtime-role.sql',import.meta.url),'utf8');await admin.query(grant);await admin.query(grant);
     for(const sql of ['SELECT * FROM auth.users','SELECT * FROM auth.challenges','SELECT * FROM relay.packs','SELECT * FROM relay.schema_migrations','CREATE TABLE publications.forbidden(id integer)','TRUNCATE publications.items','DELETE FROM auth.users'])await assert.rejects(pool.query(sql),{code:'42501'});
-    await admin.query('CREATE SCHEMA private_sync');await admin.query('CREATE TABLE private_sync.libraries(owner_id uuid,payload jsonb)');
+    await admin.query('CREATE SCHEMA IF NOT EXISTS private_sync');await admin.query('CREATE TABLE private_sync.libraries(owner_id uuid,payload jsonb)');
     const alice=randomUUID(),bob=randomUUID();await admin.query('INSERT INTO auth.users VALUES($1,$2,$5),($3,$4,$5)',[alice,'private-alice@example.com',bob,'private-bob@example.com',now]);
     await admin.query('INSERT INTO private_sync.libraries VALUES($1,$2)',[alice,{private:'never public'}]);await assert.rejects(pool.query('SELECT * FROM private_sync.libraries'),{code:'42501'});
     const storage=new FileStorage(root),limits={storageBytes:1024**3,dailyBytes:1024**3,dailyWrites:100},publications=new Publications(pool,storage,limits,()=>now);

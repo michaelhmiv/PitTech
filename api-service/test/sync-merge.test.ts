@@ -23,7 +23,7 @@ test('equal content at different versions does not invent a conflict and outputs
 test('shared native vectors are identical files and match the backend merge in both directions',async()=>{
  const {readFile}=await import('node:fs/promises');const bytes=await readFile(new URL('../../contracts/fixtures/sync-merge-v1.json',import.meta.url),'utf8');
  assert.equal(bytes,await readFile(new URL('../../app/src/test/resources/sync-merge-v1.json',import.meta.url),'utf8'));assert.equal(bytes,await readFile(new URL('../../ios/PitTechTests/Fixtures/sync-merge-v1.json',import.meta.url),'utf8'));
- const vectors=JSON.parse(bytes);assert.equal(vectors.contractVersion,1);assert.equal(vectors.cases.length,10);
+ const vectors=JSON.parse(bytes);assert.equal(vectors.contractVersion,1);assert.equal(vectors.cases.length,11);
  for(const c of vectors.cases)if(c.rejected)assert.throws(()=>mergeSync(c.base,c.local,c.remote));else{assert.deepEqual(mergeSync(c.base,c.local,c.remote),c.expected,c.name);assert.deepEqual(mergeSync(c.base,c.remote,c.local),c.expected,c.name);}
 });
 

@@ -60,6 +60,7 @@ enum NativePrivateSyncMerge {
             if let prior {
                 guard let a, let b else { throw NativeSyncError.invalid }
                 for r in [a, b] where r != prior { guard r.version.counter > prior.version.counter, !prior.deleted || r.deleted else { throw NativeSyncError.invalid } }
+                guard a.version != b.version || a == b else { throw NativeSyncError.invalid }
                 if !prior.deleted && immutable.contains(prior.recordType) {
                     var bad = [a, b].filter { !$0.deleted && !$0.sameContent(prior) }; if bad.count == 2 && bad[0] == bad[1] { bad.removeLast() }
                     if !bad.isEmpty { records.append(prior); for r in bad.sorted(by: less) { conflict(prior, r, "immutable_identity") }; continue }

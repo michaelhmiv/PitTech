@@ -20,7 +20,7 @@ OS limitation. Completion requires both clients and CI evidence. Existing
 | Discovery/save/cook available signed out | Port both | 11 | Offline owned copy; source removed; no auth barrier |
 | Editable recipe/collection/attempt publication | Implemented on both; Actions/visual gates pending | 12 | Explicit scope/identity preview, durable retries; owner download/edit without original draft; frozen stories and pinned credits; versioned public-copy consent and read-only source comparison; full acceptance still open |
 | Reporting, opaque publisher blocking, deletion | Implemented on both; native verification and local cleanup gates open | 13 | Exact anonymous/account-bound report recovery; audience-scoped offline cache; original purge; independent fork survival; backend 47-test Actions pass at `6467867` |
-| Sync metadata/tombstones/photo queue/recovery | Merge foundation implemented on both; native Actions, transport, photos and durable apply open | 14 | Ten identical merge vectors; recoverable conflicts and tombstones; two-device ownership/inactive automation gates pending |
+| Sync metadata/tombstones/photo queue/recovery | Merge foundation implemented on both; native Actions, transport, photos and durable apply open | 14 | Eleven identical merge vectors; recoverable conflicts and tombstones; two-device ownership/inactive automation gates pending |
 | Existing free Insights math | Port common metrics | 15 | Shared golden measurements and sparse/gapped samples |
 | Verified purchases, restore and zero-ad requests | Port both | 16 | Store sandboxes and SDK/network spies |
 | Personal analysis/customization/recap | Port both | 18 | Offline entitlement cache; accessible defaults; explicit sharing |

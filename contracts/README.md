@@ -66,7 +66,7 @@ never publishes a fork or imports somebody else’s cook into the user’s histo
 The unshipped v1 sync envelope now includes recoverable `conflicts`, known record
 types, safe composite local record keys and explicit null-payload tombstones.
 Logical counters start at one; timestamps are payload facts, never merge clocks.
-The native/backend merge helpers consume ten identical `sync-merge-v1.json`
+The native/backend merge helpers consume eleven identical `sync-merge-v1.json`
 vectors. A conflict ID hashes ASCII record identity/reason and both version stamps,
 so it does not depend on a platform's JSON formatting. This is a foundation only:
 strict library projection/relationship checks, transport and native durable apply

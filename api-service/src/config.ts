@@ -1,5 +1,6 @@
 import { CommunityLifecycle } from './community-lifecycle.ts';
 import { AccountDeletion } from './account-deletion.ts';
+import { PrivateSyncPurger } from './sync-purge.ts';
 import { ResendLifecycleMailer } from './lifecycle-email.ts';
 import { Publications } from './publications.ts';
 import { Authentication } from './auth.ts';
@@ -45,7 +46,7 @@ export function createRuntime() {
   const lifecyclePool=lifecycleUrl?new Pool({connectionString:lifecycleUrl,max:5,connectionTimeoutMillis:5000,idleTimeoutMillis:30000,statement_timeout:10000}):undefined;
   lifecyclePool?.on('error',()=>console.error('lifecycle_database_connection_error'));
   const community=lifecyclePool&&lifecycleSecrets?new CommunityLifecycle(lifecyclePool,lifecycleSecrets,Date.now,storage):undefined;
-  const deletion=lifecyclePool&&lifecycleSecrets?new AccountDeletion(lifecyclePool,lifecycleSecrets,storage,new ResendLifecycleMailer(required('RESEND_API_KEY'),required('AUTH_FROM'),required('AUTH_PUBLIC_ORIGIN')),email=>authSecrets!.hash('email',email)):undefined;
+  const deletion=lifecyclePool&&lifecycleSecrets?new AccountDeletion(lifecyclePool,lifecycleSecrets,storage,new ResendLifecycleMailer(required('RESEND_API_KEY'),required('AUTH_FROM'),required('AUTH_PUBLIC_ORIGIN')),email=>authSecrets!.hash('email',email),Date.now,new PrivateSyncPurger(lifecyclePool,storage)):undefined;
   if(process.env.PUBLIC_API_ENABLED==='true'&&(!auth||!community||!deletion||process.env.PUBLIC_MODERATION_READY!=='true'||process.env.ACCOUNT_DELETION_READY!=='true'))throw new Error('Complete phase required');
   if(process.env.PUBLIC_API_ENABLED==='true'&&budgets.storageBytes+positive('PUBLIC_STORAGE_MAX_BYTES')>positive('TOTAL_OBJECT_STORAGE_MAX_BYTES'))throw new Error('Combined storage budget exceeds cap');
   const publications=process.env.PUBLIC_API_ENABLED==='true'?new Publications(pool,storage,{storageBytes:positive('PUBLIC_STORAGE_MAX_BYTES'),dailyBytes:positive('PUBLIC_DAILY_BYTES'),dailyWrites:positive('PUBLIC_DAILY_WRITES')},Date.now,true,handle=>lifecycleSecrets!.hash('retired-handle',handle)):undefined;
