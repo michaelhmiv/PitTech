@@ -215,3 +215,6 @@ presents its hero and actions together to prevent a late photo shifting a tap
 target. Compact CI diagnostics now include the text log, since a failed run's
 full xcresult archive can exceed the connector's 512 MiB download limit. Fresh
 native results are required; these changes do not close the acceptance gate.
+
+Full xcresult bundles now upload separately from screenshots/logs. This keeps
+visual evidence downloadable when a failed result bundle exceeds 512 MiB.
