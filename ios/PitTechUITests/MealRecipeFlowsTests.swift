@@ -7,7 +7,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, navigation.identifier == "Account" {
+            if let navigation, ["Account", "Delete account"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
@@ -146,7 +146,13 @@ final class MealRecipeFlowsTests: XCTestCase {
             let code = app.textFields["account-code"]; reveal(code, app: app); XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("123456")
             app.buttons["Hide keyboard"].tap()
             let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
-            let signedIn = app.staticTexts["account-signed-in"]; reveal(signedIn, app: app); XCTAssertTrue(signedIn.waitForExistence(timeout: 10))
+            let signedIn = app.staticTexts["account-signed-in"]
+            if !signedIn.waitForExistence(timeout: 5), app.staticTexts["account-message"].label == "Check your email for a link and six-digit code. Both expire in 15 minutes." {
+                // Simulator notification banners can consume the first gesture.
+                // Retry only while the fixture remains in its untouched start state.
+                reveal(verify, app: app); verify.tap()
+            }
+            XCTAssertTrue(signedIn.waitForExistence(timeout: 10)); reveal(signedIn, app: app)
             capture(large ? "Native account signed in large text" : "Native account signed in")
             let signOut = app.buttons["Sign out"]; reveal(signOut, app: app); signOut.tap()
             let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
@@ -154,6 +160,30 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native account signed out large text" : "Native account signed out")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
             XCTAssertFalse(app.staticTexts["Signed in"].exists)
+            app.terminate()
+        }
+    }
+    func testAccountDeletionReviewRecoveryAndCompletionAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-deletion-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let deletion = app.buttons["account-delete"]; reveal(deletion, app: app); deletion.tap()
+            let acknowledgment = app.switches["account-deletion-acknowledge"].firstMatch
+            reveal(acknowledgment, app: app); acknowledgment.tap()
+            let typed = app.textFields["account-deletion-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("DELETE")
+            app.buttons["Hide keyboard"].tap()
+            let submit = app.buttons["account-deletion-submit"]; reveal(submit, app: app)
+            capture(large ? "Account deletion review large text" : "Account deletion review")
+            submit.tap()
+            let status = app.staticTexts["account-deletion-status"]; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app)
+            XCTAssertTrue(status.label.contains("queued"))
+            let recover = app.buttons["account-deletion-recover"]; reveal(recover, app: app); recover.tap()
+            let check = app.buttons["account-deletion-check"]; reveal(check, app: app); check.tap()
+            let finished = app.buttons["Close completed request"]; reveal(finished, app: app)
+            capture(large ? "Account deletion complete large text" : "Account deletion complete")
+            finished.tap(); XCTAssertTrue(app.textFields["account-email"].waitForExistence(timeout: 10))
             app.terminate()
         }
     }

@@ -56,6 +56,7 @@ object RecipeExtraction {
     }
     fun mergeAttempt(previous: RecipeSnapshot, attempt: RecipeSnapshot): RecipeSnapshot = attempt.copy(
         name = previous.name, description = previous.description, tags = previous.tags,
+        publicSource = previous.publicSource,
         dish = attempt.dish.copy(preparationItems = attempt.dish.preparationItems.ifEmpty { previous.dish.preparationItems },
             prepNotes = attempt.dish.prepNotes.ifBlank { previous.dish.prepNotes }),
         instructions = mergeInstructions(previous.instructions, attempt.instructions),

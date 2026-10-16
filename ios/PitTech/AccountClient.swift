@@ -4,7 +4,7 @@ protocol NativeAccountAPI { func call(_ path: String, body: [String: String]?, a
 struct NativeAccountClient: NativeAccountAPI {
     var configuration: URLSessionConfiguration?
     func call(_ path: String, body: [String: String]? = nil, access: String? = nil) async throws -> Data {
-        guard ["/v1/auth/challenges", "/v1/auth/verify", "/v1/auth/refresh", "/v1/auth/logout", "/v1/me"].contains(path) else { throw NativeAccountError.invalid }
+        guard ["/v1/auth/challenges", "/v1/auth/verify", "/v1/auth/refresh", "/v1/auth/logout", "/v1/me", "/v1/me/deletion", "/v1/deletion/recover", "/v1/deletion/status"].contains(path) else { throw NativeAccountError.invalid }
         var request = URLRequest(url: URL(string: "https://api.pittech.app" + path)!)
         request.httpMethod = body == nil ? "GET" : "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Draft iOS and Android account deletion: review server removal separately from the retained device journal, confirm explicitly, and recover an interrupted request after sign-out. Local-journal removal and the remaining lifecycle controls still require completion and verification; account/community access stays disabled.
 - Backend and web draft: prepare reviewed community publishing, private reports and blocks, and recoverable server account deletion that preserves other cooks’ independent copies. Native lifecycle controls and release verification remain in progress; account/community access stays disabled.
 - Draft iOS and Android community work: review public-copy terms before publishing, compare a saved recipe with its shared source, and preserve fractional recorded ratings. Community controls remain disabled.
 - Draft iOS and Android owner editing: preview a private editing copy of your publication, revise instructions, and confirm a new public revision while preserving recorded results and source credit. Community controls remain disabled.

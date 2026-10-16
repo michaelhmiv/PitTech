@@ -81,6 +81,7 @@ struct NativeAccountState: Codable {
     var session: NativeAccountSession?
     var refreshOperation: String?
     var logoutToken: String?
+    var deletion: NativeDeletionRecord?
 }
 protocol NativeAccountStorage { func load() throws -> NativeAccountState; func save(_ value: NativeAccountState) throws }
 struct NativeAccountVault: NativeAccountStorage {

@@ -23,6 +23,7 @@ import org.json.JSONObject
     val scope=rememberCoroutineScope(); val uri=LocalUriHandler.current
     var loadedUser by remember { mutableStateOf<String?>(null) }; var items by remember { mutableStateOf<List<JSONObject>>(emptyList()) }; var cursor by remember { mutableStateOf<String?>(null) }
     var handle by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }; var isPublic by remember { mutableStateOf(false) }
+    var profileReviewStatus by remember { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<JSONObject?>(null) }; var removing by remember { mutableStateOf<JSONObject?>(null) }
     var pending by remember { mutableStateOf<PublicationOperation?>(null) }; var pendingArchive by remember { mutableStateOf<PreparedPublication?>(null) }; var pendingProfile by remember { mutableStateOf<JSONObject?>(null) }
     var ownerPreview by remember { mutableStateOf<PreparedPublication?>(null) }; var ownerReceipt by remember { mutableStateOf<PublicationReceipt?>(null) }; var ownerUser by remember { mutableStateOf<String?>(null) }; var editingDraft by remember { mutableStateOf<String?>(null) }
@@ -43,20 +44,20 @@ import org.json.JSONObject
         checkAccount(); val page=writer.read("/v1/me/recipes"+if(more && cursor!=null)"?cursor=$cursor" else "")
         val rows=page.getJSONArray("items"); require(rows.length()<=20)
         val next=(0 until rows.length()).map(rows::getJSONObject)
-        next.forEach { require(publicationUuid(it.getString("id")) && publicationUuid(it.getString("revisionId")) && it.getInt("revision")>0 && it.getString("title").length in 1..160 && it.getString("identityMode") in setOf("named","anonymous") && it.getString("status") in setOf("active","unpublished","taken_down")) }
+        next.forEach { require(publicationUuid(it.getString("id")) && publicationUuid(it.getString("revisionId")) && it.getInt("revision")>0 && it.getString("title").length in 1..160 && it.getString("identityMode") in setOf("named","anonymous") && it.getString("status") in setOf("active","pending_review","unpublished","taken_down")) }
         val nextCursor=if(page.isNull("nextCursor"))null else page.getString("nextCursor"); require(nextCursor==null || publicationUuid(nextCursor)); checkAccount()
         items=if(more)items+next.filter { new -> items.none { it.getString("id")==new.getString("id") } } else next; cursor=nextCursor
     }
     suspend fun reload() {
         checkAccount(); pendingPreview(); val profile=writer.read("/v1/me/profile"); checkAccount()
-        handle=if(profile.isNull("handle"))"" else profile.getString("handle"); name=profile.getString("displayName"); isPublic=profile.getBoolean("isPublic"); preview=null; loadItems(false)
+        handle=if(profile.isNull("handle"))"" else profile.getString("handle"); name=profile.getString("displayName"); isPublic=profile.getBoolean("isPublic"); profileReviewStatus=profile.optString("reviewStatus").takeIf{it.isNotEmpty()}; preview=null; loadItems(false)
     }
     fun run(action: suspend () -> Unit) {
         if(busy)return; busy=true; message=null
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. Your saved request remains available."; try { pendingPreview() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) {
-        loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null
+        loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; profileReviewStatus=null; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null
         if(loadedUser!=null)try { reload() } catch(e: Exception) { message=e.message }
     }
     ModalBottomSheet(onDismissRequest={ if(!busy)onClose() }) {
@@ -92,6 +93,7 @@ import org.json.JSONObject
                     Text("Cookbook identity",style=MaterialTheme.typography.titleLarge)
                     OutlinedTextField(name,{ name=it; preview=null },label={ Text("Display name") },modifier=Modifier.fillMaxWidth().testTag("cookbook-name"))
                     OutlinedTextField(handle,{ handle=it; preview=null },label={ Text("Handle (3–24 letters, numbers or underscores)") },modifier=Modifier.fillMaxWidth().testTag("cookbook-handle"))
+                    if(profileReviewStatus=="pending")Text("Identity changes are awaiting review and are not yet public.")
                     Row { Checkbox(isPublic,{ isPublic=it; preview=null },modifier=Modifier.testTag("cookbook-public")); Text("Enable my public cookbook",Modifier.weight(1f)) }
                     Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.")
                     Button(onClick={ run { require(handle.isEmpty() || handle.matches(Regex("[A-Za-z0-9_]{3,24}"))) { "Choose a handle with 3–24 letters, numbers or underscores." }; require(name.length<=160 && name.none { it.code<32 || it.code==127 } && (!isPublic || handle.isNotEmpty() && name.isNotBlank())) { "Choose a display name and handle before enabling your public cookbook." }; preview=JSONObject().put("handle",handle.takeIf { it.isNotEmpty() }?.lowercase(java.util.Locale.ROOT) ?: JSONObject.NULL).put("displayName",name.trim()).put("isPublic",isPublic) } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-preview")) { Text("Preview cookbook changes") }
@@ -103,8 +105,8 @@ import org.json.JSONObject
                     items.forEach { item -> Card { Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text(item.getString("title"),style=MaterialTheme.typography.titleMedium)
                         val status=item.getString("status")
-                        Text(if(status=="active")"Public · revision ${item.getInt("revision")} · ${item.getString("identityMode")}" else if(status=="unpublished")"Removed from public access" else "Unavailable after moderation")
-                        if(status in setOf("active","unpublished"))TextButton(onClick={ run {
+                        Text(if(status=="active")"Public · revision ${item.getInt("revision")} · ${item.getString("identityMode")}" else if(status=="pending_review")"Submitted for review · not public" else if(status=="unpublished")"Removed from public access" else "Unavailable after moderation")
+                        if(status in setOf("active","pending_review","unpublished"))TextButton(onClick={ run {
                             checkAccount();val user=checkNotNull(loadedUser);val receipt=PublicationReceipt(item.getString("id"),item.getString("revisionId"),item.getInt("revision"),"https://pittech.app/c/"+item.getString("id"))
                             val file=java.io.File(context.cacheDir,"publication-edit-"+java.util.UUID.randomUUID()+".zip")
                             try {
@@ -112,10 +114,8 @@ import org.json.JSONObject
                                 check(user==account.publicationUserId() && user==loadedUser);ownerPreview=prepared;ownerReceipt=receipt;ownerUser=user
                             } finally { file.delete() }
                         } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-edit-"+item.getString("id"))) { Text("Preview an editable private copy") }
-                        if(status=="active") {
-                            TextButton(onClick={ uri.openUri("https://pittech.app/c/"+item.getString("id")) }) { Text("Open publication") }
-                            TextButton(onClick={ removing=item },enabled=!busy && pending==null) { Text("Remove from public access") }
-                        }
+                        if(status=="active")TextButton(onClick={ uri.openUri("https://pittech.app/c/"+item.getString("id")) }) { Text("Open publication") }
+                        if(status in setOf("active","pending_review"))TextButton(onClick={ removing=item },enabled=!busy && pending==null) { Text(if(status=="pending_review")"Withdraw review request" else "Remove from public access") }
                     } } }
                     if(cursor!=null)Button(onClick={ run { loadItems(true) } },enabled=!busy) { Text("More publications") }
                     Button(onClick={ run { reload() } },enabled=!busy) { Text("Refresh cookbook") }
@@ -130,6 +130,7 @@ import org.json.JSONObject
 }
 @Composable private fun CookbookProfileSummary(profile: JSONObject) {
     Card { Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        if(profile.optString("reviewStatus")=="pending")Text("Identity changes are awaiting review and are not yet public.")
         Text("Public display name · "+profile.optString("displayName").ifBlank { "a PitTech cook" },style=MaterialTheme.typography.titleMedium)
         Text(if(profile.getBoolean("isPublic"))"Public cookbook: https://pittech.app/p/"+profile.optString("handle") else "Public cookbook disabled. Your named recipe credit remains visible.")
     } }

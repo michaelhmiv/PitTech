@@ -14,18 +14,19 @@ import Observation
     private(set) var pendingLink: String?
     var challengeEmail: String? { state.challenge?.email }
     var signedIn: Bool { state.session != nil }
-    var stateUserId: String? { state.session?.userId }
+    var stateUserId: String? { state.deletion == nil ? state.session?.userId : nil }
+    var deletionRecord: NativeDeletionRecord? { state.deletion }
     var canResend: Bool { state.challenge.map { Date().timeIntervalSince($0.created) >= 60 } ?? true }
     var interruptedVerification: Bool { state.challenge?.operation != nil }
     init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient()) {
         self.enabled = enabled; self.vault = vault; self.api = api
         do {
-            state = try vault.load()
+            state = try vault.load(); try state.deletion?.validate()
             if let challenge = state.challenge, Date().timeIntervalSince(challenge.created) >= 900 { state.challenge = nil; try vault.save(state) }
             if let session = state.session {
                 try session.validate()
                 if try NativeAccountProtocol.date(session.sessionExpiresAt) <= Date() {
-                    state = NativeAccountState(logoutToken: session.refreshToken); try vault.save(state)
+                    state = NativeAccountState(logoutToken: session.refreshToken, deletion: state.deletion); try vault.save(state)
                 }
             }
         } catch { storageReady = false; message = "This device's account storage is unavailable. Your local cookbook is unchanged." }
@@ -47,6 +48,7 @@ import Observation
     }
     func start(_ input: String, resend: Bool = false) async {
         await perform {
+            guard self.state.deletion?.receipt == nil else { throw NativeAccountError.invalid }
             try await self.flushLogout()
             let email = try NativeAccountProtocol.email(input)
             var next = self.state
@@ -88,6 +90,10 @@ import Observation
             do {
                 let bytes = try await self.api.call("/v1/auth/verify", body: body, access: nil)
                 let session = try JSONDecoder().decode(NativeAccountSession.self, from: bytes); try session.validate()
+                if let owner = self.state.deletion?.userId, owner != session.userId {
+                    _ = try? await self.api.call("/v1/auth/logout", body: ["refreshToken": session.refreshToken], access: nil)
+                    throw NativeAccountError.invalid
+                }
                 var next = self.state; next.session = session; next.challenge = nil; next.refreshOperation = nil; try self.save(next)
                 self.pendingLink = nil; self.message = "Signed in. Your local cookbook is unchanged."
             } catch NativeAccountError.status(401) {
@@ -97,23 +103,25 @@ import Observation
         }
     }
     /// Single-flight refresh; persist the operation before sending, including across app restarts.
-    func access(forceRefresh: Bool = false) async throws -> String {
+    func access(forceRefresh: Bool = false) async throws -> String { try await accountAccess(forceRefresh: forceRefresh) }
+    private func accountAccess(forceRefresh: Bool = false, forDeletion: Bool = false) async throws -> String {
         try requireReady()
+        guard state.deletion == nil || forDeletion else { throw NativeAccountError.status(401) }
         if let refreshTask { return try await refreshTask.value }
-        guard !busy, let session = state.session else { throw NativeAccountError.status(401) }
+        guard (!busy || forDeletion), let session = state.session else { throw NativeAccountError.status(401) }
         if !forceRefresh, state.refreshOperation == nil, try NativeAccountProtocol.date(session.accessExpiresAt).timeIntervalSinceNow > 30 { return session.accessToken }
         let task = Task { () throws -> String in
-            guard try NativeAccountProtocol.date(session.sessionExpiresAt) > Date() else { try self.save(NativeAccountState(logoutToken: session.refreshToken)); throw NativeAccountError.status(401) }
+            guard try NativeAccountProtocol.date(session.sessionExpiresAt) > Date() else { try self.save(NativeAccountState(logoutToken: session.refreshToken, deletion: self.state.deletion)); throw NativeAccountError.status(401) }
             var next = self.state; next.refreshOperation = next.refreshOperation ?? UUID().uuidString.lowercased(); try self.save(next)
             do {
                 let bytes = try await self.api.call("/v1/auth/refresh", body: ["refreshToken": session.refreshToken, "idempotencyId": self.state.refreshOperation!], access: nil)
                 let rotated = try JSONDecoder().decode(NativeAccountSession.self, from: bytes); try rotated.validate()
                 guard rotated.userId == session.userId else { throw NativeAccountError.invalid }
                 next = self.state; next.session = rotated; next.refreshOperation = nil; try self.save(next); return rotated.accessToken
-            } catch NativeAccountError.status(401) { try self.save(NativeAccountState()); throw NativeAccountError.status(401) }
+            } catch NativeAccountError.status(401) { try self.save(NativeAccountState(deletion: self.state.deletion)); throw NativeAccountError.status(401) }
         }
-        refreshTask = task; busy = true
-        defer { refreshTask = nil; busy = false }
+        let wasBusy = busy; refreshTask = task; busy = true
+        defer { refreshTask = nil; busy = wasBusy }
         return try await task.value
     }
     func checkSession() async {
@@ -126,16 +134,69 @@ import Observation
             let reply = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             guard reply?["id"] as? String == state.session?.userId else { throw NativeAccountError.invalid }
             message = "Your session is active."
-        } catch NativeAccountError.status(401) { try? save(NativeAccountState()); message = "Sign in again to reconnect. Your local cookbook is unchanged." }
+        } catch NativeAccountError.status(401) { try? save(NativeAccountState(deletion: state.deletion)); message = "Sign in again to reconnect. Your local cookbook is unchanged." }
         catch { message = "Couldn't reconnect. Your local cookbook is available offline." }
     }
     func signOut() async {
         await perform {
             // One atomic write removes credentials from the active account before network access.
-            try self.save(NativeAccountState(logoutToken: self.state.session?.refreshToken ?? self.state.logoutToken))
+            try self.save(NativeAccountState(logoutToken: self.state.session?.refreshToken ?? self.state.logoutToken, deletion: self.state.deletion))
             self.pendingLink = nil
             do { try await self.flushLogout(); self.message = "Signed out. Your local cookbook stays on this device." }
             catch { self.message = "Signed out on this device. Server sign-out will retry before your next sign-in." }
         }
     }
+    func requestDeletion() async {
+        guard !busy else { return }
+        await perform {
+            guard let user = self.state.session?.userId else { throw NativeAccountError.status(401) }
+            if let pending = self.state.deletion { guard pending.userId == user, pending.receipt == nil else { throw NativeAccountError.invalid } }
+            else {
+                var next = self.state
+                next.deletion = NativeDeletionRecord(userId: user, operationId: UUID().uuidString.lowercased(), verifier: try NativeAccountProtocol.verifier())
+                try self.save(next) // Exact proof and operation precede all deletion network access.
+            }
+            guard let record = self.state.deletion else { throw NativeAccountError.invalid }
+            let token = try await self.accountAccess(forDeletion: true)
+            let bytes: Data
+            do { bytes = try await self.api.call("/v1/me/deletion", body: record.request, access: token) }
+            catch NativeAccountError.status(401) {
+                let refreshed = try await self.accountAccess(forceRefresh: true, forDeletion: true)
+                guard self.state.session?.userId == record.userId else { throw NativeAccountError.invalid }
+                bytes = try await self.api.call("/v1/me/deletion", body: record.request, access: refreshed)
+            }
+            try self.acceptDeletion(bytes)
+        }
+        if state.deletion?.receipt == nil { message = "Deletion was not confirmed. Recover the request first, or retry the same request on this account. Your local journal stays available." }
+    }
+    private func acceptDeletion(_ bytes: Data) throws {
+        guard var record = state.deletion else { throw NativeAccountError.invalid }
+        let receipt = try JSONDecoder().decode(NativeDeletionReceipt.self, from: bytes); try receipt.validate()
+        if let previous = record.receipt { guard previous.deletionId == receipt.deletionId, previous.statusToken == receipt.statusToken else { throw NativeAccountError.invalid } }
+        record.receipt = receipt; record.userId = nil
+        if receipt.state == "complete" { record.verifier = nil }
+        try save(NativeAccountState(deletion: record)); pendingLink = nil
+        message = receipt.description
+    }
+    func recoverDeletion() async {
+        await perform {
+            guard let record = self.state.deletion, let verifier = record.verifier else { throw NativeAccountError.invalid }
+            try self.acceptDeletion(await self.api.call("/v1/deletion/recover", body: ["operationId": record.operationId, "verifier": verifier], access: nil))
+        }
+    }
+    func checkDeletion() async {
+        await perform {
+            guard let receipt = self.state.deletion?.receipt else { throw NativeAccountError.invalid }
+            let bytes = try await self.api.call("/v1/deletion/status", body: ["deletionId": receipt.deletionId, "statusToken": receipt.statusToken], access: nil)
+            guard let result = try JSONSerialization.jsonObject(with: bytes) as? [String: String], result["deletionId"] == receipt.deletionId, let status = result["state"] else { throw NativeAccountError.invalid }
+            var next = receipt; next.state = status; try next.validate()
+            try self.acceptDeletion(JSONEncoder().encode(next))
+        }
+    }
+    func dismissCompletedDeletion() {
+        guard !busy, state.deletion?.receipt?.state == "complete" else { return }
+        do { try save(NativeAccountState()); message = "Account deletion is complete. Your local journal stays on this device." }
+        catch { message = "This device could not clear its recovery record. Try again." }
+    }
+
 }

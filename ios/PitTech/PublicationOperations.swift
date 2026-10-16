@@ -15,9 +15,10 @@ struct NativePublicationReceipt: Codable, Equatable, Sendable {
     let revision: Int
     let url: String
     var kind: String? = nil
+    var status: String? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0,
-              url == "https://pittech.app/c/" + id, kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true else { throw NativePublicationError.invalid }
+              url == "https://pittech.app/c/" + id, (kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true), (status.map({ ["active", "pending_review"].contains($0) }) ?? true) else { throw NativePublicationError.invalid }
     }
 }
 struct NativePublicationOperation: Codable {

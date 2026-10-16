@@ -56,3 +56,20 @@ transport; this draft must not advertise a complete Phase 2 release.
 Storage protocol references: [AWS conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html), [Railway bucket compatibility](https://docs.railway.com/storage-buckets#s3-compatibility). Railway currently documents no object versioning; conditional-write behavior and the versioning API still require a staging integration check. Do not infer provider conformance from an S3-compatible label. Never roll back to an unconditional publication writer while cleanup is running. Markers carry no authored payload, owner or email; provider-created metadata requires operational retention review, and their random keys must not be reused or garbage-collected without proving every old writer is fenced. Provider metadata charges/retention remain an operational review gate.
 
 Runtime wiring: `ACCOUNT_LIFECYCLE_ENABLED` requires authentication, separate lifecycle hash/encryption keys and `LIFECYCLE_DATABASE_URL` with only the lifecycle runtime grants. Public API startup additionally requires the lifecycle instance and the existing moderation/deletion readiness gates. Production always uses review-required publishing. `/delete-account` uses nonce-restricted same-origin script, explicit email-code verification and a typed confirmation; browser access tokens remain in memory, while session storage holds only proof/receipt capabilities. GET never mutates account state. The UI and native flows still require visual and Actions evidence.
+
+Native deletion work now includes device-only persisted proof/receipt state, exact
+account-bound retries, one refresh on 401, anonymous recovery/status after session
+revocation, and a typed in-app confirmation on both platforms. Deletion blocks
+further publishing access, and recovery survives sign-out/restart. The journal and
+local recording are untouched by these account operations. Both clients display
+pending publication/profile review rather than claiming immediate publication.
+Native unit tests cover interrupted responses, restart recovery, failed local saves, malformed receipts and same-body 401 retries. Both UI suites now exercise typed confirmation, recovery and progress at their required text sizes; these new tests are not yet verified in Actions. The
+separate local-journal removal option, native reports/blocks, account-scoped outbox
+cleanup and all lifecycle visual paths remain open gates.
+
+The first database Actions run found an unnecessary user row lock requiring a
+privilege absent from the cleanup role; the account advisory lock supplies the
+required serialization. The second run completed original/private/media purge and
+survivor checks, then hit a test-only expired access token after advancing the
+clock. The survivor assertion now refreshes that separate user's session. A green
+full database/container run is still required.

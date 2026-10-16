@@ -31,10 +31,10 @@ internal class AccountPublicationSession(private val account: AccountManager): P
     override suspend fun access(forceRefresh: Boolean) = account.access(forceRefresh)
 }
 internal fun publicationUuid(value: String) = value.matches(Regex("[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"))
-internal data class PublicationReceipt(val id: String, val revisionId: String, val revision: Int, val url: String, val kind: String? = null) {
-    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "https://pittech.app/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt"))) }
-    fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL)
-    companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind")).also { it.validate() } }
+internal data class PublicationReceipt(val id: String, val revisionId: String, val revision: Int, val url: String, val kind: String? = null, val status: String? = null) {
+    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "https://pittech.app/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt")) && (status==null || status in setOf("active","pending_review"))) }
+    fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL).put("status",status ?: JSONObject.NULL)
+    companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind"),if(o.isNull("status"))null else o.getString("status")).also { it.validate() } }
 }
 internal data class PublicationOperation(val id: String, val userId: String, val method: String, val path: String, val contentType: String, val sha256: String, val bytes: Int, val expectedRevision: String? = null, val draftId: String? = null, val rejected: Boolean = false, val publicationKind: String? = null, val termsVersion: String? = null) {
     fun validate() {

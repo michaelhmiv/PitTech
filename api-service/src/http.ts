@@ -52,8 +52,8 @@ export function makeServer(relay: Relay, options: Options) {
         res.setHeader('X-Robots-Tag', 'noindex, nofollow');
         res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PitTech sign in</title><h1>Sign in to PitTech</h1><p>Open PitTech on the device where you requested this email. If the app did not open, enter the six-digit code from your email there.</p><p>This page does not sign you in or use your link. Your local library is unchanged.</p></html>'); return;
       }
-      if(req.url==='/delete-account'&&method==='GET'&&options.deletion){
-        route='/delete-account';const nonce=randomBytes(16).toString('hex');
+      if(['/account/delete','/delete-account'].includes(req.url??'')&&method==='GET'&&options.deletion){
+        route='/account/delete';const nonce=randomBytes(16).toString('hex');
         res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('X-Robots-Tag','noindex, nofollow');
         res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
         res.end(deletionPage(nonce));return;

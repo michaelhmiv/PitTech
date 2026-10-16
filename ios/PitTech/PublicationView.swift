@@ -41,9 +41,9 @@ struct NativePublicationView: View {
                         Button("Discard rejected request", role: .destructive) { run { if let user = account.stateUserId { try writer?.store.discardRejected(user) }; prepared = nil; try refreshPending() } }.disabled(busy)
                     }
                 } else if let published {
-                    Text("Published").font(.title2.bold()).accessibilityIdentifier("publication-complete")
-                    Link("Open public recipe", destination: URL(string: published.url)!)
-                    ShareLink("Share public link", item: URL(string: published.url)!)
+                    Text(published.status == "pending_review" ? "Submitted for review" : "Published").font(.title2.bold()).accessibilityIdentifier("publication-complete")
+                    if published.status == "pending_review" { Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.") }
+                    else { Link("Open public recipe", destination: URL(string: published.url)!); ShareLink("Share public link", item: URL(string: published.url)!) }
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
                     Picker("Publication", selection: $kind) { Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt") }.disabled(busy)
@@ -100,7 +100,7 @@ struct NativePublicationView: View {
             let bytes = try await writer.read("/v1/me/recipes/" + old.id)
             guard let current = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], current["id"] as? String == old.id,
                   let revision = current["revision"] as? Int, let revisionId = current["revisionId"] as? String,
-                  let status = current["status"] as? String, ["active", "unpublished"].contains(status) else { throw NativePublicationError.invalid }
+                  let status = current["status"] as? String, ["active", "pending_review", "unpublished"].contains(status) else { throw NativePublicationError.invalid }
             if let context, context.receipt.revisionId != revisionId { throw NativePublicError.status(409) }
             let receipt = NativePublicationReceipt(id: old.id, revisionId: revisionId, revision: revision, url: old.url); try receipt.validate(); linked = receipt
             updateSummary = status == "unpublished" ? "This publication is currently removed. Publishing this preview will make it public again." : "This preview will replace public revision \(revision)."
