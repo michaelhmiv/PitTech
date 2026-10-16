@@ -170,3 +170,10 @@ bounded 50-minute test step, records the native console log and uploads only a
 finalized, closed xcresult ZIP; a fresh complete run remains required.
 Both actual owned-update writers pass canonical backend validation, retained as
 `native-owned-update-android-v1.json` and `native-owned-update-ios-v1.json`.
+
+Native iOS Date values can carry fractional milliseconds. Public projection now
+rounds relative offsets to the contract's whole-millisecond precision, leaving
+private timestamps and measurements untouched. The actual-cook acceptance case
+uses explicit fractional source timestamps and checks the projected offset. Both
+source-review parsers also bound offsets before formatting, preventing an invalid
+remote value from overflowing a duration label. Fresh native verification is open.

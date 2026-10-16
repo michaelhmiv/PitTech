@@ -15,7 +15,7 @@ internal object SourceUpdateComparison {
         fun step(row: JSONObject,shared: Boolean): String {
             val fields=listOf(text(row,"title",160),text(row,"details",2000),text(row,"method",160),text(row,"action",80)).filter { it.isNotEmpty() }.toMutableList()
             val key=if(shared)"suggestedOffsetMillis" else "offsetMillis"
-            if(!row.isNull(key)) { val value=row.getDouble(key);require(value.isFinite() && value==row.getLong(key).toDouble());fields+="Suggested offset · "+com.pittech.domain.RecipeReferenceTimeline.relativeLabel(row.getLong(key)) }
+            if(!row.isNull(key)) { val value=row.getDouble(key);require(value.isFinite() && value==row.getLong(key).toDouble() && row.getLong(key) in -604800000L..2592000000L);fields+="Suggested offset · "+com.pittech.domain.RecipeReferenceTimeline.relativeLabel(row.getLong(key)) }
             return fields.joinToString(" · ")
         }
         val encoded=JSONObject(RecipeSnapshotCodec.encode(snapshot))

@@ -13,6 +13,8 @@ class SourceUpdateComparisonTest {
         assertTrue(sections[1].saved[0].contains("Wrap"));assertTrue(sections[1].shared[0].contains("Finish"))
         val malformed=JSONObject(shared.toString());malformed.getJSONArray("ingredients").getJSONObject(0).put("name","x".repeat(161))
         assertThrows(IllegalArgumentException::class.java) { SourceUpdateComparison.sections(snapshot,malformed) }
+        val hugeOffset=JSONObject(shared.toString());hugeOffset.getJSONArray("instructions").getJSONObject(0).put("suggestedOffsetMillis",Long.MAX_VALUE)
+        assertThrows(IllegalArgumentException::class.java) { SourceUpdateComparison.sections(snapshot,hugeOffset) }
         assertEquals("Wrap",snapshot.instructions.first().title)
     }
 }
