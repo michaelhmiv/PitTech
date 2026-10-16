@@ -94,7 +94,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
 
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
-    implementation("com.google.zxing:core:3.5.4")
+    // Pinned to the verified earlier Maven Central release after the clean public-artifact
+    // audit could not resolve 3.5.4; release artifact auditing must prove this pin.
+    implementation("com.google.zxing:core:3.5.3")
 
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
