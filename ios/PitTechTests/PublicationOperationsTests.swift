@@ -15,6 +15,17 @@ import XCTest
             catch { XCTAssertNotEqual(status, 200); XCTAssertFalse(error.localizedDescription.contains("private-provider-diagnostic")) }
         }
     }
+    func testOwnerArchiveDownloadPinsRevisionChecksSizeAndHashAndCleansRejectedDownloads() async throws {
+        let root = directory(); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
+        for mode in [200, 302, 401, 409, 998, 999] {
+            let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [OwnerArchiveURLProtocol.self]; configuration.httpAdditionalHeaders = ["X-Owner-Test": String(mode)]
+            let file = root.appendingPathComponent("download")
+            do {
+                _ = try await NativePublicationClient(configuration: configuration).archive("dddddddd-dddd-4ddd-dddd-dddddddddddd", revision: "eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee", to: file, access: String(repeating: "A", count: 43))
+                XCTAssertEqual(mode, 200); XCTAssertEqual(try Data(contentsOf: file), Data("owner bytes".utf8)); try FileManager.default.removeItem(at: file)
+            } catch { XCTAssertNotEqual(mode, 200); XCTAssertFalse(FileManager.default.fileExists(atPath: file.path)); XCTAssertFalse(error.localizedDescription.contains("private-provider-diagnostic")) }
+        }
+    }
     func testLostResponseRecoversIdenticalBodyAndOperationAfterRestartWithoutDuplicatePublication() async throws {
         let root = directory(); defer { try? FileManager.default.removeItem(at: root) }
         let store = NativePublicationOperationsStore(directory: root), session = PublicationTestSession(user), api = PublicationTestAPI()
@@ -64,7 +75,15 @@ import XCTest
         XCTAssertEqual(try store.pending(user)?.id, malformed.id); XCTAssertEqual(try store.pending(user)?.rejected, false); XCTAssertThrowsError(try store.discardRejected(user))
         api.readStatuses = [401]; session.refreshes = []
         _ = try await NativePublicationWriter(session: session, store: store, api: api).read("/v1/me/profile")
-        XCTAssertEqual(api.reads, 2); XCTAssertEqual(session.refreshes, [false, true]); XCTAssertEqual(try store.pending(user)?.id, malformed.id)
+        api.archiveStatuses = [401]; session.refreshes = []
+        let download = root.appendingPathComponent("owner.zip"), writer = NativePublicationWriter(session: session, store: store, api: api)
+        _ = try await writer.ownedArchive(api.receipt, to: download)
+        XCTAssertEqual(api.archives, 2); XCTAssertEqual(session.refreshes, [false, true]); XCTAssertEqual(try Data(contentsOf: download), Data("owner bytes".utf8))
+        api.onArchive = { session.publicationUserId = "cccccccc-cccc-4ccc-cccc-cccccccccccc" }
+        do { _ = try await writer.ownedArchive(api.receipt, to: download); XCTFail("Changed account received owner bytes") } catch { }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: download.path))
+        session.publicationUserId = user; session.onAccess = nil
+        XCTAssertEqual(api.reads, 2); XCTAssertEqual(try store.pending(user)?.id, malformed.id)
     }
 }
 @MainActor private final class PublicationTestSession: NativePublicationSession {
@@ -79,6 +98,13 @@ private final class PublicationTestAPI: NativePublicationAPI {
     var operations: [String] = [], bodies: [Data] = [], effects = Set<String>(), statuses: [Int] = []
     var loseResponse = false
     var readStatuses: [Int] = [], reads = 0
+    var archiveStatuses: [Int] = [], archives = 0
+    var onArchive: (() -> Void)?
+    func archive(_ id: String, revision: String, to: URL, access: String) async throws -> URL {
+        archives += 1; XCTAssertEqual(id, receipt.id); XCTAssertEqual(revision, receipt.revisionId)
+        if !archiveStatuses.isEmpty { throw NativePublicError.status(archiveStatuses.removeFirst()) }
+        try Data("owner bytes".utf8).write(to: to); onArchive?(); return to
+    }
     func read(_ path: String, access: String) async throws -> Data { reads += 1; if !readStatuses.isEmpty { throw NativePublicError.status(readStatuses.removeFirst()) }; return Data("{}".utf8) }
     func write(_ operation: NativePublicationOperation, file: URL, access: String) async throws -> Data {
         operations.append(operation.id); bodies.append(try Data(contentsOf: file))
@@ -101,6 +127,20 @@ private final class PublicationURLProtocol: URLProtocol, @unchecked Sendable {
         let status = Int(request.value(forHTTPHeaderField: "X-Publication-Test") ?? "401") ?? 401
         let bytes = status == 999 ? Data(repeating: 120, count: 8193) : Data((status == 200 ? "{}" : "private-provider-diagnostic").utf8)
         let response = HTTPURLResponse(url: request.url!, statusCode: status == 999 ? 200 : status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json", "Set-Cookie": "sensitive=discard", "Location": "https://attacker.invalid/"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed); client?.urlProtocol(self, didLoad: bytes); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() { }
+}
+
+private final class OwnerArchiveURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "api.pittech.app" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        XCTAssertEqual(request.url?.absoluteString, "https://api.pittech.app/v1/me/recipes/dddddddd-dddd-4ddd-dddd-dddddddddddd/archive")
+        XCTAssertEqual(request.httpMethod, "GET"); XCTAssertEqual(request.value(forHTTPHeaderField: "If-Match"), "eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "A", count: 43)); XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        let mode = Int(request.value(forHTTPHeaderField: "X-Owner-Test") ?? "401") ?? 401, bytes = Data("owner bytes".utf8)
+        let response = HTTPURLResponse(url: request.url!, statusCode: mode > 900 ? 200 : mode, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/zip", "Content-Length": mode == 998 ? "67108865" : String(bytes.count), "X-Content-SHA256": mode == 999 ? String(repeating: "0", count: 64) : NativeRelayProtocol.hash(bytes), "Location": "https://attacker.invalid/"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed); client?.urlProtocol(self, didLoad: bytes); client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() { }

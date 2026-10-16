@@ -71,7 +71,7 @@ struct NativePublicationView: View {
             .task(id: account.stateUserId) {
                 if writer == nil { writer = NativePublicationWriter.forApp(session: account) }
                 prepared = nil; reviewed = false; published = nil
-                do { try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
+                do { identity = (try? store.sharingDocument(draft).identityMode) ?? "anonymous"; try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
             }
             .onChange(of: identity) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
@@ -90,7 +90,9 @@ struct NativePublicationView: View {
         displayName = identity == "anonymous" ? "a PitTech cook" : (profile?["displayName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "a PitTech cook"
         var document = try store.sharingDocument(draft); document.identityMode = identity
         try store.saveSharingDraft(draft, document: document, expectedUpdated: store.sharingRecord(draft)?["updated"]?.numberValue ?? 0)
-        let value = try await store.preparePublication(draft, kind: kind)
+        let context: NativePublicationEditContext?
+        if updating && linked != nil { context = try writer.editContext(draft) } else { context = nil }
+        let value = try await store.preparePublication(draft, kind: kind, editContext: context)
         guard account.stateUserId == user else { throw NativePublicationError.accountChanged }
         linked = try writer.binding(draft); updateSummary = nil
         if let old = linked, updating {
@@ -98,6 +100,7 @@ struct NativePublicationView: View {
             guard let current = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], current["id"] as? String == old.id,
                   let revision = current["revision"] as? Int, let revisionId = current["revisionId"] as? String,
                   let status = current["status"] as? String, ["active", "unpublished"].contains(status) else { throw NativePublicationError.invalid }
+            if let context, context.receipt.revisionId != revisionId { throw NativePublicError.status(409) }
             let receipt = NativePublicationReceipt(id: old.id, revisionId: revisionId, revision: revision, url: old.url); try receipt.validate(); linked = receipt
             updateSummary = status == "unpublished" ? "This publication is currently removed. Publishing this preview will make it public again." : "This preview will replace public revision \(revision)."
         }

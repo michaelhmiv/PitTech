@@ -70,6 +70,15 @@ import java.util.UUID
             compose.onNodeWithTag("cookbook-unpublish-confirm").performClick()
             compose.waitUntil(10000) { api.writes==4 && compose.onAllNodesWithText("Removed from public access").fetchSemanticsNodes().isNotEmpty() }
             assertTrue(api.profile.getBoolean("isPublic")); assertEquals("unpublished",api.item!!.getString("status"))
+            compose.onNodeWithTag("cookbook-edit-dddddddd-dddd-4ddd-dddd-dddddddddddd").performScrollTo().performClick()
+            waitFor("cookbook-create-editing-draft"); compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo(); screenshot("publication-owner-edit-preview")
+            compose.onNodeWithTag("cookbook-create-editing-draft").performClick();waitFor("sharing-title")
+            compose.onNodeWithTag("sharing-title").performScrollTo().performTextReplacement("Owner revised title")
+            compose.onNodeWithTag("sharing-publish").performScrollTo().performClick();waitFor("publication-prepare")
+            compose.onNodeWithTag("publication-prepare").performScrollTo().performClick();waitFor("publication-confirm")
+            compose.onNodeWithTag("publication-confirm").performScrollTo().assertTextEquals("Publish this update").assertIsNotEnabled();screenshot("publication-owner-update-preview")
+            compose.onNodeWithTag("publication-reviewed").performScrollTo().performClick();compose.onNodeWithTag("publication-confirm").performScrollTo().performClick();waitFor("publication-complete")
+            assertEquals(5,api.writes);assertEquals(3,api.item!!.getInt("revision"));assertEquals("Owner revised title",api.item!!.getString("title"));assertEquals("active",api.item!!.getString("status"))
             assertEquals("anonymous",api.item!!.getString("identityMode")); assertTrue(runBlocking(Dispatchers.IO) { database.cookDao().getAllCooks().isEmpty() })
         } finally { scope.cancel(); runBlocking(Dispatchers.IO) { database.recipeDao().assets().forEach { storage.delete(it.relativeFilePath) }; database.companionDao().photos().forEach { storage.delete(it.relativePath) } }; database.close(); root.deleteRecursively() }
     }
@@ -79,8 +88,12 @@ import java.util.UUID
         @Volatile var writes=0
         var profile=JSONObject().put("handle",JSONObject.NULL).put("displayName","").put("isPublic",false)
         var item: JSONObject?=null
+        var archiveBytes: ByteArray?=null
         private val replies=mutableMapOf<String,JSONObject>()
         override suspend fun read(path: String, access: String): JSONObject = if(path=="/v1/me/profile")JSONObject(profile.toString()) else if(path.startsWith("/v1/me/recipes/"))JSONObject(checkNotNull(item).toString()) else JSONObject().put("items",org.json.JSONArray(item?.let { listOf(it) } ?: emptyList<JSONObject>())).put("nextCursor",JSONObject.NULL)
+        override suspend fun archive(id: String,revision: String,to: File,access: String): File {
+            require(item!!.getString("id")==id && item!!.getString("revisionId")==revision);to.writeBytes(checkNotNull(archiveBytes));return to
+        }
         override suspend fun write(operation: PublicationOperation,file: File,access: String): JSONObject {
             replies[operation.id]?.let { return it }
             val response=if(operation.contentType=="application/zip") {
@@ -88,6 +101,7 @@ import java.util.UUID
                 if(item!=null) { require(operation.method=="PUT" && operation.expectedRevision==item!!.getString("revisionId")); require(operation.path=="/v1/recipes/"+item!!.getString("id")) }
                 val number=(item?.getInt("revision") ?: 0)+1; val id="dddddddd-dddd-4ddd-dddd-dddddddddddd"; val revision=UUID.randomUUID().toString()
                 item=JSONObject().put("id",id).put("revisionId",revision).put("revision",number).put("title",preview.payload.getString("title")).put("identityMode",preview.payload.getString("identityMode")).put("status","active")
+                archiveBytes=file.readBytes()
                 PublicationReceipt(id,revision,number,"https://pittech.app/c/$id").json()
             } else if(operation.path=="/v1/me/profile") { profile=JSONObject(file.readText()); JSONObject(profile.toString()) }
             else { item!!.put("status","unpublished"); JSONObject().put("id",item!!.getString("id")).put("unpublished",true) }

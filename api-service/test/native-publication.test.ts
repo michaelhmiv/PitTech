@@ -4,8 +4,9 @@ import { readFile } from 'node:fs/promises';
 import { digest } from '../src/core.ts';
 import { canonicalPublication } from '../src/publication-pack.ts';
 
-test('actual Android Actions publication archive passes canonical validation and retains the selected frozen public story',async()=>{
-  const fixture=JSON.parse(await readFile(new URL('../../contracts/fixtures/native-publication-android-v1.json',import.meta.url),'utf8'));
+for(const platform of ['android','ios'])test(`actual ${platform} Actions publication archive passes canonical validation and retains the selected frozen public story`,async()=>{
+  const source=await readFile(new URL(`../../contracts/fixtures/native-publication-${platform}-v1.json`,import.meta.url),'utf8');if(platform==='android')assert.equal(source,await readFile(new URL('../../app/src/androidTest/assets/native-publication-android-v1.json',import.meta.url),'utf8'));
+  const fixture=JSON.parse(source);
   const server=JSON.parse(await readFile(new URL('../../contracts/fixtures/public-native-v1.json',import.meta.url),'utf8'));
   const bytes=Buffer.from(fixture.archiveBase64,'base64');assert.equal(digest(bytes),fixture.archiveSha256);
   const result=await canonicalPublication(bytes);assert.equal(result.sha256,fixture.canonicalSha256);

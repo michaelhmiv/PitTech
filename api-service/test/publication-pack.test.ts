@@ -35,7 +35,7 @@ test('publication validation rejects private backups, dangling media/channels, d
   await assert.rejects(readZip(accepted.bytes));
 });
 test('public routes bound accepted shapes and keep dynamic IDs out of operational route labels',()=>{
-  const id=randomUUID();assert.equal(publicationRoute(`/v1/me/recipes/${id}`,'GET'),'/v1/me/recipes/:id');assert.equal(publicationRoute(`/v1/me/recipes/${id}`,'PUT'),undefined);assert.equal(publicationRoute(`/v1/me/recipes/${id}?owner=secret`,'GET'),undefined);assert.equal(publicationRoute(`/v1/recipes/${id}`,'GET'),'/v1/recipes/:id');
+  const id=randomUUID();assert.equal(publicationRoute(`/v1/me/recipes/${id}/archive`,'GET'),'/v1/me/recipes/:id/archive');assert.equal(publicationRoute(`/v1/me/recipes/${id}/archive`,'POST'),undefined);assert.equal(publicationRoute(`/v1/me/recipes/${id}`,'GET'),'/v1/me/recipes/:id');assert.equal(publicationRoute(`/v1/me/recipes/${id}`,'PUT'),undefined);assert.equal(publicationRoute(`/v1/me/recipes/${id}?owner=secret`,'GET'),undefined);assert.equal(publicationRoute(`/v1/recipes/${id}`,'GET'),'/v1/recipes/:id');
   assert.equal(publicationRoute(`/v1/recipes/${id}/assets/${randomUUID()}`,'GET'),'/v1/recipes/:id/assets/:assetId');
   assert.equal(publicationRoute('/v1/discover?sort=liked&q=private-search','GET'),'/v1/discover');
   for(const path of ['/v1/sync','/v1/recipes/../../auth','/v1/profiles/a%2fb',`/v1/recipes/${id}?owner=secret`])assert.equal(publicationRoute(path,'GET'),undefined);

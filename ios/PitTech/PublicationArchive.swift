@@ -106,7 +106,7 @@ enum NativePublicationProjection {
         try document.validate(); let selected = document.entries.filter(\.included)
         guard (1...20).contains(selected.count), ["recipe", "collection", "attempt"].contains(kind), kind != "recipe" || selected.count == 1,
               kind != "attempt" || document.sourceCookId != nil && selected.count == 1 && selected[0].includeStory else { throw NativePublicationError.invalid }
-        var attachments: [String: Data] = [:], publicPhotos: [String: Data] = [:], recipes: [JSONValue] = [], expanded = 0
+        var publicPhotos: [String: Data] = [:], recipes: [JSONValue] = [], expanded = 0
         for entry in selected {
             try Task.checkCancellation(); let snapshot = try entry.snapshot
             let setup = snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue ?? [:]
@@ -131,7 +131,7 @@ enum NativePublicationProjection {
                 let assetId = id("photo:" + photoId), path = "attachments/" + assetId + ".jpg"
                 let bytes = try NativeCookPackPhoto.derivative(Data(contentsOf: photo.url)); expanded += bytes.count
                 guard expanded <= 64 * 1024 * 1024 else { throw NativePublicationError.limits }
-                attachments[path] = bytes; publicPhotos[assetId] = bytes
+                publicPhotos[assetId] = bytes
                 assets.append(.object(["id": .string(assetId), "path": .string(path), "mimeType": .string("image/jpeg"), "sha256": .string(NativeRelayProtocol.hash(bytes)), "caption": try text(photo.caption, 2000)]))
             }
             recipes.append(.object(["id": .string(id("recipe:" + entry.id)), "revisionId": .string(id("revision:" + entry.id + ":" + String(Int64(updated)))),
@@ -146,27 +146,43 @@ enum NativePublicationProjection {
         let payload: JSONValue = .object(["contractVersion": .number(1), "kind": .string(kind), "identityMode": .string(document.identityMode), "title": try text(document.title, 160), "recipes": .array(recipes),
             "source": source(commonSource), "measuredAttemptId": kind == "attempt" ? recipes[0].objectValue?["story"]?.objectValue?["attemptId"] ?? .null : .null,
             "heroAssetId": document.heroPhotoId.map { .string(id("photo:" + $0)) } ?? .null])
+        return try package(payload, photos: publicPhotos)
+    }
+    static func package(_ payload: JSONValue, photos: [String: Data]) throws -> NativePreparedPublication {
+        guard let recipes = payload.objectValue?["recipes"]?.arrayValue, (1...20).contains(recipes.count) else { throw NativePublicationError.invalid }
+        var attachments: [String: Data] = [:], ids = Set<String>()
+        for recipe in recipes {
+            for asset in recipe.objectValue?["assets"]?.arrayValue ?? [] {
+                guard let row = asset.objectValue, let id = row["id"]?.stringValue, UUID(uuidString: id) != nil, ids.insert(id).inserted,
+                      row["path"]?.stringValue == "attachments/" + id + ".jpg", row["mimeType"]?.stringValue == "image/jpeg", let bytes = photos[id],
+                      bytes.count <= 16 * 1024 * 1024, NativeRelayProtocol.hash(bytes) == row["sha256"]?.stringValue else { throw NativePublicationError.invalid }
+                attachments["attachments/" + id + ".jpg"] = bytes
+            }
+        }
+        guard ids == Set(photos.keys) else { throw NativePublicationError.invalid }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let json = try encoder.encode(payload); expanded += json.count
-        guard json.count <= 8 * 1024 * 1024, expanded <= 64 * 1024 * 1024, attachments.count + 1 <= 1000 else { throw NativePublicationError.limits }
+        let json = try encoder.encode(payload)
+        guard json.count <= 8 * 1024 * 1024, json.count + photos.values.reduce(0, { $0 + $1.count }) <= 64 * 1024 * 1024, attachments.count + 1 <= 1000 else { throw NativePublicationError.limits }
         let archive = try Archive(accessMode: .create)
         for (path, bytes) in ["publication.json": json].merging(attachments, uniquingKeysWith: { a, _ in a }).sorted(by: { $0.key < $1.key }) {
-            guard bytes.count <= 16 * 1024 * 1024 else { throw NativePublicationError.limits }
             try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(bytes.count), compressionMethod: .deflate) { at, size in bytes.subdata(in: Int(at)..<(Int(at) + size)) }
         }
         guard let bytes = archive.data, bytes.count <= 64 * 1024 * 1024 else { throw NativePublicationError.limits }
-        return NativePreparedPublication(payload: payload, bytes: bytes, photos: publicPhotos)
+        return NativePreparedPublication(payload: payload, bytes: bytes, photos: photos)
     }
     private static func rowString(_ row: JSONValue, _ key: String) -> String { row.objectValue?[key]?.stringValue ?? "" }
 }
 @MainActor extension CookStore {
-    func preparePublication(_ id: String, kind: String) async throws -> NativePreparedPublication {
+    func preparePublication(_ id: String, kind: String, editContext: NativePublicationEditContext? = nil) async throws -> NativePreparedPublication {
         let document = try sharingDocument(id), updated = sharingRecord(id)?["updated"]?.numberValue ?? 0
         let photos = try sharingPhotos(id).map { row -> NativePublicationPhoto in
             guard let id = row["id"]?.stringValue, let entry = row["action"]?.stringValue, let path = row["archivePath"]?.stringValue else { throw NativePublicationError.invalid }
             return NativePublicationPhoto(id: id, entryId: entry, url: photoURL(path), caption: row["caption"]?.stringValue ?? "")
         }
-        let task = Task.detached(priority: .userInitiated) { try NativePublicationProjection.build(document, updated: updated, photos: photos, kind: kind) }
+        let task = Task.detached(priority: .userInitiated) {
+            let projected = try NativePublicationProjection.build(document, updated: updated, photos: photos, kind: kind == "attempt" && editContext?.receipt.kind == "attempt" ? "recipe" : kind)
+            return try editContext?.apply(projected, document: document, kind: kind) ?? projected
+        }
         return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
 }
@@ -189,8 +205,9 @@ extension NativePreparedPublication {
         for recipe in recipes {
             for asset in recipe.objectValue?["assets"]?.arrayValue ?? [] {
                 guard let row = asset.objectValue, let id = row["id"]?.stringValue, UUID(uuidString: id) != nil,
-                      row["path"]?.stringValue == "attachments/" + id + ".jpg" else { throw NativePublicationError.invalid }
-                let bytes = try read("attachments/" + id + ".jpg", limit: 16 * 1024 * 1024)
+                      let mime = row["mimeType"]?.stringValue, let suffix = ["image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"][mime],
+                      row["path"]?.stringValue == "attachments/" + id + "." + suffix else { throw NativePublicationError.invalid }
+                let bytes = try read("attachments/" + id + "." + suffix, limit: 16 * 1024 * 1024)
                 guard NativeRelayProtocol.hash(bytes) == row["sha256"]?.stringValue else { throw NativePublicationError.invalid }; photos[id] = bytes
             }
         }

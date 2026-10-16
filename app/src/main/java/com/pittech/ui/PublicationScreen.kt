@@ -40,7 +40,7 @@ import org.json.JSONObject
         if(busy)return; busy=true; message=null
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. The exact request stays saved."; try { refreshPending() } catch(_: Exception) { } } finally { busy=false } }
     }
-    LaunchedEffect(state.signedIn) { invalidate(); published=null; try { refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message } }
+    LaunchedEffect(state.signedIn) { invalidate(); published=null; try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message } }
     ModalBottomSheet(onDismissRequest={ if(!busy)onClose() }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth()) { Text("Publish preview",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
@@ -75,10 +75,12 @@ import org.json.JSONObject
                         invalidate(); val user=checkNotNull(account.publicationUserId()); val profile=writer.read("/v1/me/profile")
                         displayName=if(identity=="anonymous")"a PitTech cook" else profile.optString("displayName").ifBlank { "a PitTech cook" }
                         withContext(Dispatchers.IO) { val row=checkNotNull(viewModel.sharing.get(draft)); val document=SharingDraftCodec.decode(row.payload).copy(identityMode=identity); viewModel.sharing.save(draft,document,row.updatedAtUtcMillis) }
-                        val value=viewModel.sharing.preparePublication(draft,kind); check(account.publicationUserId()==user)
+                        val context=if(updating && linked!=null)writer.editContext(draft) else null
+                        val value=viewModel.sharing.preparePublication(draft,kind,context); check(account.publicationUserId()==user)
                         linked=writer.binding(draft); updateSummary=null
                         linked?.takeIf { updating }?.let { old ->
                             val current=writer.read("/v1/me/recipes/"+old.id); require(current.getString("id")==old.id && current.getString("status") in setOf("active","unpublished")) { "This publication is unavailable for updates. Your private draft stays on this device." }
+                            if(context!=null && context.receipt.revisionId!=current.getString("revisionId"))throw AccountFailure(409)
                             linked=PublicationReceipt(old.id,current.getString("revisionId"),current.getInt("revision"),old.url).also { it.validate() }
                             updateSummary=if(current.getString("status")=="unpublished")"This publication is currently removed. Publishing this preview will make it public again." else "This preview will replace public revision ${current.getInt("revision")}."
                         }

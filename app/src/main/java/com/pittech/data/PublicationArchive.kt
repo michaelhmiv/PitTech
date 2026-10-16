@@ -75,7 +75,7 @@ internal object PublicationProjection {
         SharingDraftCodec.validate(document);val selected=document.entries.filter { it.included }
         require(selected.size in 1..20 && kind in setOf("recipe","collection","attempt") && (kind!="recipe" || selected.size==1))
         require(kind!="attempt" || document.sourceCookId!=null && selected.size==1 && selected.single().includeStory)
-        val attachments=linkedMapOf<String,ByteArray>();val images=linkedMapOf<String,ByteArray>();var expanded=0L
+        val images=linkedMapOf<String,ByteArray>();var expanded=0L
         val recipes=selected.map { entry->
             val snapshot=entry.snapshot;val setup=JSONObject(RecipeSnapshotCodec.encode(snapshot)).getJSONObject("draft").getJSONArray("dishes").getJSONObject(0)
             val unit=setup.optString("weightUnit","lb");val weight=setup.optString("weight").toDoubleOrNull()
@@ -90,7 +90,7 @@ internal object PublicationProjection {
             val assets=entry.photoIds.map { photoId->
                 val photo=photos.firstOrNull { it.id==photoId && it.entryId==entry.id } ?: error("A selected photo is unavailable. Your draft is unchanged.")
                 val assetId=id("photo:$photoId");val path="attachments/$assetId.jpg";val bytes=CookPackPhoto.derivative(photo.bytes);expanded+=bytes.size
-                require(expanded<=64*1024*1024);attachments[path]=bytes;images[assetId]=bytes
+                require(expanded<=64*1024*1024);images[assetId]=bytes
                 JSONObject().put("id",assetId).put("path",path).put("mimeType","image/jpeg").put("sha256",RelayProtocol.hash(bytes)).put("caption",text(photo.caption,2000))
             }
             JSONObject().put("id",id("recipe:"+entry.id)).put("revisionId",id("revision:${entry.id}:$updated")).put("title",text(snapshot.name,160))
@@ -103,21 +103,36 @@ internal object PublicationProjection {
         val payload=JSONObject().put("contractVersion",1).put("kind",kind).put("identityMode",document.identityMode).put("title",text(document.title,160))
             .put("recipes",JSONArray(recipes)).put("source",source(common)).put("measuredAttemptId",if(kind=="attempt")recipes[0].getJSONObject("story").getString("attemptId") else JSONObject.NULL)
             .put("heroAssetId",document.heroPhotoId?.let { id("photo:$it") } ?: JSONObject.NULL)
-        val json=payload.toString().toByteArray();expanded+=json.size;require(json.size<=8*1024*1024 && expanded<=64*1024*1024 && attachments.size+1<=1000)
+        return pack(payload,images)
+    }
+    fun pack(payload: JSONObject, photos: Map<String,ByteArray>): PreparedPublication {
+        val recipes=payload.getJSONArray("recipes"); require(recipes.length() in 1..20)
+        val attachments=linkedMapOf<String,ByteArray>(); val ids=mutableSetOf<String>()
+        for(index in 0 until recipes.length()) {
+            val assets=recipes.getJSONObject(index).getJSONArray("assets")
+            for(a in 0 until assets.length()) {
+                val asset=assets.getJSONObject(a); val id=asset.getString("id"); val bytes=photos[id] ?: error("Selected public photo unavailable.")
+                require(publicationUuid(id) && ids.add(id) && asset.getString("path")=="attachments/$id.jpg" && asset.getString("mimeType")=="image/jpeg" && bytes.size<=16*1024*1024 && RelayProtocol.hash(bytes)==asset.getString("sha256"))
+                attachments["attachments/$id.jpg"]=bytes
+            }
+        }
+        require(ids==photos.keys)
+        val json=payload.toString().toByteArray();require(json.size<=8*1024*1024 && json.size.toLong()+photos.values.sumOf { it.size.toLong() }<=64*1024*1024 && attachments.size+1<=1000)
         val bytes=ByteArrayOutputStream().use { output->ZipOutputStream(output).use { zip->
-            (mapOf("publication.json" to json)+attachments).toSortedMap().forEach { (path,content)->require(content.size<=16*1024*1024);zip.putNextEntry(ZipEntry(path));zip.write(content);zip.closeEntry() }
+            (mapOf("publication.json" to json)+attachments).toSortedMap().forEach { (path,content)->zip.putNextEntry(ZipEntry(path));zip.write(content);zip.closeEntry() }
         };output.toByteArray() };require(bytes.size<=64*1024*1024)
-        return PreparedPublication(payload,bytes,images)
+        return PreparedPublication(payload,bytes,photos)
     }
 }
-internal suspend fun SharingRepository.preparePublication(id: String,kind: String): PreparedPublication=withContext(Dispatchers.IO) {
+internal suspend fun SharingRepository.preparePublication(id: String,kind: String,editContext: PublicationEditContext? = null): PreparedPublication=withContext(Dispatchers.IO) {
     val row=get(id) ?: error("This sharing draft is unavailable.");val document=SharingDraftCodec.decode(row.payload)
     val selected=document.entries.filter { it.included }.flatMap { entry->entry.photoIds.map { it to entry.id } }.toSet()
     val photos=assets(id).filter { it.action?.let { entry -> (it.id to entry) in selected } == true }.map { photo->
         coroutineContext.ensureActive()
         PublicationPhoto(photo.id,photo.action.orEmpty(),photo.caption,photoBytes(photo.relativePath) ?: error("A selected photo is unavailable."))
     }
-    coroutineContext.ensureActive();PublicationProjection.build(document,row.updatedAtUtcMillis,photos,kind)
+    coroutineContext.ensureActive(); val prepared=PublicationProjection.build(document,row.updatedAtUtcMillis,photos,if(kind=="attempt" && editContext?.receipt?.kind=="attempt")"recipe" else kind)
+    editContext?.apply(prepared,document,kind) ?: prepared
 }
 
 /** Exact preview of a verified device-owned pending request, with bounded ZIP reads. */
@@ -135,8 +150,9 @@ internal fun pendingPublication(file: java.io.File): PreparedPublication = java.
     for(index in 0 until recipes.length()) {
         val assets=recipes.getJSONObject(index).getJSONArray("assets")
         for(a in 0 until assets.length()) {
-            val asset=assets.getJSONObject(a); val id=asset.getString("id"); require(publicationUuid(id) && asset.getString("path")=="attachments/$id.jpg")
-            val bytes=read("attachments/$id.jpg",16*1024*1024); require(RelayProtocol.hash(bytes)==asset.getString("sha256")); photos[id]=bytes
+            val asset=assets.getJSONObject(a); val id=asset.getString("id"); val suffix=mapOf("image/jpeg" to "jpg","image/png" to "png","image/webp" to "webp")[asset.getString("mimeType")] ?: error("Unsupported public photo.")
+            require(publicationUuid(id) && asset.getString("path")=="attachments/$id.$suffix")
+            val bytes=read("attachments/$id.$suffix",16*1024*1024); require(RelayProtocol.hash(bytes)==asset.getString("sha256")); photos[id]=bytes
         }
     }
     PreparedPublication(payload,file.readBytes(),photos)

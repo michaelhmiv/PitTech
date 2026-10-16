@@ -120,6 +120,10 @@ The owner requires iOS/Android parity going forward:
 - Native public archive builders export selected sharing drafts only. Saved public
   stories retain their public-only gap/quality/verdict contract; edited instructions
   never replace frozen measured facts. Both native writers emit CI fixtures.
+- Owner editing downloads require authentication and an exact revision. Private
+  account-bound edit context preserves public identities/source credit without
+  entering exports. Recorded facts stay frozen; stale owner drafts must reopen
+  the current revision. See `docs/online/12-publishing.md`.
 - Public writes persist the exact selected body and operation before network access,
   retry under the initiating account only, and retain ambiguous outcomes. Named
   credit and public cookbook visibility require separate explicit previews.

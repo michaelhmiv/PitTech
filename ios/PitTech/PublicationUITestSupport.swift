@@ -10,12 +10,17 @@ import SwiftUI
         var receipts: [String: Data] = [:]
         var profile: [String: Any] = ["handle": "alex_at_the_pit", "displayName": "Alex at the pit", "isPublic": false]
         var item: [String: Any]?
+        var archiveBytes: Data?
         func read(_ path: String, access: String) async throws -> Data {
             let value: [String: Any]
             if path == "/v1/me/profile" { value = profile }
             else if path.hasPrefix("/v1/me/recipes/") { guard let item else { throw NativePublicError.status(404) }; value = item }
             else { value = ["items": item.map { [$0] } ?? [], "nextCursor": NSNull()] }
             return try JSONSerialization.data(withJSONObject: value)
+        }
+        func archive(_ id: String, revision: String, to: URL, access: String) async throws -> URL {
+            guard item?["id"] as? String == id, item?["revisionId"] as? String == revision, let archiveBytes else { throw NativePublicError.status(409) }
+            try archiveBytes.write(to: to); return to
         }
         func write(_ operation: NativePublicationOperation, file: URL, access: String) async throws -> Data {
             if let saved = receipts[operation.id] { return saved }
@@ -25,6 +30,7 @@ import SwiftUI
                 if let item { guard operation.method == "PUT", operation.expectedRevision == item["revisionId"] as? String, operation.path == "/v1/recipes/" + (item["id"] as! String) else { throw NativePublicError.status(409) } }
                 let id = "dddddddd-dddd-4ddd-dddd-dddddddddddd", revisionId = UUID().uuidString.lowercased(), revision = (item?["revision"] as? Int ?? 0) + 1
                 item = ["id": id, "revisionId": revisionId, "revision": revision, "status": "active", "title": preview.payload.objectValue?["title"]?.stringValue ?? "", "identityMode": preview.payload.objectValue?["identityMode"]?.stringValue ?? "anonymous"]
+                archiveBytes = try Data(contentsOf: file)
                 result = try JSONEncoder().encode(NativePublicationReceipt(id: id, revisionId: revisionId, revision: revision, url: "https://pittech.app/c/" + id))
             } else if operation.path == "/v1/me/profile" {
                 profile = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]; result = try JSONSerialization.data(withJSONObject: profile)

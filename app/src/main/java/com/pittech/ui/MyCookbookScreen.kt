@@ -25,6 +25,8 @@ import org.json.JSONObject
     var handle by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }; var isPublic by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<JSONObject?>(null) }; var removing by remember { mutableStateOf<JSONObject?>(null) }
     var pending by remember { mutableStateOf<PublicationOperation?>(null) }; var pendingArchive by remember { mutableStateOf<PreparedPublication?>(null) }; var pendingProfile by remember { mutableStateOf<JSONObject?>(null) }
+    var ownerPreview by remember { mutableStateOf<PreparedPublication?>(null) }; var ownerReceipt by remember { mutableStateOf<PublicationReceipt?>(null) }; var ownerUser by remember { mutableStateOf<String?>(null) }; var editingDraft by remember { mutableStateOf<String?>(null) }
+    val context=androidx.compose.ui.platform.LocalContext.current
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
     suspend fun checkAccount() { check(loadedUser!=null && loadedUser==account.publicationUserId()) { "Sign in with the account that opened this cookbook." } }
     suspend fun pendingPreview() {
@@ -54,7 +56,7 @@ import org.json.JSONObject
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. Your saved request remains available."; try { pendingPreview() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) {
-        loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null
+        loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null
         if(loadedUser!=null)try { reload() } catch(e: Exception) { message=e.message }
     }
     ModalBottomSheet(onDismissRequest={ if(!busy)onClose() }) {
@@ -75,6 +77,18 @@ import org.json.JSONObject
                         if(!op.rejected)Button(onClick={ run { checkAccount(); writer.recover(); reload() } },enabled=!busy,modifier=Modifier.testTag("cookbook-recover")) { Text("Retry this exact change") }
                         else TextButton(onClick={ run { checkAccount(); withContext(Dispatchers.IO) { writer.store.discardRejected(checkNotNull(loadedUser)) }; reload() } },enabled=!busy) { Text("Discard rejected change") }
                     }
+                    ownerPreview?.let { prepared -> ownerReceipt?.let { receipt ->
+                        Text("Private editing preview",style=MaterialTheme.typography.titleLarge)
+                        Text("This creates an editable sharing draft on this device. It does not publish or change your meal history.")
+                        PublicationContent(prepared)
+                        Button(onClick={ run {
+                            val user=checkNotNull(ownerUser);check(user==account.publicationUserId())
+                            val draft=withContext(Dispatchers.Default) { OwnedPublication.draft(prepared,receipt) };check(user==account.publicationUserId())
+                            withContext(Dispatchers.IO) { writer.store.attachEditContext(user,draft.id,draft.context); viewModel.sharing.saveOwnedPublicationDraft(draft) }
+                            check(user==account.publicationUserId());ownerPreview=null;ownerReceipt=null;editingDraft=draft.id
+                        } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-create-editing-draft")) { Text("Create private editing draft") }
+                        TextButton(onClick={ ownerPreview=null;ownerReceipt=null;ownerUser=null },enabled=!busy) { Text("Cancel editing preview") }
+                    } }
                     Text("Cookbook identity",style=MaterialTheme.typography.titleLarge)
                     OutlinedTextField(name,{ name=it; preview=null },label={ Text("Display name") },modifier=Modifier.fillMaxWidth().testTag("cookbook-name"))
                     OutlinedTextField(handle,{ handle=it; preview=null },label={ Text("Handle (3–24 letters, numbers or underscores)") },modifier=Modifier.fillMaxWidth().testTag("cookbook-handle"))
@@ -90,6 +104,14 @@ import org.json.JSONObject
                         Text(item.getString("title"),style=MaterialTheme.typography.titleMedium)
                         val status=item.getString("status")
                         Text(if(status=="active")"Public · revision ${item.getInt("revision")} · ${item.getString("identityMode")}" else if(status=="unpublished")"Removed from public access" else "Unavailable after moderation")
+                        if(status in setOf("active","unpublished"))TextButton(onClick={ run {
+                            checkAccount();val user=checkNotNull(loadedUser);val receipt=PublicationReceipt(item.getString("id"),item.getString("revisionId"),item.getInt("revision"),"https://pittech.app/c/"+item.getString("id"))
+                            val file=java.io.File(context.cacheDir,"publication-edit-"+java.util.UUID.randomUUID()+".zip")
+                            try {
+                                writer.ownedArchive(receipt,file);val prepared=withContext(Dispatchers.IO) { pendingPublication(file) }
+                                check(user==account.publicationUserId() && user==loadedUser);ownerPreview=prepared;ownerReceipt=receipt;ownerUser=user
+                            } finally { file.delete() }
+                        } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-edit-"+item.getString("id"))) { Text("Preview an editable private copy") }
                         if(status=="active") {
                             TextButton(onClick={ uri.openUri("https://pittech.app/c/"+item.getString("id")) }) { Text("Open publication") }
                             TextButton(onClick={ removing=item },enabled=!busy && pending==null) { Text("Remove from public access") }
@@ -102,6 +124,7 @@ import org.json.JSONObject
             }
         }
     }
+    editingDraft?.let { draft -> SharingDraftEditor(draft,viewModel,account,writer,publishingEnabled=account.enabled) { editingDraft=null } }
     removing?.let { item -> AlertDialog(onDismissRequest={ removing=null },title={ Text("Remove this publication from public access?") },text={ Text("Other cooks keep independent copies they already saved.") },confirmButton={ TextButton(onClick={ removing=null; run { checkAccount(); writer.json("DELETE","/v1/recipes/"+item.getString("id"),expected=item.getString("revisionId")); reload() } },modifier=Modifier.testTag("cookbook-unpublish-confirm")) { Text("Remove publication") } },dismissButton={ TextButton(onClick={ removing=null }) { Text("Cancel") } }) }
     if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") } })
 }
