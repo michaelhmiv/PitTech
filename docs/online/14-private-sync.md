@@ -41,8 +41,9 @@ object kind, plaintext SHA-256 and key ID. Snapshot/photo plaintext limits are
 owner substitution, altered metadata, tampering and unknown/removed keys. New
 objects use the configured current key, while retained old keys permit staged
 rotation. This is server-managed encryption at rest, **not** end-to-end encryption.
-Real key provisioning, configuration, database/object ownership, ciphertext
-storage and rotation/re-encryption verification remain unimplemented gates.
+Real key provisioning, runtime upload/read configuration, encrypted snapshot
+transport and rotation/re-encryption verification remain unimplemented gates.
+The draft metadata ledger and lifecycle cleanup adapter are described below.
 No real keys or cloud resources have been created.
 
 Eleven identical shared cases cover independent notes, clock skew, recoverable
@@ -55,7 +56,7 @@ open in PR 13.
 Still to implement: strict native library projection and per-record mutation
 tracking; encrypted authenticated API and resumable photo transfer; durable
 account-bound native outboxes/association; conflict review/restore UI; inactive
-rule import; lifecycle purge adapter; supported background opportunities; full
+rule import; verified lifecycle purge integration; supported background opportunities; full
 two-device Android↔iOS and real Postgres ownership/race evidence. No backup success
 or completed sync claim is made by this draft.
 
@@ -83,3 +84,9 @@ rewriting that copy is rejected. A concurrent tombstone may supersede a greater
 logical-clock edit only with the exact retained losing edit. These generic helpers
 remain unexposed: strict native projection/relationships, encrypted snapshot and
 photo API, durable application and conflict UI are still required.
+
+Backend Actions run 38922430944 at bfa8df7 passed all 68 tests with zero
+skips, including the real-Postgres private-sync cleanup/isolation test and
+production-container validation. The test now performs the final deletion sweep
+after generic notice delivery before expecting complete status, and closes pools
+without forced database termination. No external database was changed.
