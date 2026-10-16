@@ -21,10 +21,11 @@ const leaseMillis = 300_000;
 const unavailable = () => new ApiError(503, 'private_snapshot_unavailable');
 const conflict = () => new ApiError(409, 'sync_version_changed');
 
-/** Internal storage boundary only, deliberately NOT wired to HTTP or runtime config.
- * A production caller must provide the strict native-library projection/relationship
- * validator. syncEnvelope by itself only validates metadata and is not that validator.
- * Photo references must name verified, completed assets owned by this account.
+/** Internal storage boundary, exposed over HTTP only through the PRIVATE_SYNC_ENABLED
+ * opt-in. A production caller must provide the strict native-library
+ * projection/relationship validator. syncEnvelope by itself only validates metadata
+ * and is not that validator. Photo references must name verified, completed assets
+ * owned by this account.
  */
 export class PrivateSnapshots {
   private pool: Pool;

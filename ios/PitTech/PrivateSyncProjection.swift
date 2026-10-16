@@ -49,6 +49,13 @@ struct NativePrivateSyncProjection {
             guard let a = value.arrayValue, Double(a.count) >= (n["min"]?.numberValue ?? 0), Double(a.count) <= (n["max"]?.numberValue ?? 100000), let schema = n["items"]?.objectValue else { throw NativePrivateProjectionError.invalid }
             for v in a { try validate(v, descriptor: schema, depth: depth + 1) }
             if let key = n["uniqueBy"]?.stringValue { guard Set(a.compactMap { $0.objectValue?[key]?.stringValue }).count == a.count else { throw NativePrivateProjectionError.invalid } }
+        case "map":
+            guard let o = value.objectValue, let schema = n["values"]?.objectValue,
+                  Double(o.count) <= (n["maxKeys"]?.numberValue ?? 100000) else { throw NativePrivateProjectionError.invalid }
+            for (key, v) in o {
+                guard Double(key.utf16.count) <= (n["keyMax"]?.numberValue ?? 32768) else { throw NativePrivateProjectionError.invalid }
+                try validate(v, descriptor: schema, depth: depth + 1)
+            }
         case "string", "id", "uuid", "json":
             guard let s = value.stringValue, Double(s.utf16.count) <= (n["max"]?.numberValue ?? 32768) else { throw NativePrivateProjectionError.invalid }
             if yes(n["nonBlank"]) && s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw NativePrivateProjectionError.invalid }
@@ -65,6 +72,16 @@ struct NativePrivateSyncProjection {
         case "boolean": if case .bool = value {} else { throw NativePrivateProjectionError.invalid }
         default: throw NativePrivateProjectionError.invalid
         }
+    }
+    private func stripOmit(_ value: JSONValue, parts: ArraySlice<String>) -> JSONValue {
+        guard let first = parts.first, var o = value.objectValue else { return value }
+        if parts.count == 1 {
+            if first == "*" { o.removeAll() } else { o.removeValue(forKey: first) }
+            return .object(o)
+        }
+        if first == "*" { for key in o.keys { o[key] = stripOmit(o[key]!, parts: parts.dropFirst()) } }
+        else if o[first] != nil { o[first] = stripOmit(o[first]!, parts: parts.dropFirst()) }
+        return .object(o)
     }
     func project(_ library: PitTechLibrary, assets: [String: String] = [:]) throws -> [NativePrivateProjectedRecord] {
         try project(JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(library)), assets: assets)
@@ -92,6 +109,11 @@ struct NativePrivateSyncProjection {
                 }
                 var p = o.filter { fields[$0.key] != nil }
                 if fields["assetId"] != nil { guard let asset = assets[type + "|" + id] else { throw NativePrivateProjectionError.invalid }; p["assetId"] = .string(asset) }
+                if type == "companionRecords", let kind = p["kind"]?.stringValue {
+                    for path in strings(contract["documentRules"]?.objectValue?[kind]?.objectValue?["omit"]) {
+                        if p["payload"] != nil { p["payload"] = stripOmit(p["payload"]!, parts: path.split(separator: ".").map(String.init)[...]) }
+                    }
+                }
                 try validate(.object(p), descriptor: schema)
                 rows.append(NativePrivateProjectedRecord(recordType: type, recordId: id, payload: p, assetIds: p["assetId"]?.stringValue.map { [$0] } ?? []))
             }
@@ -138,6 +160,40 @@ struct NativePrivateSyncProjection {
                     let parent = live[target + "|" + id]
                     if parent == nil && yes(ref["allowMissing"]) { continue }
                     guard let parent, parent["cookId"] == (same == "$record" ? row.payload["cookId"] : doc[same]) else { throw NativePrivateProjectionError.invalid }
+                }
+                if kind == "plan" {
+                    let dishes = doc["draft"]?.objectValue?["dishes"]?.arrayValue ?? []
+                    let dishIds = strings(doc["dishIds"])
+                    let stepIds = Set(doc["steps"]?.arrayValue?.compactMap { $0.objectValue?["id"]?.stringValue } ?? [])
+                    guard doc["dishIds"]?.arrayValue != nil, dishIds.count == dishes.count, Set(dishIds).count == dishIds.count,
+                          dishIds.allSatisfy({ live["dishes|" + $0]?["cookId"] == row.payload["cookId"] }),
+                          Set((doc["progress"]?.objectValue ?? [:]).keys).isSubset(of: stepIds) else { throw NativePrivateProjectionError.invalid }
+                }
+                if kind == "alert" {
+                    if let dish = doc["dishId"]?.stringValue { guard live["dishes|" + dish]?["cookId"] == row.payload["cookId"] else { throw NativePrivateProjectionError.invalid } }
+                    if doc["type"]?.stringValue == "target" { guard let t = doc["targetF"]?.numberValue, (32...600).contains(t) else { throw NativePrivateProjectionError.invalid } }
+                    if doc["type"]?.stringValue == "pit_range" { guard let lo = doc["lowF"]?.numberValue, let hi = doc["highF"]?.numberValue, lo < hi else { throw NativePrivateProjectionError.invalid } }
+                }
+                if kind == "upcoming" || kind == "serve_goal" {
+                    let dishes = doc["book"]?.objectValue?["draft"]?.objectValue?["dishes"]?.arrayValue ?? []
+                    let schedules = doc["schedules"]?.arrayValue ?? []
+                    let order = schedules.compactMap { $0.objectValue?["dish"]?.numberValue }.sorted()
+                    guard schedules.count == dishes.count, order.enumerated().allSatisfy({ $0.element == Double($0.offset) }),
+                          schedules.allSatisfy({ ($0.objectValue?["max"]?.numberValue ?? -.infinity) >= ($0.objectValue?["min"]?.numberValue ?? .infinity) }) else { throw NativePrivateProjectionError.invalid }
+                }
+                if kind == "sharing_draft" || kind == "collection_revision" || kind == "recipe_reference" {
+                    let entries = doc["entries"]?.arrayValue?.compactMap(\.objectValue) ?? []
+                    for e in entries {
+                        let photoIds = strings(e["photoIds"])
+                        guard Set(photoIds).count == photoIds.count else { throw NativePrivateProjectionError.invalid }
+                        for id in photoIds { guard let photo = live["companionPhotos|" + id], photo["recordId"] == row.payload["id"], photo["action"] == e["id"] else { throw NativePrivateProjectionError.invalid } }
+                    }
+                    if let hero = doc["heroPhotoId"]?.stringValue {
+                        guard entries.contains(where: { $0["included"] == .bool(true) && strings($0["photoIds"]).contains(hero) }) else { throw NativePrivateProjectionError.invalid }
+                    }
+                }
+                if kind == "guide_presentation", let dishIds = doc["dishIds"]?.arrayValue?.compactMap(\.stringValue) {
+                    guard Set(dishIds).count == dishIds.count, dishIds.allSatisfy({ live["dishes|" + $0]?["cookId"] == row.payload["cookId"] }) else { throw NativePrivateProjectionError.invalid }
                 }
             }
         }

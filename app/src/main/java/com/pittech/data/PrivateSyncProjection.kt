@@ -30,6 +30,11 @@ class PrivateSyncProjection(rawContract: String) {
                 for (i in 0 until v.length()) value(v.get(i), n.getJSONObject("items"), depth + 1)
                 n.optString("uniqueBy").takeIf { it.isNotEmpty() }?.let { key -> require((0 until v.length()).map { v.getJSONObject(it).getString(key) }.distinct().size == v.length()) }
             }
+            "map" -> {
+                require(v is JSONObject && v.length() <= n.optInt("maxKeys", 100000))
+                val schema = n.getJSONObject("values")
+                for (key in keys(v)) { require(key.length <= n.optInt("keyMax", 32768)); value(v.get(key), schema, depth + 1) }
+            }
             "string", "id", "uuid", "json" -> {
                 require(v is String && v.length <= n.optInt("max", 32768))
                 require(!n.optBoolean("nonBlank") || v.isNotBlank())
@@ -68,6 +73,12 @@ class PrivateSyncProjection(rawContract: String) {
                 }
                 val payload = JSONObject(); for (key in keys(source)) if (fields.has(key)) payload.put(key, source.get(key))
                 if (fields.has("assetId")) payload.put("assetId", requireNotNull(assets["$type|$id"]))
+                if (type == "companionRecords") for (path in strings(contract.getJSONObject("documentRules").optJSONObject(payload.optString("kind"))?.optJSONArray("omit"))) {
+                    val parts = path.split("."); var nodes: List<Any?> = listOf(payload.opt("payload"))
+                    for (i in 0 until parts.size - 1) nodes = nodes.flatMap { node -> if (node !is JSONObject) emptyList() else if (parts[i] == "*") keys(node).map { node.get(it) } else if (node.has(parts[i])) listOf(node.get(parts[i])) else emptyList() }
+                    val last = parts.last()
+                    for (node in nodes) if (node is JSONObject) { if (last == "*") for (k in keys(node).toList()) node.remove(k) else node.remove(last) }
+                }
                 value(payload, schema)
                 rows += JSONObject().put("recordType", type).put("recordId", id).put("payload", payload).put("assetIds", JSONArray(if (payload.has("assetId")) listOf(payload.getString("assetId")) else emptyList<String>()))
             }
@@ -104,6 +115,42 @@ class PrivateSyncProjection(rawContract: String) {
                     val ref = references.getJSONObject(i); val parent = live[ref.getString("target") + "|" + doc.getString(ref.getString("field"))]
                     if (parent == null && ref.optBoolean("allowMissing")) continue
                     require(parent != null && parent.opt("cookId") == if (ref.getString("sameCook") == "\$record") payload.opt("cookId") else doc.opt(ref.getString("sameCook")))
+                }
+                val kind = payload.getString("kind")
+                if (kind == "plan") {
+                    val dishes = doc.getJSONObject("draft").getJSONArray("dishes"); val dishIds = strings(doc.getJSONArray("dishIds"))
+                    val stepIds = (0 until doc.getJSONArray("steps").length()).map { doc.getJSONArray("steps").getJSONObject(it).getString("id") }.toSet()
+                    require(dishIds.size == dishes.length() && dishIds.distinct().size == dishIds.size)
+                    for (id in dishIds) require(live["dishes|$id"]?.opt("cookId") == payload.opt("cookId"))
+                    for (key in keys(doc.optJSONObject("progress") ?: JSONObject())) require(key in stepIds)
+                }
+                if (kind == "alert") {
+                    if (!doc.isNull("dishId")) require(live["dishes|" + doc.getString("dishId")]?.opt("cookId") == payload.opt("cookId"))
+                    if (doc.getString("type") == "target") require(!doc.isNull("targetF") && doc.getDouble("targetF") in 32.0..600.0)
+                    if (doc.getString("type") == "pit_range") require(!doc.isNull("lowF") && !doc.isNull("highF") && doc.getDouble("lowF") < doc.getDouble("highF"))
+                }
+                if (kind == "upcoming" || kind == "serve_goal") {
+                    val dishes = doc.getJSONObject("book").getJSONObject("draft").getJSONArray("dishes"); val schedules = doc.getJSONArray("schedules")
+                    val order = (0 until schedules.length()).map { schedules.getJSONObject(it).getInt("dish") }.sorted()
+                    require(schedules.length() == dishes.length() && order.indices.all { order[it] == it })
+                    for (i in 0 until schedules.length()) { val s = schedules.getJSONObject(i); require(s.getLong("max") >= s.getLong("min")) }
+                }
+                if (kind == "sharing_draft" || kind == "collection_revision" || kind == "recipe_reference") {
+                    val entries = doc.getJSONArray("entries")
+                    for (i in 0 until entries.length()) {
+                        val e = entries.getJSONObject(i); val photoIds = strings(e.getJSONArray("photoIds"))
+                        require(photoIds.distinct().size == photoIds.size)
+                        for (id in photoIds) { val photo = live["companionPhotos|$id"]; require(photo != null && photo.opt("recordId") == payload.opt("id") && photo.opt("action") == e.opt("id")) }
+                    }
+                    if (!doc.isNull("heroPhotoId")) {
+                        val hero = doc.getString("heroPhotoId")
+                        require((0 until entries.length()).any { val e = entries.getJSONObject(it); e.getBoolean("included") && strings(e.getJSONArray("photoIds")).contains(hero) })
+                    }
+                }
+                if (kind == "guide_presentation" && !doc.isNull("dishIds")) {
+                    val dishIds = strings(doc.getJSONArray("dishIds"))
+                    require(dishIds.distinct().size == dishIds.size)
+                    for (id in dishIds) require(live["dishes|$id"]?.opt("cookId") == payload.opt("cookId"))
                 }
             }
         }

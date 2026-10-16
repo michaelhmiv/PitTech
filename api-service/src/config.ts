@@ -12,9 +12,14 @@ import { FileStorage, S3Storage, type Storage } from './storage.ts';
 import { PostgresRepository } from './repository.ts';
 import { Relay } from './relay.ts';
 import { linkConfig } from './web.ts';
+import { SyncEncryption } from './sync-encryption.ts';
+import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
+import { PrivatePhotos } from './sync-photos.ts';
+import { privateLibraryEnvelope } from './sync-projection.ts';
 
 const required = (name: string) => { const value = process.env[name]; if (!value) throw new Error('Missing configuration'); return value; };
 function positive(name: string) { const n = Number(required(name)); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
+function positiveDefault(name: string, fallback: number) { const raw = process.env[name]; if (raw === undefined) return fallback; const n = Number(raw); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
 export function createRuntime() {
   const ipKey = required('RATE_HMAC_KEY'); if (ipKey.length < 32) throw new Error('Invalid HMAC key');
   const url = required('DATABASE_URL'); if (!['postgres:', 'postgresql:'].includes(new URL(url).protocol)) throw new Error('Invalid database URL');
@@ -50,6 +55,25 @@ export function createRuntime() {
   if(process.env.PUBLIC_API_ENABLED==='true'&&(!auth||!community||!deletion||process.env.PUBLIC_MODERATION_READY!=='true'||process.env.ACCOUNT_DELETION_READY!=='true'))throw new Error('Complete phase required');
   if(process.env.PUBLIC_API_ENABLED==='true'&&budgets.storageBytes+positive('PUBLIC_STORAGE_MAX_BYTES')>positive('TOTAL_OBJECT_STORAGE_MAX_BYTES'))throw new Error('Combined storage budget exceeds cap');
   const publications=process.env.PUBLIC_API_ENABLED==='true'?new Publications(pool,storage,{storageBytes:positive('PUBLIC_STORAGE_MAX_BYTES'),dailyBytes:positive('PUBLIC_DAILY_BYTES'),dailyWrites:positive('PUBLIC_DAILY_WRITES')},Date.now,true,handle=>lifecycleSecrets!.hash('retired-handle',handle)):undefined;
-  return { pool, lifecyclePool, relay, port, auth, publications, community, deletion, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end()]);}, options: { ipKey, auth, publications, community, deletion, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  const syncEnabled=process.env.PRIVATE_SYNC_ENABLED==='true';
+  if(syncEnabled&&!authSecrets)throw new Error('Accounts required');
+  const syncUrl=syncEnabled?required('PRIVATE_SYNC_DATABASE_URL'):undefined;
+  if(syncUrl&&!['postgres:','postgresql:'].includes(new URL(syncUrl).protocol))throw new Error('Invalid private sync database URL');
+  const syncPool=syncUrl?new Pool({connectionString:syncUrl,max:5,connectionTimeoutMillis:5000,idleTimeoutMillis:30000,statement_timeout:10000}):undefined;
+  syncPool?.on('error',()=>console.error('sync_database_connection_error'));
+  let syncKeys:Record<string,string>|undefined;
+  if(syncEnabled){
+    const raw=required('PRIVATE_SYNC_ENCRYPTION_KEYS');
+    let parsed:unknown; try{parsed=JSON.parse(raw);}catch{throw new Error('Invalid private sync encryption configuration');}
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||!Object.values(parsed).every(v=>typeof v==='string'))throw new Error('Invalid private sync encryption configuration');
+    syncKeys=parsed as Record<string,string>;
+  }
+  if(syncKeys&&Object.values(syncKeys).some(k=>[process.env.AUTH_HASH_KEY,process.env.AUTH_ENCRYPTION_KEY,process.env.LIFECYCLE_HASH_KEY,process.env.LIFECYCLE_ENCRYPTION_KEY].includes(k)))throw new Error('Separate private sync keys required');
+  const syncEncryption=syncKeys?new SyncEncryption(required('PRIVATE_SYNC_CURRENT_KEY_ID'),syncKeys):undefined;
+  // One shared limits object serves snapshots and photos, so the defaults follow the
+  // photo-capable values from the sync storage tests rather than the small snapshot-only ones.
+  const syncLimits:SyncStorageLimits|undefined=syncEnabled?{ownerBytes:positiveDefault('PRIVATE_SYNC_LIMIT_OWNER_BYTES',64*1024**2),globalBytes:positiveDefault('PRIVATE_SYNC_LIMIT_GLOBAL_BYTES',128*1024**2),dailyBytes:positiveDefault('PRIVATE_SYNC_LIMIT_DAILY_BYTES',256*1024**2),dailyUploads:positiveDefault('PRIVATE_SYNC_LIMIT_DAILY_UPLOADS',200),ownerOperations:positiveDefault('PRIVATE_SYNC_LIMIT_OWNER_OPERATIONS',100)}:undefined;
+  const sync=syncPool&&syncEncryption&&syncLimits?{snapshots:new PrivateSnapshots(syncPool,storage,syncEncryption,privateLibraryEnvelope,syncLimits),photos:new PrivatePhotos(syncPool,storage,syncEncryption,syncLimits)}:undefined;
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }

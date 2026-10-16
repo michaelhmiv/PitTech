@@ -8,6 +8,7 @@ try {
   if (runtime.auth) await runtime.pool.query('SELECT 1 FROM auth.challenges LIMIT 1');
   if (runtime.publications) await runtime.pool.query('SELECT 1 FROM publications.items LIMIT 1');
   if(runtime.lifecyclePool){await runtime.lifecyclePool.query('SELECT 1 FROM moderation.deletions LIMIT 1');await runtime.lifecyclePool.query('SELECT 1 FROM private_sync.accounts LIMIT 1');}
+  if(runtime.syncPool)await runtime.syncPool.query('SELECT 1 FROM private_sync.accounts LIMIT 1');
   await pruneUploads(tempRoot);
   const server = makeServer(runtime.relay, { ...runtime.options, log: value => console.info(JSON.stringify(value)) });
   server.listen(runtime.port, '0.0.0.0');

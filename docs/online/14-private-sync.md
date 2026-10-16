@@ -210,3 +210,46 @@ At `3dad210`, backend Actions 38939930673 passed 89/89 tests, zero skips,
 including authenticated HTTP ownership/retry/photo transfer and strict projection
 through encrypted storage. Fresh native/full-Postgres evidence remains required
 for the companion-format follow-up.
+
+## Full portable vocabulary and opt-in production wiring
+
+The portable projection now covers every authored document kind: `plan`,
+`alert`, `upcoming` and `serve_goal` serving plans, `sharing_draft`,
+`collection_revision` and `recipe_reference` saved sharing documents,
+`recipe_attempt` attempts and `guide_presentation` guides join the existing
+checklist, equipment, preparation-combo, reference, playbook and fuel codecs.
+Ownership follows the established rules (globally saved templates/equipment
+versus cook-owned documents); unknown fields reject the whole projection and
+nothing is silently omitted. The shared cases grew from 32 to 64 vectors with
+positive and negative coverage per newly supported kind. The only remaining
+exclusion is `monitor_status`, which is device-local telemetry rather than
+authored data: the archive boundary drops it while the wire validator still
+rejects it as an unknown kind. Settings, recordings, probe-assignment
+activation, delivery occurrences, timers and rule enabled/status fields still
+never enter portable rows, and synced definitions still arrive inactive.
+`guide_presentation` is covered by the contract, all three validators and the
+real-archive full-library tests, but has no dedicated shared-case vectors yet.
+All four contract copies stay byte-identical and `releaseReady` stays `false`.
+
+Production construction is wired behind an explicit opt-in:
+`PRIVATE_SYNC_ENABLED=true` in `createRuntime`, off by default with unchanged
+behavior when unset. Enabling requires authentication, a dedicated
+`PRIVATE_SYNC_DATABASE_URL` pool carrying the private-sync runtime role (never
+the main or lifecycle pool), separately provisioned
+`PRIVATE_SYNC_CURRENT_KEY_ID` plus `PRIVATE_SYNC_ENCRYPTION_KEYS` (a JSON
+object mapping key id to base64url key: 1–3 keys, current present, any reuse
+of auth/lifecycle key values rejected), the runtime's existing `Storage`
+adapter, and five `PRIVATE_SYNC_LIMIT_*` quotas defaulting to the
+photo-capable values from the sync storage tests. `PrivateSnapshots` is
+constructed with the strict `privateLibraryEnvelope` projector rather than
+the synthetic test adapter, and `PrivatePhotos` shares the same
+pool/storage/encryption/limits; both are served as `options.sync`. Startup
+verifies the private tables against the sync pool and closes that pool in
+`runtime.close()`; the lifecycle purger path is unchanged. Any missing or
+invalid piece fails startup closed.
+
+Native durable apply and conflict-review UI remain the open gate, so no
+backup claim is made. No deployment has applied this wiring and no real keys
+or cloud resources exist. The corrected full-library and new config/wiring
+tests, including the authenticated-HTTP proof through `createRuntime`
+services, require fresh Actions evidence before any release statement.

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { once } from 'node:events';
 import { Authentication } from '../src/auth.ts';
+import { createRuntime } from '../src/config.ts';
 import type { SignInMail } from '../src/auth-email.ts';
 import { makeServer } from '../src/http.ts';
 import { Relay } from '../src/relay.ts';
@@ -18,7 +19,7 @@ import { FileStorage, type Storage } from '../src/storage.ts';
 import { SyncEncryption } from '../src/sync-encryption.ts';
 import { PrivateSnapshots, type SyncStorageLimits } from '../src/sync-snapshots.ts';
 import { syncEnvelope, type SyncEnvelope } from '../src/sync-envelope.ts';
-import { privateLibraryEnvelope } from '../src/sync-projection.ts';
+import { privateLibraryEnvelope, projectPrivateArchive } from '../src/sync-projection.ts';
 import { stable } from '../src/pack.ts';
 import { AccountDeletion } from '../src/account-deletion.ts';
 import { PrivateSyncPurger } from '../src/sync-purge.ts';
@@ -280,6 +281,80 @@ test('real Postgres encrypted snapshots: exact retries, compare-and-swap, quotas
         const logs = JSON.stringify(log); for (const privateValue of [owner, other, input.assetId, a.accessToken, b.accessToken, value.records[0].payload!.title]) assert.ok(!logs.includes(String(privateValue)));
         assert.ok(logs.includes('/v1/sync/photos/:id/parts/:index'));
       } finally { server.closeAllConnections(); absent.closeAllConnections(); await Promise.all([new Promise<void>(r => server.close(() => r())), new Promise<void>(r => absent.close(() => r()))]); }
+    });
+    await t.test('production createRuntime wiring accepts a real full library and rejects unknown fields over authenticated HTTP', async () => {
+      const { default: yauzl } = await import('yauzl');
+      const zipBytes = await readFile(new URL('../../ios/PitTechTests/Fixtures/android-guide-meal-v10.zip', import.meta.url));
+      const bytes: Buffer = await new Promise<Buffer>((resolve, reject) => {
+        yauzl.fromBuffer(zipBytes, { lazyEntries: true }, (error, zip) => {
+          if (error || !zip) { reject(error); return; }
+          zip.on('error', reject);
+          zip.on('end', () => reject(Error('Fixture data missing')));
+          zip.on('entry', entry => {
+            if (entry.fileName !== 'data/pittech.json') { zip.readEntry(); return; }
+            zip.openReadStream(entry, (err, stream) => {
+              if (err || !stream) { reject(err); zip.close(); return; }
+              void (async () => { const chunks: Buffer[] = []; for await (const b of stream) chunks.push(Buffer.from(b)); zip.close(); resolve(Buffer.concat(chunks)); })().catch(reject);
+            });
+          });
+          zip.readEntry();
+        });
+      });
+      const archive = JSON.parse(bytes.toString('utf8'));
+      const assets: Record<string, string> = {};
+      for (const type of ['photos', 'recipeAssets', 'companionPhotos']) for (const row of archive[type] ?? []) assets[type + '|' + row.id] = randomUUID();
+      const rows = projectPrivateArchive(archive, assets);
+      assert.ok(rows.some(r => r.recordType === 'companionRecords'), 'production wiring must prove the newly supported document kinds');
+      const value = { contractVersion: 1, baseVersion: 0, mutationId: randomUUID(), clientId: device, records: rows.map(r => ({ ...r, deleted: false, version: { counter: 1, clientId: device } })), conflicts: [] as never[] };
+      const vars: Record<string, string> = {
+        RATE_HMAC_KEY: credential(), DATABASE_URL: connectionString, STORAGE_MAX_BYTES: String(1024 ** 3), DAILY_UPLOAD_MAX_BYTES: String(1024 ** 3),
+        DAILY_UPLOAD_MAX_COUNT: '1000', OBJECT_STORAGE: 'filesystem', OBJECT_DIRECTORY: root, NODE_ENV: 'test', PORT: '3000',
+        AUTH_ENABLED: 'true', AUTH_HASH_KEY: credential(), AUTH_ENCRYPTION_KEY: credential(), RESEND_API_KEY: 're_synthetic_test_key',
+        AUTH_FROM: 'signin@auth.pittech.app', AUTH_PUBLIC_ORIGIN: 'https://pittech.app', AUTH_DAILY_EMAIL_LIMIT: '100',
+        PRIVATE_SYNC_ENABLED: 'true', PRIVATE_SYNC_DATABASE_URL: connectionString,
+        PRIVATE_SYNC_CURRENT_KEY_ID: 'test-key-1', PRIVATE_SYNC_ENCRYPTION_KEYS: JSON.stringify({ 'test-key-1': credential(), 'test-key-2': credential() }),
+      };
+      const saved = new Map<string, string | undefined>();
+      for (const [key, val] of Object.entries(vars)) { saved.set(key, process.env[key]); process.env[key] = val; }
+      let runtime: ReturnType<typeof createRuntime> | undefined;
+      try {
+        runtime = createRuntime();
+        const sync = runtime.sync; assert.ok(sync);
+        const owner = await freshOwner(), sent: SignInMail[] = [];
+        const auth = new Authentication(authPool, new AuthSecrets(credential(), credential()), { send: async mail => { sent.push(mail); } }, 100, () => now);
+        const verifier = credential(), challenge = await auth.start({ email: owner + '@example.com', idempotencyId: randomUUID(), proofChallenge: proofHash(verifier) });
+        await auth.deliverPending();
+        const mail = sent.find(v => v.challengeId === challenge.challengeId); assert.ok(mail);
+        const session = await auth.verify({ challengeId: challenge.challengeId, verifier, code: mail.code, idempotencyId: randomUUID() });
+        const relay = new Relay(new MemoryRepository(), storage, budgets, () => now);
+        const server = makeServer(relay, { ipKey: credential(), auth, uploadsEnabled: false, sync });
+        server.listen(0, '127.0.0.1'); await once(server, 'listening');
+        try {
+          const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
+          const headers = { Authorization: 'Bearer ' + session.accessToken, 'Content-Type': 'application/json' };
+          const put = (body: unknown, key: string) => fetch(origin + '/v1/sync', { method: 'PUT', headers: { ...headers, 'Idempotency-Key': key }, body: JSON.stringify(body) });
+          const first = await put(value, value.mutationId);
+          assert.equal(first.status, 200);
+          assert.equal((await first.json() as { version: number }).version, 1);
+          const read = await fetch(origin + '/v1/sync', { headers });
+          assert.equal(read.status, 200);
+          assert.deepEqual(await read.json(), { version: 1, envelope: value });
+          const tampered = structuredClone(value);
+          tampered.baseVersion = 1; tampered.mutationId = randomUUID();
+          const companion = tampered.records.find(r => r.recordType === 'companionRecords'); assert.ok(companion);
+          (companion.payload.payload as Record<string, unknown>).injectedField = true;
+          assert.equal((await put(tampered, tampered.mutationId)).status, 422);
+          const unknown = structuredClone(value);
+          unknown.baseVersion = 1; unknown.mutationId = randomUUID();
+          const victim = unknown.records.find(r => r.recordType === 'companionRecords'); assert.ok(victim);
+          victim.payload.kind = 'future-kind';
+          assert.equal((await put(unknown, unknown.mutationId)).status, 422);
+          assert.equal((await (await fetch(origin + '/v1/sync', { headers })).json() as { version: number }).version, 1);
+        } finally { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
+      } finally {
+        await runtime?.close();
+        for (const [key, val] of saved) { if (val === undefined) delete process.env[key]; else process.env[key] = val; }
+      }
     });
   } finally {
     await Promise.all([admin.end(), pool.end(), life.end(), authPool.end()]); await control.query(`DROP DATABASE ${database}`); await control.end(); await rm(root, { recursive: true, force: true });

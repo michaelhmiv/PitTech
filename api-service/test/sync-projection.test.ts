@@ -7,7 +7,7 @@ const fixture = JSON.parse(await read('contracts/fixtures/private-sync-projectio
 const clientId = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
 function envelope(rows: Record<string, unknown>[]) { return { contractVersion: 1, baseVersion: 0, mutationId: clientId, clientId, records: rows.map(r => ({ ...r, deleted: false, version: { counter: 1, clientId } })), conflicts: [] }; }
 test('shared portable projection vectors reject credentials, activation, malformed fields and broken ownership', () => {
-  assert.equal(fixture.contractVersion, 1); assert.equal(fixture.cases.length, 32);
+  assert.equal(fixture.contractVersion, 1); assert.equal(fixture.cases.length, 64);
   for (const c of fixture.cases) {
     if (c.rejected) assert.throws(() => privateLibraryEnvelope(envelope(c.rows)), c.name);
     else assert.equal(privateLibraryEnvelope(envelope(c.rows)).records.length, c.rows.length, c.name);
@@ -46,17 +46,23 @@ test('actual Android and iOS archive core records preserve typed fields and reci
       }); zip.readEntry();
     });
   });
+  let projectedCompanions = 0;
   for (const path of ['ios/PitTechTests/Fixtures/android-meal-v9.zip', 'ios/PitTechTests/Fixtures/android-guide-meal-v10.zip', 'app/src/androidTest/assets/cross-platform/native-meal-v9.zip', 'app/src/androidTest/assets/cross-platform/native-guide-meal-v10.zip']) {
     const bytes = await archiveData(await readFile(new URL('../../' + path, import.meta.url)));
     const archive = JSON.parse(bytes.toString('utf8'));
-    // These fixtures contain unsupported saved-document kinds. Explicitly test
-    // only their independent core graph; full-library projection must still fail.
-    assert.throws(() => projectPrivateArchive(archive));
-    archive.companionRecords = []; archive.companionPhotos = [];
+    // Every authored document kind in these fixtures now projects, so full-library
+    // projection succeeds and preserves the companion documents, not just the core graph.
     const assets: Record<string, string> = {};
-    for (const type of ['photos', 'recipeAssets']) for (const row of archive[type] ?? []) assets[type + '|' + row.id] = randomUUID();
+    for (const type of ['photos', 'recipeAssets', 'companionPhotos']) for (const row of archive[type] ?? []) assets[type + '|' + row.id] = randomUUID();
     const result = projectPrivateArchive(archive, assets);
     for (const type of ['cooks', 'recipes', 'recipeRevisions', 'readings', 'dishes', 'events', 'reminderRules']) assert.equal(result.filter(r => r.recordType === type).length, archive[type].length, path + ':' + type);
+    const expected = (archive.companionRecords ?? []).filter((r: { kind: string }) => !privateProjectionContract.excludedDocumentKinds.includes(r.kind));
+    const companions = result.filter(r => r.recordType === 'companionRecords');
+    assert.equal(companions.length, expected.length, path + ':companionRecords');
+    assert.deepEqual(companions.map(r => String(r.payload.kind)).sort(), expected.map((r: { kind: string }) => r.kind).sort(), path + ':companionKinds');
+    assert.equal(result.filter(r => r.recordType === 'companionPhotos').length, (archive.companionPhotos ?? []).length, path + ':companionPhotos');
+    projectedCompanions += companions.length;
     assert.ok(result.every(r => !Object.hasOwn(r.payload, 'archivePath')));
   }
+  assert.ok(projectedCompanions > 0, 'fixtures must exercise companion projection');
 });

@@ -29,7 +29,7 @@ export function photoMetadata(value: unknown): Photo {
   }
   return structuredClone(p);
 }
-/** Internal owner-scoped resumable photos. No HTTP route or real configuration is enabled. */
+/** Internal owner-scoped resumable photos, exposed only through the PRIVATE_SYNC_ENABLED opt-in. */
 export class PrivatePhotos {
   private pool: Pool; private storage: Storage; private encryption: SyncEncryption;
   private limits: SyncStorageLimits; private clock: () => number;

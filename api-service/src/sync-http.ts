@@ -37,8 +37,10 @@ async function object(req: IncomingMessage, limit: number): Promise<Record<strin
   finally { bytes.fill(0); }
 }
 function empty(value: Record<string, unknown>) { if (Object.keys(value).length) throw new ApiError(422, 'invalid_sync_request'); }
-/** Explicit dependency injection only. Production startup does not supply these
- * services until strict native projection, durable application and release gates pass. */
+/** Explicit opt-in wiring only. Production startup supplies these services solely when
+ * PRIVATE_SYNC_ENABLED=true with a dedicated pool, separate keys and the strict
+ * production projector; otherwise the routes stay absent. Native durable
+ * apply/conflict UI remains an open gate. */
 export async function handlePrivateSync(req: IncomingMessage, res: ServerResponse, route: PrivateSyncRoute, auth: Authentication | undefined, services: PrivateSyncServices, capacity: { claim(): boolean; release(): void }) {
   const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '')?.[1];
   if (!auth || !token) throw new ApiError(401, 'authentication_required');
