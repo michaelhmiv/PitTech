@@ -24,7 +24,7 @@ export class AccountDeletion {
       const hint=(await client.query('SELECT email FROM auth.users WHERE id=$1',[user.id])).rows[0];if(!hint)throw new ApiError(401,'authentication_required');
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,890008))',[this.hashEmail(hint.email)]);
       await lockAccount(client,user.id);
-      const account=(await client.query('SELECT id,email FROM auth.users WHERE id=$1 FOR UPDATE',[user.id])).rows[0];if(!account)throw new ApiError(401,'authentication_required');
+      const account=(await client.query('SELECT id,email FROM auth.users WHERE id=$1',[user.id])).rows[0];if(!account)throw new ApiError(401,'authentication_required');
       const applied=(await client.query<Job>('SELECT * FROM moderation.deletions WHERE operation_id=$1',[request.operationId])).rows[0];
       if(applied){if(applied.request_hash!==hash||!equalHash(applied.proof_hash,request.proofChallenge))throw new ApiError(409,'retry_content_changed');return this.receipt(applied);}
       if((await client.query('SELECT 1 FROM moderation.deletions WHERE user_id=$1',[user.id])).rowCount)throw new ApiError(409,'deletion_already_requested');
@@ -86,7 +86,7 @@ export class AccountDeletion {
       await lockAccount(client,user);
       if((await client.query('SELECT 1 FROM publications.objects WHERE owner_id=$1 LIMIT 1',[user])).rowCount)return false;
       if((await client.query('SELECT 1 FROM moderation.notices WHERE user_id=$1 AND envelope IS NOT NULL AND lease_until>$2 LIMIT 1',[user,this.clock()])).rowCount)return false;
-      const account=(await client.query('SELECT email FROM auth.users WHERE id=$1 FOR UPDATE',[user])).rows[0];
+      const account=(await client.query('SELECT email FROM auth.users WHERE id=$1',[user])).rows[0];
       if(!account)throw new Error('Deletion ownership unavailable');
       await client.query('DELETE FROM moderation.notices WHERE user_id=$1',[user]);
       const noticeId=randomUUID(),mail:LifecycleMail={id:noticeId,email:account.email,kind:'deletion_complete'},now=this.clock();
