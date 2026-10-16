@@ -146,9 +146,17 @@ jobs:
         with:
           name: pittech-native-test-evidence-${{ github.run_number }}
           path: |
-            build/native-tests.xcresult.zip
             build/native-tests.log
             build/native-ui-evidence/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload full native result bundle separately
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-result-bundle-${{ github.run_number }}
+          path: build/native-tests.xcresult.zip
           if-no-files-found: warn
           retention-days: 14
 
