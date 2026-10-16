@@ -141,6 +141,22 @@ class AccountTest {
         val restarted=AccountManager(memory,this,api,true,cleanup={owner->assertEquals(user,owner);attempts++})
         assertEquals(2,attempts);assertNull(memory.value.deletion!!.cleanupUserId);restarted.dismissCompletedDeletion();yield();assertNull(memory.value.deletion)
     }
+    @Test fun localJournalRemovalWorksWhileDisabledAndLeavesDeletionAlone()=runBlocking {
+        val deletion=DeletionRecord("12345678-1234-4234-8234-123456789abc",java.util.UUID.randomUUID().toString(),token)
+        val memory=Memory(AccountState(session=session(),deletion=deletion));var calls=0
+        val api=AccountAPI{_,_,_->fail("Journal removal must not use the network");JSONObject()}
+        val account=AccountManager(memory,this,api,false,removeJournal={calls++})
+        account.removeLocalJournal();yield()
+        assertEquals(1,calls);assertEquals(deletion,memory.value.deletion);assertNotNull(memory.value.session)
+        assertEquals("Local journal removed from this device. Your server account is unchanged.",account.presentation.value.message)
+        val blocked=AccountManager(memory,this,api,false,removeJournal={throw LocalJournalRemovalBlocked("Finish or stop the active cook first.")})
+        blocked.removeLocalJournal();yield()
+        assertEquals("Finish or stop the active cook first.",blocked.presentation.value.message)
+        assertEquals(deletion,memory.value.deletion)
+        val failing=AccountManager(memory,this,api,false,removeJournal={error("Synthetic storage interruption")})
+        failing.removeLocalJournal();yield()
+        assertEquals("Local journal removal failed. Your journal is unchanged.",failing.presentation.value.message)
+    }
     @Test fun deletionRetries401OnceWithoutChangingBodyOrAccount()=runBlocking {
         val memory=Memory(AccountState(session=session()));var calls=0;var refreshed=0;var request:String?=null
         val receipt=DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"queued")

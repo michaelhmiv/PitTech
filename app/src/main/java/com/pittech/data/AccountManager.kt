@@ -12,7 +12,7 @@ import java.time.Instant
 import java.util.UUID
 
 internal data class AccountPresentation(val signedIn: Boolean = false, val challengeEmail: String? = null, val canResend: Boolean = true, val interruptedVerification: Boolean = false, val pendingLink: Boolean = false, val busy: Boolean = false, val message: String? = null, val deletion: DeletionRecord? = null)
-internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis, private val cleanup: (String) -> Unit = {}) {
+internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis, private val cleanup: (String) -> Unit = {}, private val removeJournal: (suspend () -> Unit)? = null) {
     private var state = AccountState()
     private var storageReady = true
     private val mutex = Mutex()
@@ -162,6 +162,25 @@ internal class AccountManager(private val storage: AccountStorage, private val s
     }
     fun dismissCompletedDeletion()=perform {
         require(state.deletion?.receipt?.state=="complete");cleanupAcceptedDeletion();save(AccountState());publish(message="Account deletion is complete. Your local journal stays on this device.")
+    }
+    /** Device-local journal removal. Independent of account deletion and of account availability: the server account, credentials and deletion records are untouched, and this works whether accounts are enabled or not. */
+    fun removeLocalJournal() {
+        // Deliberately not perform(): the journal is device-local, so account
+        // availability and account-storage readiness must not gate removal.
+        if(_presentation.value.busy) return
+        publish(busy=true)
+        scope.launch {
+            mutex.withLock {
+                try {
+                    val remove=removeJournal ?: error("Local journal removal is unavailable on this device.")
+                    remove()
+                    publish(message="Local journal removed from this device. Your server account is unchanged.")
+                }
+                catch(e: CancellationException) { publish(message="Local journal removal was interrupted. Your journal is unchanged."); throw e }
+                catch(e: LocalJournalRemovalBlocked) { publish(message=e.message) }
+                catch(e: Exception) { publish(message="Local journal removal failed. Your journal is unchanged.") }
+            }
+        }
     }
 
 }

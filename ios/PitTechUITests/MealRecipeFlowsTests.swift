@@ -7,7 +7,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, ["Account", "Delete account", "Report publication", "Report publisher", "Community controls"].contains(navigation.identifier) {
+            if let navigation, ["Account", "Delete account", "Remove local journal", "Report publication", "Report publisher", "Community controls"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
@@ -203,6 +203,29 @@ final class MealRecipeFlowsTests: XCTestCase {
             let finished = app.buttons["Close completed request"]; reveal(finished, app: app)
             capture(large ? "Account deletion complete large text" : "Account deletion complete")
             finished.tap(); XCTAssertTrue(app.textFields["account-email"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
+    func testLocalJournalRemovalConfirmationAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let remove = app.buttons["local-journal-remove"]; reveal(remove, app: app); remove.tap()
+            let acknowledgment = app.switches["local-journal-acknowledge"].firstMatch
+            setSwitch(acknowledgment, on: true, app: app)
+            let typed = app.textFields["local-journal-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("REMOVE")
+            app.buttons["Hide keyboard"].tap()
+            let submit = app.buttons["local-journal-submit"]; reveal(submit, app: app)
+            XCTAssertTrue(submit.isEnabled)
+            capture(large ? "Local journal removal review large text" : "Local journal removal review")
+            submit.tap()
+            let message = app.staticTexts["account-message"]; XCTAssertTrue(message.waitForExistence(timeout: 10)); reveal(message, app: app)
+            XCTAssertTrue(message.label.contains("Local journal removed"))
+            capture(large ? "Local journal removed large text" : "Local journal removed")
+            app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
+            XCTAssertTrue(app.staticTexts["No finished cooks yet"].waitForExistence(timeout: 10))
             app.terminate()
         }
     }

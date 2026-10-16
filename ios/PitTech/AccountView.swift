@@ -7,6 +7,7 @@ struct NativeAccountView: View {
     @State private var code = ""
     @State private var confirmingSignOut = false
     @State private var reviewingDeletion = false
+    @State private var reviewingJournal = false
     private enum Field: Hashable { case email, code }
     @FocusState private var focused: Field?
     var body: some View {
@@ -39,6 +40,10 @@ struct NativeAccountView: View {
                     Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
                 }
             } else { signInContent }
+            Section("Remove local journal") {
+                Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
+                Button("Remove local journal", role: .destructive) { reviewingJournal = true }.disabled(account.busy).accessibilityIdentifier("local-journal-remove")
+            }
             if account.busy { ProgressView("Connecting…") }
             if let message = account.message { Section { Text(message).accessibilityIdentifier("account-message") } }
         }
@@ -49,6 +54,7 @@ struct NativeAccountView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $reviewingDeletion) { NavigationStack { NativeDeletionReviewView { reviewingDeletion = false; Task { await account.requestDeletion() } } } }
+        .sheet(isPresented: $reviewingJournal) { NavigationStack { NativeLocalJournalReviewView { reviewingJournal = false; account.removeLocalJournal() } } }
         .confirmationDialog("Sign out on this device?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await account.signOut() } }.accessibilityIdentifier("account-confirm-signout")
         } message: { Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.") }
@@ -93,6 +99,30 @@ private struct NativeDeletionReviewView: View {
                 Button("Delete account and server data", role: .destructive) { typing = false; confirm() }.disabled(!acknowledged || typed != "DELETE").accessibilityIdentifier("account-deletion-submit")
             }
         }.navigationTitle("Delete account").navigationBarTitleDisplayMode(.inline).scrollDismissesKeyboard(.interactively)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
+    }
+}
+private struct NativeLocalJournalReviewView: View {
+    let confirm: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var acknowledged = false
+    @State private var typed = ""
+    @FocusState private var typing: Bool
+    var body: some View {
+        Form {
+            Section("This device's journal") {
+                Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This cannot be undone.")
+                Text("Finish or stop any active cook and its recording first. Removal is refused while a cook is active or a recording is in progress.")
+            }
+            Section("Server account") {
+                Text("This does not delete the server account. Signing in again will not bring the journal back. Credentials, deletion records and recovery, and community block and report device state stay untouched.")
+            }
+            Section {
+                Toggle("I understand the journal on this device is removed and my account stays", isOn: $acknowledged).accessibilityIdentifier("local-journal-acknowledge")
+                TextField("Type REMOVE", text: $typed).textInputAutocapitalization(.characters).autocorrectionDisabled().focused($typing).accessibilityIdentifier("local-journal-confirmation")
+                Button("Remove local journal", role: .destructive) { typing = false; confirm() }.disabled(!acknowledged || typed != "REMOVE").accessibilityIdentifier("local-journal-submit")
+            }
+        }.navigationTitle("Remove local journal").navigationBarTitleDisplayMode(.inline).scrollDismissesKeyboard(.interactively)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
     }
 }

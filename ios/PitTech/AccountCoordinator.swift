@@ -6,6 +6,7 @@ import Observation
     private let vault: any NativeAccountStorage
     private let api: any NativeAccountAPI
     private let cleanup: (String) throws -> Void
+    var removeJournal: (@MainActor () throws -> Void)?
     private var state = NativeAccountState()
     private var storageReady = true
     private var refreshTask: Task<String, Error>?
@@ -19,8 +20,8 @@ import Observation
     var deletionRecord: NativeDeletionRecord? { state.deletion }
     var canResend: Bool { state.challenge.map { Date().timeIntervalSince($0.created) >= 60 } ?? true }
     var interruptedVerification: Bool { state.challenge?.operation != nil }
-    init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient(), cleanup: @escaping (String) throws -> Void = { _ in }) {
-        self.enabled = enabled; self.vault = vault; self.api = api; self.cleanup = cleanup
+    init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient(), cleanup: @escaping (String) throws -> Void = { _ in }, removeJournal: (@MainActor () throws -> Void)? = nil) {
+        self.enabled = enabled; self.vault = vault; self.api = api; self.cleanup = cleanup; self.removeJournal = removeJournal
         do {
             state = try vault.load(); try state.deletion?.validate()
             if state.deletion?.receipt != nil { do { try cleanupAcceptedDeletion() } catch { message = "Device account metadata cleanup needs a retry. Your journal is unchanged." } }
@@ -211,6 +212,19 @@ import Observation
         guard !busy, state.deletion?.receipt?.state == "complete" else { return }
         do { try cleanupAcceptedDeletion(); try save(NativeAccountState()); message = "Account deletion is complete. Your local journal stays on this device." }
         catch { message = "This device could not clear its recovery record. Try again." }
+    }
+    /// Device-local journal removal. Independent of account deletion and of account
+    /// availability: the server account, credentials and deletion records are untouched,
+    /// and this works whether accounts are enabled or not.
+    func removeLocalJournal() {
+        guard !busy else { return }
+        busy = true; defer { busy = false }
+        do {
+            guard let removeJournal else { throw NativeAccountError.invalid }
+            try removeJournal()
+            message = "Local journal removed from this device. Your server account is unchanged."
+        } catch let removal as LocalJournalRemovalError { message = removal.localizedDescription }
+        catch { message = "Local journal removal failed. Your journal is unchanged." }
     }
 
 }

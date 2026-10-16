@@ -60,6 +60,10 @@ class CooksViewModel(
         com.pittech.data.PublicationOperationsStore(context).purgeAccount(user)
         com.pittech.data.CommunityVault(context).purgeAccount(user)
         communityControls.reload();publicDiscovery.controlsChanged()
+    },removeJournal={
+        com.pittech.data.LocalJournalRemoval(app.database,com.pittech.data.PhotoStorage(context)).remove()
+        // The open detail would otherwise stick on "Opening cook…" for a deleted row.
+        closeCook()
     })
     internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes

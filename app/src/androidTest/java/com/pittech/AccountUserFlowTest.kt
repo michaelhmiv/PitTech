@@ -89,6 +89,32 @@ import android.graphics.Bitmap
             compose.waitUntil(10000){storage.value.deletion==null};assertNull(storage.value.session)
         }finally{scope.cancel()}
     }
+    @Test fun localJournalRemovalRequiresTypedConfirmationAndLeavesAccountStateAlone() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+        val storage=object:AccountStorage{
+            var value=AccountState()
+            override fun load()=value
+            override fun save(value:AccountState){this.value=value}
+        }
+        var removals=0
+        // Accounts stay disabled: the journal is device-local and must not need them.
+        val account=AccountManager(storage,scope,AccountAPI{_,_,_->JSONObject()},false,removeJournal={removals++})
+        try{
+            compose.setContent{PitTechTheme{AccountContent(account)}}
+            compose.onNodeWithTag("account-unavailable").assertIsDisplayed()
+            compose.onNodeWithTag("local-journal-remove").performScrollTo().performClick()
+            compose.onNodeWithTag("local-journal-submit").assertIsNotEnabled();assertEquals(0,removals)
+            compose.onNodeWithTag("local-journal-acknowledge").performScrollTo().performClick()
+            compose.onNodeWithTag("local-journal-confirmation").performScrollTo().performTextReplacement("REMOVE")
+            screenshot("account-local-journal-review")
+            compose.onNodeWithTag("local-journal-submit").performClick()
+            compose.waitUntil(10000){removals==1}
+            compose.waitUntil(10000){compose.onAllNodesWithTag("account-message").fetchSemanticsNodes().isNotEmpty()}
+            compose.onNodeWithTag("account-message").assertTextContains("Local journal removed")
+            screenshot("account-local-journal-removed")
+            assertNull(storage.value.session);assertNull(storage.value.deletion)
+        }finally{scope.cancel()}
+    }
     private fun screenshot(name: String) {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val image=instrumentation.uiAutomation.takeScreenshot()
