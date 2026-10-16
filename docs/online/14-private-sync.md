@@ -95,8 +95,8 @@ without forced database termination. No external database was changed.
 
 `PrivateSnapshots` implements owner-scoped reads, exact mutation receipts and a
 versioned compare-and-swap commit over encrypted objects. It is internal only: no
-HTTP route, production projector, real key/configuration or native upload calls
-are connected. A required projection callback must eventually validate the exact
+production HTTP route, complete production projector, real key/configuration or native upload calls
+are connected. The dependency-injected HTTP adapter below is exercised only in tests. A required projection callback must eventually validate the exact
 native library vocabulary and relationships; generic metadata validation is only
 the synthetic test adapter. Asset references require completed, verified, owner-scoped photo metadata.
 The internal owned-photo path is described below and remains unexposed. This remains an incomplete sync feature.
@@ -146,5 +146,41 @@ Snapshots accept only complete assets belonging to the same owner, including
 assets in retained conflict copies. The final commit rechecks ownership/completion.
 An asset referenced by the current snapshot/recovery copies cannot be abandoned;
 a concurrent head change forces a recheck. Explicit abandonment retires bytes for
-the existing fenced cleanup and is retryable. No HTTP endpoints, production native
+the existing fenced cleanup and is retryable. No production endpoints, complete native
 projection, runtime keys or native photo upload/apply are connected yet.
+
+
+## Authenticated transport and portable projection checkpoint
+
+An optional dependency-injected HTTP adapter exposes exact `/v1/sync` and private
+photo routes only when a caller explicitly supplies both private services. Main
+startup does not construct them. Authentication resolves the owner from the
+existing bearer session before reading payloads. JSON and chunk lengths, encodings,
+UTF-8, idempotency headers, route methods and global request capacity are bounded.
+Responses are private/no-store; request logs contain route templates only. The
+real-Postgres HTTP test uses real proof-bound authentication with an in-memory
+fake mailer: no real message is sent. It covers session rejection, owner isolation,
+CAS/retry, resumable photos, explicit abandonment and disabled routing.
+
+`private-sync-projection-v1.json` declares portable fields independently of archive
+import. All three pure validators consume the same contract and twenty shared
+cases. Paths become explicit owned asset IDs. Settings, recordings, probe
+assignment activation, delivery occurrences, timers and rule enabled/status fields
+never enter the portable rows. Unknown fields and broken ownership graphs reject
+the entire projection. Android validates strict JSON syntax before its permissive
+org.json decoder; all clients reject malformed embedded JSON. Tests also project
+a real-shaped journal, preserve its input and reject missing photo mappings.
+A new encrypted-storage test exercises the strict validator without synthetic
+metadata-only payloads. Local typecheck/unit results are not native/DB Actions
+proof; the fresh checkpoint must pass those gates.
+
+This contract is explicitly `releaseReady: false`. Companion document codecs are
+not implemented and fail the whole projection with an unsupported-data error;
+nothing is silently omitted. Native transaction application, reference semantics
+inside serialized documents, durable mutation/outbox state, inactive remote-rule
+adoption, branch storage, conflict recovery and two-device verification remain
+required. No production route, cloud-backup status, account activation or native
+upload flow is enabled by this checkpoint.
+
+Prior backend Actions at `2a94068` passed 83 tests with zero skips, including real
+Postgres snapshot/photo races and production-image checks (run 38936939647).

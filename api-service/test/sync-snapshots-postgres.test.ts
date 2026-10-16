@@ -5,6 +5,12 @@ import { readFile, writeFile, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
+import { once } from 'node:events';
+import { Authentication } from '../src/auth.ts';
+import type { SignInMail } from '../src/auth-email.ts';
+import { makeServer } from '../src/http.ts';
+import { Relay } from '../src/relay.ts';
+import { MemoryRepository, budgets } from './helpers.ts';
 import sharp from 'sharp';
 import { PrivatePhotos, PRIVATE_PHOTO_CHUNK_BYTES } from '../src/sync-photos.ts';
 import { migrate } from '../src/migrate.ts';
@@ -12,6 +18,7 @@ import { FileStorage, type Storage } from '../src/storage.ts';
 import { SyncEncryption } from '../src/sync-encryption.ts';
 import { PrivateSnapshots, type SyncStorageLimits } from '../src/sync-snapshots.ts';
 import { syncEnvelope, type SyncEnvelope } from '../src/sync-envelope.ts';
+import { privateLibraryEnvelope } from '../src/sync-projection.ts';
 import { stable } from '../src/pack.ts';
 import { AccountDeletion } from '../src/account-deletion.ts';
 import { PrivateSyncPurger } from '../src/sync-purge.ts';
@@ -31,6 +38,7 @@ test('real Postgres encrypted snapshots: exact retries, compare-and-swap, quotas
   const connectionString = url.toString(), admin = new Pool({ connectionString, max: 5 });
   const pool = new Pool({ connectionString, max: 8, options: '-c role=pittech_private_sync_runtime' });
   const life = new Pool({ connectionString, max: 5, options: '-c role=pittech_lifecycle_runtime' });
+  const authPool = new Pool({ connectionString, max: 5, options: '-c role=pittech_auth_runtime' });
   const root = await mkdtemp(join(tmpdir(), 'pittech-snapshot-test-')), storage = new FileStorage(root);
   const encryption = new SyncEncryption('synthetic', { synthetic: randomBytes(32).toString('base64url') });
   const limits: SyncStorageLimits = { ownerBytes: 1024 ** 2, globalBytes: 8 * 1024 ** 2, dailyBytes: 16 * 1024 ** 2, dailyUploads: 100, ownerOperations: 100 };
@@ -42,7 +50,7 @@ test('real Postgres encrypted snapshots: exact retries, compare-and-swap, quotas
   const requestDelete = (service: AccountDeletion, id: string) => service.request({ id, email: 'ignored@example.com' }, { operationId: randomUUID(), proofChallenge: proofHash(credential()), confirm: 'delete-account', policyVersion: 'account-deletion-v1' });
   try {
     await migrate(admin); await migrate(admin);
-    for (const role of ['lifecycle', 'private-sync']) await admin.query(await readFile(new URL(`../operations/${role}-runtime-role.sql`, import.meta.url), 'utf8'));
+    for (const role of ['auth', 'lifecycle', 'private-sync']) await admin.query(await readFile(new URL(`../operations/${role}-runtime-role.sql`, import.meta.url), 'utf8'));
     await t.test('empty reads are owner scoped; canonical snapshots persist encrypted and exact replay does not restore an old head', async () => {
       const owner = await freshOwner(), other = await freshOwner(), api = create(), first = snapshot('Synthetic private journal alpha');
       assert.deepEqual(await api.read(owner), { version: 0, envelope: null });
@@ -208,7 +216,72 @@ test('real Postgres encrypted snapshots: exact retries, compare-and-swap, quotas
       await assert.rejects(strict.put(owner, snapshot('Unprojected input')), /projection rejection/);
       assert.equal((await admin.query('SELECT count(*) AS n FROM private_sync.objects WHERE user_id=$1', [owner])).rows[0].n, '0');
     });
+    await t.test('strict portable library projection survives encrypted storage and rejects malformed ownership before reservation', async () => {
+      const fixture = JSON.parse(await readFile(new URL('../../contracts/fixtures/private-sync-projection-cases-v1.json', import.meta.url), 'utf8'));
+      const owner = await freshOwner(), api = new PrivateSnapshots(pool, storage, encryption, privateLibraryEnvelope, limits, () => now);
+      const records = fixture.cases[0].rows.filter((r: { recordType: string }) => r.recordType !== 'photos').map((r: object) => ({ ...r, deleted: false, version: { counter: 1, clientId: device } }));
+      const value = { contractVersion: 1, baseVersion: 0, mutationId: randomUUID(), clientId: device, records, conflicts: [] };
+      await api.put(owner, value); assert.deepEqual((await api.read(owner)).envelope, value);
+      const invalid = structuredClone(value); invalid.baseVersion = 1; invalid.mutationId = randomUUID(); invalid.records.find((r: { recordType: string }) => r.recordType === 'events').payload.noteMetadataJson = '{"version":1,"category":"general","token":"synthetic-placeholder"}';
+      const before = await admin.query('SELECT count(*) AS n FROM private_sync.objects WHERE user_id=$1', [owner]);
+      await assert.rejects(api.put(owner, invalid), { code: 'invalid_private_library' });
+      assert.deepEqual((await admin.query('SELECT count(*) AS n FROM private_sync.objects WHERE user_id=$1', [owner])).rows, before.rows);
+    });
+    await t.test('authenticated sync HTTP binds ownership, resumes photos, redacts logs and stays absent without explicit services', async () => {
+      const owner = await freshOwner(), other = await freshOwner(), sent: SignInMail[] = [];
+      const auth = new Authentication(authPool, new AuthSecrets(credential(), credential()), { send: async mail => { sent.push(mail); } }, 100, () => now);
+      const signIn = async (id: string) => {
+        const verifier = credential(), challenge = await auth.start({ email: id + '@example.com', idempotencyId: randomUUID(), proofChallenge: proofHash(verifier) });
+        await auth.deliverPending(); const mail = sent.find(v => v.challengeId === challenge.challengeId); assert.ok(mail);
+        return auth.verify({ challengeId: challenge.challengeId, verifier, code: mail.code, idempotencyId: randomUUID() });
+      };
+      const a = await signIn(owner), b = await signIn(other), log: unknown[] = [];
+      const relay = new Relay(new MemoryRepository(), storage, budgets, () => now);
+      const server = makeServer(relay, { ipKey: credential(), auth, uploadsEnabled: false, sync: { snapshots: create(storage, photoCaps), photos: photos() }, log: value => log.push(value) });
+      const absent = makeServer(relay, { ipKey: credential(), auth, uploadsEnabled: false });
+      server.listen(0, '127.0.0.1'); absent.listen(0, '127.0.0.1'); await Promise.all([once(server, 'listening'), once(absent, 'listening')]);
+      const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port, disabled = 'http://127.0.0.1:' + (absent.address() as { port: number }).port;
+      const headers = (token = a.accessToken) => ({ Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' });
+      const send = (path: string, body: unknown, method = 'POST', token = a.accessToken, key?: string) => fetch(origin + path, { method, headers: { ...headers(token), ...(key ? { 'Idempotency-Key': key } : {}) }, body: JSON.stringify(body) });
+      try {
+        assert.equal((await fetch(origin + '/v1/sync')).status, 401);
+        assert.equal((await fetch(origin + '/v1/sync', { headers: headers(credential()) })).status, 401);
+        assert.equal((await fetch(disabled + '/v1/sync', { headers: headers() })).status, 404);
+        const empty = await fetch(origin + '/v1/sync', { headers: headers() }); assert.deepEqual(await empty.json(), { version: 0, envelope: null });
+        assert.equal(empty.headers.get('cache-control'), 'private, no-store'); assert.equal(empty.headers.get('vary'), 'Authorization'); assert.equal(empty.headers.get('access-control-allow-origin'), null);
+        const value = snapshot('Synthetic HTTP private journal');
+        assert.equal((await send('/v1/sync', value, 'PUT')).status, 400);
+        assert.equal((await send('/v1/sync', { ...value, userId: other }, 'PUT', a.accessToken, value.mutationId)).status, 422);
+        const first = await send('/v1/sync', value, 'PUT', a.accessToken, value.mutationId); assert.equal(first.status, 200); const receipt = await first.json();
+        assert.deepEqual(await (await send('/v1/sync', value, 'PUT', a.accessToken, value.mutationId)).json(), receipt);
+        assert.deepEqual(await (await fetch(origin + '/v1/sync', { headers: headers(b.accessToken) })).json(), { version: 0, envelope: null });
+        const stale = snapshot('Stale HTTP update'); assert.equal((await send('/v1/sync', stale, 'PUT', a.accessToken, stale.mutationId)).status, 409);
+        const invalidUtf = await fetch(origin + '/v1/sync', { method: 'PUT', headers: headers(), body: new Uint8Array([255]) }); assert.equal(invalidUtf.status, 400);
+        const input = photoInput(); assert.equal((await send('/v1/sync/photos', input, 'POST', a.accessToken, input.assetId)).status, 200);
+        const photoPath = '/v1/sync/photos/' + input.assetId;
+        assert.equal((await send(photoPath + '/complete', {})).status, 409);
+        assert.equal((await fetch(origin + photoPath + '/status', { headers: headers(b.accessToken) })).status, 404);
+        const tooLarge = await fetch(origin + photoPath + '/parts/0', { method: 'PUT', headers: { Authorization: headers().Authorization, 'Content-Type': 'application/octet-stream' }, body: new Uint8Array(PRIVATE_PHOTO_CHUNK_BYTES + 1) }); assert.equal(tooLarge.status, 413);
+        for (let i = 0; i * PRIVATE_PHOTO_CHUNK_BYTES < picture.length; i++) {
+          const uploaded = await fetch(origin + photoPath + '/parts/' + i, { method: 'PUT', headers: { Authorization: headers().Authorization, 'Content-Type': 'application/octet-stream' }, body: new Uint8Array(picture.subarray(i * PRIVATE_PHOTO_CHUNK_BYTES, (i + 1) * PRIVATE_PHOTO_CHUNK_BYTES)) }); assert.equal(uploaded.status, 200);
+        }
+        const complete = await send(photoPath + '/complete', {}); assert.equal(complete.status, 200); assert.equal((await complete.json()).complete, true);
+        const download = await fetch(origin + photoPath, { headers: headers() }); assert.equal(download.status, 200); assert.equal(download.headers.get('content-type'), 'image/jpeg'); assert.equal(download.headers.get('x-content-sha256'), input.sha256); assert.deepEqual(Buffer.from(await download.arrayBuffer()), picture);
+        assert.equal((await fetch(origin + photoPath, { headers: headers(b.accessToken) })).status, 404);
+        assert.equal((await fetch(origin + '/packs/' + input.assetId)).status, 404); assert.equal((await fetch(origin + '/v1/recipes/' + input.assetId)).status, 404);
+        const withPhoto = snapshot('Owned HTTP photo', 1, 2); withPhoto.records[0].assetIds = [input.assetId];
+        assert.equal((await send('/v1/sync', withPhoto, 'PUT', a.accessToken, withPhoto.mutationId)).status, 200);
+        assert.equal((await send(photoPath, {}, 'DELETE')).status, 422); assert.equal((await send(photoPath, { confirm: 'abandon-private-photo' }, 'DELETE')).status, 409);
+        const detach = snapshot('Explicit photo detachment', 2, 3); assert.equal((await send('/v1/sync', detach, 'PUT', a.accessToken, detach.mutationId)).status, 200);
+        assert.equal((await send(photoPath, { confirm: 'abandon-private-photo' }, 'DELETE')).status, 200);
+        assert.equal((await fetch(origin + photoPath, { headers: headers() })).status, 404);
+        await auth.logout(a.refreshToken); assert.equal((await fetch(origin + '/v1/sync', { headers: headers() })).status, 401);
+        now += 16 * 60000; assert.equal((await fetch(origin + '/v1/sync', { headers: headers(b.accessToken) })).status, 401);
+        const logs = JSON.stringify(log); for (const privateValue of [owner, other, input.assetId, a.accessToken, b.accessToken, value.records[0].payload!.title]) assert.ok(!logs.includes(String(privateValue)));
+        assert.ok(logs.includes('/v1/sync/photos/:id/parts/:index'));
+      } finally { server.closeAllConnections(); absent.closeAllConnections(); await Promise.all([new Promise<void>(r => server.close(() => r())), new Promise<void>(r => absent.close(() => r()))]); }
+    });
   } finally {
-    await Promise.all([admin.end(), pool.end(), life.end()]); await control.query(`DROP DATABASE ${database}`); await control.end(); await rm(root, { recursive: true, force: true });
+    await Promise.all([admin.end(), pool.end(), life.end(), authPool.end()]); await control.query(`DROP DATABASE ${database}`); await control.end(); await rm(root, { recursive: true, force: true });
   }
 });

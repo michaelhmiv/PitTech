@@ -34,6 +34,7 @@ targets:
     resources:
       - path: PitTech/PrivacyInfo.xcprivacy
       - path: PitTech/TelemetryNotices.txt
+      - path: Contracts/private-sync-projection-v1.json
     dependencies:
       - package: CombustionBLE
         product: CombustionBLE
@@ -97,6 +98,10 @@ targets:
       - path: ../contracts/fixtures/public-native-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/source-review-v1.json
+        buildPhase: resources
+      - path: Contracts/private-sync-projection-v1.json
+        buildPhase: resources
+      - path: ../contracts/fixtures/private-sync-projection-cases-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/native-publication-android-v1.json
         buildPhase: resources

@@ -1,0 +1,2795 @@
+{
+  "contractVersion": 1,
+  "cases": [
+    {
+      "name": "portable history with mapped photo and inactive rule definition",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": false
+    },
+    {
+      "name": "unknown credentials rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "providerToken": "synthetic-placeholder"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "nested credentials rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\",\"token\":\"synthetic-placeholder\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "reminder activation not transportable",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1,
+            "enabled": true
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "filesystem path not transportable",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc",
+            "relativePath": "private/photo.jpg"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "wrong parent rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "missing-cook",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "numeric text rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": "198.5",
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "boolean number rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": true,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "fractional timestamp rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1.5,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "unsafe integer rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 9007199254740992,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "reminder discriminator mismatch rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "clock",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "malformed embedded JSON rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{'version':1,'category':'general'}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "trailing embedded JSON rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"} true"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "unquoted embedded key rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{version:1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "unknown nested trigger field rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000,\"enabled\":true}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "record identity mismatch rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "another-cook",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "missing photo ownership reference rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "duplicate identity rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "cross-cook dish reference rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-b",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "cooks",
+          "recordId": "cook-b",
+          "payload": {
+            "id": "cook-b",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "unsupported document stops whole projection",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "document-a",
+          "payload": {
+            "id": "document-a",
+            "kind": "playbook",
+            "title": "Saved document",
+            "payload": {},
+            "created": 1,
+            "updated": 2
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    }
+  ],
+  "projection": {
+    "archive": {
+      "cooks": [
+        {
+          "id": "cook-a",
+          "title": "Private dinner",
+          "status": "completed",
+          "startedAtUtcMillis": 1000,
+          "startedTimeZoneId": "UTC",
+          "createdAtUtcMillis": 1000,
+          "updatedAtUtcMillis": 2000
+        }
+      ],
+      "dishes": [
+        {
+          "id": "dish-a",
+          "cookId": "cook-a",
+          "name": "Brisket",
+          "foodType": "beef",
+          "createdAtUtcMillis": 1000,
+          "updatedAtUtcMillis": 2000
+        }
+      ],
+      "events": [
+        {
+          "id": "event-a",
+          "cookId": "cook-a",
+          "dishId": "dish-a",
+          "eventType": "note",
+          "title": "Taste check",
+          "details": "Keep both edits",
+          "occurredAtUtcMillis": 1500,
+          "recordedAtUtcMillis": 1500,
+          "timeZoneId": "UTC",
+          "source": "manual",
+          "createdAtUtcMillis": 1500,
+          "updatedAtUtcMillis": 1500,
+          "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+        }
+      ],
+      "logReadingLinks": [
+        {
+          "readingId": "reading-a",
+          "eventId": "event-a"
+        }
+      ],
+      "photos": [
+        {
+          "id": "photo-a",
+          "cookId": "cook-a",
+          "dishId": "dish-a",
+          "eventId": "event-a",
+          "mimeType": "image/jpeg",
+          "caption": "Private photo",
+          "addedAtUtcMillis": 1600,
+          "relativePath": "photos/private.jpg",
+          "originalFileName": "private.jpg",
+          "archivePath": "photos/photo-a.jpg"
+        }
+      ],
+      "probes": [
+        {
+          "id": "probe-a",
+          "cookId": "cook-a",
+          "name": "Food",
+          "measurementType": "internal",
+          "source": "manual",
+          "createdAtUtcMillis": 1000,
+          "assignedDishId": "dish-a"
+        }
+      ],
+      "readings": [
+        {
+          "id": "reading-a",
+          "cookId": "cook-a",
+          "dishId": "dish-a",
+          "probeName": "Manual",
+          "measurementType": "internal",
+          "value": 198.5,
+          "unit": "F",
+          "measuredAtUtcMillis": 1500,
+          "timeZoneId": "UTC",
+          "source": "manual",
+          "recordedAtUtcMillis": 1500
+        }
+      ],
+      "reminderRules": [
+        {
+          "id": "rule-a",
+          "cookId": "cook-a",
+          "title": "Rest reminder",
+          "kind": "duration",
+          "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+          "createdAtUtcMillis": 1000,
+          "updatedAtUtcMillis": 2000,
+          "schemaVersion": 1,
+          "enabled": true,
+          "status": "active"
+        }
+      ],
+      "schemaVersion": 10,
+      "preferences": {
+        "temperatureUnit": "F"
+      },
+      "recordings": [
+        {
+          "cookId": "cook-a",
+          "active": true
+        }
+      ],
+      "probeAssignments": [
+        {
+          "probeId": "probe-a",
+          "dishId": "dish-a"
+        }
+      ],
+      "reminderOccurrences": [
+        {
+          "id": "local-occurrence",
+          "status": "pending"
+        }
+      ]
+    },
+    "assets": {
+      "photos|photo-a": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+    },
+    "expected": [
+      {
+        "recordType": "cooks",
+        "recordId": "cook-a",
+        "payload": {
+          "id": "cook-a",
+          "title": "Private dinner",
+          "status": "completed",
+          "startedAtUtcMillis": 1000,
+          "startedTimeZoneId": "UTC",
+          "createdAtUtcMillis": 1000,
+          "updatedAtUtcMillis": 2000
+        },
+        "assetIds": []
+      },
+      {
+        "recordType": "dishes",
+        "recordId": "dish-a",
+        "payload": {
+          "id": "dish-a",
+          "cookId": "cook-a",
+          "name": "Brisket",
+          "foodType": "beef",
+          "createdAtUtcMillis": 1000,
+          "updatedAtUtcMillis": 2000
+        },
+        "assetIds": []
+      },
+      {
+        "recordType": "events",
+        "recordId": "event-a",
+        "payload": {
+          "id": "event-a",
+          "cookId": "cook-a",
+          "dishId": "dish-a",
+          "eventType": "note",
+          "title": "Taste check",
+          "details": "Keep both edits",
+          "occurredAtUtcMillis": 1500,
+          "recordedAtUtcMillis": 1500,
+          "timeZoneId": "UTC",
+          "source": "manual",
+          "createdAtUtcMillis": 1500,
+          "updatedAtUtcMillis": 1500,
+          "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+        },
+        "assetIds": []
+      },
+      {
+        "recordType": "logReadingLinks",
+        "recordId": "reading-a",
+        "payload": {
+          "readingId": "reading-a",
+          "eventId": "event-a"
+        },
+        "assetIds": []
+      },
+      {
+        "recordType": "photos",
+        "recordId": "photo-a",
+        "payload": {
+          "id": "photo-a",
+          "cookId": "cook-a",
+          "dishId": "dish-a",
+          "eventId": "event-a",
+          "mimeType": "image/jpeg",
+          "caption": "Private photo",
+          "addedAtUtcMillis": 1600,
+          "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+        },
+        "assetIds": [
+          "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+        ]
+      },
+      {
+        "recordType": "probes",
+        "recordId": "probe-a",
+        "payload": {
+          "id": "probe-a",
+          "cookId": "cook-a",
+          "name": "Food",
+          "measurementType": "internal",
+          "source": "manual",
+          "createdAtUtcMillis": 1000
+        },
+        "assetIds": []
+      },
+      {
+        "recordType": "readings",
+        "recordId": "reading-a",
+        "payload": {
+          "id": "reading-a",
+          "cookId": "cook-a",
+          "dishId": "dish-a",
+          "probeName": "Manual",
+          "measurementType": "internal",
+          "value": 198.5,
+          "unit": "F",
+          "measuredAtUtcMillis": 1500,
+          "timeZoneId": "UTC",
+          "source": "manual",
+          "recordedAtUtcMillis": 1500
+        },
+        "assetIds": []
+      },
+      {
+        "recordType": "reminderRules",
+        "recordId": "rule-a",
+        "payload": {
+          "id": "rule-a",
+          "cookId": "cook-a",
+          "title": "Rest reminder",
+          "kind": "duration",
+          "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+          "createdAtUtcMillis": 1000,
+          "updatedAtUtcMillis": 2000,
+          "schemaVersion": 1
+        },
+        "assetIds": []
+      }
+    ]
+  }
+}
