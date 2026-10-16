@@ -105,7 +105,7 @@ jobs:
           root = pathlib.Path.home() / "Library/Developer/CoreSimulator/Devices"
           destination = pathlib.Path("build/portable-fixtures")
           destination.mkdir(parents=True, exist_ok=True)
-          for name in ["pittech-native-recipe-fixture.zip", "pittech-native-publication.pittech"]:
+          for name in ["pittech-native-recipe-fixture.zip", "pittech-native-publication.pittech", "pittech-native-owned-update.pittech"]:
               candidates = [p for p in root.rglob(name) if p.stat().st_mtime >= int(sys.argv[1])]
               if not candidates:
                   raise SystemExit("The native writer did not produce a fresh fixture: " + name)

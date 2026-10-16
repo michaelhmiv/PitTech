@@ -40,6 +40,8 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     const one=await prepare(),operation=randomUUID(),posted=await publications.publish(alice,operation,one.validated,one.file);
     assert.deepEqual(await publications.publish(alice,operation,one.validated,one.file),posted);
     await assert.rejects(publications.publish(alice,operation,{...one.validated,sha256:'b'.repeat(64)},one.file),{code:'retry_content_changed'});
+    const ownedBytes=await publications.ownedArchive(alice,posted.id,posted.revisionId);assert.equal(digest(ownedBytes.bytes),ownedBytes.sha256);assert.equal((await canonicalPublication(ownedBytes.bytes)).payload.recipes[0].id,raw.recipes[0].id);
+    await assert.rejects(publications.ownedArchive(bob,posted.id,posted.revisionId),{code:'publication_unavailable'});await assert.rejects(publications.ownedArchive(alice,posted.id,randomUUID()),{code:'revision_changed'});
     const ownerMetadata=await publications.myItem(alice,posted.id);assert.equal(ownerMetadata.revisionId,posted.revisionId);assert.equal(ownerMetadata.status,'active');assert.deepEqual(Object.keys(ownerMetadata).sort(),['id','identityMode','revision','revisionId','status','title']);
     await assert.rejects(publications.myItem(bob,posted.id),{code:'publication_unavailable'});await assert.rejects(publications.myItem(alice,randomUUID()),{code:'publication_unavailable'});
     const publicOne=await publications.get(posted.id);assert.equal(publicOne.credit.displayName,'a PitTech cook');
@@ -95,6 +97,9 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     const image=await prepare(photoPayload,new Map([[assetPath,photo]])),photoPost=await publications.publish(alice,randomUUID(),image.validated,image.file);
     const served=await publications.media(photoPost.id,assetId);assert.equal(digest(served.bytes),served.sha256);assert.equal((await sharp(served.bytes).metadata()).exif,undefined);
     await publications.unpublish(alice,photoPost.id,randomUUID(),photoPost.revisionId);await assert.rejects(publications.media(photoPost.id,assetId),{code:'publication_unavailable'});
+    assert.ok((await publications.ownedArchive(alice,photoPost.id,photoPost.revisionId)).bytes.length>0,'Owner cannot edit a voluntarily removed original');
+    const racedStorage={put:storage.put.bind(storage),delete:storage.delete.bind(storage),get:async(key:string)=>{const bytes=await storage.get(key);await admin.query('UPDATE publications.items SET status=\'taken_down\' WHERE id=$1',[photoPost.id]);return bytes;}};
+    await assert.rejects(new Publications(pool,racedStorage,limits,()=>now).ownedArchive(alice,photoPost.id,photoPost.revisionId),{code:'publication_under_review'});
     const logs:unknown[]=[],relay=new Relay(new MemoryRepository(),storage,budgets,()=>now);
     const auth={user:async(token:unknown)=>{if(token!=='A'.repeat(43))throw new ApiError(401,'authentication_required');return {id:bob,email:'private-bob@example.com'};}} as Authentication;
     const server=makeServer(relay,{ipKey:'x'.repeat(32),uploadsEnabled:false,publications,auth,log:x=>logs.push(x)});server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -107,6 +112,8 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       const retryResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(retryResponse.status,201);assert.deepEqual(await retryResponse.json(),published);
       assert.equal((await fetch(origin+'/v1/recipes/'+published.id)).status,200);
       assert.equal((await fetch(origin+'/v1/me/recipes/'+published.id)).status,401);
+      const ownedResponse=await fetch(origin+'/v1/me/recipes/'+published.id+'/archive',{headers:{Authorization:headers.Authorization,'If-Match':published.revisionId}});assert.equal(ownedResponse.status,200);const ownArchive=Buffer.from(await ownedResponse.arrayBuffer());assert.equal(digest(ownArchive),ownedResponse.headers.get('x-content-sha256'));assert.equal((await canonicalPublication(ownArchive)).payload.title,raw.title);
+      assert.equal((await fetch(origin+'/v1/me/recipes/'+posted.id+'/archive',{headers:{Authorization:headers.Authorization,'If-Match':second.revisionId}})).status,404);
       const ownerRead=await fetch(origin+'/v1/me/recipes/'+published.id,{headers:{Authorization:headers.Authorization}});assert.equal(ownerRead.status,200);assert.equal(ownerRead.headers.get('cache-control'),'private, no-store');assert.equal((await ownerRead.json()).revisionId,published.revisionId);
       assert.equal((await fetch(origin+'/v1/me/recipes/'+posted.id,{headers:{Authorization:headers.Authorization}})).status,404);
       const page=await fetch(origin+'/c/'+published.id);assert.equal(page.status,200);const html=await page.text();

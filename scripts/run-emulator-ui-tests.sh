@@ -387,15 +387,16 @@ fi
 recipe_test_output="$output_dir/recipe-preparation-tests.txt"
 echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest' \
+  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (29 tests)' "$recipe_test_output"
+grep -q 'OK (30 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"
 done
 mkdir -p "$output_dir/portable-fixtures"
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-publication/android-publication.pittech > "$output_dir/portable-fixtures/android-publication.pittech"
+timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-publication/android-owned-update.pittech > "$output_dir/portable-fixtures/android-owned-update.pittech"
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
 
 companion_test_output="$output_dir/companion-tests.txt"

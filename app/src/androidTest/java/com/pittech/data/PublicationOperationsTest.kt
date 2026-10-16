@@ -61,7 +61,13 @@ import java.util.UUID
             assertEquals(malformed.id,store.pending(user)?.id); assertEquals(false,store.pending(user)?.rejected); assertThrows(Exception::class.java) { store.discardRejected(user) }
             api.readStatuses+=401; session.refreshes.clear()
             PublicationWriter(session,store,api).read("/v1/me/profile")
-            assertEquals(2,api.reads); assertEquals(listOf(false,true),session.refreshes); assertEquals(malformed.id,store.pending(user)?.id)
+            api.archiveStatuses+=401;session.refreshes.clear()
+            val download=File(root,"owner.zip");val writer=PublicationWriter(session,store,api)
+            writer.ownedArchive(api.receipt,download);assertEquals(2,api.archives);assertEquals(listOf(false,true),session.refreshes);assertEquals("owner bytes",download.readText())
+            api.onArchive={ session.user="cccccccc-cccc-4ccc-cccc-cccccccccccc" }
+            try { writer.ownedArchive(api.receipt,download);fail("Changed account received owner bytes") } catch(_: IllegalStateException) { }
+            assertFalse(download.exists());session.user=user
+            assertEquals(2,api.reads); assertEquals(malformed.id,store.pending(user)?.id)
         } finally { root.deleteRecursively() }
     }
     private class Session(var user: String?): PublicationSession {
@@ -73,6 +79,12 @@ import java.util.UUID
         val receipt=PublicationReceipt("dddddddd-dddd-4ddd-dddd-dddddddddddd","eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee",1,"https://pittech.app/c/dddddddd-dddd-4ddd-dddd-dddddddddddd")
         val operations=mutableListOf<String>(); val bodies=mutableListOf<ByteArray>(); val effects=mutableSetOf<String>(); val statuses=mutableListOf<Int>(); var loseResponse=false
         val readStatuses=mutableListOf<Int>(); var reads=0
+        val archiveStatuses=mutableListOf<Int>();var archives=0;var onArchive: (() -> Unit)?=null
+        override suspend fun archive(id: String,revision: String,to: File,access: String): File {
+            archives++;assertEquals(receipt.id,id);assertEquals(receipt.revisionId,revision)
+            if(archiveStatuses.isNotEmpty())throw AccountFailure(archiveStatuses.removeAt(0))
+            to.writeText("owner bytes");onArchive?.invoke();return to
+        }
         override suspend fun read(path: String, access: String): JSONObject { reads++; if(readStatuses.isNotEmpty())throw AccountFailure(readStatuses.removeAt(0)); return JSONObject() }
         override suspend fun write(operation: PublicationOperation, file: File, access: String): JSONObject {
             operations+=operation.id; bodies+=file.readBytes()

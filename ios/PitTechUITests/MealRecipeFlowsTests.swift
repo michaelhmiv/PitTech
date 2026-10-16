@@ -96,8 +96,17 @@ final class MealRecipeFlowsTests: XCTestCase {
             let save = app.buttons["cookbook-save"]; reveal(save, app: app); capture(large ? "Native cookbook opt-in preview large text" : "Native cookbook opt-in preview"); save.tap()
             let revision = app.staticTexts["Public · revision 2 · anonymous"]; reveal(revision, app: app); XCTAssertTrue(revision.waitForExistence(timeout: 15))
             let remove = app.buttons["Remove from public access"]; reveal(remove, app: app); remove.tap()
-            let removeConfirm = app.buttons["cookbook-unpublish-confirm"]; XCTAssertTrue(removeConfirm.waitForExistence(timeout: 10)); removeConfirm.tap()
+            let removeConfirm = app.buttons.matching(identifier: "cookbook-unpublish-confirm").firstMatch; XCTAssertTrue(removeConfirm.waitForExistence(timeout: 10)); removeConfirm.tap()
             let removed = app.staticTexts["Removed from public access"]; reveal(removed, app: app); XCTAssertTrue(removed.waitForExistence(timeout: 15))
+            let edit = app.buttons["cookbook-edit-dddddddd-dddd-4ddd-dddd-dddddddddddd"]; reveal(edit, app: app); edit.tap()
+            let createDraft = app.buttons["cookbook-create-editing-draft"]; reveal(createDraft, app: app)
+            capture(large ? "Native owner editing preview large text" : "Native owner editing preview"); createDraft.tap()
+            let newTitle = app.textFields["sharing-title"]; reveal(newTitle, app: app); XCTAssertTrue(newTitle.waitForExistence(timeout: 15))
+            reveal(open, app: app); open.tap(); reveal(prepare, app: app); prepare.tap()
+            reveal(confirm, app: app); XCTAssertEqual(confirm.label, "Publish this update"); XCTAssertFalse(confirm.isEnabled)
+            capture(large ? "Native owner update preview large text" : "Native owner update preview")
+            reveal(reviewed, app: app); reviewed.tap(); reveal(confirm, app: app); confirm.tap()
+            XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15))
             app.terminate()
         }
     }

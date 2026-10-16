@@ -66,6 +66,7 @@ internal class PublicationOperationsStore(val directory: File) {
             require(state.getInt("version")==1)
             state.optJSONObject("pending")?.let { require(PublicationOperation.parse(it).userId==user) }
             val bindings=state.getJSONObject("bindings"); bindings.keys().forEach { PublicationReceipt.parse(bindings.getJSONObject(it)) }
+            if(state.has("editContexts") && !state.isNull("editContexts"))state.getJSONObject("editContexts").let { edits -> edits.keys().forEach { draft -> val context=PublicationEditContext.parse(edits.getJSONObject(draft));require(publicationUuid(draft) && bindings.getJSONObject(draft).getString("id")==context.receipt.id) } }
         }
     }
     private fun write(file: File, bytes: ByteArray) {
@@ -78,6 +79,11 @@ internal class PublicationOperationsStore(val directory: File) {
     fun body(op: PublicationOperation): File { op.validate(); return File(directory,op.id+".body") }
     fun pending(user: String): PublicationOperation? = synchronized(lock) { load(user).optJSONObject("pending")?.let(PublicationOperation::parse) }
     fun binding(user: String, draft: String): PublicationReceipt? = synchronized(lock) { load(user).getJSONObject("bindings").optJSONObject(draft)?.let(PublicationReceipt::parse) }
+    fun editContext(user: String,draft: String): PublicationEditContext? = synchronized(lock) { load(user).optJSONObject("editContexts")?.optJSONObject(draft)?.let(PublicationEditContext::parse) }
+    fun attachEditContext(user: String,draft: String,context: PublicationEditContext) = synchronized(lock) {
+        context.validate();require(publicationUuid(draft));val state=load(user);check(state.isNull("pending") && !state.getJSONObject("bindings").has(draft))
+        state.getJSONObject("bindings").put(draft,context.receipt.json());val edits=state.optJSONObject("editContexts") ?: JSONObject();edits.put(draft,context.json());state.put("editContexts",edits);save(user,state)
+    }
     fun prepare(user: String, method: String, path: String, bytes: ByteArray, archive: Boolean, expected: String? = null, draft: String? = null, kind: String? = null): PublicationOperation = synchronized(lock) {
         val state=load(user); check(state.isNull("pending")) { "Recover the previous publication before starting another." }
         check(directory.isDirectory || directory.mkdirs())
@@ -111,7 +117,12 @@ internal class PublicationOperationsStore(val directory: File) {
         val state=load(op.userId); check(pending(op.userId)?.id==op.id)
         if(op.contentType=="application/zip") {
             val receipt=PublicationReceipt.parse(response).copy(kind=op.publicationKind); if(op.method=="PUT")require(op.path=="/v1/recipes/"+receipt.id)
-            op.draftId?.let { state.getJSONObject("bindings").put(it,receipt.json()) }
+            op.draftId?.let { draft ->
+                val edits=state.optJSONObject("editContexts");edits?.optJSONObject(draft)?.let { old ->
+                    val context=PublicationEditContext.parse(old);if(context.receipt.id==receipt.id)edits.put(draft,context.copy(receipt=receipt).json()) else edits.remove(draft)
+                }
+                state.getJSONObject("bindings").put(draft,receipt.json())
+            }
         } else {
             if(op.path=="/v1/me/profile") {
                 require(response.getString("displayName").length<=160 && response.get("isPublic") is Boolean)
@@ -128,6 +139,7 @@ internal class PublicationOperationsStore(val directory: File) {
 internal interface PublicationAPI {
     suspend fun read(path: String, access: String): JSONObject
     suspend fun write(operation: PublicationOperation, file: File, access: String): JSONObject
+    suspend fun archive(id: String,revision: String,to: File,access: String): File { throw UnsupportedOperationException("Owner archive unavailable.") }
 }
 internal class PublicationClient(client: OkHttpClient = OkHttpClient()): PublicationAPI {
     private val client=client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(CookieJar.NO_COOKIES).cache(null).callTimeout(90,TimeUnit.SECONDS).build()
@@ -138,6 +150,30 @@ internal class PublicationClient(client: OkHttpClient = OkHttpClient()): Publica
         val parts=path.split('/'); val exactOwner=parts.size==5 && parts[0]=="" && parts[1]=="v1" && parts[2]=="me" && parts[3]=="recipes" && publicationUuid(parts[4])
         require(exactOwner || path=="/v1/me/profile" || path.matches(Regex("/v1/me/recipes(\\?cursor=[a-f0-9-]{36})?")))
         return call(request(path,access).get().build(),65536)
+    }
+    override suspend fun archive(id: String,revision: String,to: File,access: String): File {
+        require(publicationUuid(id) && publicationUuid(revision))
+        try {
+            return suspendCancellableCoroutine { continuation ->
+                val call=client.newCall(request("/v1/me/recipes/$id/archive",access).header("Accept","application/zip").header("If-Match",revision).get().build());continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object: Callback {
+                    override fun onFailure(call: Call,e: IOException) { if(continuation.isActive)continuation.resumeWithException(e) }
+                    override fun onResponse(call: Call,response: Response) {
+                        try {
+                            response.use {
+                                if(!it.isSuccessful)throw AccountFailure(it.code)
+                                val body=checkNotNull(it.body);val length=body.contentLength();val hash=it.header("X-Content-SHA256").orEmpty()
+                                require(length in 1..64L*1024*1024 && hash.matches(Regex("[a-f0-9]{64}")))
+                                val digest=java.security.MessageDigest.getInstance("SHA-256");var size=0L
+                                body.byteStream().use { input->to.outputStream().use { output->val buffer=ByteArray(65536);while(true) { val count=input.read(buffer);if(count<0)break;size+=count;require(size<=length);digest.update(buffer,0,count);output.write(buffer,0,count) } } }
+                                require(size==length && digest.digest().joinToString("") { byte->"%02x".format(byte) }==hash)
+                            }
+                            if(continuation.isActive)continuation.resume(to) else to.delete()
+                        } catch(e: Exception) { to.delete();if(continuation.isActive)continuation.resumeWithException(e) }
+                    }
+                })
+            }
+        } catch(e: Exception) { to.delete();throw e }
     }
     override suspend fun write(operation: PublicationOperation, file: File, access: String): JSONObject {
         operation.validate(); val request=request(operation.path,access).header("Idempotency-Key",operation.id).method(operation.method,file.asRequestBody(operation.contentType.toMediaType()))
@@ -189,6 +225,19 @@ internal class PublicationWriter(private val session: PublicationSession, val st
     suspend fun json(method: String, path: String, body: JSONObject = JSONObject(), expected: String? = null): JSONObject = mutex.withLock { withContext(Dispatchers.IO) {
         execute(store.prepare(checkNotNull(session.userId()),method,path,body.toString().toByteArray(),false,expected))
     } }
+    suspend fun editContext(draft: String): PublicationEditContext? {
+        val user=session.userId() ?: return null;val value=withContext(Dispatchers.IO) { store.editContext(user,draft) };check(session.userId()==user);return value
+    }
+    suspend fun ownedArchive(receipt: PublicationReceipt,to: File): File {
+        receipt.validate();val user=checkNotNull(session.userId())
+        try {
+            val token=session.access(false);check(session.userId()==user);coroutineContext.ensureActive()
+            val file=try { api.archive(receipt.id,receipt.revisionId,to,token) } catch(e: AccountFailure) {
+                if(e.status!=401)throw e;val refreshed=session.access(true);check(session.userId()==user);coroutineContext.ensureActive();api.archive(receipt.id,receipt.revisionId,to,refreshed)
+            }
+            coroutineContext.ensureActive();check(file==to && session.userId()==user);return file
+        } catch(e: Exception) { to.delete();throw e }
+    }
     suspend fun read(path: String): JSONObject {
         val user=checkNotNull(session.userId()); val token=session.access(false); check(session.userId()==user)
         val response=try { api.read(path,token) } catch(e: AccountFailure) {

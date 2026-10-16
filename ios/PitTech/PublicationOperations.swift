@@ -9,7 +9,7 @@ import Observation
 extension NativeAccountCoordinator: NativePublicationSession {
     var publicationUserId: String? { stateUserId }
 }
-struct NativePublicationReceipt: Codable, Equatable {
+struct NativePublicationReceipt: Codable, Equatable, Sendable {
     let id: String
     let revisionId: String
     let revision: Int
@@ -52,6 +52,7 @@ private struct NativePublicationState: Codable {
     var version = 1
     var pending: NativePublicationOperation?
     var bindings: [String: NativePublicationReceipt] = [:]
+    var editContexts: [String: NativePublicationEditContext]?
 }
 @MainActor final class NativePublicationOperationsStore {
     let directory: URL
@@ -74,7 +75,8 @@ private struct NativePublicationState: Codable {
         guard (try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 8 * 1024 * 1024 else { throw NativePublicationError.invalid }
         let state = try JSONDecoder().decode(NativePublicationState.self, from: Data(contentsOf: file))
         guard state.version == 1, state.pending?.userId == nil || state.pending?.userId == user else { throw NativePublicationError.accountChanged }
-        try state.pending?.validate(); for receipt in state.bindings.values { try receipt.validate() }; return state
+        try state.pending?.validate(); for receipt in state.bindings.values { try receipt.validate() }
+        for (draft, context) in state.editContexts ?? [:] { try context.validate(); guard UUID(uuidString: draft) != nil, state.bindings[draft]?.id == context.receipt.id else { throw NativePublicationError.invalid } }; return state
     }
     private func write(_ state: NativePublicationState, user: String) throws {
         try prepareDirectory(); let file = try stateFile(user), bytes = try JSONEncoder().encode(state)
@@ -83,6 +85,12 @@ private struct NativePublicationState: Codable {
     }
     func pending(_ user: String) throws -> NativePublicationOperation? { try load(user).pending }
     func binding(_ user: String, draft: String) throws -> NativePublicationReceipt? { try load(user).bindings[draft] }
+    func editContext(_ user: String, draft: String) throws -> NativePublicationEditContext? { try load(user).editContexts?[draft] }
+    func attachEditContext(_ user: String, draft: String, context: NativePublicationEditContext) throws {
+        try context.validate(); guard UUID(uuidString: draft) != nil else { throw NativePublicationError.invalid }
+        var state = try load(user); guard state.pending == nil, state.bindings[draft] == nil else { throw NativePublicationError.pending }
+        state.bindings[draft] = context.receipt; var edits = state.editContexts ?? [:]; edits[draft] = context; state.editContexts = edits; try write(state, user: user)
+    }
     func prepare(user: String, method: String, path: String, bytes: Data, archive: Bool, expected: String? = nil, draft: String? = nil, kind: String? = nil) throws -> NativePublicationOperation {
         var state = try load(user); guard state.pending == nil else { throw NativePublicationError.pending }
         try prepareDirectory()
@@ -126,7 +134,13 @@ private struct NativePublicationState: Codable {
         if operation.contentType == "application/zip" {
             var receipt = try JSONDecoder().decode(NativePublicationReceipt.self, from: response); try receipt.validate(); receipt.kind = operation.publicationKind
             if operation.method == "PUT" { guard operation.path == "/v1/recipes/" + receipt.id else { throw NativePublicationError.invalid } }
-            if let draft = operation.draftId { state.bindings[draft] = receipt }
+            if let draft = operation.draftId {
+                if var context = state.editContexts?[draft] {
+                    if context.receipt.id == receipt.id { context.receipt = receipt; state.editContexts?[draft] = context }
+                    else { state.editContexts?[draft] = nil }
+                }
+                state.bindings[draft] = receipt
+            }
         } else {
             guard let value = try JSONSerialization.jsonObject(with: response) as? [String: Any] else { throw NativePublicationError.invalid }
             func boolean(_ key: String) -> Bool? {
@@ -147,6 +161,10 @@ private struct NativePublicationState: Codable {
 protocol NativePublicationAPI {
     func read(_ path: String, access: String) async throws -> Data
     func write(_ operation: NativePublicationOperation, file: URL, access: String) async throws -> Data
+    func archive(_ id: String, revision: String, to: URL, access: String) async throws -> URL
+}
+extension NativePublicationAPI {
+    func archive(_ id: String, revision: String, to: URL, access: String) async throws -> URL { throw NativePublicationError.invalid }
 }
 struct NativePublicationClient: NativePublicationAPI {
     var configuration: URLSessionConfiguration?
@@ -160,6 +178,12 @@ struct NativePublicationClient: NativePublicationAPI {
         let exactOwner = ownerItem.count == 4 && ownerItem[0] == "v1" && ownerItem[1] == "me" && ownerItem[2] == "recipes" && UUID(uuidString: String(ownerItem[3])) != nil
         guard exactOwner || path == "/v1/me/profile" || path.range(of: "^/v1/me/recipes(\\?cursor=[a-f0-9-]{36})?$", options: .regularExpression) != nil else { throw NativePublicationError.invalid }
         return try await NativeRelayTransport(configuration: configuration, responseError: { NativePublicError.status($0) }, maximumResponseBytes: 65536).run(request(path, access: access)).data
+    }
+    func archive(_ id: String, revision: String, to: URL, access: String) async throws -> URL {
+        guard UUID(uuidString: id) != nil, UUID(uuidString: revision) != nil else { throw NativePublicationError.invalid }
+        var request = try request("/v1/me/recipes/" + id + "/archive", access: access)
+        request.setValue("application/zip", forHTTPHeaderField: "Accept"); request.setValue(revision, forHTTPHeaderField: "If-Match")
+        _ = try await NativeRelayTransport(configuration: configuration, responseError: { NativePublicError.status($0) }).run(request, download: to); return to
     }
     func write(_ operation: NativePublicationOperation, file: URL, access: String) async throws -> Data {
         try operation.validate(); var request = try request(operation.path, access: access); request.httpMethod = operation.method
@@ -214,6 +238,20 @@ struct NativePublicationClient: NativePublicationAPI {
         busy = true; defer { busy = false }
         let operation = try store.prepare(user: userId, method: method, path: path, bytes: body, archive: false, expected: expected)
         return try await execute(operation)
+    }
+    func editContext(_ draft: String) throws -> NativePublicationEditContext? { guard let userId else { return nil }; return try store.editContext(userId, draft: draft) }
+    func ownedArchive(_ receipt: NativePublicationReceipt, to: URL) async throws -> URL {
+        try receipt.validate(); guard let userId else { throw NativePublicationError.accountChanged }
+        do {
+            let token = try await session.access(forceRefresh: false); guard userId == self.userId else { throw NativePublicationError.accountChanged }; try Task.checkCancellation()
+            let file: URL
+            do { file = try await api.archive(receipt.id, revision: receipt.revisionId, to: to, access: token) }
+            catch NativePublicError.status(401) {
+                let refreshed = try await session.access(forceRefresh: true); guard userId == self.userId else { throw NativePublicationError.accountChanged }; try Task.checkCancellation()
+                file = try await api.archive(receipt.id, revision: receipt.revisionId, to: to, access: refreshed)
+            }
+            try Task.checkCancellation(); guard file == to, userId == self.userId else { throw NativePublicationError.accountChanged }; return file
+        } catch { try? FileManager.default.removeItem(at: to); throw error }
     }
     func read(_ path: String) async throws -> Data {
         guard let userId else { throw NativePublicationError.accountChanged }; let token = try await session.access(forceRefresh: false)

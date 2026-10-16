@@ -9,6 +9,7 @@ private struct NativeCookbookPage: Decodable { let items: [NativeCookbookItem]; 
 private struct NativeCookbookProfile: Codable, Equatable { let handle: String?; let displayName: String; let isPublic: Bool }
 struct NativeMyCookbookView: View {
     @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(CookStore.self) private var store
     @State private var writer: NativePublicationWriter?
     @State private var loadedUser: String?
     @State private var items: [NativeCookbookItem] = []
@@ -24,6 +25,10 @@ struct NativeMyCookbookView: View {
     @State private var busy = false
     @State private var message: String?
     @State private var signingIn = false
+    @State private var ownerPreview: NativePreparedPublication?
+    @State private var ownerReceipt: NativePublicationReceipt?
+    @State private var ownerUser: String?
+    @State private var editingDraft: String?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -43,6 +48,7 @@ struct NativeMyCookbookView: View {
                         if !pending.rejected { Button("Retry this exact change") { run { try checkAccount(); _ = try await writer?.recover(); try await reload() } }.disabled(busy).accessibilityIdentifier("cookbook-recover") }
                         else { Button("Discard rejected change", role: .destructive) { run { try checkAccount(); if let loadedUser { try writer?.store.discardRejected(loadedUser) }; try await reload() } }.disabled(busy) }
                     }
+                    ownerEditingPreview
                     Text("Cookbook identity").font(.title2.bold())
                     TextField("Display name", text: $name).textFieldStyle(.roundedBorder).accessibilityIdentifier("cookbook-name")
                     TextField("Handle (3–24 letters, numbers or underscores)", text: $handle).textFieldStyle(.roundedBorder).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("cookbook-handle")
@@ -58,16 +64,7 @@ struct NativeMyCookbookView: View {
                     }
                     Text("My publications").font(.title2.bold())
                     Text("Removing a publication hides its public link. Other cooks keep independent copies they already saved.").font(.subheadline)
-                    ForEach(items) { item in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(item.title).font(.headline)
-                            Text(item.status == "active" ? "Public · revision \(item.revision) · \(item.identityMode == "named" ? "named" : "anonymous")" : item.status == "unpublished" ? "Removed from public access" : "Unavailable after moderation").font(.caption)
-                            if item.status == "active" {
-                                Link("Open publication", destination: URL(string: "https://pittech.app/c/" + item.id)!)
-                                Button("Remove from public access", role: .destructive) { removing = item }.disabled(busy || pending != nil)
-                            }
-                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                    }
+                    publicationCards
                     if cursor != nil { Button("More publications") { run { try await loadItems(more: true) } }.disabled(busy) }
                     Button("Refresh cookbook") { run { try await reload() } }.disabled(busy)
                 }
@@ -77,7 +74,7 @@ struct NativeMyCookbookView: View {
         }.accessibilityIdentifier("cookbook-content").navigationTitle("My cookbook").navigationBarTitleDisplayMode(.inline)
             .task(id: account.stateUserId) {
                 if writer == nil { writer = NativePublicationWriter.forApp(session: account) }
-                loadedUser = account.stateUserId; items = []; pending = nil; pendingArchive = nil; pendingProfile = nil; profilePreview = nil; removing = nil; name = ""; handle = ""; isPublic = false
+                loadedUser = account.stateUserId; items = []; pending = nil; pendingArchive = nil; pendingProfile = nil; profilePreview = nil; removing = nil; name = ""; handle = ""; isPublic = false; ownerPreview = nil; ownerReceipt = nil; ownerUser = nil; editingDraft = nil
                 guard loadedUser != nil else { return }
                 do { try await reload() } catch { message = error.localizedDescription }
             }
@@ -85,7 +82,48 @@ struct NativeMyCookbookView: View {
             .confirmationDialog("Remove this publication from public access?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
                 if let item = removing { Button("Remove publication", role: .destructive) { removing = nil; run { try checkAccount(); _ = try await writer?.json(method: "DELETE", path: "/v1/recipes/" + item.id, body: Data("{}".utf8), expected: item.revisionId); try await reload() } }.accessibilityIdentifier("cookbook-unpublish-confirm") }
             }
+            .navigationDestination(isPresented: Binding(get: { editingDraft != nil }, set: { if !$0 { editingDraft = nil } })) { if let editingDraft { SharingDraftView(id: editingDraft) } }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
+    }
+    @ViewBuilder private var ownerEditingPreview: some View {
+                    if let ownerPreview, let ownerReceipt {
+                        Text("Private editing preview").font(.title2.bold())
+                        Text("This creates an editable sharing draft on this device. It does not publish or change your meal history.")
+                        NativePublicationContent(prepared: ownerPreview)
+                        Button("Create private editing draft") { run {
+                            guard let writer, let user = ownerUser, user == account.stateUserId else { throw NativePublicationError.accountChanged }
+                            let draft = try await Task.detached(priority: .userInitiated) { try NativeOwnedPublication.draft(ownerPreview, receipt: ownerReceipt) }.value
+                            guard user == account.stateUserId else { throw NativePublicationError.accountChanged }
+                            // Bind first. A failed library save can leave only harmless private metadata,
+                            // never an unbound draft that silently changes an update into a publication.
+                            try writer.store.attachEditContext(user, draft: draft.id, context: draft.context)
+                            try store.saveOwnedPublicationDraft(draft); self.ownerPreview = nil; self.ownerReceipt = nil; editingDraft = draft.id
+                        } }.disabled(busy || pending != nil).accessibilityIdentifier("cookbook-create-editing-draft")
+                        Button("Cancel editing preview") { self.ownerPreview = nil; self.ownerReceipt = nil; ownerUser = nil }.disabled(busy)
+                    }
+    }
+    private var publicationCards: some View {
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(item.title).font(.headline)
+                            Text(item.status == "active" ? "Public · revision \(item.revision) · \(item.identityMode == "named" ? "named" : "anonymous")" : item.status == "unpublished" ? "Removed from public access" : "Unavailable after moderation").font(.caption)
+                            if ["active", "unpublished"].contains(item.status) {
+                                Button("Preview an editable private copy") { run {
+                                    try checkAccount(); guard let writer, let user = loadedUser else { throw NativePublicationError.accountChanged }
+                                    let receipt = NativePublicationReceipt(id: item.id, revisionId: item.revisionId, revision: item.revision, url: "https://pittech.app/c/" + item.id)
+                                    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip"); defer { try? FileManager.default.removeItem(at: file) }
+                                    _ = try await writer.ownedArchive(receipt, to: file)
+                                    let prepared = try await Task.detached(priority: .userInitiated) { try NativePreparedPublication.pending(file: file) }.value
+                                    guard user == account.stateUserId, user == loadedUser else { throw NativePublicationError.accountChanged }
+                                    ownerPreview = prepared; ownerReceipt = receipt; ownerUser = user
+                                } }.disabled(busy || pending != nil).accessibilityIdentifier("cookbook-edit-" + item.id)
+                            }
+                            if item.status == "active" {
+                                Link("Open publication", destination: URL(string: "https://pittech.app/c/" + item.id)!)
+                                Button("Remove from public access", role: .destructive) { removing = item }.disabled(busy || pending != nil)
+                            }
+                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                    }
     }
     @ViewBuilder private func profileSummary(_ profile: NativeCookbookProfile) -> some View {
         VStack(alignment: .leading, spacing: 8) {

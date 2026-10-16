@@ -35,7 +35,7 @@ import kotlinx.coroutines.sync.withLock
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun SharingDraftEditor(id: String, viewModel: CooksViewModel, onClose: () -> Unit) {
+@Composable internal fun SharingDraftEditor(id: String, viewModel: CooksViewModel, account: com.pittech.data.AccountManager = viewModel.account, publisher: com.pittech.data.PublicationWriter = viewModel.publicationWriter, publishingEnabled: Boolean = viewModel.publicDiscovery.enabled && account.enabled, onClose: () -> Unit) {
     var includeRecordedCook by remember(id) { mutableStateOf(false) }
     var record by remember(id) { mutableStateOf<CompanionRecord?>(null) }
     var document by remember(id) { mutableStateOf<SharingDocument?>(null) }
@@ -115,7 +115,7 @@ import kotlinx.coroutines.sync.withLock
                     OutlinedButton({ act { persist(); cardPreview = true } }, enabled = !busy && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-preview-card")) { Text("Preview share card") }
                     OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton(onClick = { act { persist(); relayShare = true } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-relay")) { Text("Share by code") }
-                    if(viewModel.publicDiscovery.enabled && viewModel.account.enabled)OutlinedButton(onClick={ act { persist(); publishing=true } },enabled=!busy && current.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
+                    if(publishingEnabled)OutlinedButton(onClick={ act { persist(); publishing=true } },enabled=!busy && current.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
                     exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }
@@ -126,7 +126,7 @@ import kotlinx.coroutines.sync.withLock
         }
     }
     if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false })
-    if (publishing) PublicationDialog(id,viewModel) { publishing=false; act { reload() } }
+    if (publishing) PublicationDialog(id,viewModel,account,publisher) { publishing=false; act { reload() } }
     if (relayShare) RelayShareDialog(id, includeRecordedCook, viewModel) { relayShare = false }
     if (chooseRecipe) AlertDialog(onDismissRequest = { chooseRecipe = false }, title = { Text("Add a recipe") }, text = {
         Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {

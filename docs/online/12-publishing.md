@@ -38,9 +38,8 @@ to the initiating account, checked for corruption, and reused after an ambiguous
 response. A 401 permits one refresh with the same request. Definite rejected writes
 require an explicit review/discard; ambiguous writes cannot be discarded automatically.
 No access or refresh credentials enter these stores. Matching native tests cover
-response-loss recovery, account switching, corruption, refresh and revision conflicts;
-Actions verification for this increment is pending. The stores are not yet wired
-to user-facing publishing controls.
+response-loss recovery, account switching, corruption, refresh and revision conflicts.
+These stores are wired into the explicit publishing and cookbook controls.
 
 Both native sharing draft editors now open a separate publication flow. It shows
 selected recipes, ingredients, instructions, methods/actions, photo derivatives,
@@ -61,26 +60,48 @@ Matching synthetic native UI flows cover preview-before-confirmation, anonymous
 publication, a revision-pinned update, cookbook opt-in and confirmed removal. They use memory APIs and never
 send mail or call a deployed service. Photo previews decode one bounded thumbnail per recipe and let the user step
 through every selected photo, avoiding simultaneous full-size bitmap decoding.
-Normal and enlarged text captures, native archive recovery round trips and transport/revision/cookie/redirect bounds are
-included in the next Actions increment; full verification and visual review are
-pending. Core upload code compiled on both platforms at eeb4e78. Both required Android
-lanes pass all 29 core tests, including queue recovery, before the separate
-fixed-footer discovery test failure. The actual Android publication archive from
-Actions 38799334048 passes the canonical backend validator and is retained as
-`native-publication-android-v1.json` with producer/digest metadata. A backend
-regression test verifies its selected frozen story, source revision and photo.
-iOS Actions 38799333789 passes 92/93 tests, zero skips, including all three
-queue tests and the standard-size discovery Save/Cook flow. The enlarged
-automation launch reset library metadata but retained fixed-ID photo files;
-the DEBUG-only reset now clears its owned attachments too. Complete native
-runtime/visual verification remains pending.
+At `002d8ac`, both required Android API 36 text sizes pass every suite; the advisory
+API 37 retry also passes. iOS compiles in Debug/Release and passes 95/96 tests,
+zero skips. The sole failure is a duplicate accessibility match on the confirmation
+sheet's unpublish button; the selector now explicitly chooses its first match.
+The complete updated native run and visual review remain pending.
 
-Still required in this same draft: finish native CI and visual review, validate
-both actual native publication archives through the canonical backend validator,
-review update/fork and actual-attempt flows end to end, and support editing an
-owned publication when its originating local sharing draft is unavailable. A
-saved copy must not be blindly uploaded as an update to itself: that would create
-self-lineage and lose the original member/source relationships.
+Actual Android and iOS publication archives from Actions pass canonical backend
+validation and are retained with producer/digest metadata as
+`native-publication-android-v1.json` and `native-publication-ios-v1.json`. These
+prove selected frozen story/source/photo fidelity, not overall UI success.
+Backend Actions at `002d8ac` passes 36 tests with zero skips, real Postgres,
+strict typecheck, image validation and runtime audit.
+
+Owners can preview and create an editable private draft without the originating
+local draft. `GET /v1/me/recipes/:id/archive` authenticates ownership and requires
+an exact revision, streams a bounded checksum-verified archive, and rechecks
+ownership/revision/moderation after storage I/O. Voluntarily unpublished originals
+remain editable; takedowns and purges do not. The download retains its concurrency
+slot until the response closes.
+
+Per-account, device-only editing metadata preserves the original public member,
+instruction and asset identities, parent credits and recipe method. It never enters
+a library export or public payload. Only a deliberate update applies it; publishing
+an independent variation keeps credit to the copied publication and fresh member
+IDs. Instructions remain editable while measured stories/verdicts stay frozen.
+An actual-attempt update preserves its measured attempt identity; a reference
+copy cannot claim a newly recorded cook or insert a synthetic meal into history.
+Successful updates advance the context revision; a stale preview must reopen the
+latest owner copy rather than silently adopting a newer server revision.
+
+Matching native tests cover context persistence/account isolation, independent
+photo ownership, editable instructions versus frozen results, actual-attempt
+identity, metadata survival and actual owned-update archive exports. Both UI flows
+exercise owner editing after voluntary unpublication and a separately confirmed
+republication. Owner download tests cover revision/auth headers, one 401 refresh,
+checksum/size limits, rejected-download cleanup and account switches. This owner
+increment still requires fresh Actions and visual evidence.
+
+Still open: complete native UI/visual results, backend validation of both native
+owned-update exports, full collection/variation/new-actual-cook acceptance flows,
+source-update diff presentation, publication-terms acknowledgment and capacity
+validation. No complete step-12 claim is made.
 
 The server remains gated by moderation/deletion readiness and normal clients
 keep community/account entry disabled. PR 13 supplies reporting, blocking,

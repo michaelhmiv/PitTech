@@ -3,7 +3,7 @@ import { mkdir,mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Pool, PoolClient } from 'pg';
-import { ApiError, digest } from './core.ts';
+import { ApiError, digest, LIMITS } from './core.ts';
 import { readZip } from './zip.ts';
 import { stable } from './pack.ts';
 import { publicCookWorker } from './publication-cook-validation.ts';
@@ -243,6 +243,16 @@ export class Publications {
   async myProfile(user:string){
     const row=(await this.pool.query('SELECT handle,display_name,is_public FROM publications.profiles WHERE user_id=$1',[user])).rows[0];
     return {handle:row?.handle??null,displayName:row?.display_name??'',isPublic:row?.is_public??false};
+  }
+  async ownedArchive(user:string,id:string,expected:string){
+    if(!uuid(id)||!uuid(expected))throw new ApiError(400,'revision_required');
+    const select=async(c:PoolClient)=>{const item=await this.owner(c,user,id,expected);if(item.status==='taken_down')throw new ApiError(403,'publication_under_review');return item;};
+    const selected=await this.tx(async c=>{await select(c);
+      const object=(await c.query<ObjectRow>('SELECT o.* FROM publications.revisions r JOIN publications.objects o ON o.id=r.object_id WHERE r.id=$1 AND r.item_id=$2 AND o.state=\'active\'',[expected,id])).rows[0];if(!object)throw missing();return object;});
+    const bytes=await this.storage.get(selected.key);
+    if(bytes.length>LIMITS.compressed||bytes.length!==Number(selected.bytes)||digest(bytes)!==selected.sha256)throw new ApiError(503,'publication_unavailable');
+    // Ownership, revision and moderation are rechecked after object storage I/O.
+    await this.tx(select);return {bytes,sha256:selected.sha256};
   }
   async myItem(user:string,id:string){
     if(!uuid(id))throw missing();
