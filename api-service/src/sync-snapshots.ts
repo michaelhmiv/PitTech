@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Pool, PoolClient } from 'pg';
 import { ApiError, digest } from './core.ts';
 import { stable } from './pack.ts';
@@ -9,6 +6,8 @@ import { lockAccount, uuid } from './lifecycle-contract.ts';
 import { SyncEncryption } from './sync-encryption.ts';
 import { syncEnvelope, syncTransition, type SyncEnvelope } from './sync-envelope.ts';
 import type { Storage } from './storage.ts';
+import { persistPrivateObject } from './sync-object-bytes.ts';
+import { photoMetadata } from './sync-photos.ts';
 
 export type SyncStorageLimits = {
   ownerBytes: number; globalBytes: number; dailyBytes: number; dailyUploads: number;
@@ -25,7 +24,7 @@ const conflict = () => new ApiError(409, 'sync_version_changed');
 /** Internal storage boundary only, deliberately NOT wired to HTTP or runtime config.
  * A production caller must provide the strict native-library projection/relationship
  * validator. syncEnvelope by itself only validates metadata and is not that validator.
- * Photo references are rejected until the separate owned/resumable asset path exists.
+ * Photo references must name verified, completed assets owned by this account.
  */
 export class PrivateSnapshots {
   private pool: Pool;
@@ -56,9 +55,15 @@ export class PrivateSnapshots {
   }
   private validate(value: unknown) {
     const envelope = syncEnvelope(this.project(value));
-    // This first increment cannot advertise an asset which has no owned bytes.
-    if ([...envelope.records, ...envelope.conflicts.flatMap(c => [c.winner, c.loser])].some(r => r.assetIds.length)) throw new ApiError(422, 'private_assets_unavailable');
     return envelope;
+  }
+  private async assets(c: PoolClient, user: string, envelope: SyncEnvelope) {
+    const ids = [...new Set([...envelope.records, ...envelope.conflicts.flatMap(c => [c.winner, c.loser])].flatMap(r => r.assetIds))];
+    if (ids.length > 10000) throw new ApiError(422, 'private_asset_capacity');
+    if (!ids.length) return;
+    const rows = (await c.query("SELECT operation_id,response FROM private_sync.operations WHERE user_id=$1 AND operation_id=ANY($2::uuid[]) AND state='committed'", [user, ids])).rows;
+    if (rows.length !== ids.length) throw new ApiError(422, 'private_assets_unavailable');
+    for (const row of rows) { const photo = photoMetadata(row.response); if (photo.assetId !== row.operation_id || photo.parts.length !== photo.count || photo.parts.some(p => !p.active)) throw new ApiError(422, 'private_assets_unavailable'); }
   }
   private async head(c: PoolClient, user: string): Promise<Head> {
     const account = (await c.query('SELECT version,head_id FROM private_sync.accounts WHERE user_id=$1', [user])).rows[0];
@@ -89,6 +94,7 @@ export class PrivateSnapshots {
     await this.tx(async c => {
       await this.owner(c, user); const current = await this.head(c, user);
       if (current.version !== head.version || current.object?.id !== head.object?.id) throw conflict();
+      if (envelope) await this.assets(c, user, envelope);
     });
     return { version: head.version, envelope };
   }
@@ -118,6 +124,7 @@ export class PrivateSnapshots {
         const old = await this.operation(c, user, id, hash);
         if (old?.state === 'committed') return { receipt: this.receipt(old, id, hash) };
         if (old?.state === 'conflict') return { changed: true };
+        await this.assets(c, user, envelope);
         if (Number(account.version) !== envelope.baseVersion) {
           if (old) await c.query("UPDATE private_sync.operations SET state='conflict' WHERE user_id=$1 AND operation_id=$2", [user, id]);
           return { changed: true };
@@ -144,7 +151,7 @@ export class PrivateSnapshots {
       });
       if (reservation.receipt) return reservation.receipt;
       if (reservation.changed || !reservation.object) throw conflict();
-      const object = reservation.object, cipherHash = await this.upload(user, object, plain);
+      const object = reservation.object, cipherHash = await persistPrivateObject(this.storage, this.encryption, this.context(user, object), object.key, plain);
       const result = await this.tx(async c => {
         await this.owner(c, user);
         const account = (await c.query('SELECT version,head_id FROM private_sync.accounts WHERE user_id=$1 FOR UPDATE', [user])).rows[0];
@@ -156,6 +163,7 @@ export class PrivateSnapshots {
           await c.query("UPDATE private_sync.objects SET state='deleting' WHERE id=$1 AND user_id=$2 AND state='reserved'", [object.id, user]);
           return null;
         }
+        await this.assets(c, user, envelope);
         const receipt = { version: envelope.baseVersion + 1, mutationId: id, sha256: hash };
         await c.query("UPDATE private_sync.objects SET state='active',cipher_sha256=$3 WHERE id=$1 AND user_id=$2", [object.id, user, cipherHash]);
         await c.query('UPDATE private_sync.accounts SET head_id=$2,version=$3,updated_at=$4 WHERE user_id=$1', [user, object.id, receipt.version, this.clock()]);
@@ -166,24 +174,6 @@ export class PrivateSnapshots {
       if (!result) throw conflict();
       return result;
     } finally { plain.fill(0); }
-  }
-  private async upload(user: string, row: ObjectRow, plain: Buffer): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), 'pittech-private-cipher-'));
-    try {
-      const file = join(root, 'object'), encrypted = this.encryption.seal(this.context(user, row), plain);
-      await writeFile(file, encrypted, { mode: 0o600, flag: 'wx' });
-      let failure: unknown;
-      try { await this.storage.put(row.key, file); } catch (e) { failure = e; }
-      // Random nonces mean an exact plaintext retry need not have identical ciphertext.
-      // Adopt only bytes authenticated for this precise owned object and plaintext.
-      let recovered: Buffer | undefined;
-      try {
-        const actual = await this.storage.get(row.key);
-        recovered = this.encryption.open(this.context(user, row), actual);
-        if (!recovered.equals(plain)) throw unavailable();
-        return digest(actual);
-      } catch { throw failure ?? unavailable(); } finally { recovered?.fill(0); }
-    } finally { await rm(root, { recursive: true, force: true }); }
   }
   /** Owner-scoped maintenance; account deletion uses the separate lifecycle adapter. */
   async sweep(user: string): Promise<number> {

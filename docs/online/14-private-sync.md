@@ -98,8 +98,8 @@ versioned compare-and-swap commit over encrypted objects. It is internal only: n
 HTTP route, production projector, real key/configuration or native upload calls
 are connected. A required projection callback must eventually validate the exact
 native library vocabulary and relationships; generic metadata validation is only
-the synthetic test adapter. Asset references are explicitly rejected until the
-owned resumable-photo path is complete. This remains an incomplete sync feature.
+the synthetic test adapter. Asset references require completed, verified, owner-scoped photo metadata.
+The internal owned-photo path is described below and remains unexposed. This remains an incomplete sync feature.
 
 A short account-locked transaction reserves metadata and quota before object I/O.
 The ciphertext is written create-only and read back with authenticated owner/object
@@ -124,3 +124,27 @@ upload/restart with different nonces, simultaneous commits, concurrent quotas,
 failed cleanup accounting, tampered/substituted reads and deletion during reads or
 paused uploads. Fresh Actions results are required for this increment. No generic
 helper or storage service is exposed as working cloud backup.
+
+## Resumable private photos (internal)
+
+Photo bytes transfer in fixed 1 MiB chunks, at most 16 MiB per photo. Each
+chunk has a separate random object identity, plaintext hash, authenticated owner
+context and storage lease; retries preserve completed chunks. Bounded `photo-v1`
+metadata uses the private operation ledger, so no authored bytes, file paths or
+new schema tables are introduced. Exact asset IDs/claims and part hashes cannot
+be changed on retry. Expired partial chunks can resume with fresh object IDs after
+the old keys are fenced; reserved/deleting bytes remain charged until removed.
+
+Finalization reassembles and checks the whole-photo SHA, verifies JPEG/PNG/WebP
+format, bounds dimensions/pixels and forces a decode before marking complete.
+Owner-scoped reads recheck account and asset state after I/O. Deletion during a
+photo read prevents returning the bytes; account purge removes the same existing
+private metadata/objects. Private backup preserves original photo bytes; public
+publication continues through its independent EXIF-stripping canonicalizer.
+
+Snapshots accept only complete assets belonging to the same owner, including
+assets in retained conflict copies. The final commit rechecks ownership/completion.
+An asset referenced by the current snapshot/recovery copies cannot be abandoned;
+a concurrent head change forces a recheck. Explicit abandonment retires bytes for
+the existing fenced cleanup and is retryable. No HTTP endpoints, production native
+projection, runtime keys or native photo upload/apply are connected yet.
