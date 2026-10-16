@@ -155,5 +155,17 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       assert.equal((await fetch(origin+'/v1/recipes/'+forked.id)).status,200);assert.equal((await fetch(origin+'/v1/recipes/'+posted.id)).status,404);
       assert.ok(!JSON.stringify(logs).includes('independent'));assert.ok(!JSON.stringify(logs).includes(bob));assert.ok(!JSON.stringify(logs).includes(forked.id));
     }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
-  }finally{await pool.end();await admin.end();await control.query(`DROP DATABASE ${database} WITH (FORCE)`);await control.end();await rm(root,{recursive:true,force:true});}
+  }finally{
+    // Close idle and in-flight clients before dropping the isolated test database.
+    // FORCE can otherwise emit uncaught pg Pool errors while Node's test runner
+    // still owns a client, making a successful test appear to fail intermittently.
+    try { await pool.end(); } finally {
+      try { await admin.end(); } finally {
+        try { await control.query(`DROP DATABASE ${database}`); } finally {
+          await control.end();
+          await rm(root,{recursive:true,force:true});
+        }
+      }
+    }
+  }
 });
