@@ -124,6 +124,9 @@ The owner requires iOS/Android parity going forward:
   account-bound edit context preserves public identities/source credit without
   entering exports. Recorded facts stay frozen; stale owner drafts must reopen
   the current revision. See `docs/online/12-publishing.md`.
+- Public publication/fork writes require explicit versioned public-copy consent.
+  Acknowledgments stay in the private operation/account domain, never public
+  archives. Source-update review is read-only and active meals remain pinned.
 - Public writes persist the exact selected body and operation before network access,
   retry under the initiating account only, and retain ambiguous outcomes. Named
   credit and public cookbook visibility require separate explicit previews.

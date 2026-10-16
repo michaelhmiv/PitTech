@@ -20,7 +20,7 @@ final class MealRecipeFlowsTests: XCTestCase {
                 start.press(forDuration: 0.01, thenDragTo: end)
                 continue
             }
-            if (app.scrollViews["relay-import-content"].exists || app.scrollViews["publication-content"].exists || app.scrollViews["cookbook-content"].exists || app.scrollViews["sharing-draft-content"].exists), let navigation {
+            if (app.scrollViews["relay-import-content"].exists || app.scrollViews["publication-content"].exists || app.scrollViews["cookbook-content"].exists || app.scrollViews["sharing-draft-content"].exists || app.scrollViews["source-review-content"].exists), let navigation {
                 // The modal scroll view can also report an infinite AX frame.
                 // Its finite navigation bar anchors an ordinary content-gutter swipe.
                 let top = navigation.frame.maxY + 12
@@ -121,6 +121,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
             app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
+            app.staticTexts["Oak-smoked pork shoulder"].firstMatch.tap()
+            let review = app.buttons["source-review-open"]; reveal(review, app: app); review.tap()
+            let check = app.buttons["source-review-check"]; reveal(check, app: app); check.tap()
+            let member = app.buttons["source-review-member-0"]; reveal(member, app: app); member.tap()
+            let unchanged = app.staticTexts["Ingredients · unchanged"]; reveal(unchanged, app: app); XCTAssertTrue(unchanged.waitForExistence(timeout: 15))
+            capture(large ? "Native source change review large text" : "Native source change review")
             app.tabBars.buttons["Discover"].tap()
             let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
             let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");start.tap()

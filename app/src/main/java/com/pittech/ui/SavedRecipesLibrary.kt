@@ -153,6 +153,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                 if (!source.removed) TextButton(onClick = { uriHandler.openUri(source.url) }) { Text("View shared source") }
                 Text("This saved version is yours. Changes to the public recipe don't replace it.", style = MaterialTheme.typography.bodySmall)
             }
+            if(viewModel.publicDiscovery.enabled)snapshot?.takeIf { it.publicSource?.removed==false }?.let { PublicSourceReviewButton(it,viewModel.publicDiscovery) }
             snapshot?.let { s -> Text(s.description); Text(s.dish.prepNotes); s.dish.preparationItems.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }; s.instructions.forEach { Text(it.title + it.details.takeIf { x -> x.isNotBlank() }?.let { x -> " · $x" }.orEmpty()) }; if (s.resultNotes.isNotBlank()) Text(s.resultNotes) }
             assets.forEach { asset -> RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath)); if (asset.caption.isNotBlank()) Text(asset.caption) }
             revision?.let { r -> TextButton(onClick = { onEdit(r) }, enabled = !busy) { Text("Edit as a new version") } }
@@ -161,7 +162,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             TextButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank()) { Text("Duplicate recipe") }
             TextButton(onClick = onArchive, enabled = !busy) { Text("Archive recipe") }
         }
-    }, confirmButton = { TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Close") } })
+    }, confirmButton = { TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy, modifier=Modifier.testTag("recipe-details-close")) { Text("Close") } })
 }
 
 @Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false) {

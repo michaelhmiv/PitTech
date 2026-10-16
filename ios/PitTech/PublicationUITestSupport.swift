@@ -26,6 +26,7 @@ import SwiftUI
             if let saved = receipts[operation.id] { return saved }
             let result: Data
             if operation.contentType == "application/zip" {
+                guard operation.termsVersion == NativePublicationTerms.version else { throw NativePublicError.status(428) }
                 let preview = try NativePreparedPublication.pending(file: file)
                 if let item { guard operation.method == "PUT", operation.expectedRevision == item["revisionId"] as? String, operation.path == "/v1/recipes/" + (item["id"] as! String) else { throw NativePublicError.status(409) } }
                 let id = "dddddddd-dddd-4ddd-dddd-dddddddddddd", revisionId = UUID().uuidString.lowercased(), revision = (item?["revision"] as? Int ?? 0) + 1

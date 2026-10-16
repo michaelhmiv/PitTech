@@ -63,7 +63,7 @@ import java.util.Locale
         story.rows("milestones").forEach { row->Text(time(row.getDouble("offsetMillis"))+" · "+row.optString("text")) }
         if(!story.isNull("foodOffOffsetMillis"))Text("Recorded Food off · "+time(story.getDouble("foodOffOffsetMillis")))
         story.getJSONObject("verdict").let { verdict->
-            if(!verdict.isNull("rating"))Text("Recorded rating · ${verdict.getInt("rating")} / 5")
+            if(!verdict.isNull("rating"))Text("Recorded rating · ${java.math.BigDecimal.valueOf(verdict.getDouble("rating")).stripTrailingZeros().toPlainString()} / 5")
             if(!verdict.isNull("cookAgain"))Text(if(verdict.getBoolean("cookAgain"))"Would cook again" else "Would change next time")
             if(verdict.optString("notes").isNotEmpty())Text(verdict.getString("notes"))
         }

@@ -33,6 +33,7 @@ internal object AccountProtocol {
 }
 internal class AccountFailure(val status: Int = 0) : Exception(when(status) {
     401 -> "This sign-in has expired or is unavailable. Request a new code."
+    428 -> "Review the current public-copy terms before publishing a new request."
     429 -> "Too many attempts. Wait a minute before trying again."
     503 -> "Accounts are not available in this build. Your local cookbook works without signing in."
     else -> "Couldn't complete sign-in. Retry the same request when you're online."

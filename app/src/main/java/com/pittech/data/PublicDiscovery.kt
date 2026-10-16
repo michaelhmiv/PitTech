@@ -173,6 +173,10 @@ internal class PublicManager(private val context: Context,private val scope: Cor
             } catch(e: Exception) { if(e is CancellationException)throw e;_state.value=_state.value.copy(profileName=null,profileItems=emptyList(),profileLoading=false,message=(e as? PublicFailure)?.message ?: PublicFailure().message) }
         }
     }
+    suspend fun detailForReview(id: String): Pair<PublicDetail,Boolean> {
+        require(enabled && publicUUID(id));val (bytes,saved)=cached("/v1/recipes/$id")
+        val detail=PublicDetail.parse(JSONObject(String(bytes,Charsets.UTF_8)));require(detail.id==id);return detail to saved
+    }
     fun open(id: String){
         if(!enabled || !publicUUID(id))return;profileReturn=_state.value.profileHandle;profileJob?.cancel();detailJob?.cancel();_state.value=_state.value.copy(profileHandle=null,profileName=null,profileLoading=false,detailId=id,detail=null,detailLoading=true,image=null,message=null)
         detailJob=scope.launch {

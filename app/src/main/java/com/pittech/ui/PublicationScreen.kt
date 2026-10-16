@@ -90,10 +90,11 @@ import org.json.JSONObject
                         Text("Public credit · $displayName",style=MaterialTheme.typography.titleMedium,modifier=Modifier.testTag("publication-credit"))
                         updateSummary?.let { Text(it,style=MaterialTheme.typography.titleMedium) }
                         PublicationContent(value)
-                        Row { Checkbox(reviewed,{ reviewed=it },modifier=Modifier.testTag("publication-reviewed")); Text("I reviewed the selected content and public credit",Modifier.weight(1f)) }
+                        Text(PublicationTerms.text,modifier=Modifier.testTag("publication-terms"))
+                        Row { Checkbox(reviewed,{ reviewed=it },modifier=Modifier.testTag("publication-reviewed")); Text("I reviewed the content and credit and agree to these public-copy terms",Modifier.weight(1f)) }
                         Button(onClick={ run {
                             check(reviewed && previewUser==account.publicationUserId()) { "Sign in with the account that prepared this preview." }
-                            published=PublicationReceipt.parse(writer.submit(draft,value,if(updating)linked else null)); prepared=null; refreshPending()
+                            published=PublicationReceipt.parse(writer.submit(draft,value,if(updating)linked else null,PublicationTerms.version)); prepared=null; refreshPending()
                         } },enabled=!busy && reviewed,modifier=Modifier.testTag("publication-confirm")) { Text(if(updating && linked!=null)"Publish this update" else "Publish this preview") }
                     }
                 }

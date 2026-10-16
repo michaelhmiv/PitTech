@@ -55,10 +55,11 @@ struct NativePublicationView: View {
                         Text("Public credit · " + displayName).font(.headline).accessibilityIdentifier("publication-credit")
                         if let updateSummary { Text(updateSummary).font(.headline) }
                         NativePublicationContent(prepared: prepared)
-                        Toggle("I reviewed the selected content and public credit", isOn: $reviewed).accessibilityIdentifier("publication-reviewed")
+                        Text(NativePublicationTerms.text).font(.subheadline).accessibilityIdentifier("publication-terms")
+                        Toggle("I reviewed the content and credit and agree to these public-copy terms", isOn: $reviewed).accessibilityIdentifier("publication-reviewed")
                         Button(updating && linked != nil ? "Publish this update" : "Publish this preview") { run {
                             guard reviewed, previewUser == account.stateUserId, let writer else { throw NativePublicationError.accountChanged }
-                            let response = try await writer.submit(draft: draft, prepared: prepared, update: updating ? linked : nil)
+                            let response = try await writer.submit(draft: draft, prepared: prepared, update: updating ? linked : nil, acceptedTerms: NativePublicationTerms.version)
                             published = try JSONDecoder().decode(NativePublicationReceipt.self, from: response); try published?.validate(); self.prepared = nil; try refreshPending()
                         } }.buttonStyle(.borderedProminent).disabled(busy || !reviewed).accessibilityIdentifier("publication-confirm")
                     }

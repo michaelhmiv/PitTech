@@ -7,12 +7,14 @@ import { digest } from '../src/core.ts';
 import { writeZip,readZip } from '../src/zip.ts';
 test('actual server writer produces bounded independent native recipes with pinned public credit, relative timing and action semantics',async()=>{
   const fixture=JSON.parse(await readFile(new URL('../../contracts/fixtures/public-native-v1.json',import.meta.url),'utf8'));
+  fixture.detail.payload.recipes[0].story.verdict.rating=4.5;
   const photo=Buffer.from(fixture.imageBase64,'base64'),result=await publicationCookPack(fixture.detail,new Map([[fixture.detail.media[0].id,photo]]));
   assert.equal(result.summary.kind,'collection');assert.equal(result.summary.dishes,2);
   const files=await readZip(result.bytes),root=JSON.parse(files.get('data/pittech.json')!.toString()),manifest=JSON.parse(files.get('manifest.json')!.toString());
   assert.equal(root.cooks.length,0);assert.equal(root.devices.length,0);assert.equal(root.reminderRules.length,0);assert.equal(root.recipes.length,2);
   assert.deepEqual(manifest.cookPack.source,{itemId:fixture.detail.id,revisionId:fixture.detail.revisionId,displayName:'a PitTech cook',removed:false});
   const snapshot=JSON.parse(root.recipeRevisions[0].snapshotJson);assert.equal(snapshot.publicSource.itemId,fixture.detail.id);assert.equal(snapshot.publicSource.relativeTiming,true);
+  assert.equal(snapshot.rating,4.5);
   assert.equal(snapshot.instructions[0].action,'wrap');assert.equal(snapshot.instructions[0].method,null);assert.equal(snapshot.draft.dishes[0].ingredients[0].unit,'To taste');
   assert.ok(snapshot.observations.some((o:{action:string})=>o.action==='food_on'));assert.ok(snapshot.observations.some((o:{action:string})=>o.action==='remove'));
   assert.notEqual(root.recipes[0].id,fixture.detail.payload.recipes[0].id);assert.equal(root.companionRecords[0].payload.entries[0].story.attemptId,fixture.detail.payload.recipes[0].story.attemptId);
