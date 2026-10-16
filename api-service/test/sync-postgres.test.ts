@@ -32,6 +32,6 @@ test('real Postgres private-sync isolation, deletion fence, encrypted purge reco
   unavailable=false;now+=300001;await deletion.sweepDeletion();
   assert.equal((await admin.query('SELECT 1 FROM auth.users WHERE id=$1',[alice])).rowCount,0);for(const table of ['accounts','objects','operations'])assert.equal((await admin.query(`SELECT 1 FROM private_sync.${table} WHERE user_id=$1`,[alice])).rowCount,0);
   const a=objects[0],b=objects[1];assert.equal((await stat(storage.path(a.key))).size,0);await assert.rejects(storage.put(a.key,a.file));assert.deepEqual(crypto.open(b.context,await storage.get(b.key)),bytes);assert.equal((await sync.query('SELECT version FROM private_sync.accounts WHERE user_id=$1',[bob])).rows[0].version,'1');
-  await deletion.deliverNotices();assert.equal((await deletion.status({deletionId:receipt.deletionId,statusToken:receipt.statusToken})).state,'complete');assert.equal(notices.length,1);assert.ok(!JSON.stringify(notices).includes(bytes.toString()));
- }finally{await Promise.all([admin.end(),life.end(),sync.end(),pub.end()]);await control.query(`DROP DATABASE ${database} WITH(FORCE)`);await control.end();await rm(root,{recursive:true,force:true});}
+  await deletion.deliverNotices();now+=60001;await deletion.sweepDeletion();assert.equal((await deletion.status({deletionId:receipt.deletionId,statusToken:receipt.statusToken})).state,'complete');assert.equal(notices.length,1);assert.ok(!JSON.stringify(notices).includes(bytes.toString()));
+ }finally{await Promise.all([admin.end(),life.end(),sync.end(),pub.end()]);await control.query(`DROP DATABASE ${database}`);await control.end();await rm(root,{recursive:true,force:true});}
 });
