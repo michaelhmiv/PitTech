@@ -40,6 +40,24 @@ class CrossPlatformArchiveTest {
             assertEquals(3,pinned.size)
             val sample = pinned.flatMap { CookPackHistory.rows(it.getJSONObject("story"),"readings") }.single()
             assertEquals("°C",sample.getString("unit"));assertEquals(74.125,sample.getDouble("value"),0.0)
+            val projection = PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() })
+            val source = archiveSnapshotJson(repo.exportSnapshot(), null)
+            assertThrows(Exception::class.java) { projection.project(source) }
+            val originalDocuments = source.getJSONArray("companionRecords").toString()
+            // Only the independent core graph is covered here. Unsupported saved
+            // documents remain in Room and still block a full-library upload.
+            val core = JSONObject(source.toString()).put("companionRecords", org.json.JSONArray()).put("companionPhotos", org.json.JSONArray())
+            val assets = mutableMapOf<String, String>()
+            for (type in listOf("photos", "recipeAssets")) {
+                val rows = core.getJSONArray(type)
+                for (i in 0 until rows.length()) assets[type + "|" + rows.getJSONObject(i).getString("id")] = java.util.UUID.randomUUID().toString()
+            }
+            val projected = projection.project(core, assets)
+            for (type in listOf("cooks", "recipes", "recipeRevisions", "readings", "reminderRules")) {
+                assertEquals(source.getJSONArray(type).length(), (0 until projected.length()).count { projected.getJSONObject(it).getString("recordType") == type })
+            }
+            assertEquals(originalDocuments, archiveSnapshotJson(repo.exportSnapshot(), null).getJSONArray("companionRecords").toString())
+            assertFalse(db.reminderDao().rules().single().enabled)
         } finally { db.close() }
     }
     @Test fun nativeVersionEightReadsAndAndroidWriterProducesOwnedVersionNineFixture(): Unit = runBlocking {

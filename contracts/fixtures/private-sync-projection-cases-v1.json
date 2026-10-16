@@ -1005,7 +1005,7 @@
       "rejected": true
     },
     {
-      "name": "fractional timestamp rejected",
+      "name": "fractional schema version rejected",
       "rows": [
         {
           "recordType": "cooks",
@@ -1044,7 +1044,7 @@
             "eventType": "note",
             "title": "Taste check",
             "details": "Keep both edits",
-            "occurredAtUtcMillis": 1.5,
+            "occurredAtUtcMillis": 1500,
             "recordedAtUtcMillis": 1500,
             "timeZoneId": "UTC",
             "source": "manual",
@@ -1122,7 +1122,7 @@
             "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
             "createdAtUtcMillis": 1000,
             "updatedAtUtcMillis": 2000,
-            "schemaVersion": 1
+            "schemaVersion": 1.5
           },
           "assetIds": []
         }
@@ -2542,6 +2542,3062 @@
         }
       ],
       "rejected": true
+    },
+    {
+      "name": "explicit companion codecs preserve portable documents and fractional native timestamps",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": false
+    },
+    {
+      "name": "nested equipment credential rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5,
+              "providerToken": "synthetic-placeholder"
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "local timestamp alias rejected in wire record",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a",
+            "createdAtUtcMillis": 1000
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "duplicate checklist item identity rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                },
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "blank equipment name rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "   ",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "zero fuel quantity rejected",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 0,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "fuel payload cook cannot diverge from record scope",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": null
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "global equipment cannot attach to cook",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "checklist requires a live owning cook",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "reference dish must belong to current cook",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "missing-dish",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "existing source dish must match declared source cook",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\"}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "dish-a",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "embedded note dish scope must belong to cook",
+      "rows": [
+        {
+          "recordType": "cooks",
+          "recordId": "cook-a",
+          "payload": {
+            "id": "cook-a",
+            "title": "Private dinner",
+            "status": "completed",
+            "startedAtUtcMillis": 1000,
+            "startedTimeZoneId": "UTC",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "dishes",
+          "recordId": "dish-a",
+          "payload": {
+            "id": "dish-a",
+            "cookId": "cook-a",
+            "name": "Brisket",
+            "foodType": "beef",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "event-a",
+          "payload": {
+            "id": "event-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventType": "note",
+            "title": "Taste check",
+            "details": "Keep both edits",
+            "occurredAtUtcMillis": 1500,
+            "recordedAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "createdAtUtcMillis": 1500,
+            "updatedAtUtcMillis": 1500,
+            "noteMetadataJson": "{\"version\":1,\"category\":\"general\",\"dishIds\":[\"missing-dish\"]}"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "logReadingLinks",
+          "recordId": "reading-a",
+          "payload": {
+            "readingId": "reading-a",
+            "eventId": "event-a"
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "photos",
+          "recordId": "photo-a",
+          "payload": {
+            "id": "photo-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "eventId": "event-a",
+            "mimeType": "image/jpeg",
+            "caption": "Private photo",
+            "addedAtUtcMillis": 1600,
+            "assetId": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          },
+          "assetIds": [
+            "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+          ]
+        },
+        {
+          "recordType": "probes",
+          "recordId": "probe-a",
+          "payload": {
+            "id": "probe-a",
+            "cookId": "cook-a",
+            "name": "Food",
+            "measurementType": "internal",
+            "source": "manual",
+            "createdAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "readings",
+          "recordId": "reading-a",
+          "payload": {
+            "id": "reading-a",
+            "cookId": "cook-a",
+            "dishId": "dish-a",
+            "probeName": "Manual",
+            "measurementType": "internal",
+            "value": 198.5,
+            "unit": "F",
+            "measuredAtUtcMillis": 1500,
+            "timeZoneId": "UTC",
+            "source": "manual",
+            "recordedAtUtcMillis": 1500
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "reminderRules",
+          "recordId": "rule-a",
+          "payload": {
+            "id": "rule-a",
+            "cookId": "cook-a",
+            "title": "Rest reminder",
+            "kind": "duration",
+            "triggerConfig": "{\"version\":1,\"type\":\"duration\",\"startedAt\":1500,\"delayMillis\":60000}",
+            "createdAtUtcMillis": 1000,
+            "updatedAtUtcMillis": 2000,
+            "schemaVersion": 1
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "checklist-a",
+          "assetIds": [],
+          "payload": {
+            "id": "checklist-a",
+            "kind": "checklist",
+            "title": "Saved checklist",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "items": [
+                {
+                  "id": "item-a",
+                  "text": "Fuel",
+                  "category": "supplies",
+                  "done": true
+                }
+              ]
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "equipment-a",
+          "assetIds": [],
+          "payload": {
+            "id": "equipment-a",
+            "kind": "equipment",
+            "title": "Saved equipment",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Smoker",
+              "fuel": "Wood",
+              "blend": "Oak",
+              "intervalHours": 10,
+              "maintainedHours": 2.5
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "fuel-a",
+          "assetIds": [],
+          "payload": {
+            "id": "fuel-a",
+            "kind": "fuel",
+            "title": "Saved fuel",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "equipment": "Smoker",
+              "kg": 2.5,
+              "at": 1500,
+              "type": "used",
+              "cookId": "cook-a"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "prep_combo-a",
+          "assetIds": [],
+          "payload": {
+            "id": "prep_combo-a",
+            "kind": "prep_combo",
+            "title": "Saved prep_combo",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Rub",
+              "items": [
+                {
+                  "name": "Salt",
+                  "amount": "2",
+                  "unit": "tbsp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "reference-a",
+          "assetIds": [],
+          "payload": {
+            "id": "reference-a",
+            "kind": "reference",
+            "title": "Saved reference",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "dishId": "dish-a",
+              "sourceCookId": "source-cook",
+              "sourceDishId": "source-dish",
+              "anchor": "food_on"
+            },
+            "cookId": "cook-a"
+          }
+        },
+        {
+          "recordType": "companionRecords",
+          "recordId": "playbook-a",
+          "assetIds": [],
+          "payload": {
+            "id": "playbook-a",
+            "kind": "playbook",
+            "title": "Saved playbook",
+            "created": 1000.125,
+            "updated": 1500.5,
+            "payload": {
+              "version": 1,
+              "name": "Dinner",
+              "draft": {
+                "title": "Dinner",
+                "dishes": []
+              },
+              "steps": []
+            }
+          }
+        }
+      ],
+      "rejected": true
     }
   ],
   "projection": {
@@ -2665,12 +5721,206 @@
           "id": "local-occurrence",
           "status": "pending"
         }
+      ],
+      "companionRecords": [
+        {
+          "id": "checklist-a",
+          "kind": "checklist",
+          "title": "Saved checklist",
+          "payload": "{\"version\":1,\"items\":[{\"id\":\"item-a\",\"text\":\"Fuel\",\"category\":\"supplies\",\"done\":true}]}",
+          "cookId": "cook-a",
+          "createdAtUtcMillis": 1000.125,
+          "updatedAtUtcMillis": 1500.5
+        },
+        {
+          "id": "equipment-a",
+          "kind": "equipment",
+          "title": "Saved equipment",
+          "payload": "{\"version\":1,\"name\":\"Smoker\",\"fuel\":\"Wood\",\"blend\":\"Oak\",\"intervalHours\":10,\"maintainedHours\":2.5}",
+          "createdAtUtcMillis": 1000.125,
+          "updatedAtUtcMillis": 1500.5
+        },
+        {
+          "id": "fuel-a",
+          "kind": "fuel",
+          "title": "Saved fuel",
+          "payload": "{\"version\":1,\"equipment\":\"Smoker\",\"kg\":2.5,\"at\":1500,\"type\":\"used\",\"cookId\":\"cook-a\"}",
+          "cookId": "cook-a",
+          "createdAtUtcMillis": 1000.125,
+          "updatedAtUtcMillis": 1500.5
+        },
+        {
+          "id": "prep_combo-a",
+          "kind": "prep_combo",
+          "title": "Saved prep_combo",
+          "payload": "{\"version\":1,\"name\":\"Rub\",\"items\":[{\"name\":\"Salt\",\"amount\":\"2\",\"unit\":\"tbsp\"}]}",
+          "createdAtUtcMillis": 1000.125,
+          "updatedAtUtcMillis": 1500.5
+        },
+        {
+          "id": "reference-a",
+          "kind": "reference",
+          "title": "Saved reference",
+          "payload": "{\"version\":1,\"dishId\":\"dish-a\",\"sourceCookId\":\"source-cook\",\"sourceDishId\":\"source-dish\",\"anchor\":\"food_on\"}",
+          "cookId": "cook-a",
+          "createdAtUtcMillis": 1000.125,
+          "updatedAtUtcMillis": 1500.5
+        },
+        {
+          "id": "playbook-a",
+          "kind": "playbook",
+          "title": "Saved playbook",
+          "payload": "{\"version\":1,\"name\":\"Dinner\",\"draft\":{\"title\":\"Dinner\",\"dishes\":[]},\"steps\":[]}",
+          "createdAtUtcMillis": 1000.125,
+          "updatedAtUtcMillis": 1500.5
+        },
+        {
+          "id": "monitor-status:cook-a",
+          "kind": "monitor_status",
+          "payload": {
+            "online": 1,
+            "at": 1500
+          },
+          "cookId": "cook-a",
+          "title": "Local reported status",
+          "created": 1000,
+          "updated": 1500
+        }
       ]
     },
     "assets": {
       "photos|photo-a": "cccccccc-cccc-4ccc-cccc-cccccccccccc"
     },
     "expected": [
+      {
+        "recordType": "companionRecords",
+        "recordId": "checklist-a",
+        "assetIds": [],
+        "payload": {
+          "id": "checklist-a",
+          "kind": "checklist",
+          "title": "Saved checklist",
+          "created": 1000.125,
+          "updated": 1500.5,
+          "payload": {
+            "version": 1,
+            "items": [
+              {
+                "id": "item-a",
+                "text": "Fuel",
+                "category": "supplies",
+                "done": true
+              }
+            ]
+          },
+          "cookId": "cook-a"
+        }
+      },
+      {
+        "recordType": "companionRecords",
+        "recordId": "equipment-a",
+        "assetIds": [],
+        "payload": {
+          "id": "equipment-a",
+          "kind": "equipment",
+          "title": "Saved equipment",
+          "created": 1000.125,
+          "updated": 1500.5,
+          "payload": {
+            "version": 1,
+            "name": "Smoker",
+            "fuel": "Wood",
+            "blend": "Oak",
+            "intervalHours": 10,
+            "maintainedHours": 2.5
+          }
+        }
+      },
+      {
+        "recordType": "companionRecords",
+        "recordId": "fuel-a",
+        "assetIds": [],
+        "payload": {
+          "id": "fuel-a",
+          "kind": "fuel",
+          "title": "Saved fuel",
+          "created": 1000.125,
+          "updated": 1500.5,
+          "payload": {
+            "version": 1,
+            "equipment": "Smoker",
+            "kg": 2.5,
+            "at": 1500,
+            "type": "used",
+            "cookId": "cook-a"
+          },
+          "cookId": "cook-a"
+        }
+      },
+      {
+        "recordType": "companionRecords",
+        "recordId": "playbook-a",
+        "assetIds": [],
+        "payload": {
+          "id": "playbook-a",
+          "kind": "playbook",
+          "title": "Saved playbook",
+          "created": 1000.125,
+          "updated": 1500.5,
+          "payload": {
+            "version": 1,
+            "name": "Dinner",
+            "draft": {
+              "title": "Dinner",
+              "dishes": []
+            },
+            "steps": []
+          }
+        }
+      },
+      {
+        "recordType": "companionRecords",
+        "recordId": "prep_combo-a",
+        "assetIds": [],
+        "payload": {
+          "id": "prep_combo-a",
+          "kind": "prep_combo",
+          "title": "Saved prep_combo",
+          "created": 1000.125,
+          "updated": 1500.5,
+          "payload": {
+            "version": 1,
+            "name": "Rub",
+            "items": [
+              {
+                "name": "Salt",
+                "amount": "2",
+                "unit": "tbsp"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "recordType": "companionRecords",
+        "recordId": "reference-a",
+        "assetIds": [],
+        "payload": {
+          "id": "reference-a",
+          "kind": "reference",
+          "title": "Saved reference",
+          "created": 1000.125,
+          "updated": 1500.5,
+          "payload": {
+            "version": 1,
+            "dishId": "dish-a",
+            "sourceCookId": "source-cook",
+            "sourceDishId": "source-dish",
+            "anchor": "food_on"
+          },
+          "cookId": "cook-a"
+        }
+      },
       {
         "recordType": "cooks",
         "recordId": "cook-a",

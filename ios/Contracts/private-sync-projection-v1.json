@@ -19,7 +19,7 @@
             "max": 32768
           },
           "startedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -28,7 +28,7 @@
             "max": 32768
           },
           "endedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990,
             "nullable": true
@@ -55,12 +55,12 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updatedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -172,12 +172,12 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updatedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -251,7 +251,7 @@
             "nullable": true
           },
           "appliedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990,
             "nullable": true
@@ -262,7 +262,7 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -328,12 +328,12 @@
             "nullable": true
           },
           "occurredAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "recordedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -351,12 +351,12 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updatedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -442,7 +442,7 @@
             "max": 32768
           },
           "measuredAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -465,7 +465,7 @@
             "default": "valid"
           },
           "recordedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -561,7 +561,7 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -635,7 +635,7 @@
             "nullable": true
           },
           "recordedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -699,7 +699,7 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -751,7 +751,7 @@
             "max": 32768
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -815,13 +815,13 @@
             "nullable": true
           },
           "capturedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990,
             "nullable": true
           },
           "addedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -897,17 +897,17 @@
             "max": 200
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updatedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "archivedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990,
             "nullable": true
@@ -982,7 +982,7 @@
             "max": 16777216
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -1044,7 +1044,7 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -1097,15 +1097,35 @@
             "max": 32768
           },
           "payload": {
-            "ref": "unsupported"
+            "selectSibling": "kind",
+            "cases": {
+              "checklist": {
+                "ref": "checklist"
+              },
+              "equipment": {
+                "ref": "equipment"
+              },
+              "fuel": {
+                "ref": "fuel"
+              },
+              "prep_combo": {
+                "ref": "prep_combo"
+              },
+              "reference": {
+                "ref": "reference"
+              },
+              "playbook": {
+                "ref": "playbook"
+              }
+            }
           },
           "created": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updated": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -1125,6 +1145,24 @@
           "field": "cookId",
           "target": "cooks"
         }
+      ],
+      "aliases": {
+        "createdAtUtcMillis": "created",
+        "updatedAtUtcMillis": "updated"
+      },
+      "parseJsonFields": [
+        "payload"
+      ],
+      "unsupportedKinds": [
+        "plan",
+        "alert",
+        "upcoming",
+        "serve_goal",
+        "recipe_attempt",
+        "sharing_draft",
+        "collection_revision",
+        "recipe_reference",
+        "guide_presentation"
       ]
     },
     "companionPhotos": {
@@ -1203,12 +1241,12 @@
             "max": 16777216
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updatedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -1242,7 +1280,7 @@
             "max": 200
           },
           "appliedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -1335,7 +1373,7 @@
             "max": 32768
           },
           "effectiveAt": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           }
@@ -1437,12 +1475,12 @@
             "nullable": true
           },
           "createdAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
           "updatedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -1516,7 +1554,7 @@
             ]
           },
           "observedAtUtcMillis": {
-            "type": "integer",
+            "type": "number",
             "min": -9007199254740990,
             "max": 9007199254740990
           },
@@ -1591,13 +1629,13 @@
           "nullable": true
         },
         "startedAtUtcMillis": {
-          "type": "integer",
+          "type": "number",
           "min": -9007199254740990,
           "max": 9007199254740990,
           "nullable": true
         },
         "endedAtUtcMillis": {
-          "type": "integer",
+          "type": "number",
           "min": -9007199254740990,
           "max": 9007199254740990,
           "nullable": true
@@ -1661,7 +1699,7 @@
               ]
             },
             "startedAt": {
-              "type": "integer",
+              "type": "number",
               "min": -9007199254740990,
               "max": 9007199254740990
             },
@@ -1696,7 +1734,7 @@
               ]
             },
             "at": {
-              "type": "integer",
+              "type": "number",
               "min": -9007199254740990,
               "max": 9007199254740990
             }
@@ -2061,7 +2099,7 @@
                 "max": 200
               },
               "occurredAtUtcMillis": {
-                "type": "integer",
+                "type": "number",
                 "min": -9007199254740990,
                 "max": 9007199254740990
               },
@@ -2151,7 +2189,7 @@
                       ]
                     },
                     "measuredAtUtcMillis": {
-                      "type": "integer",
+                      "type": "number",
                       "min": -9007199254740990,
                       "max": 9007199254740990
                     },
@@ -2514,6 +2552,600 @@
           ]
         }
       ]
+    },
+    "checklist": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 200
+              },
+              "text": {
+                "type": "string",
+                "max": 32768,
+                "nonBlank": true
+              },
+              "category": {
+                "type": "string",
+                "max": 32768
+              },
+              "done": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "text"
+            ]
+          },
+          "max": 200,
+          "uniqueBy": "id"
+        }
+      },
+      "required": [
+        "version",
+        "items"
+      ]
+    },
+    "equipment": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 32768,
+          "nonBlank": true
+        },
+        "fuel": {
+          "type": "string",
+          "max": 32768
+        },
+        "blend": {
+          "type": "string",
+          "max": 32768
+        },
+        "intervalHours": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0,
+          "nullable": true,
+          "exclusiveMin": 0
+        },
+        "maintainedHours": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0
+        },
+        "maintainedAt": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        }
+      },
+      "required": [
+        "version",
+        "name"
+      ]
+    },
+    "fuel": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "equipment": {
+          "type": "string",
+          "max": 32768,
+          "nonBlank": true
+        },
+        "kg": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0,
+          "exclusiveMin": 0
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "at": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "added",
+            "used"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "equipment",
+        "kg",
+        "at",
+        "type"
+      ]
+    },
+    "prep_combo": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 32768,
+          "nonBlank": true
+        },
+        "yield": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0,
+          "nullable": true,
+          "exclusiveMin": 0
+        },
+        "yieldUnit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "name": {
+                "type": "string",
+                "max": 32768
+              },
+              "stage": {
+                "type": "string",
+                "max": 32768
+              },
+              "brand": {
+                "type": "string",
+                "max": 32768
+              },
+              "amount": {
+                "type": "string",
+                "max": 32768
+              },
+              "unit": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "max": 100,
+          "min": 1
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "items"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200
+        },
+        "sourceCookId": {
+          "type": "id",
+          "max": 200
+        },
+        "sourceDishId": {
+          "type": "id",
+          "max": 200
+        },
+        "currentProbe": {
+          "type": "string",
+          "max": 32768
+        },
+        "sourceProbe": {
+          "type": "string",
+          "max": 32768
+        },
+        "anchor": {
+          "type": "string",
+          "enum": [
+            "food_on",
+            "wrap"
+          ]
+        },
+        "currentSeriesId": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "sourceSeriesId": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        }
+      },
+      "required": [
+        "version",
+        "dishId",
+        "sourceCookId",
+        "sourceDishId"
+      ]
+    },
+    "playbook": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 200,
+          "nonBlank": true
+        },
+        "draft": {
+          "type": "object",
+          "fields": {
+            "title": {
+              "type": "string",
+              "max": 32768
+            },
+            "smoker": {
+              "type": "string",
+              "max": 32768
+            },
+            "setpoint": {
+              "type": "string",
+              "max": 32768
+            },
+            "unit": {
+              "type": "string",
+              "max": 32768
+            },
+            "notes": {
+              "type": "string",
+              "max": 32768
+            },
+            "fuel": {
+              "type": "string",
+              "max": 32768
+            },
+            "wood": {
+              "type": "string",
+              "max": 32768
+            },
+            "dishes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "name": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "foodType": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "cut": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weight": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weightUnit": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "placement": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "grade": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "thickness": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "prep": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "startingCondition": {
+                    "type": "string",
+                    "max": 32768,
+                    "nullable": true
+                  },
+                  "boneIn": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "ingredients": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "fields": {
+                        "name": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "stage": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "brand": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "amount": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "unit": {
+                          "type": "string",
+                          "max": 32768
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "max": 100
+                  }
+                },
+                "required": [
+                  "name",
+                  "foodType"
+                ]
+              },
+              "max": 30
+            }
+          },
+          "required": [
+            "title",
+            "dishes"
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 200
+              },
+              "dish": {
+                "type": "integer",
+                "min": 0,
+                "max": 29,
+                "nullable": true
+              },
+              "action": {
+                "type": "string",
+                "max": 32768,
+                "enum": [
+                  "food_on",
+                  "spritz",
+                  "wrap",
+                  "check_in",
+                  "remove",
+                  "rest_start",
+                  "hold_start",
+                  "dish_done"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "max": 32768,
+                "nonBlank": true
+              },
+              "instructions": {
+                "type": "string",
+                "max": 32768
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "elapsed",
+                  "after_action",
+                  "temperature",
+                  "clock"
+                ]
+              },
+              "minutes": {
+                "type": "integer",
+                "min": 0,
+                "max": 100800
+              },
+              "temperatureF": {
+                "type": "number",
+                "min": 32,
+                "max": 600,
+                "nullable": true
+              },
+              "anchor": {
+                "type": "string",
+                "max": 32768,
+                "enum": [
+                  "food_on",
+                  "spritz",
+                  "wrap",
+                  "check_in",
+                  "remove",
+                  "rest_start",
+                  "hold_start",
+                  "dish_done"
+                ]
+              },
+              "clock": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0,
+                "nullable": true
+              },
+              "repeat": {
+                "type": "integer",
+                "min": 1,
+                "max": 10080,
+                "nullable": true
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "prep",
+                  "cooking",
+                  "resting",
+                  "holding"
+                ]
+              },
+              "observations": {
+                "type": "string",
+                "max": 32768
+              },
+              "probeName": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "id",
+              "action",
+              "title"
+            ]
+          },
+          "max": 100,
+          "uniqueBy": "id"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "dish": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "type": {
+                "type": "string",
+                "max": 32768
+              },
+              "value": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "\u00b0F",
+                  "\u00b0C"
+                ]
+              },
+              "explanation": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              }
+            },
+            "required": [
+              "dish",
+              "type",
+              "value",
+              "unit"
+            ]
+          },
+          "max": 100
+        },
+        "sourceCookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "revision": {
+          "type": "integer",
+          "min": 1,
+          "max": 9007199254740990
+        },
+        "previousRevisionId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "keepDoing": {
+          "type": "string",
+          "max": 32768
+        },
+        "changeNextTime": {
+          "type": "string",
+          "max": 32768
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "draft",
+        "steps"
+      ]
     }
   },
   "excludedRootFields": [
@@ -2525,5 +3157,44 @@
     "activityTimers",
     "reminderOccurrences"
   ],
-  "releaseReady": false
+  "releaseReady": false,
+  "excludedDocumentKinds": [
+    "monitor_status"
+  ],
+  "documentRules": {
+    "checklist": {
+      "scope": "cook"
+    },
+    "equipment": {
+      "scope": "global"
+    },
+    "prep_combo": {
+      "scope": "global"
+    },
+    "playbook": {
+      "scope": "global"
+    },
+    "fuel": {
+      "scope": "optional",
+      "sameFields": {
+        "cookId": "cookId"
+      }
+    },
+    "reference": {
+      "scope": "cook",
+      "references": [
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "sameCook": "$record"
+        },
+        {
+          "field": "sourceDishId",
+          "target": "dishes",
+          "sameCook": "sourceCookId",
+          "allowMissing": true
+        }
+      ]
+    }
+  }
 }

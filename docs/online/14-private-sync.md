@@ -163,7 +163,7 @@ fake mailer: no real message is sent. It covers session rejection, owner isolati
 CAS/retry, resumable photos, explicit abandonment and disabled routing.
 
 `private-sync-projection-v1.json` declares portable fields independently of archive
-import. All three pure validators consume the same contract and twenty shared
+import. All three pure validators consume the same contract and thirty-two shared
 cases. Paths become explicit owned asset IDs. Settings, recordings, probe
 assignment activation, delivery occurrences, timers and rule enabled/status fields
 never enter the portable rows. Unknown fields and broken ownership graphs reject
@@ -175,7 +175,9 @@ metadata-only payloads. Local typecheck/unit results are not native/DB Actions
 proof; the fresh checkpoint must pass those gates.
 
 This contract is explicitly `releaseReady: false`. Companion document codecs are
-not implemented and fail the whole projection with an unsupported-data error;
+partial: checklist, equipment, fuel, preparation combo, reference and playbook
+field formats are declared. Plans, alerts, serving plans, saved sharing documents,
+recipe attempts and guide presentation still fail the whole projection with an unsupported-data error;
 nothing is silently omitted. Native transaction application, reference semantics
 inside serialized documents, durable mutation/outbox state, inactive remote-rule
 adoption, branch storage, conflict recovery and two-device verification remain
@@ -184,3 +186,27 @@ upload flow is enabled by this checkpoint.
 
 Prior backend Actions at `2a94068` passed 83 tests with zero skips, including real
 Postgres snapshot/photo races and production-image checks (run 38936939647).
+
+
+Legacy iOS companion timestamp aliases and string-encoded JSON payloads normalize
+only at the local projection boundary. Conflicting aliases reject; transport accepts
+only canonical fields and decoded objects. Finite fractional native timestamps are
+preserved; logical clocks, schema versions and ordinals remain safe integers.
+`monitor_status` is explicitly device-local telemetry state and never becomes a
+sync record. Named unsupported authored document kinds still stop the full snapshot.
+Document ownership rules distinguish globally saved templates/equipment from
+cook-owned checklists/references and verify fuel scope and available source dishes.
+Unknown nested fields, duplicate checklist identities, empty required names, invalid
+quantities and cross-cook note scopes reject in the shared cases.
+
+A backend test projects independent core graphs from four actual native archive
+fixtures (Android and iOS v9/v10), retaining recipe snapshots, readings and record
+counts. New native tests perform projection after each platform imports the real
+opposite-platform v10 archive, retain unsupported saved documents in the journal,
+and leave reminder activation unchanged. Those tests explicitly cover a core subset;
+they do not claim full-library support or safe transaction application.
+
+At `3dad210`, backend Actions 38939930673 passed 89/89 tests, zero skips,
+including authenticated HTTP ownership/retry/photo transfer and strict projection
+through encrypted storage. Fresh native/full-Postgres evidence remains required
+for the companion-format follow-up.
