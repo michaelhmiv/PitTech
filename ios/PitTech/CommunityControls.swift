@@ -37,7 +37,7 @@ struct NativeCommunityControlsState: Codable {
         guard UUID(uuidString: generation) != nil, NativeAccountProtocol.credential(session), blocks.count <= 100, reports.count <= 20,
               Set(blocks.map { $0.alias.lowercased() }).count == blocks.count,
               blocks.allSatisfy({ UUID(uuidString: $0.alias) != nil && $0.title.utf16.count <= 160 }),
-              reports.allSatisfy({ UUID(uuidString: $0.id) != nil && ["received", "open", "reviewing", "resolved", "dismissed"].contains($0.status) }) else { throw NativePublicError.invalid }
+              reports.allSatisfy({ UUID(uuidString: $0.id) != nil && ($0.userId.map({ UUID(uuidString: $0) != nil }) ?? true) && ["received", "open", "reviewing", "resolved", "dismissed"].contains($0.status) }) else { throw NativePublicError.invalid }
         try pending?.validate()
     }
 }

@@ -33,7 +33,7 @@ internal data class CommunityPending(val userId:String?,val operationId:String,v
 }
 internal data class CommunityControlsState(val session:String,val generation:String=UUID.randomUUID().toString(),val blocks:List<CommunityBlock> = emptyList(),val pending:CommunityPending?=null,val reports:List<CommunityReportReceipt> = emptyList()){
     override fun toString()="CommunityControlsState(redacted)"
-    fun validate(){require(AccountProtocol.credential(session) && publicationUuid(generation) && blocks.size<=100 && blocks.map{it.alias.lowercase()}.distinct().size==blocks.size && blocks.all{publicationUuid(it.alias) && it.title.length<=160} && reports.size<=20 && reports.all{publicationUuid(it.id) && it.status in setOf("received","open","reviewing","resolved","dismissed")});pending?.validate()}
+    fun validate(){require(AccountProtocol.credential(session) && publicationUuid(generation) && blocks.size<=100 && blocks.map{it.alias.lowercase()}.distinct().size==blocks.size && blocks.all{publicationUuid(it.alias) && it.title.length<=160} && reports.size<=20 && reports.all{publicationUuid(it.id) && (it.userId==null || publicationUuid(it.userId)) && it.status in setOf("received","open","reviewing","resolved","dismissed")});pending?.validate()}
     fun json()=JSONObject().put("session",session).put("generation",generation).put("blocks",JSONArray(blocks.map{it.json()})).put("pending",pending?.json()?:JSONObject.NULL).put("reports",JSONArray(reports.map{it.json()}))
     companion object{fun parse(o:JSONObject):CommunityControlsState{
         val b=o.getJSONArray("blocks");val r=o.getJSONArray("reports")

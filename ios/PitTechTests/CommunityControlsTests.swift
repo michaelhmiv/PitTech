@@ -68,4 +68,17 @@ import XCTest
         await controls.report(item: UUID().uuidString.lowercased(), asset: nil, publisher: false, reason: "other", details: "", account: user)
         XCTAssertTrue(controls.pending?.rejected == true); controls.discardRejected(); XCTAssertNil(controls.pending)
     }
+    func testAnInFlightAnonymousReplyCannotRestoreReceiptsRemovedByAccountCleanup() async throws {
+        let storage = Storage(), user = account(), removed = UUID().uuidString.lowercased(), receipt = UUID().uuidString.lowercased()
+        storage.value = NativeCommunityControlsState(session: String(repeating: "A", count: 43), reports: [NativeCommunityReportReceipt(id: removed, status: "received", userId: UUID().uuidString.lowercased())])
+        var generation: String?
+        let api = API { _, _, _, _ in
+            storage.value?.reports = []; storage.value?.generation = UUID().uuidString.lowercased(); generation = storage.value?.generation
+            return try JSONSerialization.data(withJSONObject: ["reportId": receipt, "status": "received"])
+        }
+        let controls = NativeCommunityControls(storage: storage, api: api)
+        await controls.report(item: UUID().uuidString.lowercased(), asset: nil, publisher: false, reason: "other", details: "", account: user)
+        XCTAssertEqual(controls.reports.map(\.id), [receipt]); XCTAssertEqual(storage.value?.generation, generation)
+    }
+
 }

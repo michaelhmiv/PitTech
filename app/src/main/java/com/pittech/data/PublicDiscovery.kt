@@ -122,7 +122,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         try{
             val bytes=api.json(path);check(audienceProvider()==audience);val json=JSONObject(String(bytes,Charsets.UTF_8))
             if(path.startsWith("/v1/discover?"))page(json) else { require(PublicDetail.parse(json).id==path.substringAfterLast('/')) }
-            try{withContext(Dispatchers.IO){cache.save(key,bytes)}}catch(e: CancellationException){throw e}catch(_: Exception){};return bytes to false
+            try{withContext(Dispatchers.IO){cache.save(key,bytes)}}catch(e: CancellationException){throw e}catch(_: Exception){};check(audienceProvider()==audience);return bytes to false
         }catch(e: CancellationException){throw e}
         catch(e: Exception){
             if(e is PublicFailure && e.status==404){withContext(Dispatchers.IO){cache.remove(key)};throw e}
@@ -159,9 +159,9 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         profileJob?.cancel();detailJob?.cancel();downloadJob?.cancel()
         val previous=if(cursor!=null && _state.value.profileHandle==handle)_state.value.profileItems else emptyList()
         _state.value=_state.value.copy(detailId=null,detail=null,detailLoading=false,image=null,preparing=false,profileHandle=handle,profileName=if(cursor==null)null else _state.value.profileName,profileItems=previous,profileCursor=null,profileLoading=true,message=null)
-        val audience=audienceProvider()
         profileJob=scope.launch {
             try {
+                val audience=audienceProvider()
                 // Public profile visibility is checked live; no stale profile cache restores a hidden identity.
                 val json=JSONObject(String(api.json("/v1/profiles/$handle"+(cursor?.let { "?cursor=$it" } ?: "")),Charsets.UTF_8))
                 require(json.getString("handle")==handle && json.getString("displayName").length<=160)
@@ -204,7 +204,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         if(old!=null && RelayProtocol.hash(old)==asset.getString("sha256")){check(audienceProvider()==audience);return old}
         val bytes=api.image(id,asset);check(audienceProvider()==audience)
         try{withContext(Dispatchers.IO){cache.save(key,bytes)}}catch(e: CancellationException){throw e}catch(_: Exception){}
-        return bytes
+        check(audienceProvider()==audience);return bytes
     }
     fun back(){
         val returning=profileReturn;profileReturn=null
@@ -214,10 +214,9 @@ internal class PublicManager(private val context: Context,private val scope: Cor
     fun preview(cook: Boolean){
         val detail=_state.value.detail ?: return;if(!enabled || _state.value.preparing)return
         _state.value=_state.value.copy(preparing=true,message=null)
-        val audience=audienceProvider()
         downloadJob=scope.launch {
             val file=File(context.cacheDir,UUID.randomUUID().toString()+".pittech")
-            try{val downloaded=api.pack(detail.id,detail.revisionId,file);ensureActive();check(audienceProvider()==audience);onPreview(downloaded,cook,detail.id,detail.revisionId)}
+            try{val audience=audienceProvider();val downloaded=api.pack(detail.id,detail.revisionId,file);ensureActive();check(audienceProvider()==audience);onPreview(downloaded,cook,detail.id,detail.revisionId)}
             catch(e: Exception){_state.value=_state.value.copy(message=if(e is CancellationException)"Canceled. Nothing was added to your cookbook." else (e as? PublicFailure)?.message ?: PublicFailure().message);if(e is CancellationException)throw e}
             finally{file.delete();_state.value=_state.value.copy(preparing=false)}
         }

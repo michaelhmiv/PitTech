@@ -33,4 +33,12 @@ class CommunityControlsTest {
         val storage=Storage();val user=account(this);val controls=CommunityControls(storage,this,CommunityAPI{_,_,_,_->throw PublicFailure(422)})
         controls.report(UUID.randomUUID().toString(),null,false,"other","",user);yield();assertTrue(controls.presentation.value.pending!!.rejected);controls.discardRejected();assertNull(controls.presentation.value.pending)
     }
+    @Test fun anInFlightAnonymousReplyCannotRestoreAccountReceiptsRemovedDuringCleanup()=runBlocking{
+        val storage=Storage();val user=account(this);val receipt=UUID.randomUUID().toString();var generation:String?=null
+        storage.value=CommunityControlsState("A".repeat(43),reports=listOf(CommunityReportReceipt(UUID.randomUUID().toString(),"received",UUID.randomUUID().toString())))
+        val api=CommunityAPI{_,_,_,_->generation=UUID.randomUUID().toString();storage.value=storage.value!!.copy(reports=emptyList(),generation=generation!!);JSONObject().put("reportId",receipt).put("status","received")}
+        val controls=CommunityControls(storage,this,api);controls.report(UUID.randomUUID().toString(),null,false,"other","",user);yield()
+        assertEquals(listOf(receipt),controls.presentation.value.reports.map{it.id});assertEquals(generation,storage.value!!.generation)
+    }
+
 }

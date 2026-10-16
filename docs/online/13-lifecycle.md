@@ -109,3 +109,9 @@ current durable state before saving, so cleanup cannot be undone by an old reply
 Matching native tests cover failed cleanup/restart, metadata/body account isolation
 and idempotent cleanup. These additions require fresh Actions evidence. Local
 journal removal remains a distinct unfinished control.
+
+Additional race regression tests ensure an anonymous report reply cannot restore
+account receipts removed during cleanup. Android public read context checks also
+run inside the managed asynchronous job, so corrupt credential/control storage
+shows a recoverable browsing error instead of throwing from a UI action. Native
+verification remains pending.
