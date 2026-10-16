@@ -142,39 +142,6 @@ import Security
         state = NativeAccountState(logoutToken: token); try vault.save(state)
         XCTAssertNil(try vault.load().session); XCTAssertEqual(try vault.load().logoutToken, token)
     }
-}
-
-final class AccountTransportTests: XCTestCase {
-    func testCredentialTransportBoundsResponsesRejectsRedirectsAndRedactsProviderErrors() async throws {
-        for status in [200, 302, 401, 429, 999] {
-            let id = UUID().uuidString; AccountURLProtocol.set(id, status: status)
-            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AccountURLProtocol.self]
-            config.httpAdditionalHeaders = ["X-PitTech-Unit": id]
-            do {
-                let data = try await NativeAccountClient(configuration: config).call("/v1/me", body: nil, access: String(repeating: "A", count: 43))
-                XCTAssertEqual(status, 200); XCTAssertEqual(data, Data("{}".utf8))
-            } catch {
-                XCTAssertNotEqual(status, 200); XCTAssertFalse(error.localizedDescription.contains("private-provider-diagnostic"))
-            }
-        }
-    }
-}
-private final class AccountURLProtocol: URLProtocol, @unchecked Sendable {
-    private static let lock = NSLock()
-    private static var modes: [String: Int] = [:]
-    static func set(_ id: String, status: Int) { lock.lock(); modes[id] = status; lock.unlock() }
-    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "api.pittech.app" }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        Self.lock.lock(); let status = Self.modes.removeValue(forKey: request.value(forHTTPHeaderField: "X-PitTech-Unit") ?? "") ?? 401; Self.lock.unlock()
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "A", count: 43))
-        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
-        let bytes = status == 999 ? Data(repeating: 120, count: 8193) : Data((status == 200 ? "{}" : "private-provider-diagnostic").utf8)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status == 999 ? 200 : status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json", "Set-Cookie": "sensitive=discard", "Location": "https://attacker.invalid/"])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: bytes); client?.urlProtocolDidFinishLoading(self)
-    }
-    override func stopLoading() { }
     func testDeletionPersistsExactProofBeforeNetworkAndRecoversWithoutSessionAfterRestart() async throws {
         let memory = Memory(); memory.value.session = session()
         let receipt = NativeDeletionReceipt(deletionId: UUID().uuidString.lowercased(), statusToken: token, state: "queued")
@@ -230,5 +197,39 @@ private final class AccountURLProtocol: URLProtocol, @unchecked Sendable {
         let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
         await account.requestDeletion(); XCTAssertEqual(calls, 2); XCTAssertEqual(refreshed, 1); XCTAssertNil(memory.value.session)
     }
+
+}
+
+final class AccountTransportTests: XCTestCase {
+    func testCredentialTransportBoundsResponsesRejectsRedirectsAndRedactsProviderErrors() async throws {
+        for status in [200, 302, 401, 429, 999] {
+            let id = UUID().uuidString; AccountURLProtocol.set(id, status: status)
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AccountURLProtocol.self]
+            config.httpAdditionalHeaders = ["X-PitTech-Unit": id]
+            do {
+                let data = try await NativeAccountClient(configuration: config).call("/v1/me", body: nil, access: String(repeating: "A", count: 43))
+                XCTAssertEqual(status, 200); XCTAssertEqual(data, Data("{}".utf8))
+            } catch {
+                XCTAssertNotEqual(status, 200); XCTAssertFalse(error.localizedDescription.contains("private-provider-diagnostic"))
+            }
+        }
+    }
+}
+private final class AccountURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var modes: [String: Int] = [:]
+    static func set(_ id: String, status: Int) { lock.lock(); modes[id] = status; lock.unlock() }
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "api.pittech.app" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); let status = Self.modes.removeValue(forKey: request.value(forHTTPHeaderField: "X-PitTech-Unit") ?? "") ?? 401; Self.lock.unlock()
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "A", count: 43))
+        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        let bytes = status == 999 ? Data(repeating: 120, count: 8193) : Data((status == 200 ? "{}" : "private-provider-diagnostic").utf8)
+        let response = HTTPURLResponse(url: request.url!, statusCode: status == 999 ? 200 : status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json", "Set-Cookie": "sensitive=discard", "Location": "https://attacker.invalid/"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: bytes); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() { }
 
 }

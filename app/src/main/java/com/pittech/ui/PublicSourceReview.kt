@@ -19,8 +19,9 @@ import kotlinx.coroutines.launch
     var showing by remember(source) { mutableStateOf(false) }
     var detail by remember(source) { mutableStateOf<PublicDetail?>(null) };var offline by remember { mutableStateOf(false) };var selected by remember { mutableStateOf<Int?>(null) }
     var busy by remember { mutableStateOf(false) };var message by remember { mutableStateOf<String?>(null) };val scope=rememberCoroutineScope()
+    val sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)
     TextButton(onClick={ showing=true },modifier=Modifier.testTag("source-review-open")) { Text("Review shared changes") }
-    if(showing)ModalBottomSheet(onDismissRequest={ showing=false }) {
+    if(showing)ModalBottomSheet(onDismissRequest={ showing=false },sheetState=sheetState) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             Text("Review shared changes",style=MaterialTheme.typography.titleLarge)
             Text("Compare your saved copy with the shared source. Your edits may also appear as differences. Meals already using your saved version keep it.")
