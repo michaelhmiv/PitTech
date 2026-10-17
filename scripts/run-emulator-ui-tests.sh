@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview telemetry-connections; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts telemetry-connections; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -387,9 +387,9 @@ fi
 recipe_test_output="$output_dir/recipe-preparation-tests.txt"
 echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest' \
+  -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (17 tests)' "$recipe_test_output"
+grep -q 'OK (19 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 mkdir -p "$output_dir/portable-fixtures"
 timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/android-meal-v9.zip > "$output_dir/portable-fixtures/android-meal-v9.zip"
@@ -399,7 +399,7 @@ echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (13 tests)' "$companion_test_output"
+grep -q 'OK (14 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -499,6 +499,9 @@ if (( api_level == 36 )); then
   pull_app_screenshot cook-pack-selective-preview
   pull_app_screenshot cook-pack-saved-recipe
   pull_app_screenshot cook-pack-recorded-history-preview
+  pull_app_screenshot show-guide-live
+  pull_app_screenshot show-guide-timeline
+  pull_app_screenshot show-guide-charts
 fi
 
 if (( api_level >= 37 )); then

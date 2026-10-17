@@ -15,7 +15,7 @@ class CookPackProjection {
     private fun known(value: JSONObject, keys: Set<String>) = JSONObject().apply { keys.forEach { if (value.has(it)) put(it, value.get(it)) } }
     private fun objects(value: JSONArray): List<JSONObject> = (0 until value.length()).map { value.getJSONObject(it) }
     private fun measurements(values: JSONArray) = JSONArray(objects(values).map { row ->
-        known(row, setOf("probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "timeZoneId", "source", "samplingIntervalMillis", "qualityStatus")).apply {
+        known(row, setOf("probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "timeZoneId", "source", "samplingIntervalMillis", "qualityStatus", "timestampBasis")).apply {
             for (key in listOf("id", "sourceReadingId", "probeId")) if (row.has(key)) put(key, alias(row.opt(key)))
         }
     })
@@ -31,6 +31,7 @@ class CookPackProjection {
             .put("anchorUtcMillis", if (entry.includeStory) raw.opt("anchorUtcMillis") ?: JSONObject.NULL else JSONObject.NULL)
             .put("observations", if (entry.includeStory) observations(raw.optJSONArray("observations") ?: JSONArray()) else JSONArray())
             .put("readings", if (entry.includeStory) measurements(raw.getJSONArray("readings")) else JSONArray())
+            .put("connectionGaps", if (entry.includeStory) raw.optJSONArray("connectionGaps") ?: JSONArray() else JSONArray())
             .put("results", JSONArray(if (entry.includeStory) objects(raw.optJSONArray("results") ?: JSONArray()).map { known(it, setOf("type", "numericValue", "textValue", "unit")) } else emptyList<JSONObject>()))
     }
     fun recipe(entry: SharingEntry, story: JSONObject): RecipeSnapshot {

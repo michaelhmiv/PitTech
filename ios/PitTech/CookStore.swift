@@ -20,6 +20,7 @@ final class CookStore {
     var telemetryLiveProbes: Set<String> = []
     @ObservationIgnored var telemetryOnLog: ((String) -> Void)?
     @ObservationIgnored var reminderScheduleTask: Task<Void, Never>?
+    @ObservationIgnored var recipeGuideCache: [String: CachedRecipeGuide] = [:]
     private let directory: URL
     init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

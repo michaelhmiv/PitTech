@@ -46,14 +46,11 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
     val app = LocalContext.current.applicationContext as PitTechApplication
     var show by remember { mutableStateOf(false) }
     var dishId by remember(data.cook.id) { mutableStateOf(data.dishes.firstOrNull()?.id.orEmpty()) }
-    val recipeSources by viewModel.recipes.observeSources().collectAsStateWithLifecycle(emptyList())
-    val recipeRevisions by viewModel.recipes.observeRevisions().collectAsStateWithLifecycle(emptyList())
-    val recipeSource = recipeSources.firstOrNull { it.dishId == dishId }?.let { src -> recipeRevisions.firstOrNull { it.id == src.recipeRevisionId } }
     val saved = records.firstOrNull { it.kind == "reference" && it.cookId == data.cook.id && CookReferenceCodec.decode(it.payload).dishId == dishId }?.let { CookReferenceCodec.decode(it.payload) }
-    var sourceCookId by remember(saved?.sourceCookId, recipeSource?.sourceCookId, dishId) { mutableStateOf(saved?.sourceCookId ?: recipeSource?.sourceCookId ?: records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }?.let { CookPlanEngine.decode(it.payload).book.sourceCookId }.orEmpty()) }
+    var sourceCookId by remember(saved?.sourceCookId, dishId) { mutableStateOf(saved?.sourceCookId.orEmpty()) }
     var source by remember { mutableStateOf<CookDetailData?>(null) }
     LaunchedEffect(sourceCookId) { source = null; if (sourceCookId.isNotBlank()) app.cookRepository.observeCookDetail(sourceCookId).collectLatest { source = it } }
-    var sourceDishId by remember(saved?.sourceDishId, recipeSource?.sourceDishId, sourceCookId) { mutableStateOf(saved?.sourceDishId ?: recipeSource?.sourceDishId.orEmpty()) }
+    var sourceDishId by remember(saved?.sourceDishId, sourceCookId) { mutableStateOf(saved?.sourceDishId.orEmpty()) }
     var anchor by remember(saved?.anchor) { mutableStateOf(saved?.anchor ?: "food_on") }
     var currentProbe by remember(saved?.currentProbe, dishId) { mutableStateOf(saved?.currentProbe ?: data.readings.firstOrNull { it.dishId == dishId && it.measurementType == "food_probe" }?.probeName.orEmpty()) }
     var currentSeriesId by remember(saved?.currentSeriesId, dishId) { mutableStateOf(saved?.currentSeriesId) }

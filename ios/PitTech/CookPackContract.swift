@@ -37,6 +37,7 @@ enum NativeCookPackContract {
                 if !entry.includeStory {
                     let story = entry.story.objectValue ?? [:], snapshot = try entry.snapshot
                     guard story["attemptId"]?.stringValue == nil, story["anchorUtcMillis"]?.numberValue == nil,
+                          (story["connectionGaps"]?.arrayValue ?? []).isEmpty,
                           ["observations", "readings", "results"].allSatisfy({ story[$0]?.arrayValue?.isEmpty == true }),
                           snapshot.rating == nil, snapshot.cookAgain == nil, snapshot.resultNotes.isEmpty else { throw PitTechArchiveError.invalidArchive }
                 }

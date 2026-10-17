@@ -1,0 +1,17 @@
+{
+  "producer": "Native RecipeCompositionTests on iPhone Simulator",
+  "commit": "031f2e79c32f97421d642a75921385b3ff06bf35",
+  "run": 38653110580,
+  "artifact": 11936731083,
+  "attachment": "PitTech actual native portable fixtures",
+  "sha256": "4705516ca9556c0dc1a80de807db9d81084c2d68ec215b625a0bb3635e0a3584",
+  "retainedAs": "app/src/androidTest/assets/cross-platform/native-guide-meal-v10.zip",
+  "assertions": [
+    "visible guide",
+    "two selected dishes",
+    "three pinned guides",
+    "74.125 Celsius raw story",
+    "inactive imported reminders",
+    "idempotent import"
+  ]
+}

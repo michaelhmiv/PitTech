@@ -1,22 +1,80 @@
 import XCTest
 
 final class MealRecipeFlowsTests: XCTestCase {
+    override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<12 {
+        for _ in 0..<18 {
+            let cookScroll = app.scrollViews["cook-content"]
+            let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
+            let log = app.buttons["meal-log"]
+            if cookScroll.exists, let navigation, log.exists, log.isHittable, log.frame.minY.isFinite {
+                // SwiftUI can expose this scroll container with an infinite AX frame.
+                // Anchor to the finite navigation bar and stay inside the content gutter,
+                // above the fixed quick actions and away from the chart/slider gestures.
+                let top = navigation.frame.maxY + 10
+                let bottom = log.frame.minY - 20
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
+                let down = element.exists && element.frame.minY < top
+                let span = max(60, (bottom - top) * 0.55)
+                let distance = element.exists ? (down ? top - element.frame.minY : element.frame.maxY - bottom) + 24 : span
+                let travel = min(span, max(60, distance))
+                let startY = down ? top + 24 : bottom - 24
+                let endY = down ? startY + travel : startY - travel
+                let origin = navigation.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 32, dy: startY - navigation.frame.minY))
+                let end = origin.withOffset(CGVector(dx: 32, dy: endY - navigation.frame.minY))
+                start.press(forDuration: 0.01, thenDragTo: end)
+                continue
+            }
+            let top = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable })?.frame.maxY ?? app.windows.firstMatch.frame.minY
+            let bottom = app.tabBars.allElementsBoundByIndex.first(where: { $0.isHittable })?.frame.minY ?? app.windows.firstMatch.frame.maxY
             if element.waitForExistence(timeout: 1) && element.isHittable {
-                let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
-                let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
                 if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
             }
-            let scroll = app.scrollViews["cook-content"].exists ? app.scrollViews["cook-content"] : app.scrollViews.firstMatch
-            let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
-            if scroll.exists && scroll.isHittable {
-                if element.exists && element.frame.maxY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
+            let scroll = cookScroll.exists && cookScroll.isHittable ? cookScroll : app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
+            if let scroll, scroll.exists && scroll.isHittable {
+                if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
+        let log = app.buttons["meal-log"]
+        if app.scrollViews["cook-content"].exists, log.exists, log.isHittable,
+           let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }) {
+            XCTAssertGreaterThanOrEqual(element.frame.minY, navigation.frame.maxY + 10)
+            XCTAssertLessThanOrEqual(element.frame.maxY, log.frame.minY - 20)
+        }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testOneGuideToggleControlsAllSectionsAndPersistsAtStandardAndLargeText() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-guide"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch()
+            let meal = app.staticTexts["Guided meal"].firstMatch; reveal(meal, app: app); meal.tap()
+            let toggle = app.switches["show-guide"]; reveal(toggle, app: app)
+            XCTAssertEqual(toggle.value as? String, "0"); toggle.tap()
+            let reference = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "guide-reference-", "Guide · ")).firstMatch
+            XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
+            capture(large ? "Native Show guide Live large text" : "Native Show guide Live")
+            let timeline = app.segmentedControls.buttons["Timeline"]; reveal(timeline, app: app); timeline.tap()
+            XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
+            capture(large ? "Native Show guide Timeline large text" : "Native Show guide Timeline")
+            let charts = app.segmentedControls.buttons["Charts"]; reveal(charts, app: app); charts.tap()
+            let legend = app.staticTexts["guide-chart-legend"]; reveal(legend, app: app)
+            capture(large ? "Native Show guide Charts large text" : "Native Show guide Charts")
+            let plot = app.descendants(matching: .any)["temperature-plot"].firstMatch; reveal(plot, app: app)
+            plot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.45, thenDragTo: plot.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
+            let sourceTime = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Author source time · ")).firstMatch
+            XCTAssertTrue(sourceTime.waitForExistence(timeout: 10), "A deliberate hold-and-drag still selects measured source data.")
+            reveal(toggle, app: app); toggle.tap(); XCTAssertEqual(toggle.value as? String, "0")
+            app.terminate()
+            app.launchArguments = ["--screenshot-no-ads"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); let reopened = app.staticTexts["Guided meal"].firstMatch; reveal(reopened, app: app); reopened.tap()
+            let restored = app.switches["show-guide"]; reveal(restored, app: app); XCTAssertEqual(restored.value as? String, "0")
+            app.terminate()
+        }
+    }
     func testCookPackPreviewSavesOneRecipeWithoutImportingHistoryAtStandardAndLargeText() {
         for large in [false, true] {
             let app = XCUIApplication()
@@ -105,8 +163,17 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(foods.firstMatch, app: app)
         capture("Native composed meal")
         let reminders = app.buttons["Reminders"].firstMatch
-        for _ in 0..<6 { if reminders.exists && reminders.isHittable { break }; app.swipeDown() }
-        reveal(reminders, app: app); reminders.tap()
+        // This action is in the fixed horizontal toolbar, outside cook-content.
+        // Page scrolling cannot reveal a clipped quick action.
+        for _ in 0..<4 {
+            if reminders.exists && reminders.isHittable { break }
+            let navigation = app.navigationBars["Meal"]
+            let origin = navigation.coordinate(withNormalizedOffset: .zero)
+            let y = app.buttons["meal-log"].frame.midY - navigation.frame.minY
+            origin.withOffset(CGVector(dx: navigation.frame.width - 32, dy: y))
+                .press(forDuration: 0.01, thenDragTo: origin.withOffset(CGVector(dx: 32, dy: y)))
+        }
+        XCTAssertTrue(reminders.exists && reminders.isHittable); reminders.tap()
         let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Chicken · last time")).firstMatch
         reveal(suggestion, app: app); suggestion.tap()
         let saveReminder = app.buttons["reminder-rule-save"]

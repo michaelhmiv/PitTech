@@ -22,11 +22,24 @@ struct ScreenshotTextSize: ViewModifier {
                     if category == "Pasta" { try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(method: "stovetop", durationMillis: 480000), title: "Boil macaroni", occurredAt: anchor - 600000)) }
                     try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: anchor))
                     try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "wrap"), title: "Wrapped", occurredAt: anchor + 12000000))
+                    if CommandLine.arguments.contains("--ui-test-guide") {
+                        try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, title: "Recorded check", occurredAt: anchor + 60000,
+                            temperatures: [NoteTemperatureDraft(probeName: "Same name", valueText: "74.125", unit: "°C", measuredAt: anchor + 60000, dishId: dish.id)]))
+                    }
                     finishCook(cook.id)
                     let snapshot = try extractRecipe(cookId: cook.id, dishId: dish.id)
                     _ = try saveRecipe(snapshot, sourceCookId: cook.id, sourceDishId: dish.id)
                 } catch { assertionFailure("UI fixture failed: " + error.localizedDescription) }
             }
+        }
+        if CommandLine.arguments.contains("--ui-test-guide") {
+            do {
+                let revisions = library.recipes.compactMap { $0.objectValue?["currentRevisionId"]?.stringValue }
+                let cook = try startRecipeMeal(title: "Guided meal", revisionIds: revisions)
+                for (index, dish) in dishRecords(cook).enumerated() {
+                    try saveNote(CookNoteDraft(cookId: cook, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)) - 3600000 + Double(index * 600000)))
+                }
+            } catch { assertionFailure("Guide UI fixture failed: " + error.localizedDescription) }
         }
         save()
     }

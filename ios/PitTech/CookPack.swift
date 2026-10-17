@@ -12,7 +12,7 @@ final class NativeCookPackProjection {
     private func known(_ value: JSONValue, _ keys: Set<String>) -> [String: JSONValue] { (value.objectValue ?? [:]).filter { keys.contains($0.key) } }
     private func measurements(_ values: [JSONValue]) -> [JSONValue] {
         values.map { value in
-            var row = known(value, ["probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "timeZoneId", "source", "samplingIntervalMillis", "qualityStatus"])
+            var row = known(value, ["probeName", "measurementType", "value", "unit", "measuredAtUtcMillis", "timeZoneId", "source", "samplingIntervalMillis", "qualityStatus", "timestampBasis"])
             for key in ["id", "sourceReadingId", "probeId"] { if let id = value.objectValue?[key] { row[key] = alias(id) } }
             return .object(row)
         }
@@ -31,6 +31,7 @@ final class NativeCookPackProjection {
             "anchorUtcMillis": entry.includeStory ? source["anchorUtcMillis"] ?? .null : .null,
             "observations": .array(entry.includeStory ? observations(source["observations"]?.arrayValue ?? []) : []),
             "readings": .array(entry.includeStory ? measurements(source["readings"]?.arrayValue ?? []) : []),
+            "connectionGaps": .array(entry.includeStory ? source["connectionGaps"]?.arrayValue ?? [] : []),
             "results": .array(entry.includeStory ? (source["results"]?.arrayValue ?? []).map { .object(known($0, ["type", "numericValue", "textValue", "unit"])) } : [])])
     }
     func recipe(_ entry: NativeSharingEntry, story: JSONValue) throws -> RecipeSnapshot {

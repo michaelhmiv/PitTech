@@ -21,6 +21,7 @@ class CookRepository(
     val recipes by lazy { RecipeRepository(database, photoStorage) }
     val notes by lazy { CookNoteRepository(database, photoStorage, this) }
     val sharing by lazy { SharingRepository(database, photoStorage, this) }
+    val guide by lazy { RecipeGuideRepository(database, this) }
 
     suspend fun saveDishVerdict(cookId: String, dishId: String, rating: Double?, cookAgain: Boolean?, notes: String) = database.withTransaction {
         require(dao.getDish(dishId)?.cookId == cookId) { "This dish is unavailable." }
@@ -855,7 +856,7 @@ class CookRepository(
         recipes.link(dishId, revision.recipeId, revision.id)
         val now = System.currentTimeMillis()
         database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
-            RecipeAttemptCodec.encode(dishId, revision.id, snapshot), now, now))
+            org.json.JSONObject(RecipeAttemptCodec.encode(dishId, revision.id, snapshot)).put("guide", guide.pin(revision, snapshot)).toString(), now, now))
         snapshot.targets.forEach { target -> dao.insertTarget(TargetEntity(UUID.randomUUID().toString(), dish.cookId, dishId,
             target.type, target.value, target.unit, "dish", target.explanation, "recipe:${revision.id}", now)) }
     }
@@ -880,7 +881,7 @@ class CookRepository(
         }
         val prior = database.companionDao().get("recipe-attempt:$dishId")
         database.companionDao().put(CompanionRecord("recipe-attempt:$dishId", "recipe_attempt", dish.cookId, snapshot.name,
-            RecipeAttemptCodec.encode(dishId, source.recipeRevisionId, snapshot), prior?.createdAtUtcMillis ?: now, now))
+            org.json.JSONObject(RecipeAttemptCodec.encode(dishId, source.recipeRevisionId, snapshot)).put("guide", prior?.let { org.json.JSONObject(it.payload).optJSONObject("guide") } ?: org.json.JSONObject.NULL).toString(), prior?.createdAtUtcMillis ?: now, now))
     }
 
     suspend fun saveMealPreset(cookId: String, name: String): String = database.withTransaction {

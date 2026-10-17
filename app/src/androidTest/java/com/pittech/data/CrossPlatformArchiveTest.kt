@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.data.CameraPhotoFiles
 import com.pittech.domain.*
+import org.json.JSONObject
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import org.junit.Test
@@ -26,12 +27,19 @@ class CrossPlatformArchiveTest {
         val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
         try {
             val repo = CookRepository(db, PhotoStorage(context)); val transfer = PitTechDataTransfer(context, repo)
-            val bytes = instrumentation.context.assets.open("cross-platform/native-meal-v9.zip").use { it.readBytes() }
+            val bytes = instrumentation.context.assets.open("cross-platform/native-guide-meal-v10.zip").use { it.readBytes() }
             val preview = transfer.previewImport(ByteArrayInputStream(bytes)); assertTrue(preview.archiveVersion in 9..PitTechDataTransfer.ARCHIVE_VERSION); assertEquals(1, preview.snapshot.reminderRules.size)
             repo.importSnapshot(preview.snapshot, preview.attachments); repo.importSnapshot(preview.snapshot, preview.attachments)
             val rule = db.reminderDao().rules().single(); assertFalse(rule.enabled); assertEquals("inactive", rule.status)
             assertEquals("historical", rule.kind); assertEquals(12000000L, (ReminderTriggerCodec.decode(rule.triggerConfig) as ReminderTrigger.Historical).offsetMillis)
             assertTrue(db.reminderDao().occurrences().filter { it.sequence == 0 }.none { it.active })
+            val stateRecord = db.companionDao().observeAll().first().single { it.kind == "guide_presentation" }
+            val state = GuidePresentation.decode(stateRecord.payload)
+            assertTrue(state.visible);assertEquals(2,state.dishIds!!.size)
+            val pinned = db.companionDao().observeAll().first().filter { it.kind == "recipe_attempt" }.mapNotNull { JSONObject(it.payload).optJSONObject("guide") }
+            assertEquals(3,pinned.size)
+            val sample = pinned.flatMap { CookPackHistory.rows(it.getJSONObject("story"),"readings") }.single()
+            assertEquals("°C",sample.getString("unit"));assertEquals(74.125,sample.getDouble("value"),0.0)
         } finally { db.close() }
     }
     @Test fun nativeVersionEightReadsAndAndroidWriterProducesOwnedVersionNineFixture(): Unit = runBlocking {
@@ -66,6 +74,7 @@ class CrossPlatformArchiveTest {
             reminders.save(next, currentMac.id, "Last time wrapped · check the bark", ReminderTrigger.Historical("food_on", milestone.offsetMillis!!), sourceRevision = saved.currentRevisionId, sourceMilestone = milestone.sourceEventId)
             reminders.save(next, null, "Stir in ten minutes", ReminderTrigger.Duration(System.currentTimeMillis(), 600000))
             repo.createCookReminder(next, "Legacy pending timer", System.currentTimeMillis() + 600000)
+            repo.guide.save(next, GuidePresentation(true, db.cookDao().getDishesForCook(next).take(2).map { it.id }.toSet()))
             val output = ByteArrayOutputStream(); transfer.writeZip(output)
             val final = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
             assertEquals(PitTechDataTransfer.ARCHIVE_VERSION, final.archiveVersion); assertEquals(2, final.snapshot.reminderRules.size)

@@ -58,10 +58,12 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
                 if (previous == null) dao.insertRecipe(saved)
                 val parent = if (previous == null) null else retainAssetsFromRevisionId?.let { dao.revision(it) }?.takeIf { it.recipeId == id } ?: prior
                 val revisionNumber = (dao.history(id).maxOfOrNull { it.revisionNumber } ?: 0) + 1
-                dao.insertRevision(RecipeRevision(revisionId, id, parent?.id, revisionNumber,
-                    sourceCookId ?: prior?.sourceCookId, sourceDishId ?: prior?.sourceDishId, snapshot.schemaVersion, payload, now, changeNotes))
+                val revision = RecipeRevision(revisionId, id, parent?.id, revisionNumber,
+                    sourceCookId ?: prior?.sourceCookId, sourceDishId ?: prior?.sourceDishId, snapshot.schemaVersion, payload, now, changeNotes)
+                dao.insertRevision(revision)
                 dao.insertAssets(copies)
                 if (previous != null) dao.updateRecipe(saved)
+                CookRepository(database, photoStorage).guide.retain(revision, snapshot, retainAssetsFromRevisionId ?: parent?.id)
                 saved
             }
         } catch (failure: Throwable) { copies.forEach { photoStorage.delete(it.relativeFilePath) }; throw failure }

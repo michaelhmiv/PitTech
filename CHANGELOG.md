@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Android and iOS: One Show guide setting across Live, Timeline and Charts, with per-dish source scope, recorded reference measurements and optional channel matching. Hiding the guide keeps reminders active.
 - Android and iOS: Choose whether to include a finished recorded meal in a Cook Pack; recipients can add it to history separately from saving recipes.
 - Share selected recipes or meal collections as Cook Pack files, and preview individual recipes before saving them on Android and iOS. Packs own their guide data and location-free photos. iOS full-backup restore uses bounded disk staging and the shared Android size limits.
 - Readings CSV and Excel workbooks are available on iOS. Both platforms write bounded worksheet files, preserve long text in a Long Values sheet and keep distinct probe channels separate in summaries.
@@ -20,6 +21,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 - A five-integration roadmap approving all four manufacturer SDK/API candidates and the optional user-operated Home Assistant bridge for development, with separate public-release terms validation. Legacy GrillirG cook histories remain supported without a public direct connector.
 
 ### Changed
+- iOS: Hold briefly to scrub the temperature chart, so ordinary vertical swipes can scroll the meal page. The temperature slider remains available.
 - Both apps now use Meals, Recipes, Discover, Insights and More. Devices and settings live under More, with device access during a cook. Recipe filters are quieter and meal selection is explicit; iOS gains matching light/dark surfaces and a reviewed feedback flow.
 - Live dish cards show recorded stages, readings, recent actions and enabled reminders. Finishing offers selected recipe saves or leaving without saving.
 - Clarified the product direction: observational, read-only temperature monitoring only; no grill or Wi-Fi configuration.

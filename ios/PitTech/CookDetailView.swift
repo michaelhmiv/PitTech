@@ -39,6 +39,7 @@ struct CookDetailView: View {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
                             }
                             Picker("Cook section", selection: $section) { Text("Live").tag("Live"); Text("Timeline").tag("Timeline"); Text("Charts").tag("Charts") }.pickerStyle(.segmented)
+                            RecipeGuideControl(cookId: cookId)
                             switch section {
                             case "Timeline": timelineContent
                             case "Charts": CookTemperatureChart(cookId: cookId) { event in section = "Timeline"; focused = event.id }
@@ -99,7 +100,7 @@ struct CookDetailView: View {
     private var shortcutBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }
+                Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }.accessibilityIdentifier("meal-log")
                 Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer").frame(minHeight: 44) }
                 Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera").frame(minHeight: 44) }
                 Button { showingReminders = true } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }
@@ -115,6 +116,7 @@ struct CookDetailView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
                 MealRecipeActions(cookId: cookId)
+                RecipeGuideMilestones(cookId: cookId, compact: true) { section = "Timeline" }
                 MealActivityTimers(cookId: cookId)
                 Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())
                 if store.timingMode(cookId) == "legacy_preserved" {
@@ -135,6 +137,7 @@ struct CookDetailView: View {
         let linked = Set(store.library.logReadingLinks.compactMap { $0.objectValue?["readingId"]?.stringValue })
         return VStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Timeline", subtitle: "Complete notes, newest activity first.")
+            RecipeGuideMilestones(cookId: cookId)
             ForEach(events) { event in
                 CookNoteCard(event: event, cookId: cookId, focused: focused == event.id, onEdit: {
                     do { draft = try store.loadNote(event.id) } catch { self.error = error.localizedDescription }

@@ -75,7 +75,7 @@ import java.time.format.DateTimeFormatter
                 }
                 val original = cooks.firstOrNull { it.cook.id == revision.sourceCookId }
                 if (original != null) TextButton({ dishId = null; viewModel.openCook(original.cook.id) }) { Text("Open original meal context") }
-                else Text("Original meal unavailable. Saved observations and photos remain; its full temperature curve cannot be compared.")
+                else Text("Original meal unavailable. Saved reference content remains available.")
                 Text("This cook · actual actions", style = MaterialTheme.typography.titleMedium)
                 val current = notePlanEvents(data.events).filter { (it.dishId == dishId || it.dishId == null) && it.action in CookNoteMetadata.actions }.sortedBy { it.at }
                 val currentAnchor = CookReferenceCodec.anchor(current, dishId.orEmpty(), "food_on")

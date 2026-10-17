@@ -42,7 +42,7 @@ struct RecipeReferenceView: View {
                     RecipeAssetGallery(revisionId: revisionId)
                     if let original = store.recipeRevision(revisionId)?["sourceCookId"]?.stringValue, store.library.cooks.contains(where: { $0.id == original }) {
                         NavigationLink("Open original meal context") { CookDetailView(cookId: original) }
-                    } else { Text("Original meal unavailable. Saved observations and photos remain; its full temperature curve cannot be compared.").font(.caption) }
+                    } else { Text("Original meal unavailable. Saved reference content remains available.").font(.caption) }
                 }
                 Section("This cook · actual actions") {
                     let actions = store.library.actions(for: cookId).filter { CookNoteMetadata.actions.contains($0.action) && ($0.dishIds.isEmpty || $0.dishIds.contains(dishId)) }

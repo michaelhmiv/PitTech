@@ -41,6 +41,7 @@ final class RecipeCompositionTests: XCTestCase {
         var sharing = try store.sharingDocument(sharingId)
         for index in sharing.entries.indices { sharing.entries[index].included = index == 2 }
         try store.saveSharingDraft(sharingId, document: sharing, expectedUpdated: store.sharingRecord(sharingId)!["updated"]!.numberValue!)
+        try store.saveGuideState(meal, GuidePresentation(visible: true, dishIds: Array(store.dishRecords(meal).prefix(2).map(\.id))))
         let bytes = try store.exportArchive()
         let destination = CookStore(directory: directory.appendingPathComponent("restored"))
         _ = try destination.importArchive(bytes)

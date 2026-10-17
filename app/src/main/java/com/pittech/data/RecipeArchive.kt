@@ -53,6 +53,7 @@ object RecipeArchive {
             require(s.dishes.any { it.id == dishId && it.cookId == record.cookId } &&
                 s.dishRecipeSources.any { it.dishId == dishId && it.recipeRevisionId == o.getString("revisionId") }) { "Invalid recipe attempt ownership." }
             RecipeAttemptCodec.snapshot(record.payload)
+            o.optJSONObject("guide")?.let { raw -> require(PinnedRecipeGuide.decode(raw).revisionId in revisions) { "Missing pinned guide version." } }
         }
         s.mealPresets.forEach { preset ->
             require(preset.name.isNotBlank())

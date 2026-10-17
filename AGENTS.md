@@ -48,6 +48,8 @@ GitHub issues; this file holds the durable rules of the road.
    The core data gate in `scripts/run-emulator-ui-tests.sh` explicitly includes
    sharing ownership, Cook Pack exchange, dense-document persistence and workbook tests.
    Keep its expected test counts aligned with the explicit class selectors.
+   iOS retains compact test-result JSON separately from full screenshots and
+   xcresult diagnostics so failures can be inspected without downloading video.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
    own distribution certificate and "PitTech App Store CI" provisioning
    profile via the App Store Connect API on every run. Never add steps that

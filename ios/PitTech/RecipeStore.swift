@@ -130,6 +130,7 @@ enum RecipeError: LocalizedError, Equatable {
                 "createdAtUtcMillis": .number(now), "changeNotes": .string("")])
             library.recipes.removeAll { $0.objectValue?["id"]?.stringValue == id }; library.recipes.append(.object(header))
             library.recipeRevisions.append(revision); library.recipeAssets.append(contentsOf: assets)
+            try retainRecipeGuide(revisionId, snapshot: snapshot, inheritedRevisionId: assetRevisionId ?? priorRevision?["id"]?.stringValue)
             try library.validateCookExperience(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }
             return id
         } catch { library = prior; written.forEach { try? FileManager.default.removeItem(at: $0) }; throw error }
