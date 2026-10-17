@@ -61,6 +61,10 @@ class CooksViewModel(
         com.pittech.data.CommunityVault(context).purgeAccount(user)
         com.pittech.data.PrivateSyncStore(context).purgeAccount(user)
         communityControls.reload();publicDiscovery.controlsChanged()
+    },removeJournal={
+        com.pittech.data.LocalJournalRemoval(app.database,com.pittech.data.PhotoStorage(context)).remove()
+        // The open detail would otherwise stick on "Opening cook…" for a deleted row.
+        closeCook()
     })
     internal val sync = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
         library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context)),

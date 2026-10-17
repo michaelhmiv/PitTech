@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
     val state by account.presentation.collectAsStateWithLifecycle()
     var confirm by remember{mutableStateOf(false)}
     var reviewingDeletion by remember{mutableStateOf(false)}
+    var reviewingJournal by remember{mutableStateOf(false)}
     LaunchedEffect(account,state.challengeEmail){while(true){delay(1000);account.tick()}}
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(4.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         Text("Your cookbook works without an account. Signing in doesn't publish or upload your local records.")
@@ -72,11 +73,15 @@ import kotlinx.coroutines.launch
             TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
         }else AccountSignIn(account,state)
         sync?.let{SyncSection(it,state.signedIn)}
+        Text("Remove local journal",style=MaterialTheme.typography.titleMedium)
+        Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
+        TextButton(onClick={reviewingJournal=true},enabled=!state.busy,modifier=Modifier.testTag("local-journal-remove")){Text("Remove local journal")}
         if(state.busy)CircularProgressIndicator()
         state.message?.let{Text(it,Modifier.testTag("account-message"))}
     }
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Sign out on this device?")},text={Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.")},confirmButton={TextButton(onClick={confirm=false;account.signOut()},modifier=Modifier.testTag("account-confirm-signout")){Text("Sign out")}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
     if(reviewingDeletion)AccountDeletionConfirmation(onCancel={reviewingDeletion=false},onConfirm={reviewingDeletion=false;account.requestDeletion()})
+    if(reviewingJournal)LocalJournalRemovalConfirmation(onCancel={reviewingJournal=false},onConfirm={reviewingJournal=false;account.removeLocalJournal()})
 }
 @Composable private fun SyncSection(sync: com.pittech.data.PrivateSyncCoordinator, signedIn: Boolean) {
     val state by sync.presentation.collectAsStateWithLifecycle()
@@ -147,4 +152,15 @@ import kotlinx.coroutines.launch
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(acknowledged,{acknowledged=it},modifier=Modifier.testTag("account-deletion-acknowledge"));Text("I understand what is deleted and what other cooks keep")}
         OutlinedTextField(typed,{typed=it},label={Text("Type DELETE")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("account-deletion-confirmation"))
     }},confirmButton={TextButton(onClick={keyboard?.hide();onConfirm()},enabled=acknowledged && typed=="DELETE",modifier=Modifier.testTag("account-deletion-submit")){Text("Delete account and server data")}},dismissButton={TextButton(onClick=onCancel){Text("Cancel")}})
+}
+@Composable private fun LocalJournalRemovalConfirmation(onCancel:()->Unit,onConfirm:()->Unit){
+    var acknowledged by remember{mutableStateOf(false)};var typed by remember{mutableStateOf("")}
+    val keyboard=LocalSoftwareKeyboardController.current
+    AlertDialog(onDismissRequest=onCancel,title={Text("Remove local journal")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This cannot be undone.")
+        Text("Finish or stop any active cook and its recording first. Removal is refused while a cook is active or a recording is in progress.")
+        Text("This does not delete the server account. Signing in again will not bring the journal back. Credentials, deletion records and recovery, and community block and report device state stay untouched.")
+        Row(verticalAlignment=Alignment.CenterVertically){Checkbox(acknowledged,{acknowledged=it},modifier=Modifier.testTag("local-journal-acknowledge"));Text("I understand the journal on this device is removed and my account stays")}
+        OutlinedTextField(typed,{typed=it},label={Text("Type REMOVE")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("local-journal-confirmation"))
+    }},confirmButton={TextButton(onClick={keyboard?.hide();onConfirm()},enabled=acknowledged && typed=="REMOVE",modifier=Modifier.testTag("local-journal-submit")){Text("Remove local journal")}},dismissButton={TextButton(onClick=onCancel){Text("Cancel")}})
 }

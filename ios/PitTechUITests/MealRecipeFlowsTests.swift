@@ -7,7 +7,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, ["Account", "Delete account", "Report publication", "Report publisher", "Community controls", "Review synced edits"].contains(navigation.identifier) {
+            if let navigation, ["Account", "Delete account", "Remove local journal", "Report publication", "Report publisher", "Community controls", "Review synced edits"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
@@ -193,12 +193,14 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.buttons["Hide keyboard"].tap()
             let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
             let signedIn = app.staticTexts["account-signed-in"]
-            if !signedIn.waitForExistence(timeout: 5), app.staticTexts["account-message"].label == "Check your email for a link and six-digit code. Both expire in 15 minutes." {
-                // Simulator notification banners can consume the first gesture.
-                // Retry only while the fixture remains in its untouched start state.
-                reveal(verify, app: app); verify.tap()
-            }
-            XCTAssertTrue(signedIn.waitForExistence(timeout: 10)); reveal(signedIn, app: app)
+            // In large text the Form virtualizes off-screen rows, so the signed-in
+            // marker only materializes once scrolled into view: scroll it into view
+            // instead of waiting on a possibly-unrealized node. reveal() polls
+            // (~18 attempts), covering the fixture-backed verify latency too.
+            // (The old retry-on-consumed-tap guard is dropped: the message row it
+            // read is itself virtualized off-screen in large text, so the guard
+            // could never fire reliably.)
+            reveal(signedIn, app: app)
             capture(large ? "Native account signed in large text" : "Native account signed in")
             let signOut = app.buttons["Sign out"]; reveal(signOut, app: app); signOut.tap()
             let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
@@ -230,7 +232,41 @@ final class MealRecipeFlowsTests: XCTestCase {
             let check = app.buttons["account-deletion-check"]; reveal(check, app: app); check.tap()
             let finished = app.buttons["Close completed request"]; reveal(finished, app: app)
             capture(large ? "Account deletion complete large text" : "Account deletion complete")
-            finished.tap(); XCTAssertTrue(app.textFields["account-email"].waitForExistence(timeout: 10))
+            finished.tap()
+            let email = app.textFields["account-email"]
+            if !email.waitForExistence(timeout: 5), finished.exists, finished.isEnabled {
+                // The dismissal tap can land while the button is still disabled from
+                // the status check; retry once the request has settled.
+                finished.tap()
+            }
+            // In large text the Form virtualizes off-screen rows: scroll the field
+            // into view (which materializes it) instead of waiting on a
+            // possibly-unrealized node.
+            reveal(email, app: app)
+            app.terminate()
+        }
+    }
+    func testLocalJournalRemovalConfirmationAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            // The account entry point only exists when accounts are enabled.
+            app.launchArguments = ["--ui-test-reset", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let remove = app.buttons["local-journal-remove"]; reveal(remove, app: app); remove.tap()
+            let acknowledgment = app.switches["local-journal-acknowledge"].firstMatch
+            setSwitch(acknowledgment, on: true, app: app)
+            let typed = app.textFields["local-journal-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("REMOVE")
+            app.buttons["Hide keyboard"].tap()
+            let submit = app.buttons["local-journal-submit"]; reveal(submit, app: app)
+            XCTAssertTrue(submit.isEnabled)
+            capture(large ? "Local journal removal review large text" : "Local journal removal review")
+            submit.tap()
+            let message = app.staticTexts["account-message"]; XCTAssertTrue(message.waitForExistence(timeout: 10)); reveal(message, app: app)
+            XCTAssertTrue(message.label.contains("Local journal removed"))
+            capture(large ? "Local journal removed large text" : "Local journal removed")
+            app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
+            XCTAssertTrue(app.staticTexts["No finished cooks yet"].waitForExistence(timeout: 10))
             app.terminate()
         }
     }

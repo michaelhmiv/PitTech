@@ -64,8 +64,8 @@ further publishing access, and recovery survives sign-out/restart. The journal a
 local recording are untouched by these account operations. Both clients display
 pending publication/profile review rather than claiming immediate publication.
 Native unit tests cover interrupted responses, restart recovery, failed local saves, malformed receipts and same-body 401 retries. Both UI suites now exercise typed confirmation, recovery and progress at their required text sizes; these new tests are not yet verified in Actions. The
-separate local-journal removal option, native reports/blocks, account-scoped outbox
-cleanup and all lifecycle visual paths remain open gates.
+native reports/blocks, account-scoped outbox cleanup and all lifecycle visual paths
+remain open gates.
 
 The first database Actions run found an unnecessary user row lock requiring a
 privilege absent from the cleanup role; the account advisory lock supplies the
@@ -94,8 +94,7 @@ The normal lane now passes source comparison but times out opening an owner
 editing draft; the advisory API 37 emulator reports a system crash. A full-height
 cookbook sheet and extra button visibility diagnostics are queued for the next
 run. iOS deletion results and the newly added report/block paths remain pending.
-Account-scoped native outbox cleanup, local-journal removal, operator-facing review
-usability and private-sync cleanup remain open gates. No full lifecycle release
+Account-scoped native outbox cleanup and private-sync cleanup remain open gates. No full lifecycle release
 claim is made.
 
 Accepted native deletion now persists a separate cleanup owner before clearing
@@ -107,8 +106,22 @@ restart or an explicit action and must clear before dismissing a completed reque
 The journal is never opened by this adapter. In-flight community responses re-read
 current durable state before saving, so cleanup cannot be undone by an old reply.
 Matching native tests cover failed cleanup/restart, metadata/body account isolation
-and idempotent cleanup. These additions require fresh Actions evidence. Local
-journal removal remains a distinct unfinished control.
+and idempotent cleanup. These additions require fresh Actions evidence.
+
+The separate local-journal removal control now exists on both clients and is no
+longer an open gate beyond its own Actions and visual evidence. A standalone
+"Remove local journal" section in the Account screen is visible whether signed in
+or not and whether accounts are enabled or not; confirmation mirrors deletion
+with an acknowledgment switch and a typed `REMOVE`. Removal clears the
+device-local journal only — cooks, recipes, photos, notes, drafts, reminders and
+timers — and empties durably, so a restart cannot resurrect the library. It never
+touches the server account, credentials, deletion records/recovery, or community
+block/report device state. While any cook is active or a recording is in
+progress, removal is refused with a message to finish or stop first, so it can
+never interrupt or corrupt an in-progress recording. Account deletion behavior is
+unchanged. Native tests cover journal/file clearing, active-cook refusal, account
+store isolation and restart persistence, plus the confirmation flow at the
+required text sizes; their Actions runs and screenshots are still pending.
 
 Additional race regression tests ensure an anonymous report reply cannot restore
 account receipts removed during cleanup. Android public read context checks also
@@ -128,3 +141,12 @@ failed the deletion-review and public-save UI flows; report recovery/blocking
 passed. The deletion test now verifies the acknowledgment switch and enabled
 submit button before submitting. The public preview layout is stabilized in
 the publishing layer. These are pending fresh Actions verification.
+
+Operator review now has a usable page at `GET /operator`, served only when the
+lifecycle surface is configured and carrying the same nonce CSP, robots and
+no-store hardening as `/delete-account`. The operator token lives only in page
+memory and is never written to storage, cookies or the URL. Queue loads and item
+reads use the existing operator endpoints and never mutate; authored text renders
+as text only, and review images load through authenticated `fetch` calls shown as
+blob object URLs because an `img` tag cannot send the header. Operator usability
+is therefore done; its Actions and visual evidence remain pending.

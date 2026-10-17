@@ -51,6 +51,7 @@ struct PitTechApp: App {
                     }
                 }
                 .task {
+                    account.removeJournal = { try store.removeLocalJournal() }
                     communityControls.reload()
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()
