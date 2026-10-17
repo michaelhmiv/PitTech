@@ -19,9 +19,10 @@ import { lifecycleRoute,handleLifecycle,requestAudience } from './lifecycle-http
 import type { AccountDeletion } from './account-deletion.ts';
 import type { CommunityLifecycle } from './community-lifecycle.ts';
 import { publicWebRoute, publicPage } from './publication-web.ts';
+import { privateSyncRoute, handlePrivateSync, type PrivateSyncServices } from './sync-http.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -83,6 +84,19 @@ export function makeServer(relay: Relay, options: Options) {
         else if (authRoute === '/v1/auth/verify') json(200, await options.auth.verify({ challengeId: body.challengeId, verifier: body.verifier, code: body.code, token: body.token, idempotencyId: body.idempotencyId }));
         else if (authRoute === '/v1/auth/refresh') json(200, await options.auth.refresh(body.refreshToken, body.idempotencyId));
         else { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
+        return;
+      }
+      const syncRoute = privateSyncRoute(req.url ?? '', method);
+      if (syncRoute && options.sync) {
+        route = syncRoute;
+        if (active >= 2) throw new ApiError(503, 'temporarily_unavailable'); active++; counted = true;
+        const bucket = Math.floor(relay.clock() / 3600000), address = proxyaddr(req, trust);
+        const key = 'private-sync:' + rateIdentity(options.ipKey, address, 'private-sync:' + bucket);
+        if (!await relay.repository.rate(key, 120, (bucket + 1) * 3600000)) throw new ApiError(429, 'rate_limited');
+        await handlePrivateSync(req, res, syncRoute, options.auth, options.sync, {
+          claim: () => { if (uploading) return false; uploading = true; return true; },
+          release: () => { uploading = false; },
+        });
         return;
       }
       const lifecycle=lifecycleRoute(req.url??'',method);

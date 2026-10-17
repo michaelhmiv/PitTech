@@ -60,3 +60,14 @@ measurements, never a claimed calendar date. UI/export consumers must preserve
 that distinction. The actual server-generated pack captured in
 `fixtures/public-native-v1.json` is consumed by both native suites. Public Save
 never publishes a fork or imports somebody else’s cook into the user’s history.
+
+## Draft private-sync merge
+
+The unshipped v1 sync envelope now includes recoverable `conflicts`, known record
+types, safe composite local record keys and explicit null-payload tombstones.
+Logical counters start at one; timestamps are payload facts, never merge clocks.
+The native/backend merge helpers consume eleven identical `sync-merge-v1.json`
+vectors. A conflict ID hashes ASCII record identity/reason and both version stamps,
+so it does not depend on a platform's JSON formatting. This is a foundation only:
+strict library projection/relationship checks, transport and native durable apply
+remain open. Generic record payload acceptance is not a credential sanitizer.

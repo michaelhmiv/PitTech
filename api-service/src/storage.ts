@@ -6,14 +6,15 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, GetB
 import { LIMITS } from './core.ts';
 
 export interface Storage { put(key: string, file: string): Promise<void>; get(key: string): Promise<Buffer>; delete(key: string): Promise<void> }
-function validKey(key: string): void { if (!/^(relay|publications)\/[a-f\d-]{36}\.pittech$/i.test(key)) throw new Error('Invalid object key'); }
+const fenced = (key: string) => key.startsWith('publications/') || key.startsWith('private-sync/');
+function validKey(key: string): void { if (!/^(relay|publications|private-sync)\/[a-fA-F\d-]{36}\.pittech$/.test(key)) throw new Error('Invalid object key'); }
 export class FileStorage implements Storage {
   root: string;
   constructor(root: string) { this.root = root; }
   path(key: string) { validKey(key); return join(this.root, key); }
   async put(key: string, file: string) {
     const path = this.path(key), temporary = path + '.' + randomUUID() + '.partial'; await mkdir(join(this.root, key.split('/')[0]), { recursive: true, mode: 0o700 });
-    try { await copyFile(file, temporary); await chmod(temporary, 0o600); if (key.startsWith('publications/')) {
+    try { await copyFile(file, temporary); await chmod(temporary, 0o600); if (fenced(key)) {
       try { await link(temporary, path); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         if (!(await this.get(key)).equals(await readFile(file))) throw new Error('Object already exists');
@@ -23,16 +24,16 @@ export class FileStorage implements Storage {
   async get(key: string) { const p = this.path(key); if ((await stat(p)).size === 0 || (await stat(p)).size > LIMITS.compressed) throw new Error('Oversize object'); return readFile(p); }
   async delete(key: string) {
     const path = this.path(key);
-    if (!key.startsWith('publications/')) { await rm(path, { force: true }); return; }
+    if (!fenced(key)) { await rm(path, { force: true }); return; }
     // Never remove the key: a create-only upload that resumes after cleanup must
     // fail instead of restoring the original bytes. No identity enters this marker.
-    await mkdir(join(this.root, 'publications'), { recursive: true, mode: 0o700 });
+    await mkdir(join(this.root, key.split('/')[0]), { recursive: true, mode: 0o700 });
     const temporary = path + '.' + randomUUID() + '.partial';
     try { await writeFile(temporary, Buffer.alloc(0), { mode: 0o600, flag: 'wx' }); await rename(temporary, path); }
     finally { await rm(temporary, { force: true }); }
   }
   async prune(now: number) {
-    for (const namespace of ['relay','publications']) {
+    for (const namespace of ['relay','publications','private-sync']) {
     const root = join(this.root, namespace); for (const item of await readdir(root).catch(() => [])) if (item.endsWith('.partial')) {
       const p = join(root, item); if ((await stat(p)).mtimeMs < now - 30 * 60000) await rm(p, { force: true });
     }
@@ -45,10 +46,10 @@ export class S3Storage implements Storage {
   async put(key: string, file: string) {
     validKey(key); const body = createReadStream(file);
     try { await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body,
-      ...(key.startsWith('publications/') ? { IfNoneMatch: '*' } : {}),
+      ...(fenced(key) ? { IfNoneMatch: '*' } : {}),
       ContentLength: (await stat(file)).size, ContentType: 'application/octet-stream', CacheControl: 'private,no-store' }), { abortSignal: AbortSignal.timeout(30000) }); }
     catch (error) {
-      if (!key.startsWith('publications/') || (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 412) throw error;
+      if (!fenced(key) || (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 412) throw error;
       // Response loss may retry an already committed identical body. A marker or
       // mismatched body can never be replaced by this retry.
       if (!(await this.get(key)).equals(await readFile(file))) throw new Error('Object already exists');
@@ -64,7 +65,7 @@ export class S3Storage implements Storage {
   }
   async delete(key: string) {
     validKey(key);
-    if (!key.startsWith('publications/')) {
+    if (!fenced(key)) {
       await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: AbortSignal.timeout(30000) }); return;
     }
     // Overwriting a versioned object would retain its original bytes. Unknown or

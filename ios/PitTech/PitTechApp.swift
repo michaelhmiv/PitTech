@@ -12,6 +12,10 @@ struct PitTechApp: App {
     #else
     @State private var account = NativeAccountCoordinator(cleanup: NativeAccountLocalCleanup.run)
     #endif
+    @State private var sync: NativePrivateSyncCoordinator
+    init() {
+        _sync = State(initialValue: NativePrivateSyncCoordinator.forApp(store: _store.wrappedValue, account: _account.wrappedValue))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -27,6 +31,7 @@ struct PitTechApp: App {
                 .environment(community)
                 .environment(communityControls)
                 .environment(account)
+                .environment(sync)
                 .environment(AdsConsentManager.shared)
                 .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
                 .onChange(of: account.deletionRecord?.receipt?.deletionId) { _, _ in communityControls.reload(); community.controlsChanged() }

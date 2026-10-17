@@ -72,6 +72,9 @@ abstract class CookCompanionDao {
     abstract suspend fun restore(records: List<CompanionRecord>)
     @Query("DELETE FROM companion_records WHERE id = :id")
     abstract suspend fun delete(id: String)
+    /** Private-sync tombstone application only. Additive; no schema change. */
+    @Query("DELETE FROM companion_photos WHERE id = :id")
+    abstract suspend fun deletePhotoById(id: String)
     @Query("SELECT * FROM companion_photos")
     abstract suspend fun photos(): List<CompanionPhoto>
     @Query("SELECT * FROM companion_photos WHERE recordId = :recordId")

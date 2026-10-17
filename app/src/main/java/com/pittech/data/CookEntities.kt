@@ -547,6 +547,37 @@ interface CookDao {
     @Delete
     suspend fun deleteSensorReading(reading: SensorReadingEntity)
 
+    /** Private-sync tombstone application only. Additive; no schema change. */
+    @Update
+    suspend fun updateTarget(target: TargetEntity)
+
+    @Query("DELETE FROM cooks WHERE id = :id")
+    suspend fun deleteCookById(id: String)
+
+    @Query("DELETE FROM dishes WHERE id = :id")
+    suspend fun deleteDishById(id: String)
+
+    @Query("DELETE FROM ingredients WHERE id = :id")
+    suspend fun deleteIngredientById(id: String)
+
+    @Query("DELETE FROM timeline_events WHERE id = :id")
+    suspend fun deleteEventById(id: String)
+
+    @Query("DELETE FROM sensor_readings WHERE id = :id")
+    suspend fun deleteReadingById(id: String)
+
+    @Query("DELETE FROM devices WHERE id = :id")
+    suspend fun deleteDeviceById(id: String)
+
+    @Query("DELETE FROM probes WHERE id = :id")
+    suspend fun deleteProbeById(id: String)
+
+    @Query("DELETE FROM photos WHERE id = :id")
+    suspend fun deletePhotoById(id: String)
+
+    @Query("DELETE FROM targets WHERE id = :id")
+    suspend fun deleteTargetById(id: String)
+
     @Transaction
     @Query("SELECT * FROM cooks ORDER BY startedAtUtcMillis DESC")
     fun observeCooks(): Flow<List<CookWithDishes>>
