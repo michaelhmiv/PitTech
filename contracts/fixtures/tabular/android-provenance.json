@@ -1,0 +1,14 @@
+{
+  "producer": "PitTech Android emulator writer",
+  "producerCommit": "d47b4cb84b887206f3dfa9d9ed9a8e0df1945c67",
+  "workflowRun": 38605303503,
+  "artifactId": 11917086250,
+  "producerTests": "CrossPlatformArchiveTest.nativeVersionEightReadsAndAndroidWriterProducesOwnedVersionNineFixture",
+  "workflowResult": "The writer test completed; the workflow later failed in UI ActivityScenario cleanup.",
+  "files": {
+    "ios/PitTechTests/Fixtures/android-cook-pack-recipe-v1.pittech": "44a9253441d08c2f2b228a3d9c413ec9fac6f680c987b4a22909e8245c4a616c",
+    "ios/PitTechTests/Fixtures/android-cook-pack-collection-v1.pittech": "530cafaae17b2e50f8010e3e42310893a44b7e49fc7a690587b4f4f43fdfb279",
+    "contracts/fixtures/tabular/android-v1.xlsx": "fe333e69490171d51d51c70621d1103adbb8bb69654bf55b8af2bd17f2850fbf",
+    "contracts/fixtures/tabular/android-v1.csv": "47b58c6218dbc9ecad4a6942f169799d0dc755ad6a38fb55d5945689a50ce872"
+  }
+}

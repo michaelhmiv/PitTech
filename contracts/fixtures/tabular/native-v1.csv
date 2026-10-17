@@ -1,0 +1,2 @@
+reading_id,cook_id,dish_id,probe_id,probe_name,measurement_type,value,unit,measured_at_utc,measured_at_local,time_zone,source,source_device_id,quality_status,recorded_at_utc,timestamp_basis,sampling_interval_millis
+"c857b30c-5584-4c8a-89fd-7330dc608b52","68f34d5a-fa45-43ee-8b14-8e92954fd2ed","ef131b44-85e3-47f4-81d3-49bdb1ca70fa","manual-ac88788fb98a6a1a0d4079b54874c8e71ce687ccf59711e70c8e32502ece1de2","Same name","food","74.125","°C","2026-10-14T16:42:23.991Z","2026-10-14T16:42:23.991Z","GMT","manual","","valid","2026-10-14T16:42:23.993Z","measurement","0.0"

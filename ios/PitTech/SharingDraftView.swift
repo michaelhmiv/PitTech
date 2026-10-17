@@ -12,6 +12,11 @@ struct SharingDraftView: View {
     @State private var editor: NativeRecipeRequest?
     @State private var choosingRecipe = false
     @State private var error: String?
+    @State private var includeRecordedCook = false
+    @State private var preparingExport = false
+    @State private var exporting = false
+    @State private var exportDocument = PitTechArchiveDocument(data: Data())
+    @State private var exportTask: Task<Void, Never>?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -52,6 +57,13 @@ struct SharingDraftView: View {
                     }
                     Button("Add a saved recipe") { act { try persist(); choosingRecipe = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(current.entries.count >= 20)
                     Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                    if current.sourceHistory != nil {
+                        Toggle("Include this recorded meal", isOn: $includeRecordedCook).disabled(!canIncludeHistory(current) || preparingExport).accessibilityIdentifier("sharing-include-history")
+                        Text(canIncludeHistory(current) ? "Recipients can choose to add this finished meal to history." : "Enable the recorded story for each selected original dish first.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                    }
+                    if preparingExport { ProgressView("Preparing Cook Pack…") }
+                    Button { prepareExport() } label: { Label("Share Cook Pack file", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-export-pack")
                     Button("Save meal collection") { act { try persist(); _ = try store.copySharingDocument(id, asCollection: true); try store.discardSharingDraft(id); document = nil; dismiss() } }
                         .buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(!current.entries.contains { $0.included })
                     Button("Discard draft", role: .destructive) { act { saveTask?.cancel(); try store.discardSharingDraft(id); document = nil; dismiss() } }.frame(minHeight: 44)
@@ -61,6 +73,7 @@ struct SharingDraftView: View {
         }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Sharing draft").navigationBarTitleDisplayMode(.inline)
             .onAppear { act { try reload() } }
             .onChange(of: document) { _, value in
+                if let value, !canIncludeHistory(value) { includeRecordedCook = false }
                 saveTask?.cancel(); guard value != nil, editor == nil else { return }; saved = false
                 saveTask = Task { @MainActor in
                     do { try await Task.sleep(for: .milliseconds(500)); guard !Task.isCancelled else { return }; try persist(); error = nil }
@@ -69,7 +82,11 @@ struct SharingDraftView: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in if phase != .active && editor == nil { act { try persist() } } }
-            .onDisappear { saveTask?.cancel(); if document != nil && editor == nil { act { try persist() } } }
+            .onDisappear { saveTask?.cancel(); exportTask?.cancel(); if document != nil && editor == nil { act { try persist() } } }
+            .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .pittechCookPack, defaultFilename: document?.title ?? "PitTech-Recipe") { result in
+                if case .failure(let failure) = result { error = failure.localizedDescription }
+                exportDocument = PitTechArchiveDocument(data: Data())
+            }
             .sheet(item: $editor, onDismiss: { act { try reload() } }) { NativeRecipeEditor(request: $0) }
             .sheet(isPresented: $choosingRecipe) {
                 NavigationStack {
@@ -79,7 +96,28 @@ struct SharingDraftView: View {
                 }
             }
     }
+    private func canIncludeHistory(_ value: NativeSharingDocument) -> Bool {
+        guard let history = value.sourceHistory else { return false }
+        let original = Set(NativeCookPackHistory.rows(history, "dishes").compactMap { $0["id"]?.stringValue })
+        let selected = value.entries.filter(\.included)
+        return !selected.isEmpty && selected.allSatisfy { $0.includeStory && $0.sourceDishId.map(original.contains) == true }
+    }
     private func reload() throws { document = try store.sharingDocument(id); updated = store.sharingRecord(id)?["updated"]?.numberValue ?? 0; saved = true }
+    private func prepareExport() {
+        guard !preparingExport else { return }
+        act {
+            try persist(); preparingExport = true
+            exportTask = Task { @MainActor in
+                do {
+                    let data = try await store.exportCookPackAsync(id, includeRecordedCook: includeRecordedCook)
+                    try Task.checkCancellation()
+                    exportDocument = PitTechArchiveDocument(data: data); exporting = true; error = nil
+                } catch is CancellationError { }
+                catch { self.error = error.localizedDescription }
+                preparingExport = false
+            }
+        }
+    }
     private func persist() throws { saveTask?.cancel(); guard let document else { return }; try store.saveSharingDraft(id, document: document, expectedUpdated: updated); updated = store.sharingRecord(id)?["updated"]?.numberValue ?? updated; saved = true }
     private func change(_ mutation: (inout NativeSharingDocument) -> Void) { guard var current = document else { return }; mutation(&current); document = current }
     private func entryBinding(_ id: String, key: String) -> Binding<Bool> { Binding(get: { document?.entries.first { $0.id == id }?.includeStory ?? false }, set: { value in change { if let index = $0.entries.firstIndex(where: { $0.id == id }) { $0.entries[index].includeStory = value } } }) }

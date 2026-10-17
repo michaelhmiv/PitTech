@@ -1,0 +1,10 @@
+{
+  "producerCommit": "cfeea73b5e10aa2218f50f53653722dd3a744be8",
+  "workflowRun": 38639019681,
+  "artifactId": 11930680592,
+  "writerTest": "CrossPlatformArchiveTest.nativeVersionEightReadsAndAndroidWriterProducesOwnedVersionNineFixture",
+  "workflowResult": "All 16 data tests and 13 companion/UI tests passed; the workflow stopped at an outdated expected-count assertion.",
+  "files": {
+    "ios/PitTechTests/Fixtures/android-cook-pack-cook-v1.pittech": "41ec6ebebe9600a3b81e1360a70a76b3800063ac1cbc0db1516a87152d2ea760"
+  }
+}

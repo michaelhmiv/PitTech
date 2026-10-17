@@ -28,6 +28,39 @@ class MealRecipeUserFlowsTest {
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
     }
     private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    @Test fun cookPackPreviewLetsGuestSaveOnlyOneRecipeAndKeepsHistorySeparate() {
+        val prepared = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val cook = app.cookRepository.startCook(NewCookDraft("Pork and potatoes", dishes = listOf(DishDraft("Pork", "Pork"), DishDraft("Potatoes", "Vegetables"))))
+            val dishes = app.database.cookDao().getDishesForCook(cook)
+            app.cookRepository.completeCook(cook)
+            val id = app.cookRepository.sharing.fromMeal(cook, dishes.map { it.id }.toSet())
+            val file = File(app.cacheDir, "exports/ui-selection.pittech").apply { parentFile!!.mkdirs() }
+            file.outputStream().use { app.dataTransfer.writeCookPack(it, id) }
+            val preview = file.inputStream().use(app.dataTransfer::previewCookPack)
+            val omit = preview.snapshot.recipes.first { it.name == "Potatoes" }.currentRevisionId
+            app.database.clearAllTables()
+            val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+            uri to omit
+        }
+        compose.activityRule.scenario.onActivity { activity ->
+            val launchIntent = activity.intent
+            val incoming = android.content.Intent(launchIntent).setAction(android.content.Intent.ACTION_VIEW).setDataAndType(prepared.first, "application/zip")
+            InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(activity, incoming)
+            // ActivityScenario matches the launch intent when it receives later lifecycle callbacks.
+            activity.intent = launchIntent
+        }
+        waitFor("pack-save-recipes")
+        compose.onNodeWithTag("pack-select-${prepared.second}").performScrollTo().performClick()
+        compose.onNodeWithTag("pack-save-recipes").assertTextEquals("Save 1 recipe")
+        shot("cook-pack-selective-preview")
+        compose.onNodeWithTag("pack-save-recipes").performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().size == 1 } }
+        assertEquals("Pork", runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().single().name })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().isEmpty() })
+        compose.onNodeWithTag("nav-recipes").performClick(); shot("cook-pack-saved-recipe")
+    }
     @Test fun combineAdjustEnableHistoricalCheckAndSaveOnlyOneDishAfterPausedFinish() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         if (Build.VERSION.SDK_INT >= 33) instrumentation.uiAutomation.grantRuntimePermission(app.packageName, Manifest.permission.POST_NOTIFICATIONS)
@@ -97,5 +130,34 @@ class MealRecipeUserFlowsTest {
         shot("meal-finished-recipe-choice")
         compose.onNodeWithTag("leave-without-saving").performScrollTo().performClick()
         assertEquals(CookStatus.COMPLETED, runBlocking(Dispatchers.IO) { app.database.cookDao().getCook(meal.id)!!.status })
+    }
+    @Test fun recordedCookPreviewAddsHistoryWithoutSavingRecipesOrStartingAutomation() {
+        val uri = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val cook = app.cookRepository.startCook(NewCookDraft("Pork and potatoes", dishes = listOf(DishDraft("Pork", "Pork"), DishDraft("Potatoes", "Vegetables"))))
+            val dishes = app.database.cookDao().getDishesForCook(cook)
+            app.cookRepository.completeCook(cook)
+            val id = app.cookRepository.sharing.fromMeal(cook, dishes.map { it.id }.toSet())
+            val record = app.cookRepository.sharing.get(id)!!; val document = SharingDraftCodec.decode(record.payload)
+            app.cookRepository.sharing.save(id, document.copy(entries = document.entries.map { it.copy(includeStory = true) }), record.updatedAtUtcMillis)
+            val file = File(app.cacheDir, "exports/ui-history.pittech").apply { parentFile!!.mkdirs() }
+            file.outputStream().use { app.dataTransfer.writeCookPack(it, id, includeRecordedCook = true) }
+            app.database.clearAllTables()
+            androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+        }
+        compose.activityRule.scenario.onActivity { activity ->
+            val launch = activity.intent
+            InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(activity, android.content.Intent(launch).setAction(android.content.Intent.ACTION_VIEW).setDataAndType(uri, "application/zip"))
+            activity.intent = launch
+        }
+        waitFor("pack-add-history"); compose.onNodeWithTag("pack-add-history").performScrollTo()
+        shot("cook-pack-recorded-history-preview")
+        compose.onNodeWithTag("pack-add-history").performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().size == 1 } }
+        assertEquals(CookStatus.COMPLETED, runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().single().status })
+        assertEquals(2, runBlocking(Dispatchers.IO) { app.database.cookDao().getAllDishes().size })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().isEmpty() })
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.recordingDao().getAllRecordings().isEmpty() })
     }
 }

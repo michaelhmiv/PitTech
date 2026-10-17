@@ -24,7 +24,8 @@
         "type": "string",
         "format": "uuid"
       },
-      "maxItems": 20
+      "maxItems": 20,
+      "uniqueItems": true
     },
     "dishIds": {
       "type": "array",
@@ -32,7 +33,8 @@
         "type": "string",
         "format": "uuid"
       },
-      "maxItems": 20
+      "maxItems": 20,
+      "uniqueItems": true
     },
     "includedStory": {
       "type": "boolean"
@@ -79,5 +81,36 @@
     "dishIds",
     "includedStory",
     "source"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "cook"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "dishIds": {
+            "minItems": 1
+          },
+          "includedStory": {
+            "const": true
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "dishIds": {
+            "maxItems": 0
+          },
+          "recipeRevisionIds": {
+            "minItems": 1
+          }
+        }
+      }
+    }
   ]
 }

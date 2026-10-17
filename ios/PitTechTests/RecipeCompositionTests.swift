@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import ZIPFoundation
 @testable import PitTech
 
 final class RecipeCompositionTests: XCTestCase {
@@ -11,7 +12,14 @@ final class RecipeCompositionTests: XCTestCase {
         for name in ["Chicken", "Mac", "Pork"] {
             store.startCook(title: name, firstDish: name)
             let cook = store.library.cooks.last!.id, dish = store.dishRecords(cook)[0].id
-            try store.saveNote(CookNoteDraft(cookId: cook, dishId: dish, description: "\(name) private note"))
+            let temperatures = name == "Chicken" ? [NoteTemperatureDraft(probeName: "Same name", valueText: "74.125", unit: "°C", dishId: dish)] : []
+            var photos: [NotePhotoDraft] = []
+            if name == "Chicken" {
+                let format = UIGraphicsImageRendererFormat(); format.scale = 1
+                let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 4), format: format).image { UIColor.orange.setFill(); $0.fill(CGRect(x: 0, y: 0, width: 8, height: 4)) }
+                photos = [try store.stagePhoto(image.jpegData(compressionQuality: 0.8)!)]
+            }
+            try store.saveNote(CookNoteDraft(cookId: cook, dishId: dish, description: "\(name) private note", temperatures: temperatures, photos: photos))
             store.finishCook(cook)
             let recipeId = try store.saveRecipe(store.extractRecipe(cookId: cook, dishId: dish), sourceCookId: cook, sourceDishId: dish)
             revisions.append(store.recipe(recipeId)!["currentRevisionId"]!.stringValue!)
@@ -43,7 +51,27 @@ final class RecipeCompositionTests: XCTestCase {
         XCTAssertEqual(try destination.sharingDocument(sharingId), sharing)
         try destination.library.validateCookExperience()
         // CI retrieves this synthetic fixture to exercise the native writer with the Android reader.
-        try bytes.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("pittech-native-recipe-fixture.zip"), options: .atomic)
+        let fixtureURL = FileManager.default.temporaryDirectory.appendingPathComponent("pittech-native-recipe-fixture.zip")
+        try bytes.write(to: fixtureURL, options: .atomic)
+        // Preserve the legacy/full fixture and carry actual writer outputs inside the same CI artifact.
+        let recordedCook = store.library.cooks.first!.id, recordedDish = store.dishRecords(recordedCook)[0].id
+        let packDraft = try store.createSharingDraft(cookId: recordedCook, dishIds: [recordedDish])
+        var chosen = try store.sharingDocument(packDraft); chosen.entries[0].includeStory = true
+        chosen.entries[0].photoIds = store.sharingPhotos(packDraft).compactMap { $0["id"]?.stringValue }; chosen.heroPhotoId = chosen.entries[0].photoIds.first
+        try store.saveSharingDraft(packDraft, document: chosen, expectedUpdated: store.sharingRecord(packDraft)!["updated"]!.numberValue!)
+        let recipePack = try store.exportCookPack(packDraft)
+        let recordedPack = try store.exportCookPack(packDraft, includeRecordedCook: true)
+        try store.addRecipeToSharingDraft(packDraft, revisionId: revisions[1], expectedUpdated: store.sharingRecord(packDraft)!["updated"]!.numberValue!)
+        let collectionPack = try store.exportCookPack(packDraft)
+        store.library.cooks[0].notes = String(repeating: "🌶", count: 17000)
+        let workbookURL = directory.appendingPathComponent("native.xlsx"), csvURL = directory.appendingPathComponent("native.csv")
+        try NativeTabularExport.writeWorkbook(store.library, to: workbookURL); try NativeTabularExport.writeCSV(store.library, to: csvURL)
+        let fixture = try Archive(url: fixtureURL, accessMode: .update)
+        for (path, data) in [("fixtures/recipe.pittech", recipePack), ("fixtures/cook.pittech", recordedPack), ("fixtures/collection.pittech", collectionPack), ("fixtures/portable.xlsx", try Data(contentsOf: workbookURL)), ("fixtures/readings.csv", try Data(contentsOf: csvURL))] {
+            try fixture.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), compressionMethod: .deflate) { offset, count in data.subdata(in: Int(offset)..<(Int(offset) + count)) }
+        }
+        let attachment = XCTAttachment(data: try Data(contentsOf: fixtureURL), uniformTypeIdentifier: "public.zip-archive")
+        attachment.name = "PitTech actual native portable fixtures"; attachment.lifetime = .keepAlways; add(attachment)
     }
     @MainActor func testRecipePhotoCopiesAndVersionsRemainAvailableWithoutTheirSourceMeal() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

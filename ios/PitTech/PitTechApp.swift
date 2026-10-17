@@ -12,6 +12,7 @@ struct PitTechApp: App {
                 .environment(AdsConsentManager.shared)
                 .tint(PitTechStyle.accent)
                 .modifier(ScreenshotTextSize())
+                .onOpenURL { url in if url.isFileURL { Task { await store.receiveArchive(at: url) } } }
                 .task {
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()

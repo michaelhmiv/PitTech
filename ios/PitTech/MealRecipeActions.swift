@@ -5,6 +5,7 @@ struct MealRecipeActions: View {
     let cookId: String
     var initiallyExpanded = false
     @State private var expanded = false
+    @State private var exportExpanded = false
     @State private var editor: NativeRecipeRequest?
     @State private var presetName = ""
     @State private var error: String?
@@ -49,6 +50,9 @@ struct MealRecipeActions: View {
                 if let error { Text(error).foregroundStyle(.red) }
             }.sheet(item: $editor) { NativeRecipeEditor(request: $0) }
                 .onAppear { if initiallyExpanded { expanded = true }; if presetName.isEmpty { presetName = cook?.title ?? "Meal" } }
+        }
+        if cook != nil {
+            DisclosureGroup("Export meal data", isExpanded: $exportExpanded) { NativeDataExportButtons(cookId: cookId) }
         }
     }
     private func request(_ dishId: String) throws -> NativeRecipeRequest {

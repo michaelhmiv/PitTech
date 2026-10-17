@@ -46,7 +46,8 @@ GitHub issues; this file holds the durable rules of the road.
    `play-closed-testing.yml` (Google Play), `firebase-dev-distribution.yml`
    (dev builds), `feedback-relay.yml`.
    The core data gate in `scripts/run-emulator-ui-tests.sh` explicitly includes
-   sharing ownership and dense-document persistence tests.
+   sharing ownership, Cook Pack exchange, dense-document persistence and workbook tests.
+   Keep its expected test counts aligned with the explicit class selectors.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
    own distribution certificate and "PitTech App Store CI" provisioning
    profile via the App Store Connect API on every run. Never add steps that

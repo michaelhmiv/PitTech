@@ -1,0 +1,10 @@
+{
+  "producerCommit": "cfeea73b5e10aa2218f50f53653722dd3a744be8",
+  "workflowRun": 38639019502,
+  "artifactId": 11931105769,
+  "writerTest": "RecipeCompositionTests.testRecipesComposeIndependentAttemptsAndPreserveArchiveRelationships",
+  "workflowResult": "All 53 native unit tests passed. A subsequent push canceled the UI portion; the writer attachment was recovered from the retained xcresult Data.",
+  "files": {
+    "app/src/androidTest/assets/cross-platform/native-cook-pack-cook-v1.pittech": "a220f88bcfaf11e740f6009b6aa8cdf02e4150907bf6b3006246b48062abf7d8"
+  }
+}

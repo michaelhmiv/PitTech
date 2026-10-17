@@ -1,0 +1,24 @@
+{
+  "producer": "iOS simulator writer",
+  "commit": "3eda74423c0c18b07335fa19e2b060ffa94e0402",
+  "workflowRun": 38598285844,
+  "artifact": 11912889095,
+  "fixtures": [
+    {
+      "path": "app/src/androidTest/assets/cross-platform/native-cook-pack-recipe-v1.pittech",
+      "sha256": "0e6ab0c0faaeb9f9be9c19e62d3db5b4ae0d9ca78a099f00c4b4211fcb74182b"
+    },
+    {
+      "path": "app/src/androidTest/assets/cross-platform/native-cook-pack-collection-v1.pittech",
+      "sha256": "7aba1cdaeed2f5418d0e70d2d44604a5b62adc71cda2f8517dca67bf57ba4eb5"
+    },
+    {
+      "path": "contracts/fixtures/tabular/native-v1.xlsx",
+      "sha256": "f70928e27f574c4ce90f9b88ae0b231b596e40c143d62a6d7e6426926ab0e455"
+    },
+    {
+      "path": "contracts/fixtures/tabular/native-v1.csv",
+      "sha256": "0acf59b4a15869714abbb1b143a824509d3a7e06b2fac18669eb7dc6d3f9168d"
+    }
+  ]
+}

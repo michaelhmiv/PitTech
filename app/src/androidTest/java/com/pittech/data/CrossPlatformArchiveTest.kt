@@ -14,6 +14,9 @@ import org.junit.Assert.*
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 /** Inputs come from a successful native simulator run, not a hand-written JSON approximation. */
 @RunWith(AndroidJUnit4::class)
@@ -69,8 +72,32 @@ class CrossPlatformArchiveTest {
             assertEquals(480000L, CookNoteMetadata.decode(final.snapshot.events.first { it.id == note.id }.noteMetadataJson)!!.durationMillis)
             assertEquals("4.00", CookNoteMetadata.decode(final.snapshot.events.first { it.id == note.id }.noteMetadataJson)!!.ingredients.single().amountText)
             assertEquals(1, final.snapshot.recipeAssets.size); assertTrue(final.snapshot.recipeAssets.none { asset -> final.snapshot.photos.any { it.id == asset.id } })
-            File(context.filesDir, "pittech-portable/android-meal-v9.zip").apply { parentFile!!.mkdirs(); writeBytes(output.toByteArray()) }
+            repo.completeCook(meal.id)
+            val sharingId = repo.sharing.fromMeal(meal.id, db.cookDao().getDishesForCook(meal.id).map { it.id }.toSet())
+            val record = repo.sharing.get(sharingId)!!; val sharing = SharingDraftCodec.decode(record.payload)
+            val photos = repo.sharing.assets(sharingId)
+            repo.sharing.save(sharingId, sharing.copy(entries = sharing.entries.map { entry -> entry.copy(included = entry.sourceDishId == mac.id, includeStory = true, photoIds = photos.filter { it.action == entry.id }.map { it.id }) }), record.updatedAtUtcMillis)
+            val one = ByteArrayOutputStream(); transfer.writeCookPack(one, sharingId)
+            val recorded = ByteArrayOutputStream(); transfer.writeCookPack(recorded, sharingId, includeRecordedCook = true)
+            val latest = repo.sharing.get(sharingId)!!; val selected = SharingDraftCodec.decode(latest.payload)
+            repo.sharing.save(sharingId, selected.copy(entries = selected.entries.map { it.copy(included = true) }), latest.updatedAtUtcMillis)
+            val all = ByteArrayOutputStream(); transfer.writeCookPack(all, sharingId)
+            repoDaoSetFixtureNotes(db, meal.id)
+            val workbook = ByteArrayOutputStream(); transfer.writeWorkbook(workbook)
+            val csv = ByteArrayOutputStream(); transfer.writeCsv(csv)
+            File(context.filesDir, "pittech-portable/android-meal-v9.zip").apply {
+                parentFile!!.mkdirs()
+                ZipOutputStream(outputStream().buffered()).use { zip ->
+                    ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { original ->
+                        while (true) { val entry = original.nextEntry ?: break; zip.putNextEntry(ZipEntry(entry.name)); original.copyTo(zip); zip.closeEntry() }
+                    }
+                    for ((name, data) in listOf("fixtures/recipe.pittech" to one.toByteArray(), "fixtures/cook.pittech" to recorded.toByteArray(), "fixtures/collection.pittech" to all.toByteArray(), "fixtures/portable.xlsx" to workbook.toByteArray(), "fixtures/readings.csv" to csv.toByteArray())) { zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry() }
+                }
+            }
             cameraFile.delete()
         } finally { db.close() }
+    }
+    private suspend fun repoDaoSetFixtureNotes(db: PitTechDatabase, id: String) {
+        db.cookDao().updateCook(db.cookDao().getCook(id)!!.copy(notes = "🌶".repeat(17000)))
     }
 }

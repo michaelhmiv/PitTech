@@ -1,0 +1,44 @@
+{
+  "commit": "c57419cd5d4d4edf93e5d328ee4bfa3654cc5c1c",
+  "workflowRun": 38644722539,
+  "artifactId": 11932868206,
+  "test": "ArchiveBoundaryTests.testStreamedSeventyTwoMiBImportMemoryAndElapsedTime",
+  "testResult": "passed",
+  "workflowResult": "one selective-save accessibility UI assertion failed; 59 of 60 tests passed",
+  "scenario": {
+    "expandedMediaBytes": 75497472,
+    "attachments": 4,
+    "bytesPerAttachment": 18874368,
+    "compression": "deflate",
+    "content": "opaque synthetic media filled with byte 65",
+    "iterations": 3,
+    "warmupIterations": 1,
+    "measuredOperation": "new CookStore, importArchive and destination cleanup on the GitHub Actions iPhone Simulator"
+  },
+  "metrics": {
+    "memoryPeakPhysical": {
+      "unit": "kB",
+      "measurements": [
+        70621.12,
+        70637.504,
+        70653.888
+      ]
+    },
+    "memoryPhysical": {
+      "unit": "kB",
+      "measurements": [
+        0.0,
+        0.0,
+        16.384
+      ]
+    },
+    "clockMonotonicTime": {
+      "unit": "s",
+      "measurements": [
+        0.185009589,
+        0.200550065,
+        0.14065132
+      ]
+    }
+  }
+}

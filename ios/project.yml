@@ -73,6 +73,12 @@ targets:
         excludes: ["Fixtures/**"]
       - path: PitTechTests/Fixtures/android-meal-v9.zip
         buildPhase: resources
+      - path: PitTechTests/Fixtures/android-cook-pack-recipe-v1.pittech
+        buildPhase: resources
+      - path: PitTechTests/Fixtures/android-cook-pack-collection-v1.pittech
+        buildPhase: resources
+      - path: PitTechTests/Fixtures/android-cook-pack-cook-v1.pittech
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

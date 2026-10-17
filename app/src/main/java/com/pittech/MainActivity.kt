@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleReminderIntent(intent)
+        if (savedInstanceState == null) handleArchiveIntent(intent)
         setContent {
             val preferences = remember(this@MainActivity) {
                 this@MainActivity.getSharedPreferences("pittech-preferences", MODE_PRIVATE)
@@ -81,6 +82,19 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleReminderIntent(intent)
+        handleArchiveIntent(intent)
+    }
+
+    private fun handleArchiveIntent(intent: android.content.Intent?) {
+        val uri = when (intent?.action) {
+            android.content.Intent.ACTION_VIEW -> intent.data
+            android.content.Intent.ACTION_SEND -> if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java) else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+            }
+            else -> null
+        }
+        if (uri?.scheme == "content") viewModel.previewImport(uri)
     }
 
     private fun handleReminderIntent(intent: android.content.Intent?) {

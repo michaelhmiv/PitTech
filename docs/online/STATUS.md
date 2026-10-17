@@ -7,9 +7,9 @@ remain separate. No online phase is released until its complete parity gate pass
 | PR | Deliverable | State | Evidence |
 |---|---|---|---|
 | 00 | Design, parity, contracts, CI requirements | Draft PR #92 | Three schemas validated; concept states rendered/inspected; backend workflow write path remains open |
-| 01 | Native refresh and core parity | Draft PR #93 | Toolbar navigation/height fix pushed at `43270a0`; exact-head native runs pending; deeper free Insights/provider port remain open |
-| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | Reuses existing result/companion storage; archive v10, Room remains v10; source isolation, owned-photo restore/reimport and stale-draft tests added; native CI/review pending |
-| 03 | Cook Packs and exports | Pending | |
+| 01 | Native refresh and core parity | Draft PR #93 | All configured checks passed at `d9389c9`; iOS run 38592169385 and Android run 38592169411. Native composition/finish and large-text screenshots inspected. Deeper free Insights/provider port remain open |
+| 02 | Verdicts, collections, persistent drafts | Draft PR #95 | Both Android API 36 text-size lanes passed at `4ee5077`. Native reminder test now handles notification permission before waiting for dismissal; a Simulator termination failure in the Beta onboarding test is being retried. Archive v10, Room v10 |
+| 03 | Cook Packs and exports | Draft PR #97 | Actual Android↔native recipe/collection/cook files, CSV and workbook fixtures retained with producer provenance. At `cfeea73`, all 53 native unit tests and all 16 Android data / 13 companion tests passed; native UI was canceled by the next push, and the Android count assertion needed correction. Reciprocal recorded-cook import tests and native 72 MiB memory/time measurement are added; their Actions gates and final native UI/visual review remain pending |
 | 04 | Shared guide presentation | Pending | |
 | 05 | Native share cards | Pending | |
 | 06 | API/relay | Pending | |

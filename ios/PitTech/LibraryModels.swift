@@ -1,6 +1,6 @@
 import Foundation
 
-struct CookRecord: Codable, Identifiable, Equatable {
+struct CookRecord: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var title: String
     var status: String
@@ -48,7 +48,7 @@ struct CookRecord: Codable, Identifiable, Equatable {
     }
 }
 
-indirect enum JSONValue: Codable, Equatable {
+indirect enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -92,7 +92,7 @@ indirect enum JSONValue: Codable, Equatable {
     var objectValue: [String: JSONValue]? { if case .object(let value) = self { value } else { nil } }
 }
 
-struct PitTechLibrary: Codable {
+struct PitTechLibrary: Codable, Sendable {
     static let archiveVersion = 10
     var schemaVersion: Int
     var preferences: [String: JSONValue]?
