@@ -1,7 +1,9 @@
 package com.pittech.data
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -258,7 +260,10 @@ class PrivateSyncCoordinatorTest {
         session.user = userB
         val callsBefore = api.calls
         sync.refresh()
-        kotlinx.coroutines.delay(50)
+        // The switch cancels the old account's outbox on a background dispatcher and
+        // refresh() does not suspend for it: await the cancellation instead of racing
+        // it with a fixed delay.
+        withTimeout(10_000) { while (store.load(userA).mutationId != null) delay(10) }
         // Nothing syncs silently on switch; the new account starts clean.
         assertEquals(callsBefore, api.calls)
         val cancelled = store.load(userA)
