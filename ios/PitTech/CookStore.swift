@@ -282,11 +282,12 @@ final class CookStore {
             }) else { throw PitTechArchiveError.invalidArchive }
         }
         let existingPhotoIds = Set((library.photos + library.companionPhotos + library.recipeAssets).compactMap { $0.objectValue?["id"]?.stringValue })
+        let existingRecordIds = Set(library.companionRecords.compactMap { $0.objectValue?["id"]?.stringValue })
         let importedRecords = imported.companionRecords.filter { row in
             guard let object = row.objectValue else { return false }
-            return object["cookId"]?.stringValue.map(newIds.contains) ?? true
+            return !(object["id"]?.stringValue.map(existingRecordIds.contains) ?? true) && (object["cookId"]?.stringValue.map(newIds.contains) ?? true)
         }
-        let existingRecordIds = Set(library.companionRecords.compactMap { $0.objectValue?["id"]?.stringValue })
+        guard imported.companionRecords.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ !existingRecordIds.contains($0.objectValue?["id"]?.stringValue ?? "") }) else { throw PitTechArchiveError.invalidArchive }
         guard importedRecords.filter({ belongsToNewCook($0, ids: newIds) }).allSatisfy({ !existingRecordIds.contains($0.objectValue?["id"]?.stringValue ?? "") }) else { throw PitTechArchiveError.invalidArchive }
         let newRecordIds = Set(importedRecords.compactMap { $0.objectValue?["id"]?.stringValue })
         let importedPhotos = imported.photos.filter { belongsToNewCook($0, ids: newIds) }
@@ -395,7 +396,7 @@ final class CookStore {
 
     var storageURL: URL { directory.appendingPathComponent("pittech.json") }
 
-    private static let archiveReadme = "PitTech cook archive, schema 9. Cook records are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
+    private static let archiveReadme = "PitTech cook archive, schema 10. Cook records, editable sharing drafts and saved collections are stored in data/pittech.json. This archive can be imported by PitTech on iOS or Android.\n"
 
     private static func isSafeArchivePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.contains("\\") &&

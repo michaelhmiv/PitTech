@@ -12,6 +12,7 @@ struct NativeRecipeRequest: Identifiable {
     var photoIds: Set<String> = []
     var context: [JSONValue] = []
     var attemptDishId: String?
+    var onSave: ((RecipeSnapshot, [Data], [String]) throws -> Void)?
 }
 
 struct SavedRecipesView: View {
@@ -55,6 +56,7 @@ struct SavedRecipesView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
             Text("Your cookbook, ready for another cook.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+            SharingLibrarySection()
             HStack(spacing: 12) {
                 HStack { Image(systemName: "magnifyingglass").foregroundStyle(PitTechStyle.supporting); TextField("Find a recipe", text: $query).accessibilityIdentifier("recipe-search") }
                     .padding(12).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))

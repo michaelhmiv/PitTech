@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Optional dish ratings and cook-again choices, independently editable sharing drafts and saved meal collections on Android and iOS. Drafts own their reference photos and leave the original meal unchanged.
 - Meals with independent dishes, editable saved recipe revisions and combinations drawn from different previous meals (Android and iOS).
 - Flexible preparation notes, ingredients and persistent task timers, with separate previous-cook references.
 - Optional time and historical-action reminders, plus connected-probe thresholds on Android and iOS.
@@ -22,6 +23,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 - Connected release documentation to Google Play and Firebase distribution.
 
 ### Fixed
+- Large sharing drafts reopen on Android using bounded SQLite reads, preserving every recorded sample and the existing archive format.
 - Corrected the repository's iOS privacy-policy source to match the currently published iOS behavior.
 
 ## Development baseline — October 12, 2026 (not a tagged release)

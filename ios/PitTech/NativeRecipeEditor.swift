@@ -164,7 +164,8 @@ struct NativeRecipeEditor: View {
         do {
             var result = snapshot; result.tags = Array(Set(tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
             result.observations = result.observations.filter { keptFacts.contains($0.objectValue?["sourceEventId"]?.stringValue ?? "") }
-            if let dishId = request.attemptDishId { try store.updateRecipeAttempt(dishId, snapshot: result) }
+            if let onSave = request.onSave { try onSave(result, addedPhotos.map(\.data), addedPhotos.map(\.caption)) }
+            else if let dishId = request.attemptDishId { try store.updateRecipeAttempt(dishId, snapshot: result) }
             else {
                 if let cookId = request.sourceCookId, let dishId = request.sourceDishId, !contextIds.isEmpty {
                     let actual = try store.extractRecipe(cookId: cookId, dishId: dishId, contextIds: contextIds)

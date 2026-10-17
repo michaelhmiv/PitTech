@@ -24,7 +24,7 @@ class CrossPlatformArchiveTest {
         try {
             val repo = CookRepository(db, PhotoStorage(context)); val transfer = PitTechDataTransfer(context, repo)
             val bytes = instrumentation.context.assets.open("cross-platform/native-meal-v9.zip").use { it.readBytes() }
-            val preview = transfer.previewImport(ByteArrayInputStream(bytes)); assertEquals(9, preview.archiveVersion); assertEquals(1, preview.snapshot.reminderRules.size)
+            val preview = transfer.previewImport(ByteArrayInputStream(bytes)); assertTrue(preview.archiveVersion in 9..PitTechDataTransfer.ARCHIVE_VERSION); assertEquals(1, preview.snapshot.reminderRules.size)
             repo.importSnapshot(preview.snapshot, preview.attachments); repo.importSnapshot(preview.snapshot, preview.attachments)
             val rule = db.reminderDao().rules().single(); assertFalse(rule.enabled); assertEquals("inactive", rule.status)
             assertEquals("historical", rule.kind); assertEquals(12000000L, (ReminderTriggerCodec.decode(rule.triggerConfig) as ReminderTrigger.Historical).offsetMillis)
@@ -65,7 +65,7 @@ class CrossPlatformArchiveTest {
             repo.createCookReminder(next, "Legacy pending timer", System.currentTimeMillis() + 600000)
             val output = ByteArrayOutputStream(); transfer.writeZip(output)
             val final = transfer.previewImport(ByteArrayInputStream(output.toByteArray()))
-            assertEquals(9, final.archiveVersion); assertEquals(2, final.snapshot.reminderRules.size)
+            assertEquals(PitTechDataTransfer.ARCHIVE_VERSION, final.archiveVersion); assertEquals(2, final.snapshot.reminderRules.size)
             assertEquals(480000L, CookNoteMetadata.decode(final.snapshot.events.first { it.id == note.id }.noteMetadataJson)!!.durationMillis)
             assertEquals("4.00", CookNoteMetadata.decode(final.snapshot.events.first { it.id == note.id }.noteMetadataJson)!!.ingredients.single().amountText)
             assertEquals(1, final.snapshot.recipeAssets.size); assertTrue(final.snapshot.recipeAssets.none { asset -> final.snapshot.photos.any { it.id == asset.id } })

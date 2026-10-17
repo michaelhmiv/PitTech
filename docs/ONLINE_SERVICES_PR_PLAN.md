@@ -162,7 +162,7 @@ Use scoped components rather than adding every new feature into the already larg
 
 ### PR 02 — Per-dish verdicts, flexible composition, and durable sharing drafts
 
-**Depends on:** 00–01. **Areas:** result entities/repositories, existing recipe revisions/presets, native result/edit views and draft storage. **Migration:** next additive Room version; shared archive v10 models with v1–v9 defaults.
+**Depends on:** 00–01. **Areas:** result entities/repositories, existing recipe revisions/presets, native result/edit views and draft storage. **Migration:** shared archive v10 with v1–v9 defaults. Implementation reuses existing result records and independent companion documents/owned photos, so Room stays v10; no table/column migration is necessary.
 
 Unify existing rating/result storage with optional overall dish rating and nullable cookAgain. Completion remains a short confirmation followed by a voluntary result/save/share summary. Do not put a mandatory review questionnaire in front of Finish. Add equivalent result editing on iOS; avoid overwriting recorded older ratings with empty new fields.
 

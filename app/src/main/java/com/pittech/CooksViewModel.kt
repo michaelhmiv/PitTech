@@ -41,6 +41,8 @@ class CooksViewModel(
     private val context: Context,
 ) : ViewModel() {
     internal val recipes get() = repository.recipes
+    internal val sharing get() = repository.sharing
+    internal fun saveDishVerdict(cookId: String, dishId: String, rating: Double?, again: Boolean?, notes: String, onSaved: (Boolean) -> Unit) = perform({ repository.saveDishVerdict(cookId, dishId, rating, again, notes) }, onSaved)
     internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()): com.pittech.data.RecipeExtractionDraft {
         val recorded = com.pittech.data.RecipeExtraction.fromMeal(repository.observeCookDetail(cookId).first() ?: error("Meal unavailable."), dishId, contextIds)
         val working = repository.recipeAttempt(dishId)

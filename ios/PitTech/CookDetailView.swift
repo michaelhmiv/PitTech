@@ -18,6 +18,7 @@ struct CookDetailView: View {
     @State private var showingDevices = false
     @State private var showingReminders = false
     @ScaledMetric(relativeTo: .caption) private var quickBarHeight: CGFloat = 52
+    @State private var sharingDraftId: String?
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var readings: [TemperatureSample] { store.readings(for: cookId) }
     private var events: [TimelineEntry] { store.events(for: cookId) }
@@ -31,6 +32,9 @@ struct CookDetailView: View {
                             Text(cook.title).font(.title.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
                             MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
+                            if !store.dishRecords(cookId).isEmpty {
+                                Button("Create sharing draft") { do { sharingDraftId = try store.createSharingDraft(cookId: cookId, dishIds: Set(store.dishRecords(cookId).map(\.id))) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("meal-sharing-draft")
+                            }
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
                             }
@@ -59,6 +63,9 @@ struct CookDetailView: View {
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
                 .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId) }
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
+                .sheet(isPresented: Binding(get: { sharingDraftId != nil }, set: { if !$0 { sharingDraftId = nil } })) {
+                    if let sharingDraftId { NavigationStack { SharingDraftView(id: sharingDraftId) } }
+                }
                 .alert("Finish meal?", isPresented: $finishing) {
                     Button("Finish meal", role: .destructive) { store.finishCook(cookId); if store.saveError == nil { completionChoices = true } }
                     Button("Cancel", role: .cancel) { }

@@ -93,7 +93,7 @@ indirect enum JSONValue: Codable, Equatable {
 }
 
 struct PitTechLibrary: Codable {
-    static let archiveVersion = 9
+    static let archiveVersion = 10
     var schemaVersion: Int
     var preferences: [String: JSONValue]?
     var cooks: [CookRecord]

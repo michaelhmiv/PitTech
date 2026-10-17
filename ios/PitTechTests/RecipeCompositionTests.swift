@@ -29,6 +29,10 @@ final class RecipeCompositionTests: XCTestCase {
         try store.saveMealPreset(meal, name: "Favorites")
         XCTAssertEqual(store.library.recipes.count, 3)
         try store.saveReminderRule(cookId: meal, dishId: dish, title: "Last time wrapped · check the bark", config: ["version": .number(1), "type": .string("historical"), "anchorAction": .string("food_on"), "offsetMillis": .number(12000000)], id: "portable-history", revisionId: revisions[1], milestoneId: "original-wrap")
+        let sharingId = try store.createSharingDraft(cookId: meal, dishIds: Set(store.dishRecords(meal).map(\.id)))
+        var sharing = try store.sharingDocument(sharingId)
+        for index in sharing.entries.indices { sharing.entries[index].included = index == 2 }
+        try store.saveSharingDraft(sharingId, document: sharing, expectedUpdated: store.sharingRecord(sharingId)!["updated"]!.numberValue!)
         let bytes = try store.exportArchive()
         let destination = CookStore(directory: directory.appendingPathComponent("restored"))
         _ = try destination.importArchive(bytes)
@@ -36,6 +40,7 @@ final class RecipeCompositionTests: XCTestCase {
         XCTAssertEqual(destination.library.recipes.count, 3)
         XCTAssertEqual(destination.library.dishRecipeSources.count, 3)
         XCTAssertEqual(destination.library.events, originalEvents)
+        XCTAssertEqual(try destination.sharingDocument(sharingId), sharing)
         try destination.library.validateCookExperience()
         // CI retrieves this synthetic fixture to exercise the native writer with the Android reader.
         try bytes.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("pittech-native-recipe-fixture.zip"), options: .atomic)

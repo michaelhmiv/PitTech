@@ -45,6 +45,8 @@ GitHub issues; this file holds the durable rules of the road.
    API 36 is the gate; the API 37 job is advisory), `play-bundle.yml` and
    `play-closed-testing.yml` (Google Play), `firebase-dev-distribution.yml`
    (dev builds), `feedback-relay.yml`.
+   The core data gate in `scripts/run-emulator-ui-tests.sh` explicitly includes
+   sharing ownership and dense-document persistence tests.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
    own distribution certificate and "PitTech App Store CI" provisioning
    profile via the App Store Connect API on every run. Never add steps that
