@@ -447,6 +447,10 @@ import XCTest
         library.activityTimers = [.object(["id": .string("timer-1"), "noteId": .string("timer-note-1"), "cookId": .string("cook-1"), "title": .string("Rest"), "startedAtUtcMillis": .number(1000), "status": .string("running")])]
         store.library = library; store.save()
         let trigger = try XCTUnwrap(store.reminderRule("rule-local")?["triggerConfig"]?.stringValue)
+        // The local rule's status is whatever the scheduler left it ("waiting" when no
+        // due date is computable — the long-standing, cross-platform behavior the
+        // reminders UI displays). Sync must preserve it exactly, not rewrite it.
+        let preSyncStatus = store.reminderRule("rule-local")?["status"]
         let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
         let (sync, _) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
         await sync.syncNow()
@@ -465,7 +469,7 @@ import XCTest
         XCTAssertTrue(store.library.reminderOccurrences.filter { $0.objectValue?["ruleId"]?.stringValue == "rule-remote" }.isEmpty)
         // Existing local monitoring and recording state is preserved exactly.
         let local = try XCTUnwrap(store.reminderRule("rule-local"))
-        XCTAssertEqual(local["enabled"], .bool(true)); XCTAssertEqual(local["status"], .string("pending"))
+        XCTAssertEqual(local["enabled"], .bool(true)); XCTAssertEqual(local["status"], preSyncStatus)
         XCTAssertEqual(store.library.reminderOccurrences.filter { $0.objectValue?["ruleId"]?.stringValue == "rule-local" }.count, 2)
         XCTAssertEqual(store.library.recordings.count, 1)
         XCTAssertEqual(store.library.probeAssignments.count, 1)

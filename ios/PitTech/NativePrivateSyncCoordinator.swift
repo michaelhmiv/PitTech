@@ -37,8 +37,18 @@ private struct NativeSyncAuthLost: Error {}
             library: NativeCookStoreSyncLibrary(store), projection: try? loadContract())
     }
     static func loadContract(bundle: Bundle = .main) throws -> NativePrivateSyncProjection {
-        guard let url = bundle.url(forResource: "private-sync-projection-v1", withExtension: "json") else { throw NativeSyncError.invalid }
-        return try NativePrivateSyncProjection(data: Data(contentsOf: url))
+        // The contract is copied flat into the app bundle, but be tolerant of it
+        // landing in a subdirectory or a different bundle (UI-test host processes).
+        var candidates: [URL] = []
+        if let url = bundle.url(forResource: "private-sync-projection-v1", withExtension: "json") { candidates.append(url) }
+        if let url = bundle.url(forResource: "private-sync-projection-v1", withExtension: "json", subdirectory: "Contracts") { candidates.append(url) }
+        for other in Bundle.allBundles where other != bundle {
+            if let url = other.url(forResource: "private-sync-projection-v1", withExtension: "json") { candidates.append(url) }
+        }
+        for url in candidates {
+            if let projection = try? NativePrivateSyncProjection(data: Data(contentsOf: url)) { return projection }
+        }
+        throw NativeSyncError.invalid
     }
 
     func refresh() { publish(bindUser(), busy: false) }

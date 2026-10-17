@@ -337,7 +337,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launch()
             let meal = app.staticTexts["Guided meal"].firstMatch; reveal(meal, app: app); meal.tap()
             let toggle = app.switches["show-guide"]; reveal(toggle, app: app)
-            XCTAssertEqual(toggle.value as? String, "0"); toggle.tap()
+            XCTAssertEqual(toggle.value as? String, "0"); setSwitch(toggle, on: true, app: app)
             let reference = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "guide-reference-", "Guide · ")).firstMatch
             XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
             capture(large ? "Native Show guide Live large text" : "Native Show guide Live")
@@ -351,7 +351,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             plot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.45, thenDragTo: plot.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
             let sourceTime = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Author source time · ")).firstMatch
             XCTAssertTrue(sourceTime.waitForExistence(timeout: 10), "A deliberate hold-and-drag still selects measured source data.")
-            reveal(toggle, app: app); toggle.tap(); XCTAssertEqual(toggle.value as? String, "0")
+            reveal(toggle, app: app); setSwitch(toggle, on: false, app: app)
             app.terminate()
             app.launchArguments = ["--screenshot-no-ads"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); let reopened = app.staticTexts["Guided meal"].firstMatch; reveal(reopened, app: app); reopened.tap()
