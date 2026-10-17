@@ -1,0 +1,66 @@
+# Records a demo video of the Android app in an emulator for Google Play's
+# Foreground Service permission declaration (connectedDevice). The workflow is
+# manual (workflow_dispatch): it boots a clean API 36 emulator, seeds the
+# DEBUG-only synthetic background cook fixture, taps through the real
+# Combustion Bluetooth connection flow, and records the whole storyboard to an
+# mp4 that is uploaded as an artifact.
+name: FGS demo video
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  record-fgs-demo-video:
+    name: Record FGS demo video (API 36 emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK and clean emulator image
+        run: |
+          for attempt in 1 2 3; do
+            if sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36" "system-images;android-36;google_apis;x86_64" "emulator"; then exit 0; fi
+            echo "SDK download failed on attempt $attempt; retrying."
+          done
+          exit 1
+
+      - name: Set up Gradle 9.6.1
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Build debug and instrumented apps
+        run: gradle assembleDebug assembleDebugAndroidTest
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Record the foreground-service demo video
+        run: bash scripts/record-fgs-demo-video.sh
+
+      - name: Upload the demo video and evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-fgs-demo-video
+          path: app/build/fgs-demo/**
+          if-no-files-found: warn
+          retention-days: 14
