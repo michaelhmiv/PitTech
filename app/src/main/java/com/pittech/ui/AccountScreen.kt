@@ -2,6 +2,8 @@ package com.pittech.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -94,6 +96,7 @@ import kotlinx.coroutines.launch
     }
     if(reviewing)SyncConflictDialog(sync,state.conflicts,state.busy,onClose={reviewing=false})
 }
+@OptIn(ExperimentalLayoutApi::class)
 @Composable private fun SyncConflictDialog(sync: com.pittech.data.PrivateSyncCoordinator, conflicts: List<com.pittech.data.PrivateSyncConflictView>, busy: Boolean, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     AlertDialog(onDismissRequest=onClose,title={Text("Review synced edits")},text={
@@ -104,7 +107,10 @@ import kotlinx.coroutines.launch
                     Text(conflict.reason,style=MaterialTheme.typography.titleSmall)
                     Text("Yours: ${conflict.mineSummary}")
                     Text("Other device: ${conflict.theirsSummary}")
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                    // FlowRow: the three resolution buttons must all stay reachable on narrow
+                    // screens. A fixed Row pushed "Keep both" off-screen horizontally, where
+                    // taps landed outside the dialog and the resolution never fired.
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                         Button(onClick={scope.launch{sync.resolve(conflict.id,"mine")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-mine-${conflict.id}")){Text("Keep mine")}
                         Button(onClick={scope.launch{sync.resolve(conflict.id,"theirs")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-theirs-${conflict.id}")){Text("Use theirs")}
                         if(conflict.canKeepBoth)Button(onClick={scope.launch{sync.resolve(conflict.id,"both")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-both-${conflict.id}")){Text("Keep both")}
