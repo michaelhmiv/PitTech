@@ -31,10 +31,15 @@ targets:
     platform: iOS
     sources:
       - path: PitTech
+      # The contract MUST be declared here (not under resources:): xcodegen
+      # demonstrably drops it from the app bundle when declared under
+      # resources: (it only ever reached PitTechTests.xctest), while the
+      # sources+buildPhase form copies it — the unit-test target proves it.
+      - path: Contracts/private-sync-projection-v1.json
+        buildPhase: resources
     resources:
       - path: PitTech/PrivacyInfo.xcprivacy
       - path: PitTech/TelemetryNotices.txt
-      - path: Contracts/private-sync-projection-v1.json
     dependencies:
       - package: CombustionBLE
         product: CombustionBLE
