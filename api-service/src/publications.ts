@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir,mkdtemp,writeFile,rm } from 'node:fs/promises';
+import { mkdir,mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Pool, PoolClient } from 'pg';
 import { ApiError, digest } from './core.ts';
 import { readZip } from './zip.ts';
 import { stable } from './pack.ts';
+import { publicCookWorker } from './publication-cook-validation.ts';
 import type { Storage } from './storage.ts';
 import type { PublicationPayload } from './publication-pack.ts';
 import type { ValidatedPublication } from './publication-validation.ts';
@@ -180,6 +181,20 @@ export class Publications {
     const files=await readZip(archive,'publication'),bytes=files.get(selected.asset.path);if(!bytes||digest(bytes)!==selected.asset.sha256)throw new ApiError(503,'media_unavailable');
     // Recheck visibility after storage I/O; deletion/unpublish cannot grant new media reads.
     await this.tx(c=>this.active(c,id));return {bytes,mimeType:selected.asset.mimeType,sha256:selected.asset.sha256};
+  }
+  async cookPack(id:string,expected:string){
+    if(!uuid(expected))throw new ApiError(400,'revision_required');
+    const publication=await this.get(id);if(publication.revisionId!==expected)throw new ApiError(409,'revision_changed');
+    const selected=await this.tx(async c=>{const item=await this.active(c,id);if(item.current_revision_id!==expected)throw new ApiError(409,'revision_changed');
+      const object=(await c.query<ObjectRow>('SELECT o.* FROM publications.revisions r JOIN publications.objects o ON o.id=r.object_id WHERE r.id=$1 AND o.state=\'active\'',[expected])).rows[0];if(!object)throw missing();return object;});
+    const bytes=await this.storage.get(selected.key);if(digest(bytes)!==selected.sha256)throw new ApiError(503,'media_unavailable');
+    const root=join(tmpdir(),'pittech-api-uploads');await mkdir(root,{recursive:true,mode:0o700});const directory=await mkdtemp(join(root,'upload-'));
+    try{
+      const input=join(directory,'publication.zip'),output=join(directory,'public.pittech');await writeFile(input,bytes,{mode:0o600,flag:'wx'});
+      const summary=await publicCookWorker(input,output,publication),pack=await readFile(output);
+      if(pack.length!==summary.bytes||digest(pack)!==summary.sha256)throw new ApiError(503,'pack_unavailable');
+      const still=await this.tx(c=>this.active(c,id));if(still.current_revision_id!==expected)throw new ApiError(409,'revision_changed');return {bytes:pack,sha256:summary.sha256};
+    }finally{await rm(directory,{recursive:true,force:true});}
   }
   async discover(input:{sort?:string;food?:string;query?:string;cursor?:string}){
     const sort=input.sort??'liked',food=input.food??'',query=input.query??'';

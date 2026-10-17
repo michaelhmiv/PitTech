@@ -21,7 +21,7 @@ struct NativeArchiveImportView: View {
                         ForEach(source.recipes) { recipe in
                             NativeArchiveRecipeCard(recipe: recipe, selected: selection(recipe.id)).disabled(saving)
                         }
-                        Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")").frame(maxWidth: .infinity, minHeight: 44) }
+                        Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")" + (source.publicCookOnSave ? " & start meal" : "")).frame(maxWidth: .infinity, minHeight: 44) }
                             .buttonStyle(.borderedProminent).disabled(selected.isEmpty || saving).accessibilityIdentifier("pack-save-recipes")
                         if source.preview.cookPack?.objectValue?["kind"]?.stringValue == "cook" {
                             Text("Add all \(source.preview.dishes) recorded dishes in this file. Recipe selections above apply when saving recipes.").font(.caption).foregroundStyle(PitTechStyle.supporting)

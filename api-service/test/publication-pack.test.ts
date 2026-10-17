@@ -23,7 +23,7 @@ test('publication validation rejects private backups, dangling media/channels, d
   const base=await fixture();
   const mutations:((p:PublicationPayload)=>void)[]=[
     p=>{(p as unknown as Record<string,unknown>).privateLibrary={email:'private@example.com'};},
-    p=>{p.heroAssetId=randomUUID();},p=>{p.recipes[0].story!.measurements[0].channelId='missing';},
+    p=>{p.title='🌶'.repeat(100);},p=>{p.heroAssetId=randomUUID();},p=>{p.recipes[0].story!.measurements[0].channelId='missing';},
     p=>{p.recipes.push(structuredClone(p.recipes[0]));},p=>{p.measuredAttemptId=randomUUID();},
     p=>{p.recipes[0].assets=[{id:randomUUID(),path:'attachments/x.jpg',mimeType:'image/jpeg',sha256:'a'.repeat(64),caption:''}];}
   ];

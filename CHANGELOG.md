@@ -7,6 +7,10 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Android and iOS post-launch draft: browse community recipes without signing
+  in, inspect selected photos and recorded measurements, and preview recipes
+  before saving your own copy or starting a new meal. Community access remains
+  disabled until the complete release is ready.
 - Backend post-launch draft: prepare public recipe discovery, deliberate
   publishing, named or anonymous credit, independent forks and likes. Public
   services stay disabled until the complete community and privacy features are ready.

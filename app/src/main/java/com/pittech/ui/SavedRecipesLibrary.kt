@@ -147,6 +147,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { "Version ${it.revisionNumber}" }.orEmpty(), history.sortedByDescending { it.revisionNumber }.map { "Version ${it.revisionNumber}" }, { label -> selected = history.first { "Version ${it.revisionNumber}" == label }.id })
             Text(if (selected == recipe.currentRevisionId) "Preferred version" else "Previous version")
             if (revision?.sourceCookId != null) Text(if (revision.sourceCookId in cookIds) "Saved from your meal history." else "Source meal is unavailable. Saved instructions and reference photos remain available.")
+            snapshot?.publicSource?.let { source ->
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                Text(if (source.removed) "Saved from a removed recipe" else "Saved from " + source.displayName)
+                if (!source.removed) TextButton(onClick = { uriHandler.openUri(source.url) }) { Text("View shared source") }
+                Text("This saved version is yours. Changes to the public recipe don't replace it.", style = MaterialTheme.typography.bodySmall)
+            }
             snapshot?.let { s -> Text(s.description); Text(s.dish.prepNotes); s.dish.preparationItems.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }; s.instructions.forEach { Text(it.title + it.details.takeIf { x -> x.isNotBlank() }?.let { x -> " · $x" }.orEmpty()) }; if (s.resultNotes.isNotBlank()) Text(s.resultNotes) }
             assets.forEach { asset -> RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath)); if (asset.caption.isNotBlank()) Text(asset.caption) }
             revision?.let { r -> TextButton(onClick = { onEdit(r) }, enabled = !busy) { Text("Edit as a new version") } }

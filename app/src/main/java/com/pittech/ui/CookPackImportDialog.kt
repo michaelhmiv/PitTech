@@ -57,5 +57,5 @@ import com.pittech.domain.RecipeSnapshotCodec
             if (saving) CircularProgressIndicator(Modifier.size(24.dp))
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(onClick = { onSave(selected) }, enabled = selected.isNotEmpty() && !saving, modifier = Modifier.testTag("pack-save-recipes")) { Text("Save ${selected.size} ${if (selected.size == 1) "recipe" else "recipes"}") } }, dismissButton = { TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") } })
+    }, confirmButton = { TextButton(onClick = { onSave(selected) }, enabled = selected.isNotEmpty() && !saving, modifier = Modifier.testTag("pack-save-recipes")) { Text("Save ${selected.size} ${if (selected.size == 1) "recipe" else "recipes"}" + if (source.publicCookOnSave) " & start meal" else "") } }, dismissButton = { TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") } })
 }

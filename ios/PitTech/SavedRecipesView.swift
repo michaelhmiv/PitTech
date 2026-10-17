@@ -208,6 +208,11 @@ struct SavedRecipeDetailView: View {
             Picker("Version", selection: Binding(get: { revisionId }, set: { selectedRevision = $0 })) { ForEach(history.compactMap { $0["id"]?.stringValue }, id: \.self) { id in Text("Version \(Int(store.recipeRevision(id)?["revisionNumber"]?.numberValue ?? 1))").tag(id) } }
             Text(revisionId == recipe["currentRevisionId"]?.stringValue ? "Preferred version" : "Previous version")
             if let snapshot = try? store.recipeSnapshot(revisionId) {
+                if let source = snapshot.publicSource {
+                    Text(source.removed ? "Saved from a removed recipe" : "Saved from " + source.displayName)
+                    if !source.removed { Link("View shared source", destination: source.url) }
+                    Text("This saved version is yours. Changes to the public recipe don't replace it.").font(.caption)
+                }
                 Text(snapshot.description)
                 ForEach(snapshot.instructions.indices, id: \.self) { index in Text(snapshot.instructions[index].objectValue?["title"]?.stringValue ?? "Instruction"); Text(snapshot.instructions[index].objectValue?["details"]?.stringValue ?? "") }
                 Text(snapshot.resultNotes)

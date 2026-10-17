@@ -117,6 +117,10 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
+- Signed-out discovery uses bounded public-only caches and exact-revision Cook Pack
+  previews. Saved recipes pin public credit and mark relative-only story timing;
+  see `docs/online/11-discovery.md`. Never display that coordinate origin as a
+  recorded calendar date or feed private libraries into public read paths.
 - Account sessions use a separate device-only Keychain/Keystore namespace and never
   enter exports or relay storage. Account entry remains disabled until the entire
   accounts/social/sync/deletion phase passes. See `docs/online/09-native-accounts.md`.

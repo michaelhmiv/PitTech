@@ -50,3 +50,13 @@ appropriate HTTP status; clients preserve drafts and offer task-local retry.
 No secrets or user content in operational logs. Public/private schemas and
 fixtures are executable contracts in the backend and native test suites as the
 relevant PRs land; the specification does not pretend those tests exist yet.
+
+## Public recipe save adapter
+
+Optional recipe snapshot fields `publicSource` and instruction `action` preserve
+pinned public provenance and action semantics across both native codecs.
+`publicSource.relativeTiming` marks a coordinate system for published relative
+measurements, never a claimed calendar date. UI/export consumers must preserve
+that distinction. The actual server-generated pack captured in
+`fixtures/public-native-v1.json` is consumed by both native suites. Public Save
+never publishes a fork or imports somebody else’s cook into the user’s history.

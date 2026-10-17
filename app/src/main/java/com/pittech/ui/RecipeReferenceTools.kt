@@ -41,12 +41,12 @@ import java.time.format.DateTimeFormatter
             LaunchedEffect(revisionId) { assets = revisionId?.let { viewModel.recipes.assets(it) }.orEmpty() }
             if (snapshot != null) {
                 Text("Previous cook · saved observations", style = MaterialTheme.typography.titleMedium)
-                Text("${historyTime(snapshot.smokingAnchorUtcMillis ?: snapshot.observations.minOfOrNull { it.occurredAtUtcMillis }, snapshot.observations.firstOrNull()?.timeZoneId)} · ${revision.changeNotes}")
+                Text("${if (snapshot.publicSource?.relativeTiming == true) "Original date not shared" else historyTime(snapshot.smokingAnchorUtcMillis ?: snapshot.observations.minOfOrNull { it.occurredAtUtcMillis }, snapshot.observations.firstOrNull()?.timeZoneId)} · ${revision.changeNotes}")
                 snapshot.rating?.let { Text("Recorded rating: $it") }
                 if (snapshot.resultNotes.isNotBlank()) Text(snapshot.resultNotes)
                 snapshot.targets.forEach { Text("Previous target · ${it.type.replace('_', ' ')}: ${it.value} ${it.unit}") }
                 RecipeReferenceTimeline.heating(snapshot).forEachIndexed { index, interval ->
-                    Text("Heating interval ${index + 1} · ${historyTime(interval.startedAt, null)} → ${interval.endedAt?.let { historyTime(it, null) } ?: "end not recorded"}")
+                    Text("Heating interval ${index + 1} · ${if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { interval.startedAt - it }) else historyTime(interval.startedAt, null)} → ${interval.endedAt?.let { if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { anchor -> it - anchor }) else historyTime(it, null) } ?: "end not recorded"}")
                 }
                 var actionsOnly by remember { mutableStateOf(true) }
                 FilterChip(actionsOnly, { actionsOnly = !actionsOnly }, { Text(if (actionsOnly) "Major actions" else "All saved notes") })
@@ -57,14 +57,14 @@ import java.time.format.DateTimeFormatter
                     OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
                         TextButton({ expanded = !expanded }) { Text("${RecipeReferenceTimeline.relativeLabel(event.offsetMillis)} · ${event.title}") }
                         if (expanded) {
-                            Text(historyTime(event.occurredAtUtcMillis, event.timeZoneId))
+                            Text(if (snapshot.publicSource?.relativeTiming == true) "Original date not shared" else historyTime(event.occurredAtUtcMillis, event.timeZoneId))
                             if (event.details.isNotBlank()) Text(event.details)
                             CookNoteMetadata.decode(event.noteMetadataJson)?.let { metadata ->
                                 metadata.method?.let { Text("Method · ${CookingMethods.labels[it] ?: it}") }
                                 metadata.durationMillis?.let { Text("Recorded duration · ${it / 60_000.0} min") }
                                 metadata.ingredients.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }
                             }
-                            event.recordedTemperatures.forEach { measurement -> Text("${measurement.probeName} · ${measurement.measurementType.replace('_', ' ')} · ${measurement.value} ${measurement.unit} · ${historyTime(measurement.measuredAtUtcMillis, measurement.timeZoneId)}") }
+                            event.recordedTemperatures.forEach { measurement -> Text("${measurement.probeName} · ${measurement.measurementType.replace('_', ' ')} · ${measurement.value} ${measurement.unit} · ${if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { measurement.measuredAtUtcMillis - it }) else historyTime(measurement.measuredAtUtcMillis, measurement.timeZoneId)}") }
                             TemperatureContext.decode(event.temperatureContextJson).forEach { Text("Recorded context · ${it.name}: ${it.value} ${it.unit}") }
                         }
                     } }

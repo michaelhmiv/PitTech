@@ -62,8 +62,13 @@ function ingredient(value: unknown): void {
   if (i.amount) requirePack(string(i.amount) && Number.isFinite(Number(i.amount)) && Number(i.amount) > 0);
 }
 function snapshot(value: unknown): ObjectValue {
-  const s = known(parse(value), 'version name description tags draft instructions observations targets resultNotes rating cookAgain smokingAnchorUtcMillis preferredPitTemperatureF servings');
+  const s = known(parse(value), 'version name description tags draft instructions observations targets resultNotes rating cookAgain smokingAnchorUtcMillis preferredPitTemperatureF servings publicSource');
   requirePack(s.version === 1); text(s.name, 200);
+  if(s.publicSource!=null){
+    const source=known(s.publicSource,'itemId revisionId displayName removed relativeTiming');
+    requirePack(uuid(source.itemId)&&uuid(source.revisionId)&&string(source.displayName,160)&&typeof source.removed==='boolean'&&typeof source.relativeTiming==='boolean');
+  }
+
   requirePack(array(s.tags, 100).every(v => string(v, 200)));
   const draft = known(s.draft, 'title smoker setpoint unit notes fuel wood dishes'); requirePack(draft.notes == null || draft.notes === '');
   const dishes = array(draft.dishes, 1); requirePack(dishes.length === 1);
@@ -73,8 +78,9 @@ function snapshot(value: unknown): ObjectValue {
   }
   const ids = new Set();
   for (const value of array(s.instructions, 500)) {
-    const i = known(value, 'id title details method offsetMillis durationMillis sourceEventId');
+    const i = known(value, 'id title details method offsetMillis durationMillis sourceEventId action');
     requirePack(uuid(i.id) && !ids.has(i.id)); ids.add(i.id); text(i.title, 32768);
+    if (i.action != null) requirePack(string(i.action,80));
     if (i.durationMillis != null) requirePack(typeof i.durationMillis === 'number' && i.durationMillis >= 0);
   }
   const observations = array(s.observations, 5000).map(object);
