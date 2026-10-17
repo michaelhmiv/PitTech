@@ -165,16 +165,14 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.buttons["Hide keyboard"].tap()
             let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
             let signedIn = app.staticTexts["account-signed-in"]
-            if !signedIn.waitForExistence(timeout: 10) {
-                // Simulator notification banners can consume the first gesture.
-                // Retry only while the fixture remains in its untouched start state.
-                // Guard the message lookup: reading .label on a missing element throws.
-                let message = app.staticTexts["account-message"]
-                if message.waitForExistence(timeout: 2), message.label == "Check your email for a link and six-digit code. Both expire in 15 minutes." {
-                    reveal(verify, app: app); verify.tap()
-                }
-            }
-            XCTAssertTrue(signedIn.waitForExistence(timeout: 10)); reveal(signedIn, app: app)
+            // In large text the Form virtualizes off-screen rows, so the signed-in
+            // marker only materializes once scrolled into view: scroll it into view
+            // instead of waiting on a possibly-unrealized node. reveal() polls
+            // (~18 attempts), covering the fixture-backed verify latency too.
+            // (The old retry-on-consumed-tap guard is dropped: the message row it
+            // read is itself virtualized off-screen in large text, so the guard
+            // could never fire reliably.)
+            reveal(signedIn, app: app)
             capture(large ? "Native account signed in large text" : "Native account signed in")
             let signOut = app.buttons["Sign out"]; reveal(signOut, app: app); signOut.tap()
             let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
@@ -213,7 +211,10 @@ final class MealRecipeFlowsTests: XCTestCase {
                 // the status check; retry once the request has settled.
                 finished.tap()
             }
-            XCTAssertTrue(email.waitForExistence(timeout: 10))
+            // In large text the Form virtualizes off-screen rows: scroll the field
+            // into view (which materializes it) instead of waiting on a
+            // possibly-unrealized node.
+            reveal(email, app: app)
             app.terminate()
         }
     }
