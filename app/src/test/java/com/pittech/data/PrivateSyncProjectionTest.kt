@@ -9,7 +9,7 @@ class PrivateSyncProjectionTest {
     @Test fun sharedProjectionRejectsActivationCredentialsAndBrokenOwnership() {
         val projection = PrivateSyncProjection(resource("private-sync-projection-v1"))
         val fixture = JSONObject(resource("private-sync-projection-cases-v1"))
-        val cases = fixture.getJSONArray("cases"); assertEquals(32, cases.length())
+        val cases = fixture.getJSONArray("cases"); assertEquals(64, cases.length())
         for (i in 0 until cases.length()) {
             val c = cases.getJSONObject(i)
             if (c.getBoolean("rejected")) assertThrows(c.getString("name"), Exception::class.java) { projection.validateRows(c.getJSONArray("rows")) }

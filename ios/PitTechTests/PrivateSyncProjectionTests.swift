@@ -11,7 +11,7 @@ final class PrivateSyncProjectionTests: XCTestCase {
         let projection = try NativePrivateSyncProjection(data: data)
         let fixtureData = try Data(contentsOf: XCTUnwrap(bundle.url(forResource: "private-sync-projection-cases-v1", withExtension: "json")))
         let fixture = try JSONDecoder().decode(Fixture.self, from: fixtureData)
-        XCTAssertEqual(fixture.contractVersion, 1); XCTAssertEqual(fixture.cases.count, 32)
+        XCTAssertEqual(fixture.contractVersion, 1); XCTAssertEqual(fixture.cases.count, 64)
         for c in fixture.cases {
             if c.rejected { XCTAssertThrowsError(try projection.validateRows(c.rows), c.name) }
             else { XCTAssertNoThrow(try projection.validateRows(c.rows), c.name) }
