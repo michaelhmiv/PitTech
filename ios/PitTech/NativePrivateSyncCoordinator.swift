@@ -448,7 +448,7 @@ private struct NativeSyncAuthLost: Error {}
         let baseKeys = Set(records.map(\.key))
         let conflictKeys = Set(merged.values.flatMap { [$0.winner.key, $0.loser.key] })
         var next = state
-        for key in Array(next.photos.keys) where !projectedKeys.contains(key), !baseKeys.contains(key), !conflictKeys.contains(key) {
+        for key in Array(next.photos.keys) where !projectedKeys.contains(key) && !baseKeys.contains(key) && !conflictKeys.contains(key) {
             if next.photos[key]?.complete == false, let assetId = next.photos[key]?.assetId { try? await authorized(user) { try await api.abandonPhoto(assetId: assetId, access: $0) } }
             next.photos.removeValue(forKey: key)
         }

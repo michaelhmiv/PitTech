@@ -121,14 +121,15 @@ internal class PrivateSyncCoordinator(
     }
 
     private suspend fun restoreBytes(resolution: ConflictResolution, state: PrivateSyncState, user: String): ByteArray? {
+        val assetId = resolution.restoreAssetId ?: return null
         val originalId = resolution.restorePayload!!.optString(originalKey(resolution.restoreType!!), "")
         val local = withContext(Dispatchers.IO) { library.photoBytes(resolution.restoreType, originalId) }
         // Keep both of a locally-lost photo reuses the bytes already on this device.
-        if (local != null && state.photos[resolution.restoreType + "|" + originalId]?.assetId == resolution.restoreAssetId) return local.bytes
+        if (local != null && state.photos[resolution.restoreType + "|" + originalId]?.assetId == assetId) return local.bytes
         val staging = withContext(Dispatchers.IO) { store.stagingDir() }
-        val file = java.io.File(staging, resolution.restoreAssetId + ".download")
+        val file = java.io.File(staging, "$assetId.download")
         return try {
-            authorized(user) { token -> api.downloadPhoto(resolution.restoreAssetId, file, token) }
+            authorized(user) { token -> api.downloadPhoto(assetId, file, token) }
             val bytes = withContext(Dispatchers.IO) { file.readBytes() }
             require(bytes.size in 1..PrivateSyncProtocol.MAX_PHOTO_BYTES); bytes
         } catch (_: IOException) { null } catch (_: PrivateSyncHttpError) { null }
