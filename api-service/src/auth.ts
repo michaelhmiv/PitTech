@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { ApiError } from './core.ts';
+import { lockAccount } from './lifecycle-contract.ts';
 import { AUTH, AuthSecrets, credential, emailAddress, equalHash, isCredential, proofHash } from './auth-credentials.ts';
 import type { AuthMailer, SignInMail } from './auth-email.ts';
 
@@ -33,6 +34,7 @@ export class Authentication {
         if (prior.email_key !== emailKey || !equalHash(prior.proof_hash, proof) || prior.consumed_at != null || Number(prior.expires_at) <= now) throw new ApiError(409, 'sign_in_request_unavailable');
         return;
       }
+      if ((await client.query('SELECT 1 FROM auth.users u JOIN auth.account_lifecycle a ON a.user_id=u.id WHERE u.email=$1 AND a.deleting', [email])).rowCount) return;
       const latest = (await client.query('SELECT created_at FROM auth.challenges WHERE email_key=$1 ORDER BY created_at DESC LIMIT 1', [emailKey])).rows[0];
       if (latest && now - Number(latest.created_at) < AUTH.resendMs) throw new ApiError(429, 'rate_limited');
       if (!await this.rate(client, `email:${emailKey}:${day}`, 10, (day + 1) * 86400_000) || !await this.rate(client, `global:${day}`, this.dailyEmails, (day + 1) * 86400_000)) throw new ApiError(429, 'rate_limited');
@@ -68,6 +70,14 @@ export class Authentication {
     if (!uuid(input.challengeId) || !uuid(input.idempotencyId) || !isCredential(input.verifier)) throw unavailable();
     const id = input.challengeId, proof = proofHash(input.verifier), now = this.clock();
     const result = await this.transaction(async client => {
+      // Email -> account -> row locks: deletion uses the same order. A pre-read
+      // grants no authority; the locked challenge is always checked again below.
+      const hint = (await client.query<Challenge>('SELECT * FROM auth.challenges WHERE id=$1', [id])).rows[0];
+      if (!hint) return null;
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,890008))', [hint.email_key]);
+      const existing = (await client.query<{id:string}>('SELECT id FROM auth.users WHERE email=$1', [hint.email])).rows[0];
+      const candidate = existing?.id ?? randomUUID(); await lockAccount(client,candidate);
+      if ((await client.query('SELECT 1 FROM auth.account_lifecycle WHERE user_id=$1 AND deleting', [candidate])).rowCount) return null;
       const row = (await client.query<Challenge>('SELECT * FROM auth.challenges WHERE id=$1 FOR UPDATE', [id])).rows[0];
       if (!row || Number(row.expires_at) <= now || !equalHash(row.proof_hash, proof)) return null;
       const codeValid = typeof input.code === 'string' && /^\d{6}$/.test(input.code) && equalHash(row.code_hash, this.secrets.hash('code/' + id, input.code));
@@ -80,7 +90,7 @@ export class Authentication {
       if (row.attempts >= AUTH.attempts) return null;
       await client.query('UPDATE auth.challenges SET attempts=attempts+1,consumed_at=CASE WHEN $2 OR attempts+1>=5 THEN $3 ELSE consumed_at END,mail_envelope=CASE WHEN $2 OR attempts+1>=5 THEN NULL ELSE mail_envelope END WHERE id=$1', [id, valid, now]);
       if (!valid) return null; // Commit failed-attempt counters, never roll them back with the 401.
-      const user = (await client.query<{ id: string }>('INSERT INTO auth.users VALUES($1,$2,$3) ON CONFLICT(email) DO UPDATE SET email=EXCLUDED.email RETURNING id', [randomUUID(), row.email, now])).rows[0];
+      const user = (await client.query<{ id: string }>('INSERT INTO auth.users VALUES($1,$2,$3) ON CONFLICT(email) DO UPDATE SET email=EXCLUDED.email RETURNING id', [candidate, row.email, now])).rows[0];
       const sessionId = randomUUID(), expires = now + AUTH.sessionMs;
       await client.query('INSERT INTO auth.sessions(id,user_id,created_at,expires_at) VALUES($1,$2,$3,$4)', [sessionId, user.id, now, expires]);
       const session = await this.tokens(client, sessionId, user.id, expires);
@@ -92,6 +102,10 @@ export class Authentication {
   async refresh(token: unknown, idempotencyId: unknown): Promise<AuthSession> {
     if (!isCredential(token) || !uuid(idempotencyId)) throw unavailable(); const hash = this.secrets.hash('refresh', token), now = this.clock();
     const result = await this.transaction(async client => {
+      const hint = (await client.query<{user_id:string}>('SELECT s.user_id FROM auth.session_tokens t JOIN auth.sessions s ON s.id=t.session_id WHERE t.refresh_hash=$1',[hash])).rows[0];
+      if (!hint) return null;
+      await lockAccount(client,hint.user_id);
+      if ((await client.query('SELECT 1 FROM auth.account_lifecycle WHERE user_id=$1 AND deleting',[hint.user_id])).rowCount) return null;
       const row = (await client.query<{ session_id: string; user_id: string; expires_at: string; revoked: boolean; used: boolean; rotation_id: string | null; rotation_envelope: string | null; rotation_expires_at: string | null }>('SELECT t.session_id,t.used,t.rotation_id,t.rotation_envelope,t.rotation_expires_at,s.user_id,s.expires_at,s.revoked FROM auth.session_tokens t JOIN auth.sessions s ON s.id=t.session_id WHERE t.refresh_hash=$1 FOR UPDATE OF s,t', [hash])).rows[0];
       if (!row) return null;
       if (row.used && !row.revoked && Number(row.expires_at) > now && row.rotation_id === idempotencyId && row.rotation_envelope && Number(row.rotation_expires_at) > now) return this.secrets.open('rotation/' + hash, row.rotation_envelope) as AuthSession;
@@ -104,7 +118,7 @@ export class Authentication {
   }
   async user(accessToken: unknown) {
     if (!isCredential(accessToken)) throw unavailable(); const now = this.clock();
-    const row = (await this.pool.query<{ id: string; email: string }>('SELECT u.id,u.email FROM auth.session_tokens t JOIN auth.sessions s ON s.id=t.session_id JOIN auth.users u ON u.id=s.user_id WHERE t.access_hash=$1 AND NOT t.used AND NOT s.revoked AND t.access_expires_at>$2 AND s.expires_at>$2', [this.secrets.hash('access', accessToken), now])).rows[0];
+    const row = (await this.pool.query<{ id: string; email: string }>('SELECT u.id,u.email FROM auth.session_tokens t JOIN auth.sessions s ON s.id=t.session_id JOIN auth.users u ON u.id=s.user_id LEFT JOIN auth.account_lifecycle a ON a.user_id=u.id WHERE NOT COALESCE(a.deleting,false) AND t.access_hash=$1 AND NOT t.used AND NOT s.revoked AND t.access_expires_at>$2 AND s.expires_at>$2', [this.secrets.hash('access', accessToken), now])).rows[0];
     if (!row) throw unavailable(); return row;
   }
   async logout(refreshToken: unknown) {

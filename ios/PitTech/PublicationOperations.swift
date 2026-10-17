@@ -15,9 +15,10 @@ struct NativePublicationReceipt: Codable, Equatable, Sendable {
     let revision: Int
     let url: String
     var kind: String? = nil
+    var status: String? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0,
-              url == "https://pittech.app/c/" + id, kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true else { throw NativePublicationError.invalid }
+              url == "https://pittech.app/c/" + id, (kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true), (status.map({ ["active", "pending_review"].contains($0) }) ?? true) else { throw NativePublicationError.invalid }
     }
 }
 struct NativePublicationOperation: Codable {
@@ -84,6 +85,16 @@ private struct NativePublicationState: Codable {
         try prepareDirectory(); let file = try stateFile(user), bytes = try JSONEncoder().encode(state)
         guard bytes.count <= 8 * 1024 * 1024 else { throw NativePublicationError.limits }
         try bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func purgeAccount(_ user: String) throws {
+        // Keep the metadata reference until its body is gone, so interrupted cleanup retries.
+        let pending = try load(user).pending
+        if let pending {
+            let file = try body(pending)
+            if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+        }
+        let file = try stateFile(user)
+        if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
     }
     func pending(_ user: String) throws -> NativePublicationOperation? { try load(user).pending }
     func binding(_ user: String, draft: String) throws -> NativePublicationReceipt? { try load(user).bindings[draft] }

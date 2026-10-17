@@ -19,7 +19,7 @@ OS limitation. Completion requires both clients and CI evidence. Existing
 | Secure magic-link/code sessions and account controls | Port both | 09 | Replays, code retries, sign-out/account switch/delete |
 | Discovery/save/cook available signed out | Port both | 11 | Offline owned copy; source removed; no auth barrier |
 | Editable recipe/collection/attempt publication | Implemented on both; Actions/visual gates pending | 12 | Explicit scope/identity preview, durable retries; owner download/edit without original draft; frozen stories and pinned credits; versioned public-copy consent and read-only source comparison; full acceptance still open |
-| Reporting, opaque publisher blocking, deletion | Port both | 13 | Anonymous privacy; original purge; independent fork survival |
+| Reporting, opaque publisher blocking, deletion | Implemented on both; native verification and local cleanup gates open | 13 | Exact anonymous/account-bound report recovery; audience-scoped offline cache; original purge; independent fork survival; backend 47-test Actions pass at `6467867` |
 | Sync metadata/tombstones/photo queue/recovery | Port both | 14 | Two-device offline conflicts; account ownership; inactive automation |
 | Existing free Insights math | Port common metrics | 15 | Shared golden measurements and sparse/gapped samples |
 | Verified purchases, restore and zero-ad requests | Port both | 16 | Store sandboxes and SDK/network spies |

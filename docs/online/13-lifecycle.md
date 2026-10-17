@@ -1,0 +1,152 @@
+# PR 13 — Community lifecycle (in progress)
+
+This phase is under implementation and is not release-ready. Production community
+and account entry remain disabled. No deployment or store submission is included.
+Issue #89's approved October 14 amendment supersedes its earlier anonymization
+proposal: remove account identity, originals, private sync and media; independently
+owned recipient copies/forks survive with a non-identifying removed-source stub.
+
+Implementation boundaries:
+
+- Per-publication random publisher aliases allow reporting/blocking without exposing
+  anonymous account identity or correlating different anonymous publications.
+  Signed-out blocks stay on the device; signed-in blocks persist privately. Bounded
+  anonymous block aliases also filter direct detail/media/Cook Pack reads.
+- All new or changed public content requires operator review in the initial corpus.
+  A role-gated queue presents actual authored text and images. MIME/profanity checks
+  do not count as image moderation. An operator cannot be created by a public user.
+  Known violating asset hashes are blocked wherever served; direct forks get review
+  flags, while legitimate independently owned variants are retained.
+- Reports have bounded reasons/details, per-IP/session/global budgets and durable
+  idempotent receipts. Moderator notes/audit identities never enter public payloads.
+- Deletion persists a request bound to an initiating device proof, flags the account
+  and revokes sessions atomically. Anonymous proof-based recovery can recover a lost
+  receipt after revocation. A separate random status capability reveals progress
+  only, without email/account identity or library content.
+- Purging hides originals immediately, keeps non-identifying source stubs, and
+  deletes original revisions/owned blobs under durable leases. Upload leases reduce contention; create-only writes and permanent empty
+  storage markers prevent late uploads from restoring deleted bytes. Publication
+  cleanup never removes these random-key markers. S3 cleanup fails closed if the
+  bucket is versioned, suspended or its versioning state cannot be checked; original
+  versions require a separately verified purge. Failed cleanup retains ownership
+  and budget. Independent forks'
+  objects are untouched. Private-sync cleanup must explicitly complete; a present
+  private-sync namespace without its cleanup adapter fails closed.
+- Only after owned objects/private data and pending notification identity are gone
+  is a deletion marked complete. Provider backup/object-version retention requires
+  documented staging/operator verification. No retention duration is invented here.
+- Native deletion confirmation separates server deletion from local-journal choices.
+  Keeping the journal preserves active local cooking; account switches never attach
+  it silently to a new account. Store billing management cannot gate deletion.
+- A browser request flow signs in explicitly with an email code and can request or
+  recover deletion without reinstalling an app. GET/link opening never deletes.
+- Transactional lifecycle notices use a durable encrypted outbox, deterministic
+  event keys, bounded retries inside the provider's idempotency window and generic
+  content. They contain no private reported text or exported history. No email has
+  been sent by this implementation work. Reply-to remains the verified project
+  contact, `sportfolioholdings@gmail.com`.
+
+Required evidence: real Postgres role/ownership/race/purge tests, named/anonymous
+signed-out reports and blocks, rejected admin escalation, manual review and asset
+revocation, lost deletion responses, surviving independent forks, web request flow,
+and both native large-text paths. All remain open until their Actions and visual
+results are recorded. Phase 14 supplies actual private-sync cleanup and conflict
+transport; this draft must not advertise a complete Phase 2 release.
+
+Storage protocol references: [AWS conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html), [Railway bucket compatibility](https://docs.railway.com/storage-buckets#s3-compatibility). Railway currently documents no object versioning; conditional-write behavior and the versioning API still require a staging integration check. Do not infer provider conformance from an S3-compatible label. Never roll back to an unconditional publication writer while cleanup is running. Markers carry no authored payload, owner or email; provider-created metadata requires operational retention review, and their random keys must not be reused or garbage-collected without proving every old writer is fenced. Provider metadata charges/retention remain an operational review gate.
+
+Runtime wiring: `ACCOUNT_LIFECYCLE_ENABLED` requires authentication, separate lifecycle hash/encryption keys and `LIFECYCLE_DATABASE_URL` with only the lifecycle runtime grants. Public API startup additionally requires the lifecycle instance and the existing moderation/deletion readiness gates. Production always uses review-required publishing. `/delete-account` uses nonce-restricted same-origin script, explicit email-code verification and a typed confirmation; browser access tokens remain in memory, while session storage holds only proof/receipt capabilities. GET never mutates account state. The UI and native flows still require visual and Actions evidence.
+
+Native deletion work now includes device-only persisted proof/receipt state, exact
+account-bound retries, one refresh on 401, anonymous recovery/status after session
+revocation, and a typed in-app confirmation on both platforms. Deletion blocks
+further publishing access, and recovery survives sign-out/restart. The journal and
+local recording are untouched by these account operations. Both clients display
+pending publication/profile review rather than claiming immediate publication.
+Native unit tests cover interrupted responses, restart recovery, failed local saves, malformed receipts and same-body 401 retries. Both UI suites now exercise typed confirmation, recovery and progress at their required text sizes; these new tests are not yet verified in Actions. The
+native reports/blocks, account-scoped outbox cleanup and all lifecycle visual paths
+remain open gates.
+
+The first database Actions run found an unnecessary user row lock requiring a
+privilege absent from the cleanup role; the account advisory lock supplies the
+required serialization. The second run completed original/private/media purge and
+survivor checks, then hit a test-only expired access token after advancing the
+clock. The survivor assertion now refreshes that separate user's session. A green
+full database/container run is still required.
+
+Native reports and blocks now have matching implementation and synthetic tests.
+Reports persist exact private request bytes, a random device reporting capability
+and the initiating account before HTTP. Lost responses retry the same request;
+account changes cannot take it over, and definite rejection requires explicit
+review/discard. Successful receipts retain status references, not authored details.
+Signed-out blocks are device-only; signed-in blocks additionally submit an exact
+account operation. Local filtering commits before transmission. Both clients send
+only random publisher aliases and scope bounded public caches by a fresh controls
+generation and account context, checking that context after network/cache awaits.
+Blocking clears visible browsing and cannot replay an earlier offline audience.
+Expired credentials never silently downgrade an existing account to anonymous
+public reads. Private journals and already saved independent copies are untouched.
+
+At `6467867`, backend Actions passes all 47 tests, including real Postgres roles,
+auth/deletion races, cleanup fences and surviving independently owned copies.
+Android API 36 large text passes all suites (31 core and 20 companion tests).
+The normal lane now passes source comparison but times out opening an owner
+editing draft; the advisory API 37 emulator reports a system crash. A full-height
+cookbook sheet and extra button visibility diagnostics are queued for the next
+run. iOS deletion results and the newly added report/block paths remain pending.
+Account-scoped native outbox cleanup and private-sync cleanup remain open gates. No full lifecycle release
+claim is made.
+
+Accepted native deletion now persists a separate cleanup owner before clearing
+credentials. Production adapters remove only that account's exact publication
+body, bindings/editing metadata and bound report request/receipts; anonymous device
+reports and blocks remain separate. Body removal precedes metadata removal so a
+failed cleanup retains its retry reference. A durable owner marker retries on
+restart or an explicit action and must clear before dismissing a completed request.
+The journal is never opened by this adapter. In-flight community responses re-read
+current durable state before saving, so cleanup cannot be undone by an old reply.
+Matching native tests cover failed cleanup/restart, metadata/body account isolation
+and idempotent cleanup. These additions require fresh Actions evidence.
+
+The separate local-journal removal control now exists on both clients and is no
+longer an open gate beyond its own Actions and visual evidence. A standalone
+"Remove local journal" section in the Account screen is visible whether signed in
+or not and whether accounts are enabled or not; confirmation mirrors deletion
+with an acknowledgment switch and a typed `REMOVE`. Removal clears the
+device-local journal only — cooks, recipes, photos, notes, drafts, reminders and
+timers — and empties durably, so a restart cannot resurrect the library. It never
+touches the server account, credentials, deletion records/recovery, or community
+block/report device state. While any cook is active or a recording is in
+progress, removal is refused with a message to finish or stop first, so it can
+never interrupt or corrupt an in-progress recording. Account deletion behavior is
+unchanged. Native tests cover journal/file clearing, active-cook refusal, account
+store isolation and restart persistence, plus the confirmation flow at the
+required text sizes; their Actions runs and screenshots are still pending.
+
+Additional race regression tests ensure an anonymous report reply cannot restore
+account receipts removed during cleanup. Android public read context checks also
+run inside the managed asynchronous job, so corrupt credential/control storage
+shows a recoverable browsing error instead of throwing from a UI action. Native
+verification remains pending.
+
+At `651d29e`, backend Actions passes 53 tests with zero skips. Required Android
+lanes pass 32 core tests, then stop because the script still expected 31; the
+report/block companion selector contains 22 tests, not 23. The corrected totals
+match the explicitly selected source classes. No assertion was weakened and no
+native lifecycle UI pass is inferred from this early script failure. iOS and
+corrected complete native evidence remain pending.
+
+iOS runs 263/265 passed 112/114 and 113/115 respectively, with no skips. Both
+failed the deletion-review and public-save UI flows; report recovery/blocking
+passed. The deletion test now verifies the acknowledgment switch and enabled
+submit button before submitting. The public preview layout is stabilized in
+the publishing layer. These are pending fresh Actions verification.
+
+Operator review now has a usable page at `GET /operator`, served only when the
+lifecycle surface is configured and carrying the same nonce CSP, robots and
+no-store hardening as `/delete-account`. The operator token lives only in page
+memory and is never written to storage, cookies or the URL. Queue loads and item
+reads use the existing operator endpoints and never mutate; authored text renders
+as text only, and review images load through authenticated `fetch` calls shown as
+blob object URLs because an `img` tag cannot send the header. Operator usability
+is therefore done; its Actions and visual evidence remain pending.

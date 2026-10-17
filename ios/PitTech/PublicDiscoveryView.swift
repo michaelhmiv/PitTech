@@ -64,6 +64,7 @@ struct NativePublicRecipeView: View {
                     Text("Shared by " + detail.credit.displayName)
                     if let url = detail.credit.profileUrl, let destination = try? NativePublicLink.destination(url), destination.hasPrefix("profile:") { NavigationLink("View public cookbook", value: destination) }
                     if account.enabled && community.enabled { NativePublicLikeActions(id: id) }
+                    NativeCommunityActions(detail: detail)
                     Text("Your saved version stays yours. Publishing a variation is a separate choice.").font(.subheadline).foregroundStyle(.secondary)
                     HStack {
                         Button("Save recipes") { preview(detail, cook: false) }.buttonStyle(.borderedProminent).accessibilityIdentifier("public-save")
@@ -141,6 +142,7 @@ struct NativePublicFixtureAPI: NativePublicAPI {
 @MainActor extension NativePublicCoordinator {
     static func forApp() -> NativePublicCoordinator {
         #if DEBUG
+        if NativeCommunityUITestSupport.active { return NativeCommunityUITestSupport.community() }
         if CommandLine.arguments.contains("--discovery-ui-test") || NativePublicationUITestSupport.active { return NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: NativePublicUITestFixture.data), cache: NativePublicCache(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))) }
         #endif
         return NativePublicCoordinator()

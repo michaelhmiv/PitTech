@@ -31,10 +31,10 @@ internal class AccountPublicationSession(private val account: AccountManager): P
     override suspend fun access(forceRefresh: Boolean) = account.access(forceRefresh)
 }
 internal fun publicationUuid(value: String) = value.matches(Regex("[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"))
-internal data class PublicationReceipt(val id: String, val revisionId: String, val revision: Int, val url: String, val kind: String? = null) {
-    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "https://pittech.app/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt"))) }
-    fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL)
-    companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind")).also { it.validate() } }
+internal data class PublicationReceipt(val id: String, val revisionId: String, val revision: Int, val url: String, val kind: String? = null, val status: String? = null) {
+    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "https://pittech.app/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt")) && (status==null || status in setOf("active","pending_review"))) }
+    fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL).put("status",status ?: JSONObject.NULL)
+    companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind"),if(o.isNull("status"))null else o.getString("status")).also { it.validate() } }
 }
 internal data class PublicationOperation(val id: String, val userId: String, val method: String, val path: String, val contentType: String, val sha256: String, val bytes: Int, val expectedRevision: String? = null, val draftId: String? = null, val rejected: Boolean = false, val publicationKind: String? = null, val termsVersion: String? = null) {
     fun validate() {
@@ -78,6 +78,13 @@ internal class PublicationOperationsStore(val directory: File) {
     }
     private fun save(user: String, state: JSONObject) { val bytes=state.toString().toByteArray(); require(bytes.size<=8*1024*1024); write(stateFile(user),bytes) }
     fun body(op: PublicationOperation): File { op.validate(); return File(directory,op.id+".body") }
+    fun purgeAccount(user: String) = synchronized(lock) {
+        // Remove the body first; retain its durable reference on an interrupted cleanup.
+        val op=load(user).optJSONObject("pending")?.let(PublicationOperation::parse)
+        op?.let { val file=body(it); if(file.exists())check(file.delete()); check(!file.exists()) }
+        val file=stateFile(user);AtomicFile(file).delete()
+        check(!file.exists() && !File(file.path+".bak").exists() && !File(file.path+".new").exists())
+    }
     fun pending(user: String): PublicationOperation? = synchronized(lock) { load(user).optJSONObject("pending")?.let(PublicationOperation::parse) }
     fun binding(user: String, draft: String): PublicationReceipt? = synchronized(lock) { load(user).getJSONObject("bindings").optJSONObject(draft)?.let(PublicationReceipt::parse) }
     fun editContext(user: String,draft: String): PublicationEditContext? = synchronized(lock) { load(user).optJSONObject("editContexts")?.optJSONObject(draft)?.let(PublicationEditContext::parse) }

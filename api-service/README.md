@@ -147,3 +147,44 @@ Public API routes and storage remain disabled by default. See
 independent forks, runtime budgets and moderation/deletion release gates.
 Apply `operations/publications-runtime-role.sql` after migrations with the
 isolated administrator; the runtime role cannot read auth or private sync.
+
+## Community lifecycle draft (13)
+
+Account/community controls remain disabled pending native, browser, provider and
+release verification. See [the lifecycle implementation and evidence gates](../docs/online/13-lifecycle.md).
+The dedicated lifecycle database login must receive only
+`operations/lifecycle-runtime-role.sql` privileges, separately from auth/public
+requests. Apply migration 005 before reapplying the runtime grants. Never give a
+runtime login migration privileges or permission to create moderator credentials.
+Use independent staging/production lifecycle hash/encryption keys. The web flow
+is `/delete-account`; it uses email codes and explicit confirmation, with no
+account mutation on GET and no credentials in URLs. The page must be routed to
+this service on the official account-deletion URL before release.
+
+| Method | Route | Authority |
+|---|---|---|
+| POST | `/v1/reports` | Optional account; otherwise random device report session in `X-PitTech-Report-Session` |
+| GET | `/v1/reports/:id` | Same reporting account or device session; status only |
+| GET/POST | `/v1/me/blocks` | Account; aliases only, never publisher account IDs |
+| POST | `/v1/me/deletion` | Account plus explicit policy/confirmation and device proof challenge |
+| POST | `/v1/deletion/recover` | Original operation UUID and secret device verifier |
+| POST | `/v1/deletion/status` | Receipt UUID and random status capability |
+| GET | `/v1/operator/queue/:kind` | Separate operator capability; content, profiles or reports |
+| GET | `/v1/operator/items/:id` | Operator; actual public-only text and selected asset links |
+| GET | `/v1/operator/items/:id/assets/:assetId` | Operator; checksum-verified selected bytes |
+| POST | `/v1/operator/content`, `/profiles`, `/reports` | Operator, exact revision/review and operation UUID |
+| POST | `/v1/operator/publishers` | Owner operator; alias-targeted suspension/restoration |
+
+Public reads accept at most 100 random local aliases in `X-PitTech-Blocks` and
+also apply authenticated account blocks. Filtering includes direct media and Cook
+Pack requests. Operator tokens are neither account sessions nor client-side role
+flags. Database administrators provision/rotate them through a separately reviewed
+secret-management procedure; this draft has created no real operator credentials.
+
+Publication uploads are create-only. Their cleanup replaces originals with empty
+random-key markers, preserving an atomic fence against resumed uploads. Do not
+physically remove those markers, reuse their keys, enable versioning or roll back
+to unconditional writers. The S3 adapter refuses completion if versioning state is
+unknown, enabled or suspended. Actual provider conditional-write and versioning
+API conformance, backup retention and marker metadata costs remain release gates.
+S3 requests use virtual-hosted URLs, matching Railway's documented bucket style.

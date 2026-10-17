@@ -27,19 +27,26 @@ internal class AccountVault(context: Context, private val namespace: String = "p
         }.generateKey()
     }
     @Synchronized override fun load(): AccountState {
+        val plain=loadBytes() ?: return AccountState()
+        return try { AccountState.parse(JSONObject(String(plain,Charsets.UTF_8))) } finally { plain.fill(0) }
+    }
+    @Synchronized fun loadBytes():ByteArray? {
         val atomic = AtomicFile(file)
-        if (!file.exists() && !File(file.path + ".bak").exists()) return AccountState()
+        if (!file.exists() && !File(file.path + ".bak").exists()) return null
         val bytes = atomic.openRead().use { input -> require(input.channel.size() in 29..16412); input.readBytes() }
         require(bytes.size in 29..16412)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE,key(false),GCMParameterSpec(128,bytes.copyOfRange(0,12))); cipher.updateAAD(alias.toByteArray())
-        val plain = cipher.doFinal(bytes,12,bytes.size-12)
-        return try { AccountState.parse(JSONObject(String(plain,Charsets.UTF_8))) } finally { plain.fill(0) }
+        return cipher.doFinal(bytes,12,bytes.size-12)
     }
     @Synchronized override fun save(value: AccountState) {
-        val plain = value.json().toString().toByteArray(); require(plain.size <= 16384)
+        val plain=value.json().toString().toByteArray()
+        try { saveBytes(plain) } finally { plain.fill(0) }
+    }
+    @Synchronized fun saveBytes(plain:ByteArray) {
+        require(plain.size <= 16384)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE,key(true)); cipher.updateAAD(alias.toByteArray())
-        val bytes = try { cipher.iv + cipher.doFinal(plain) } finally { plain.fill(0) }
+        val bytes = cipher.iv + cipher.doFinal(plain)
         val atomic = AtomicFile(file); val output = atomic.startWrite()
         try { output.write(bytes); atomic.finishWrite(output) } catch (e: Throwable) { atomic.failWrite(output); throw e }
     }

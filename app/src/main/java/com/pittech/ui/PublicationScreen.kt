@@ -61,9 +61,10 @@ import org.json.JSONObject
                         TextButton(onClick={ run { withContext(Dispatchers.IO) { writer.store.discardRejected(checkNotNull(account.publicationUserId())) }; prepared=null; refreshPending() } },enabled=!busy) { Text("Discard rejected request") }
                     }
                 } else if(published!=null) {
-                    Text("Published",style=MaterialTheme.typography.titleLarge,modifier=Modifier.testTag("publication-complete"))
+                    Text(if(published!!.status=="pending_review")"Submitted for review" else "Published",style=MaterialTheme.typography.titleLarge,modifier=Modifier.testTag("publication-complete"))
                     val uri=androidx.compose.ui.platform.LocalUriHandler.current
-                    Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
+                    if(published!!.status=="pending_review")Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.")
+                    else Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
                     val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook")
@@ -79,7 +80,7 @@ import org.json.JSONObject
                         val value=viewModel.sharing.preparePublication(draft,kind,context); check(account.publicationUserId()==user)
                         linked=writer.binding(draft); updateSummary=null
                         linked?.takeIf { updating }?.let { old ->
-                            val current=writer.read("/v1/me/recipes/"+old.id); require(current.getString("id")==old.id && current.getString("status") in setOf("active","unpublished")) { "This publication is unavailable for updates. Your private draft stays on this device." }
+                            val current=writer.read("/v1/me/recipes/"+old.id); require(current.getString("id")==old.id && current.getString("status") in setOf("active","pending_review","unpublished")) { "This publication is unavailable for updates. Your private draft stays on this device." }
                             if(context!=null && context.receipt.revisionId!=current.getString("revisionId"))throw AccountFailure(409)
                             linked=PublicationReceipt(old.id,current.getString("revisionId"),current.getInt("revision"),old.url).also { it.validate() }
                             updateSummary=if(current.getString("status")=="unpublished")"This publication is currently removed. Publishing this preview will make it public again." else "This preview will replace public revision ${current.getInt("revision")}."

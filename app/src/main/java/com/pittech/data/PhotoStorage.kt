@@ -68,7 +68,7 @@ class PhotoStorage(private val context: Context) {
     suspend fun stageNotePhoto(draftId: String, uriString: String): com.pittech.domain.NotePhoto = withContext(Dispatchers.IO) {
         val uri = Uri.parse(uriString)
         val id = UUID.randomUUID().toString()
-        val directory = File(context.filesDir, "note-drafts/" + UUID.nameUUIDFromBytes(draftId.toByteArray())).apply { mkdirs() }
+        val directory = File(context.filesDir, NOTE_DRAFTS_DIRECTORY + "/" + UUID.nameUUIDFromBytes(draftId.toByteArray())).apply { mkdirs() }
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(context.contentResolver.getType(uri) ?: "image/jpeg") ?: "jpg"
         val destination = File(directory, "$id.$extension")
         try {
@@ -83,7 +83,14 @@ class PhotoStorage(private val context: Context) {
     }
 
     suspend fun deleteDraftFiles(draftId: String) = withContext(Dispatchers.IO) {
-        File(context.filesDir, "note-drafts/" + UUID.nameUUIDFromBytes(draftId.toByteArray())).deleteRecursively()
+        File(context.filesDir, NOTE_DRAFTS_DIRECTORY + "/" + UUID.nameUUIDFromBytes(draftId.toByteArray())).deleteRecursively()
+        Unit
+    }
+
+    /** Removes the whole journal photo library and every staged note-draft file. Account and community stores live elsewhere and are untouched. */
+    suspend fun clearJournalFiles() = withContext(Dispatchers.IO) {
+        File(context.filesDir, PHOTO_DIRECTORY).deleteRecursively()
+        File(context.filesDir, NOTE_DRAFTS_DIRECTORY).deleteRecursively()
         Unit
     }
 
@@ -134,5 +141,6 @@ class PhotoStorage(private val context: Context) {
 
     companion object {
         private const val PHOTO_DIRECTORY = "photos"
+        private const val NOTE_DRAFTS_DIRECTORY = "note-drafts"
     }
 }

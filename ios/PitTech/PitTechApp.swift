@@ -6,10 +6,11 @@ struct PitTechApp: App {
     @State private var store = CookStore()
     @State private var relay = NativeRelayCoordinator()
     @State private var community = NativePublicCoordinator.forApp()
+    @State private var communityControls = NativeCommunityControls.forApp()
     #if DEBUG
     @State private var account = NativeAccountUITestSupport.make()
     #else
-    @State private var account = NativeAccountCoordinator()
+    @State private var account = NativeAccountCoordinator(cleanup: NativeAccountLocalCleanup.run)
     #endif
 
     var body: some Scene {
@@ -24,8 +25,11 @@ struct PitTechApp: App {
                 .environment(store)
                 .environment(relay)
                 .environment(community)
+                .environment(communityControls)
                 .environment(account)
                 .environment(AdsConsentManager.shared)
+                .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
+                .onChange(of: account.deletionRecord?.receipt?.deletionId) { _, _ in communityControls.reload(); community.controlsChanged() }
                 .tint(PitTechStyle.accent)
                 .modifier(ScreenshotTextSize())
                 .onOpenURL { url in
@@ -42,6 +46,8 @@ struct PitTechApp: App {
                     }
                 }
                 .task {
+                    account.removeJournal = { try store.removeLocalJournal() }
+                    communityControls.reload()
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()
                     store.save()

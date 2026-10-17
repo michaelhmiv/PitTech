@@ -27,14 +27,14 @@ internal data class PublicItem(val id: String,val revisionId: String,val title: 
         require(publicUUID(item.id) && publicUUID(item.revisionId) && item.title.length in 1..160 && item.credit.length <= 160 && item.kind in setOf("recipe","collection","attempt") && item.likes in 0..1_000_000_000 && item.forks in 0..1_000_000_000);return item
     } }
 }
-internal data class PublicDetail(val id: String,val revisionId: String,val payload: JSONObject,val credit: String,val media: List<JSONObject>,val profileUrl: String? = null) {
+internal data class PublicDetail(val id: String,val revisionId: String,val payload: JSONObject,val credit: String,val media: List<JSONObject>,val profileUrl: String? = null,val publisherAlias:String?=null) {
     val title get()=payload.getString("title")
     val recipes get()=payload.getJSONArray("recipes").let { a->(0 until a.length()).map(a::getJSONObject) }
     val hero get()=media.firstOrNull { it.getString("id") == payload.optString("heroAssetId") }
     companion object { fun parse(o: JSONObject): PublicDetail {
         val media=o.getJSONArray("media").let { a->(0 until a.length()).map(a::getJSONObject) }
-        val value=PublicDetail(o.getString("id"),o.getString("revisionId"),o.getJSONObject("payload"),o.getJSONObject("credit").getString("displayName"),media,o.getJSONObject("credit").optString("profileUrl").takeIf { it.isNotEmpty() })
-        require(publicUUID(value.id) && publicUUID(value.revisionId) && value.title.length in 1..160 && value.credit.length <= 160 && value.recipes.size in 1..20 && media.size <= 600 && media.map { it.getString("id") }.distinct().size == media.size)
+        val value=PublicDetail(o.getString("id"),o.getString("revisionId"),o.getJSONObject("payload"),o.getJSONObject("credit").getString("displayName"),media,o.getJSONObject("credit").optString("profileUrl").takeIf { it.isNotEmpty() },if(o.isNull("publisherAlias"))null else o.getString("publisherAlias"))
+        require(publicUUID(value.id) && publicUUID(value.revisionId) && value.title.length in 1..160 && value.credit.length <= 160 && (value.publisherAlias==null || publicUUID(value.publisherAlias)) && value.recipes.size in 1..20 && media.size <= 600 && media.map { it.getString("id") }.distinct().size == media.size)
         value.recipes.forEach { r-> require(publicUUID(r.getString("id")) && r.getString("title").length in 1..160 && r.optString("description").length <= 2000 && r.getJSONArray("ingredients").length() <= 100 && r.getJSONArray("instructions").length() <= 100) }
         media.forEach { m->require(publicUUID(m.getString("id")) && m.getString("url") == "https://api.pittech.app/v1/recipes/${value.id}/assets/${m.getString("id")}" && m.getString("sha256").matches(Regex("[a-f0-9]{64}")) && m.getString("mimeType") in setOf("image/jpeg","image/png","image/webp")) }
         value.profileUrl?.let { require(PublicLink.destination(it).startsWith("profile:")) }
@@ -47,11 +47,13 @@ internal interface PublicAPI {
     suspend fun pack(id: String,revision: String,to: File): File
     suspend fun image(id: String,asset: JSONObject): ByteArray
 }
-internal class PublicClient(client: OkHttpClient = OkHttpClient()) : PublicAPI {
+internal class PublicClient(client: OkHttpClient = OkHttpClient(),private val blocks:()->List<String> = {emptyList()},private val access:()->String?={null}) : PublicAPI {
     private val client=client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(CookieJar.NO_COOKIES).cache(null).callTimeout(30,TimeUnit.SECONDS).build()
     private fun request(path: String): Request.Builder {
         require(path.matches(Regex("/v1/profiles/[a-z0-9_]{3,24}(\\?cursor=[a-fA-F0-9-]{36})?")) || path.startsWith("/v1/discover?") || path.matches(Regex("/v1/recipes/[a-fA-F0-9-]{36}(/pack|/assets/[a-fA-F0-9-]{36})?")))
-        return Request.Builder().url("https://api.pittech.app$path").header("Cache-Control","no-store").header("Accept","application/json")
+        val request=Request.Builder().url("https://api.pittech.app$path").header("Cache-Control","no-store").header("Accept","application/json")
+        val aliases=blocks();require(aliases.size<=100 && aliases.all(::publicUUID));if(aliases.isNotEmpty())request.header("X-PitTech-Blocks",aliases.joinToString(","))
+        access()?.let{require(AccountProtocol.credential(it));request.header("Authorization","Bearer $it")};return request
     }
     private suspend fun <T> perform(request: Request,read: (Response)->T): T=suspendCancellableCoroutine { c->
         val call=client.newCall(request);c.invokeOnCancellation { call.cancel() }
@@ -109,20 +111,22 @@ internal class PublicCache(context: Context,namespace: String = "production") {
     }
 }
 internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null)
-internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(),val enabled: Boolean = false,private val cache: PublicCache = PublicCache(context)) {
+internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = false,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()}) {
     private val _state=MutableStateFlow(PublicPresentation());val state=_state.asStateFlow()
     private val _linkSequence=MutableStateFlow(0L);val linkSequence=_linkSequence.asStateFlow()
     private var profileJob: Job?=null;private var profileReturn: String?=null
+    private var pageJob:Job?=null;private var controlsGeneration=0
     private var pageKey="";private var detailJob: Job?=null;private var downloadJob: Job?=null
     private suspend fun cached(path: String): Pair<ByteArray,Boolean> {
+        val audience=audienceProvider();val key=audience+"|"+path
         try{
-            val bytes=api.json(path);val json=JSONObject(String(bytes,Charsets.UTF_8))
+            val bytes=api.json(path);check(audienceProvider()==audience);val json=JSONObject(String(bytes,Charsets.UTF_8))
             if(path.startsWith("/v1/discover?"))page(json) else { require(PublicDetail.parse(json).id==path.substringAfterLast('/')) }
-            try{withContext(Dispatchers.IO){cache.save(path,bytes)}}catch(e: CancellationException){throw e}catch(_: Exception){};return bytes to false
+            try{withContext(Dispatchers.IO){cache.save(key,bytes)}}catch(e: CancellationException){throw e}catch(_: Exception){};check(audienceProvider()==audience);return bytes to false
         }catch(e: CancellationException){throw e}
         catch(e: Exception){
-            if(e is PublicFailure && e.status==404){withContext(Dispatchers.IO){cache.remove(path)};throw e}
-            val old=withContext(Dispatchers.IO){cache.read(path)};if(old!=null)return old to true;throw e
+            if(e is PublicFailure && e.status==404){withContext(Dispatchers.IO){cache.remove(key)};throw e}
+            check(audienceProvider()==audience);val old=withContext(Dispatchers.IO){cache.read(key)};check(audienceProvider()==audience);if(old!=null)return old to true;throw e
         }
     }
     private fun page(o: JSONObject): Pair<List<PublicItem>,String?> {
@@ -135,12 +139,14 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         if(more && (pageKey!=base || _state.value.nextCursor==null))return
         val path=base+(if(more)"&cursor="+java.net.URLEncoder.encode(_state.value.nextCursor,"UTF-8") else "")
         _state.value=_state.value.copy(loading=true,message=null,appliedSort=sort,appliedFood=food,appliedQuery=query,nextCursor=if(!more && base!=pageKey)null else _state.value.nextCursor,items=if(!more && base!=pageKey)emptyList() else _state.value.items)
-        scope.launch {
-            try{val (bytes,saved)=cached(path);val (items,cursor)=page(JSONObject(String(bytes,Charsets.UTF_8)))
+        val generation=controlsGeneration
+        pageJob=scope.launch {
+            try{val (bytes,saved)=cached(path);if(generation!=controlsGeneration)return@launch;val (items,cursor)=page(JSONObject(String(bytes,Charsets.UTF_8)))
                 _state.value=_state.value.copy(items=if(more)(_state.value.items+items).distinctBy { it.id } else items,nextCursor=cursor,loading=false,message=if(saved)"Showing saved browsing results. Refresh when you can connect." else null);pageKey=base
-            }catch(e: Exception){_state.value=_state.value.copy(loading=false,message=if(e is CancellationException)"Request canceled." else (e as? PublicFailure)?.message ?: PublicFailure().message);if(e is CancellationException)throw e}
+            }catch(e: Exception){if(generation!=controlsGeneration)return@launch;_state.value=_state.value.copy(loading=false,message=if(e is CancellationException)"Request canceled." else (e as? PublicFailure)?.message ?: PublicFailure().message);if(e is CancellationException)throw e}
         }
     }
+    fun controlsChanged(){controlsGeneration++;pageJob?.cancel();profileJob?.cancel();detailJob?.cancel();downloadJob?.cancel();pageKey="";_state.value=PublicPresentation(message="Community controls changed. Refresh to browse with your current blocks.")}
     fun receivePublic(input: String): Boolean {
         if(!enabled)return false
         val destination=runCatching { PublicLink.destination(input) }.getOrNull() ?: return false
@@ -155,6 +161,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         _state.value=_state.value.copy(detailId=null,detail=null,detailLoading=false,image=null,preparing=false,profileHandle=handle,profileName=if(cursor==null)null else _state.value.profileName,profileItems=previous,profileCursor=null,profileLoading=true,message=null)
         profileJob=scope.launch {
             try {
+                val audience=audienceProvider()
                 // Public profile visibility is checked live; no stale profile cache restores a hidden identity.
                 val json=JSONObject(String(api.json("/v1/profiles/$handle"+(cursor?.let { "?cursor=$it" } ?: "")),Charsets.UTF_8))
                 require(json.getString("handle")==handle && json.getString("displayName").length<=160)
@@ -169,7 +176,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
                     } catch(e: PublicFailure) { if(e.status!=404)throw e }
                 }
                 val next=if(json.isNull("nextCursor"))null else json.getString("nextCursor");require(next==null || publicUUID(next));ensureActive()
-                _state.value=_state.value.copy(profileName=json.getString("displayName"),profileItems=(previous+items).distinctBy { it.id },profileCursor=next,profileLoading=false)
+                check(audienceProvider()==audience);_state.value=_state.value.copy(profileName=json.getString("displayName"),profileItems=(previous+items).distinctBy { it.id },profileCursor=next,profileLoading=false)
             } catch(e: Exception) { if(e is CancellationException)throw e;_state.value=_state.value.copy(profileName=null,profileItems=emptyList(),profileLoading=false,message=(e as? PublicFailure)?.message ?: PublicFailure().message) }
         }
     }
@@ -192,12 +199,12 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         }
     }
     suspend fun image(id: String,asset: JSONObject): ByteArray {
-        val key="image:"+asset.getString("sha256")
+        val audience=audienceProvider();val key=audience+"|image:"+asset.getString("sha256")
         val old=withContext(Dispatchers.IO){cache.read(key,16*1024*1024)}
-        if(old!=null && RelayProtocol.hash(old)==asset.getString("sha256"))return old
-        val bytes=api.image(id,asset)
+        if(old!=null && RelayProtocol.hash(old)==asset.getString("sha256")){check(audienceProvider()==audience);return old}
+        val bytes=api.image(id,asset);check(audienceProvider()==audience)
         try{withContext(Dispatchers.IO){cache.save(key,bytes)}}catch(e: CancellationException){throw e}catch(_: Exception){}
-        return bytes
+        check(audienceProvider()==audience);return bytes
     }
     fun back(){
         val returning=profileReturn;profileReturn=null
@@ -209,7 +216,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         _state.value=_state.value.copy(preparing=true,message=null)
         downloadJob=scope.launch {
             val file=File(context.cacheDir,UUID.randomUUID().toString()+".pittech")
-            try{val downloaded=api.pack(detail.id,detail.revisionId,file);ensureActive();onPreview(downloaded,cook,detail.id,detail.revisionId)}
+            try{val audience=audienceProvider();val downloaded=api.pack(detail.id,detail.revisionId,file);ensureActive();check(audienceProvider()==audience);onPreview(downloaded,cook,detail.id,detail.revisionId)}
             catch(e: Exception){_state.value=_state.value.copy(message=if(e is CancellationException)"Canceled. Nothing was added to your cookbook." else (e as? PublicFailure)?.message ?: PublicFailure().message);if(e is CancellationException)throw e}
             finally{file.delete();_state.value=_state.value.copy(preparing=false)}
         }

@@ -3,17 +3,17 @@ import XCTest
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<18 {
+        for attempt in 0..<18 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, navigation.identifier == "Account" {
+            if let navigation, ["Account", "Delete account", "Remove local journal", "Report publication", "Report publisher", "Community controls"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
                 if element.waitForExistence(timeout: 1), element.isHittable,
                    element.frame.minY >= top, element.frame.maxY <= bottom { return }
-                let down = element.exists && element.frame.minY < top
+                let down = element.exists && element.frame.minY < top || !element.exists && attempt >= 9
                 let origin = navigation.coordinate(withNormalizedOffset: .zero)
                 let start = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 32 : navigation.frame.height + 400))
                 let end = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 400 : navigation.frame.height + 32))
@@ -164,7 +164,15 @@ final class MealRecipeFlowsTests: XCTestCase {
             let code = app.textFields["account-code"]; reveal(code, app: app); XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("123456")
             app.buttons["Hide keyboard"].tap()
             let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
-            let signedIn = app.staticTexts["account-signed-in"]; reveal(signedIn, app: app); XCTAssertTrue(signedIn.waitForExistence(timeout: 10))
+            let signedIn = app.staticTexts["account-signed-in"]
+            // In large text the Form virtualizes off-screen rows, so the signed-in
+            // marker only materializes once scrolled into view: scroll it into view
+            // instead of waiting on a possibly-unrealized node. reveal() polls
+            // (~18 attempts), covering the fixture-backed verify latency too.
+            // (The old retry-on-consumed-tap guard is dropped: the message row it
+            // read is itself virtualized off-screen in large text, so the guard
+            // could never fire reliably.)
+            reveal(signedIn, app: app)
             capture(large ? "Native account signed in large text" : "Native account signed in")
             let signOut = app.buttons["Sign out"]; reveal(signOut, app: app); signOut.tap()
             let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
@@ -172,6 +180,93 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native account signed out large text" : "Native account signed out")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
             XCTAssertFalse(app.staticTexts["Signed in"].exists)
+            app.terminate()
+        }
+    }
+    func testAccountDeletionReviewRecoveryAndCompletionAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-deletion-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let deletion = app.buttons["account-delete"]; reveal(deletion, app: app); deletion.tap()
+            let acknowledgment = app.switches["account-deletion-acknowledge"].firstMatch
+            setSwitch(acknowledgment, on: true, app: app)
+            let typed = app.textFields["account-deletion-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("DELETE")
+            app.buttons["Hide keyboard"].tap()
+            let submit = app.buttons["account-deletion-submit"]; reveal(submit, app: app)
+            XCTAssertTrue(submit.isEnabled)
+            capture(large ? "Account deletion review large text" : "Account deletion review")
+            submit.tap()
+            let status = app.staticTexts["account-deletion-status"]; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app)
+            XCTAssertTrue(status.label.contains("queued"))
+            let recover = app.buttons["account-deletion-recover"]; reveal(recover, app: app); recover.tap()
+            let check = app.buttons["account-deletion-check"]; reveal(check, app: app); check.tap()
+            let finished = app.buttons["Close completed request"]; reveal(finished, app: app)
+            capture(large ? "Account deletion complete large text" : "Account deletion complete")
+            finished.tap()
+            let email = app.textFields["account-email"]
+            if !email.waitForExistence(timeout: 5), finished.exists, finished.isEnabled {
+                // The dismissal tap can land while the button is still disabled from
+                // the status check; retry once the request has settled.
+                finished.tap()
+            }
+            // In large text the Form virtualizes off-screen rows: scroll the field
+            // into view (which materializes it) instead of waiting on a
+            // possibly-unrealized node.
+            reveal(email, app: app)
+            app.terminate()
+        }
+    }
+    func testLocalJournalRemovalConfirmationAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            // The account entry point only exists when accounts are enabled.
+            app.launchArguments = ["--ui-test-reset", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let remove = app.buttons["local-journal-remove"]; reveal(remove, app: app); remove.tap()
+            let acknowledgment = app.switches["local-journal-acknowledge"].firstMatch
+            setSwitch(acknowledgment, on: true, app: app)
+            let typed = app.textFields["local-journal-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("REMOVE")
+            app.buttons["Hide keyboard"].tap()
+            let submit = app.buttons["local-journal-submit"]; reveal(submit, app: app)
+            XCTAssertTrue(submit.isEnabled)
+            capture(large ? "Local journal removal review large text" : "Local journal removal review")
+            submit.tap()
+            let message = app.staticTexts["account-message"]; XCTAssertTrue(message.waitForExistence(timeout: 10)); reveal(message, app: app)
+            XCTAssertTrue(message.label.contains("Local journal removed"))
+            capture(large ? "Local journal removed large text" : "Local journal removed")
+            app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
+            XCTAssertTrue(app.staticTexts["No finished cooks yet"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
+    func testAnonymousReportRecoveryAndPublisherBlockAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--community-controls-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["Discover"].tap()
+            let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discover-open-")).firstMatch
+            XCTAssertTrue(source.waitForExistence(timeout: 10)); reveal(source, app: app); source.tap()
+            let report = app.buttons["public-report"]; reveal(report, app: app); report.tap()
+            let details = app.textViews["report-details"]; reveal(details, app: app); details.tap(); details.typeText("Synthetic private review request")
+            app.buttons["Hide keyboard"].tap(); let submit = app.buttons["report-submit"]; reveal(submit, app: app); submit.tap()
+            let saved = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Recover or review the saved request")).firstMatch
+            XCTAssertTrue(saved.waitForExistence(timeout: 10)); reveal(saved, app: app)
+            capture(large ? "Community report saved large text" : "Community report saved")
+            app.navigationBars["Report publication"].buttons["Cancel"].tap()
+            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app); manage.tap()
+            let retry = app.buttons["community-retry"]; reveal(retry, app: app); retry.tap()
+            let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app); status.tap()
+            let reviewing = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch; XCTAssertTrue(reviewing.waitForExistence(timeout: 10)); reveal(reviewing, app: app)
+            capture(large ? "Community report status large text" : "Community report status")
+            app.tabBars.buttons["Discover"].tap(); let block = app.buttons["public-block"]; reveal(block, app: app); block.tap()
+            let search = app.buttons["discover-search"]; reveal(search, app: app); search.tap()
+            XCTAssertTrue(app.staticTexts["discover-empty"].waitForExistence(timeout: 10))
+            capture(large ? "Publisher blocked large text" : "Publisher blocked")
+            app.tabBars.buttons["More"].tap(); let unblock = app.buttons["Unblock publisher"].firstMatch; reveal(unblock, app: app); unblock.tap()
+            app.tabBars.buttons["Discover"].tap(); reveal(search, app: app); search.tap(); XCTAssertTrue(source.waitForExistence(timeout: 10))
             app.terminate()
         }
     }

@@ -3,10 +3,10 @@ import SwiftUI
 private struct NativeCookbookItem: Decodable, Identifiable {
     let id: String, status: String, revisionId: String, title: String, identityMode: String
     let revision: Int
-    func validate() throws { guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0, (1...160).contains(title.utf16.count), ["named", "anonymous"].contains(identityMode), ["active", "unpublished", "taken_down"].contains(status) else { throw NativePublicationError.invalid } }
+    func validate() throws { guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0, (1...160).contains(title.utf16.count), ["named", "anonymous"].contains(identityMode), ["active", "pending_review", "unpublished", "taken_down"].contains(status) else { throw NativePublicationError.invalid } }
 }
 private struct NativeCookbookPage: Decodable { let items: [NativeCookbookItem]; let nextCursor: String? }
-private struct NativeCookbookProfile: Codable, Equatable { let handle: String?; let displayName: String; let isPublic: Bool }
+private struct NativeCookbookProfile: Codable, Equatable { let handle: String?; let displayName: String; let isPublic: Bool; var reviewStatus: String? = nil }
 struct NativeMyCookbookView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(CookStore.self) private var store
@@ -17,6 +17,7 @@ struct NativeMyCookbookView: View {
     @State private var handle = ""
     @State private var name = ""
     @State private var isPublic = false
+    @State private var profileReviewStatus: String?
     @State private var profilePreview: NativeCookbookProfile?
     @State private var removing: NativeCookbookItem?
     @State private var pending: NativePublicationOperation?
@@ -52,6 +53,7 @@ struct NativeMyCookbookView: View {
                     Text("Cookbook identity").font(.title2.bold())
                     TextField("Display name", text: $name).textFieldStyle(.roundedBorder).accessibilityIdentifier("cookbook-name")
                     TextField("Handle (3–24 letters, numbers or underscores)", text: $handle).textFieldStyle(.roundedBorder).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("cookbook-handle")
+                    if profileReviewStatus == "pending" { Text("Identity changes are awaiting review and are not yet public.") }
                     Toggle("Enable my public cookbook", isOn: $isPublic).accessibilityIdentifier("cookbook-public")
                     Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.").font(.subheadline)
                     Button("Preview cookbook changes") { run {
@@ -74,7 +76,7 @@ struct NativeMyCookbookView: View {
         }.accessibilityIdentifier("cookbook-content").navigationTitle("My cookbook").navigationBarTitleDisplayMode(.inline)
             .task(id: account.stateUserId) {
                 if writer == nil { writer = NativePublicationWriter.forApp(session: account) }
-                loadedUser = account.stateUserId; items = []; pending = nil; pendingArchive = nil; pendingProfile = nil; profilePreview = nil; removing = nil; name = ""; handle = ""; isPublic = false; ownerPreview = nil; ownerReceipt = nil; ownerUser = nil; editingDraft = nil
+                loadedUser = account.stateUserId; items = []; pending = nil; pendingArchive = nil; pendingProfile = nil; profilePreview = nil; removing = nil; name = ""; handle = ""; isPublic = false; profileReviewStatus = nil; ownerPreview = nil; ownerReceipt = nil; ownerUser = nil; editingDraft = nil
                 guard loadedUser != nil else { return }
                 do { try await reload() } catch { message = error.localizedDescription }
             }
@@ -106,8 +108,8 @@ struct NativeMyCookbookView: View {
                     ForEach(items) { item in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(item.title).font(.headline)
-                            Text(item.status == "active" ? "Public · revision \(item.revision) · \(item.identityMode == "named" ? "named" : "anonymous")" : item.status == "unpublished" ? "Removed from public access" : "Unavailable after moderation").font(.caption)
-                            if ["active", "unpublished"].contains(item.status) {
+                            Text(item.status == "active" ? "Public · revision \(item.revision) · \(item.identityMode == "named" ? "named" : "anonymous")" : item.status == "pending_review" ? "Submitted for review · not public" : item.status == "unpublished" ? "Removed from public access" : "Unavailable after moderation").font(.caption)
+                            if ["active", "pending_review", "unpublished"].contains(item.status) {
                                 Button("Preview an editable private copy") { run {
                                     try checkAccount(); guard let writer, let user = loadedUser else { throw NativePublicationError.accountChanged }
                                     let receipt = NativePublicationReceipt(id: item.id, revisionId: item.revisionId, revision: item.revision, url: "https://pittech.app/c/" + item.id)
@@ -118,15 +120,16 @@ struct NativeMyCookbookView: View {
                                     ownerPreview = prepared; ownerReceipt = receipt; ownerUser = user
                                 } }.disabled(busy || pending != nil).accessibilityIdentifier("cookbook-edit-" + item.id)
                             }
-                            if item.status == "active" {
-                                Link("Open publication", destination: URL(string: "https://pittech.app/c/" + item.id)!)
-                                Button("Remove from public access", role: .destructive) { removing = item }.disabled(busy || pending != nil)
+                            if item.status == "active" { Link("Open publication", destination: URL(string: "https://pittech.app/c/" + item.id)!) }
+                            if ["active", "pending_review"].contains(item.status) {
+                                Button(item.status == "pending_review" ? "Withdraw review request" : "Remove from public access", role: .destructive) { removing = item }.disabled(busy || pending != nil)
                             }
                         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                     }
     }
     @ViewBuilder private func profileSummary(_ profile: NativeCookbookProfile) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            if profile.reviewStatus == "pending" { Text("Identity changes are awaiting review and are not yet public.") }
             Text("Public display name · " + (profile.displayName.isEmpty ? "a PitTech cook" : profile.displayName)).font(.headline)
             Text(profile.isPublic ? "Public cookbook: https://pittech.app/p/" + (profile.handle ?? "Choose a handle") : "Public cookbook disabled. Your named recipe credit remains visible.")
         }.padding(12).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -144,7 +147,7 @@ struct NativeMyCookbookView: View {
         try checkAccount(); try pendingPreview()
         guard let writer else { return }
         let profile = try JSONDecoder().decode(NativeCookbookProfile.self, from: await writer.read("/v1/me/profile")); try checkAccount()
-        name = profile.displayName; handle = profile.handle ?? ""; isPublic = profile.isPublic
+        name = profile.displayName; handle = profile.handle ?? ""; isPublic = profile.isPublic; profileReviewStatus = profile.reviewStatus
         try await loadItems(more: false)
     }
     private func loadItems(more: Bool) async throws {

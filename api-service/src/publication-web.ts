@@ -8,16 +8,16 @@ export function publicWebRoute(raw:string){
   if(/^\/p\/[a-z0-9_]{3,24}$/.test(raw))return '/p/:handle';
   return undefined;
 }
-export async function publicPage(raw:string,publications:Publications,links:LinkConfig){
+export async function publicPage(raw:string,publications:Publications,links:LinkConfig,blocked:string[]=[]){
   const route=publicWebRoute(raw),id=raw.split('/')[2];
   if(route==='/p/:handle'){
-    const profile=await publications.profile(id),items=[];
-    for(const entry of profile.items){try{const detail=await publications.get(entry.id);items.push(`<article><h2><a href="/c/${entry.id}">${escape(detail.payload.title)}</a></h2><p>${escape(detail.payload.kind)} · ${detail.likes} likes · ${detail.forks} forks</p></article>`);}catch(error){if((error as {status?:number}).status!==404)throw error;}}
-    await publications.profile(id); // Recheck opt-in after fetching item content.
+    const profile=await publications.profile(id,undefined,blocked),items=[];
+    for(const entry of profile.items){try{const detail=await publications.get(entry.id,blocked);items.push(`<article><h2><a href="/c/${entry.id}">${escape(detail.payload.title)}</a></h2><p>${escape(detail.payload.kind)} · ${detail.likes} likes · ${detail.forks} forks</p></article>`);}catch(error){if((error as {status?:number}).status!==404)throw error;}}
+    await publications.profile(id,undefined,blocked); // Recheck opt-in after fetching item content.
     return shell(profile.displayName,`<h1>${escape(profile.displayName)}</h1><p class="muted">@${escape(profile.handle)}</p>${items.join('')||'<p>No named publications here yet.</p>'}${profile.nextCursor?'<p>Open the cookbook in PitTech to browse more.</p>':''}<a class="button" href="pittech://profile/${id}">Open cookbook in PitTech</a>`,links);
   }
   if(route!=='/c/:id')throw new Error('Invalid public page route');
-  const item=await publications.get(id),payload=item.payload;
+  const item=await publications.get(id,blocked),payload=item.payload;
   const recipes=payload.recipes.map(recipe=>{
     const photos=recipe.assets.map(asset=>`<figure><img src="https://api.pittech.app/v1/recipes/${id}/assets/${asset.id}" alt="${escape(asset.caption||recipe.title)}" loading="lazy"><figcaption>${escape(asset.caption)}</figcaption></figure>`).join('');
     const source=recipe.source?`<p class="muted">${recipe.source.removed?'Based on a removed recipe':`Based on a recipe shared by ${escape(recipe.source.displayName||'a PitTech cook')}`}</p>`:'';

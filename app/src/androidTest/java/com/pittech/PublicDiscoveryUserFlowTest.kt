@@ -57,6 +57,24 @@ import java.util.Base64
         waitFor("food-card-${dish.id}");compose.onNodeWithTag("food-card-${dish.id}").performScrollTo().assertIsDisplayed()
         assertTrue(runBlocking(Dispatchers.IO){app.database.reminderDao().rules().isEmpty()});shot("public-cook")
     }
+    @Test fun changingBlocksDoesNotReuseAnotherAudienceOfflineCache(){
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val fixture=JSONObject(context.assets.open("public-native-v1.json").bufferedReader().use{it.readText()})
+        val generation=java.util.concurrent.atomic.AtomicReference("before");val offline=java.util.concurrent.atomic.AtomicBoolean(false)
+        val scope=kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()+kotlinx.coroutines.Dispatchers.Main.immediate)
+        val namespace="controls-"+java.util.UUID.randomUUID().toString()
+        val api=object:com.pittech.data.PublicAPI{
+            override suspend fun json(path:String):ByteArray{if(offline.get())throw com.pittech.data.PublicFailure();return fixture.getJSONObject("feed").toString().toByteArray()}
+            override suspend fun pack(id:String,revision:String,to:File):File=error("Browsing cannot import")
+            override suspend fun image(id:String,asset:JSONObject):ByteArray=error("Browsing cannot load a photo here")
+        }
+        val manager=com.pittech.data.PublicManager(context,scope,{_,_,_,_->},api,true,com.pittech.data.PublicCache(context,namespace),audienceProvider={generation.get()})
+        try{
+            compose.runOnIdle{manager.refresh()};compose.waitUntil(10000){!manager.state.value.loading && manager.state.value.items.isNotEmpty()}
+            offline.set(true);generation.set("after");compose.runOnIdle{manager.controlsChanged();manager.refresh()};compose.waitUntil(10000){!manager.state.value.loading};assertTrue(manager.state.value.items.isEmpty())
+            generation.set("after-unblock");compose.runOnIdle{manager.controlsChanged();manager.refresh()};compose.waitUntil(10000){!manager.state.value.loading};assertTrue(manager.state.value.items.isEmpty())
+        }finally{scope.coroutineContext[kotlinx.coroutines.Job]?.cancel();File(context.noBackupFilesDir,"public-browsing-$namespace-v1").deleteRecursively()}
+    }
     private fun waitFor(tag: String){compose.waitUntil(20000){compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
     private fun shot(name: String){compose.waitForIdle();InstrumentationRegistry.getInstrumentation().waitForIdleSync();val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot();val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() };file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) };image.recycle()}
 }

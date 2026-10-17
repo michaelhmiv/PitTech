@@ -76,7 +76,7 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     // Reproduce an old fork blob containing source JSON, while keeping the committed revision authoritative.
     const oldCopy=(await pool.query('SELECT o.* FROM publications.revisions r JOIN publications.objects o ON o.id=r.object_id WHERE r.id=$1',[ownForkUpdate.revisionId])).rows[0];
     const sourceObject=(await pool.query('SELECT o.* FROM publications.revisions r JOIN publications.objects o ON o.id=r.object_id WHERE r.id=$1',[posted.revisionId])).rows[0];
-    const legacyBytes=await storage.get(sourceObject.key),legacyFile=join(root,randomUUID()+'.zip');await writeFile(legacyFile,legacyBytes);await storage.put(oldCopy.key,legacyFile);
+    const legacyBytes=await storage.get(sourceObject.key),legacyFile=join(root,randomUUID()+'.zip');await writeFile(legacyFile,legacyBytes);await writeFile(storage.path(oldCopy.key),legacyBytes); // Synthetic pre-immutability legacy blob, bypass the current write adapter.
     await admin.query('UPDATE publications.objects SET bytes=$2,sha256=$3 WHERE id=$1',[oldCopy.id,legacyBytes.length,digest(legacyBytes)]);
     const recoveredLegacyFork=await canonicalPublication((await publications.ownedArchive(bob,copy.id,ownForkUpdate.revisionId)).bytes);assert.equal(recoveredLegacyFork.payload.source!.itemId,posted.id);assert.equal(recoveredLegacyFork.payload.recipes[0].source!.itemId,posted.id);
     const revisionPayload=structuredClone(raw);revisionPayload.title='Changed original';revisionPayload.identityMode='named';const updated=await prepare(revisionPayload);

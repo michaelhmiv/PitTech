@@ -11,8 +11,8 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
 
-internal data class AccountPresentation(val signedIn: Boolean = false, val challengeEmail: String? = null, val canResend: Boolean = true, val interruptedVerification: Boolean = false, val pendingLink: Boolean = false, val busy: Boolean = false, val message: String? = null)
-internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis) {
+internal data class AccountPresentation(val signedIn: Boolean = false, val challengeEmail: String? = null, val canResend: Boolean = true, val interruptedVerification: Boolean = false, val pendingLink: Boolean = false, val busy: Boolean = false, val message: String? = null, val deletion: DeletionRecord? = null)
+internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis, private val cleanup: (String) -> Unit = {}, private val removeJournal: (suspend () -> Unit)? = null) {
     private var state = AccountState()
     private var storageReady = true
     private val mutex = Mutex()
@@ -24,10 +24,10 @@ internal class AccountManager(private val storage: AccountStorage, private val s
     fun open() { _showing.value = true }
     fun close() { _showing.value = false }
     fun tick() { _presentation.value = _presentation.value.copy(canResend=state.challenge?.let { now()-it.created >= 60000 } ?: true) }
-    init { try { state = storage.load(); if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null));
-        state.session?.let { it.validate(); if(Instant.parse(it.sessionExpiresAt).toEpochMilli() <= now()) save(AccountState(logoutToken=it.refreshToken)) }; publish() } catch (_: Exception) { storageReady = false; publish(message="This device's account storage is unavailable. Your local cookbook is unchanged.") } }
+    init { try { state = storage.load(); state.deletion?.validate(); if(state.deletion?.receipt!=null)runCatching{cleanupAcceptedDeletion()}; if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null));
+        state.session?.let { it.validate(); if(Instant.parse(it.sessionExpiresAt).toEpochMilli() <= now()) save(AccountState(logoutToken=it.refreshToken,deletion=state.deletion)) }; publish() } catch (_: Exception) { storageReady = false; publish(message="This device's account storage is unavailable. Your local cookbook is unchanged.") } }
     private fun publish(busy: Boolean = false, message: String? = null) {
-        _presentation.value = AccountPresentation(state.session != null,state.challenge?.email,state.challenge?.let { now()-it.created >= 60000 } ?: true,state.challenge?.operation != null,link != null,busy,message)
+        _presentation.value = AccountPresentation(state.session != null,state.challenge?.email,state.challenge?.let { now()-it.created >= 60000 } ?: true,state.challenge?.operation != null,link != null,busy,message,state.deletion)
     }
     private fun save(next: AccountState) { storage.save(next); state = next }
     private fun ready() { if(!enabled) throw AccountFailure(503); check(storageReady) }
@@ -45,7 +45,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         }
     }
     fun start(input: String, resend: Boolean = false) = perform {
-        flushLogout(); val email = AccountProtocol.email(input); val old = state.challenge
+        require(state.deletion?.receipt==null); flushLogout(); val email = AccountProtocol.email(input); val old = state.challenge
         if(old == null || old.email != email || resend || now()-old.created >= 900000) {
             if(old != null && now()-old.created < 60000) throw AccountFailure(429)
             save(state.copy(challenge=AccountChallenge(UUID.randomUUID().toString(),email,AccountProtocol.verifier(),now()))); link=null
@@ -76,6 +76,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         val body = JSONObject().put("challengeId",challenge.id).put("verifier",challenge.verifier).put("idempotencyId",challenge.operation).put(if(challenge.isLink) "token" else "code",challenge.secret)
         try {
             val session = AccountSession.parse(api.call("/v1/auth/verify",body,null))
+            state.deletion?.userId?.let{owner->if(owner!=session.userId){runCatching{api.call("/v1/auth/logout",JSONObject().put("refreshToken",session.refreshToken),null)};error("Verify the original account.")}}
             save(state.copy(session=session,challenge=null,refreshOperation=null)); link=null
             publish(message="Signed in. Your local cookbook is unchanged.")
         } catch(e: AccountFailure) {
@@ -84,17 +85,20 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         }
     }
     /** Serialized refresh shares the resulting access credential; ambiguous responses keep the same operation UUID. */
-    suspend fun publicationUserId(): String? = mutex.withLock { state.session?.userId }
+    suspend fun publicationUserId(): String? = mutex.withLock { if(state.deletion==null)state.session?.userId else null }
     suspend fun access(forceRefresh: Boolean = false): String = mutex.withLock {
+        require(state.deletion==null); accessLocked(forceRefresh)
+    }
+    private suspend fun accessLocked(forceRefresh: Boolean = false):String {
         ready(); val session = state.session ?: throw AccountFailure(401)
-        if(Instant.parse(session.sessionExpiresAt).toEpochMilli() <= now()) { save(AccountState(logoutToken=session.refreshToken)); publish(); throw AccountFailure(401) }
-        if(!forceRefresh && state.refreshOperation == null && Instant.parse(session.accessExpiresAt).toEpochMilli() > now()+30000) return@withLock session.accessToken
+        if(Instant.parse(session.sessionExpiresAt).toEpochMilli() <= now()) { save(AccountState(logoutToken=session.refreshToken,deletion=state.deletion)); publish(); throw AccountFailure(401) }
+        if(!forceRefresh && state.refreshOperation == null && Instant.parse(session.accessExpiresAt).toEpochMilli() > now()+30000) return session.accessToken
         save(state.copy(refreshOperation=state.refreshOperation ?: UUID.randomUUID().toString()))
         try {
             val rotated = AccountSession.parse(api.call("/v1/auth/refresh",JSONObject().put("refreshToken",session.refreshToken).put("idempotencyId",state.refreshOperation),null))
             require(rotated.userId == session.userId)
-            save(state.copy(session=rotated,refreshOperation=null)); publish(busy=_presentation.value.busy); rotated.accessToken
-        } catch(e: AccountFailure) { if(e.status == 401) { save(AccountState()); publish() }; throw e }
+            save(state.copy(session=rotated,refreshOperation=null)); publish(busy=_presentation.value.busy); return rotated.accessToken
+        } catch(e: AccountFailure) { if(e.status == 401) { save(AccountState(deletion=state.deletion)); publish() }; throw e }
     }
     fun checkSession() {
         if(_presentation.value.busy) return
@@ -108,7 +112,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
                 }
             } catch(e: Exception) {
                 mutex.withLock {
-                    if(e is AccountFailure && e.status == 401) save(AccountState())
+                    if(e is AccountFailure && e.status == 401) save(AccountState(deletion=state.deletion))
                     publish(message="Couldn't reconnect. Your local cookbook is available offline.")
                 }
                 if(e is CancellationException) throw e
@@ -116,8 +120,67 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         }
     }
     fun signOut() = perform {
-        save(AccountState(logoutToken=state.session?.refreshToken ?: state.logoutToken)); link=null
+        save(AccountState(logoutToken=state.session?.refreshToken ?: state.logoutToken,deletion=state.deletion)); link=null
         try { flushLogout(); publish(message="Signed out. Your local cookbook stays on this device.") }
         catch(e: Exception) { publish(message="Signed out on this device. Server sign-out will retry before your next sign-in."); if(e is CancellationException) throw e }
     }
+    private fun acceptDeletion(receipt:DeletionReceipt){
+        receipt.validate();val record=requireNotNull(state.deletion)
+        record.receipt?.let{require(it.deletionId==receipt.deletionId && it.statusToken==receipt.statusToken)}
+        save(AccountState(deletion=record.copy(userId=null,cleanupUserId=record.cleanupUserId?:record.userId,verifier=if(receipt.state=="complete")null else record.verifier,receipt=receipt)));link=null
+        try{cleanupAcceptedDeletion();publish(busy=true,message=receipt.description)}
+        catch(_:Exception){publish(busy=true,message="Server deletion was accepted. Device account metadata cleanup needs a retry. Your journal is unchanged.")}
+    }
+    private fun cleanupAcceptedDeletion(){
+        val record=state.deletion?:return;if(record.receipt==null)return;val user=record.cleanupUserId?:return
+        cleanup(user);save(AccountState(deletion=record.copy(cleanupUserId=null)))
+    }
+    fun retryDeviceCleanup()=perform{cleanupAcceptedDeletion();publish(busy=true,message=state.deletion?.receipt?.description)}
+    fun requestDeletion()=perform {
+        val user=state.session?.userId ?: throw AccountFailure(401)
+        state.deletion?.let{require(it.userId==user && it.receipt==null)} ?: save(state.copy(deletion=DeletionRecord(user,UUID.randomUUID().toString(),AccountProtocol.verifier())))
+        val record=requireNotNull(state.deletion);val body=record.request()
+        try {
+            val token=accessLocked()
+            val reply=try{api.call("/v1/me/deletion",body,token)}catch(e:AccountFailure){
+                if(e.status!=401)throw e
+                val refreshed=accessLocked(true);require(state.session?.userId==record.userId)
+                api.call("/v1/me/deletion",body,refreshed)
+            }
+            acceptDeletion(DeletionReceipt.parse(reply))
+        }catch(e:Exception){publish(busy=true,message="Deletion was not confirmed. Recover the request first, or retry the same request on this account. Your local journal stays available.");if(e is CancellationException)throw e}
+    }
+    fun recoverDeletion()=perform {
+        val record=requireNotNull(state.deletion);val verifier=requireNotNull(record.verifier)
+        acceptDeletion(DeletionReceipt.parse(api.call("/v1/deletion/recover",JSONObject().put("operationId",record.operationId).put("verifier",verifier),null)))
+    }
+    fun checkDeletion()=perform {
+        val receipt=requireNotNull(state.deletion?.receipt)
+        val result=api.call("/v1/deletion/status",JSONObject().put("deletionId",receipt.deletionId).put("statusToken",receipt.statusToken),null)
+        require(result.getString("deletionId")==receipt.deletionId)
+        acceptDeletion(receipt.copy(state=result.getString("state")))
+    }
+    fun dismissCompletedDeletion()=perform {
+        require(state.deletion?.receipt?.state=="complete");cleanupAcceptedDeletion();save(AccountState());publish(message="Account deletion is complete. Your local journal stays on this device.")
+    }
+    /** Device-local journal removal. Independent of account deletion and of account availability: the server account, credentials and deletion records are untouched, and this works whether accounts are enabled or not. */
+    fun removeLocalJournal() {
+        // Deliberately not perform(): the journal is device-local, so account
+        // availability and account-storage readiness must not gate removal.
+        if(_presentation.value.busy) return
+        publish(busy=true)
+        scope.launch {
+            mutex.withLock {
+                try {
+                    val remove=removeJournal ?: error("Local journal removal is unavailable on this device.")
+                    remove()
+                    publish(message="Local journal removed from this device. Your server account is unchanged.")
+                }
+                catch(e: CancellationException) { publish(message="Local journal removal was interrupted. Your journal is unchanged."); throw e }
+                catch(e: LocalJournalRemovalBlocked) { publish(message=e.message) }
+                catch(e: Exception) { publish(message="Local journal removal failed. Your journal is unchanged.") }
+            }
+        }
+    }
+
 }

@@ -99,9 +99,74 @@ class AccountTest {
             if(path.endsWith("challenges")) { starts++; JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900) }
             else { verifies++; proof+=body!!.getString("verifier"); if(verifies == 1) throw AccountFailure(401); session().json() }
         }
-        val manager=AccountManager(memory,this,api,true) { clock }; manager.start("cook@example.com"); yield()
+        val manager=AccountManager(memory,this,api,true,now={ clock }); manager.start("cook@example.com"); yield()
         manager.start("cook@example.com",true); yield(); assertEquals(1,starts)
         manager.verify("111111"); yield(); manager.verify("222222"); yield(); assertEquals(2,verifies); assertEquals(proof[0],proof[1])
         assertTrue(manager.presentation.value.signedIn)
     }
+    @Test fun deletionPersistsExactProofAndRecoversWithoutSessionAcrossRestart()=runBlocking {
+        val memory=Memory(AccountState(session=session()));var submitted:String?=null;var lost=true
+        val receipt=DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"queued")
+        val api=AccountAPI{path,body,access->
+            when(path){
+                "/v1/me/deletion"->{
+                    assertEquals(memory.value.deletion!!.request().toString(),body.toString())
+                    if(submitted==null)submitted=body.toString() else assertEquals(submitted,body.toString())
+                    if(lost){lost=false;throw AccountFailure()};receipt.json()
+                }
+                "/v1/deletion/recover"->{assertNull(access);assertNull(memory.value.session);assertEquals(JSONObject(submitted!!).getString("proofChallenge"),AccountProtocol.proof(body!!.getString("verifier")));receipt.json()}
+                else->{assertEquals("/v1/deletion/status",path);assertNull(access);JSONObject().put("deletionId",receipt.deletionId).put("state","complete")}
+            }
+        }
+        val first=AccountManager(memory,this,api,true);first.requestDeletion();yield();assertNotNull(memory.value.deletion);assertNull(first.publicationUserId())
+        try{first.access();fail("Publishing remained available")}catch(_:Exception){}
+        val second=AccountManager(memory,this,api,true);second.requestDeletion();yield();assertNull(memory.value.session);assertEquals("queued",memory.value.deletion!!.receipt!!.state)
+        val restarted=AccountManager(memory,this,api,true);restarted.recoverDeletion();yield();restarted.checkDeletion();yield();assertEquals("complete",memory.value.deletion!!.receipt!!.state);assertNull(memory.value.deletion!!.verifier)
+        restarted.dismissCompletedDeletion();yield();assertNull(memory.value.deletion)
+    }
+    @Test fun deletionStorageFailureNeverSendsAndMalformedReceiptKeepsProof()=runBlocking {
+        val memory=Memory(AccountState(session=session()));memory.fail=true;var calls=0
+        val api=AccountAPI{_,_,_->calls++;JSONObject()}
+        val account=AccountManager(memory,this,api,true);account.requestDeletion();yield();assertEquals(0,calls)
+        memory.fail=false;account.requestDeletion();yield();assertEquals(1,calls);assertNotNull(memory.value.deletion!!.verifier);assertNull(memory.value.deletion!!.receipt);assertNotNull(memory.value.session)
+        assertThrows(Exception::class.java){DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"unknown").validate()}
+        assertNull(AccountState.parse(JSONObject()).deletion)
+    }
+    @Test fun acceptedDeletionRetainsCleanupOwnerAfterFailureAndRetriesOnRestart()=runBlocking {
+        val memory=Memory(AccountState(session=session()));val user=memory.value.session!!.userId;var attempts=0
+        val receipt=DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"complete")
+        val api=AccountAPI{_,_,_->receipt.json()}
+        val first=AccountManager(memory,this,api,true,cleanup={owner->assertEquals(user,owner);assertNull(memory.value.session);assertNotNull(memory.value.deletion!!.receipt);attempts++;error("Synthetic storage interruption")})
+        first.requestDeletion();yield();assertEquals(1,attempts);assertNull(memory.value.session);assertEquals(user,memory.value.deletion!!.cleanupUserId);assertNull(memory.value.deletion!!.userId)
+        val restarted=AccountManager(memory,this,api,true,cleanup={owner->assertEquals(user,owner);attempts++})
+        assertEquals(2,attempts);assertNull(memory.value.deletion!!.cleanupUserId);restarted.dismissCompletedDeletion();yield();assertNull(memory.value.deletion)
+    }
+    @Test fun localJournalRemovalWorksWhileDisabledAndLeavesDeletionAlone()=runBlocking {
+        val deletion=DeletionRecord("12345678-1234-4234-8234-123456789abc",java.util.UUID.randomUUID().toString(),token)
+        val memory=Memory(AccountState(session=session(),deletion=deletion));var calls=0
+        val api=AccountAPI{_,_,_->fail("Journal removal must not use the network");JSONObject()}
+        val account=AccountManager(memory,this,api,false,removeJournal={calls++})
+        account.removeLocalJournal();yield()
+        assertEquals(1,calls);assertEquals(deletion,memory.value.deletion);assertNotNull(memory.value.session)
+        assertEquals("Local journal removed from this device. Your server account is unchanged.",account.presentation.value.message)
+        val blocked=AccountManager(memory,this,api,false,removeJournal={throw LocalJournalRemovalBlocked("Finish or stop the active cook first.")})
+        blocked.removeLocalJournal();yield()
+        assertEquals("Finish or stop the active cook first.",blocked.presentation.value.message)
+        assertEquals(deletion,memory.value.deletion)
+        val failing=AccountManager(memory,this,api,false,removeJournal={error("Synthetic storage interruption")})
+        failing.removeLocalJournal();yield()
+        assertEquals("Local journal removal failed. Your journal is unchanged.",failing.presentation.value.message)
+    }
+    @Test fun deletionRetries401OnceWithoutChangingBodyOrAccount()=runBlocking {
+        val memory=Memory(AccountState(session=session()));var calls=0;var refreshed=0;var request:String?=null
+        val receipt=DeletionReceipt(java.util.UUID.randomUUID().toString(),token,"queued")
+        val api=AccountAPI{path,body,_->
+            if(path=="/v1/auth/refresh"){refreshed++;session(rotated=true).json()}else{
+                calls++;if(request==null)request=body.toString() else assertEquals(request,body.toString())
+                if(calls==1)throw AccountFailure(401);receipt.json()
+            }
+        }
+        val account=AccountManager(memory,this,api,true);account.requestDeletion();yield();assertEquals(2,calls);assertEquals(1,refreshed);assertNull(memory.value.session)
+    }
+
 }

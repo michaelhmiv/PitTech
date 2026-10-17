@@ -17,14 +17,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.PublicManager
 import org.json.JSONObject
 
-@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null) {
+@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null, controls:com.pittech.data.CommunityControls?=null) {
     val state by manager.state.collectAsStateWithLifecycle()
+    val accountState=account?.presentation?.collectAsStateWithLifecycle()?.value
+    var previousSignedIn by remember{mutableStateOf(accountState?.signedIn)}
+    LaunchedEffect(accountState?.signedIn){if(previousSignedIn!=accountState?.signedIn){previousSignedIn=accountState?.signedIn;manager.controlsChanged()}}
     var query by rememberSaveable { mutableStateOf(state.appliedQuery) }
     var food by rememberSaveable { mutableStateOf(state.appliedFood) }
+    var managingControls by remember{mutableStateOf(false)}
     var sort by rememberSaveable { mutableStateOf(state.appliedSort) }
     LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery) }
     BackHandler(state.detailId != null || state.profileHandle != null) { manager.back() }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        if(controls!=null && account!=null)TextButton(onClick={managingControls=true}){Text("Community controls")}
         if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
             if(state.detailLoading) CircularProgressIndicator()
@@ -39,6 +44,7 @@ import org.json.JSONObject
                 Text("Shared by ${detail.credit}")
                 detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
                 if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
+                if(controls!=null && account!=null)CommunityActions(detail,controls,account,manager)
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.")
                 Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
@@ -90,5 +96,6 @@ import org.json.JSONObject
             if(state.nextCursor != null)OutlinedButton(onClick={ manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery,true) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("More recipes") }
         }
     }
+    if(managingControls && controls!=null && account!=null)CommunityControlsDialog(controls,account,manager){managingControls=false}
 }
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { array->(0 until array.length()).map(array::getJSONObject) }

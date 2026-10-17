@@ -1,0 +1,79 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PitTech operator review</title><style nonce="__NONCE__">:root{color-scheme:light}body{margin:0;background:#f5f0e7;color:#242622;font:1.05rem/1.6 system-ui,sans-serif}main{max-width:46rem;padding:2rem 1.25rem;margin:auto}h1{font-size:clamp(1.8rem,6vw,2.6rem);line-height:1.15}section{margin:1.5rem 0;padding:1.2rem;background:#fffdf7;border:1px solid #c7c5b9;border-radius:1rem}label{display:block;margin:.8rem 0}input,button,select,textarea{font:inherit;box-sizing:border-box;max-width:100%;min-height:48px}input[type=password],input[type=text],textarea,select{display:block;width:100%;padding:.6rem;border:1px solid #58665a;border-radius:.4rem}textarea{min-height:96px}input[type=checkbox]{vertical-align:middle;width:24px;min-height:24px;margin-right:.5rem}button{padding:.7rem 1rem;background:#934025;color:white;border:0;border-radius:.5rem;cursor:pointer;margin:.4rem .4rem .4rem 0}button:disabled{opacity:.55;cursor:wait}button.secondary{background:#58665a}a{color:#934025}p,li{overflow-wrap:anywhere}[hidden]{display:none!important}:focus-visible{outline:3px solid #245c91;outline-offset:3px}#message{white-space:pre-wrap}ul.queue{list-style:none;padding:0;margin:.8rem 0}ul.queue li{padding:.7rem;border:1px solid #c7c5b9;border-radius:.6rem;margin:.5rem 0;background:#fff}ul.queue li p{margin:.2rem 0}figure{margin:.8rem 0}figure img{max-width:100%;height:auto;border-radius:.4rem}figcaption{font-size:.95rem}</style></head><body><main><p>PITTECH OPERATOR REVIEW</p><h1>Review community reports and content</h1><p>Opening this page changes nothing. Queue loads are read-only; only the decision buttons below send a review. Your operator token stays in this page’s memory and is never saved.</p><section id="tokenSection"><h2>1. Operator token</h2><label>Paste your operator token<input id="token" type="password" autocomplete="off" maxlength="200"></label><button id="clearToken" type="button" class="secondary">Clear token</button></section><section><h2>2. Review queues</h2><p><button id="loadContent" type="button">Load content queue</button><button id="loadProfiles" type="button">Load profile queue</button><button id="loadReports" type="button">Load report queue</button></p><h3>Content</h3><ul id="contentList" class="queue"></ul><button id="moreContent" type="button" class="secondary" hidden>Load more content</button><h3>Profiles</h3><ul id="profileList" class="queue"></ul><button id="moreProfiles" type="button" class="secondary" hidden>Load more profiles</button><h3>Reports</h3><ul id="reportList" class="queue"></ul><button id="moreReports" type="button" class="secondary" hidden>Load more reports</button></section><section id="detail" hidden><h2>3. Selected publication</h2><h3 id="dTitle"></h3><p id="dMeta"></p><div id="dBody"></div><div id="dAssets"></div><h3>Content decision</h3><label>Item ID<input id="cItemId" type="text" autocomplete="off" maxlength="36"></label><label>Revision ID<input id="cRevisionId" type="text" autocomplete="off" maxlength="36"></label><label>Decision<select id="cAction"><option value="approve">Approve</option><option value="reject">Reject</option><option value="takedown">Takedown</option></select></label><label>Moderator note<input id="cNote" type="text" autocomplete="off" maxlength="2000"></label><label><input id="cReviewed" type="checkbox">I read the full authored text</label><label>Reviewed asset IDs (comma separated)<input id="cReviewedIds" type="text" autocomplete="off" maxlength="8000"></label><label>Violating asset IDs (comma separated)<input id="cViolatingIds" type="text" autocomplete="off" maxlength="8000"></label><button id="decideContent" type="button">Send content decision</button></section><section><h2>4. Profile decision</h2><label>Review ID<input id="pReviewId" type="text" autocomplete="off" maxlength="36"></label><label>Decision<select id="pAction"><option value="approve">Approve</option><option value="reject">Reject</option></select></label><label>Moderator note<input id="pNote" type="text" autocomplete="off" maxlength="2000"></label><label><input id="pReviewed" type="checkbox">I read the full profile text</label><button id="decideProfile" type="button">Send profile decision</button></section><section><h2>5. Publisher suspension</h2><label>Publisher alias<input id="sAlias" type="text" autocomplete="off" maxlength="36"></label><label><input id="sSuspended" type="checkbox">Suspended</label><label>Moderator note<input id="sNote" type="text" autocomplete="off" maxlength="2000"></label><button id="decidePublisher" type="button">Send publisher decision</button></section><section><h2>6. Report status</h2><label>Report ID<input id="rReportId" type="text" autocomplete="off" maxlength="36"></label><label>Status<select id="rStatus"><option value="reviewing">Reviewing</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select></label><label>Moderator note<input id="rNote" type="text" autocomplete="off" maxlength="2000"></label><button id="decideReport" type="button">Send report update</button></section><p id="message" role="status" aria-live="polite"></p><noscript><p>Operator review needs JavaScript.</p></noscript></main><script nonce="__NONCE__">
+'use strict';
+const $=id=>document.getElementById(id);
+let token='',busy=false;
+const cursors={content:null,profiles:null,reports:null};
+let mediaUrls=[];
+const message=text=>{$('message').textContent=text;};
+function readToken(){token=$('token').value;return token;}
+function parseIds(value){return String(value||'').split(/[\s,]+/).filter(part=>part.length>0);}
+function clear(node){while(node.firstChild)node.removeChild(node.firstChild);}
+function textLine(tag,value){const node=document.createElement(tag);node.textContent=value;return node;}
+function forgetMedia(){for(const url of mediaUrls){try{URL.revokeObjectURL(url);}catch{}}mediaUrls=[];}
+async function api(path,body){
+  const response=await fetch(path,{method:body===undefined?'GET':'POST',credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),Authorization:'Bearer '+token},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  if(!response.ok){let code='';try{code=(((await response.json()).error)||{}).code||'';}catch{/* Plain-text or empty failure; status below is enough. */}throw new Error('Request failed ('+response.status+(code?': '+code:'')+').');}
+  return response.json();
+}
+async function action(fn){if(busy)return;busy=true;document.querySelectorAll('button').forEach(b=>{b.disabled=true;});try{await fn();}catch(error){message(error instanceof Error?error.message:'Please try again.');}finally{busy=false;document.querySelectorAll('button').forEach(b=>{b.disabled=false;});}}
+async function loadQueue(kind,mode){
+  if(!readToken())throw new Error('Paste your operator token first.');
+  const paths={content:'/v1/operator/queue/content',profiles:'/v1/operator/queue/profiles',reports:'/v1/operator/queue/reports'};
+  const lists={content:'contentList',profiles:'profileList',reports:'reportList'};
+  const more={content:'moreContent',profiles:'moreProfiles',reports:'moreReports'};
+  const cursor=mode==='more'?cursors[kind]:null;
+  const result=await api(paths[kind]+(cursor?'?cursor='+encodeURIComponent(cursor):''));
+  if(!result||!Array.isArray(result.items))throw new Error('Queue response is unavailable.');
+  if(mode!=='more')clear($(lists[kind]));
+  for(const item of result.items)$(lists[kind]).appendChild(row(kind,item));
+  cursors[kind]=typeof result.nextCursor==='string'?result.nextCursor:null;
+  $(more[kind]).hidden=cursors[kind]===null;
+  if($(lists[kind]).childElementCount===0)$(lists[kind]).appendChild(textLine('li','No items.'));
+  message('');
+}
+function row(kind,item){
+  const entry=document.createElement('li'),summary=document.createElement('p'),open=document.createElement('button');
+  open.type='button';
+  if(kind==='content'){summary.textContent=(item.title||'(untitled)')+' — '+(item.reason||'review');open.textContent='Open';open.addEventListener('click',()=>action(()=>openItem(item.itemId)));}
+  else if(kind==='profiles'){summary.textContent=(item.displayName||item.handle||'(profile)')+' — '+(item.isPublic?'public':'private');open.textContent='Select';open.addEventListener('click',()=>{$('pReviewId').value=item.id||'';message('Profile review selected.');});}
+  else{summary.textContent=(item.kind||'report')+' — '+(item.reason||'reported')+' ('+(item.state||'open')+')';open.textContent='Select';open.addEventListener('click',()=>{$('rReportId').value=item.id||'';message('Report selected.');});}
+  entry.appendChild(summary);entry.appendChild(open);return entry;
+}
+async function openItem(itemId){
+  if(!readToken())throw new Error('Paste your operator token first.');
+  const result=await api('/v1/operator/items/'+encodeURIComponent(itemId));
+  if(!result||!result.payload||!Array.isArray(result.payload.recipes))throw new Error('Publication response is unavailable.');
+  forgetMedia();clear($('dBody'));clear($('dAssets'));
+  $('detail').hidden=false;
+  $('dTitle').textContent=result.payload.title||'(untitled)';
+  $('dMeta').textContent='Kind: '+(result.payload.kind||'unknown')+' · Reason: see queue · Alias: '+(result.publisherAlias||'withheld')+' · Revision: '+(result.revisionId||'');
+  for(const recipe of result.payload.recipes){
+    $('dBody').appendChild(textLine('h4',recipe.title||'(dish)'));
+    if(recipe.description)$('dBody').appendChild(textLine('p',recipe.description));
+    for(const ingredient of recipe.ingredients||[])$('dBody').appendChild(textLine('p','Ingredient: '+(ingredient.name||'')+' '+(ingredient.amount||'')));
+    for(const step of recipe.instructions||[])$('dBody').appendChild(textLine('p','Step: '+(step.title||'')+(step.details?' — '+step.details:'')));
+  }
+  for(const asset of result.assets||[]){
+    const media=await fetch(asset.url,{credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+token}});
+    if(!media.ok)throw new Error('Media fetch failed ('+media.status+').');
+    const url=URL.createObjectURL(await media.blob());mediaUrls.push(url);
+    const frame=document.createElement('figure'),img=document.createElement('img');
+    img.src=url;img.alt='Publication asset under review';
+    frame.appendChild(img);frame.appendChild(textLine('figcaption',asset.caption||asset.id||'asset'));
+    $('dAssets').appendChild(frame);
+  }
+  $('cItemId').value=result.itemId||'';$('cRevisionId').value=result.revisionId||'';
+  message('');
+}
+$('clearToken').addEventListener('click',()=>{token='';$('token').value='';message('Token cleared from this page.');});
+$('loadContent').addEventListener('click',()=>action(()=>loadQueue('content','reload')));
+$('loadProfiles').addEventListener('click',()=>action(()=>loadQueue('profiles','reload')));
+$('loadReports').addEventListener('click',()=>action(()=>loadQueue('reports','reload')));
+$('moreContent').addEventListener('click',()=>action(()=>loadQueue('content','more')));
+$('moreProfiles').addEventListener('click',()=>action(()=>loadQueue('profiles','more')));
+$('moreReports').addEventListener('click',()=>action(()=>loadQueue('reports','more')));
+$('decideContent').addEventListener('click',()=>action(async()=>{if(!readToken())throw new Error('Paste your operator token first.');await api('/v1/operator/content',{operationId:crypto.randomUUID(),itemId:$('cItemId').value,revisionId:$('cRevisionId').value,action:$('cAction').value,note:$('cNote').value,reviewedText:$('cReviewed').checked,reviewedAssetIds:parseIds($('cReviewedIds').value),violatingAssetIds:parseIds($('cViolatingIds').value)});message('Content decision recorded.');await loadQueue('content','reload');}));
+$('decideProfile').addEventListener('click',()=>action(async()=>{if(!readToken())throw new Error('Paste your operator token first.');await api('/v1/operator/profiles',{operationId:crypto.randomUUID(),reviewId:$('pReviewId').value,action:$('pAction').value,note:$('pNote').value,reviewedText:$('pReviewed').checked});message('Profile decision recorded.');await loadQueue('profiles','reload');}));
+$('decidePublisher').addEventListener('click',()=>action(async()=>{if(!readToken())throw new Error('Paste your operator token first.');await api('/v1/operator/publishers',{operationId:crypto.randomUUID(),alias:$('sAlias').value,suspended:$('sSuspended').checked,note:$('sNote').value});message('Publisher decision recorded.');}));
+$('decideReport').addEventListener('click',()=>action(async()=>{if(!readToken())throw new Error('Paste your operator token first.');await api('/v1/operator/reports',{operationId:crypto.randomUUID(),reportId:$('rReportId').value,status:$('rStatus').value,note:$('rNote').value});message('Report update recorded.');await loadQueue('reports','reload');}));
+</script></body></html>
