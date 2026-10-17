@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pittech.app/contracts/cook-pack-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "enum": [
+        "recipe",
+        "collection",
+        "cook"
+      ]
+    },
+    "recipeRevisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "maxItems": 20
+    },
+    "dishIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "maxItems": 20
+    },
+    "includedStory": {
+      "type": "boolean"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "revisionId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "displayName": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "removed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "itemId",
+            "revisionId",
+            "removed"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contractVersion",
+    "id",
+    "kind",
+    "recipeRevisionIds",
+    "dishIds",
+    "includedStory",
+    "source"
+  ]
+}

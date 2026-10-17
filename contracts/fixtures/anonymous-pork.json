@@ -1,0 +1,83 @@
+{
+  "contractVersion": 1,
+  "kind": "recipe",
+  "identityMode": "anonymous",
+  "title": "Oak-smoked pork shoulder",
+  "recipes": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "revisionId": "00000000-0000-4000-8000-000000000002",
+      "title": "Oak-smoked pork shoulder",
+      "description": "Synthetic fixture for a sparse, photo-free cook.",
+      "foodType": "Pork",
+      "cut": "Shoulder",
+      "weightGrams": 3855,
+      "method": "Smoke",
+      "ingredients": [
+        {
+          "name": "Salt and pepper",
+          "amount": "To taste"
+        }
+      ],
+      "instructions": [
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "title": "Check bark before wrapping",
+          "details": "Adjust to your own cook.",
+          "action": "wrap",
+          "suggestedOffsetMillis": 10800000
+        }
+      ],
+      "tags": [
+        "low-and-slow"
+      ],
+      "story": {
+        "attemptId": "00000000-0000-4000-8000-000000000004",
+        "foodOnOffsetMillis": 0,
+        "foodOffOffsetMillis": 27600000,
+        "channels": [
+          {
+            "id": "food-1",
+            "role": "food",
+            "label": "Pork"
+          }
+        ],
+        "measurements": [
+          {
+            "offsetMillis": 0,
+            "channelId": "food-1",
+            "role": "food",
+            "valueCelsius": 8,
+            "quality": "manual"
+          },
+          {
+            "offsetMillis": 12000000,
+            "channelId": "food-1",
+            "role": "food",
+            "valueCelsius": 72.2,
+            "quality": "manual"
+          }
+        ],
+        "milestones": [
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "offsetMillis": 12000000,
+            "action": "wrap",
+            "text": "Wrapped in paper"
+          }
+        ],
+        "verdict": {
+          "rating": null,
+          "cookAgain": null,
+          "notes": ""
+        },
+        "gaps": []
+      },
+      "assets": [],
+      "source": null
+    }
+  ],
+  "source": null,
+  "measuredAttemptId": null,
+  "heroAssetId": null
+}
