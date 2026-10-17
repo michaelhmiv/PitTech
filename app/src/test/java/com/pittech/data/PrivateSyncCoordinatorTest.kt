@@ -113,7 +113,7 @@ class PrivateSyncCoordinatorTest {
         }
     }
 
-    private fun coordinator(store: PrivateSyncStorage = PrivateSyncMemoryStore(), session: FakeSession = FakeSession(userA), api: FakeApi = FakeApi(), library: FakeLibrary, scope: CoroutineScope) =
+    private fun coordinator(store: PrivateSyncStorage = PrivateSyncMemoryStore(), session: FakeSession = FakeSession(userA), api: PrivateSyncAPI = FakeApi(), library: FakeLibrary, scope: CoroutineScope) =
         PrivateSyncCoordinator(store, session, scope, api, library, projection(), enabled = true, now = { 1_700_000_000_000L })
 
     private fun eventRow(root: JSONObject, id: String): JSONObject? {

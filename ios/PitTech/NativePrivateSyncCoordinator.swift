@@ -117,12 +117,12 @@ private struct NativeSyncAuthLost: Error {}
         let staging = try store.stagingDirectory()
         let file = staging.appendingPathComponent(assetId + ".download")
         do {
+            defer { try? FileManager.default.removeItem(at: file) }
             try await authorized(user) { try await api.downloadPhoto(assetId: assetId, to: file, access: $0) }
             let bytes = try Data(contentsOf: file)
             guard (1...NativePrivateSyncProtocol.maxPhotoBytes).contains(bytes.count) else { throw NativeSyncError.invalid }
             return bytes
         } catch is NativePrivateSyncHttpError { return nil } catch is URLError { return nil } catch is CocoaError { return nil }
-        finally { try? FileManager.default.removeItem(at: file) }
     }
 
     private func mimeOf(_ payload: [String: JSONValue]) -> String {
@@ -137,15 +137,15 @@ private struct NativeSyncAuthLost: Error {}
         let device = try store.deviceId()
         var state = try store.load(user)
         let archive: JSONValue
-        do { archive = try library.archive() } catch { fail(user, state, outcome: "retry", message: "Private sync needs a retry. Your local journal is unchanged."); return }
+        do { archive = try library.archive() } catch { fail(user: user, state: state, outcome: "retry", message: "Private sync needs a retry. Your local journal is unchanged."); return }
         do { state = try await ensureRegistry(user: user, state: state, archive: archive) }
-        catch is URLError { fail(user, state, outcome: "waiting", message: "Waiting for connection. Photo uploads resume where they stopped."); return }
-        catch { fail(user, state, outcome: "retry", message: "Private sync needs a retry."); return }
+        catch is URLError { fail(user: user, state: state, outcome: "waiting", message: "Waiting for connection. Photo uploads resume where they stopped."); return }
+        catch { fail(user: user, state: state, outcome: "retry", message: "Private sync needs a retry."); return }
         var assets = Dictionary(uniqueKeysWithValues: state.photos.map { ($0.key, $0.value.assetId) })
         var projected: [NativePrivateProjectedRecord]
         do { projected = try projection.project(archive, assets: assets) } catch {
             // A library that fails projection fails the attempt. Nothing uploads; nothing changes locally.
-            fail(user, state, outcome: "retry", message: "Some saved information cannot be synced safely yet. Your journal is unchanged."); return
+            fail(user: user, state: state, outcome: "retry", message: "Some saved information cannot be synced safely yet. Your journal is unchanged."); return
         }
         var local = try NativePrivateSyncProtocol.stampLocal(projected, base: state.base, deviceId: device, counter: state.maxCounter)
         // Every mutation advances the logical counter beyond observed counters, including on
@@ -160,7 +160,7 @@ private struct NativeSyncAuthLost: Error {}
                     case .acked, .failed: return
                     case .conflict:
                         attempts += 1
-                        guard attempts < 3 else { fail(user: user, (try? store.load(user)) ?? state, outcome: "retry", message: "Another device keeps changing the backup. Retry shortly."); return }
+                        guard attempts < 3 else { fail(user: user, state: (try? store.load(user)) ?? state, outcome: "retry", message: "Another device keeps changing the backup. Retry shortly."); return }
                         guard let refetched = try await fetch(user: user, state: (try? store.load(user)) ?? state) else { return }
                         fetched = refetched; state = (try? store.load(user)) ?? state
                         continue
@@ -176,7 +176,7 @@ private struct NativeSyncAuthLost: Error {}
                 case .acked, .failed: return
                 case .conflict:
                     attempts += 1
-                    guard attempts < 3 else { fail(user: user, (try? store.load(user)) ?? state, outcome: "retry", message: "Another device keeps changing the backup. Retry shortly."); return }
+                    guard attempts < 3 else { fail(user: user, state: (try? store.load(user)) ?? state, outcome: "retry", message: "Another device keeps changing the backup. Retry shortly."); return }
                     guard let refetched = try await fetch(user: user, state: (try? store.load(user)) ?? state) else { return }
                     fetched = refetched; state = (try? store.load(user)) ?? state
                     continue
@@ -212,10 +212,10 @@ private struct NativeSyncAuthLost: Error {}
             case .conflict: break
             }
             attempts += 1
-            guard attempts < 3 else { fail(user: user, (try? store.load(user)) ?? state, outcome: "retry", message: "Another device keeps changing the backup. Retry shortly."); return }
+            guard attempts < 3 else { fail(user: user, state: (try? store.load(user)) ?? state, outcome: "retry", message: "Another device keeps changing the backup. Retry shortly."); return }
             // 409 with a moved server version: fetch, merge and retry with a fresh identity.
             guard let refetched = try await fetch(user: user, state: (try? store.load(user)) ?? state), refetched.version >= version else {
-                fail(user: user, state, outcome: "retry", message: "Private sync needs a retry. Your local journal is unchanged."); return
+                fail(user: user, state: state, outcome: "retry", message: "Private sync needs a retry. Your local journal is unchanged."); return
             }
             fetched = refetched
             state = (try? store.load(user)) ?? state
@@ -253,6 +253,9 @@ private struct NativeSyncAuthLost: Error {}
     }
 
     private func applyMerged(user: String, state: NativePrivateSyncState, merged: [NativeSyncRecord], build: JSONValue, assets: [String: String]) async throws -> Bool {
+        guard let projection else {
+            fail(user: user, state: state, outcome: "retry", message: "The merged backup could not be applied safely. Your journal is unchanged."); return false
+        }
         let old = Dictionary(uniqueKeysWithValues: state.base.map { ($0.key, $0) })
         var upserts: [NativeSyncUpsert] = [], deletes: [NativeSyncDelete] = []
         for row in merged {
@@ -308,13 +311,13 @@ private struct NativeSyncAuthLost: Error {}
         let staging = try store.stagingDirectory()
         let file = staging.appendingPathComponent(assetId + ".download")
         do {
+            defer { try? FileManager.default.removeItem(at: file) }
             try await authorized(user) { try await api.downloadPhoto(assetId: assetId, to: file, access: $0) }
             let bytes = try Data(contentsOf: file)
             guard (1...NativePrivateSyncProtocol.maxPhotoBytes).contains(bytes.count) else { throw NativeSyncError.invalid }
             downloadCache[assetId] = bytes
             return bytes
         } catch is NativePrivateSyncHttpError { return nil } catch is URLError { return nil } catch is CocoaError { return nil }
-        finally { try? FileManager.default.removeItem(at: file) }
     }
 
     /** Mint stable asset identities for local photos and upload every incomplete one with
