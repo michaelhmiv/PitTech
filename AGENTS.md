@@ -117,6 +117,21 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
+- Native public archive builders export selected sharing drafts only. Saved public
+  stories retain their public-only gap/quality/verdict contract; edited instructions
+  never replace frozen measured facts. Both native writers emit CI fixtures.
+- Owner editing downloads require authentication and an exact revision. Private
+  account-bound edit context preserves public identities/source credit without
+  entering exports. Recorded facts stay frozen; stale owner drafts must reopen
+  the current revision. See `docs/online/12-publishing.md`.
+- Public publication/fork writes require explicit versioned public-copy consent.
+  Acknowledgments stay in the private operation/account domain, never public
+  archives. Source-update review is read-only and active meals remain pinned.
+- Public writes persist the exact selected body and operation before network access,
+  retry under the initiating account only, and retain ambiguous outcomes. Named
+  credit and public cookbook visibility require separate explicit previews.
+- Public recipe/profile links navigate only; never authenticate or import on open.
+  Public profile visibility is checked live; see `docs/online/12-publishing.md`.
 - Signed-out discovery uses bounded public-only caches and exact-revision Cook Pack
   previews. Saved recipes pin public credit and mark relative-only story timing;
   see `docs/online/11-discovery.md`. Never display that coordinate origin as a

@@ -20,6 +20,10 @@ import Foundation
         }
     }
     static func make() -> NativeAccountCoordinator {
+        if NativePublicationUITestSupport.active {
+            let vault = Memory(); vault.value.session = NativeAccountSession(accessToken: String(repeating: "A", count: 43), refreshToken: String(repeating: "A", count: 43), accessExpiresAt: "2100-01-01T00:00:00.000Z", sessionExpiresAt: "2100-02-01T00:00:00.000Z", userId: "12345678-1234-4234-8234-123456789abc")
+            return NativeAccountCoordinator(enabled: true, vault: vault, api: API())
+        }
         if CommandLine.arguments.contains("--account-ui-test") { return NativeAccountCoordinator(enabled: true, vault: Memory(), api: API()) }
         return NativeAccountCoordinator()
     }

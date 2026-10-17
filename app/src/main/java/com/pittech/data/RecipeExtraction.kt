@@ -56,7 +56,14 @@ object RecipeExtraction {
     }
     fun mergeAttempt(previous: RecipeSnapshot, attempt: RecipeSnapshot): RecipeSnapshot = attempt.copy(
         name = previous.name, description = previous.description, tags = previous.tags,
-        dish = attempt.dish.copy(preparationItems = attempt.dish.preparationItems.ifEmpty { previous.dish.preparationItems },
+        publicSource = previous.publicSource,
+        dish = attempt.dish.copy(preparationItems = attempt.dish.preparationItems.ifEmpty { previous.dish.preparationItems }.map { recorded ->
+            // The cook table stores numeric quantities only. Preserve an inherited free-text
+            // recipe quantity (for example “To taste”) when no new quantity was recorded.
+            val inherited = previous.dish.preparationItems.singleOrNull { it.name == recorded.name && it.stage == recorded.stage }
+            if (recorded.amountText.isBlank() && recorded.amountUnit == "count" && inherited?.amountText?.isBlank() == true)
+                recorded.copy(amountUnit = inherited.amountUnit) else recorded
+        },
             prepNotes = attempt.dish.prepNotes.ifBlank { previous.dish.prepNotes }),
         instructions = mergeInstructions(previous.instructions, attempt.instructions),
         resultNotes = attempt.resultNotes.ifBlank { previous.resultNotes },

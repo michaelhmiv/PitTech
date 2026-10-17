@@ -1,0 +1,90 @@
+{
+  "snapshot": {
+    "version": 1,
+    "name": "Pork",
+    "description": "My saved copy",
+    "tags": [],
+    "draft": {
+      "title": "Pork",
+      "dishes": [
+        {
+          "name": "Pork",
+          "foodType": "Pork",
+          "cut": "",
+          "weight": "",
+          "weightUnit": "lb",
+          "ingredients": [
+            {
+              "name": "Salt",
+              "stage": "seasoning",
+              "brand": "",
+              "amount": "2",
+              "unit": "tsp"
+            }
+          ]
+        }
+      ]
+    },
+    "instructions": [
+      {
+        "id": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+        "title": "Wrap",
+        "details": "Use paper",
+        "method": null,
+        "action": "wrap",
+        "offsetMillis": 600000,
+        "durationMillis": null,
+        "sourceEventId": null
+      },
+      {
+        "id": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb",
+        "title": "Finish",
+        "details": "Rest",
+        "method": null,
+        "action": "remove",
+        "offsetMillis": 1200000,
+        "durationMillis": null,
+        "sourceEventId": null
+      }
+    ],
+    "observations": [],
+    "targets": [],
+    "resultNotes": "",
+    "rating": null,
+    "smokingAnchorUtcMillis": null,
+    "preferredPitTemperatureF": null,
+    "servings": "",
+    "cookAgain": null,
+    "publicSource": null
+  },
+  "shared": {
+    "ingredients": [
+      {
+        "name": "Salt",
+        "amount": "2 tsp"
+      }
+    ],
+    "instructions": [
+      {
+        "id": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb",
+        "title": "Finish",
+        "details": "Rest",
+        "method": null,
+        "action": "remove",
+        "suggestedOffsetMillis": 1200000
+      },
+      {
+        "id": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+        "title": "Wrap",
+        "details": "Use paper",
+        "method": null,
+        "action": "wrap",
+        "suggestedOffsetMillis": 600000
+      }
+    ]
+  },
+  "expectedChanged": [
+    false,
+    true
+  ]
+}

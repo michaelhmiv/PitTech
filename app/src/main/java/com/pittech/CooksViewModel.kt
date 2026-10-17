@@ -56,6 +56,7 @@ class CooksViewModel(
             cache = com.pittech.data.PublicCache(context, "test-" + java.util.UUID.randomUUID().toString()))
     }
     internal val account = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope)
+    internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing
     internal val relay = com.pittech.data.RelayManager(context, viewModelScope, prepare = { id, history, file ->

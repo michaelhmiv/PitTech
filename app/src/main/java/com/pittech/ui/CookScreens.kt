@@ -135,8 +135,12 @@ fun PitTechApp(
     val restoredPreferences by viewModel.restoredPreferences.collectAsStateWithLifecycle()
     val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
+    val publicLinkSequence by viewModel.publicDiscovery.linkSequence.collectAsStateWithLifecycle()
+    LaunchedEffect(publicLinkSequence) { if(publicLinkSequence>0)selectedSection=MainSection.DISCOVER.name }
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var sharedCodes by rememberSaveable { mutableStateOf(false) }
+    var myCookbook by rememberSaveable { mutableStateOf(false) }
+    if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
     AccountDialog(viewModel.account)
     if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
@@ -304,7 +308,7 @@ fun PitTechApp(
             MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SavedRecipesLibrary(viewModel, standalone = true)
             }
-            MainSection.DISCOVER -> if (viewModel.publicDiscovery.enabled) PublicDiscoveryScreen(viewModel.publicDiscovery, Modifier.padding(padding), temperatureUnit) else DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
+            MainSection.DISCOVER -> if (viewModel.publicDiscovery.enabled) PublicDiscoveryScreen(viewModel.publicDiscovery, Modifier.padding(padding), temperatureUnit, viewModel.account, viewModel.publicationWriter) else DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
             MainSection.INSIGHTS -> InsightsScreen(
                 data = insights,
                 onOpenCook = viewModel::openCook,
@@ -343,7 +347,7 @@ fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
-            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null)
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null)
             }
         }
     }

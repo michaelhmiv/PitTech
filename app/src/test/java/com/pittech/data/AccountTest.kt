@@ -62,6 +62,13 @@ class AccountTest {
         val values=awaitAll(async { restarted.access() },async { restarted.access() })
         assertEquals(values[0],values[1]); assertEquals(2,calls); assertNull(memory.value.refreshOperation)
     }
+    @Test fun forcedRefreshReplacesAnOtherwiseUnexpiredAccessCredential() = runBlocking {
+        val memory=Memory(AccountState(session=session())); var calls=0
+        val account=AccountManager(memory,this,AccountAPI { path,_,_-> calls++; assertEquals("/v1/auth/refresh",path); session(rotated=true).json() },true)
+        assertEquals(token,account.access()); assertEquals(0,calls)
+        val refreshed=account.access(true); assertNotEquals(token,refreshed); assertEquals(1,calls)
+        assertEquals(refreshed,account.access()); assertEquals(1,calls)
+    }
     @Test fun rejectedRefreshClearsTheSessionButOfflineRefreshRetainsItsRetry() = runBlocking {
         val memory=Memory(AccountState(session=session(true)))
         val manager=AccountManager(memory,this,AccountAPI { _,_,_ -> throw AccountFailure(401) },true)

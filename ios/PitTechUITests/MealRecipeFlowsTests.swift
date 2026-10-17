@@ -20,7 +20,7 @@ final class MealRecipeFlowsTests: XCTestCase {
                 start.press(forDuration: 0.01, thenDragTo: end)
                 continue
             }
-            if app.scrollViews["relay-import-content"].exists, let navigation {
+            if (app.scrollViews["relay-import-content"].exists || app.scrollViews["publication-content"].exists || app.scrollViews["cookbook-content"].exists || app.scrollViews["sharing-draft-content"].exists || app.scrollViews["source-review-content"].exists), let navigation {
                 // The modal scroll view can also report an infinite AX frame.
                 // Its finite navigation bar anchors an ordinary content-gutter swipe.
                 let top = navigation.frame.maxY + 12
@@ -72,7 +72,62 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertLessThanOrEqual(element.frame.maxY, log.frame.minY - 20)
         }
     }
+    private func setSwitch(_ element: XCUIElement, on: Bool, app: XCUIApplication) {
+        let expected = on ? "1" : "0"
+        reveal(element, app: app)
+        for _ in 0..<2 {
+            if element.value as? String == expected { return }
+            // SwiftUI exposes both a row and its contained UISwitch. Tap the
+            // finite control, then verify state before any conditional retry.
+            let control = app.switches.allElementsBoundByIndex.first {
+                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 &&
+                element.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) && $0.isHittable
+            } ?? element
+            control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", expected), object: element)
+            if XCTWaiter.wait(for: [changed], timeout: 3) == .completed { return }
+            reveal(element, app: app)
+        }
+        XCTAssertEqual(element.value as? String, expected)
+    }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testSelectedPublicationPreviewAndCookbookChangesRequireSeparateConfirmationsAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--publishing-ui-test"] + (large ? ["--screenshot-large-text"] : []); app.launch()
+            let open = app.buttons["sharing-publish"]; reveal(open, app: app); open.tap()
+            let prepare = app.buttons["publication-prepare"]; reveal(prepare, app: app); prepare.tap()
+            XCTAssertTrue(app.staticTexts["publication-preview-title"].waitForExistence(timeout: 15))
+            let confirm = app.buttons["publication-confirm"]; reveal(confirm, app: app); XCTAssertFalse(confirm.isEnabled)
+            capture(large ? "Native publication preview large text" : "Native publication preview")
+            let reviewed = app.switches["publication-reviewed"]; reveal(reviewed, app: app); reviewed.tap()
+            reveal(confirm, app: app); XCTAssertTrue(confirm.isEnabled); confirm.tap()
+            XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15)); capture(large ? "Native publication complete large text" : "Native publication complete")
+            app.buttons["publication-done"].tap()
+            reveal(open, app: app); open.tap(); reveal(prepare, app: app); prepare.tap()
+            reveal(confirm, app: app); XCTAssertEqual(confirm.label, "Publish this update"); XCTAssertFalse(confirm.isEnabled)
+            reveal(reviewed, app: app); reviewed.tap(); reveal(confirm, app: app); confirm.tap()
+            XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15)); app.buttons["publication-done"].tap()
+            let cookbook = app.buttons["publication-test-cookbook"]; reveal(cookbook, app: app); cookbook.tap()
+            let name = app.textFields["cookbook-name"]; reveal(name, app: app); XCTAssertTrue(name.waitForExistence(timeout: 15))
+            let publicToggle = app.switches["cookbook-public"]; reveal(publicToggle, app: app); publicToggle.tap()
+            let preview = app.buttons["cookbook-preview"]; reveal(preview, app: app); preview.tap()
+            let save = app.buttons["cookbook-save"]; reveal(save, app: app); capture(large ? "Native cookbook opt-in preview large text" : "Native cookbook opt-in preview"); save.tap()
+            let revision = app.staticTexts["Public · revision 2 · anonymous"]; reveal(revision, app: app); XCTAssertTrue(revision.waitForExistence(timeout: 15))
+            let remove = app.buttons["Remove from public access"]; reveal(remove, app: app); remove.tap()
+            let removeConfirm = app.buttons.matching(identifier: "cookbook-unpublish-confirm").firstMatch; XCTAssertTrue(removeConfirm.waitForExistence(timeout: 10)); removeConfirm.tap()
+            let removed = app.staticTexts["Removed from public access"]; reveal(removed, app: app); XCTAssertTrue(removed.waitForExistence(timeout: 15))
+            let edit = app.buttons["cookbook-edit-dddddddd-dddd-4ddd-dddd-dddddddddddd"]; reveal(edit, app: app); edit.tap()
+            let createDraft = app.buttons["cookbook-create-editing-draft"]; reveal(createDraft, app: app)
+            capture(large ? "Native owner editing preview large text" : "Native owner editing preview"); createDraft.tap()
+            let newTitle = app.textFields["sharing-title"]; reveal(newTitle, app: app); XCTAssertTrue(newTitle.waitForExistence(timeout: 15))
+            reveal(open, app: app); open.tap(); reveal(prepare, app: app); prepare.tap()
+            reveal(confirm, app: app); XCTAssertEqual(confirm.label, "Publish this update"); XCTAssertFalse(confirm.isEnabled)
+            capture(large ? "Native owner update preview large text" : "Native owner update preview")
+            reveal(reviewed, app: app); reviewed.tap(); reveal(confirm, app: app); confirm.tap()
+            XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15))
+            app.terminate()
+        }
+    }
     func testSignedOutDiscoverySavesPrivateCopiesAndStartsANewMealAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication();app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--discovery-ui-test"] + (large ? ["--screenshot-large-text"] : []);app.launch()
@@ -84,6 +139,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
             app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
+            app.staticTexts["Oak-smoked pork shoulder"].firstMatch.tap()
+            let review = app.buttons["source-review-open"]; reveal(review, app: app); review.tap()
+            let check = app.buttons["source-review-check"]; reveal(check, app: app); check.tap()
+            let member = app.buttons["source-review-member-0"]; reveal(member, app: app); member.tap()
+            let unchanged = app.staticTexts["Ingredients · unchanged"]; reveal(unchanged, app: app); XCTAssertTrue(unchanged.waitForExistence(timeout: 15))
+            capture(large ? "Native source change review large text" : "Native source change review")
             app.tabBars.buttons["Discover"].tap()
             let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
             let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");start.tap()
@@ -185,14 +246,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
             XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
             let first = choices.firstMatch; reveal(first, app: app)
-            // iOS exposes the labeled Toggle container and the actual UISwitch separately.
-            // Target the small control contained by this selected recipe row.
-            let controls = app.switches.allElementsBoundByIndex.filter {
-                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 && first.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) && $0.isHittable
-            }
-            XCTAssertEqual(controls.count, 1)
-            controls.first!.tap()
-            XCTAssertTrue(NSPredicate(format: "value == %@", "0").evaluate(with: first) || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: first)], timeout: 5) == .completed)
+            setSwitch(first, on: false, app: app)
             let save = app.buttons["pack-save-recipes"]; reveal(save, app: app)
             XCTAssertEqual(save.label, "Save 1 recipe")
             capture(large ? "Native Cook Pack selective preview large text" : "Native Cook Pack selective preview")

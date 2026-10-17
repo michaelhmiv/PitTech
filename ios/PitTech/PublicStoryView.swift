@@ -50,7 +50,7 @@ struct NativePublicStoryView: View {
             }
             if let off = story["foodOffOffsetMillis"]?.numberValue { Text("Recorded Food off · " + time(off)).font(.caption) }
             if let verdict = story["verdict"]?.objectValue {
-                if let rating = verdict["rating"]?.numberValue { Text("Recorded rating · \(rating, specifier: "%.0f") / 5") }
+                if let rating = verdict["rating"]?.numberValue { Text("Recorded rating · \(rating.formatted()) / 5") }
                 if let again = verdict["cookAgain"]?.boolValue { Text(again ? "Would cook again" : "Would change next time") }
                 if let notes = verdict["notes"]?.stringValue, !notes.isEmpty { Text(notes) }
             }

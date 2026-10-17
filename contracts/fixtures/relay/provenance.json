@@ -1,7 +1,7 @@
 {
   "generatedWith": "Node 22.23.3, locked sharp/libvips",
   "verification": "Development generation; backend Actions and native consumers pending",
-  "validatorBlobSHA": "dc3a64ece44c2eaa5ed2958e6fdc6ff98fb01be5",
+  "validatorBlobSHA": "a74ac78e19866b57a165a1e558035e7cba109d1c",
   "lockfileSHA256": "c6eb48b1d999174e7efba1f556367e2d9aa2ce47550433bee05cf9a2d7da6868",
   "fixtures": [
     {

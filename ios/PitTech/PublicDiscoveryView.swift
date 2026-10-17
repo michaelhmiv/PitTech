@@ -7,7 +7,7 @@ struct NativePublicDiscoveryView: View {
     @State private var sort = "liked"
     @State private var initialized = false
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: Binding(get: { community.path }, set: { community.path = $0 })) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Find your next cook").font(.title.bold())
@@ -34,12 +34,15 @@ struct NativePublicDiscoveryView: View {
                     if community.nextCursor != nil { Button("More recipes") { Task { await community.refresh(sort: community.appliedSort, food: community.appliedFood, query: community.appliedQuery, more: true) } }.disabled(community.loading) }
                 }.padding(20)
             }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
-                .navigationDestination(for: String.self) { NativePublicRecipeView(id: $0) }
+                .navigationDestination(for: String.self) { value in
+                    if value.hasPrefix("profile:") { NativePublicProfileView(handle: String(value.dropFirst(8))) } else { NativePublicRecipeView(id: value) }
+                }
                 .task { if !initialized { sort = community.appliedSort; food = community.appliedFood; query = community.appliedQuery; initialized = true }; if community.items.isEmpty { await community.refresh(sort: sort, food: food, query: query) } }
         }
     }
 }
 struct NativePublicRecipeView: View {
+    @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePublicCoordinator.self) private var community
     @Environment(CookStore.self) private var store
     let id: String
@@ -59,6 +62,8 @@ struct NativePublicRecipeView: View {
                     }
                     Text(detail.title).font(.title.bold()).accessibilityIdentifier("public-title")
                     Text("Shared by " + detail.credit.displayName)
+                    if let url = detail.credit.profileUrl, let destination = try? NativePublicLink.destination(url), destination.hasPrefix("profile:") { NavigationLink("View public cookbook", value: destination) }
+                    if account.enabled && community.enabled { NativePublicLikeActions(id: id) }
                     Text("Your saved version stays yours. Publishing a variation is a separate choice.").font(.subheadline).foregroundStyle(.secondary)
                     HStack {
                         Button("Save recipes") { preview(detail, cook: false) }.buttonStyle(.borderedProminent).accessibilityIdentifier("public-save")
@@ -68,6 +73,12 @@ struct NativePublicRecipeView: View {
                     ForEach(detail.recipes.indices, id: \.self) { index in
                         let recipe = detail.recipes[index].objectValue ?? [:]
                         Text(recipe["title"]?.stringValue ?? "Recipe").font(.title2.bold())
+                        if let source = recipe["source"]?.objectValue {
+                            if source["removed"]?.boolValue == true { Text("Based on a removed recipe").font(.subheadline).foregroundStyle(.secondary) }
+                            else if let item = source["itemId"]?.stringValue, UUID(uuidString: item) != nil {
+                                NavigationLink("Based on a recipe shared by " + (source["displayName"]?.stringValue ?? "a PitTech cook"), value: item).font(.subheadline)
+                            }
+                        }
                         Text(recipe["description"]?.stringValue ?? "")
                         if let grams = recipe["weightGrams"]?.numberValue { Text("Recorded weight · \(grams / 1000, specifier: "%.2f") kg") }
                         let ingredients = recipe["ingredients"]?.arrayValue ?? []
@@ -78,7 +89,9 @@ struct NativePublicRecipeView: View {
                         let instructions = recipe["instructions"]?.arrayValue ?? []
                         ForEach(instructions.indices, id: \.self) { step in
                             let row = instructions[step].objectValue ?? [:]
-                            Text(row["title"]?.stringValue ?? "Step").font(.headline); Text(row["details"]?.stringValue ?? "")
+                            Text(row["title"]?.stringValue ?? "Step").font(.headline)
+                            if let method = row["method"]?.stringValue, !method.isEmpty { Text("Method · " + method).font(.subheadline) }
+                            Text(row["details"]?.stringValue ?? "")
                         }
                         if let story = recipe["story"]?.objectValue { NativePublicStoryView(story: story) }
                         let assets = recipe["assets"]?.arrayValue ?? []
@@ -101,9 +114,13 @@ struct NativePublicRecipeView: View {
     private func load() async {
         loading = true; defer { loading = false }
         do {
-            let (value, saved) = try await community.detail(id); detail = value
+            let (value, saved) = try await community.detail(id)
+            let loadedImage = try? await community.image(value)
+            // Present the hero and actions together so a late photo cannot move
+            // the save/cook controls underneath an in-progress tap.
+            try Task.checkCancellation()
+            detail = value; image = loadedImage
             message = saved ? "Showing a saved preview. Connect to check for updates." : nil
-            image = try? await community.image(value)
         } catch { detail = nil; image = nil; message = (error as? NativePublicError)?.localizedDescription ?? "This recipe couldn't be read safely. Try refreshing." }
     }
     private func preview(_ detail: NativePublicDetail, cook: Bool) { task = Task { await community.preview(detail, cook: cook, store: store) } }
@@ -124,7 +141,7 @@ struct NativePublicFixtureAPI: NativePublicAPI {
 @MainActor extension NativePublicCoordinator {
     static func forApp() -> NativePublicCoordinator {
         #if DEBUG
-        if CommandLine.arguments.contains("--discovery-ui-test") { return NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: NativePublicUITestFixture.data), cache: NativePublicCache(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))) }
+        if CommandLine.arguments.contains("--discovery-ui-test") || NativePublicationUITestSupport.active { return NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: NativePublicUITestFixture.data), cache: NativePublicCache(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))) }
         #endif
         return NativePublicCoordinator()
     }

@@ -84,10 +84,11 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         }
     }
     /** Serialized refresh shares the resulting access credential; ambiguous responses keep the same operation UUID. */
-    suspend fun access(): String = mutex.withLock {
+    suspend fun publicationUserId(): String? = mutex.withLock { state.session?.userId }
+    suspend fun access(forceRefresh: Boolean = false): String = mutex.withLock {
         ready(); val session = state.session ?: throw AccountFailure(401)
         if(Instant.parse(session.sessionExpiresAt).toEpochMilli() <= now()) { save(AccountState(logoutToken=session.refreshToken)); publish(); throw AccountFailure(401) }
-        if(state.refreshOperation == null && Instant.parse(session.accessExpiresAt).toEpochMilli() > now()+30000) return@withLock session.accessToken
+        if(!forceRefresh && state.refreshOperation == null && Instant.parse(session.accessExpiresAt).toEpochMilli() > now()+30000) return@withLock session.accessToken
         save(state.copy(refreshOperation=state.refreshOperation ?: UUID.randomUUID().toString()))
         try {
             val rotated = AccountSession.parse(api.call("/v1/auth/refresh",JSONObject().put("refreshToken",session.refreshToken).put("idempotencyId",state.refreshOperation),null))

@@ -1,10 +1,11 @@
+import { PUBLICATION_TERMS_VERSION,type PublicationAcknowledgment } from './publication-terms.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir,mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Pool, PoolClient } from 'pg';
-import { ApiError, digest } from './core.ts';
-import { readZip } from './zip.ts';
+import { ApiError, digest, LIMITS } from './core.ts';
+import { readZip,writeZip } from './zip.ts';
 import { stable } from './pack.ts';
 import { publicCookWorker } from './publication-cook-validation.ts';
 import type { Storage } from './storage.ts';
@@ -54,9 +55,10 @@ export class Publications {
   private async active(c:PoolClient,id:string){
     const row=(await c.query<ItemRow>('SELECT * FROM publications.items WHERE id=$1 AND status=\'active\' FOR SHARE',[id])).rows[0];if(!row)throw missing();return row;
   }
-  private async reserve(user:string,operation:string,hash:string,bytes:number,sha256:string) {
+  private async reserve(user:string,operation:string,hash:string,bytes:number,sha256:string,acknowledgment:PublicationAcknowledgment) {
     return this.tx(async c=>{
       const prior=await this.operation(c,user,operation,hash);if(prior)return {response:prior as Result};
+      if(acknowledgment.version!==PUBLICATION_TERMS_VERSION)throw new ApiError(428,'publication_terms_required');
       await this.lock(c,'publication-budget');
       const old=(await c.query<ObjectRow>('SELECT * FROM publications.objects WHERE owner_id=$1 AND operation_id=$2 FOR UPDATE',[user,operation])).rows[0];
       if(old){if(old.request_hash!==hash||Number(old.bytes)!==bytes)throw retryChanged();if(old.state!=='uploading'||Number(old.lease_until)>this.clock())throw new ApiError(503,'publication_busy');}
@@ -76,10 +78,10 @@ export class Publications {
     });
   }
   /** The same submitted archive/expected revision always recovers the same result. Source display credits never come from the caller. */
-  async publish(user:string,operation:string,validated:ValidatedPublication,file:string,update?:{id:string;base:string},parent?:{id:string;revisionId:string},forkRequestHash?:string):Promise<Result>{
+  async publish(user:string,operation:string,validated:ValidatedPublication,file:string,update?:{id:string;base:string},parent?:{id:string;revisionId:string},forkRequestHash?:string,acknowledgment:PublicationAcknowledgment={}):Promise<Result>{
     if(update&&(!uuid(update.id)||!uuid(update.base))||parent&&(!uuid(parent.id)||!uuid(parent.revisionId)))throw missing();
-    const hash=forkRequestHash??digest(stable({kind:update?'update':'publish',sha256:validated.sha256,payloadHash:digest(stable(validated.payload)),update:update??null,parent:parent??null}));
-    const reservation=await this.reserve(user,operation,hash,validated.bytes,validated.sha256);
+    const hash=forkRequestHash??digest(stable({kind:update?'update':'publish',sha256:validated.sha256,payloadHash:digest(stable(validated.payload)),update:update??null,parent:parent??null,...(acknowledgment.version===undefined?{}:{termsVersion:acknowledgment.version})}));
+    const reservation=await this.reserve(user,operation,hash,validated.bytes,validated.sha256,acknowledgment);
     if(reservation.response)return reservation.response;
     const object=reservation.object!;
     await this.storage.put(object.key,file);
@@ -98,11 +100,18 @@ export class Publications {
         if(!source)return null;
         if(!uuid(source.itemId)||!uuid(source.revisionId)||source.itemId===update?.id)throw new ApiError(422,'invalid_lineage');
         const p=(await c.query<ItemRow>('SELECT * FROM publications.items WHERE id=$1 FOR SHARE',[source.itemId])).rows[0];
-        if(!p||p.status!=='active'){
-          if(old?.itemId===source.itemId&&old.revisionId===source.revisionId)return {itemId:source.itemId,revisionId:source.revisionId,removed:true};
-          throw missing();
+        const retained=old?.itemId===source.itemId&&old.revisionId===source.revisionId;
+        if(!p)throw missing();
+        if(p.status==='taken_down'){
+          if(retained)return {itemId:source.itemId,revisionId:source.revisionId,removed:true};
+          throw new ApiError(403,'publication_under_review');
         }
-        if(p.current_revision_id!==source.revisionId&&!(old?.itemId===source.itemId&&old.revisionId===source.revisionId))throw new ApiError(409,'source_revision_changed');
+        // A saved copy pins its source revision. Later upstream edits never force
+        // the owner to republish newer instructions or discard independently owned media.
+        const pinned=(await c.query<RevisionRow>('SELECT * FROM publications.revisions WHERE id=$1 AND item_id=$2',[source.revisionId,source.itemId])).rows[0];
+        if(!pinned&&p.status!=='purged')throw new ApiError(422,'invalid_lineage');
+        if(parent&&source.itemId===parent.id&&(p.status!=='active'||p.current_revision_id!==parent.revisionId))throw new ApiError(409,'source_revision_changed');
+        if(p.status!=='active')return {itemId:source.itemId,revisionId:source.revisionId,removed:true};
         return {itemId:source.itemId,revisionId:source.revisionId,removed:false};
       };
       payload.source=await validateSource(selectedRoot,previous?.source??null);
@@ -110,31 +119,49 @@ export class Publications {
         const old=previous?.recipes.find(p=>p.id===r.id)?.source??null;
         r.source=await validateSource(r.source??payload.source,old??previous?.source??null);
       }
+      // Bound the complete pinned lineage, including collection members. Reject
+      // an item-level cycle even when immutable revision IDs would terminate it.
+      let frontier=[payload.source,...payload.recipes.map(r=>r.source)].filter(s=>s!==null),depth=0;
+      const seen=new Set<string>();
+      while(frontier.length){
+        if(++depth>32)throw new ApiError(422,'lineage_too_deep');
+        const next:NonNullable<PublicationPayload['source']>[]=[];
+        for(const source of frontier){
+          if(source.itemId===(item?.id??object.id))throw new ApiError(422,'invalid_lineage');
+          const key=source.itemId+':'+source.revisionId;if(seen.has(key))continue;
+          seen.add(key);if(seen.size>200)throw new ApiError(422,'lineage_too_deep');
+          const revision=(await c.query<RevisionRow>('SELECT * FROM publications.revisions WHERE id=$1 AND item_id=$2',[source.revisionId,source.itemId])).rows[0];
+          if(revision)for(const parent of [revision.payload.source,...revision.payload.recipes.map(r=>r.source)])if(parent)next.push(parent);
+        }
+        frontier=next;
+      }
       const id=item?.id??object.id,revisionId=randomUUID();
       const revision=item?Number((await c.query('SELECT max(revision_no) AS n FROM publications.revisions WHERE item_id=$1',[id])).rows[0].n)+1:1;
       if(!item)await c.query('INSERT INTO publications.items VALUES($1,$2,NULL,$3,\'active\',$4,$4)',[id,user,parentId,this.clock()]);
       await c.query('INSERT INTO publications.revisions VALUES($1,$2,$3,$4,$5,$6,$7)',[revisionId,id,revision,object.id,payload.identityMode,payload,this.clock()]);
       await c.query('UPDATE publications.items SET current_revision_id=$2,status=\'active\',updated_at=$3 WHERE id=$1',[id,revisionId,this.clock()]);
       await c.query('UPDATE publications.objects SET state=\'active\' WHERE id=$1',[object.id]);
-      const result={id,revisionId,revision,url:`https://pittech.app/c/${id}`};await this.record(c,user,operation,hash,result);return result;
+      const result={id,revisionId,revision,url:`https://pittech.app/c/${id}`};await this.record(c,user,operation,hash,result);await c.query('INSERT INTO publications.acknowledgments VALUES($1,$2,$3,$4,$5)',[user,operation,revisionId,PUBLICATION_TERMS_VERSION,this.clock()]);return result;
     });
   }
   /** Explicit public fork. Ordinary local Save never calls this endpoint. Stable measured attempt IDs are retained. */
-  async fork(user:string,id:string,operation:string,base:string,identity:unknown){
+  async fork(user:string,id:string,operation:string,base:string,identity:unknown,acknowledgment:PublicationAcknowledgment={}){
     if(!uuid(id)||!uuid(base)||!['named','anonymous'].includes(String(identity)))throw new ApiError(422,'invalid_fork');
-    const hash=digest(stable({kind:'fork',id,base,identity}));
+    const hash=digest(stable({kind:'fork',id,base,identity,...(acknowledgment.version===undefined?{}:{termsVersion:acknowledgment.version})}));
     const prior=await this.tx(c=>this.operation(c,user,operation,hash));if(prior)return prior as Result;
+    if(acknowledgment.version!==PUBLICATION_TERMS_VERSION)throw new ApiError(428,'publication_terms_required');
     const selected=await this.tx(async c=>{const item=await this.active(c,id);if(item.current_revision_id!==base)throw new ApiError(409,'source_revision_changed');
       const revision=(await c.query<RevisionRow>('SELECT * FROM publications.revisions WHERE id=$1',[base])).rows[0];
       const object=(await c.query<ObjectRow>('SELECT * FROM publications.objects WHERE id=$1 AND state=\'active\'',[revision.object_id])).rows[0];if(!object)throw missing();return {payload:structuredClone(revision.payload),key:object.key,sha256:object.sha256};});
-    const bytes=await this.storage.get(selected.key),payload=selected.payload;
-    if(digest(bytes)!==selected.sha256)throw new ApiError(503,'media_unavailable');
+    const stored=await this.storage.get(selected.key),payload=selected.payload;
+    if(digest(stored)!==selected.sha256)throw new ApiError(503,'media_unavailable');
     payload.identityMode=identity as 'named'|'anonymous';payload.source={itemId:id,revisionId:base,removed:false};
     for(const recipe of payload.recipes)recipe.source=payload.source;
+    const files=await readZip(stored,'publication');files.set('publication.json',Buffer.from(stable(payload)));const bytes=writeZip(files);
     const root=join(tmpdir(),'pittech-api-uploads');await mkdir(root,{recursive:true,mode:0o700});
     const directory=await mkdtemp(join(root,'upload-'));
     try{const file=join(directory,'fork.pittech');await writeFile(file,bytes,{mode:0o600,flag:'wx'});
-      return await this.publish(user,operation,{payload,sha256:digest(bytes),bytes:bytes.length},file,undefined,{id,revisionId:base},hash);
+      return await this.publish(user,operation,{payload,sha256:digest(bytes),bytes:bytes.length},file,undefined,{id,revisionId:base},hash,acknowledgment);
     }finally{await rm(directory,{recursive:true,force:true});}
   }
   async unpublish(user:string,id:string,operation:string,base:string){
@@ -220,6 +247,34 @@ export class Publications {
   async myProfile(user:string){
     const row=(await this.pool.query('SELECT handle,display_name,is_public FROM publications.profiles WHERE user_id=$1',[user])).rows[0];
     return {handle:row?.handle??null,displayName:row?.display_name??'',isPublic:row?.is_public??false};
+  }
+  async ownedArchive(user:string,id:string,expected:string){
+    if(!uuid(id)||!uuid(expected))throw new ApiError(400,'revision_required');
+    const select=async(c:PoolClient)=>{const item=await this.owner(c,user,id,expected);if(item.status==='taken_down')throw new ApiError(403,'publication_under_review');return item;};
+    const selected=await this.tx(async c=>{await select(c);
+      const row=(await c.query<ObjectRow&{payload:PublicationPayload}>('SELECT o.*,r.payload FROM publications.revisions r JOIN publications.objects o ON o.id=r.object_id WHERE r.id=$1 AND r.item_id=$2 AND o.state=\'active\'',[expected,id])).rows[0];if(!row)throw missing();return row;});
+    const stored=await this.storage.get(selected.key);
+    if(stored.length>LIMITS.compressed||stored.length!==Number(selected.bytes)||digest(stored)!==selected.sha256)throw new ApiError(503,'publication_unavailable');
+    const files=await readZip(stored,'publication'),payload=selected.payload;
+    // The committed revision owns source attribution. Older direct server forks
+    // can have original-source publication.json bytes in their independent blob.
+    const strip=(source:PublicationPayload['source'])=>source?{itemId:source.itemId,revisionId:source.revisionId,removed:source.removed}:null;
+    payload.source=strip(payload.source);for(const recipe of payload.recipes)recipe.source=strip(recipe.source);
+    const accepted=new Map<string,Buffer>([['publication.json',Buffer.from(stable(payload))]]);
+    if(accepted.get('publication.json')!.length>8*1024**2)throw new ApiError(503,'publication_unavailable');
+    for(const asset of payload.recipes.flatMap(recipe=>recipe.assets)){
+      const bytes=files.get(asset.path);if(!bytes||digest(bytes)!==asset.sha256)throw new ApiError(503,'publication_unavailable');accepted.set(asset.path,bytes);
+    }
+    const bytes=writeZip(accepted);
+    // Ownership, revision and moderation are rechecked after storage and ZIP work.
+    await this.tx(select);return {bytes,sha256:digest(bytes)};
+  }
+
+  async myItem(user:string,id:string){
+    if(!uuid(id))throw missing();
+    const r=(await this.pool.query('SELECT i.id,i.status,r.id AS revision_id,r.revision_no,r.payload->>\'title\' AS title,r.identity_mode FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.id=$1 AND i.author_id=$2 AND i.status<>\'purged\'',[id,user])).rows[0];
+    if(!r)throw missing();
+    return {id:r.id,status:r.status,revisionId:r.revision_id,revision:r.revision_no,title:r.title,identityMode:r.identity_mode};
   }
   async myItems(user:string,cursor?:string){
     if(cursor&&!uuid(cursor))throw new ApiError(400,'invalid_cursor');

@@ -14,7 +14,13 @@ struct PitTechApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                #if DEBUG
+                if NativePublicationUITestSupport.active { NativePublicationUITestHost() } else { ContentView() }
+                #else
+                ContentView()
+                #endif
+            }
                 .environment(store)
                 .environment(relay)
                 .environment(community)
@@ -24,12 +30,14 @@ struct PitTechApp: App {
                 .modifier(ScreenshotTextSize())
                 .onOpenURL { url in
                     if url.isFileURL { Task { await store.receiveArchive(at: url) } }
+                    else if community.receivePublic(url) { }
                     else if url.path == "/auth" { account.receive(url) }
                     else if (try? NativeRelayProtocol.code(url.absoluteString)) != nil { relay.receive(url) }
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     if let url = activity.webpageURL {
-                        if url.path == "/auth" { account.receive(url) }
+                        if community.receivePublic(url) { }
+                        else if url.path == "/auth" { account.receive(url) }
                         else if (try? NativeRelayProtocol.code(url.absoluteString)) != nil { relay.receive(url) }
                     }
                 }

@@ -83,22 +83,33 @@ jobs:
           find build/ios-public/SourcePackages -name Package.resolved -o -name LICENSE -o -name LICENSE.txt > build/ios-public-dependency-evidence.txt
 
       - name: Run native compatibility tests
+        id: native-tests
+        timeout-minutes: 50
         run: |
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
           fixture_started_at=$(date +%s)
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test
+          echo "$fixture_started_at" > build/native-fixture-start
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/native-tests.log
+
+      - name: Collect fresh native writer exports
+        id: portable-fixtures
+        if: always() && steps.native-tests.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          fixture_started_at=$(cat build/native-fixture-start)
           python3 - "$fixture_started_at" <<'PYFIXTURE'
           import pathlib, shutil, sys
           # Xcode may run tests on a clone and shut it down. Read the fixture from its
           # persistent data container instead of querying a booted Simulator.
           root = pathlib.Path.home() / "Library/Developer/CoreSimulator/Devices"
-          candidates = [p for p in root.rglob("pittech-native-recipe-fixture.zip") if p.stat().st_mtime >= int(sys.argv[1])]
-          if not candidates:
-              raise SystemExit("The native writer did not produce a fresh portable fixture.")
           destination = pathlib.Path("build/portable-fixtures")
           destination.mkdir(parents=True, exist_ok=True)
-          shutil.copy2(max(candidates, key=lambda p: p.stat().st_mtime), destination / "pittech-native-recipe-fixture.zip")
+          for name in ["pittech-native-recipe-fixture.zip", "pittech-native-publication.pittech", "pittech-native-owned-update.pittech", "pittech-native-publication-variant.pittech", "pittech-native-publication-collection.pittech", "pittech-native-publication-attempt.pittech"]:
+              candidates = [p for p in root.rglob(name) if p.stat().st_mtime >= int(sys.argv[1])]
+              if not candidates:
+                  raise SystemExit("The native writer did not produce a fresh fixture: " + name)
+              shutil.copy2(max(candidates, key=lambda p: p.stat().st_mtime), destination / name)
           PYFIXTURE
           xcrun simctl shutdown all || true
 
@@ -110,6 +121,11 @@ jobs:
             xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/native-test-summary.json
             xcrun xcresulttool get test-results tests --path build/ios-tests.xcresult > build/native-test-cases.json
             xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
+            # Upload a closed archive, never a live Staging directory that Xcode
+            # can rename while upload-artifact enumerates it after a timeout.
+            ditto -c -k --keepParent build/ios-tests.xcresult build/native-tests.xcresult.zip
+          else
+            echo "The result bundle did not finalize; retaining the test log and fresh writer exports."
           fi
 
       - name: Upload compact native test results
@@ -120,6 +136,7 @@ jobs:
           path: |
             build/native-test-summary.json
             build/native-test-cases.json
+            build/native-tests.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -129,16 +146,26 @@ jobs:
         with:
           name: pittech-native-test-evidence-${{ github.run_number }}
           path: |
-            build/ios-tests.xcresult
+            build/native-tests.log
             build/native-ui-evidence/**
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Upload full native result bundle separately
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pittech-native-result-bundle-${{ github.run_number }}
+          path: build/native-tests.xcresult.zip
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload native portable recipe fixture
+        if: always() && steps.portable-fixtures.outcome == 'success'
         uses: actions/upload-artifact@v6
         with:
           name: pittech-native-recipe-fixture
-          path: build/portable-fixtures/pittech-native-recipe-fixture.zip
+          path: build/portable-fixtures/*
           if-no-files-found: error
           retention-days: 14
 

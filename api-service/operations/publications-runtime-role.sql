@@ -8,5 +8,5 @@ DO $$ BEGIN
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO pittech_publications_runtime',current_database());
 END $$;
 GRANT USAGE ON SCHEMA publications TO pittech_publications_runtime;
-GRANT SELECT,INSERT,UPDATE,DELETE ON publications.profiles,publications.items,publications.objects,publications.revisions,publications.likes,publications.operations,publications.budgets TO pittech_publications_runtime;
+GRANT SELECT,INSERT,UPDATE,DELETE ON publications.profiles,publications.items,publications.objects,publications.revisions,publications.likes,publications.operations,publications.budgets,publications.acknowledgments TO pittech_publications_runtime;
 COMMIT;

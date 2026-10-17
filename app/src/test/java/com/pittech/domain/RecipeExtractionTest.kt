@@ -41,13 +41,24 @@ class RecipeExtractionTest {
     }
     @Test fun anIncompleteAttemptRetainsUnreplacedIngredientsAndInstructions() {
         val original = RecipeSnapshot("Mac", DishDraft("Mac", "Pasta", prepNotes = "Salt pasta water", preparationItems = listOf(IngredientDraft("Gouda", amountText = "4.00", amountUnit = "oz"))),
+            publicSource = PublicRecipeSource("12345678-1234-4234-8234-123456789abc", "23456789-1234-4234-8234-123456789abc", "a PitTech cook"),
             instructions = listOf(RecipeInstruction("boil", "Boil", durationMillis = 480000), RecipeInstruction("sauce", "Make sauce")))
         val current = RecipeSnapshot("Mac again", DishDraft("Mac", "Pasta"), instructions = listOf(RecipeInstruction("new-boil", "Boil", durationMillis = 420000)))
         val merged = RecipeExtraction.mergeAttempt(original, current)
+        assertEquals(original.publicSource, merged.publicSource)
         assertEquals("4.00", merged.dish.preparationItems.single().amountText)
         assertEquals("Salt pasta water", merged.dish.prepNotes)
         assertEquals(420000L, merged.instructions.first().durationMillis)
         assertEquals("Make sauce", merged.instructions.last().title)
         assertTrue(merged.observations.isEmpty())
     }
+    @Test fun inheritedFreeTextQuantitySurvivesNumericOnlyCookStorageButNewQuantitiesWin() {
+        val original=RecipeSnapshot("Pork",DishDraft("Pork","Pork",preparationItems=listOf(IngredientDraft("Salt",amountUnit="To taste"))))
+        val recorded=original.copy(dish=original.dish.copy(preparationItems=listOf(IngredientDraft("Salt",amountUnit="count"))))
+        assertEquals("To taste",RecipeExtraction.mergeAttempt(original,recorded).dish.preparationItems.single().amountUnit)
+        val measured=recorded.copy(dish=recorded.dish.copy(preparationItems=listOf(IngredientDraft("Salt",amountText="2",amountUnit="tsp"))))
+        assertEquals("2",RecipeExtraction.mergeAttempt(original,measured).dish.preparationItems.single().amountText)
+        assertEquals("tsp",RecipeExtraction.mergeAttempt(original,measured).dish.preparationItems.single().amountUnit)
+    }
+
 }

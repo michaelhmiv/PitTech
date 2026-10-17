@@ -14,6 +14,7 @@ import type { Relay } from './relay.ts';
 import { validate } from './validation.ts';
 import { publicationRoute, handlePublication } from './publication-http.ts';
 import type { Publications } from './publications.ts';
+import { publicWebRoute, publicPage } from './publication-web.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
   links?: LinkConfig; auth?: Authentication; publications?: Publications; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
@@ -68,14 +69,21 @@ export function makeServer(relay: Relay, options: Options) {
         else { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
         return;
       }
+      const pageRoute=method==='GET'?publicWebRoute(req.url??''):undefined;
       const publicRoute=publicationRoute(req.url??'',method);
-      if(publicRoute&&options.publications){
-        route=publicRoute;
+      if((publicRoute||pageRoute)&&options.publications){
+        route=publicRoute??pageRoute!;
         if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
         const now=relay.clock(),bucket=Math.floor(now/3600000),category=method==='GET'?'public-read':'public-write';
         const key=category+':'+rateIdentity(options.ipKey,proxyaddr(req,trust),category+':'+bucket);
         if(!await relay.repository.rate(key,method==='GET'?120:60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
-        await handlePublication(req,res,publicRoute,options.publications,options.auth,{root,
+        if(pageRoute){
+          res.setHeader('Content-Type','text/html; charset=utf-8');
+          res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; img-src https://api.pittech.app; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+          res.setHeader('X-Robots-Tag','noindex, nofollow');
+          res.end(await publicPage(req.url!,options.publications,options.links??{appleAppIds:[],androidCertificates:[]}));return;
+        }
+        await handlePublication(req,res,publicRoute!,options.publications,options.auth,{root,
           claimUpload:()=>{if(uploading)return false;uploading=true;return true;},releaseUpload:()=>{uploading=false;}});return;
       }
       const links = options.links ?? { appleAppIds: [], androidCertificates: [] };

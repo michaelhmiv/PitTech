@@ -38,6 +38,18 @@ class SharingRepository(private val database: PitTechDatabase, private val photo
         } catch (failure: Throwable) { copies.forEach { photos.delete(it.relativePath) }; throw failure }
     }
 
+    internal suspend fun saveOwnedPublicationDraft(draft: OwnedPublicationDraft) {
+        require(get(draft.id)==null);SharingDraftCodec.validate(draft.document);val copied=mutableListOf<CompanionPhoto>()
+        try {
+            for(photo in draft.photos) {
+                val path="photos/${photo.id}.jpg";photos.writeImported(path,photo.bytes)
+                copied+=CompanionPhoto(photo.id,draft.id,path,"image/jpeg",photo.caption,draft.document.entries.indexOfFirst { it.id==photo.entryId },photo.entryId)
+            }
+            val now=System.currentTimeMillis()
+            database.withTransaction { require(get(draft.id)==null);dao.put(CompanionRecord(draft.id,SharingDraftCodec.DRAFT,title=draft.document.title,payload=SharingDraftCodec.encode(draft.document),createdAtUtcMillis=now,updatedAtUtcMillis=now));dao.putPhotos(copied) }
+        } catch(e: Throwable) { copied.forEach { photos.delete(it.relativePath) };throw e }
+    }
+
     suspend fun fromMeal(cookId: String, dishIds: Set<String>): String {
         val meal = cooks.observeCookDetail(cookId).first() ?: error("This meal is unavailable.")
         require(dishIds.isNotEmpty() && dishIds.all { id -> meal.dishes.any { it.id == id } }) { "Choose dishes from this meal." }

@@ -1,0 +1,185 @@
+package com.pittech.ui
+
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pittech.CooksViewModel
+import com.pittech.data.*
+import com.pittech.domain.SharingDraftCodec
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable internal fun PublicationDialog(draft: String, viewModel: CooksViewModel, account: AccountManager = viewModel.account, writer: PublicationWriter = viewModel.publicationWriter, onClose: () -> Unit) {
+    val state by account.presentation.collectAsStateWithLifecycle()
+    val scope=rememberCoroutineScope()
+    var prepared by remember { mutableStateOf<PreparedPublication?>(null) }; var previewUser by remember { mutableStateOf<String?>(null) }
+    var identity by remember { mutableStateOf("anonymous") }; var kind by remember { mutableStateOf("recipe") }
+    var updateSummary by remember { mutableStateOf<String?>(null) }
+    var linked by remember { mutableStateOf<PublicationReceipt?>(null) }; var updating by remember { mutableStateOf(true) }
+    var pending by remember { mutableStateOf<PublicationOperation?>(null) }; var reviewed by remember { mutableStateOf(false) }
+    var displayName by remember { mutableStateOf("a PitTech cook") }; var published by remember { mutableStateOf<PublicationReceipt?>(null) }
+    var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
+    fun invalidate() { prepared=null; reviewed=false; previewUser=null; updateSummary=null }
+    suspend fun refreshPending() {
+        pending=writer.pending(); linked=writer.binding(draft)
+        pending?.takeIf { it.draftId==draft && it.contentType=="application/zip" }?.let { op -> val value=withContext(Dispatchers.IO) { pendingPublication(writer.store.verify(op)) }; check(account.publicationUserId()==op.userId); prepared=value }
+    }
+    fun run(action: suspend () -> Unit) {
+        if(busy)return; busy=true; message=null
+        scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. The exact request stays saved."; try { refreshPending() } catch(_: Exception) { } } finally { busy=false } }
+    }
+    LaunchedEffect(state.signedIn) { invalidate(); published=null; try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message } }
+    ModalBottomSheet(onDismissRequest={ if(!busy)onClose() }) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth()) { Text("Publish preview",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.")
+                if(!state.signedIn) {
+                    Text("Sign in to publish. This sharing draft stays on this device, and sign-in won't publish it.")
+                    Button(onClick={ signingIn=true },modifier=Modifier.testTag("publication-sign-in")) { Text("Sign in to continue") }
+                } else if(pending!=null) {
+                    val op=pending!!
+                    Text(if(op.rejected)"This request was rejected" else "An interrupted request is saved",style=MaterialTheme.typography.titleMedium)
+                    Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.")
+                    prepared?.let { PublicationContent(it) }
+                    if(op.draftId==draft && prepared!=null && !op.rejected)Button(onClick={ run { writer.recover(); prepared=null; refreshPending(); message="The saved publication was recovered." } },enabled=!busy,modifier=Modifier.testTag("publication-recover")) { Text("Retry the saved publication") }
+                    if(op.draftId!=draft)Text("Recover the saved account or publication change in My cookbook first.")
+                    if(op.rejected) {
+                        Text("Review the current publication before making a new preview. A rejection did not apply this request.")
+                        TextButton(onClick={ run { withContext(Dispatchers.IO) { writer.store.discardRejected(checkNotNull(account.publicationUserId())) }; prepared=null; refreshPending() } },enabled=!busy) { Text("Discard rejected request") }
+                    }
+                } else if(published!=null) {
+                    Text("Published",style=MaterialTheme.typography.titleLarge,modifier=Modifier.testTag("publication-complete"))
+                    val uri=androidx.compose.ui.platform.LocalUriHandler.current
+                    Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
+                    Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
+                } else {
+                    val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook")
+                    SimpleDropdownField("Publication",kindLabels.getValue(kind),kindLabels.values.toList(),{ label -> kind=kindLabels.entries.first { it.value==label }.key; invalidate() },enabled=!busy)
+                    SimpleDropdownField("Public credit",if(identity=="anonymous")"Anonymous · a PitTech cook" else "My display name",listOf("Anonymous · a PitTech cook","My display name"),{ identity=if(it=="My display name")"named" else "anonymous"; invalidate() },enabled=!busy)
+                    Text(if(identity=="anonymous")"Your profile name and cookbook link won't appear on this publication." else "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.")
+                    if(linked!=null)Row { Checkbox(updating,{ updating=it; invalidate() },enabled=!busy); Text("Update the publication linked to this draft",Modifier.weight(1f)) }
+                    Button(onClick={ run {
+                        invalidate(); val user=checkNotNull(account.publicationUserId()); val profile=writer.read("/v1/me/profile")
+                        displayName=if(identity=="anonymous")"a PitTech cook" else profile.optString("displayName").ifBlank { "a PitTech cook" }
+                        withContext(Dispatchers.IO) { val row=checkNotNull(viewModel.sharing.get(draft)); val document=SharingDraftCodec.decode(row.payload).copy(identityMode=identity); viewModel.sharing.save(draft,document,row.updatedAtUtcMillis) }
+                        val context=if(updating && linked!=null)writer.editContext(draft) else null
+                        val value=viewModel.sharing.preparePublication(draft,kind,context); check(account.publicationUserId()==user)
+                        linked=writer.binding(draft); updateSummary=null
+                        linked?.takeIf { updating }?.let { old ->
+                            val current=writer.read("/v1/me/recipes/"+old.id); require(current.getString("id")==old.id && current.getString("status") in setOf("active","unpublished")) { "This publication is unavailable for updates. Your private draft stays on this device." }
+                            if(context!=null && context.receipt.revisionId!=current.getString("revisionId"))throw AccountFailure(409)
+                            linked=PublicationReceipt(old.id,current.getString("revisionId"),current.getInt("revision"),old.url).also { it.validate() }
+                            updateSummary=if(current.getString("status")=="unpublished")"This publication is currently removed. Publishing this preview will make it public again." else "This preview will replace public revision ${current.getInt("revision")}."
+                        }
+                        check(account.publicationUserId()==user); prepared=value; previewUser=user; reviewed=false
+                    } },enabled=!busy,modifier=Modifier.testTag("publication-prepare")) { Text("Prepare public preview") }
+                    prepared?.let { value ->
+                        Text("Public credit · $displayName",style=MaterialTheme.typography.titleMedium,modifier=Modifier.testTag("publication-credit"))
+                        updateSummary?.let { Text(it,style=MaterialTheme.typography.titleMedium) }
+                        PublicationContent(value)
+                        Text(PublicationTerms.text,modifier=Modifier.testTag("publication-terms"))
+                        Row { Checkbox(reviewed,{ reviewed=it },modifier=Modifier.testTag("publication-reviewed")); Text("I reviewed the content and credit and agree to these public-copy terms",Modifier.weight(1f)) }
+                        Button(onClick={ run {
+                            check(reviewed && previewUser==account.publicationUserId()) { "Sign in with the account that prepared this preview." }
+                            published=PublicationReceipt.parse(writer.submit(draft,value,if(updating)linked else null,PublicationTerms.version)); prepared=null; refreshPending()
+                        } },enabled=!busy && reviewed,modifier=Modifier.testTag("publication-confirm")) { Text(if(updating && linked!=null)"Publish this update" else "Publish this preview") }
+                    }
+                }
+                if(busy)CircularProgressIndicator()
+                message?.let { Text(it,Modifier.testTag("publication-message")) }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+    if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to publication") } })
+}
+
+@Composable internal fun PublicationContent(prepared: PreparedPublication) {
+    val context=androidx.compose.ui.platform.LocalContext.current
+    val temperatureUnit=context.getSharedPreferences("pittech-preferences",0).getString("temperature-unit","°F") ?: "°F"
+    val payload=prepared.payload; val recipes=remember(prepared) { payload.rows("recipes") }
+    Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text(payload.getString("title"),style=MaterialTheme.typography.headlineMedium,modifier=Modifier.testTag("publication-preview-title"))
+        Text(when(payload.getString("kind")) { "attempt" -> "Actual recorded cook"; "collection" -> "Meal collection"; else -> "Recipe" },style=MaterialTheme.typography.titleMedium)
+        Text("${recipes.size} selected recipes · ${prepared.photos.size} selected photos")
+        Text("Public credit: "+if(payload.getString("identityMode")=="named")"your display name" else "a PitTech cook")
+        recipes.forEach { recipe ->
+            Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge); Text(recipe.getString("description"))
+            Text(listOf("foodType","cut","method").mapNotNull { if(recipe.isNull(it))null else recipe.optString(it).takeIf(String::isNotBlank) }.joinToString(" · "))
+            if(!recipe.isNull("weightGrams"))Text("Weight · "+String.format(java.util.Locale.ROOT,"%.2f kg",recipe.getDouble("weightGrams")/1000))
+            val tags=recipe.getJSONArray("tags"); Text((0 until tags.length()).joinToString(" · ") { tags.getString(it) },style=MaterialTheme.typography.bodySmall)
+            recipe.optJSONObject("source")?.let { source ->
+                val uri=androidx.compose.ui.platform.LocalUriHandler.current
+                Text(if(source.optBoolean("removed"))"Based on a removed recipe" else "Based on a pinned public recipe")
+                if(!source.optBoolean("removed"))TextButton(onClick={ uri.openUri("https://pittech.app/c/"+source.getString("itemId")) }) { Text("View source recipe") }
+            }
+            recipe.rows("ingredients").forEach { Text(it.getString("name")+" · "+it.getString("amount")) }
+            recipe.rows("instructions").forEach { step ->
+                Text(step.getString("title"),style=MaterialTheme.typography.titleMedium); Text(step.getString("details"))
+                if(!step.isNull("method"))Text("Method · "+step.getString("method"))
+                if(!step.isNull("action"))Text("Action · "+step.getString("action"))
+                if(!step.isNull("suggestedOffsetMillis"))Text("Suggested timing · "+com.pittech.domain.RecipeReferenceTimeline.relativeLabel(step.getLong("suggestedOffsetMillis")))
+            }
+            PublicationPhotoPreview(recipe.rows("assets"),prepared.photos,payload.optString("heroAssetId"))
+            recipe.optJSONObject("story")?.let { PublicStoryView(it,temperatureUnit) }
+            HorizontalDivider()
+        }
+    }
+}
+
+private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 until array.length()).map(array::getJSONObject) }
+
+@Composable internal fun PublicLikeActions(id: String, account: AccountManager, writer: PublicationWriter) {
+    val state by account.presentation.collectAsStateWithLifecycle(); val scope=rememberCoroutineScope()
+    var busy by remember(id) { mutableStateOf(false) }; var signingIn by remember { mutableStateOf(false) }; var message by remember(id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.signedIn) { message=null }
+    fun set(liked: Boolean) { if(busy)return; busy=true; scope.launch {
+        try { writer.json(if(liked)"POST" else "DELETE","/v1/recipes/$id/like"); message=if(liked)"Your like is saved." else "Your like is removed." }
+        catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=(e.message ?: "Couldn't reconnect.")+" Recover interrupted changes in My cookbook." } finally { busy=false }
+    } }
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        if(state.signedIn) {
+            OutlinedButton(onClick={ set(true) },enabled=!busy,modifier=Modifier.testTag("public-like")) { Text("Like this recipe") }
+            TextButton(onClick={ set(false) },enabled=!busy,modifier=Modifier.testTag("public-unlike")) { Text("Remove my like") }
+        } else {
+            TextButton(onClick={ signingIn=true }) { Text("Sign in to like this recipe") }; Text("Signing in won't add a like automatically.",style=MaterialTheme.typography.bodySmall)
+        }
+        message?.let { Text(it) }
+    }
+    if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to recipe") } })
+}
+
+@Composable private fun PublicationPhotoPreview(assets: List<JSONObject>, photos: Map<String,ByteArray>, hero: String) {
+    if(assets.isEmpty())return
+    var selected by remember(assets) { mutableStateOf(0) }; val index=selected.coerceIn(0,assets.lastIndex); val asset=assets[index]
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        Text("Selected photo ${index+1} of ${assets.size}",style=MaterialTheme.typography.titleMedium)
+        photos[asset.getString("id")]?.let { bytes ->
+            val bitmap=remember(bytes) {
+                val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }; BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
+                var sample=1; while(bounds.outWidth/sample>800 || bounds.outHeight/sample>800)sample*=2
+                BitmapFactory.decodeByteArray(bytes,0,bytes.size,BitmapFactory.Options().apply { inSampleSize=sample })?.asImageBitmap()
+            }
+            if(bitmap!=null)Image(bitmap,asset.getString("caption").ifBlank { "Selected public photo" },Modifier.fillMaxWidth().heightIn(max=260.dp))
+        }
+        if(hero==asset.getString("id"))Text("Cover photo",style=MaterialTheme.typography.bodySmall)
+        Text(asset.getString("caption"))
+        if(assets.size>1)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick={ selected=maxOf(0,index-1) },enabled=index>0,modifier=Modifier.weight(1f).heightIn(min=48.dp)) { Text("Previous photo") }
+            TextButton(onClick={ selected=minOf(assets.lastIndex,index+1) },enabled=index<assets.lastIndex,modifier=Modifier.weight(1f).heightIn(min=48.dp)) { Text("Next photo") }
+        }
+    }
+}

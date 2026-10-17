@@ -18,7 +18,7 @@ OS limitation. Completion requires both clients and CI evidence. Existing
 | Code entry, Universal/App Links | Port both | 07 | Signed artifacts, installed/uninstalled fallback, cancel import |
 | Secure magic-link/code sessions and account controls | Port both | 09 | Replays, code retries, sign-out/account switch/delete |
 | Discovery/save/cook available signed out | Port both | 11 | Offline owned copy; source removed; no auth barrier |
-| Editable recipe/collection/attempt publication | Port both | 12 | Explicit scope/identity preview, durable retry/idempotency |
+| Editable recipe/collection/attempt publication | Implemented on both; Actions/visual gates pending | 12 | Explicit scope/identity preview, durable retries; owner download/edit without original draft; frozen stories and pinned credits; versioned public-copy consent and read-only source comparison; full acceptance still open |
 | Reporting, opaque publisher blocking, deletion | Port both | 13 | Anonymous privacy; original purge; independent fork survival |
 | Sync metadata/tombstones/photo queue/recovery | Port both | 14 | Two-device offline conflicts; account ownership; inactive automation |
 | Existing free Insights math | Port common metrics | 15 | Shared golden measurements and sparse/gapped samples |

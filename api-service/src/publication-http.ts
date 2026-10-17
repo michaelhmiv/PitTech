@@ -22,6 +22,8 @@ export function publicationRoute(raw:string,method:string){
   if(raw==='/v1/me/profile'&&['GET','PUT'].includes(method))return '/v1/me/profile';
   if(method==='GET'&&/^\/v1\/me\/recipes(?:\?cursor=[a-f\d-]{36})?$/.test(raw))return '/v1/me/recipes';
   if(method==='GET'&&/^\/v1\/profiles\/[a-z0-9_]{3,24}(?:\?cursor=[a-f\d-]{36})?$/.test(raw))return '/v1/profiles/:handle';
+  if(method==='GET'&&/^\/v1\/me\/recipes\/[a-f\d-]{36}\/archive$/.test(raw))return '/v1/me/recipes/:id/archive';
+  if(method==='GET'&&/^\/v1\/me\/recipes\/[a-f\d-]{36}$/.test(raw))return '/v1/me/recipes/:id';
   if(raw==='/v1/recipes'&&method==='POST')return '/v1/recipes';
   if(/^\/v1\/recipes\/[a-f\d-]{36}$/.test(raw)&&['GET','PUT','DELETE'].includes(method))return '/v1/recipes/:id';
   if(/^\/v1\/recipes\/[a-f\d-]{36}\/pack$/.test(raw)&&method==='GET')return '/v1/recipes/:id/pack';
@@ -39,9 +41,15 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
     json(200,await publications.discover({sort:params.get('sort')??undefined,food:params.get('food')??undefined,query:params.get('q')??undefined,cursor:params.get('cursor')??undefined}));return;
   }
   if(route==='/v1/profiles/:handle'){json(200,await publications.profile(path[3],new URL(raw,'https://api.pittech.app').searchParams.get('cursor')??undefined));return;}
-  if(route==='/v1/me/profile'||route==='/v1/me/recipes'){
+  if(route==='/v1/me/profile'||route==='/v1/me/recipes'||route==='/v1/me/recipes/:id'||route==='/v1/me/recipes/:id/archive'){
     if(!auth)throw new ApiError(503,'accounts_unavailable');
     const user=await auth.user(/^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization??'')?.[1]);
+    if(route==='/v1/me/recipes/:id/archive'){
+      if(!gate.claimUpload())throw new ApiError(503,'publication_busy');
+      let held=true,settled=false,closed=res.destroyed;const release=()=>{if(held&&settled&&closed){held=false;gate.releaseUpload();}};res.once('close',()=>{closed=true;release();});
+      try{const archive=await publications.ownedArchive(user.id,path[4],String(req.headers['if-match']??''));res.setHeader('Content-Type','application/zip');res.setHeader('Content-Length',archive.bytes.length);res.setHeader('X-Content-SHA256',archive.sha256);if(res.destroyed)throw new ApiError(400,'request_interrupted');res.end(archive.bytes);}finally{settled=true;release();}return;
+    }
+    if(route==='/v1/me/recipes/:id'){json(200,await publications.myItem(user.id,path[4]));return;}
     if(route==='/v1/me/recipes'){json(200,await publications.myItems(user.id,new URL(raw,'https://api.pittech.app').searchParams.get('cursor')??undefined));return;}
     if(method==='GET'){json(200,await publications.myProfile(user.id));return;}
     const input=await body(req);json(200,await publications.updateProfile(user.id,idempotency(req),{handle:input.handle,displayName:input.displayName,isPublic:input.isPublic}));return;
@@ -59,7 +67,7 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
   if(route.endsWith('/fork')){
     const input=await body(req);if(input.publish!==true||typeof input.expectedRevisionId!=='string')throw new ApiError(422,'explicit_publication_required');
     if(!gate.claimUpload())throw new ApiError(503,'publication_busy');
-    try{json(201,await publications.fork(user.id,id,operation,input.expectedRevisionId,input.identityMode));}finally{gate.releaseUpload();}return;
+    try{json(201,await publications.fork(user.id,id,operation,input.expectedRevisionId,input.identityMode,{version:req.headers['x-pittech-publication-terms']}));}finally{gate.releaseUpload();}return;
   }
   if(route.endsWith('/like')){json(200,await publications.like(user.id,id,operation,method==='POST'));return;}
   const base=String(req.headers['if-match']??'');
@@ -74,7 +82,7 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
     await pipeline(req,new Transform({transform(chunk,_encoding,done){size+=chunk.length;done(size>LIMITS.compressed?new ApiError(413,'request_too_large'):null,chunk);}}),createWriteStream(input,{mode:0o600,flags:'wx'}));
     const validated=await validatePublication(input,output);
     if(res.destroyed)throw new ApiError(400,'request_interrupted');
-    const result=await publications.publish(user.id,operation,validated,output,method==='PUT'?{id,base}:undefined);
+    const result=await publications.publish(user.id,operation,validated,output,method==='PUT'?{id,base}:undefined,undefined,undefined,{version:req.headers['x-pittech-publication-terms']});
     // Release the staging file and shared slot before the client can retry the 201.
     await rm(directory,{recursive:true,force:true});directory=undefined;gate.releaseUpload();held=false;
     json(method==='PUT'?200:201,result);

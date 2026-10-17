@@ -146,6 +146,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "method": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -307,7 +318,7 @@
                       "rating": {
                         "anyOf": [
                           {
-                            "type": "integer",
+                            "type": "number",
                             "minimum": 1,
                             "maximum": 5
                           },

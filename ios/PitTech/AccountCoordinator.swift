@@ -14,6 +14,7 @@ import Observation
     private(set) var pendingLink: String?
     var challengeEmail: String? { state.challenge?.email }
     var signedIn: Bool { state.session != nil }
+    var stateUserId: String? { state.session?.userId }
     var canResend: Bool { state.challenge.map { Date().timeIntervalSince($0.created) >= 60 } ?? true }
     var interruptedVerification: Bool { state.challenge?.operation != nil }
     init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient()) {
@@ -96,11 +97,11 @@ import Observation
         }
     }
     /// Single-flight refresh; persist the operation before sending, including across app restarts.
-    func access() async throws -> String {
+    func access(forceRefresh: Bool = false) async throws -> String {
         try requireReady()
         if let refreshTask { return try await refreshTask.value }
         guard !busy, let session = state.session else { throw NativeAccountError.status(401) }
-        if state.refreshOperation == nil, try NativeAccountProtocol.date(session.accessExpiresAt).timeIntervalSinceNow > 30 { return session.accessToken }
+        if !forceRefresh, state.refreshOperation == nil, try NativeAccountProtocol.date(session.accessExpiresAt).timeIntervalSinceNow > 30 { return session.accessToken }
         let task = Task { () throws -> String in
             guard try NativeAccountProtocol.date(session.sessionExpiresAt) > Date() else { try self.save(NativeAccountState(logoutToken: session.refreshToken)); throw NativeAccountError.status(401) }
             var next = self.state; next.refreshOperation = next.refreshOperation ?? UUID().uuidString.lowercased(); try self.save(next)

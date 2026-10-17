@@ -17,15 +17,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.PublicManager
 import org.json.JSONObject
 
-@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F") {
+@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null) {
     val state by manager.state.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.appliedQuery) }
     var food by rememberSaveable { mutableStateOf(state.appliedFood) }
     var sort by rememberSaveable { mutableStateOf(state.appliedSort) }
     LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery) }
-    BackHandler(state.detailId != null) { manager.back() }
+    BackHandler(state.detailId != null || state.profileHandle != null) { manager.back() }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        if(state.detailId != null) {
+        if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
             if(state.detailLoading) CircularProgressIndicator()
             state.detail?.let { detail ->
@@ -37,16 +37,26 @@ import org.json.JSONObject
                 }
                 Text(detail.title,Modifier.testTag("public-title"),style=MaterialTheme.typography.headlineMedium)
                 Text("Shared by ${detail.credit}")
+                detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
+                if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.")
                 Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
                 if(state.preparing) { CircularProgressIndicator();TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
                     Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge)
+                    recipe.optJSONObject("source")?.let { source->
+                        if(source.optBoolean("removed"))Text("Based on a removed recipe",style=MaterialTheme.typography.bodySmall)
+                        else TextButton(onClick={manager.open(source.getString("itemId"))}) { Text("Based on a recipe shared by "+source.optString("displayName","a PitTech cook")) }
+                    }
                     Text(recipe.optString("description"))
                     if(!recipe.isNull("weightGrams"))Text("Recorded weight · ${recipe.getDouble("weightGrams")/1000} kg")
                     recipe.rows("ingredients").forEach { Text(it.optString("name")+" · "+it.optString("amount")) }
-                    recipe.rows("instructions").forEach { Text(it.optString("title"),style=MaterialTheme.typography.titleMedium);Text(it.optString("details")) }
+                    recipe.rows("instructions").forEach { step->
+                        Text(step.optString("title"),style=MaterialTheme.typography.titleMedium)
+                        if(!step.isNull("method") && step.getString("method").isNotEmpty())Text("Method · "+step.getString("method"),style=MaterialTheme.typography.bodySmall)
+                        Text(step.optString("details"))
+                    }
                     if(!recipe.isNull("story"))PublicStoryView(recipe.getJSONObject("story"),temperatureUnit)
                     recipe.rows("assets").forEach { photo->detail.media.firstOrNull { it.getString("id")==photo.getString("id") }?.let { asset->
                         if(asset.getString("id")!=detail.hero?.getString("id"))PublicAdditionalPhoto(manager,detail,asset,photo.optString("caption"))
