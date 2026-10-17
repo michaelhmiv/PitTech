@@ -127,12 +127,12 @@ import XCTest
         var library = store.library
         library.companionRecords = [.object(["id": .string("doc-1"), "kind": .string("future_kind"), "title": .string("From tomorrow"), "payload": .object([:]), "created": .number(1000), "updated": .number(1000)])]
         store.library = library; store.save()
-        let before = try JSONEncoder().encode(store.library)
+        let before = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library))
         let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
         let (sync, _) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
         await sync.syncNow()
         XCTAssertEqual(api.calls, 0)
-        XCTAssertEqual(before, try JSONEncoder().encode(store.library))
+        XCTAssertEqual(before, try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library)))
         XCTAssertEqual(sync.presentation.status, "Retry needed")
         XCTAssertEqual(try journal.load(userA).serverVersion, 0)
     }
@@ -424,11 +424,11 @@ import XCTest
         remote[remote.firstIndex { $0.recordId == "note-1" }!] = versioned("events", "note-1", 2, deviceB, note("Remote"))
         api.snapshot = .object(["version": .number(2), "envelope": .object(["contractVersion": .number(1),
             "records": .array(try JSONDecoder().decode([JSONValue].self, from: JSONEncoder().encode(remote))), "conflicts": .array([])])])
-        let before = try JSONEncoder().encode(store.library)
+        let before = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library))
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
         await sync.syncNow()
         XCTAssertEqual(sync.presentation.status, "Retry needed")
-        XCTAssertEqual(before, try JSONEncoder().encode(store.library))
+        XCTAssertEqual(before, try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library)))
         XCTAssertEqual(eventRow(store, "note-1")?["title"], .string("Original"))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
     }

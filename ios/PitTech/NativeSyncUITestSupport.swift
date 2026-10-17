@@ -47,7 +47,11 @@ private struct NativeSyncOfflineAPI: NativePrivateSyncAPI {
         library.events.append(.object(note("Remote title")))
         store.library = library; store.save()
         let projection = try? NativePrivateSyncCoordinator.loadContract()
-        return NativePrivateSyncCoordinator(store: journal, session: account, api: NativeSyncOfflineAPI(), library: NativeCookStoreSyncLibrary(store), projection: projection, enabled: true)
+        let coordinator = NativePrivateSyncCoordinator(store: journal, session: account, api: NativeSyncOfflineAPI(), library: NativeCookStoreSyncLibrary(store), projection: projection, enabled: true)
+        // Publish the seeded conflict immediately so the account view shows
+        // "Conflicts to review" on first appearance without waiting for a sync run.
+        coordinator.refresh()
+        return coordinator
     }
 }
 #endif

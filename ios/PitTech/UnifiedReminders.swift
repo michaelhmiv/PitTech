@@ -137,7 +137,10 @@ extension PitTechLibrary {
             }
             if state["deliveredAtUtcMillis"]?.numberValue != nil && state["snoozedUntilUtcMillis"]?.numberValue == nil { rule["status"] = .string("due"); library.reminderRules[index] = .object(rule); continue }
             guard let due = state["snoozedUntilUtcMillis"]?.numberValue ?? (config["type"]?.stringValue == "probe" ? probeDue : NativeReminderEngine.due(config, dishId: rule["dishId"]?.stringValue, actions: library.actions(for: cookId))) else {
-                rule["status"] = .string("waiting"); state["status"] = .string("waiting"); state["dueAtUtcMillis"] = .null; putOccurrence(state); library.reminderRules[index] = .object(rule); result.cancellations += allIdentifiers; continue
+                // A rule that has never been scheduled stays pending; only a rule that
+                // previously had a due date transitions to waiting for data.
+                if rule["status"]?.stringValue != "pending" { rule["status"] = .string("waiting") }
+                state["status"] = .string("waiting"); state["dueAtUtcMillis"] = .null; putOccurrence(state); library.reminderRules[index] = .object(rule); result.cancellations += allIdentifiers; continue
             }
             var occurrence = rows.filter { $0["status"]?.stringValue == "scheduled" }.max { ($0["sequence"]?.numberValue ?? 0) < ($1["sequence"]?.numberValue ?? 0) }
             // An elapsed persisted schedule is left to the OS; relaunch does not deliver it again.
