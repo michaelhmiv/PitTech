@@ -28,6 +28,32 @@ class MealRecipeUserFlowsTest {
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
     }
     private fun waitFor(tag: String) { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    @Test fun savedRecipeCardPreviewAndCanceledShareKeepTheDraftAndSource() {
+        val recipe = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            app.cookRepository.recipes.save(RecipeSnapshot("Pepper pork 🌶",DishDraft("Pepper pork 🌶","Pork"),description="Private original note"))
+        }
+        compose.activityRule.scenario.recreate()
+        waitFor("nav-recipes");compose.onNodeWithTag("nav-recipes").performClick()
+        waitFor("recipe-open-${recipe.id}");compose.onNodeWithTag("recipe-open-${recipe.id}").performScrollTo().performClick()
+        compose.onNodeWithTag("recipe-share").performScrollTo().performClick()
+        waitFor("sharing-preview-card");compose.onNodeWithTag("sharing-preview-card").performScrollTo().performClick()
+        waitFor("share-card-preview");shot("share-card-preview")
+        compose.onNodeWithTag("card-share").performScrollTo().performClick()
+        // Espresso requires our Activity to be resumed; the system chooser owns focus here.
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        compose.waitUntil(10000) {
+            automation.rootInActiveWindow?.packageName?.toString()?.let { it != app.packageName } == true
+        }
+        assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
+        waitFor("card-close");compose.onNodeWithTag("card-close").performScrollTo().performClick()
+        waitFor("sharing-title")
+        val record = runBlocking(Dispatchers.IO) { app.database.companionDao().observeAll().first().single { it.kind == SharingDraftCodec.DRAFT } }
+        val doc = SharingDraftCodec.decode(record.payload)
+        assertEquals(recipe.currentRevisionId,doc.entries.single().sourceRevisionId)
+        assertFalse(doc.entries.single().includeStory);assertTrue(doc.entries.single().photoIds.isEmpty())
+        assertEquals("Private original note",runBlocking(Dispatchers.IO) { RecipeSnapshotCodec.decode(app.database.recipeDao().revision(recipe.currentRevisionId)!!.snapshotJson).description })
+    }
     @Test fun oneGuideToggleControlsLiveTimelineAndChartsAndSurvivesRecreation() {
         val prepared = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()

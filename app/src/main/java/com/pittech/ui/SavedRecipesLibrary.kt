@@ -42,6 +42,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     var archived by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var composing by rememberSaveable { mutableStateOf(false) }
+    var sharingDraftId by remember { mutableStateOf<String?>(null) }
     var filters by rememberSaveable { mutableStateOf(false) }
     var mealTitle by rememberSaveable { mutableStateOf("") }
     var existingMealId by remember { mutableStateOf<String?>(null) }
@@ -127,13 +128,15 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             onClose = { detail = null }, onUse = { id -> act { viewModel.startRecipeMeal(recipe.name, listOf(id)); detail = null } },
             onEdit = { revision -> act { editor = RecipeEditorRequest(snapshots.getValue(revision.id), recipe.id, recipe.currentRevisionId, revision.id, revision.sourceCookId, revision.sourceDishId, viewModel.recipes.assets(revision.id)); detail = null } },
             onDuplicate = { name -> act { viewModel.recipes.duplicate(recipe.id, name); detail = null } },
-            onArchive = { act { viewModel.recipes.archive(recipe.id); detail = null } })
+            onArchive = { act { viewModel.recipes.archive(recipe.id); detail = null } },
+            onShare = { id -> act { sharingDraftId = viewModel.sharing.fromRecipe(id); detail = null } })
     }
     editor?.let { request -> RecipeEditorDialog(request, viewModel, busy, error, onClose = { editor = null }, onSave = { edit -> act { saveRecipeEdit(request, edit, viewModel); editor = null } }) }
+    sharingDraftId?.let { id -> SharingDraftEditor(id, viewModel) { sharingDraftId = null } }
 }
 
 @Composable private fun RecipeDetailsDialog(viewModel: CooksViewModel, recipe: SavedRecipe, history: List<RecipeRevision>, snapshots: Map<String, RecipeSnapshot>, cookIds: Set<String>, busy: Boolean,
-    onClose: () -> Unit, onUse: (String) -> Unit, onEdit: (RecipeRevision) -> Unit, onDuplicate: (String) -> Unit, onArchive: () -> Unit) {
+    onClose: () -> Unit, onUse: (String) -> Unit, onEdit: (RecipeRevision) -> Unit, onDuplicate: (String) -> Unit, onArchive: () -> Unit, onShare: (String) -> Unit) {
     var selected by remember(recipe.id) { mutableStateOf(recipe.currentRevisionId) }
     var duplicateName by remember(recipe.id) { mutableStateOf(recipe.name + " copy") }
     val revision = history.firstOrNull { it.id == selected }; val snapshot = snapshots[selected]
@@ -147,6 +150,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             snapshot?.let { s -> Text(s.description); Text(s.dish.prepNotes); s.dish.preparationItems.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }; s.instructions.forEach { Text(it.title + it.details.takeIf { x -> x.isNotBlank() }?.let { x -> " · $x" }.orEmpty()) }; if (s.resultNotes.isNotBlank()) Text(s.resultNotes) }
             assets.forEach { asset -> RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath)); if (asset.caption.isNotBlank()) Text(asset.caption) }
             revision?.let { r -> TextButton(onClick = { onEdit(r) }, enabled = !busy) { Text("Edit as a new version") } }
+            TextButton(onClick = { onShare(selected) }, enabled = revision != null && !busy, modifier = Modifier.testTag("recipe-share")) { Text("Share recipe") }
             OutlinedTextField(duplicateName, { duplicateName = it }, label = { Text("Variation name") }, modifier = Modifier.fillMaxWidth())
             TextButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank()) { Text("Duplicate recipe") }
             TextButton(onClick = onArchive, enabled = !busy) { Text("Archive recipe") }

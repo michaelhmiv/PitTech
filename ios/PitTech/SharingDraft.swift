@@ -21,7 +21,10 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
     var parentRevisionId: String?
     var sourceHistory: JSONValue?
     var entries: [NativeSharingEntry]
+    var card: ShareCardOptions? = nil
+    var cardOptions: ShareCardOptions { card ?? ShareCardOptions() }
     func validate() throws {
+        try cardOptions.validate()
         guard version == 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 160,
               (1...20).contains(entries.count), ["named", "anonymous"].contains(identityMode), Set(entries.map(\.id)).count == entries.count else { throw PitTechArchiveError.invalidArchive }
         for entry in entries {
@@ -78,6 +81,26 @@ extension PitTechLibrary {
         guard let payload = sharingRecord(id)?["payload"] else { throw RecipeError.unavailable }; return try NativeSharingDocument.decode(payload)
     }
     func sharingPhotos(_ id: String) -> [[String: JSONValue]] { library.companionPhotos.compactMap(\.objectValue).filter { $0["recordId"]?.stringValue == id } }
+    @discardableResult func createRecipeSharingDraft(_ revisionId: String) throws -> String {
+        guard let revision = recipeRevision(revisionId) else { throw RecipeError.unavailable }
+        let snapshot = try recipeSnapshot(revisionId)
+        let entry = NativeSharingEntry(sourceDishId: revision["sourceDishId"]?.stringValue, sourceRevisionId: revisionId,
+            snapshotJson: try recipeJSON(snapshot), story: try pinGuide(revisionId, snapshot: snapshot).objectValue?["story"] ?? .null)
+        let id = UUID().uuidString.lowercased(), prior = library; var copied: [String] = []
+        do {
+            for asset in recipeAssets(revisionId).compactMap(\.objectValue) {
+                guard let path = asset["archivePath"]?.stringValue else { throw CookNoteError.missingPhoto }
+                let photoId = UUID().uuidString.lowercased(), destination = "attachments/\(photoId).\(URL(fileURLWithPath: path).pathExtension)"
+                try FileManager.default.createDirectory(at: photoURL(destination).deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(contentsOf: photoURL(path)).write(to: photoURL(destination), options: .atomic); copied.append(destination)
+                library.companionPhotos.append(.object(["id":.string(photoId),"recordId":.string(id),"archivePath":.string(destination),"mimeType":asset["mimeType"] ?? .string("image/jpeg"),"caption":asset["caption"] ?? .string(""),"dishIndex":.number(0),"action":.string(entry.id)]))
+            }
+            let document = NativeSharingDocument(title:String(snapshot.name.prefix(160)),entries:[entry]);try document.validate()
+            let now = Date.now.timeIntervalSince1970 * 1000
+            library.companionRecords.append(.object(["id":.string(id),"kind":.string("sharing_draft"),"title":.string(document.title),"payload":try JSONDecoder().decode(JSONValue.self,from:JSONEncoder().encode(document)),"created":.number(now),"updated":.number(now)]))
+            try library.validateSharingDocuments();save();if saveError != nil { throw CocoaError(.fileWriteUnknown) };return id
+        } catch { library = prior;copied.forEach { try? FileManager.default.removeItem(at:photoURL($0)) };throw error }
+    }
     @discardableResult func createSharingDraft(cookId: String, dishIds: Set<String>) throws -> String {
         guard let cook = library.cooks.first(where: { $0.id == cookId }), !dishIds.isEmpty, dishIds.isSubset(of: Set(dishRecords(cookId).map(\.id))) else { throw RecipeError.unavailable }
         let id = UUID().uuidString.lowercased(), prior = library; var copied: [String] = [], copiedPhotos: [JSONValue] = []

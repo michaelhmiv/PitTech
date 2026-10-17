@@ -46,6 +46,23 @@ final class MealRecipeFlowsTests: XCTestCase {
         }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testSavedRecipeCardPreviewAndCanceledShareKeepDraftAtBothTextSizes() {
+        for large in [false,true] {
+            let app = XCUIApplication();app.launchArguments = ["--ui-test-reset"] + (large ? ["--screenshot-large-text"] : []);app.launch()
+            app.tabBars.buttons["Recipes"].tap()
+            let recipe = app.staticTexts["Chicken"].firstMatch;reveal(recipe,app:app);recipe.tap()
+            let share = app.buttons["recipe-share"];reveal(share,app:app);share.tap()
+            let preview = app.buttons["sharing-preview-card"];reveal(preview,app:app);preview.tap()
+            let image = app.images["share-card-preview"];XCTAssertTrue(image.waitForExistence(timeout:20))
+            capture(large ? "Native share card preview large text" : "Native share card preview")
+            let systemShare = app.buttons["card-share"];reveal(systemShare,app:app);systemShare.tap()
+            let close = app.buttons["Close"].firstMatch
+            if close.waitForExistence(timeout:5) { close.tap() } else { app.swipeDown() }
+            let back = app.buttons["card-close"];reveal(back,app:app);back.tap()
+            XCTAssertTrue(app.textFields["sharing-title"].waitForExistence(timeout:10))
+            app.terminate()
+        }
+    }
     func testOneGuideToggleControlsAllSectionsAndPersistsAtStandardAndLargeText() {
         for large in [false, true] {
             let app = XCUIApplication()

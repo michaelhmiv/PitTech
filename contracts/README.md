@@ -9,6 +9,7 @@ their supported larger limits; network packs use the bounded contract below.
 |---|---|
 | Local archive | Existing full library contract; no equipment credentials |
 | Cook Pack | Selected recipes/collection/measured story; manifest plus `data/pittech.json`; independently owned assets |
+| Share card | `share-card.schema.json` presentation v1; actual native 1080 × 1350 PNGs; explicit note/media/story; optional separately supplied relay receipt |
 | Relay | Anonymous bearer code; no listing; separate owner renewal/revocation secret |
 | Publication | Explicit public allowlist, selected identity and immutable revisions |
 | Sync | Authenticated owner-only record mutations, tombstones, assets and base version; never ordinary archive import |
