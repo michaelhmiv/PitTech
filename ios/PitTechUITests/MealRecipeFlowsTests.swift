@@ -165,10 +165,14 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.buttons["Hide keyboard"].tap()
             let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
             let signedIn = app.staticTexts["account-signed-in"]
-            if !signedIn.waitForExistence(timeout: 5), app.staticTexts["account-message"].label == "Check your email for a link and six-digit code. Both expire in 15 minutes." {
+            if !signedIn.waitForExistence(timeout: 10) {
                 // Simulator notification banners can consume the first gesture.
                 // Retry only while the fixture remains in its untouched start state.
-                reveal(verify, app: app); verify.tap()
+                // Guard the message lookup: reading .label on a missing element throws.
+                let message = app.staticTexts["account-message"]
+                if message.waitForExistence(timeout: 2), message.label == "Check your email for a link and six-digit code. Both expire in 15 minutes." {
+                    reveal(verify, app: app); verify.tap()
+                }
             }
             XCTAssertTrue(signedIn.waitForExistence(timeout: 10)); reveal(signedIn, app: app)
             capture(large ? "Native account signed in large text" : "Native account signed in")
@@ -202,14 +206,22 @@ final class MealRecipeFlowsTests: XCTestCase {
             let check = app.buttons["account-deletion-check"]; reveal(check, app: app); check.tap()
             let finished = app.buttons["Close completed request"]; reveal(finished, app: app)
             capture(large ? "Account deletion complete large text" : "Account deletion complete")
-            finished.tap(); XCTAssertTrue(app.textFields["account-email"].waitForExistence(timeout: 10))
+            finished.tap()
+            let email = app.textFields["account-email"]
+            if !email.waitForExistence(timeout: 5), finished.exists, finished.isEnabled {
+                // The dismissal tap can land while the button is still disabled from
+                // the status check; retry once the request has settled.
+                finished.tap()
+            }
+            XCTAssertTrue(email.waitForExistence(timeout: 10))
             app.terminate()
         }
     }
     func testLocalJournalRemovalConfirmationAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication()
-            app.launchArguments = ["--ui-test-reset"] + (large ? ["--screenshot-large-text"] : [])
+            // The account entry point only exists when accounts are enabled.
+            app.launchArguments = ["--ui-test-reset", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); app.tabBars.buttons["More"].tap()
             let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
             let remove = app.buttons["local-journal-remove"]; reveal(remove, app: app); remove.tap()
