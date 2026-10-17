@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
         }
         if (uri?.scheme == "content") viewModel.previewImport(uri)
         else if (uri != null && intent?.action == android.content.Intent.ACTION_VIEW) {
+            if (uri.path == "/auth") { viewModel.account.receive(uri.toString()); return }
             runCatching { com.pittech.data.RelayProtocol.code(uri.toString()) }.onSuccess { viewModel.relay.openImport(it) }
         }
     }

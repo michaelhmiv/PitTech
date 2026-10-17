@@ -1,0 +1,170 @@
+import XCTest
+import Security
+@testable import PitTech
+
+@MainActor final class AccountTests: XCTestCase {
+    private final class Memory: NativeAccountStorage {
+        var value = NativeAccountState()
+        var fail = false
+        func load() throws -> NativeAccountState { value }
+        func save(_ value: NativeAccountState) throws { if fail { throw NativeAccountError.invalid }; self.value = value }
+    }
+    private struct API: NativeAccountAPI {
+        let handler: ([String: String], String) async throws -> Data
+        func call(_ path: String, body: [String: String]?, access: String?) async throws -> Data { try await handler(body ?? [:], path) }
+    }
+    private var token: String { String(repeating: "A", count: 43) }
+    private func session(expired: Bool = false, rotated: Bool = false) -> NativeAccountSession {
+        NativeAccountSession(accessToken: rotated ? String(repeating: "B", count: 42) + "A" : token, refreshToken: token,
+            accessExpiresAt: expired ? "2000-01-01T00:00:00.000Z" : "2100-01-01T00:00:00.000Z", sessionExpiresAt: "2100-02-01T00:00:00.000Z", userId: "12345678-1234-4234-8234-123456789abc")
+    }
+    private func fixture() throws -> [String: Any] {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "auth-native-v1", withExtension: "json"))
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    }
+    func testSharedProofLinksAndEmailContract() throws {
+        let f = try fixture(), verifier = try XCTUnwrap(f["verifier"] as? String)
+        XCTAssertEqual(NativeAccountProtocol.proof(verifier), f["proof"] as? String)
+        XCTAssertTrue(NativeAccountProtocol.credential(try NativeAccountProtocol.verifier()))
+        for value in try XCTUnwrap(f["validLinks"] as? [String]) { XCTAssertEqual(try NativeAccountProtocol.link(XCTUnwrap(URL(string: value))).0, f["challengeId"] as? String) }
+        for value in try XCTUnwrap(f["invalidLinks"] as? [String]) { XCTAssertThrowsError(try NativeAccountProtocol.link(XCTUnwrap(URL(string: value))), value) }
+        for value in try XCTUnwrap(f["emails"] as? [[String]]) { XCTAssertEqual(try NativeAccountProtocol.email(value[0]), value[1]) }
+        for value in try XCTUnwrap(f["invalidEmails"] as? [String]) { XCTAssertThrowsError(try NativeAccountProtocol.email(value)) }
+    }
+    func testLostStartAndVerifyResponsesRecoverTheExactRequestAcrossRestart() async throws {
+        let memory = Memory(), result = try JSONEncoder().encode(session())
+        var start: [String: String]?, verify: [String: String]?, loseStart = true, loseVerify = true
+        let api = API { body, path in
+            if path.hasSuffix("challenges") {
+                XCTAssertNotNil(memory.value.challenge)
+                if let start { XCTAssertEqual(body, start) } else { start = body }
+                if loseStart { loseStart = false; throw NativeAccountError.network }
+                return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+            }
+            XCTAssertNotNil(memory.value.challenge?.operation)
+            if let verify { XCTAssertEqual(body, verify) } else { verify = body }
+            if loseVerify { loseVerify = false; throw NativeAccountError.network }; return result
+        }
+        let first = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        await first.start("cook@example.com")
+        let second = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        await second.start("cook@example.com"); await second.verify("123456")
+        XCTAssertTrue(second.interruptedVerification)
+        let third = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        await third.verify("999999"); XCTAssertTrue(third.signedIn); XCTAssertNil(memory.value.challenge)
+    }
+    func testLinkReceiptRequiresOriginatingDeviceAndExplicitConfirmation() async throws {
+        let f = try fixture(), memory = Memory(), result = try JSONEncoder().encode(session())
+        let id = try XCTUnwrap(f["challengeId"] as? String), verifier = try XCTUnwrap(f["verifier"] as? String)
+        memory.value.challenge = NativeAccountChallenge(id: id, email: "cook@example.com", verifier: verifier, created: .now)
+        var calls = 0
+        let api = API { body, _ in calls += 1; XCTAssertEqual(body["token"], verifier); return result }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        let link = try XCTUnwrap(URL(string: (f["validLinks"] as! [String])[0]))
+        account.receive(link); XCTAssertEqual(calls, 0); XCTAssertNotNil(account.pendingLink)
+        await account.verify(); XCTAssertEqual(calls, 1); XCTAssertTrue(account.signedIn)
+        let other = NativeAccountCoordinator(enabled: true, vault: Memory(), api: api)
+        other.receive(link); XCTAssertNil(other.pendingLink); XCTAssertEqual(calls, 1)
+    }
+    func testRefreshSerializesAndRetainsOperationAfterInterruptedResponse() async throws {
+        let memory = Memory(); memory.value.session = session(expired: true)
+        let result = try JSONEncoder().encode(session(rotated: true))
+        var calls = 0, operation: String?
+        let api = API { body, _ in
+            calls += 1; XCTAssertEqual(body["idempotencyId"], memory.value.refreshOperation)
+            if let operation { XCTAssertEqual(body["idempotencyId"], operation) } else { operation = body["idempotencyId"] }
+            try await Task.sleep(for: .milliseconds(10))
+            if calls == 1 { throw NativeAccountError.network }; return result
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        do { _ = try await account.access(); XCTFail("Lost response accepted") } catch { }
+        let restarted = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        async let first = restarted.access(); async let second = restarted.access()
+        let values = try await [first, second]
+        XCTAssertEqual(values[0], values[1]); XCTAssertEqual(calls, 2); XCTAssertNil(memory.value.refreshOperation)
+    }
+    func testRefreshRejectionRemovesActiveAccount() async throws {
+        let memory = Memory(); memory.value.session = session(expired: true)
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: API { _, _ in throw NativeAccountError.status(401) })
+        do { _ = try await account.access(); XCTFail("Rejected refresh accepted") } catch { }
+        XCTAssertFalse(account.signedIn); XCTAssertNil(memory.value.session)
+    }
+    func testOfflineSignOutQueuesRevocationBeforeAnyNewSignIn() async throws {
+        let memory = Memory(); memory.value.session = session(); var offline = true, paths: [String] = []
+        let api = API { body, path in
+            paths.append(path); if offline { throw NativeAccountError.network }
+            return try JSONSerialization.data(withJSONObject: path.hasSuffix("challenges") ? ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900] : [:])
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        await account.signOut(); XCTAssertFalse(account.signedIn); XCTAssertNil(memory.value.session); XCTAssertEqual(memory.value.logoutToken, token)
+        offline = false
+        let restarted = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        await restarted.start("new@example.com")
+        XCTAssertEqual(paths, ["/v1/auth/logout", "/v1/auth/logout", "/v1/auth/challenges"]); XCTAssertNil(memory.value.logoutToken)
+    }
+    func testDisabledAccountsAndStorageFailureNeverSendMail() async {
+        let memory = Memory(); var calls = 0
+        let api = API { _, _ in calls += 1; return Data() }
+        let disabled = NativeAccountCoordinator(vault: memory, api: api); await disabled.start("cook@example.com")
+        memory.fail = true
+        let failing = NativeAccountCoordinator(enabled: true, vault: memory, api: api); await failing.start("cook@example.com")
+        XCTAssertEqual(calls, 0)
+    }
+    func testWrongCodeCanBeCorrectedWithoutChangingDeviceProofAndResendHasCooldown() async throws {
+        let memory = Memory(), result = try JSONEncoder().encode(session()); var starts = 0, proofs: [String] = []
+        let api = API { body, path in
+            if path.hasSuffix("challenges") { starts += 1; return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900]) }
+            proofs.append(body["verifier"]!); if proofs.count == 1 { throw NativeAccountError.status(401) }; return result
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
+        await account.start("cook@example.com"); await account.start("cook@example.com", resend: true); XCTAssertEqual(starts, 1)
+        await account.verify("111111"); await account.verify("222222")
+        XCTAssertTrue(account.signedIn); XCTAssertEqual(proofs.count, 2); XCTAssertEqual(proofs.first, proofs.last)
+    }
+    func testVaultSurvivesRestartUsesDeviceOnlyKeychainAndRemainsSeparateFromRelay() throws {
+        let service = "com.pittech.account.test." + UUID().uuidString
+        defer { SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary) }
+        let vault = NativeAccountVault(service: service)
+        var state = NativeAccountState(session: session(), refreshOperation: UUID().uuidString)
+        try vault.save(state); XCTAssertEqual(try NativeAccountVault(service: service).load().session?.refreshToken, token)
+        var result: CFTypeRef?
+        XCTAssertEqual(SecItemCopyMatching([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecReturnAttributes as String: true] as CFDictionary, &result), errSecSuccess)
+        let attrs = try XCTUnwrap(result as? [String: Any]); XCTAssertEqual(attrs[kSecAttrAccessible as String] as? String, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        XCTAssertNotEqual(attrs[kSecAttrSynchronizable as String] as? Bool, true)
+        state = NativeAccountState(logoutToken: token); try vault.save(state)
+        XCTAssertNil(try vault.load().session); XCTAssertEqual(try vault.load().logoutToken, token)
+    }
+}
+
+final class AccountTransportTests: XCTestCase {
+    func testCredentialTransportBoundsResponsesRejectsRedirectsAndRedactsProviderErrors() async throws {
+        for status in [200, 302, 401, 429, 999] {
+            let id = UUID().uuidString; AccountURLProtocol.set(id, status: status)
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AccountURLProtocol.self]
+            config.httpAdditionalHeaders = ["X-PitTech-Unit": id]
+            do {
+                let data = try await NativeAccountClient(configuration: config).call("/v1/me", body: nil, access: String(repeating: "A", count: 43))
+                XCTAssertEqual(status, 200); XCTAssertEqual(data, Data("{}".utf8))
+            } catch {
+                XCTAssertNotEqual(status, 200); XCTAssertFalse(error.localizedDescription.contains("private-provider-diagnostic"))
+            }
+        }
+    }
+}
+private final class AccountURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var modes: [String: Int] = [:]
+    static func set(_ id: String, status: Int) { lock.lock(); modes[id] = status; lock.unlock() }
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "api.pittech.app" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); let status = Self.modes.removeValue(forKey: request.value(forHTTPHeaderField: "X-PitTech-Unit") ?? "") ?? 401; Self.lock.unlock()
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "A", count: 43))
+        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        let bytes = status == 999 ? Data(repeating: 120, count: 8193) : Data((status == 200 ? "{}" : "private-provider-diagnostic").utf8)
+        let response = HTTPURLResponse(url: request.url!, statusCode: status == 999 ? 200 : status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json", "Set-Cookie": "sensitive=discard", "Location": "https://attacker.invalid/"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: bytes); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() { }
+}

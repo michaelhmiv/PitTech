@@ -3,7 +3,7 @@ import { ApiError } from './core.ts';
 
 export const AUTH = Object.freeze({ challengeMs: 15 * 60_000, resendMs: 60_000, attempts: 5, accessMs: 10 * 60_000, sessionMs: 30 * 86400_000 });
 export function emailAddress(value: unknown): string {
-  if (typeof value !== 'string' || value.length > 254) throw new ApiError(400, 'email_required');
+  if (typeof value !== 'string' || value.length > 254 || /[^\x00-\x7f]/.test(value)) throw new ApiError(400, 'email_required');
   const email = value.trim().toLowerCase(), parts = email.split('@');
   if (parts.length !== 2) throw new ApiError(400, 'email_required');
   const [local, domain] = parts;

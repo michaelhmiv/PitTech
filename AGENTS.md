@@ -117,6 +117,9 @@ The owner requires iOS/Android parity going forward:
   written reason. An undocumented difference is a defect.
 - Shared contracts (archive format, Cook Pack format, backend APIs) get
   cross-platform round-trip tests in CI.
+- Account sessions use a separate device-only Keychain/Keystore namespace and never
+  enter exports or relay storage. Account entry remains disabled until the entire
+  accounts/social/sync/deletion phase passes. See `docs/online/09-native-accounts.md`.
 - Code/link sharing keeps owner capabilities in device-only Keychain/Keystore
   storage outside library exports. Incoming links open a preview flow; they
   never import or create an account automatically. See `docs/online/07-code-links.md`.

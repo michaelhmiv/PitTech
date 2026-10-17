@@ -138,6 +138,7 @@ fun PitTechApp(
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var sharedCodes by rememberSaveable { mutableStateOf(false) }
     RelayImportDialog(viewModel)
+    AccountDialog(viewModel.account)
     if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -342,7 +343,7 @@ fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
-            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true })
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null)
             }
         }
     }

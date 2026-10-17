@@ -1,0 +1,34 @@
+{
+  "verifier": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "proof": "ea866a757e4c38babfa8127cbe9a409d3e1f93a00ff1488ff735fcf917afffd0",
+  "challengeId": "12345678-1234-4234-8234-123456789abc",
+  "validLinks": [
+    "https://pittech.app/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+  ],
+  "invalidLinks": [
+    "https://pittech.app.evil.invalid/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "http://pittech.app/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "https://pittech.app/auth/?x=1#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "https://pittech.app/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&x=1",
+    "https://pittech.app/%61uth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "https://user@pittech.app/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "https://pittech.app:443/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "https://pittech.app/auth#token=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "https://pittech.app/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh9"
+  ],
+  "emails": [
+    [
+      " COOK+Recipe@Example.COM ",
+      "cook+recipe@example.com"
+    ]
+  ],
+  "invalidEmails": [
+    "a..b@example.com",
+    "a.@example.com",
+    "a@localhost",
+    "\u00e9@example.com",
+    "a@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com",
+    "a@example.com\r\nBcc:x@example.com",
+    "\u212a@example.com"
+  ]
+}

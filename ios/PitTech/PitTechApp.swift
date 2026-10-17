@@ -5,21 +5,31 @@ import UserNotifications
 struct PitTechApp: App {
     @State private var store = CookStore()
     @State private var relay = NativeRelayCoordinator()
+    #if DEBUG
+    @State private var account = NativeAccountUITestSupport.make()
+    #else
+    @State private var account = NativeAccountCoordinator()
+    #endif
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(store)
                 .environment(relay)
+                .environment(account)
                 .environment(AdsConsentManager.shared)
                 .tint(PitTechStyle.accent)
                 .modifier(ScreenshotTextSize())
                 .onOpenURL { url in
                     if url.isFileURL { Task { await store.receiveArchive(at: url) } }
+                    else if url.path == "/auth" { account.receive(url) }
                     else if (try? NativeRelayProtocol.code(url.absoluteString)) != nil { relay.receive(url) }
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-                    if let url = activity.webpageURL, (try? NativeRelayProtocol.code(url.absoluteString)) != nil { relay.receive(url) }
+                    if let url = activity.webpageURL {
+                        if url.path == "/auth" { account.receive(url) }
+                        else if (try? NativeRelayProtocol.code(url.absoluteString)) != nil { relay.receive(url) }
+                    }
                 }
                 .task {
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared

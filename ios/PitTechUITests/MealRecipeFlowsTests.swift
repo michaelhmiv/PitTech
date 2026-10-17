@@ -7,10 +7,26 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
+            if let navigation, navigation.identifier == "Account" {
+                // Form rows are virtualized: an off-screen field may not exist yet.
+                // Scroll the foreground Form before waiting for that row's AX node.
+                let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
+                let down = element.exists && element.frame.minY < top
+                let origin = navigation.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 32 : navigation.frame.height + 400))
+                let end = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 400 : navigation.frame.height + 32))
+                start.press(forDuration: 0.01, thenDragTo: end)
+                continue
+            }
             if app.scrollViews["relay-import-content"].exists, let navigation {
                 // The modal scroll view can also report an infinite AX frame.
                 // Its finite navigation bar anchors an ordinary content-gutter swipe.
-                if element.waitForExistence(timeout: 1), element.isHittable { return }
+                let top = navigation.frame.maxY + 12
+                let bottom = app.windows.firstMatch.frame.maxY - 24
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
                 let down = element.exists && element.frame.minY < navigation.frame.maxY + 8
                 let origin = navigation.coordinate(withNormalizedOffset: .zero)
                 let start = origin.withOffset(CGVector(dx: 32, dy: down ? navigation.frame.height + 24 : navigation.frame.height + 324))
@@ -57,6 +73,29 @@ final class MealRecipeFlowsTests: XCTestCase {
         }
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testAccountCodeFlowAndSignOutKeepLocalCookbookAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10)); email.tap(); email.typeText("cook@example.com")
+            app.buttons["Hide keyboard"].tap()
+            let start = app.buttons["account-start"]; reveal(start, app: app); start.tap()
+            let code = app.textFields["account-code"]; reveal(code, app: app); XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("123456")
+            app.buttons["Hide keyboard"].tap()
+            let verify = app.buttons["account-verify"]; reveal(verify, app: app); verify.tap()
+            let signedIn = app.staticTexts["account-signed-in"]; reveal(signedIn, app: app); XCTAssertTrue(signedIn.waitForExistence(timeout: 10))
+            capture(large ? "Native account signed in large text" : "Native account signed in")
+            let signOut = app.buttons["Sign out"]; reveal(signOut, app: app); signOut.tap()
+            let confirm = app.buttons["account-confirm-signout"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+            reveal(start, app: app); XCTAssertTrue(start.waitForExistence(timeout: 10))
+            capture(large ? "Native account signed out large text" : "Native account signed out")
+            app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
+            XCTAssertFalse(app.staticTexts["Signed in"].exists)
+            app.terminate()
+        }
+    }
     func testCodeImportRejectsForeignLinksBeforeAnyImportAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty"] + (large ? ["--screenshot-large-text"] : []); app.launch()
@@ -128,7 +167,13 @@ final class MealRecipeFlowsTests: XCTestCase {
             let choices = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pack-select-"))
             XCTAssertTrue(choices.firstMatch.waitForExistence(timeout: 10))
             let first = choices.firstMatch; reveal(first, app: app)
-            first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            // iOS exposes the labeled Toggle container and the actual UISwitch separately.
+            // Target the small control contained by this selected recipe row.
+            let controls = app.switches.allElementsBoundByIndex.filter {
+                $0.identifier.isEmpty && $0.frame.width < 100 && $0.frame.height < 100 && first.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) && $0.isHittable
+            }
+            XCTAssertEqual(controls.count, 1)
+            controls.first!.tap()
             XCTAssertTrue(NSPredicate(format: "value == %@", "0").evaluate(with: first) || XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: first)], timeout: 5) == .completed)
             let save = app.buttons["pack-save-recipes"]; reveal(save, app: app)
             XCTAssertEqual(save.label, "Save 1 recipe")

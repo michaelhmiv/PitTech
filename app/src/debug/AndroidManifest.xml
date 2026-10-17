@@ -28,6 +28,8 @@
         <service android:name="com.pittech.CookRecordingService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started active pellet-grill cook monitoring: continuously observe temperatures through the grill vendor cloud and record them locally while the phone is locked or the camera is open. A persistent notification lets the user pause. This cook session can exceed six hours and requires live observations; scheduled jobs cannot provide its sampling cadence." />
         </service>
+        <!-- Empty host for isolated Compose instrumentation; absent from release. -->
+        <activity android:name="androidx.activity.ComponentActivity" android:exported="false" />
         <activity
             android:name="com.pittech.ui.ControllerDiagnosticsTestActivity"
             android:exported="false" />

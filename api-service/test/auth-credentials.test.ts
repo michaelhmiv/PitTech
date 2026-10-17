@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { AUTH, AuthSecrets, credential, emailAddress, equalHash, isCredential, proofHash } from '../src/auth-credentials.ts';
 import { ResendAuthMailer, signInEmail, type SignInMail } from '../src/auth-email.ts';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 test('auth credentials: canonical entropy, keyed code hashes, separated authenticated encrypted envelopes', () => {
   const pepper = credential(), key = credential(), secrets = new AuthSecrets(pepper, key);
@@ -23,6 +24,10 @@ test('auth credentials: canonical entropy, keyed code hashes, separated authenti
 });
 test('email canonicalization rejects header injection, malformed addresses and ambiguous Unicode', () => {
   assert.equal(emailAddress(' Cook+test@Example.COM '), 'cook+test@example.com');
+  const native = JSON.parse(readFileSync(new URL('../../contracts/fixtures/auth-native-v1.json', import.meta.url), 'utf8'));
+  assert.equal(proofHash(native.verifier), native.proof);
+  for (const [input, expected] of native.emails) assert.equal(emailAddress(input), expected);
+  for (const input of native.invalidEmails) assert.throws(() => emailAddress(input));
   for (const value of [null, {}, 'a@b', '.a@example.com', 'a..b@example.com', 'a@-bad.com', 'a@example..com', 'a@example.com\r\nBcc: victim@example.com', 'cook@exämple.com', 'a'.repeat(65) + '@example.com']) assert.throws(() => emailAddress(value));
 });
 test('Resend adapter sends accessible code/link alternatives with fixed origin, idempotency, no redirects and redacted failures', async () => {
