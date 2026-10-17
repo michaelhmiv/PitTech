@@ -9,11 +9,12 @@ import { pipeline } from 'node:stream/promises';
 import proxyaddr from 'proxy-addr';
 import { ApiError, LIMITS, ownerHash, rateIdentity, normalizeCode } from './core.ts';
 import { association, landing, type LinkConfig } from './web.ts';
+import type { Authentication } from './auth.ts';
 import type { Relay } from './relay.ts';
 import { validate } from './validation.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -38,6 +39,33 @@ export function makeServer(relay: Relay, options: Options) {
     const json = (status: number, value: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
     try {
       if (req.url === '/healthz' && method === 'GET') { route = '/healthz'; json(200, { status: 'ok' }); return; }
+      if (method === 'GET' && req.url === '/auth') {
+        route = '/auth'; res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PitTech sign in</title><h1>Sign in to PitTech</h1><p>Open PitTech on the device where you requested this email. If the app did not open, enter the six-digit code from your email there.</p><p>This page does not sign you in or use your link. Your local library is unchanged.</p></html>'); return;
+      }
+      const authRoute = ['/v1/auth/challenges', '/v1/auth/verify', '/v1/auth/refresh', '/v1/auth/logout', '/v1/me'].includes(req.url ?? '') ? req.url! : undefined;
+      if (authRoute && options.auth && (method === 'POST' && authRoute !== '/v1/me' || method === 'GET' && authRoute === '/v1/me')) {
+        route = authRoute;
+        if (active >= 2) throw new ApiError(503, 'temporarily_unavailable'); active++; counted = true;
+        const now = relay.clock(), bucket = Math.floor(now / 3600000);
+        const key = 'auth:' + rateIdentity(options.ipKey, proxyaddr(req, trust), 'auth:' + bucket);
+        if (!await relay.repository.rate(key, 60, (bucket + 1) * 3600000)) throw new ApiError(429, 'rate_limited');
+        if (authRoute === '/v1/me') { json(200, await options.auth.user(/^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '')?.[1])); return; }
+        if (req.headers['content-type'] !== 'application/json' || ![undefined, 'identity'].includes(req.headers['content-encoding'])) throw new ApiError(415, 'json_required');
+        if (Number(req.headers['content-length'] ?? 0) > 8192) throw new ApiError(413, 'request_too_large');
+        const chunks: Buffer[] = []; let size = 0;
+        for await (const chunk of req) { size += chunk.length; if (size > 8192) throw new ApiError(413, 'request_too_large'); chunks.push(Buffer.from(chunk)); }
+        let body: Record<string, unknown>;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (body === null || Array.isArray(body) || typeof body !== 'object') throw new Error(); }
+        catch { throw new ApiError(400, 'json_required'); }
+        if (authRoute === '/v1/auth/challenges') json(202, await options.auth.start({ email: body.email, idempotencyId: body.idempotencyId, proofChallenge: body.proofChallenge }));
+        else if (authRoute === '/v1/auth/verify') json(200, await options.auth.verify({ challengeId: body.challengeId, verifier: body.verifier, code: body.code, token: body.token, idempotencyId: body.idempotencyId }));
+        else if (authRoute === '/v1/auth/refresh') json(200, await options.auth.refresh(body.refreshToken, body.idempotencyId));
+        else { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
+        return;
+      }
       const links = options.links ?? { appleAppIds: [], androidCertificates: [] };
       if (method === 'GET' && ['/.well-known/apple-app-site-association', '/.well-known/assetlinks.json'].includes(req.url ?? '')) {
         route = req.url!;

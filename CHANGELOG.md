@@ -7,6 +7,11 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- iOS draft: submit a shared code or link from the keyboard and dismiss the
+  keyboard to reach import actions and errors at enlarged text.
+- Backend post-launch draft: prepare optional email code/link sign-in, secure
+  session rotation and sign-out. Account screens and verified email delivery
+  are still pending; authentication remains disabled by default.
 - Android and iOS post-launch draft: preview and upload selected Cook Packs by
   code, retry or cancel transfers, manage owned codes, and open shared links
   through a selective import preview. Web fallback and app-link association

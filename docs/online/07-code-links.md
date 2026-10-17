@@ -43,6 +43,11 @@ it never serves fabricated signing fingerprints. Use the production Play app
 signing certificate, separately from upload/debug certificates. The iOS CI
 profile generator enables Associated Domains before minting its profile.
 
+The iOS import field submits with the keyboard's Go action, offers Hide keyboard,
+and dismisses focus before validation. This keeps the action and error reachable
+at enlarged text. Its modal-scroll test uses the finite navigation bar because
+SwiftUI can expose an infinite scroll-view accessibility frame.
+
 ## Acceptance still required
 
 Native compilation, protocol and secure-storage tests, transport interruption

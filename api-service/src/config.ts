@@ -1,3 +1,6 @@
+import { Authentication } from './auth.ts';
+import { AuthSecrets } from './auth-credentials.ts';
+import { ResendAuthMailer } from './auth-email.ts';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
 import { FileStorage, S3Storage, type Storage } from './storage.ts';
@@ -25,6 +28,9 @@ export function createRuntime() {
   pool.on('error', () => console.error('database_connection_error'));
   const relay = new Relay(new PostgresRepository(pool), storage, budgets);
   const port = Number(process.env.PORT ?? 3000); if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid port');
-  return { pool, relay, port, options: { ipKey, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  const auth = process.env.AUTH_ENABLED === 'true' ? new Authentication(pool,
+    new AuthSecrets(required('AUTH_HASH_KEY'), required('AUTH_ENCRYPTION_KEY')),
+    new ResendAuthMailer(required('RESEND_API_KEY'), required('AUTH_FROM'), required('AUTH_PUBLIC_ORIGIN')), positive('AUTH_DAILY_EMAIL_LIMIT')) : undefined;
+  return { pool, relay, port, auth, options: { ipKey, auth, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }

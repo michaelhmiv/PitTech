@@ -11,8 +11,8 @@ GitHub issues; this file holds the durable rules of the road.
   `ios/project.yml` (XcodeGen) — edit the spec, not the generated project.
 - `privacy-site/` — the hosted privacy policy (Railway).
 - `feedback-service/` — Android feedback relay (Railway → GitHub issues).
-- `api-service/` — draft anonymous Cook Pack relay; isolated `relay` Postgres
-  schema and private object storage. `online-services.yml` verifies the backend;
+- `api-service/` — draft anonymous Cook Pack relay and optional passwordless
+  auth; separate `relay` / `auth` Postgres schemas and private object storage. `online-services.yml` verifies the backend;
   its review copy/application patch lives in `ci-proposals/`.
 - `store-assets/`, `distribution/` — store listing material.
 
