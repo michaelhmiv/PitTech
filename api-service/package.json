@@ -1,0 +1,34 @@
+{
+  "name": "pittech-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.23.3 <23"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "migrate": "node src/migrate.ts",
+    "sweep": "node src/sweep.ts",
+    "fixtures:generate": "node scripts/canonical-fixtures.ts",
+    "fixtures:check": "node scripts/canonical-fixtures.ts --check"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1152.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "pg": "8.23.1",
+    "proxy-addr": "2.0.8",
+    "sharp": "0.35.5",
+    "yauzl": "3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "@types/proxy-addr": "2.0.3",
+    "@types/yauzl": "3.4.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -43,7 +43,7 @@ Both apps already have recipes, immutable revisions, dish provenance, meal prese
 
 Open launch PRs at planning time: #77 App Store readiness, #78 screenshot tour, and #88 iOS AdMob configuration. Resolve their final baseline through the separate launch work before this initiative starts. Rebase the plan's source assumptions after those land; do not bundle or silently merge them here.
 
-GitHub Actions is the build authority. Android API 36 lanes at font scales 1.15 and 1.5 are required; the existing API 37 lane is advisory. iOS builds/tests/screenshots and signing remain CI-side, using `ios/project.yml`. Workflow updates need a workflow-capable write path: the current GitHub App connection cannot write `.github/workflows/*`. Prepare the required workflow patch in PR 00 and arrange a permitted application path before backend feature PRs depend on it. Never bypass the restriction or declare a feature tested without its workflow evidence.
+GitHub Actions is the build authority. Android API 36 lanes at font scales 1.15 and 1.5 are required; the existing API 37 lane is advisory. iOS builds/tests/screenshots and signing remain CI-side, using `ios/project.yml`. Workflow updates need the Workflows repository permission. The current connection successfully installed `.github/workflows/online-services.yml` on October 15 in draft PR #102. Backend feature PRs require its passing Postgres/API and container gates; successful file creation alone does not establish test coverage.
 
 All equipment integration remains read-only. No guide, reminder, template, account, or Pro feature may ignite, stop, configure, or change a grill. Existing monitoring cadence, probe attribution, restart recovery, and supported provider history must survive this work.
 
@@ -513,7 +513,7 @@ The owner can seed public recipes and collections through the same publish flow.
 | Companion DESIGN.md/share-card concept images | Not located in accessible repository/files during review | PR 00 produces original concrete designs from the agreed direction; incorporate companion assets if supplied. |
 | Account-deletion default | Original anonymous-retention decision conflicts with Apple guidance | Amend issue #89 before PR 13; recommended behavior deletes account-owned originals and preserves independent forks/copies. |
 | Full feature parity | Connection matrix exists; broader audit and port work still required | PR 00 matrix assigns PRs; PR 01/03/15 and provider investigation resolve gaps. No silent deferral. |
-| Workflow writing | Current App credential cannot edit workflow files | Arrange permitted workflow application path in PR 00; backend CI must exist before PR 06 merges. |
+| Workflow writing | Write verified October 15; backend workflow installed in draft #102 | Backend Postgres/API and container gates must pass before PR 06 merges. |
 | Store products/secrets/review access | Implementation-stage setup | PR 16/19; credentials stay out of documents/repos. |
 | Physical provider/background/store tests | Not performed by this planning work | Appropriate PR release gates, reported honestly. |
 

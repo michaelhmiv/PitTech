@@ -7,6 +7,9 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Android and iOS post-launch draft: prepare an anonymous Cook Pack code relay
+  with explicit owner management, scoped pack validation and expiry. Sharing by
+  code remains unavailable in the apps until the client and release gates pass.
 - Android and iOS: Preview and share PNG cards for selected recipes or meals, with an explicitly chosen photo/chart, optional card note and recorded verdict. Canceling preserves the sharing draft.
 - Android and iOS: One Show guide setting across Live, Timeline and Charts, with per-dish source scope, recorded reference measurements and optional channel matching. Hiding the guide keeps reminders active.
 - Android and iOS: Choose whether to include a finished recorded meal in a Cook Pack; recipients can add it to history separately from saving recipes.

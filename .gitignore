@@ -4,3 +4,8 @@ build/
 app/build/
 local.properties
 *.iml
+node_modules/
+.env
+.env.*
+!.env.example
+api-service/.local/

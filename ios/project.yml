@@ -81,6 +81,8 @@ targets:
         buildPhase: resources
       - path: PitTechTests/Fixtures/android-cook-pack-cook-v1.pittech
         buildPhase: resources
+      - path: PitTechTests/Fixtures/relay-android-cook-v1.pittech
+        buildPhase: resources
       - path: PitTechTests/Fixtures/share-card-v1.json
         buildPhase: resources
     dependencies:

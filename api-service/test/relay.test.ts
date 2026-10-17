@@ -1,0 +1,62 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { newCode, normalizeCode, ownerHash, LIMITS, ApiError } from '../src/core.ts';
+import { Relay } from '../src/relay.ts';
+import { FileStorage } from '../src/storage.ts';
+import { canonicalPack } from '../src/pack.ts';
+import { MemoryRepository, budgets, golden } from './helpers.ts';
+
+export const secret = () => randomBytes(32).toString('base64url');
+test('codes have eight CSPRNG bytes and normalize without granting owner authority', () => {
+  assert.equal(newCode(() => Buffer.from([0, 1, 2, 3, 4, 5, 6, 7])), '0001-0203-0405-0607');
+  assert.equal(new Set(Array.from({ length: 10000 }, () => newCode())).size, 10000);
+  assert.equal(normalizeCode(' abcd 0123-Ef45\n6789 '), 'ABCD-0123-EF45-6789');
+  assert.throws(() => normalizeCode('EMBER-OAK-7')); assert.throws(() => ownerHash(newCode()));
+  const owner = secret(); assert.notEqual(ownerHash(owner), owner); assert.equal(ownerHash(owner).length, 64);
+});
+test('private objects survive adapter restart; retries, owner operations and 180-day expiry remain independent', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-test-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const data = await canonicalPack(await readFile(golden('native'))), file = join(root, 'input'); await writeFile(file, data.bytes, { mode: 0o600 });
+  const repository = new MemoryRepository(); let now = Date.now(); const owner = secret(), retry = randomUUID();
+  const relay = new Relay(repository, new FileStorage(root), budgets, () => now);
+  const receipt = await relay.upload(file, data.summary, owner, retry); assert.ok(!JSON.stringify(receipt).includes(owner));
+  const restarted = new Relay(repository, new FileStorage(root), budgets, () => now);
+  assert.deepEqual(await restarted.upload(file, data.summary, owner, retry), receipt);
+  assert.equal(repository.packs.size, 1); assert.deepEqual((await restarted.download(receipt.code.toLowerCase())).bytes, data.bytes);
+  now += 86400000; await restarted.download(receipt.code); assert.equal((await repository.get(receipt.code))!.expiresAt, Date.parse(receipt.expiresAt));
+  await assert.rejects(restarted.renew(receipt.code, secret()), { status: 404 }); await assert.rejects(restarted.revoke(receipt.code, secret()), { status: 404 });
+  const renewed = await restarted.renew(receipt.code, owner); assert.equal(Date.parse(renewed.expiresAt), now + LIMITS.life);
+  await assert.rejects(restarted.upload(file, { ...data.summary, sha256: 'f'.repeat(64) }, owner, retry), { status: 409 });
+  await restarted.revoke(receipt.code, owner); await assert.rejects(restarted.download(receipt.code), { status: 404 }); assert.equal(await restarted.sweep(), 1);
+  const next = await relay.upload(file, data.summary, secret(), randomUUID()); now += LIMITS.life;
+  await assert.rejects(relay.download(next.code), { status: 404 }); await assert.rejects(relay.renew(next.code, owner), { status: 404 }); assert.equal(await relay.sweep(), 1);
+});
+test('collisions retry; interrupted uploads and failed deletions keep their reserved budget until durable cleanup', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-test-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const data = await canonicalPack(await readFile(golden('android'))), file = join(root, 'input'); await writeFile(file, data.bytes, { mode: 0o600 });
+  const repo = new MemoryRepository(), storage = new FileStorage(root); let now = Date.now(), failDelete = true;
+  const codes = ['0000-0000-0000-0001', '0000-0000-0000-0001', '0000-0000-0000-0002'];
+  const relay = new Relay(repo, storage, budgets, () => now, () => codes.shift() ?? newCode());
+  const a = await relay.upload(file, data.summary, secret(), randomUUID()), b = await relay.upload(file, data.summary, secret(), randomUUID()); assert.notEqual(a.code, b.code);
+  const broken = new Relay(new MemoryRepository(), { ...storage, put: async () => { throw new Error('interrupted'); }, get: k => storage.get(k), delete: k => storage.delete(k) }, budgets, () => now);
+  await assert.rejects(broken.upload(file, data.summary, secret(), randomUUID())); assert.equal(broken.repository instanceof MemoryRepository && broken.repository.packs.size, 1);
+  now += LIMITS.uploadLease; assert.equal(await broken.sweep(), 1);
+  const reserved = new MemoryRepository(), owner = secret();
+  const bounded = new Relay(reserved, { put: (k, f) => storage.put(k, f), get: k => storage.get(k), delete: k => failDelete ? Promise.reject(new Error('temporary')) : storage.delete(k) }, { ...budgets, storageBytes: data.bytes.length }, () => now);
+  const r = await bounded.upload(file, data.summary, owner, randomUUID()); await bounded.revoke(r.code, owner); assert.equal(await bounded.sweep(), 0);
+  await assert.rejects(bounded.upload(file, data.summary, secret(), randomUUID()), { code: 'relay_budget_exhausted' });
+  failDelete = false; now += 300001; assert.equal(await bounded.sweep(), 1); await bounded.upload(file, data.summary, secret(), randomUUID());
+});
+test('object corruption cannot be downloaded and deletion does not reset the daily upload budget', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-test-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const data = await canonicalPack(await readFile(golden('native'))), file = join(root, 'input'); await writeFile(file, data.bytes, { mode: 0o600 });
+  const repository = new MemoryRepository(), storage = new FileStorage(root), relay = new Relay(repository, storage, { ...budgets, dailyUploads: 1 });
+  const owner = secret(), r = await relay.upload(file, data.summary, owner, randomUUID());
+  await writeFile(storage.path((await repository.get(r.code))!.objectKey), Buffer.from('corrupt'));
+  await assert.rejects(relay.download(r.code), (e: unknown) => e instanceof ApiError && e.status === 503);
+  await relay.revoke(r.code, owner); await relay.sweep(); await assert.rejects(relay.upload(file, data.summary, secret(), randomUUID()), { code: 'relay_budget_exhausted' });
+});

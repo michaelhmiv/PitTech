@@ -11,6 +11,9 @@ GitHub issues; this file holds the durable rules of the road.
   `ios/project.yml` (XcodeGen) — edit the spec, not the generated project.
 - `privacy-site/` — the hosted privacy policy (Railway).
 - `feedback-service/` — Android feedback relay (Railway → GitHub issues).
+- `api-service/` — draft anonymous Cook Pack relay; isolated `relay` Postgres
+  schema and private object storage. `online-services.yml` verifies the backend;
+  its review copy/application patch lives in `ci-proposals/`.
 - `store-assets/`, `distribution/` — store listing material.
 
 ## Scanning the repo efficiently
@@ -44,7 +47,8 @@ GitHub issues; this file holds the durable rules of the road.
    manual App Store IPA mode), `android-build.yml` (unit + emulator tests —
    API 36 is the gate; the API 37 job is advisory), `play-bundle.yml` and
    `play-closed-testing.yml` (Google Play), `firebase-dev-distribution.yml`
-   (dev builds), `feedback-relay.yml`.
+   (dev builds), `feedback-relay.yml`, `online-services.yml` (Node 22,
+   real Postgres 16, relay contracts/security and production-container checks).
    The core data gate in `scripts/run-emulator-ui-tests.sh` explicitly includes
    sharing ownership, Cook Pack exchange, guides, native share-card pixels,
    dense-document persistence and workbook tests.
@@ -56,9 +60,10 @@ GitHub issues; this file holds the durable rules of the road.
    profile via the App Store Connect API on every run. Never add steps that
    assume local keychains, exported .p12 files, or manually created
    certificates/profiles.
-3. **Workflow files:** GitHub App tokens cannot modify `.github/workflows/*`.
-   If a task needs a workflow change, surface that explicitly instead of
-   assuming a PR can carry it.
+3. **Workflow files:** editing `.github/workflows/*` requires the GitHub App's
+   Workflows repository permission. This connection successfully installed the
+   backend workflow on October 15. Verify the actual write and Actions result;
+   never infer workflow access from contents-write access alone.
 4. **AdMob** (publisher `ca-app-pub-2708638041809482`):
    - Android: live native unit only via `-PpittechLiveAds=true`; the `debug`
      build type always forces Google's test unit.
