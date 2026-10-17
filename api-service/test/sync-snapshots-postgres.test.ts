@@ -333,6 +333,19 @@ test('real Postgres encrypted snapshots: exact retries, compare-and-swap, quotas
           const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
           const headers = { Authorization: 'Bearer ' + session.accessToken, 'Content-Type': 'application/json' };
           const put = (body: unknown, key: string) => fetch(origin + '/v1/sync', { method: 'PUT', headers: { ...headers, 'Idempotency-Key': key }, body: JSON.stringify(body) });
+          // The production asset gate requires every referenced photo to have a
+          // completed upload; satisfy it with the synthetic picture for each asset.
+          for (const assetId of [...new Set(value.records.flatMap(r => r.assetIds))]) {
+            const input = { assetId, bytes: picture.length, mimeType: 'image/jpeg', sha256: digestForPhoto(picture) };
+            const begun = await fetch(origin + '/v1/sync/photos', { method: 'POST', headers: { ...headers, 'Idempotency-Key': assetId }, body: JSON.stringify(input) });
+            assert.equal(begun.status, 200);
+            for (let i = 0; i * PRIVATE_PHOTO_CHUNK_BYTES < picture.length; i++) {
+              const uploaded = await fetch(origin + '/v1/sync/photos/' + assetId + '/parts/' + i, { method: 'PUT', headers: { Authorization: headers.Authorization, 'Content-Type': 'application/octet-stream' }, body: new Uint8Array(picture.subarray(i * PRIVATE_PHOTO_CHUNK_BYTES, (i + 1) * PRIVATE_PHOTO_CHUNK_BYTES)) });
+              assert.equal(uploaded.status, 200);
+            }
+            const complete = await fetch(origin + '/v1/sync/photos/' + assetId + '/complete', { method: 'POST', headers, body: '{}' });
+            assert.equal(complete.status, 200);
+          }
           const first = await put(value, value.mutationId);
           assert.equal(first.status, 200);
           assert.equal((await first.json() as { version: number }).version, 1);
