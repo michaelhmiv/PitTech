@@ -1,3 +1,4 @@
+import { Publications } from './publications.ts';
 import { Authentication } from './auth.ts';
 import { AuthSecrets } from './auth-credentials.ts';
 import { ResendAuthMailer } from './auth-email.ts';
@@ -31,6 +32,9 @@ export function createRuntime() {
   const auth = process.env.AUTH_ENABLED === 'true' ? new Authentication(pool,
     new AuthSecrets(required('AUTH_HASH_KEY'), required('AUTH_ENCRYPTION_KEY')),
     new ResendAuthMailer(required('RESEND_API_KEY'), required('AUTH_FROM'), required('AUTH_PUBLIC_ORIGIN')), positive('AUTH_DAILY_EMAIL_LIMIT')) : undefined;
-  return { pool, relay, port, auth, options: { ipKey, auth, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  if(process.env.PUBLIC_API_ENABLED==='true'&&(!auth||process.env.PUBLIC_MODERATION_READY!=='true'||process.env.ACCOUNT_DELETION_READY!=='true'))throw new Error('Complete phase required');
+  if(process.env.PUBLIC_API_ENABLED==='true'&&budgets.storageBytes+positive('PUBLIC_STORAGE_MAX_BYTES')>positive('TOTAL_OBJECT_STORAGE_MAX_BYTES'))throw new Error('Combined storage budget exceeds cap');
+  const publications=process.env.PUBLIC_API_ENABLED==='true'?new Publications(pool,storage,{storageBytes:positive('PUBLIC_STORAGE_MAX_BYTES'),dailyBytes:positive('PUBLIC_DAILY_BYTES'),dailyWrites:positive('PUBLIC_DAILY_WRITES')}):undefined;
+  return { pool, relay, port, auth, publications, options: { ipKey, auth, publications, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }

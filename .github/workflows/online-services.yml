@@ -64,7 +64,12 @@ jobs:
             const result = await canonicalPack(await readFile(`/fixtures/${platform}/${platform}-cook-pack-${kind}-v1.pittech`));
             if (result.summary.kind !== kind) throw new Error('Fixture kind mismatch');
           }
-          console.log('Production image pack validation passed');
+          import { canonicalPublication } from './src/publication-pack.ts';
+          import { writeZip } from './src/zip.ts';
+          const publication = await readFile('/srv/contracts/fixtures/anonymous-pork.json');
+          const accepted = await canonicalPublication(writeZip(new Map([['publication.json', publication]])));
+          if (accepted.payload.identityMode !== 'anonymous') throw new Error('Publication fixture changed');
+          console.log('Production image pack and publication validation passed');
           JS
       - name: Require unconfigured production startup to fail closed
         run: |

@@ -7,6 +7,9 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Backend post-launch draft: prepare public recipe discovery, deliberate
+  publishing, named or anonymous credit, independent forks and likes. Public
+  services stay disabled until the complete community and privacy features are ready.
 - Android and iOS post-launch draft: prepare optional email sign-in, secure
   session recovery and sign-out while keeping the local cookbook. Account
   access stays disabled until community recipes, private sync and deletion are ready.
