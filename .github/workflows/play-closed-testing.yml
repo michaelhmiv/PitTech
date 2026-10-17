@@ -222,6 +222,7 @@ jobs:
           userFraction: ${{ inputs.rollout_fraction }}
 
       - name: Keep a copy of the uploaded bundle
+        if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
           name: pittech-play-${{ inputs.release_track }}-${{ steps.version.outputs.name }}
