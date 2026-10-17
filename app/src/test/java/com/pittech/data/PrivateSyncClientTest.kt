@@ -15,7 +15,7 @@ import org.junit.Test
 import java.io.File
 
 class PrivateSyncClientTest {
-    private val access = "a".repeat(43)
+    private val access = "A".repeat(43)
     private val mutation = "11111111-2222-4333-8444-555555555555"
     private val asset = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     private data class Recorded(val request: Request, val body: ByteArray)

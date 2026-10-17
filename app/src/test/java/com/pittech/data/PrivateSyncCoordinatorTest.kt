@@ -172,7 +172,7 @@ class PrivateSyncCoordinatorTest {
         val remote = JSONArray()
         for (i in 0 until base.length()) {
             val row = base.getJSONObject(i)
-            remote.put(if (row.getString("recordType") == "events") versioned("events", "note-1", 2, deviceB, remoteNote) else JSONObject(row.toString()))
+            remote.put(if (row.getString("recordType") == "events") versioned("events", "note-1", 3, deviceB, remoteNote) else JSONObject(row.toString()))
         }
         api.snapshot = JSONObject().put("version", 2).put("envelope", JSONObject().put("contractVersion", 1).put("records", remote).put("conflicts", JSONArray()))
         var commits = 0
@@ -183,7 +183,7 @@ class PrivateSyncCoordinatorTest {
         val racerNote = note("note-2", title = "Racer")
         val racer = JSONArray()
         for (i in 0 until remote.length()) racer.put(remote.getJSONObject(i))
-        racer.put(versioned("events", "note-2", 3, deviceB, racerNote))
+        racer.put(versioned("events", "note-2", 4, deviceB, racerNote))
         val secondSnapshot = JSONObject().put("version", 3).put("envelope", JSONObject().put("contractVersion", 1).put("records", racer).put("conflicts", JSONArray()))
         var snapshots = 0
         val counting = object : PrivateSyncAPI by api {
@@ -191,9 +191,9 @@ class PrivateSyncCoordinatorTest {
         }
         val retrying = coordinator(store = store, session = FakeSession(userA), api = counting, library = library, scope = this)
         retrying.syncNow()
-        assertEquals(2, api.puts.size)
-        assertNotEquals(api.puts[0].second, api.puts[1].second)
-        val retry = JSONObject(String(api.puts[1].first, Charsets.UTF_8))
+        assertEquals(3, api.puts.size)
+        assertNotEquals(api.puts[1].second, api.puts[2].second)
+        val retry = JSONObject(String(api.puts[2].first, Charsets.UTF_8))
         assertEquals(3, retry.getLong("baseVersion"))
         val records = (0 until retry.getJSONArray("records").length()).map { retry.getJSONArray("records").getJSONObject(it) }
         // Both divergent edits survive: the winner in records, the loser as a retained copy.
@@ -267,8 +267,8 @@ class PrivateSyncCoordinatorTest {
         try { store.readBody(userA, pending.mutationId!!); fail() } catch (_: Exception) { }
         api.commitHandler = { bytes, mutation -> JSONObject().put("version", 1).put("mutationId", mutation).put("sha256", RelayProtocol.hash(bytes)) }
         sync.syncNow()
-        assertEquals(2, api.puts.size)
-        val other = JSONObject(String(api.puts[1].first, Charsets.UTF_8))
+        assertEquals(3, api.puts.size)
+        val other = JSONObject(String(api.puts[2].first, Charsets.UTF_8))
         // The new account starts its own backup from scratch on explicit request: fresh
         // base version, no resolutions, none of the prior account's journal attached.
         assertEquals(0, other.getLong("baseVersion"))

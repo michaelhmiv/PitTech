@@ -138,9 +138,11 @@ private struct NativeSyncAuthLost: Error {}
         var state = try store.load(user)
         let archive: JSONValue
         do { archive = try library.archive() } catch { fail(user: user, state: state, outcome: "retry", message: "Private sync needs a retry. Your local journal is unchanged."); return }
+        // ensureRegistry persists durable photo progress as it goes; a failure must keep
+        // that progress, so fail from the reloaded state instead of the pre-registry one.
         do { state = try await ensureRegistry(user: user, state: state, archive: archive) }
-        catch is URLError { fail(user: user, state: state, outcome: "waiting", message: "Waiting for connection. Photo uploads resume where they stopped."); return }
-        catch { fail(user: user, state: state, outcome: "retry", message: "Private sync needs a retry."); return }
+        catch is URLError { fail(user: user, state: (try? store.load(user)) ?? state, outcome: "waiting", message: "Waiting for connection. Photo uploads resume where they stopped."); return }
+        catch { fail(user: user, state: (try? store.load(user)) ?? state, outcome: "retry", message: "Private sync needs a retry."); return }
         var assets = Dictionary(uniqueKeysWithValues: state.photos.map { ($0.key, $0.value.assetId) })
         var projected: [NativePrivateProjectedRecord]
         do { projected = try projection.project(archive, assets: assets) } catch {
@@ -153,6 +155,10 @@ private struct NativeSyncAuthLost: Error {}
         state = advancedAfterStamp(user: user, state: state, stamped: local)
         guard var fetched = try await fetch(user: user, state: state) else { return }
         var attempts = 0
+        // Records from the last merge pass. A 409 retry stamps the rebuilt journal against
+        // these instead of the acknowledged base, so already-merged winner versions survive
+        // the retry instead of being restamped with this device's identity.
+        var lastMerged: [NativeSyncRecord]? = nil
         while true {
             if fetched.envelope == nil {
                 if state.serverVersion == 0, state.base.isEmpty, fetched.version == 0 {
@@ -187,6 +193,7 @@ private struct NativeSyncAuthLost: Error {}
             do { try projection.validateRows(liveProjected(remote.records)) } catch { fail(user: user, state: state, outcome: "retry", message: "The server backup could not be applied safely. Your journal is unchanged."); return }
             let merged: NativeSyncMergeResult
             do { merged = try NativePrivateSyncMerge.merge(base: state.base, local: local, remote: remote.records) } catch { fail(user: user, state: state, outcome: "retry", message: "The server backup could not be merged safely. Your journal is unchanged."); return }
+            lastMerged = merged.records
             state.maxCounter = max(state.maxCounter, merged.nextCounter)
             let previousConflicts = state.conflicts.count
             let retained = unionConflicts(state.conflicts, merged.conflicts, resolved: state.resolved)
@@ -225,7 +232,7 @@ private struct NativeSyncAuthLost: Error {}
             assets = Dictionary(uniqueKeysWithValues: state.photos.map { ($0.key, $0.value.assetId) })
             do { projected = try projection.project(rebuilt, assets: assets) } catch { fail(user: user, state: state, outcome: "retry", message: "Some saved information cannot be synced safely yet. Your journal is unchanged."); return }
             fetched.build = rebuilt
-            local = try NativePrivateSyncProtocol.stampLocal(projected, base: state.base, deviceId: device, counter: state.maxCounter)
+            local = try NativePrivateSyncProtocol.stampLocal(projected, base: lastMerged ?? state.base, deviceId: device, counter: state.maxCounter)
         }
     }
 
@@ -409,10 +416,28 @@ private struct NativeSyncAuthLost: Error {}
             fail(user: user, state: live, outcome: "retry", message: "This library could not be uploaded safely. Your journal is unchanged."); return .failed
         }
         let stored = live.mutationId.flatMap { try? store.readBody(user, $0) }
-        if let stored, live.mutationSha == NativeRelayProtocol.hash(candidate.data), NativeRelayProtocol.hash(stored) == NativeRelayProtocol.hash(candidate.data), let mutation = live.mutationId {
-            // Exact retry of the persisted upload: same identity, same bytes.
+        // An ambiguous outcome retries the persisted upload with the same identity and the
+        // same bytes. The journal content is compared without version stamps: the logical
+        // counter may have advanced since the body was persisted, but restamped versions of
+        // unchanged content must not rotate the idempotency identity.
+        let storedObject = stored.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0).objectValue }
+        let candidateObject = try? JSONDecoder().decode(JSONValue.self, from: candidate.data).objectValue
+        let contentUnchanged: Bool = {
+            guard let storedObject, let candidateObject,
+                  storedObject["baseVersion"]?.numberValue == Double(baseVersion),
+                  candidateObject["baseVersion"]?.numberValue == Double(baseVersion),
+                  Self.sameRecordContent(storedObject["records"]?.arrayValue ?? [], candidateObject["records"]?.arrayValue ?? []),
+                  (storedObject["conflicts"] ?? .array([])) == (candidateObject["conflicts"] ?? .array([])),
+                  (storedObject["resolvedConflictIds"] ?? .array([])) == (candidateObject["resolvedConflictIds"] ?? .array([]))
+            else { return false }
+            return true
+        }()
+        if contentUnchanged, let stored, let storedRecords = storedObject?["records"]?.arrayValue, let mutation = live.mutationId {
+            // Exact retry of the persisted upload: same identity, same bytes. The base
+            // tracks exactly what the server acknowledged: the persisted records.
             live.pending = true; try? store.save(user, live)
-            return try await commit(user: user, state: live, bytes: stored, mutation: mutation, baseVersion: baseVersion, records: records, retained: retained, fresh: fresh, resolved: resolved, serverIds: serverIds, projectedKeys: projectedKeys)
+            let decoded = (try? JSONDecoder().decode([NativeSyncRecord].self, from: JSONEncoder().encode(JSONValue.array(storedRecords)))) ?? records
+            return try await commit(user: user, state: live, bytes: stored, mutation: mutation, baseVersion: baseVersion, records: decoded, retained: retained, fresh: fresh, resolved: resolved, serverIds: serverIds, projectedKeys: projectedKeys)
         }
         // Changed content always rotates to a fresh idempotency identity; the server
         // rejects a reused identity with different bytes.
@@ -465,6 +490,25 @@ private struct NativeSyncAuthLost: Error {}
         try? FileManager.default.removeItem(at: store.bodyURL(user, mutation))
         publish(user, busy: false)
         return .acked
+    }
+
+    /** Record content without version stamps, for retry comparisons. Restamping unchanged
+     * rows with an advanced logical counter must not count as a content change. */
+    private static func sameRecordContent(_ a: [JSONValue], _ b: [JSONValue]) -> Bool {
+        guard a.count == b.count else { return false }
+        func keyed(_ values: [JSONValue]) -> [String: JSONValue]? {
+            var map: [String: JSONValue] = [:]
+            for value in values {
+                guard var object = value.objectValue,
+                      let type = object["recordType"]?.stringValue,
+                      let id = object["recordId"]?.stringValue else { return nil }
+                object.removeValue(forKey: "version")
+                map[type + "|" + id] = .object(object)
+            }
+            return map
+        }
+        guard let left = keyed(a), let right = keyed(b) else { return false }
+        return left == right
     }
 
     private func fail(user: String, state: NativePrivateSyncState, outcome: String, message: String) {

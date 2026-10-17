@@ -255,8 +255,8 @@ import XCTest
         XCTAssertEqual(cancelled.base.count, 3)
         api.commitHandler = { bytes, mutation in .object(["version": .number(1), "mutationId": .string(mutation), "sha256": .string(NativeRelayProtocol.hash(bytes))]) }
         await sync.syncNow()
-        XCTAssertEqual(api.puts.count, 2)
-        let other = try XCTUnwrap(JSONDecoder().decode(JSONValue.self, from: api.puts[1].0).objectValue)
+        XCTAssertEqual(api.puts.count, 3)
+        let other = try XCTUnwrap(JSONDecoder().decode(JSONValue.self, from: api.puts[2].0).objectValue)
         // The new account starts its own backup from scratch on explicit request: fresh
         // base version, no resolutions, none of the prior account's journal attached.
         XCTAssertEqual(other["baseVersion"], .number(0))

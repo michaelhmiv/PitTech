@@ -147,9 +147,11 @@ internal class PrivateSyncCoordinator(
         var state = withContext(Dispatchers.IO) { store.load(user) }
         var archive = try { withContext(Dispatchers.IO) { library.archive() } }
         catch (e: Exception) { fail(user, state, "retry", "Private sync needs a retry. Your local journal is unchanged."); return }
+        // ensureRegistry persists durable photo progress as it goes; a failure must keep
+        // that progress, so fail from the reloaded state instead of the pre-registry one.
         state = try { withContext(Dispatchers.IO) { ensureRegistry(user, state, archive) } }
-        catch (e: IOException) { fail(user, state, "waiting", "Waiting for connection. Photo uploads resume where they stopped."); return }
-        catch (e: Exception) { fail(user, state, "retry", e.message ?: "Private sync needs a retry."); return }
+        catch (e: IOException) { fail(user, withContext(Dispatchers.IO) { store.load(user) }, "waiting", "Waiting for connection. Photo uploads resume where they stopped."); return }
+        catch (e: Exception) { fail(user, withContext(Dispatchers.IO) { store.load(user) }, "retry", e.message ?: "Private sync needs a retry."); return }
         var assets = state.photos.mapValues { it.value.assetId }
         var projected = try { projection.project(archive, assets) }
         catch (e: Exception) {
@@ -162,6 +164,10 @@ internal class PrivateSyncCoordinator(
         state = advancedAfterStamp(user, state, local)
         var fetched = fetch(user, state) ?: return
         var attempts = 0
+        // Records from the last merge pass. A 409 retry stamps the rebuilt journal against
+        // these instead of the acknowledged base, so already-merged winner versions survive
+        // the retry instead of being restamped with this device's identity.
+        var lastMerged: JSONArray? = null
         while (true) {
             val (version, envelope) = fetched
             if (envelope == null) {
@@ -205,6 +211,7 @@ internal class PrivateSyncCoordinator(
             state = state.copy(conflicts = retained.toString())
             withContext(Dispatchers.IO) { store.save(user, state) }
             val mergedRecords = merged.getJSONArray("records")
+            lastMerged = mergedRecords
             try {
                 projection.validateRows(liveProjected(mergedRecords))
             } catch (e: Exception) { fail(user, state, "retry", "The merged backup could not be applied safely. Your journal is unchanged."); return }
@@ -240,7 +247,7 @@ internal class PrivateSyncCoordinator(
             assets = state.photos.mapValues { it.value.assetId }
             projected = try { projection.project(archive, assets) }
             catch (e: Exception) { fail(user, state, "retry", "Some saved information cannot be synced safely yet. Your journal is unchanged."); return }
-            local = PrivateSyncProtocol.stampLocal(projected, JSONArray(state.base), device, state.maxCounter)
+            local = PrivateSyncProtocol.stampLocal(projected, lastMerged ?: JSONArray(state.base), device, state.maxCounter)
         }
     }
 
@@ -423,13 +430,24 @@ internal class PrivateSyncCoordinator(
         val candidate = try {
             PrivateSyncProtocol.putBody(baseVersion, candidateId, device, records, retained, fresh, resolved, serverIds)
         } catch (e: Exception) { fail(user, live, "retry", "This library could not be uploaded safely. Your journal is unchanged."); return UploadResult.FAILED }
-        val candidateSha = RelayProtocol.hash(candidate.toString().toByteArray())
         val stored = live.mutationId?.let { id -> runCatching { withContext(Dispatchers.IO) { store.readBody(user, id) } }.getOrNull() }
-        if (stored != null && live.mutationSha == candidateSha && RelayProtocol.hash(stored) == candidateSha) {
-            // Exact retry of the persisted upload: same identity, same bytes.
+        val storedJson = stored?.let { runCatching { JSONObject(String(it, Charsets.UTF_8)) }.getOrNull() }
+        // An ambiguous outcome retries the persisted upload with the same identity and the
+        // same bytes. The journal content is compared without version stamps: the logical
+        // counter may have advanced since the body was persisted, but restamped versions of
+        // unchanged content must not rotate the idempotency identity.
+        val contentUnchanged = stored != null && storedJson != null &&
+            storedJson.optLong("baseVersion", -1) == baseVersion &&
+            sameRecordContent(records, storedJson.optJSONArray("records") ?: JSONArray()) &&
+            PrivateSyncMerge.stable(candidate.optJSONArray("conflicts")) == PrivateSyncMerge.stable(storedJson.optJSONArray("conflicts")) &&
+            PrivateSyncMerge.stable(candidate.optJSONArray("resolvedConflictIds")) == PrivateSyncMerge.stable(storedJson.optJSONArray("resolvedConflictIds"))
+        if (contentUnchanged) {
+            // Exact retry of the persisted upload: same identity, same bytes. The base
+            // tracks exactly what the server acknowledged: the persisted records.
+            val storedRecords = storedJson!!.optJSONArray("records") ?: JSONArray()
             live = live.copy(pending = true)
             withContext(Dispatchers.IO) { store.save(user, live) }
-            return commit(user, live, stored, live.mutationId!!, baseVersion, records, retained, fresh, resolved, serverIds, projectedKeys)
+            return commit(user, live, stored!!, live.mutationId!!, baseVersion, storedRecords, retained, fresh, resolved, serverIds, projectedKeys)
         }
         // Changed content always rotates to a fresh idempotency identity; the server
         // rejects a reused identity with different bytes.
@@ -521,6 +539,23 @@ internal class PrivateSyncCoordinator(
         val left = (0 until a.length()).map { PrivateSyncMerge.stable(a.getJSONObject(it)) }.sorted()
         val right = (0 until b.length()).map { PrivateSyncMerge.stable(b.getJSONObject(it)) }.sorted()
         return left == right
+    }
+
+    /** Record content without version stamps, for retry comparisons. Restamping unchanged
+     * rows with an advanced logical counter must not count as a content change. */
+    private fun sameRecordContent(a: JSONArray, b: JSONArray): Boolean {
+        if (a.length() != b.length()) return false
+        fun keyed(records: JSONArray): Map<String, String> {
+            val map = mutableMapOf<String, String>()
+            for (i in 0 until records.length()) {
+                val row = records.getJSONObject(i)
+                val copy = JSONObject(row.toString())
+                copy.remove("version")
+                map[row.getString("recordType") + "|" + row.getString("recordId")] = PrivateSyncMerge.stable(copy)
+            }
+            return map
+        }
+        return keyed(a) == keyed(b)
     }
 
     private fun unionConflicts(retained: JSONArray, fresh: JSONArray, resolved: List<String>): JSONArray {
