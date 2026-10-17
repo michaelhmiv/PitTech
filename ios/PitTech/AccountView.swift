@@ -132,6 +132,7 @@ struct NativeSyncConflictReviewView: View {
             }
         }.navigationTitle("Review synced edits").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("sync-review-done") } }
+}
 private struct NativeLocalJournalReviewView: View {
     let confirm: () -> Void
     @Environment(\.dismiss) private var dismiss

@@ -173,6 +173,8 @@ import android.graphics.Bitmap
             compose.onNodeWithTag("sync-now").performScrollTo().performClick()
             compose.waitUntil(10000){compose.onAllNodesWithText("Waiting for connection").fetchSemanticsNodes().isNotEmpty()}
             assertEquals(0,store.load(user).lastSyncedAt)
+        }finally{scope.cancel()}
+    }
     @Test fun localJournalRemovalRequiresTypedConfirmationAndLeavesAccountStateAlone() {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
         val storage=object:AccountStorage{
