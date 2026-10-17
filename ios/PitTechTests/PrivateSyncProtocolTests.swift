@@ -43,7 +43,7 @@ final class PrivateSyncProtocolTests: XCTestCase {
         // A locally generated conflict the server never saw drops without an unknown resolution ID.
         let fresh = try NativePrivateSyncProtocol.putBody(baseVersion: 4, mutationId: UUID().uuidString.lowercased(), deviceId: deviceA, records: records, retained: [], fresh: [conflict], resolved: [conflict.id], serverConflictIds: [])
         XCTAssertEqual(fresh.conflicts.count, 0); XCTAssertTrue(fresh.resolvedSent.isEmpty)
-        XCTAssertNil(JSONDecoder().decode(JSONValue.self, from: fresh.data).objectValue?["resolvedConflictIds"])
+        XCTAssertNil(try JSONDecoder().decode(JSONValue.self, from: fresh.data).objectValue?["resolvedConflictIds"])
     }
 
     func testParseSnapshotGetValidatesVersionAndEnvelope() throws {

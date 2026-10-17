@@ -325,7 +325,7 @@ import XCTest
         XCTAssertEqual(sync.presentation.status, "Conflicts to review")
         // The local rewrite stays in the journal; the acknowledged base still holds the original.
         XCTAssertEqual(store.library.readings.first?.objectValue?["value"], .number(75))
-        XCTAssertEqual(journal.load(userA).base.first { $0.recordType == "readings" }?.payload?["value"], .number(74))
+        XCTAssertEqual(try journal.load(userA).base.first { $0.recordType == "readings" }?.payload?["value"], .number(74))
     }
 
     func testAmbiguousUploadRetriesExactBytesAndNeverClaimsUnacknowledgedSuccess() async throws {
