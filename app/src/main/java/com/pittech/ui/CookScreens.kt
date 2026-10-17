@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,10 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -92,10 +97,10 @@ import java.util.Date
 
 private enum class MainSection(val title: String, val icon: ImageVector) {
     COOKS("Meals", Icons.Filled.Home),
-    RECIPES("Recipes", Icons.Filled.List),
-    INSIGHTS("Insights", Icons.Filled.List),
-    DEVICES("Devices", Icons.Filled.Info),
-    SETTINGS("Settings", Icons.Filled.Settings),
+    RECIPES("Recipes", Icons.Filled.MenuBook),
+    DISCOVER("Discover", Icons.Filled.Explore),
+    INSIGHTS("Insights", Icons.Filled.Insights),
+    MORE("More", Icons.Filled.MoreHoriz),
 }
 
 @Composable
@@ -130,6 +135,7 @@ fun PitTechApp(
     val restoredPreferences by viewModel.restoredPreferences.collectAsStateWithLifecycle()
     val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
+    var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("pittech-preferences", 0) }
@@ -245,21 +251,14 @@ fun PitTechApp(
     }
 
     val section = MainSection.valueOf(selectedSection)
+    BackHandler(enabled = section == MainSection.MORE && moreDestination != null) { moreDestination = null }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Image(
-                            painter = painterResource(R.drawable.pittech_smoker),
-                            contentDescription = "PitTech smoker logo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(42.dp),
-                        )
-                        Column {
-                            Text("PitTech", fontWeight = FontWeight.Bold)
-                            Text(section.title, style = MaterialTheme.typography.bodyMedium)
-                        }
+                title = { Text(if (section == MainSection.MORE) moreDestination ?: section.title else section.title, fontWeight = FontWeight.SemiBold) },
+                navigationIcon = {
+                    if (section == MainSection.MORE && moreDestination != null) {
+                        IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
                     }
                 },
             )
@@ -269,7 +268,10 @@ fun PitTechApp(
                 MainSection.entries.forEach { item ->
                     NavigationBarItem(
                         selected = section == item,
-                        onClick = { selectedSection = item.name },
+                        onClick = {
+                            if (item == MainSection.MORE && section == item) moreDestination = null
+                            selectedSection = item.name
+                        },
                         icon = { Icon(item.icon, contentDescription = null) },
                         label = { Text(item.title) },
                         modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
@@ -294,9 +296,10 @@ fun PitTechApp(
                     isStartingCook = true
                 },
             )
-            MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SavedRecipesLibrary(viewModel, standalone = true)
             }
+            MainSection.DISCOVER -> DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
             MainSection.INSIGHTS -> InsightsScreen(
                 data = insights,
                 onOpenCook = viewModel::openCook,
@@ -307,7 +310,8 @@ fun PitTechApp(
                 },
                 modifier = Modifier.padding(padding),
             )
-            MainSection.DEVICES -> Column(Modifier.padding(padding).fillMaxSize()) {
+            MainSection.MORE -> when (moreDestination) {
+            "Devices" -> Column(Modifier.padding(padding).fillMaxSize()) {
                 EquipmentTools(viewModel)
                 if (BuildConfig.TELEMETRY_BETA_ENABLED) {
                     TelemetryConnectionsScreen(viewModel, Modifier.weight(1f))
@@ -316,7 +320,7 @@ fun PitTechApp(
                 }
 
             }
-            MainSection.SETTINGS -> SettingsScreen(
+            "Settings" -> SettingsScreen(
                 viewModel = viewModel,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -334,6 +338,8 @@ fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" })
+            }
         }
     }
 }
@@ -364,9 +370,6 @@ private fun CooksHome(
     ) {
         if (activeCooks.isNotEmpty()) {
             SectionHeading("Active meals")
-            if (showCookListAd) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
-            }
             activeCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
         }
 
@@ -387,6 +390,7 @@ private fun CooksHome(
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
+        if (showCookListAd && activeCooks.isNotEmpty()) PitTechNativeAdPlacement(adsEnabled = adsEnabled)
 
         TextButton(onClick = { showPlanning = !showPlanning }, modifier = Modifier.testTag("home-planning-toggle")) { Text(if (showPlanning) "Hide planning" else "Planning and playbooks") }
         if (showPlanning) playbooks()

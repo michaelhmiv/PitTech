@@ -8,7 +8,8 @@ import org.junit.Test
 class TelemetryConnectionsScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     @Test fun devicesRouteOffersBetaConnectionsAndHaOAuthWithoutExposingDiagnostics() {
-        compose.onNodeWithTag("nav-devices").performClick()
+        compose.onNodeWithTag("nav-more").performClick()
+        compose.onNodeWithTag("more-devices").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("telemetry-connections").fetchSemanticsNodes().isNotEmpty() }
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
             val folder = java.io.File(compose.activity.filesDir, "pittech-ui-test").apply { mkdirs() }

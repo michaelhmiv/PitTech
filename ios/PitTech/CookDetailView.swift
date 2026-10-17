@@ -3,6 +3,7 @@ import UIKit
 
 struct CookDetailView: View {
     @Environment(CookStore.self) private var store
+    @Environment(NativeTelemetryRuntime.self) private var telemetry
     let cookId: String
     @State private var section = "Live"
     @State private var draft: CookNoteDraft?
@@ -14,6 +15,9 @@ struct CookDetailView: View {
     @State private var foodOnTime = Date.now
     @State private var finishing = false
     @State private var completionChoices = false
+    @State private var showingDevices = false
+    @State private var showingReminders = false
+    @ScaledMetric(relativeTo: .caption) private var quickBarHeight: CGFloat = 52
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var readings: [TemperatureSample] { store.readings(for: cookId) }
     private var events: [TimelineEntry] { store.events(for: cookId) }
@@ -24,10 +28,9 @@ struct CookDetailView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
-                            Text(cook.title).font(.largeTitle.bold())
+                            Text(cook.title).font(.title.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
                             MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
-                            shortcutBar
                             if let saved = store.noteDrafts.first(where: { $0.cookId == cookId }) {
                                 Button("Resume saved note") { draft = saved }.buttonStyle(.bordered)
                             }
@@ -45,10 +48,17 @@ struct CookDetailView: View {
                             }
                         }.padding(20)
                     }
+                    .accessibilityIdentifier("cook-content")
                     .onChange(of: focused) { _, id in if let id { DispatchQueue.main.async { withAnimation { proxy.scrollTo(id, anchor: .top) } } } }
                 }
                 .background(PitTechStyle.canvas.ignoresSafeArea())
                 .navigationTitle("Meal").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingDevices = true } label: { Label("Devices", systemImage: "thermometer") }.accessibilityIdentifier("meal-devices")
+                } }
+                .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
+                .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId) }
+                .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
                 .alert("Finish meal?", isPresented: $finishing) {
                     Button("Finish meal", role: .destructive) { store.finishCook(cookId); if store.saveError == nil { completionChoices = true } }
                     Button("Cancel", role: .cancel) { }
@@ -57,12 +67,13 @@ struct CookDetailView: View {
                     Text(incomplete.isEmpty ? "Finish this meal? You can add notes and results afterward." : "No completion action recorded for \(incomplete.joined(separator: ", ")). You can still finish; physical actions stay as recorded.")
                 }
                 .sheet(isPresented: $completionChoices) {
-                    NavigationStack { ScrollView { VStack(alignment: .leading, spacing: 14) {
-                        Text("Meal finished").font(.title2)
+                    NavigationStack { ScrollView { VStack(alignment: .leading, spacing: 18) {
+                        Text("Meal finished").font(.title2.weight(.semibold))
+                        Text("Your recorded actions and readings are saved. Results and recipe saves are optional.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
                         Button("View meal summary") { section = "Timeline"; completionChoices = false }
-                        MealRecipeActions(cookId: cookId, initiallyExpanded: true)
+                        MealRecipeActions(cookId: cookId)
                         Button("Leave without saving") { completionChoices = false }
-                    }.padding(20) }.navigationTitle("Meal finished") }
+                    }.padding(20) }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Summary").navigationBarTitleDisplayMode(.inline) }
                 }
                 .sheet(item: $draft) { CookNoteComposer(draft: $0) }
                 .sheet(isPresented: $showingDish) { AddDishSheet(cookId: cookId) }
@@ -79,18 +90,14 @@ struct CookDetailView: View {
         }
     }
     private var shortcutBar: some View {
-        VStack(alignment: .leading) {
-            MealActionRow {
-                Button { open() } label: { Label("Log", systemImage: "note.text") }
-                Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer") }
-                Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera") }
-            }.buttonStyle(.bordered)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in
-                    Button(CookStore.actionLabel(action)) { open(category: "action", action: action) }.buttonStyle(.bordered).fixedSize()
-                } }
-            }
-        }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                Button { open() } label: { Label("Log", systemImage: "note.text").frame(minHeight: 44) }
+                Button { open(category: "temperature") } label: { Label("Temp", systemImage: "thermometer").frame(minHeight: 44) }
+                Button { open(category: "photo") } label: { Label("Photo", systemImage: "camera").frame(minHeight: 44) }
+                Button { showingReminders = true } label: { Label("Reminders", systemImage: "bell").frame(minHeight: 44) }
+            }.font(.caption).buttonStyle(.bordered).fixedSize(horizontal: true, vertical: false).frame(minHeight: 44)
+        }.frame(height: quickBarHeight)
     }
     private func open(category: String = "general", action: String? = nil, dishId: String? = nil) {
         let scope = dishId ?? (store.dishRecords(cookId).count == 1 ? store.dishRecords(cookId).first?.id : nil)
@@ -100,7 +107,6 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
-                MealRemindersLink(cookId: cookId)
                 MealRecipeActions(cookId: cookId)
                 MealActivityTimers(cookId: cookId)
                 Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())

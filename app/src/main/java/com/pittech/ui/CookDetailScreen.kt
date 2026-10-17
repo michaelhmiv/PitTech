@@ -146,6 +146,7 @@ fun CookDetailScreen(
     onBack: () -> Unit,
 ) {
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
+    var showConnections by rememberSaveable { mutableStateOf(false) }
     val recordingRunning by viewModel.recordingServiceRunning.collectAsStateWithLifecycle()
     var noteDraftJson by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var noteEditing by rememberSaveable(data.cook.id) { mutableStateOf(false) }
@@ -570,12 +571,24 @@ fun CookDetailScreen(
                 data.photos.filter { it.eventId == event.id }.forEach { photo -> PhotoThumbnail(photo, Modifier.size(90.dp)) { viewingMarker = null; viewingPhoto = photo } }
             } }, confirmButton = { TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
     }
+    if (showConnections) ModalBottomSheet(onDismissRequest = { showConnections = false }) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Devices & connections", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showConnections = false }) { Text("Done") }
+            }
+            TelemetryConnectionsScreen(viewModel, Modifier.weight(1f))
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Column { Text(data.cook.title, maxLines = 1); Text(statusLabel(data.cook.status), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-cook-status")) } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back to cooks") } },
-                actions = { IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") } },
+                actions = {
+                    IconButton(onClick = { showConnections = true }, modifier = Modifier.testTag("meal-devices")) { Icon(Icons.Filled.Thermostat, contentDescription = "Devices and connections") }
+                    IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

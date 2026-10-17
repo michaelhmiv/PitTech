@@ -8,7 +8,11 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let bottom = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
                 if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
             }
-            app.swipeUp()
+            let scroll = app.scrollViews["cook-content"].exists ? app.scrollViews["cook-content"] : app.scrollViews.firstMatch
+            let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
+            if scroll.exists && scroll.isHittable {
+                if element.exists && element.frame.maxY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
+            } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable)
     }
@@ -18,7 +22,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             let app = XCUIApplication()
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty"] + (large ? ["--screenshot-large-text"] : [])
             app.launch()
-            app.tabBars.buttons["Devices"].tap()
+            app.tabBars.buttons["More"].tap()
+            app.buttons["more-devices"].tap()
             let add = app.buttons["telemetry-add"]
             reveal(add, app: app)
             capture(large ? "Native Beta connections large text" : "Native Beta connections")
@@ -37,10 +42,11 @@ final class MealRecipeFlowsTests: XCTestCase {
     }
     func testSavedRecipesComposeHistoricalCheckAndFinishWithoutForcedSaving() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset"]; app.launch()
-        app.tabBars.buttons["Saved Recipes"].tap()
+        app.tabBars.buttons["Recipes"].tap()
+        app.buttons["recipe-compose"].tap()
         for name in ["Chicken", "Mac and cheese", "Pork"] {
             let toggle = app.buttons["Add " + name + " to meal"]; reveal(toggle, app: app); toggle.tap()
-            expectation(for: NSPredicate(format: "value == %@", "Selected"), evaluatedWith: toggle)
+            expectation(for: NSPredicate(format: "selected == YES"), evaluatedWith: toggle)
             waitForExpectations(timeout: 5)
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()

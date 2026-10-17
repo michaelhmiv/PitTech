@@ -9,13 +9,14 @@ struct ContentView: View {
         TabView {
             CookListView()
                 .tabItem { Label("Meals", systemImage: "flame") }
-            NavigationStack { SavedRecipesView() }.tabItem { Label("Saved Recipes", systemImage: "book") }
+            NavigationStack { SavedRecipesView() }.tabItem { Label("Recipes", systemImage: "book") }
+            DiscoveryWelcomeView().tabItem { Label("Discover", systemImage: "safari") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.xyaxis.line") }
-            NativeTelemetryConnectionsView(runtime: telemetry).tabItem { Label("Devices", systemImage: "thermometer") }
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+            MoreView(runtime: telemetry).tabItem { Label("More", systemImage: "ellipsis") }
         }
+        .environment(telemetry)
+        .tint(PitTechStyle.accent)
         .task {
             telemetry.foreground(scenePhase == .active, store: store)
         }
@@ -54,14 +55,6 @@ struct CookListView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     SectionTitle(title: "Meals", subtitle: "Keep each meal in one place.")
-                    Button { showingStart = true } label: {
-                        Label("Start meal", systemImage: "plus.circle.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 54)
-                    }
-                    .buttonStyle(.borderedProminent)
-
-
                     if !store.activeCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("ACTIVE").font(.caption.weight(.bold)).foregroundStyle(.secondary)
@@ -71,13 +64,16 @@ struct CookListView: View {
                             }
                         }
                     }
+                    Button { showingStart = true } label: {
+                        Label("Start meal", systemImage: "plus")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                    }
+                    .buttonStyle(.borderedProminent)
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                         if store.completedCooks.isEmpty {
-                            if store.activeCooks.isEmpty && store.completedCooks.count >= 4 && adsConsent.canRequestAds {
-                                NativeAdCard()
-                            }
                             ContentUnavailableView("No finished cooks yet", systemImage: "book.closed", description: Text("Your cook history will show up here when you finish a cook."))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 20)
@@ -117,7 +113,7 @@ struct CookCard: View {
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(cook.isActive ? PitTechStyle.accent : PitTechStyle.sage)
                 .frame(width: 42, height: 42)
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13))
+                .background(cook.isActive ? PitTechStyle.accentFill : PitTechStyle.sageFill, in: RoundedRectangle(cornerRadius: 13))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(cook.title).font(.headline).foregroundStyle(.primary)
@@ -137,7 +133,8 @@ struct CookCard: View {
                 .accessibilityHidden(true)
         }
         .padding(14)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.border, lineWidth: 1))
     }
 }
 
@@ -255,7 +252,7 @@ struct SettingsView: View {
     @State private var archiveError: String?
 
     var body: some View {
-        NavigationStack {
+        Group {
             Form {
                 Section("Measurements") {
                     Picker("Temperature", selection: Binding(
@@ -304,6 +301,7 @@ struct SettingsView: View {
                     }
                 }
                 Section("PitTech") {
+                    NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                 }
             }

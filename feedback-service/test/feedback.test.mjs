@@ -16,6 +16,15 @@ const base = {
   device: "Google Pixel 8 Pro",
 };
 
+test("accepts iOS feedback without requiring a fictitious Android version", () => {
+  const submission = normalizeSubmission({ kind: "FEATURE", title: "Recipe sorting", description: "Choose a cookbook order", appVersion: "1.0", platform: "ios", osVersion: "17.0", device: "iPhone" });
+  assert.equal(submission.platform, "ios");
+  const issue = buildGitHubIssue(submission);
+  assert.match(issue.body, /iOS: 17.0/);
+  assert.doesNotMatch(issue.body, /Android:/);
+  assert.throws(() => normalizeSubmission({ ...base, platform: "other" }), ValidationError);
+});
+
 test("normalizes a valid bug report and includes opted-in diagnostics", () => {
   const submission = normalizeSubmission({
     ...base,
