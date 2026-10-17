@@ -7,7 +7,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, ["Account", "Delete account", "Report publication", "Report publisher", "Community controls"].contains(navigation.identifier) {
+            if let navigation, ["Account", "Delete account", "Report publication", "Report publisher", "Community controls", "Review synced edits"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
@@ -91,6 +91,34 @@ final class MealRecipeFlowsTests: XCTestCase {
         XCTAssertEqual(element.value as? String, expected)
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testPrivateSyncConflictReviewResolvesOfflineAtBothTextSizes() {
+        for large in [false, true] {
+            for choice in ["Keep mine", "Use theirs", "Keep both"] {
+                let app = XCUIApplication()
+                app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--sync-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+                app.launch(); app.tabBars.buttons["More"].tap()
+                let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+                XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
+                let status = app.staticTexts["sync-status"]; reveal(status, app: app)
+                XCTAssertEqual(status.label, "Conflicts to review")
+                let review = app.buttons["sync-conflicts"]; reveal(review, app: app); review.tap()
+                XCTAssertTrue(app.staticTexts["Yours: Note \"Local title\""].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.staticTexts["Other device: Note \"Remote title\""].waitForExistence(timeout: 10))
+                if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
+                let action = app.buttons[choice]; reveal(action, app: app); action.tap()
+                // The conflict resolves offline; the review list empties without an upload claim.
+                XCTAssertTrue(action.waitForNonExistence(timeout: 10))
+                let done = app.buttons["sync-review-done"]; reveal(done, app: app); done.tap()
+                let synced = app.staticTexts["sync-status"]; reveal(synced, app: app)
+                XCTAssertEqual(synced.label, "Last synced never")
+                if choice == "Keep mine" {
+                    let now = app.buttons["sync-now"]; reveal(now, app: app); now.tap()
+                    XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))
+                }
+                app.terminate()
+            }
+        }
+    }
     func testSelectedPublicationPreviewAndCookbookChangesRequireSeparateConfirmationsAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--publishing-ui-test"] + (large ? ["--screenshot-large-text"] : []); app.launch()

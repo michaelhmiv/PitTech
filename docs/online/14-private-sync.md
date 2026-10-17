@@ -53,12 +53,13 @@ Backend unit checks pass locally; new native implementations/tests require
 Actions. Existing lifecycle tests and native release gates remain independently
 open in PR 13.
 
-Still to implement: strict native library projection and per-record mutation
-tracking; encrypted authenticated API and resumable photo transfer; durable
-account-bound native outboxes/association; conflict review/restore UI; inactive
-rule import; verified lifecycle purge integration; supported background opportunities; full
-two-device Android↔iOS and real Postgres ownership/race evidence. No backup success
-or completed sync claim is made by this draft.
+Native library projection, per-record mutation tracking, the authenticated
+API, resumable photo transfer, durable account-bound outboxes, conflict
+review/restore UI and inactive rule import are implemented on both clients
+(see the native-completion section below) but await Actions proof. Verified
+lifecycle purge integration, supported background opportunities, full
+two-device Android↔iOS and real Postgres ownership/race evidence remain open.
+No backup success or completed sync claim is made by this draft.
 
 Migration 006 adds an isolated private metadata ledger (account head/version,
 opaque encrypted-object ownership/hash/leases, operation receipts and anonymous
@@ -248,8 +249,85 @@ verifies the private tables against the sync pool and closes that pool in
 `runtime.close()`; the lifecycle purger path is unchanged. Any missing or
 invalid piece fails startup closed.
 
-Native durable apply and conflict-review UI remain the open gate, so no
-backup claim is made. No deployment has applied this wiring and no real keys
+No deployment has applied this wiring and no real keys
 or cloud resources exist. The corrected full-library and new config/wiring
 tests, including the authenticated-HTTP proof through `createRuntime`
 services, require fresh Actions evidence before any release statement.
+
+## Native completion: durable apply, outbox, conflict UI
+
+Both clients now implement the full device side of this slice. Sync stays
+disabled by default (`AccountProtocol.ENABLED` / `NativeAccountProtocol.enabled`
+are `false`); nothing here turns it on for users. Local writes stay
+authoritative and are never blocked: sync runs only on explicit `syncNow()`,
+only for the current session account.
+
+Android (`app/src/main/java/com/pittech/data/`, `ui/`, `CooksViewModel.kt`):
+`PrivateSyncStore.kt` (durable account-bound journal),
+`PrivateSyncProtocol.kt` (pure stamping/request/conflict helpers),
+`PrivateSyncClient.kt` (GET/PUT `/v1/sync` + resumable photo routes over the
+existing OkHttp/account-session idioms, 1 MiB chunks, no redirects or cookies),
+`PrivateSyncLibrary.kt` (projection-only snapshot build, transactional Room
+apply), `PrivateSyncCoordinator.kt` (409 fetch/merge/retry, resumable photos,
+resolutions, honest presentation), additive delete-by-id DAO helpers in
+`CookEntities.kt`, `CookExperienceData.kt`, `RecipeEntities.kt` and
+`CookCompanionData.kt`, plus the `SyncSection`/`SyncConflictDialog` in
+`AccountScreen.kt` wired through `CookScreens.kt` (`sync-status`, `sync-now`,
+`sync-conflicts`, `sync-keep-mine/theirs/both-*`).
+
+iOS (`ios/PitTech/`): `NativePrivateSyncStore.swift`,
+`NativePrivateSync.swift`, `NativePrivateSyncClient.swift`,
+`NativePrivateSyncLibrary.swift`, `NativePrivateSyncCoordinator.swift`,
+`NativeSyncUITestSupport.swift` (offline DEBUG fixture), merge validators in
+`PrivateSyncMerge.swift`, journal purge in `AccountLocalCleanup.swift`,
+wiring in `PitTechApp.swift` and the sync section plus
+`NativeSyncConflictReviewView` in `AccountView.swift`.
+
+Durable-store schema (per account, device-only, never exported): stable
+device UUID, last-acknowledged base snapshot + server version, logical
+`maxCounter`, per-record mutation metadata (counter + device UUID),
+pending-upload flag with exact `mutationId`/SHA-256 retry bytes stored in a
+separate body file, retained conflict copies with resolution IDs and the
+already-sent resolution list, per-photo part registry
+(`assetId`/`sha256`/`bytes`/`mime`/`received`/`complete`), and the last
+honest status (`lastSyncedAt`/`outcome`/`message`). An account switch or
+sign-out cancels that account's pending upload bytes and never attaches the
+journal to another account; cleanup purges body files first, then journals.
+
+Transactional apply: snapshot build is projection-validator output only — a
+library that fails projection fails the attempt with an honest status and
+uploads nothing. Apply is merge(local, base, remote), then validation of the
+merged rows through the projection/relational checks, then a single Room
+transaction (Android `withTransaction`) or a single CookStore save (iOS)
+covering deletes-before-upserts across all 21 record types; staged photo
+bytes are cleaned up on failure, so a failed apply leaves the local library
+byte-identical. Imported `reminderRules` arrive `enabled=false` /
+`inactive` with no occurrences or delivery state; existing local
+recording, probe-assignment, timer and occurrence state is preserved, and
+apply never arms rules, starts recording, or schedules reminders.
+
+Conflict review matches merge semantics: Keep mine replays the losing edit
+under the same identity (or a new identity when a tombstone or immutable
+rule forbids it), Use theirs drops the retained copy, Keep both restores
+the losing edit as a new identity (disallowed for `logReadingLinks` and
+`lifecycles`, whose review buttons are hidden). Dropping a server-known
+copy sends its explicit resolution ID; locally generated conflicts the
+server never saw drop without an unknown ID. Status UI shows exactly
+`Last synced …`, `Waiting for connection`, `Retry needed`,
+`Conflicts to review` or `Sync is off`; no success is shown for an
+unacknowledged upload, and receipts must match
+`mutationId`/`sha256`/`version == base+1` before the base advances.
+
+New tests are listed in the slice summary; they cover durable restart,
+account-switch cancellation, interrupted-photo resume, 409 merge/retry with
+both edits preserved, transactional rollback, inactive rule import, exact
+merge outcomes per conflict action, projection-failure blocking, and
+offline conflict review at both required text sizes on both platforms.
+
+Still honestly open: Actions proof for all of the above (the code was
+written by construction against inspected APIs; no Android SDK or Xcode
+build ran in the authoring sandbox), two-device Android↔iOS physical
+evidence, staging verification including the `private_assets_unavailable`
+422 reset path and photo SHA-mismatch rotation, and the full accounts /
+social / sync / deletion enablement gate. No backup success claim is made
+by this draft.

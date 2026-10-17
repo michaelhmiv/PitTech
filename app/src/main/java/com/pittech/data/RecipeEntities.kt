@@ -72,4 +72,10 @@ interface RecipeDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSource(source: DishRecipeSource)
     @Query("SELECT * FROM meal_presets") suspend fun presets(): List<MealPreset>
     @Upsert suspend fun putPreset(preset: MealPreset)
+    /** Private-sync tombstone application only. Additive; no schema change. */
+    @Query("DELETE FROM saved_recipes WHERE id = :id") suspend fun deleteRecipeById(id: String)
+    @Query("DELETE FROM recipe_revisions WHERE id = :id") suspend fun deleteRevisionById(id: String)
+    @Query("DELETE FROM recipe_assets WHERE id = :id") suspend fun deleteAssetById(id: String)
+    @Query("DELETE FROM dish_recipe_sources WHERE dishId = :id") suspend fun deleteSourceByDishId(id: String)
+    @Query("DELETE FROM meal_presets WHERE id = :id") suspend fun deletePresetById(id: String)
 }

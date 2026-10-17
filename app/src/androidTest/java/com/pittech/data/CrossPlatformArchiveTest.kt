@@ -44,18 +44,22 @@ class CrossPlatformArchiveTest {
             val source = archiveSnapshotJson(repo.exportSnapshot(), null)
             assertThrows(Exception::class.java) { projection.project(source) }
             val originalDocuments = source.getJSONArray("companionRecords").toString()
-            // Only the independent core graph is covered here. Unsupported saved
-            // documents remain in Room and still block a full-library upload.
-            val core = JSONObject(source.toString()).put("companionRecords", org.json.JSONArray()).put("companionPhotos", org.json.JSONArray())
+            // The complete portable vocabulary covers this fixture: full-library projection
+            // succeeds and preserves every authored document, not just the core graph.
+            val contract = JSONObject(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() })
+            val excluded = (0 until contract.getJSONArray("excludedDocumentKinds").length()).map { contract.getJSONArray("excludedDocumentKinds").getString(it) }.toSet()
             val assets = mutableMapOf<String, String>()
-            for (type in listOf("photos", "recipeAssets")) {
-                val rows = core.getJSONArray(type)
+            for (type in listOf("photos", "recipeAssets", "companionPhotos")) {
+                val rows = source.getJSONArray(type)
                 for (i in 0 until rows.length()) assets[type + "|" + rows.getJSONObject(i).getString("id")] = java.util.UUID.randomUUID().toString()
             }
-            val projected = projection.project(core, assets)
-            for (type in listOf("cooks", "recipes", "recipeRevisions", "readings", "reminderRules")) {
+            val projected = projection.project(source, assets)
+            for (type in listOf("cooks", "recipes", "recipeRevisions", "readings", "dishes", "events", "reminderRules")) {
                 assertEquals(source.getJSONArray(type).length(), (0 until projected.length()).count { projected.getJSONObject(it).getString("recordType") == type })
             }
+            val expectedCompanions = (0 until source.getJSONArray("companionRecords").length()).count { source.getJSONArray("companionRecords").getJSONObject(it).getString("kind") !in excluded }
+            assertTrue(expectedCompanions > 0)
+            assertEquals(expectedCompanions, (0 until projected.length()).count { projected.getJSONObject(it).getString("recordType") == "companionRecords" })
             assertEquals(originalDocuments, archiveSnapshotJson(repo.exportSnapshot(), null).getJSONArray("companionRecords").toString())
             assertFalse(db.reminderDao().rules().single().enabled)
         } finally { db.close() }

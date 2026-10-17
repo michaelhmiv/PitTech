@@ -23,7 +23,7 @@ final class PrivateSyncProjectionTests: XCTestCase {
         XCTAssertThrowsError(try projection.project(.object(unknown), assets: p.assets))
         XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: data).objectValue?["releaseReady"], .bool(false))
     }
-    @MainActor func testActualAndroidArchiveCoreProjectsAfterNativeImportWithoutChangingSavedJournal() throws {
+    @MainActor func testActualAndroidArchiveProjectsFullyAfterNativeImportWithoutChangingSavedJournal() throws {
         let bundle = Bundle(for: Self.self)
         let contract = try Data(contentsOf: XCTUnwrap(bundle.url(forResource: "private-sync-projection-v1", withExtension: "json")))
         let projection = try NativePrivateSyncProjection(data: contract)
@@ -34,17 +34,23 @@ final class PrivateSyncProjectionTests: XCTestCase {
         _ = try store.importArchive(archive)
         let before = store.library
         XCTAssertThrowsError(try projection.project(before))
-        // Test the independent core graph explicitly; unsupported documents still
-        // prevent a full-library upload and are retained in the saved journal.
-        var core = before; core.companionRecords = []; core.companionPhotos = []
+        // The complete portable vocabulary covers this fixture: full-library projection
+        // succeeds and preserves every authored document, not just the core graph.
+        let excluded = Set((try? JSONDecoder().decode(JSONValue.self, from: contract).objectValue?["excludedDocumentKinds"]?.arrayValue?.compactMap(\.stringValue)) ?? [])
         var assets: [String: String] = [:]
-        for (type, rows) in [("photos", core.photos), ("recipeAssets", core.recipeAssets)] {
+        for (type, rows) in [("photos", before.photos), ("recipeAssets", before.recipeAssets), ("companionPhotos", before.companionPhotos)] {
             for row in rows { let id = try XCTUnwrap(row.objectValue?["id"]?.stringValue); assets[type + "|" + id] = UUID().uuidString.lowercased() }
         }
-        let projected = try projection.project(core, assets: assets)
+        let projected = try projection.project(before, assets: assets)
         XCTAssertEqual(projected.filter { $0.recordType == "cooks" }.count, before.cooks.count)
         XCTAssertEqual(projected.filter { $0.recordType == "recipes" }.count, 4)
         XCTAssertEqual(projected.filter { $0.recordType == "readings" }.count, before.readings.count)
+        XCTAssertEqual(projected.filter { $0.recordType == "dishes" }.count, before.dishes.count)
+        XCTAssertEqual(projected.filter { $0.recordType == "events" }.count, before.events.count)
+        XCTAssertEqual(projected.filter { $0.recordType == "reminderRules" }.count, before.reminderRules.count)
+        let expectedCompanions = before.companionRecords.filter { !excluded.contains($0.objectValue?["kind"]?.stringValue ?? "") }.count
+        XCTAssertGreaterThan(expectedCompanions, 0)
+        XCTAssertEqual(projected.filter { $0.recordType == "companionRecords" }.count, expectedCompanions)
         XCTAssertEqual(store.library.companionRecords, before.companionRecords)
         XCTAssertEqual(store.library.reminderRules, before.reminderRules)
         XCTAssertTrue(projected.allSatisfy { $0.payload["archivePath"] == nil })

@@ -46,6 +46,27 @@ enum NativePrivateSyncMerge {
             if let payload = r.payload { try bounded(.object(payload)); guard try bytes(payload) <= 16 * 1024 * 1024 else { throw NativeSyncError.invalid } }
         }
     }
+    /** Structural envelope checks shared by transport validation. Pure; no storage or network. */
+    static func validateRecords(_ records: [NativeSyncRecord]) throws { try validate(records) }
+    static func validateConflicts(_ conflicts: [NativeSyncConflict]) throws {
+        guard conflicts.count <= 10000 else { throw NativeSyncError.invalid }
+        var ids = Set<String>()
+        for conflict in conflicts {
+            guard conflict.id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil, ids.insert(conflict.id).inserted else { throw NativeSyncError.invalid }
+            guard ["edit_edit", "delete_edit", "immutable_identity"].contains(conflict.reason) else { throw NativeSyncError.invalid }
+            try validate([conflict.winner]); try validate([conflict.loser])
+            guard conflict.winner.recordType == conflict.loser.recordType, conflict.winner.recordId == conflict.loser.recordId else { throw NativeSyncError.invalid }
+            let identity = [conflict.winner.recordType, conflict.winner.recordId, conflict.reason, String(conflict.winner.version.counter), conflict.winner.version.clientId, String(conflict.loser.version.counter), conflict.loser.version.clientId].joined(separator: "|")
+            guard NativeRelayProtocol.hash(Data(identity.utf8)) == conflict.id else { throw NativeSyncError.invalid }
+            guard !conflict.winner.sameContent(conflict.loser), conflict.winner.version != conflict.loser.version else { throw NativeSyncError.invalid }
+            if conflict.reason == "delete_edit" { guard conflict.winner.deleted, !conflict.loser.deleted else { throw NativeSyncError.invalid } }
+            else {
+                guard !conflict.winner.deleted, !conflict.loser.deleted else { throw NativeSyncError.invalid }
+                if conflict.reason == "immutable_identity" { guard immutable.contains(conflict.winner.recordType) else { throw NativeSyncError.invalid } }
+                else { guard !immutable.contains(conflict.winner.recordType), less(conflict.loser, conflict.winner) else { throw NativeSyncError.invalid } }
+            }
+        }
+    }
     private static func less(_ a: NativeSyncRecord, _ b: NativeSyncRecord) -> Bool { a.version.counter == b.version.counter ? a.version.clientId < b.version.clientId : a.version.counter < b.version.counter }
     static func merge(base: [NativeSyncRecord], local: [NativeSyncRecord], remote: [NativeSyncRecord]) throws -> NativeSyncMergeResult {
         try validate(base); try validate(local); try validate(remote)

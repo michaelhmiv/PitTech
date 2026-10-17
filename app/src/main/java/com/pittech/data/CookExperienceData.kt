@@ -47,6 +47,10 @@ data class TargetHistory(@PrimaryKey val id: String, val cookId: String, val dis
     @Query("SELECT * FROM cook_log_drafts WHERE cookId = :id ORDER BY updatedAt DESC") fun observeDrafts(id: String): Flow<List<CookLogDraft>>
     @Query("SELECT * FROM cook_log_drafts WHERE id = :id") suspend fun draft(id: String): CookLogDraft?
     @Query("DELETE FROM cook_log_drafts WHERE id = :id") suspend fun deleteDraft(id: String)
+    /** Private-sync tombstone application only. Additive; no schema change. */
+    @Query("DELETE FROM target_history WHERE id = :id") suspend fun deleteHistoryById(id: String)
+    @Query("DELETE FROM log_reading_links WHERE readingId = :id") suspend fun deleteLinkByReadingId(id: String)
+    @Query("DELETE FROM cook_lifecycle WHERE cookId = :id") suspend fun deleteLifecycleByCookId(id: String)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun putHistory(values: List<TargetHistory>)
     @Query("SELECT * FROM target_history WHERE cookId = :id ORDER BY effectiveAt") fun observeHistory(id: String): Flow<List<TargetHistory>>
     @Query("UPDATE target_history SET targetType = 'removed_dish_' || targetType WHERE dishId = :dishId") suspend fun detachDishHistory(dishId: String)

@@ -2,11 +2,13 @@ import SwiftUI
 
 struct NativeAccountView: View {
     @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(NativePrivateSyncCoordinator.self) private var sync
     @Environment(\.dismiss) private var dismiss
     @State private var email = ""
     @State private var code = ""
     @State private var confirmingSignOut = false
     @State private var reviewingDeletion = false
+    @State private var reviewingSync = false
     private enum Field: Hashable { case email, code }
     @FocusState private var focused: Field?
     var body: some View {
@@ -39,6 +41,16 @@ struct NativeAccountView: View {
                     Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
                 }
             } else { signInContent }
+            Section("Private sync") {
+                Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(.footnote)
+                Text(sync.presentation.status).accessibilityIdentifier("sync-status")
+                if let detail = sync.presentation.detail { Text(detail).font(.footnote).accessibilityIdentifier("sync-message") }
+                Button("Sync now") { Task { await sync.syncNow() } }.disabled(sync.presentation.busy || !account.signedIn || !sync.enabled).accessibilityIdentifier("sync-now")
+                if !sync.presentation.conflicts.isEmpty { Button("Review conflicts (\(sync.presentation.conflicts.count))") { reviewingSync = true }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-conflicts") }
+                if sync.presentation.busy { ProgressView("Syncing…") }
+            }
+            .onAppear { sync.refresh() }
+            .onChange(of: account.signedIn) { _, _ in sync.refresh() }
             if account.busy { ProgressView("Connecting…") }
             if let message = account.message { Section { Text(message).accessibilityIdentifier("account-message") } }
         }
@@ -49,6 +61,7 @@ struct NativeAccountView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $reviewingDeletion) { NavigationStack { NativeDeletionReviewView { reviewingDeletion = false; Task { await account.requestDeletion() } } } }
+        .sheet(isPresented: $reviewingSync) { NavigationStack { NativeSyncConflictReviewView() } }
         .confirmationDialog("Sign out on this device?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await account.signOut() } }.accessibilityIdentifier("account-confirm-signout")
         } message: { Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.") }
@@ -94,5 +107,24 @@ private struct NativeDeletionReviewView: View {
             }
         }.navigationTitle("Delete account").navigationBarTitleDisplayMode(.inline).scrollDismissesKeyboard(.interactively)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
+    }
+}
+struct NativeSyncConflictReviewView: View {
+    @Environment(NativePrivateSyncCoordinator.self) private var sync
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        Form {
+            Section { Text("Two devices changed the same entry. Your journal keeps the current version until you choose.") }
+            ForEach(sync.presentation.conflicts) { conflict in
+                Section(conflict.reason) {
+                    Text("Yours: \(conflict.mineSummary)")
+                    Text("Other device: \(conflict.theirsSummary)")
+                    Button("Keep mine") { Task { await sync.resolve(conflict.id, choice: "mine") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-mine-\(conflict.id)")
+                    Button("Use theirs") { Task { await sync.resolve(conflict.id, choice: "theirs") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-theirs-\(conflict.id)")
+                    if conflict.canKeepBoth { Button("Keep both") { Task { await sync.resolve(conflict.id, choice: "both") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-both-\(conflict.id)") }
+                }
+            }
+        }.navigationTitle("Review synced edits").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("sync-review-done") } }
     }
 }

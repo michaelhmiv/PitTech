@@ -47,6 +47,31 @@ internal object PrivateSyncMerge {
             Row(type,id,counter,client,deleted,payload?.let{JSONObject(it.toString())},assets).also{require(seen.add(it.key))}
         }
     }
+    /** Structural envelope checks shared by transport validation. Pure; no storage or network. */
+    internal fun validateRecords(records:JSONArray){rows(records)}
+    internal fun validateConflicts(conflicts:JSONArray){
+        require(conflicts.length()<=10000)
+        val ids=mutableSetOf<String>()
+        for(i in 0 until conflicts.length()){
+            val c=conflicts.getJSONObject(i);require(c.keys().asSequence().toSet()==setOf("id","winner","loser","reason"))
+            val id=c.getString("id");require(c.get("id") is String && id.matches(Regex("[a-f0-9]{64}")) && ids.add(id))
+            val reason=c.getString("reason");require(c.get("reason") is String && reason in setOf("edit_edit","delete_edit","immutable_identity"))
+            val winner=c.getJSONObject("winner");val loser=c.getJSONObject("loser")
+            rows(JSONArray().put(winner));rows(JSONArray().put(loser))
+            fun field(r:JSONObject,name:String)=r.getString(name)
+            require(field(winner,"recordType")==field(loser,"recordType") && field(winner,"recordId")==field(loser,"recordId"))
+            val computed=RelayProtocol.hash(listOf(field(winner,"recordType"),field(winner,"recordId"),reason,winner.getJSONObject("version").getLong("counter").toString(),winner.getJSONObject("version").getString("clientId"),loser.getJSONObject("version").getLong("counter").toString(),loser.getJSONObject("version").getString("clientId")).joinToString("|").toByteArray())
+            require(id==computed)
+            val deleted=winner.getBoolean("deleted") to loser.getBoolean("deleted")
+            val contentW=stable(JSONObject().put("deleted",winner.get("deleted")).put("payload",winner.get("payload")).put("assetIds",winner.get("assetIds")))
+            val contentL=stable(JSONObject().put("deleted",loser.get("deleted")).put("payload",loser.get("payload")).put("assetIds",loser.get("assetIds")))
+            require(contentW!=contentL)
+            val orderW=compareValuesBy(winner,loser,{it.getJSONObject("version").getLong("counter")},{it.getJSONObject("version").getString("clientId")})
+            require(orderW!=0)
+            if(reason=="delete_edit")require(deleted.first && !deleted.second)
+            else{require(!deleted.first && !deleted.second);if(reason=="immutable_identity")require(field(winner,"recordType") in immutable)else require(field(winner,"recordType") !in immutable && orderW>0)}
+        }
+    }
     private val order=compareBy<Row>{it.counter}.thenBy{it.client}
     fun merge(baseInput:JSONArray,localInput:JSONArray,remoteInput:JSONArray):JSONObject{
         val base=rows(baseInput).associateBy{it.key};val local=rows(localInput).associateBy{it.key};val remote=rows(remoteInput).associateBy{it.key}

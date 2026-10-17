@@ -59,8 +59,12 @@ class CooksViewModel(
     internal val account = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope,cleanup={ user ->
         com.pittech.data.PublicationOperationsStore(context).purgeAccount(user)
         com.pittech.data.CommunityVault(context).purgeAccount(user)
+        com.pittech.data.PrivateSyncStore(context).purgeAccount(user)
         communityControls.reload();publicDiscovery.controlsChanged()
     })
+    internal val sync = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
+        library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context)),
+        projection = com.pittech.data.PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() }))
     internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing

@@ -24,7 +24,7 @@ import Foundation
         }
     }
     static func make() -> NativeAccountCoordinator {
-        if NativePublicationUITestSupport.active || CommandLine.arguments.contains("--account-deletion-ui-test") {
+        if NativePublicationUITestSupport.active || CommandLine.arguments.contains("--account-deletion-ui-test") || CommandLine.arguments.contains("--sync-ui-test") {
             let vault = Memory(); vault.value.session = NativeAccountSession(accessToken: String(repeating: "A", count: 43), refreshToken: String(repeating: "A", count: 43), accessExpiresAt: "2100-01-01T00:00:00.000Z", sessionExpiresAt: "2100-02-01T00:00:00.000Z", userId: "12345678-1234-4234-8234-123456789abc")
             return NativeAccountCoordinator(enabled: true, vault: vault, api: API())
         }

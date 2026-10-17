@@ -4,6 +4,7 @@ import Foundation
 @MainActor enum NativeAccountLocalCleanup {
     static func run(_ user: String) throws {
         try NativePublicationOperationsStore().purgeAccount(user)
+        try NativePrivateSyncStore().purgeAccount(user)
         let vault = NativeCommunityVault()
         if var state = try vault.load() {
             if state.pending?.userId == user { state.pending = nil }
