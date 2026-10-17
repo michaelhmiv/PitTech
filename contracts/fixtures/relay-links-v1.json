@@ -1,0 +1,24 @@
+{
+  "canonical": "ABCD-1234-5678-9EF0",
+  "valid": [
+    "ABCD-1234-5678-9EF0",
+    "abcd123456789ef0",
+    "  abcd 1234\n5678 9ef0  ",
+    "https://pittech.app/s/abcd-1234-5678-9ef0",
+    "pittech://share/ABCD-1234-5678-9EF0"
+  ],
+  "invalid": [
+    "", "EMBER-OAK-7", "ABCD-1234-5678-9EFG", "ABCD-1234-5678-9EF00",
+    "http://pittech.app/s/ABCD-1234-5678-9EF0",
+    "https://pittech.app.attacker.invalid/s/ABCD-1234-5678-9EF0",
+    "https://user:secret@pittech.app/s/ABCD-1234-5678-9EF0",
+    "https://pittech.app:443/s/ABCD-1234-5678-9EF0",
+    "https://pittech.app/s/ABCD-1234-5678-9EF0?redirect=https://attacker.invalid",
+    "https://pittech.app/s/ABCD-1234-5678-9EF0#token",
+    "https://pittech.app/s/%41BCD-1234-5678-9EF0",
+    "https://pittech.app/s/ABCD-1234-5678-9EF0/extra",
+    "pittech://auth/ABCD-1234-5678-9EF0",
+    "file:///s/ABCD-1234-5678-9EF0"
+  ],
+  "receipt": { "code": "ABCD-1234-5678-9EF0", "expiresAt": "2027-04-13T12:34:56.789Z", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bytes": 1024, "kind": "collection", "dishes": 2 }
+}

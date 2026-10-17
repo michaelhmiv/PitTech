@@ -22,3 +22,10 @@ Native iOS telemetry uses CombustionBLE 1.0.0 under MIT. Its Swift Collections
 dependencies retain their upstream terms. Full texts ship in
 `ios/PitTech/TelemetryNotices.txt` and `LICENSES/`; Nordic's name cannot be used
 as an endorsement. PitTech exposes no DFU or controller-setting operation.
+
+## ZXing Core 3.5.4
+
+The Android app uses ZXing Core to create Cook Pack QR codes locally.
+Copyright ZXing authors. Licensed under the Apache License, Version 2.0.
+Source: https://github.com/zxing/zxing/tree/zxing-3.5.4
+License: https://github.com/zxing/zxing/blob/zxing-3.5.4/LICENSE

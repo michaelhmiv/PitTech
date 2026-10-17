@@ -44,6 +44,16 @@ class CooksViewModel(
 ) : ViewModel() {
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing
+    internal val relay = com.pittech.data.RelayManager(context, viewModelScope, prepare = { id, history, file ->
+        val before = sharing.get(id) ?: error("Draft unavailable.")
+        file.outputStream().buffered().use { dataTransfer.writeCookPack(it, id, history) }
+        check(sharing.get(id)?.updatedAtUtcMillis == before.updatedAtUtcMillis) { "This draft changed while preparing. Review it and try again." }
+        before.updatedAtUtcMillis to before.title
+    }, preview = { file ->
+        val prepared = file.inputStream().buffered().use(dataTransfer::previewImport)
+        require(prepared.cookPack != null) { "This download is not a supported Cook Pack." }
+        _importPreview.value = prepared
+    })
     internal val guide get() = repository.guide
     internal fun saveDishVerdict(cookId: String, dishId: String, rating: Double?, again: Boolean?, notes: String, onSaved: (Boolean) -> Unit) = perform({ repository.saveDishVerdict(cookId, dishId, rating, again, notes) }, onSaved)
     internal suspend fun recipeExtraction(cookId: String, dishId: String, contextIds: Set<String> = emptySet()): com.pittech.data.RecipeExtractionDraft {

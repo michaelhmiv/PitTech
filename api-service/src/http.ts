@@ -7,12 +7,13 @@ import { tmpdir } from 'node:os';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import proxyaddr from 'proxy-addr';
-import { ApiError, LIMITS, ownerHash, rateIdentity } from './core.ts';
+import { ApiError, LIMITS, ownerHash, rateIdentity, normalizeCode } from './core.ts';
+import { association, landing, type LinkConfig } from './web.ts';
 import type { Relay } from './relay.ts';
 import { validate } from './validation.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -37,15 +38,29 @@ export function makeServer(relay: Relay, options: Options) {
     const json = (status: number, value: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
     try {
       if (req.url === '/healthz' && method === 'GET') { route = '/healthz'; json(200, { status: 'ok' }); return; }
+      const links = options.links ?? { appleAppIds: [], androidCertificates: [] };
+      if (method === 'GET' && ['/.well-known/apple-app-site-association', '/.well-known/assetlinks.json'].includes(req.url ?? '')) {
+        route = req.url!;
+        const value = association(req.url!, links); json(value ? 200 : 503, value ?? { error: { code: 'association_not_configured' } }); return;
+      }
+      const page = method === 'GET' ? /^\/s\/([^/?#]{1,128})$/.exec(req.url ?? '') : null;
       const match = /^\/packs\/([^/?#]{1,128})(\/renew)?$/.exec(req.url ?? '');
       const isUpload = req.url === '/packs' && method === 'POST';
-      if (!isUpload && !(match && (method === 'GET' && !match[2] || method === 'DELETE' && !match[2] || method === 'POST' && match[2]))) throw new ApiError(404, 'unavailable');
-      route = isUpload ? '/packs' : match![2] ? '/packs/:code/renew' : '/packs/:code';
+      if (!page && !isUpload && !(match && (method === 'GET' && !match[2] || method === 'DELETE' && !match[2] || method === 'POST' && match[2]))) throw new ApiError(404, 'unavailable');
+      route = page ? '/s/:code' : isUpload ? '/packs' : match![2] ? '/packs/:code/renew' : '/packs/:code';
       const now = relay.clock(), category = isUpload ? 'upload' : method === 'GET' ? 'download' : 'manage';
       const period = category === 'upload' ? 86400000 : 3600000, bucket = Math.floor(now / period);
       const address = proxyaddr(req, trust), key = category + ':' + rateIdentity(options.ipKey, address, category + ':' + bucket);
       if (!await relay.repository.rate(key, category === 'upload' ? 20 : category === 'download' ? 120 : 60, (bucket + 1) * period)) throw new ApiError(429, 'rate_limited');
       if (active >= 2) throw new ApiError(503, 'relay_busy'); active++; counted = true;
+      if (page) {
+        let code = ''; try { code = normalizeCode(decodeURIComponent(page[1])); } catch { /* Same unavailable page for invalid codes. */ }
+        const pack = code ? await relay.repository.get(code) : undefined;
+        const result = landing(code, pack, now, links);
+        res.statusCode = result.status; res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow'); res.end(result.html); return;
+      }
       if (isUpload) {
         if (!options.uploadsEnabled) throw new ApiError(503, 'uploads_paused');
         const secret = owner(req), retryKey = String(req.headers['idempotency-key'] ?? '');

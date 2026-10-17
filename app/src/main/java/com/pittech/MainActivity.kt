@@ -95,6 +95,9 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         if (uri?.scheme == "content") viewModel.previewImport(uri)
+        else if (uri != null && intent?.action == android.content.Intent.ACTION_VIEW) {
+            runCatching { com.pittech.data.RelayProtocol.code(uri.toString()) }.onSuccess { viewModel.relay.openImport(it) }
+        }
     }
 
     private fun handleReminderIntent(intent: android.content.Intent?) {

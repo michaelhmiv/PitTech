@@ -60,6 +60,7 @@ android {
     sourceSets.getByName("debug").kotlin.srcDir("src/internal/java")
     sourceSets.getByName("dev").kotlin.srcDir("src/internal/java")
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    sourceSets.getByName("test").resources.srcDir("$rootDir/contracts/fixtures")
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -93,6 +94,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
 
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.google.zxing:core:3.5.4")
 
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")

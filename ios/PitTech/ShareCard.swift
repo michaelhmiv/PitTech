@@ -138,7 +138,7 @@ enum NativeShareCardContent {
 }
 
 @MainActor extension CookStore {
-    func prepareShareCard(_ id: String) async throws -> PreparedNativeShareCard {
+    func prepareShareCard(_ id: String, relay: ShareCardRelay? = nil) async throws -> PreparedNativeShareCard {
         let document = try sharingDocument(id)
         var original: Data?
         if document.cardOptions.hero == "photo" {
@@ -150,7 +150,7 @@ enum NativeShareCardContent {
         return try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             let photo = try captured.map { try NativeCookPackPhoto.derivative($0) }
-            return try NativeShareCardContent.build(document, photo: photo)
+            return try NativeShareCardContent.build(document, photo: photo, relay: relay)
         }.value
     }
 }

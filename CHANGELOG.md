@@ -7,6 +7,10 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Added
+- Android and iOS post-launch draft: preview and upload selected Cook Packs by
+  code, retry or cancel transfers, manage owned codes, and open shared links
+  through a selective import preview. Web fallback and app-link association
+  handlers are included; production domain/device verification is still required.
 - Android and iOS post-launch draft: prepare an anonymous Cook Pack code relay
   with explicit owner management, scoped pack validation and expiry. Sharing by
   code remains unavailable in the apps until the client and release gates pass.

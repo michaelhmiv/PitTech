@@ -3,6 +3,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { FileStorage, S3Storage, type Storage } from './storage.ts';
 import { PostgresRepository } from './repository.ts';
 import { Relay } from './relay.ts';
+import { linkConfig } from './web.ts';
 
 const required = (name: string) => { const value = process.env[name]; if (!value) throw new Error('Missing configuration'); return value; };
 function positive(name: string) { const n = Number(required(name)); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
@@ -24,6 +25,6 @@ export function createRuntime() {
   pool.on('error', () => console.error('database_connection_error'));
   const relay = new Relay(new PostgresRepository(pool), storage, budgets);
   const port = Number(process.env.PORT ?? 3000); if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid port');
-  return { pool, relay, port, options: { ipKey, uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  return { pool, relay, port, options: { ipKey, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }
