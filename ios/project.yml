@@ -62,6 +62,11 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Distribution"
           DEVELOPMENT_TEAM: "R42LWFBXBH"
           PROVISIONING_PROFILE_SPECIFIER: "PitTech App Store CI"
+          # Live AdMob IDs, Release only. Base/Debug keep Google's test IDs
+          # (mirrors Android's debug force-test override) so simulator,
+          # UI-test and screenshot builds never request paid inventory.
+          PITTECH_ADMOB_APP_ID: "ca-app-pub-2708638041809482~6779851055"
+          PITTECH_NATIVE_AD_UNIT_ID: "ca-app-pub-2708638041809482/4640683589"
     scheme:
       testTargets: [PitTechTests, PitTechUITests]
       gatherCoverageData: false
