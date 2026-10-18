@@ -239,7 +239,7 @@ import XCTest
         let store = FakeStore()
         let api = FakeAPI()
         api.entitlementState = "active"
-        let (coordinator, store, _) = makeCoordinator(store: store, api: api)
+        let (coordinator, _, _) = makeCoordinator(store: store, api: api)
         await coordinator.loadProduct()
         await coordinator.refresh()
         XCTAssertEqual(coordinator.entitlement, .entitled)
@@ -324,7 +324,7 @@ import XCTest
         let store = FakeStore()
         store.productId = ""
         store.failFetch = true
-        let (coordinator, store, _) = makeCoordinator(store: store)
+        let (coordinator, _, _) = makeCoordinator(store: store)
         await coordinator.loadProduct()
         XCTAssertEqual(coordinator.productState, .unavailable)
         XCTAssertNil(proBillingText(product: nil))
