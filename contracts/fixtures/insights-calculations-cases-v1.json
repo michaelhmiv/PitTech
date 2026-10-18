@@ -1,0 +1,603 @@
+{
+  "contractVersion": 1,
+  "cases": [
+    {
+      "name": "single dish explicit phases fahrenheit",
+      "asOfUtcMillis": 22600000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Saturday pork", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 22600000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Pork shoulder", "foodType": "Pork", "cut": "Boston butt", "weightValue": 8.5, "weightUnit": "lb"}
+        ],
+        "events": [
+          {"id": "e1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1060000},
+          {"id": "e2", "cookId": "c1", "dishIds": ["d1"], "action": "wrap", "at": 13060000},
+          {"id": "e3", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 19060000},
+          {"id": "e4", "cookId": "c1", "dishIds": ["d1"], "action": "rest_start", "at": 19360000},
+          {"id": "e5", "cookId": "c1", "dishIds": ["d1"], "action": "hold_start", "at": 20260000},
+          {"id": "e6", "cookId": "c1", "dishIds": ["d1"], "action": "dish_done", "at": 22600000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 150.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r2", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 165.0, "unit": "°F", "measuredAtUtcMillis": 5000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r3", "cookId": "c1", "dishId": null, "probeId": "pit1", "probeName": "Pit", "measurementType": "pit", "value": 250.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "controller_cloud", "sourceDeviceId": "dev1", "qualityStatus": "valid"},
+          {"id": "r4", "cookId": "c1", "dishId": null, "probeId": "pit1", "probeName": "Pit", "measurementType": "pit", "value": 255.0, "unit": "°F", "measuredAtUtcMillis": 5000000, "source": "controller_cloud", "sourceDeviceId": "dev1", "qualityStatus": "valid"},
+          {"id": "r5", "cookId": "c1", "dishId": "d1", "probeId": null, "probeName": "Handheld", "measurementType": "food", "value": 160.0, "unit": "°F", "measuredAtUtcMillis": 8000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [
+          {"id": "res1", "cookId": "c1", "dishId": "d1", "resultType": "overall_rating", "numericValue": 4.5, "textValue": null, "recordedAtUtcMillis": 22000000},
+          {"id": "res2", "cookId": "c1", "dishId": "d1", "resultType": "cook_again", "numericValue": 1.0, "textValue": null, "recordedAtUtcMillis": 22000000},
+          {"id": "res3", "cookId": "c1", "dishId": "d1", "resultType": "result_notes", "numericValue": null, "textValue": "Great bark", "recordedAtUtcMillis": 22000000},
+          {"id": "res4", "cookId": "c1", "dishId": "d1", "resultType": "method", "numericValue": null, "textValue": "Smoked", "recordedAtUtcMillis": 22000000},
+          {"id": "res5", "cookId": "c1", "dishId": null, "resultType": "overall_rating", "numericValue": 3.0, "textValue": null, "recordedAtUtcMillis": 22500000},
+          {"id": "res6", "cookId": "c1", "dishId": "d1", "resultType": "method", "numericValue": null, "textValue": "Smoked", "recordedAtUtcMillis": 22100000}
+        ],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 18000000,
+            "channels": [
+              {"channelId": "c1:Handheld::d1:food:manual", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 160.0, "maxF": 160.0, "units": ["°F"]},
+              {"channelId": "c1:p1::d1:food_probe:controller_cloud", "dishId": "d1", "role": "food", "readingCount": 2, "manualCount": 0, "minF": 150.0, "maxF": 165.0, "units": ["°F"]},
+              {"channelId": "c1:pit1:dev1::pit:controller_cloud", "dishId": null, "role": "pit", "readingCount": 2, "manualCount": 0, "minF": 250.0, "maxF": 255.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": "Boston butt", "weightValue": 8.5, "weightUnit": "lb", "methods": ["Smoked"], "foodOnAt": 1060000, "wrapAt": 13060000, "removeAt": 19060000, "restStartAt": 19360000, "holdStartAt": 20260000, "dishDoneAt": 22600000, "heatingMillis": 18000000, "restMillis": 900000, "holdMillis": 2340000, "heatingIntervalCount": 2, "validReadings": 3, "manualReadings": 1, "excludedReadings": 0, "rating": 4.5, "cookAgain": true, "hasResultNotes": true}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "celsius twin matches fahrenheit",
+      "asOfUtcMillis": 22600000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Saturday pork", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 22600000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Pork shoulder", "foodType": "Pork", "cut": "Boston butt", "weightValue": 8.5, "weightUnit": "lb"}
+        ],
+        "events": [
+          {"id": "e1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1060000},
+          {"id": "e2", "cookId": "c1", "dishIds": ["d1"], "action": "wrap", "at": 13060000},
+          {"id": "e3", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 19060000},
+          {"id": "e4", "cookId": "c1", "dishIds": ["d1"], "action": "rest_start", "at": 19360000},
+          {"id": "e5", "cookId": "c1", "dishIds": ["d1"], "action": "hold_start", "at": 20260000},
+          {"id": "e6", "cookId": "c1", "dishIds": ["d1"], "action": "dish_done", "at": 22600000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 70.0, "unit": "°C", "measuredAtUtcMillis": 2000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r2", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 75.0, "unit": "°C", "measuredAtUtcMillis": 5000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r3", "cookId": "c1", "dishId": null, "probeId": "pit1", "probeName": "Pit", "measurementType": "pit", "value": 120.0, "unit": "°C", "measuredAtUtcMillis": 2000000, "source": "controller_cloud", "sourceDeviceId": "dev1", "qualityStatus": "valid"},
+          {"id": "r4", "cookId": "c1", "dishId": null, "probeId": "pit1", "probeName": "Pit", "measurementType": "pit", "value": 130.0, "unit": "°C", "measuredAtUtcMillis": 5000000, "source": "controller_cloud", "sourceDeviceId": "dev1", "qualityStatus": "valid"},
+          {"id": "r5", "cookId": "c1", "dishId": "d1", "probeId": null, "probeName": "Handheld", "measurementType": "food", "value": 70.0, "unit": "°C", "measuredAtUtcMillis": 8000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [
+          {"id": "res1", "cookId": "c1", "dishId": "d1", "resultType": "overall_rating", "numericValue": 4.5, "textValue": null, "recordedAtUtcMillis": 22000000},
+          {"id": "res2", "cookId": "c1", "dishId": "d1", "resultType": "cook_again", "numericValue": 1.0, "textValue": null, "recordedAtUtcMillis": 22000000},
+          {"id": "res3", "cookId": "c1", "dishId": "d1", "resultType": "result_notes", "numericValue": null, "textValue": "Great bark", "recordedAtUtcMillis": 22000000},
+          {"id": "res4", "cookId": "c1", "dishId": "d1", "resultType": "method", "numericValue": null, "textValue": "Smoked", "recordedAtUtcMillis": 22000000}
+        ],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 18000000,
+            "channels": [
+              {"channelId": "c1:Handheld::d1:food:manual", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 158.0, "maxF": 158.0, "units": ["°C"]},
+              {"channelId": "c1:p1::d1:food_probe:controller_cloud", "dishId": "d1", "role": "food", "readingCount": 2, "manualCount": 0, "minF": 158.0, "maxF": 167.0, "units": ["°C"]},
+              {"channelId": "c1:pit1:dev1::pit:controller_cloud", "dishId": null, "role": "pit", "readingCount": 2, "manualCount": 0, "minF": 248.0, "maxF": 266.0, "units": ["°C"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": "Boston butt", "weightValue": 8.5, "weightUnit": "lb", "methods": ["Smoked"], "foodOnAt": 1060000, "wrapAt": 13060000, "removeAt": 19060000, "restStartAt": 19360000, "holdStartAt": 20260000, "dishDoneAt": 22600000, "heatingMillis": 18000000, "restMillis": 900000, "holdMillis": 2340000, "heatingIntervalCount": 2, "validReadings": 3, "manualReadings": 1, "excludedReadings": 0, "rating": 4.5, "cookAgain": true, "hasResultNotes": true}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "simultaneous dishes union equipment hours",
+      "asOfUtcMillis": 10000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Pork and potatoes", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 10000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Pork", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null},
+          {"id": "d2", "cookId": "c1", "name": "Potatoes", "foodType": "Vegetable", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "a1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "a2", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 7000000},
+          {"id": "b1", "cookId": "c1", "dishIds": ["d2"], "action": "food_on", "at": 4000000},
+          {"id": "b2", "cookId": "c1", "dishIds": ["d2"], "action": "remove", "at": 10000000}
+        ],
+        "readings": [],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 9000000,
+            "channels": [],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 7000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 6000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false},
+              {"dishId": "d2", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 4000000, "wrapAt": null, "removeAt": 10000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 6000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing anchors stay missing",
+      "asOfUtcMillis": 4000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Brisket notes only", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 4000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Brisket", "foodType": "Beef", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "n1", "cookId": "c1", "dishIds": [], "action": "season", "at": 2000000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food", "value": 150.0, "unit": "°F", "measuredAtUtcMillis": 3000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": null,
+            "channels": [
+              {"channelId": "c1:p1::d1:food:manual", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 150.0, "maxF": 150.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": null, "wrapAt": null, "removeAt": null, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": null, "restMillis": null, "holdMillis": null, "heatingIntervalCount": null, "validReadings": 1, "manualReadings": 1, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "legacy session wall clock is not cooking time",
+      "asOfUtcMillis": 7000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Old ribs session", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 7000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Ribs", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "f1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 2000000},
+          {"id": "r1", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 6000000}
+        ],
+        "readings": [],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "legacy_preserved"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": null,
+            "channels": [],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 2000000, "wrapAt": null, "removeAt": 6000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": null, "restMillis": null, "holdMillis": null, "heatingIntervalCount": null, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "edited anchor recomputes deterministically",
+      "asOfUtcMillis": 10000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Corrected chicken", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 10000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Chicken", "foodType": "Poultry", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "a-first", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 5000000},
+          {"id": "m-second", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 5000000},
+          {"id": "whole", "cookId": "c1", "dishIds": [], "action": "spritz", "at": 6000000},
+          {"id": "w1", "cookId": "c1", "dishIds": ["d1"], "action": "wrap", "at": 8000000},
+          {"id": "r1", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 9000000}
+        ],
+        "readings": [],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 4000000,
+            "channels": [],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 5000000, "wrapAt": 8000000, "removeAt": 9000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 4000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 2, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "source corrections exclude invalid readings",
+      "asOfUtcMillis": 4000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Turkey with corrections", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 4000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Turkey", "foodType": "Poultry", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "f1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "r1", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 4000000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 150.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r2", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 999.0, "unit": "°F", "measuredAtUtcMillis": 2500000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "unavailable"},
+          {"id": "r3", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": null, "unit": "°F", "measuredAtUtcMillis": 3000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r4", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 200.0, "unit": "K", "measuredAtUtcMillis": 3200000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 3000000,
+            "channels": [
+              {"channelId": "c1:p1::d1:food_probe:controller_cloud", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 0, "minF": 150.0, "maxF": 150.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 4000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 3000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 0, "excludedReadings": 3, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "sparse manual data preserved",
+      "asOfUtcMillis": 10000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Manual lamb checks", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 10000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Lamb", "foodType": "Lamb", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "f1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "n1", "cookId": "c1", "dishIds": ["d1"], "action": "dish_done", "at": 10000000}
+        ],
+        "readings": [
+          {"id": "m1", "cookId": "c1", "dishId": "d1", "probeId": null, "probeName": "Handheld", "measurementType": "food", "value": 140.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "m2", "cookId": "c1", "dishId": "d1", "probeId": null, "probeName": "Handheld", "measurementType": "food", "value": 160.0, "unit": "°F", "measuredAtUtcMillis": 5000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "m3", "cookId": "c1", "dishId": "d1", "probeId": null, "probeName": "Handheld", "measurementType": "food", "value": 200.0, "unit": "°F", "measuredAtUtcMillis": 9000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [
+          {"id": "res1", "cookId": "c1", "dishId": "d1", "resultType": "overall", "numericValue": 4.0, "textValue": null, "recordedAtUtcMillis": 9500000}
+        ],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 9000000,
+            "channels": [
+              {"channelId": "c1:Handheld::d1:food:manual", "dishId": "d1", "role": "food", "readingCount": 3, "manualCount": 3, "minF": 140.0, "maxF": 200.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": null, "restStartAt": null, "holdStartAt": null, "dishDoneAt": 10000000, "heatingMillis": 9000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 3, "manualReadings": 3, "excludedReadings": 0, "rating": 4.0, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "changed probe assignment splits channels",
+      "asOfUtcMillis": 6000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Shared probe cook", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 6000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Brisket", "foodType": "Beef", "cut": null, "weightValue": null, "weightUnit": null},
+          {"id": "d2", "cookId": "c1", "name": "Sausage", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "a1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "a2", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 3000000},
+          {"id": "b1", "cookId": "c1", "dishIds": ["d2"], "action": "food_on", "at": 3000000},
+          {"id": "b2", "cookId": "c1", "dishIds": ["d2"], "action": "remove", "at": 6000000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 150.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r2", "cookId": "c1", "dishId": "d2", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food_probe", "value": 165.0, "unit": "°F", "measuredAtUtcMillis": 4000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 5000000,
+            "channels": [
+              {"channelId": "c1:p1::d1:food_probe:controller_cloud", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 0, "minF": 150.0, "maxF": 150.0, "units": ["°F"]},
+              {"channelId": "c1:p1::d2:food_probe:controller_cloud", "dishId": "d2", "role": "food", "readingCount": 1, "manualCount": 0, "minF": 165.0, "maxF": 165.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 3000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 2000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false},
+              {"dishId": "d2", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 3000000, "wrapAt": null, "removeAt": 6000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 2000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "repeated return to heat accumulates",
+      "asOfUtcMillis": 10000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Pork belly twice on", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 10000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Pork belly", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "f1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "o1", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 3000000},
+          {"id": "f2", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 4000000},
+          {"id": "o2", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 6000000},
+          {"id": "s1", "cookId": "c1", "dishIds": ["d1"], "action": "rest_start", "at": 6500000},
+          {"id": "n1", "cookId": "c1", "dishIds": ["d1"], "action": "dish_done", "at": 10000000}
+        ],
+        "readings": [],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 4000000,
+            "channels": [],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 3000000, "restStartAt": 6500000, "holdStartAt": null, "dishDoneAt": 10000000, "heatingMillis": 4000000, "restMillis": 3500000, "holdMillis": 0, "heatingIntervalCount": 2, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "wrap anchors recorded",
+      "asOfUtcMillis": 8000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Shoulder and ribs", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 8000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Shoulder", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null},
+          {"id": "d2", "cookId": "c1", "name": "Ribs", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "a1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "a2", "cookId": "c1", "dishIds": ["d1"], "action": "wrap", "at": 3000000},
+          {"id": "a3", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 5000000},
+          {"id": "b1", "cookId": "c1", "dishIds": ["d2"], "action": "food_on", "at": 2000000},
+          {"id": "b2", "cookId": "c1", "dishIds": ["d2"], "action": "remove", "at": 7000000}
+        ],
+        "readings": [],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 6000000,
+            "channels": [],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": 3000000, "removeAt": 5000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 4000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 2, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false},
+              {"dishId": "d2", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 2000000, "wrapAt": null, "removeAt": 7000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 5000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "multiple cooks stay independent",
+      "asOfUtcMillis": 12000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Steak night", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 4000000},
+          {"id": "c2", "title": "Old chops session", "status": "completed", "startedAtUtcMillis": 10000000, "endedAtUtcMillis": 12000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Steak", "foodType": "Beef", "cut": null, "weightValue": null, "weightUnit": null},
+          {"id": "d2", "cookId": "c2", "name": "Chops", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "a1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "a2", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 4000000},
+          {"id": "b1", "cookId": "c2", "dishIds": ["d2"], "action": "food_on", "at": 10000000},
+          {"id": "b2", "cookId": "c2", "dishIds": ["d2"], "action": "remove", "at": 12000000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food", "value": 130.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r2", "cookId": "c2", "dishId": "d2", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food", "value": 140.0, "unit": "°F", "measuredAtUtcMillis": 11000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [
+          {"id": "res1", "cookId": "c2", "dishId": null, "resultType": "overall_rating", "numericValue": 4.0, "textValue": null, "recordedAtUtcMillis": 11900000}
+        ],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"},
+          {"cookId": "c2", "timingMode": "legacy_preserved"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 3000000,
+            "channels": [
+              {"channelId": "c1:p1::d1:food:manual", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 130.0, "maxF": 130.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 4000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 3000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 1, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          },
+          {
+            "cookId": "c2",
+            "equipmentHeatingMillis": null,
+            "channels": [
+              {"channelId": "c2:p1::d2:food:manual", "dishId": "d2", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 140.0, "maxF": 140.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d2", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 10000000, "wrapAt": null, "removeAt": 12000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": null, "restMillis": null, "holdMillis": null, "heatingIntervalCount": null, "validReadings": 1, "manualReadings": 1, "excludedReadings": 0, "rating": 4.0, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "method weight unit differences visible",
+      "asOfUtcMillis": 5000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Two brisket styles", "status": "completed", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": 5000000}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Point", "foodType": "Beef", "cut": "Brisket point", "weightValue": 5.0, "weightUnit": "kg"},
+          {"id": "d2", "cookId": "c1", "name": "Flat", "foodType": "Beef", "cut": null, "weightValue": 12.0, "weightUnit": "lb"}
+        ],
+        "events": [
+          {"id": "a1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 1000000},
+          {"id": "a2", "cookId": "c1", "dishIds": ["d1"], "action": "remove", "at": 5000000},
+          {"id": "b1", "cookId": "c1", "dishIds": ["d2"], "action": "food_on", "at": 1000000},
+          {"id": "b2", "cookId": "c1", "dishIds": ["d2"], "action": "remove", "at": 5000000}
+        ],
+        "readings": [
+          {"id": "r1", "cookId": "c1", "dishId": "d1", "probeId": "p1", "probeName": "Probe 1", "measurementType": "food", "value": 100.0, "unit": "°C", "measuredAtUtcMillis": 2000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"},
+          {"id": "r2", "cookId": "c1", "dishId": "d2", "probeId": "p2", "probeName": "Probe 2", "measurementType": "food", "value": 212.0, "unit": "°F", "measuredAtUtcMillis": 2000000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid"}
+        ],
+        "results": [
+          {"id": "res1", "cookId": "c1", "dishId": "d1", "resultType": "method", "numericValue": null, "textValue": "Smoked", "recordedAtUtcMillis": 4500000},
+          {"id": "res2", "cookId": "c1", "dishId": "d1", "resultType": "overall_rating", "numericValue": 5.0, "textValue": null, "recordedAtUtcMillis": 4500000},
+          {"id": "res3", "cookId": "c1", "dishId": "d2", "resultType": "method", "numericValue": null, "textValue": "Grilled", "recordedAtUtcMillis": 4500000},
+          {"id": "res4", "cookId": "c1", "dishId": "d2", "resultType": "overall_rating", "numericValue": 3.0, "textValue": null, "recordedAtUtcMillis": 4500000},
+          {"id": "res5", "cookId": "c1", "dishId": "d2", "resultType": "cook_again", "numericValue": 0.0, "textValue": null, "recordedAtUtcMillis": 4500000}
+        ],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 4000000,
+            "channels": [
+              {"channelId": "c1:p1::d1:food:manual", "dishId": "d1", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 212.0, "maxF": 212.0, "units": ["°C"]},
+              {"channelId": "c1:p2::d2:food:manual", "dishId": "d2", "role": "food", "readingCount": 1, "manualCount": 1, "minF": 212.0, "maxF": 212.0, "units": ["°F"]}
+            ],
+            "dishes": [
+              {"dishId": "d1", "cut": "Brisket point", "weightValue": 5.0, "weightUnit": "kg", "methods": ["Smoked"], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 5000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 4000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 1, "excludedReadings": 0, "rating": 5.0, "cookAgain": null, "hasResultNotes": false},
+              {"dishId": "d2", "cut": null, "weightValue": 12.0, "weightUnit": "lb", "methods": ["Grilled"], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 5000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 4000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 1, "excludedReadings": 0, "rating": 3.0, "cookAgain": false, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "active cook uses evaluation time",
+      "asOfUtcMillis": 7000000,
+      "archive": {
+        "cooks": [
+          {"id": "c1", "title": "Butt still on", "status": "active", "startedAtUtcMillis": 1000000, "endedAtUtcMillis": null}
+        ],
+        "dishes": [
+          {"id": "d1", "cookId": "c1", "name": "Butt", "foodType": "Pork", "cut": null, "weightValue": null, "weightUnit": null}
+        ],
+        "events": [
+          {"id": "f1", "cookId": "c1", "dishIds": ["d1"], "action": "food_on", "at": 2000000},
+          {"id": "w1", "cookId": "c1", "dishIds": ["d1"], "action": "wrap", "at": 4000000}
+        ],
+        "readings": [],
+        "results": [],
+        "lifecycles": [
+          {"cookId": "c1", "timingMode": "explicit_phases"}
+        ]
+      },
+      "expected": {
+        "calculationVersion": 1,
+        "cooks": [
+          {
+            "cookId": "c1",
+            "equipmentHeatingMillis": 5000000,
+            "channels": [],
+            "dishes": [
+              {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 2000000, "wrapAt": 4000000, "removeAt": null, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 5000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 2, "validReadings": 0, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
