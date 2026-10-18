@@ -256,7 +256,14 @@ internal class SubscriptionManager(
                 notice = "Your purchase is pending with Google Play. Pro unlocks after the store confirms it; nothing is charged by PitTech.",
             )
             is ProPurchaseOutcome.Purchased -> verifyLocked(outcome.purchase, acknowledgeAfterResponse = true)
-            is ProPurchaseOutcome.AlreadyOwned -> restoreLocked()
+            is ProPurchaseOutcome.AlreadyOwned -> {
+                // The purchase attempt is over; pivot to the restore flow.
+                // restoreLocked() manages its own Verifying state, and its
+                // busy guard would otherwise see this Purchasing state and
+                // bail immediately, silently dropping the restore.
+                _presentation.value = _presentation.value.copy(purchaseState = ProPurchaseState.Idle)
+                restoreLocked()
+            }
             is ProPurchaseOutcome.Failed -> _presentation.value = _presentation.value.copy(purchaseState = ProPurchaseState.Failed(outcome.message))
         }
     }
