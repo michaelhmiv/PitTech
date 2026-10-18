@@ -292,8 +292,15 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(saved.waitForExistence(timeout: 10)); reveal(saved, app: app)
             capture(large ? "Community report saved large text" : "Community report saved")
             app.navigationBars["Report publication"].buttons["Cancel"].tap()
-            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app); manage.tap()
-            let retry = app.buttons["community-retry"]; reveal(retry, app: app); retry.tap()
+            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app)
+            let retry = app.buttons["community-retry"]
+            // Under CI load the More-list tap can be swallowed while the list settles:
+            // retry until the Community Controls screen actually lands.
+            for _ in 0..<3 {
+                if retry.waitForExistence(timeout: 5) { break }
+                reveal(manage, app: app); manage.tap()
+            }
+            reveal(retry, app: app); retry.tap()
             let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app); status.tap()
             let reviewing = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch; XCTAssertTrue(reviewing.waitForExistence(timeout: 10)); reveal(reviewing, app: app)
             capture(large ? "Community report status large text" : "Community report status")
