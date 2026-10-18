@@ -13,9 +13,12 @@ import Foundation
 @MainActor enum ProSubscriptionUITestSupport {
     static var active: Bool { CommandLine.arguments.contains("--pro-ui-test") }
 
-    static let stubProduct = ProStoreProduct(productId: "pittech.pro.monthly.stub", displayPrice: "$3.00", isMonthly: true)
+    // nonisolated: pure stub data / pure function, safe to use from the
+    // nonisolated protocol-conforming stubs below (which must stay nonisolated
+    // because ProStoreClient is a nonisolated Sendable protocol).
+    nonisolated static let stubProduct = ProStoreProduct(productId: "pittech.pro.monthly.stub", displayPrice: "$3.00", isMonthly: true)
 
-    static func cache(state: String, verified: Bool = true) throws -> SubscriptionEntitlementCache {
+    nonisolated static func cache(state: String, verified: Bool = true) throws -> SubscriptionEntitlementCache {
         try SubscriptionEntitlementCache.decode(Data("""
         {"version":"entitlement-cache-v1","environment":"production","verified":\(verified ? "true" : "false"),"state":"\(state)","verifiedUntil":"2026-11-17T12:00:00.000Z","lastVerifiedAt":"2026-10-18T12:00:00.000Z","offlineValidUntil":"2026-10-25T12:00:00.000Z","contractVersion":"store-verification-v1"}
         """.utf8))

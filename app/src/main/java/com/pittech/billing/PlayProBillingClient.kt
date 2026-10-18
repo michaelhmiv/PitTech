@@ -104,7 +104,7 @@ internal class PlayProBillingClient(context: Context, override val productId: St
                     return@queryProductDetailsAsync
                 }
                 val match = details.firstOrNull { it.productId == productId && it.productType == BillingClient.ProductType.SUBS }
-                val offer = match?.subscriptionOfferDetails?.firstOrNull { offer ->
+                val offer = match?.subscriptionOfferDetails?.firstOrNull { offer: ProductDetails.SubscriptionOfferDetails ->
                     offer.pricingPhases.pricingPhaseList.any { it.billingPeriod == "P1M" }
                 }
                 if (match == null || offer == null) {
