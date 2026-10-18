@@ -213,6 +213,8 @@ jobs:
             cp ios/screenshot-fixtures/pittech.json "$app_container/Documents/pittech.json"
             xcrun simctl ui "$device_id" appearance light
             xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
+            sleep 4
             xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}.png"
             xcrun simctl terminate "$device_id" com.pittech
             xcrun simctl ui "$device_id" appearance dark
