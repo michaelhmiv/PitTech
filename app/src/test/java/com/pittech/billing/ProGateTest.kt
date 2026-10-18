@@ -72,7 +72,7 @@ class ProGateTest {
     fun cacheParsingMapsServerStatesAndHonorsTheOfflineWindow() {
         fun cache(state: String, verified: Boolean = true) = SubscriptionCache.parse(
             JSONObject(
-                """{"version":"entitlement-cache-v1","environment":"production","verified":$verified,"state":"$state","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1"}",
+                """{"version":"entitlement-cache-v1","environment":"production","verified":$verified,"state":"$state","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1}""",
             ),
         )
         val now = 1_792_324_800_000L
@@ -92,7 +92,7 @@ class ProGateTest {
     @Test
     fun outcomeParsingCarriesConflictRecovery() {
         val cache = JSONObject(
-            """{"version":"entitlement-cache-v1","environment":"production","verified":true,"state":"none","verifiedUntil":null,"lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":null,"contractVersion":"store-verification-v1"}",
+            """{"version":"entitlement-cache-v1","environment":"production","verified":true,"state":"none","verifiedUntil":null,"lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":null,"contractVersion":"store-verification-v1}""",
         )
         val outcome = SubscriptionOutcome.parse(
             JSONObject()
