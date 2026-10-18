@@ -262,7 +262,11 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(submit.isEnabled)
             capture(large ? "Local journal removal review large text" : "Local journal removal review")
             submit.tap()
-            let message = app.staticTexts["account-message"]; XCTAssertTrue(message.waitForExistence(timeout: 10)); reveal(message, app: app)
+            let message = app.staticTexts["account-message"]
+            // In large text the Form virtualizes off-screen rows: scroll the
+            // message into view (which materializes it) before waiting on it.
+            reveal(message, app: app)
+            XCTAssertTrue(message.waitForExistence(timeout: 10))
             XCTAssertTrue(message.label.contains("Local journal removed"))
             capture(large ? "Local journal removed large text" : "Local journal removed")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
