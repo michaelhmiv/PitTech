@@ -2,6 +2,7 @@ package com.pittech
 
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
