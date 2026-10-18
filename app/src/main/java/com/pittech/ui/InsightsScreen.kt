@@ -44,6 +44,7 @@ fun InsightsScreen(
     onOpenCook: (String) -> Unit,
     onStartCook: () -> Unit,
     modifier: Modifier = Modifier,
+    onProEntry: ((com.pittech.billing.ProPlacement) -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     var favoritesOnly by remember { mutableStateOf(false) }
@@ -185,6 +186,9 @@ fun InsightsScreen(
 
             }
 
+        }
+        if (onProEntry != null) {
+            ProInsightsEntries(onEntry = onProEntry)
         }
     }
 }

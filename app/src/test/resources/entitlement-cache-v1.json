@@ -1,0 +1,10 @@
+{
+  "version": "entitlement-cache-v1",
+  "environment": "production",
+  "verified": true,
+  "state": "active",
+  "verifiedUntil": "2026-11-17T12:00:00.000Z",
+  "lastVerifiedAt": "2026-10-18T12:00:00.000Z",
+  "offlineValidUntil": "2026-10-25T12:00:00.000Z",
+  "contractVersion": "store-verification-v1"
+}

@@ -12,6 +12,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import com.pittech.ads.AdEntitlementStore
 import com.pittech.ads.PitTechAdsConsentManager
 import com.pittech.ads.SharedPrefsAdEntitlementPrefs
@@ -52,6 +55,17 @@ class MainActivity : ComponentActivity() {
                 val report = crashReport
                 LaunchedEffect(report) {
                     if (report == null) adsConsentManager.requestConsent()
+                }
+                LaunchedEffect(viewModel) {
+                    viewModel.subscription.start()
+                    launch { viewModel.subscription.entitlement.collect { adEntitlementStore.update(it) } }
+                    // A fresh sign-in re-verifies the subscription silently;
+                    // entitlement transitions never interrupt an active cook.
+                    launch {
+                        viewModel.account.presentation.map { it.signedIn }.distinctUntilChanged().collect {
+                            viewModel.subscription.refresh()
+                        }
+                    }
                 }
                 if (report != null) {
                     CrashRecoveryScreen(

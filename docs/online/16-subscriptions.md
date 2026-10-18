@@ -143,12 +143,115 @@ Billing tables live in a separate `billing` schema (migration 007) with a
 narrow runtime role (`operations/billing-runtime-role.sql`): no relay, auth,
 publication, sync, migration, DDL, or truncate access.
 
+## Native lane: paywall placement map
+
+The paywall is contextual within advanced Insights, customization, and More.
+It appears at the entry points of Pro-only views, never as a popup, and no
+purchase popup interrupts Live or Finish — ever (asserted in tests on both
+platforms).
+
+| Entry point | Surface | Preview shown |
+|---|---|---|
+| Personal analysis | Insights → "Personal analysis · Pro" | How pork cooks compare, best-rated recorded attempt, timing shifts across recorded cuts and weights |
+| Advanced curves | Insights → "Advanced curves · Pro" | Recorded cooks aligned at Food on and Wrap; measured source selection |
+| Pro themes | Share-card preview → "Pro themes · Pro" (customization) | Pro card themes, chart palettes, app icons; preview before applying |
+| PitTech Pro | More → "PitTech Pro" | Full preview: ad-free, personal analysis, advanced curves, themes |
+
+Each entry opens one gate sheet/dialog whose destination follows the verified
+entitlement state. The free-feature inventory in `15-insights.md` §1 is the
+do-not-touch list: every tool inventoried there stays free, signed-out, and
+offline. This lane adds paid views and gates; it never removes or paywalls an
+existing free tool.
+
+The paywall screen carries: a practical preview of what Pro unlocks, precise
+monthly billing text rendered verbatim from the store's localized product
+data (no placeholder pricing, no hardcoded price), Restore purchases, Manage
+subscription (store deep link), privacy and terms links, and a clear close
+action.
+
+## Native lane: purchase-flow design
+
+One monthly PitTech Pro product, settled target US $3. No annual plan, no web
+checkout. The product ID comes from the approved configuration path and is
+owner-gated: Android `-PpittechProProductId` →
+`BuildConfig.PITTECH_PRO_PRODUCT_ID`; iOS `PITTECH_PRO_PRODUCT_ID` →
+`Info.plist` `PITTECHProProductID` (empty until the owner creates the
+product; the Release value is supplied the same way as the live AdMob IDs,
+never committed). An empty product ID is a graceful not-configured state:
+no crash, no fake price, no purchase button.
+
+- iOS: StoreKit 2 (`Product.products`, `purchase()`, `Transaction.updates`,
+  `Transaction.currentEntitlements`). Android: Play Billing 9
+  (`queryProductDetailsAsync`, `launchBillingFlow`,
+  `queryPurchasesAsync`, acknowledge-after-verification, pending-purchase
+  support). Both platforms sit behind a store-client protocol so tests use a
+  stub with localized product data instead of touching a store.
+- Purchases bind to the verified PitTech account (this lane's binding
+  rules). The client sends the store transaction to the backend for
+  server-side verification (`/v1/me/purchases/verify`, `restore`,
+  `release`, `/v1/me/entitlement/reconcile`); the client never sets
+  entitlement from a local purchase callback alone. Store transactions stay
+  unfinished/unacknowledged until the server responds, so the store
+  redelivers after a failure instead of losing the purchase.
+- Pending store states show pending copy and never unlock; user cancellation
+  dismisses with a "nothing was charged" notice; restore re-sends every
+  current store entitlement and re-establishes the same account entitlement;
+  a binding conflict shows the server's recovery text with a re-check and a
+  holder release path. If the entitlement cache says the account is covered,
+  the paywall shows the entitled state and never a second purchase button.
+- A signed-out account sees the paywall preview with a sign-in requirement;
+  no store purchase starts without a verified account. Because account entry
+  stays disabled until the accounts/social/sync/deletion phase passes, the
+  paywall honestly says accounts arrive with community recipes and private
+  sync, and Subscribe stays gated on sign-in.
+- Account deletion copy already states that subscriptions are managed in
+  the store, not in PitTech (both native deletion reviews link the store
+  subscription manager), without blocking immediate deletion.
+- Privacy declarations are unchanged: StoreKit is a system framework and
+  Play Billing adds no ad/tracking SDK, so `PrivacyInfo.xcprivacy`, the
+  privacy site, and the store declarations need no new entries for this
+  lane. The terms links point at the platform subscription terms (Apple's
+  standard EULA, Google Play terms) until PitTech publishes its own
+  subscription terms in the store slice.
+
+## Native lane: entitlement-state UI matrix
+
+| State | UI |
+|---|---|
+| Verified entitled | The Pro view opens (a slice-18 placeholder until the real views land); zero ad requests via the same gate state |
+| Verified not entitled | Contextual paywall with preview |
+| Unknown/loading | Neutral loading state — never a flash of ads and never a flash of the paywall for a previously entitled user |
+| Expired (verified ended states) | Free fallback: local records, exported files, and all free capabilities keep working; previously generated Pro exports are not destroyed |
+
+The last verified cache record persists on-device (SharedPreferences /
+UserDefaults) so a recently verified subscriber keeps Pro offline for the
+server's bounded window; nothing the server did not verify is ever granted,
+and a sign-out clears the cache so accounts never share entitlement. An
+active cook is never interrupted by an entitlement transition: refreshes are
+silent, the paywall opens only from explicit taps, and Live/Finish contain
+no paywall presentation code.
+
+Native tests: `ProPaywallTests` (17 unit tests) + `ProPaywallUITests`
+(7 UI tests at both text sizes) on iOS; JVM `ProPaywallTest` (16),
+`SubscriptionManagerTest` (14), `ProGateTest` (7), and
+`SubscriptionClientTest` (2), plus `ProPaywallTest` (6 stub-driven UI tests),
+`ProPaywallContentTest` (8 purchase-flow UI tests),
+`ProPaywallFlowTest` (4 real-navigation tests), and
+`ProPaywallNoInterruptTest` (full Live start-to-finish) on Android, with
+the companion selector at `OK (45 tests)`.
+Zero-ad-requests-under-entitlement and the no-flash rules are proven via
+the `AdRequestMonitor` instrumentation hook, and the no-interrupt rule via
+the `ProPaywallPresentation` recorder (empty after Live + Finish).
+
 ## What remains
 
-Paywall UI placement and paid-screen code wait for slice 15's free-feature
-inventory. Owner-gated: store product creation and identifiers, App Store
-Server API credentials, Play service account and RTDN topic wiring, sandbox
-purchase evidence, TestFlight/closed-testing passes, and full-chain Apple X.509
-fixtures from live sandbox notifications (unit tests pin generated keys and
-cover chain rejection paths). Runtime evidence (Actions runs, staging
-verification) is still required; this draft was written without a local build.
+Owner-gated: store product creation and identifiers (then the Release
+product-ID values on both clients), App Store Server API credentials, Play
+service account and RTDN topic wiring, sandbox purchase evidence,
+TestFlight/closed-testing passes, and full-chain Apple X.509 fixtures from
+live sandbox notifications (unit tests pin generated keys and cover chain
+rejection paths). Slice 18 fills the Pro views behind these gates with the
+real personal-analysis, advanced-curve, recap, and Pro-theme content, and
+the store slice publishes PitTech-hosted subscription terms. Runtime
+evidence (Actions runs, staging verification) is still required; this draft
+was written without a local build.

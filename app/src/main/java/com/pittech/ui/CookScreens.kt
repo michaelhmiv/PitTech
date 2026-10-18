@@ -148,6 +148,7 @@ internal fun PitTechApp(
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
     AccountDialog(viewModel.account, viewModel.sync)
+    ProGateDialog(viewModel.subscription, previouslyEntitled, onSignIn = { if (viewModel.account.enabled) viewModel.account.open() })
     if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -325,6 +326,7 @@ internal fun PitTechApp(
                     isStartingCook = true
                 },
                 modifier = Modifier.padding(padding),
+                onProEntry = viewModel.subscription::openPro,
             )
             MainSection.MORE -> when (moreDestination) {
             "Devices" -> Column(Modifier.padding(padding).fillMaxSize()) {
@@ -354,7 +356,7 @@ internal fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
-            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null)
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null, onPro = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.MORE) })
             }
         }
     }

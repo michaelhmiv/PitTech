@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(NativePublicCoordinator.self) private var community
     @Environment(NativeRelayCoordinator.self) private var relay
     @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(ProSubscriptionCoordinator.self) private var pro
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
     @State private var selectedTab = "meals"
@@ -45,6 +46,9 @@ struct ContentView: View {
             }
         }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
         .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 })) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
+        .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } })) {
+            if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
+        }
         .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
             if let destination = store.publicCookDestination {
                 store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
@@ -233,6 +237,11 @@ struct InsightsView: View {
                         ContentUnavailableView("Keep logging to build insights", systemImage: "chart.xyaxis.line", description: Text("Your cook totals and average duration are calculated from records saved on this device."))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 18)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("DEEPER ANALYSIS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        ProEntryRow(entry: .analysis)
+                        ProEntryRow(entry: .curves)
                     }
                 }
                 .padding(20)

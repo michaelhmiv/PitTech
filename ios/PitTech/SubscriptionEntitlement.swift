@@ -66,6 +66,25 @@ struct SubscriptionEntitlementCache: Codable, Equatable, Sendable {
         return try decoder.decode(SubscriptionEntitlementCache.self, from: data)
     }
 
+    /// Contract-form JSON that round-trips through `decode(_:)`. The default
+    /// `JSONEncoder` date format does not, so persistence and UI-test stubs
+    /// must use this instead of a bare encoder.
+    func encoded() throws -> Data {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func string(_ date: Date?) -> Any { date.map(formatter.string) ?? NSNull() }
+        return try JSONSerialization.data(withJSONObject: [
+            "version": version,
+            "environment": environment,
+            "verified": verified,
+            "state": state,
+            "verifiedUntil": string(verifiedUntil),
+            "lastVerifiedAt": string(lastVerifiedAt),
+            "offlineValidUntil": string(offlineValidUntil),
+            "contractVersion": contractVersion,
+        ])
+    }
+
     func entitlement(now: Date = .now) -> AdEntitlementState {
         adEntitlementFromServerCache(verified: verified, state: state, verifiedUntil: verifiedUntil, cacheVersion: version, contractVersion: contractVersion, now: now)
     }
