@@ -2,23 +2,8 @@ import XCTest
 
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
-    // MARK: - Hardened interaction helpers (large-text CI robustness)
-    //
-    // Large-text UI passes run the same flows at an accessibility text size where
-    // SwiftUI virtualizes off-screen rows and every layout/animation is slower.
-    // Under CI load three timing fragilities have bitten these tests (rounds 6-10),
-    // never a product bug: swallowed taps while a list settles, nodes that exist
-    // but are not yet hittable because a sheet/nav transition is still animating,
-    // and rows that only materialize once scrolled into view. The helpers below
-    // make the waits poll-based and bounded instead of fixed, and verify each
-    // tap's effect before moving on.
-    private func reveal(_ element: XCUIElement, app: XCUIApplication, timeout: TimeInterval = 60) {
-        // The scroll budget is time-based, not a fixed attempt count: at large
-        // text under CI load, rows materialize slowly and a fixed budget expired
-        // on slow-but-healthy runs.
-        let deadline = Date().addingTimeInterval(timeout)
-        for attempt in 0..<28 {
-            guard Date() < deadline else { break }
+    private func reveal(_ element: XCUIElement, app: XCUIApplication) {
+        for attempt in 0..<18 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
@@ -79,13 +64,6 @@ final class MealRecipeFlowsTests: XCTestCase {
                 if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
-        if !(element.exists && element.isHittable) {
-            // Grace period: the node can exist while a sheet or navigation
-            // transition is still settling (large text animates more layout).
-            // Poll for hittability before failing instead of asserting blind.
-            let settled = expectation(for: NSPredicate(format: "exists == YES AND hittable == YES"), evaluatedWith: element)
-            _ = XCTWaiter.wait(for: [settled], timeout: 10)
-        }
         XCTAssertTrue(element.exists && element.isHittable)
         let log = app.buttons["meal-log"]
         if app.scrollViews["cook-content"].exists, log.exists, log.isHittable,
@@ -112,26 +90,6 @@ final class MealRecipeFlowsTests: XCTestCase {
         }
         XCTAssertEqual(element.value as? String, expected)
     }
-    /// Taps `element`, retrying while the tap has no observable effect.
-    /// Under CI load a tap can be swallowed while the list settles; the next
-    /// screen then never appears and the following waitForExistence burns its
-    /// whole timeout on the wrong screen. Re-reveal and re-tap instead.
-    /// - Parameter landed: returns true once the tap's effect is visible.
-    private func tapUntilLanded(_ element: XCUIElement, app: XCUIApplication, landed: () -> Bool, attempts: Int = 3) {
-        var ok = false
-        for _ in 0..<attempts {
-            reveal(element, app: app)
-            element.tap()
-            if landed() { ok = true; break }
-        }
-        XCTAssertTrue(ok, "Tap on '\(element.identifier)' had no observable effect after \(attempts) attempts")
-    }
-    /// Fails unless `element` disappears within `timeout`.
-    /// Use after a sheet/modal dismissal before interacting: the animating
-    /// navigation bar is not hittable, so scrolling during the transition races it.
-    private func waitForGone(_ element: XCUIElement, timeout: TimeInterval = 10, file: StaticString = #file, line: UInt = #line) {
-        XCTAssertTrue(element.waitForNonExistence(timeout: timeout), "Expected '\(element.identifier)' to disappear within \(timeout)s", file: file, line: line)
-    }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
     func testPrivateSyncConflictReviewResolvesOfflineAtBothTextSizes() {
         for large in [false, true] {
@@ -139,22 +97,22 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let app = XCUIApplication()
                 app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--sync-ui-test"] + (large ? ["--screenshot-large-text"] : [])
                 app.launch(); app.tabBars.buttons["More"].tap()
-                let open = app.buttons["more-account"]; tapUntilLanded(open, app: app) { app.staticTexts["account-signed-in"].waitForExistence(timeout: 10) }
+                let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
                 XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
                 let status = app.staticTexts["sync-status"]; reveal(status, app: app)
                 XCTAssertEqual(status.label, "Conflicts to review")
-                let review = app.buttons["sync-conflicts"]; tapUntilLanded(review, app: app) { app.staticTexts["Yours: Note \"Local title\""].waitForExistence(timeout: 10) }
+                let review = app.buttons["sync-conflicts"]; reveal(review, app: app); review.tap()
                 XCTAssertTrue(app.staticTexts["Yours: Note \"Local title\""].waitForExistence(timeout: 10))
                 XCTAssertTrue(app.staticTexts["Other device: Note \"Remote title\""].waitForExistence(timeout: 10))
                 if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
-                let action = app.buttons[choice]; tapUntilLanded(action, app: app) { action.waitForNonExistence(timeout: 5) }
+                let action = app.buttons[choice]; reveal(action, app: app); action.tap()
                 // The conflict resolves offline; the review list empties without an upload claim.
                 XCTAssertTrue(action.waitForNonExistence(timeout: 10))
-                let done = app.buttons["sync-review-done"]; tapUntilLanded(done, app: app) { app.staticTexts["sync-status"].waitForExistence(timeout: 5) }
+                let done = app.buttons["sync-review-done"]; reveal(done, app: app); done.tap()
                 let synced = app.staticTexts["sync-status"]; reveal(synced, app: app)
                 XCTAssertEqual(synced.label, "Last synced never")
                 if choice == "Keep mine" {
-                    let now = app.buttons["sync-now"]; tapUntilLanded(now, app: app) { app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15) }
+                    let now = app.buttons["sync-now"]; reveal(now, app: app); now.tap()
                     XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))
                 }
                 app.terminate()
@@ -202,11 +160,15 @@ final class MealRecipeFlowsTests: XCTestCase {
         for large in [false, true] {
             let app = XCUIApplication();app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--discovery-ui-test"] + (large ? ["--screenshot-large-text"] : []);app.launch()
             app.tabBars.buttons["Discover"].tap()
-            let item = app.buttons["discover-open-12345678-1234-4234-8234-123456789abc"];tapUntilLanded(item, app: app) { app.staticTexts["public-title"].waitForExistence(timeout: 15) }
+            let item = app.buttons["discover-open-12345678-1234-4234-8234-123456789abc"];reveal(item, app: app);item.tap()
             let title = app.staticTexts["public-title"];XCTAssertTrue(title.waitForExistence(timeout: 15));capture(large ? "Native public detail large text" : "Native public detail")
-            let save = app.buttons["public-save"];tapUntilLanded(save, app: app) { app.buttons["pack-save-recipes"].waitForExistence(timeout: 20) }
-            let confirm = app.buttons["pack-save-recipes"];XCTAssertTrue(confirm.waitForExistence(timeout: 20));reveal(confirm, app: app);XCTAssertEqual(confirm.label, "Save 2 recipes")
-            capture(large ? "Native public selective preview large text" : "Native public selective preview");tapUntilLanded(confirm, app: app) { app.alerts["Cook archive"].waitForExistence(timeout: 20) }
+            let save = app.buttons["public-save"];reveal(save, app: app);save.tap()
+            let confirm = app.buttons["pack-save-recipes"]
+            // In large text the pack-save sheet can be slow to present under CI
+            // load: scroll-poll for the button (which materializes it) before the
+            // existence wait, mirroring the journal-removal virtualization fix.
+            reveal(confirm, app: app);XCTAssertTrue(confirm.waitForExistence(timeout: 20));XCTAssertEqual(confirm.label, "Save 2 recipes")
+            capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
             app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
             app.staticTexts["Oak-smoked pork shoulder"].firstMatch.tap()
@@ -216,8 +178,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             let unchanged = app.staticTexts["Ingredients · unchanged"]; reveal(unchanged, app: app); XCTAssertTrue(unchanged.waitForExistence(timeout: 15))
             capture(large ? "Native source change review large text" : "Native source change review")
             app.tabBars.buttons["Discover"].tap()
-            let cook = app.buttons["public-cook"];tapUntilLanded(cook, app: app) { app.buttons["pack-save-recipes"].waitForExistence(timeout: 20) }
-            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");tapUntilLanded(start, app: app) { app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-")).firstMatch.waitForExistence(timeout: 20) }
+            let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
+            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");start.tap()
             let food = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"));XCTAssertTrue(food.firstMatch.waitForExistence(timeout: 20))
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
@@ -294,8 +256,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             // The account entry point only exists when accounts are enabled.
             app.launchArguments = ["--ui-test-reset", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); app.tabBars.buttons["More"].tap()
-            let open = app.buttons["more-account"]; tapUntilLanded(open, app: app) { app.buttons["local-journal-remove"].waitForExistence(timeout: 10) }
-            let remove = app.buttons["local-journal-remove"]; tapUntilLanded(remove, app: app) { app.switches["local-journal-acknowledge"].firstMatch.waitForExistence(timeout: 10) }
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let remove = app.buttons["local-journal-remove"]; reveal(remove, app: app); remove.tap()
             let acknowledgment = app.switches["local-journal-acknowledge"].firstMatch
             setSwitch(acknowledgment, on: true, app: app)
             let typed = app.textFields["local-journal-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("REMOVE")
@@ -303,14 +265,14 @@ final class MealRecipeFlowsTests: XCTestCase {
             let submit = app.buttons["local-journal-submit"]; reveal(submit, app: app)
             XCTAssertTrue(submit.isEnabled)
             capture(large ? "Local journal removal review large text" : "Local journal removal review")
-            tapUntilLanded(submit, app: app) { app.navigationBars["Remove local journal"].waitForNonExistence(timeout: 5) }
+            submit.tap()
             let message = app.staticTexts["account-message"]
             // The submit dismisses the "Remove local journal" sheet before the
             // Account screen settles: the animating nav bar is not hittable, so
             // wait out the transition before scrolling. In large text the Account
             // Form virtualizes off-screen rows, so scroll the message into view
             // (which materializes it) before waiting on it.
-            waitForGone(app.navigationBars["Remove local journal"])
+            XCTAssertTrue(app.navigationBars["Remove local journal"].waitForNonExistence(timeout: 10))
             reveal(message, app: app)
             XCTAssertTrue(message.waitForExistence(timeout: 10))
             XCTAssertTrue(message.label.contains("Local journal removed"))
@@ -326,24 +288,27 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--community-controls-ui-test"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); app.tabBars.buttons["Discover"].tap()
             let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discover-open-")).firstMatch
-            XCTAssertTrue(source.waitForExistence(timeout: 10)); tapUntilLanded(source, app: app) { app.buttons["public-report"].waitForExistence(timeout: 10) }
-            let report = app.buttons["public-report"]; tapUntilLanded(report, app: app) { app.textViews["report-details"].waitForExistence(timeout: 10) }
+            XCTAssertTrue(source.waitForExistence(timeout: 10)); reveal(source, app: app); source.tap()
+            let report = app.buttons["public-report"]; reveal(report, app: app); report.tap()
             let details = app.textViews["report-details"]; reveal(details, app: app); details.tap(); details.typeText("Synthetic private review request")
-            app.buttons["Hide keyboard"].tap(); let submit = app.buttons["report-submit"]; tapUntilLanded(submit, app: app) { app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Recover or review the saved request")).firstMatch.waitForExistence(timeout: 10) }
+            app.buttons["Hide keyboard"].tap(); let submit = app.buttons["report-submit"]; reveal(submit, app: app); submit.tap()
             let saved = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Recover or review the saved request")).firstMatch
             XCTAssertTrue(saved.waitForExistence(timeout: 10)); reveal(saved, app: app)
             capture(large ? "Community report saved large text" : "Community report saved")
             app.navigationBars["Report publication"].buttons["Cancel"].tap()
-            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]
+            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app)
             let retry = app.buttons["community-retry"]
             // Under CI load the More-list tap can be swallowed while the list settles:
             // retry until the Community Controls screen actually lands.
-            tapUntilLanded(manage, app: app) { retry.waitForExistence(timeout: 5) }
-            reveal(retry, app: app); tapUntilLanded(retry, app: app) { app.buttons["Check report status"].firstMatch.waitForExistence(timeout: 10) }
-            let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); tapUntilLanded(status, app: app) { app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch.waitForExistence(timeout: 10) }
+            for _ in 0..<3 {
+                if retry.waitForExistence(timeout: 5) { break }
+                reveal(manage, app: app); manage.tap()
+            }
+            reveal(retry, app: app); retry.tap()
+            let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app); status.tap()
             let reviewing = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch; XCTAssertTrue(reviewing.waitForExistence(timeout: 10)); reveal(reviewing, app: app)
             capture(large ? "Community report status large text" : "Community report status")
-            app.tabBars.buttons["Discover"].tap(); let block = app.buttons["public-block"]; tapUntilLanded(block, app: app) { app.buttons["discover-search"].waitForExistence(timeout: 10) }
+            app.tabBars.buttons["Discover"].tap(); let block = app.buttons["public-block"]; reveal(block, app: app); block.tap()
             let search = app.buttons["discover-search"]; reveal(search, app: app); search.tap()
             XCTAssertTrue(app.staticTexts["discover-empty"].waitForExistence(timeout: 10))
             capture(large ? "Publisher blocked large text" : "Publisher blocked")
