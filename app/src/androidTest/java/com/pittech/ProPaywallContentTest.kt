@@ -197,7 +197,7 @@ class ProPaywallContentTest {
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-expired-fallback").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("PitTech Pro ended on this account.", substring = true).assertIsDisplayed()
             compose.onNodeWithText("nothing was deleted", substring = true, ignoreCase = true).assertIsDisplayed()
-            compose.onNodeWithTag("pro-resubscribe").performScrollTo().performClick()
+            compose.onNodeWithTag("pro-resubscribe").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-paywall").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-paywall-close").performClick()
         } finally {
@@ -221,7 +221,9 @@ class ProPaywallContentTest {
             compose.onNodeWithTag("pro-subscribe").performScrollTo().performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-notice").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("Purchase cancelled. Nothing was charged.").performScrollTo().assertIsDisplayed()
-            assertEquals(AdEntitlement.UNKNOWN, manager.presentation.value.entitlement)
+            // "none" refreshes to NOT_ENTITLED; a cancelled purchase must not touch
+            // that state (and must not call verify).
+            assertEquals(AdEntitlement.NOT_ENTITLED, manager.presentation.value.entitlement)
             assertFalse(api.calls.contains("/v1/me/purchases/verify"))
         } finally {
             scope.cancel()
