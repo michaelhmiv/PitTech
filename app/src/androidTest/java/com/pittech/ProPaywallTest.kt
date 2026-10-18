@@ -156,7 +156,7 @@ class ProPaywallTest {
             subscription.openPro(ProPlacement.CURVES)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-expired-fallback").fetchSemanticsNodes().isNotEmpty() }
             compose.onAllNodesWithTag("pro-placeholder").assertCountEquals(0)
-            compose.onNodeWithTag("pro-resubscribe").performScrollTo().performClick()
+            compose.onNodeWithTag("pro-resubscribe").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-paywall").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-paywall-close").performClick()
         } finally {

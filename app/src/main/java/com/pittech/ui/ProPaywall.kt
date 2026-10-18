@@ -50,12 +50,17 @@ import kotlinx.coroutines.launch
 internal fun ProGateDialog(subscription: SubscriptionManager, previouslyEntitled: Boolean, onSignIn: () -> Unit) {
     val state by subscription.presentation.collectAsStateWithLifecycle()
     val entry = state.paywallEntry ?: return
+    // Resolved here in the host screen's composition: inside the AlertDialog
+    // below, LocalContext is the dialog's ContextThemeWrapper, not the
+    // Activity, so a lookup there would silently null out and disable the
+    // Subscribe button.
+    val activity = LocalContext.current as? Activity
     val destination = proDestination(state.signedIn, state.entitlement, state.serverState, previouslyEntitled)
     when (destination) {
         ProDestination.LOADING -> ProLoadingDialog(subscription, entry)
-        ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, onSignIn)
+        ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, onSignIn, activity)
         ProDestination.PRO -> ProPlaceholderDialog(subscription, entry)
-        ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, onSignIn)
+        ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, onSignIn, activity)
     }
 }
 
@@ -103,21 +108,20 @@ private fun ProLoadingDialog(subscription: SubscriptionManager, entry: ProPlacem
 }
 
 @Composable
-private fun ProPaywallDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit) {
+private fun ProPaywallDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
     AlertDialog(
         onDismissRequest = { subscription.closePaywall() },
         title = { Text("PitTech Pro") },
-        text = { ProPaywallContent(subscription, entry, onSignIn) },
+        text = { ProPaywallContent(subscription, entry, onSignIn, activity) },
         confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-paywall-close")) { Text("Close") } },
     )
 }
 
 @Composable
-private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit) {
+private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
     val state by subscription.presentation.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
-    val activity = LocalContext.current as? Activity
     var confirmingRelease by remember { mutableStateOf(false) }
     val product = (state.productState as? ProProductState.Ready)?.product
     Column(
@@ -242,10 +246,10 @@ private fun ProPlaceholderDialog(subscription: SubscriptionManager, entry: ProPl
 }
 
 @Composable
-private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit) {
+private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
     var resubscribing by remember { mutableStateOf(false) }
     if (resubscribing) {
-        ProPaywallDialog(subscription, entry, onSignIn)
+        ProPaywallDialog(subscription, entry, onSignIn, activity)
         return
     }
     val scope = rememberCoroutineScope()

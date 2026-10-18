@@ -195,8 +195,8 @@ class ProPaywallContentTest {
             show(manager, previouslyEntitled = true)
             manager.openPro(ProPlacement.ANALYSIS)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-expired-fallback").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("PitTech Pro ended on this account.", substring = true).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("nothing was deleted", substring = true, ignoreCase = true).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("PitTech Pro ended on this account.", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("nothing was deleted", substring = true, ignoreCase = true).assertIsDisplayed()
             compose.onNodeWithTag("pro-resubscribe").performScrollTo().performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-paywall").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-paywall-close").performClick()
