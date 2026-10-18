@@ -4,6 +4,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.data.CookResultEntity
+import com.pittech.data.ProbeEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
@@ -38,6 +39,12 @@ class InsightsFreeToolsTest {
             dao.upsertResult(CookResultEntity("method-$second", second, null, "method", textValue = "Grilled", recordedAtUtcMillis = now))
             fun reading(id: String, cook: String, dish: String?, type: String, value: Double, unit: String, source: String = "controller_cloud", quality: String = "valid") =
                 SensorReadingEntity(id, cook, dish, "p-$cook", "Probe", type, value, unit, now - 3_600_000, "UTC", source, qualityStatus = quality, recordedAtUtcMillis = now)
+            // Readings carry probeId FKs, so the probes they name must exist (production always
+            // resolves readings against real probe rows).
+            dao.insertProbesIgnoringDuplicates(listOf(
+                ProbeEntity("p-$first", first, null, null, "Probe", "food", "controller_cloud", now),
+                ProbeEntity("p-$second", second, null, null, "Probe", "food", "controller_cloud", now),
+            ))
             dao.insertReadingsIgnoringDuplicates(listOf(
                 reading("r1", first, firstDish, "food", 150.0, "°F"), reading("r2", first, firstDish, "food", 160.0, "°F", source = "manual"),
                 reading("r3", first, null, "pit", 250.0, "°F"), reading("r4", first, firstDish, "food", 999.0, "°F", quality = "unavailable"),
