@@ -140,8 +140,8 @@ internal class PlayProBillingClient(context: Context, override val productId: St
             )
             .build()
         return suspendCancellableCoroutine { continuation ->
-            launchHandler = { result, purchases ->
-                if (!continuation.isActive) return
+            launchHandler = purchaseResponse@{ result, purchases ->
+                if (!continuation.isActive) return@purchaseResponse
                 when (result.responseCode) {
                     BillingClient.BillingResponseCode.OK -> {
                         val purchase = purchases?.firstOrNull { productId in it.products }
