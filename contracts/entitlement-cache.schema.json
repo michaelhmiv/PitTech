@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PitTech verified entitlement cache v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "environment",
+    "verified",
+    "state",
+    "verifiedUntil",
+    "lastVerifiedAt",
+    "offlineValidUntil",
+    "contractVersion"
+  ],
+  "properties": {
+    "version": {
+      "const": "entitlement-cache-v1"
+    },
+    "environment": {
+      "enum": ["sandbox", "production"]
+    },
+    "verified": {
+      "type": "boolean"
+    },
+    "state": {
+      "enum": ["unknown", "none", "pending", "active", "grace", "retry", "paused", "expired", "cancelled", "refunded", "revoked"]
+    },
+    "verifiedUntil": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "lastVerifiedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "offlineValidUntil": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "contractVersion": {
+      "const": "store-verification-v1"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verified": { "const": false } } },
+      "then": { "properties": { "state": { "const": "unknown" } } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "unknown" } } },
+      "then": { "properties": { "verified": { "const": false } } }
+    }
+  ]
+}

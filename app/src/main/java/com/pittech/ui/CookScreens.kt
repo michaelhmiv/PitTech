@@ -82,6 +82,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
 import com.pittech.CooksViewModel
+import com.pittech.ads.AdEntitlement
 import com.pittech.ads.shouldShowCookListNativeAd
 import com.pittech.R
 import com.pittech.data.CameraPhotoFiles
@@ -110,6 +111,8 @@ fun PitTechApp(
     themeMode: PitTechThemeMode,
     onThemeModeChange: (PitTechThemeMode) -> Unit,
     adsEnabled: Boolean = false,
+    entitlement: AdEntitlement = AdEntitlement.UNKNOWN,
+    previouslyEntitled: Boolean = false,
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
 ) {
@@ -296,6 +299,8 @@ fun PitTechApp(
                 cooks = cooks,
                 playbooks = { UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
                 adsEnabled = adsEnabled,
+                entitlement = entitlement,
+                previouslyEntitled = previouslyEntitled,
                 error = saveError,
                 notice = notice,
                 modifier = Modifier.padding(padding),
@@ -360,6 +365,8 @@ private fun CooksHome(
     playbooks: @Composable () -> Unit,
     cooks: List<CookWithDishes>,
     adsEnabled: Boolean,
+    entitlement: AdEntitlement,
+    previouslyEntitled: Boolean,
     error: String?,
     notice: String?,
     modifier: Modifier = Modifier,
@@ -369,7 +376,7 @@ private fun CooksHome(
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
-    val showCookListAd = shouldShowCookListNativeAd(adsEnabled)
+    val showCookListAd = shouldShowCookListNativeAd(adsEnabled, entitlement, previouslyEntitled)
     var showPlanning by rememberSaveable { mutableStateOf(false) }
 
     Column(
@@ -401,7 +408,7 @@ private fun CooksHome(
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
-        if (showCookListAd && activeCooks.isNotEmpty()) PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+        if (showCookListAd && activeCooks.isNotEmpty()) PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
 
         TextButton(onClick = { showPlanning = !showPlanning }, modifier = Modifier.testTag("home-planning-toggle")) { Text(if (showPlanning) "Hide planning" else "Planning and playbooks") }
         if (showPlanning) playbooks()
@@ -409,7 +416,7 @@ private fun CooksHome(
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Completed meals")
             if (showCookListAd && activeCooks.isEmpty()) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
             }
             finishedCooks.forEach { cook ->
                 CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) })
@@ -418,7 +425,7 @@ private fun CooksHome(
 
         if (cooks.isEmpty()) {
             if (showCookListAd) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
             }
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

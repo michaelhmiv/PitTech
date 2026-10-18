@@ -190,6 +190,21 @@ API conformance, backup retention and marker metadata costs remain release gates
 S3 requests use virtual-hosted URLs, matching Railway's documented bucket style.
 
 
+Subscriptions draft (16, backend lane): migration 007 and
+`operations/billing-runtime-role.sql` add an isolated `billing` schema for
+verified transactions, entitlements, store-event dedupe, binding conflicts and
+reconciliation records. `src/subscriptions-apple.ts` /
+`src/subscriptions-google.ts` verify StoreKit JWS and Play subscriptionsv2
+payloads with explicit environments; `src/subscriptions.ts` owns the
+none/pending/active/grace/retry/paused/expired/cancelled/refunded/revoked
+state machine, ASN V2/RTDN ingestion with store reconciliation, and the
+`entitlement-cache-v1` projection; `src/subscriptions-http.ts` serves the
+`/v1/me/entitlement` and `/v1/me/purchases/*` routes plus notification
+handlers. Everything stays disabled unless `SUBSCRIPTIONS_ENABLED=true` with
+accounts and store credentials configured; product identifiers, store
+credentials, paywall UI and sandbox evidence remain open gates. See
+[`16-subscriptions.md`](../docs/online/16-subscriptions.md).
+
 Private-sync draft: migration 006 and `operations/private-sync-runtime-role.sql`
 introduce only private ownership/lease metadata and lifecycle cleanup support.
 Apply the lifecycle role script first, then the private-sync grants before starting

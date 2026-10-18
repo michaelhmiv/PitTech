@@ -98,7 +98,7 @@ struct CookListView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 20)
                         } else {
-                            if store.activeCooks.isEmpty && store.completedCooks.count >= 4 && adsConsent.canRequestAds {
+                            if store.activeCooks.isEmpty && store.completedCooks.count >= 4 && adsConsent.adsServingAllowed {
                                 NativeAdCard()
                             }
                             ForEach(store.completedCooks) { cook in

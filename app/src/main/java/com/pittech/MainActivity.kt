@@ -12,7 +12,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pittech.ads.AdEntitlementStore
 import com.pittech.ads.PitTechAdsConsentManager
+import com.pittech.ads.SharedPrefsAdEntitlementPrefs
 import com.pittech.ui.CrashRecoveryScreen
 import com.pittech.ui.PitTechApp
 import com.pittech.ui.PitTechTheme
@@ -20,6 +22,7 @@ import com.pittech.ui.PitTechThemeMode
 
 class MainActivity : ComponentActivity() {
     private val adsConsentManager by lazy { PitTechAdsConsentManager(this) }
+    private val adEntitlementStore by lazy { AdEntitlementStore(SharedPrefsAdEntitlementPrefs(this)) }
 
     private val viewModel: CooksViewModel by viewModels {
         val app = application as PitTechApplication
@@ -42,6 +45,8 @@ class MainActivity : ComponentActivity() {
             }
             val canRequestAds by adsConsentManager.canRequestAds.collectAsStateWithLifecycle()
             val adsSdkReady by adsConsentManager.sdkReady.collectAsStateWithLifecycle()
+            val entitlement by adEntitlementStore.entitlement.collectAsStateWithLifecycle()
+            val previouslyEntitled by adEntitlementStore.previouslyEntitled.collectAsStateWithLifecycle()
             val privacyOptionsRequired by adsConsentManager.privacyOptionsRequired.collectAsStateWithLifecycle()
             PitTechTheme(themeMode = themeMode) {
                 val report = crashReport
@@ -70,6 +75,8 @@ class MainActivity : ComponentActivity() {
                             preferences.edit().putString(PitTechThemeMode.PREFERENCE_KEY, newMode.name).apply()
                         },
                         adsEnabled = canRequestAds && adsSdkReady,
+                        entitlement = entitlement,
+                        previouslyEntitled = previouslyEntitled,
                         privacyOptionsRequired = privacyOptionsRequired,
                         onShowPrivacyOptions = adsConsentManager::showPrivacyOptions,
                     )
