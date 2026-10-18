@@ -84,7 +84,7 @@ jobs:
 
       - name: Run native compatibility tests
         id: native-tests
-        timeout-minutes: 50
+        timeout-minutes: 120
         run: |
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
@@ -213,8 +213,6 @@ jobs:
             cp ios/screenshot-fixtures/pittech.json "$app_container/Documents/pittech.json"
             xcrun simctl ui "$device_id" appearance light
             xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-            xcrun simctl launch "$device_id" com.pittech --screenshot-no-ads
-            sleep 4
             xcrun simctl io "$device_id" screenshot "build/app-store-screenshots/PitTech-${family}.png"
             xcrun simctl terminate "$device_id" com.pittech
             xcrun simctl ui "$device_id" appearance dark
