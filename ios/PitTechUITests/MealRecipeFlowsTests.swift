@@ -263,8 +263,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Local journal removal review large text" : "Local journal removal review")
             submit.tap()
             let message = app.staticTexts["account-message"]
-            // In large text the Form virtualizes off-screen rows: scroll the
-            // message into view (which materializes it) before waiting on it.
+            // The submit dismisses the "Remove local journal" sheet before the
+            // Account screen settles: the animating nav bar is not hittable, so
+            // wait out the transition before scrolling. In large text the Account
+            // Form virtualizes off-screen rows, so scroll the message into view
+            // (which materializes it) before waiting on it.
+            XCTAssertTrue(app.navigationBars["Remove local journal"].waitForNonExistence(timeout: 10))
             reveal(message, app: app)
             XCTAssertTrue(message.waitForExistence(timeout: 10))
             XCTAssertTrue(message.label.contains("Local journal removed"))
