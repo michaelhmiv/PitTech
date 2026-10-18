@@ -39,7 +39,7 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun InsightsScreen(
+internal fun InsightsScreen(
     data: InsightsSnapshot,
     onOpenCook: (String) -> Unit,
     onStartCook: () -> Unit,
