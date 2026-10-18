@@ -37,6 +37,8 @@ targets:
       # sources+buildPhase form copies it — the unit-test target proves it.
       - path: Contracts/private-sync-projection-v1.json
         buildPhase: resources
+      - path: Contracts/insights-calculations-v1.json
+        buildPhase: resources
     resources:
       - path: PitTech/PrivacyInfo.xcprivacy
       - path: PitTech/TelemetryNotices.txt
@@ -107,6 +109,10 @@ targets:
       - path: Contracts/private-sync-projection-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/private-sync-projection-cases-v1.json
+        buildPhase: resources
+      - path: Contracts/insights-calculations-v1.json
+        buildPhase: resources
+      - path: ../contracts/fixtures/insights-calculations-cases-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/native-publication-android-v1.json
         buildPhase: resources

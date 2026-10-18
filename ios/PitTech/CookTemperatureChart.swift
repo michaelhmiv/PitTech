@@ -264,6 +264,7 @@ struct CookTemperatureChart: View {
                 if !comparing { Text("Choose matching food or pit channels and log the selected action for both dish scopes to align recorded curves.").font(.caption) }
                 else {
                     Text("Current and reference · minutes since \(CookStore.actionLabel(alignment)) · separate stable channels").font(.caption)
+                    ForEach(InsightsCalculations.comparisonContext(currentDish: dishSummary(cookId, dishId: currentDish), sourceDish: dishSummary(comparisonCook, dishId: sourceDish), current: readingSummary(samples), source: readingSummary(sourceSamples)), id: \.self) { line in Text(line).font(.caption) }
                     if !currentDish.isEmpty && !sourceDish.isEmpty { Button("Use this reference") {
                         do { try store.saveReference(cookId, reference: NativeCookReference(dishId: currentDish, sourceCookId: comparisonCook, sourceDishId: sourceDish, currentProbe: samples.first { $0.seriesId == currentChannel }?.probeName ?? "", sourceProbe: sourceSamples.first { $0.seriesId == comparisonChannel }?.probeName ?? "", anchor: alignment, currentSeriesId: currentChannel, sourceSeriesId: comparisonChannel)); referenceMessage = "Reference saved." }
                         catch { referenceMessage = error.localizedDescription }
@@ -274,6 +275,17 @@ struct CookTemperatureChart: View {
         }
     }
     private func eligible(_ sample: TemperatureSample, dish: String) -> Bool { dish.isEmpty || sample.dishId == dish || sample.dishId == nil && ["pit", "pit_ambient", "ambient_temperature", "setpoint"].contains(sample.measurementType) }
+    private func dishSummary(_ cookId: String, dishId: String) -> InsightDishSummary {
+        let row = store.library.dishes.compactMap(\.objectValue).first { $0["id"]?.stringValue == dishId && $0["cookId"]?.stringValue == cookId }
+        let methods = store.library.results.compactMap(\.objectValue)
+            .filter { $0["cookId"]?.stringValue == cookId && ($0["dishId"]?.stringValue == nil || $0["dishId"]?.stringValue == dishId) && $0["resultType"]?.stringValue == "method" }
+            .compactMap { $0["textValue"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return InsightDishSummary(dishId: dishId, cut: row?["cut"]?.stringValue, weightValue: row?["weightValue"]?.numberValue, weightUnit: row?["weightUnit"]?.stringValue, methods: Array(Set(methods)).sorted())
+    }
+    private func readingSummary(_ rows: [TemperatureSample]) -> InsightReadingSummary {
+        let valid = rows.filter { $0.qualityStatus == "valid" && $0.value.isFinite && ["°F", "°C"].contains($0.unit) }
+        return InsightReadingSummary(units: Array(Set(valid.map(\.unit))).sorted(), validCount: valid.count, manualCount: valid.filter { $0.source == "manual" }.count, excludedCount: rows.count - valid.count, roles: Array(Set(valid.map { RecipeGuideProjection.role($0.measurementType) })).sorted())
+    }
     private func restoreReference() {
         guard let ref = store.savedReference(cookId, dishId: currentDish) else { return }
         comparisonCook = ref.sourceCookId; sourceDish = ref.sourceDishId; alignment = ref.anchor
