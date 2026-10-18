@@ -376,7 +376,7 @@
             ],
             "dishes": [
               {"dishId": "d1", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 1000000, "wrapAt": null, "removeAt": 3000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 2000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false},
-              {"dishId": "d2", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 3000000, "wrapAt": null, "removeAt": 6000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 2000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
+              {"dishId": "d2", "cut": null, "weightValue": null, "weightUnit": null, "methods": [], "foodOnAt": 3000000, "wrapAt": null, "removeAt": 6000000, "restStartAt": null, "holdStartAt": null, "dishDoneAt": null, "heatingMillis": 3000000, "restMillis": 0, "holdMillis": 0, "heatingIntervalCount": 1, "validReadings": 1, "manualReadings": 0, "excludedReadings": 0, "rating": null, "cookAgain": null, "hasResultNotes": false}
             ]
           }
         ]
