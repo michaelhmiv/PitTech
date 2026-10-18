@@ -66,7 +66,7 @@ class ProPaywallTest {
         val calls = mutableListOf<String>()
 
         private fun cache(state: String, verified: Boolean): JSONObject = JSONObject(
-            """{"version":"entitlement-cache-v1","environment":"production","verified":$verified,"state":"$state","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1}""",
+            """{"version":"entitlement-cache-v1","environment":"production","verified":$verified,"state":"$state","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1"}""",
         )
 
         override suspend fun call(path: String, body: JSONObject?, access: String?): JSONObject {
