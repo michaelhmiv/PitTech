@@ -103,8 +103,10 @@ internal class PlayProBillingClient(context: Context, override val productId: St
                     continuation.resume(null)
                     return@queryProductDetailsAsync
                 }
-                val match = details.firstOrNull { it.productId == productId && it.productType == BillingClient.ProductType.SUBS }
-                val offer = match?.subscriptionOfferDetails?.firstOrNull { offer: ProductDetails.SubscriptionOfferDetails ->
+                // billing-ktx 9.x: onProductDetailsResponse delivers a QueryProductDetailsResult;
+                // the product list lives on its productDetailsList (verified against billing-9.1.0 bytecode)
+                val match = details.productDetailsList.firstOrNull { it.productId == productId && it.productType == BillingClient.ProductType.SUBS }
+                val offer = match?.subscriptionOfferDetails?.firstOrNull { offer ->
                     offer.pricingPhases.pricingPhaseList.any { it.billingPeriod == "P1M" }
                 }
                 if (match == null || offer == null) {
