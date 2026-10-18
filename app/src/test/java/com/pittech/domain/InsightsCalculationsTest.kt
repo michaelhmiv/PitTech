@@ -9,13 +9,13 @@ class InsightsCalculationsTest {
     private val epsilon = 1e-9
 
     private fun assertDish(name: String, expected: JSONObject, actual: InsightDishMetrics) {
-        fun longs(key: String) = if (expected.isNull(key)) assertNull("$name/$key", actualValue(key)) else assertEquals("$name/$key", expected.getLong(key), actualValue(key))
         fun actualValue(key: String): Long? = when (key) {
             "foodOnAt" -> actual.foodOnAt; "wrapAt" -> actual.wrapAt; "removeAt" -> actual.removeAt
             "restStartAt" -> actual.restStartAt; "holdStartAt" -> actual.holdStartAt; "dishDoneAt" -> actual.dishDoneAt
             "heatingMillis" -> actual.heatingMillis; "restMillis" -> actual.restMillis; "holdMillis" -> actual.holdMillis
             else -> error(key)
         }
+        fun longs(key: String) = if (expected.isNull(key)) assertNull("$name/$key", actualValue(key)) else assertEquals("$name/$key", expected.getLong(key), actualValue(key))
         listOf("foodOnAt", "wrapAt", "removeAt", "restStartAt", "holdStartAt", "dishDoneAt", "heatingMillis", "restMillis", "holdMillis").forEach(::longs)
         if (expected.isNull("heatingIntervalCount")) assertNull("$name/count", actual.heatingIntervalCount)
         else assertEquals("$name/count", expected.getInt("heatingIntervalCount"), actual.heatingIntervalCount)
