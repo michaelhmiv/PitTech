@@ -106,7 +106,7 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun PitTechApp(
+internal fun PitTechApp(
     viewModel: CooksViewModel,
     themeMode: PitTechThemeMode,
     onThemeModeChange: (PitTechThemeMode) -> Unit,
