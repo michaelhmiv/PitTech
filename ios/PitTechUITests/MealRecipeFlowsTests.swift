@@ -7,7 +7,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
-            if let navigation, ["Account", "Delete account", "Remove local journal", "Report publication", "Report publisher", "Community controls"].contains(navigation.identifier) {
+            if let navigation, ["Account", "Delete account", "Remove local journal", "Report publication", "Report publisher", "Community controls", "Review synced edits"].contains(navigation.identifier) {
                 // Form rows are virtualized: an off-screen field may not exist yet.
                 // Scroll the foreground Form before waiting for that row's AX node.
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
@@ -60,7 +60,21 @@ final class MealRecipeFlowsTests: XCTestCase {
                 if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
             }
             let scroll = cookScroll.exists && cookScroll.isHittable ? cookScroll : app.scrollViews.allElementsBoundByIndex.last(where: { $0.isHittable })
-            if let scroll, scroll.exists && scroll.isHittable {
+            if let scroll, scroll.exists && scroll.isHittable, scroll.frame.height.isFinite, scroll.frame.height > 0 {
+                // Servo drags, not full-screen flings: a fling's displacement exceeds the
+                // nav-to-tab acceptance window for tall large-text rows, so the top-edge
+                // direction rule limit-cycles (up, down, up, ...) without ever landing
+                // in-window. Capping each step at the remaining distance (mirroring the
+                // cook-content branch) makes overshoot impossible, so the same direction
+                // rule converges instead of oscillating.
+                let down = element.exists && element.frame.minY < top + 8
+                let span = max(60, (bottom - top) * 0.25)
+                let distance = element.exists ? (down ? top - element.frame.minY : element.frame.maxY - (bottom - 8)) + 24 : span
+                let travel = min(span, max(60, distance)) / scroll.frame.height
+                let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.5 + travel : 0.5 - travel))
+                start.press(forDuration: 0.01, thenDragTo: end)
+            } else if let scroll, scroll.exists && scroll.isHittable {
                 if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
@@ -91,6 +105,34 @@ final class MealRecipeFlowsTests: XCTestCase {
         XCTAssertEqual(element.value as? String, expected)
     }
     private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+    func testPrivateSyncConflictReviewResolvesOfflineAtBothTextSizes() {
+        for large in [false, true] {
+            for choice in ["Keep mine", "Use theirs", "Keep both"] {
+                let app = XCUIApplication()
+                app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--sync-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+                app.launch(); app.tabBars.buttons["More"].tap()
+                let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+                XCTAssertTrue(app.staticTexts["account-signed-in"].waitForExistence(timeout: 10))
+                let status = app.staticTexts["sync-status"]; reveal(status, app: app)
+                XCTAssertEqual(status.label, "Conflicts to review")
+                let review = app.buttons["sync-conflicts"]; reveal(review, app: app); review.tap()
+                XCTAssertTrue(app.staticTexts["Yours: Note \"Local title\""].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.staticTexts["Other device: Note \"Remote title\""].waitForExistence(timeout: 10))
+                if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
+                let action = app.buttons[choice]; reveal(action, app: app); action.tap()
+                // The conflict resolves offline; the review list empties without an upload claim.
+                XCTAssertTrue(action.waitForNonExistence(timeout: 10))
+                let done = app.buttons["sync-review-done"]; reveal(done, app: app); done.tap()
+                let synced = app.staticTexts["sync-status"]; reveal(synced, app: app)
+                XCTAssertEqual(synced.label, "Last synced never")
+                if choice == "Keep mine" {
+                    let now = app.buttons["sync-now"]; reveal(now, app: app); now.tap()
+                    XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))
+                }
+                app.terminate()
+            }
+        }
+    }
     func testSelectedPublicationPreviewAndCookbookChangesRequireSeparateConfirmationsAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--publishing-ui-test"] + (large ? ["--screenshot-large-text"] : []); app.launch()
@@ -135,7 +177,11 @@ final class MealRecipeFlowsTests: XCTestCase {
             let item = app.buttons["discover-open-12345678-1234-4234-8234-123456789abc"];reveal(item, app: app);item.tap()
             let title = app.staticTexts["public-title"];XCTAssertTrue(title.waitForExistence(timeout: 15));capture(large ? "Native public detail large text" : "Native public detail")
             let save = app.buttons["public-save"];reveal(save, app: app);save.tap()
-            let confirm = app.buttons["pack-save-recipes"];XCTAssertTrue(confirm.waitForExistence(timeout: 20));reveal(confirm, app: app);XCTAssertEqual(confirm.label, "Save 2 recipes")
+            let confirm = app.buttons["pack-save-recipes"]
+            // In large text the pack-save sheet can be slow to present under CI
+            // load: scroll-poll for the button (which materializes it) before the
+            // existence wait, mirroring the journal-removal virtualization fix.
+            reveal(confirm, app: app);XCTAssertTrue(confirm.waitForExistence(timeout: 20));XCTAssertEqual(confirm.label, "Save 2 recipes")
             capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
             app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
@@ -234,7 +280,15 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(submit.isEnabled)
             capture(large ? "Local journal removal review large text" : "Local journal removal review")
             submit.tap()
-            let message = app.staticTexts["account-message"]; XCTAssertTrue(message.waitForExistence(timeout: 10)); reveal(message, app: app)
+            let message = app.staticTexts["account-message"]
+            // The submit dismisses the "Remove local journal" sheet before the
+            // Account screen settles: the animating nav bar is not hittable, so
+            // wait out the transition before scrolling. In large text the Account
+            // Form virtualizes off-screen rows, so scroll the message into view
+            // (which materializes it) before waiting on it.
+            XCTAssertTrue(app.navigationBars["Remove local journal"].waitForNonExistence(timeout: 10))
+            reveal(message, app: app)
+            XCTAssertTrue(message.waitForExistence(timeout: 10))
             XCTAssertTrue(message.label.contains("Local journal removed"))
             capture(large ? "Local journal removed large text" : "Local journal removed")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
@@ -256,8 +310,15 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(saved.waitForExistence(timeout: 10)); reveal(saved, app: app)
             capture(large ? "Community report saved large text" : "Community report saved")
             app.navigationBars["Report publication"].buttons["Cancel"].tap()
-            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app); manage.tap()
-            let retry = app.buttons["community-retry"]; reveal(retry, app: app); retry.tap()
+            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app)
+            let retry = app.buttons["community-retry"]
+            // Under CI load the More-list tap can be swallowed while the list settles:
+            // retry until the Community Controls screen actually lands.
+            for _ in 0..<3 {
+                if retry.waitForExistence(timeout: 5) { break }
+                reveal(manage, app: app); manage.tap()
+            }
+            reveal(retry, app: app); retry.tap()
             let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app); status.tap()
             let reviewing = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch; XCTAssertTrue(reviewing.waitForExistence(timeout: 10)); reveal(reviewing, app: app)
             capture(large ? "Community report status large text" : "Community report status")
@@ -309,7 +370,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launch()
             let meal = app.staticTexts["Guided meal"].firstMatch; reveal(meal, app: app); meal.tap()
             let toggle = app.switches["show-guide"]; reveal(toggle, app: app)
-            XCTAssertEqual(toggle.value as? String, "0"); toggle.tap()
+            XCTAssertEqual(toggle.value as? String, "0"); setSwitch(toggle, on: true, app: app)
             let reference = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "guide-reference-", "Guide · ")).firstMatch
             XCTAssertTrue(reference.waitForExistence(timeout: 10)); reveal(reference, app: app)
             capture(large ? "Native Show guide Live large text" : "Native Show guide Live")
@@ -323,7 +384,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             plot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.45, thenDragTo: plot.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
             let sourceTime = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Author source time · ")).firstMatch
             XCTAssertTrue(sourceTime.waitForExistence(timeout: 10), "A deliberate hold-and-drag still selects measured source data.")
-            reveal(toggle, app: app); toggle.tap(); XCTAssertEqual(toggle.value as? String, "0")
+            reveal(toggle, app: app); setSwitch(toggle, on: false, app: app)
             app.terminate()
             app.launchArguments = ["--screenshot-no-ads"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); let reopened = app.staticTexts["Guided meal"].firstMatch; reveal(reopened, app: app); reopened.tap()

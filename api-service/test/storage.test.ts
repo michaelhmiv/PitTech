@@ -8,26 +8,26 @@ import { Readable } from 'node:stream';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, GetBucketVersioningCommand } from '@aws-sdk/client-s3';
 import { FileStorage, S3Storage } from '../src/storage.ts';
 
-test('publication files are immutable, retries are exact, and deletion fences both upload orderings across restart', async t => {
+for(const namespace of ['publications','private-sync'])test(`${namespace} files are immutable, retries are exact, and deletion fences both upload orderings across restart`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pittech-storage-')); t.after(() => rm(root, { recursive: true, force: true }));
   const file = join(root, 'input'); await writeFile(file, 'original');
-  const storage = new FileStorage(root), key = `publications/${randomUUID()}.pittech`;
+  const storage = new FileStorage(root), key = `${namespace}/${randomUUID()}.pittech`;
   await storage.put(key, file); await storage.put(key, file);
   await writeFile(file, 'changed'); await assert.rejects(storage.put(key, file)); assert.equal((await storage.get(key)).toString(), 'original');
   await storage.delete(key); assert.equal((await stat(storage.path(key))).size, 0);
   await assert.rejects(new FileStorage(root).put(key, file)); await assert.rejects(storage.get(key));
   // Cleanup can win before an upload even starts; deletion is idempotent.
-  const early = `publications/${randomUUID()}.pittech`; await storage.delete(early); await storage.delete(early);
+  const early = `${namespace}/${randomUUID()}.pittech`; await storage.delete(early); await storage.delete(early);
   await assert.rejects(storage.put(early, file)); assert.equal((await readFile(storage.path(early))).length, 0);
   for (let i=0;i<20;i++) {
-    const raced = `publications/${randomUUID()}.pittech`;
+    const raced = `${namespace}/${randomUUID()}.pittech`;
     await Promise.allSettled([storage.put(raced, file), storage.delete(raced)]);
     assert.equal((await readFile(storage.path(raced))).length, 0);
     await assert.rejects(storage.put(raced, file));
   }
 });
 
-test('S3 sends atomic create-only uploads, never deletes publication fences, and retains cleanup on unknown/versioned buckets', async t => {
+for(const namespace of ['publications','private-sync'])test(`S3 ${namespace} sends atomic create-only uploads, never deletes fences, and retains cleanup on unknown/versioned buckets`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pittech-s3-')); t.after(() => rm(root, { recursive: true, force: true }));
   const file = join(root, 'input'); await writeFile(file, 'original');
   const objects = new Map<string,Buffer>(); let versioning: string|undefined, unknown = false, pause: (()=>void)|undefined, started: (()=>void)|undefined;
@@ -50,7 +50,7 @@ test('S3 sends atomic create-only uploads, never deletes publication fences, and
     if (command instanceof DeleteObjectCommand) { objects.delete(command.input.Key!); return {}; }
     throw new Error('Unexpected command');
   }} as unknown as S3Client;
-  const storage = new S3Storage(client, 'synthetic'), key=`publications/${randomUUID()}.pittech`;
+  const storage = new S3Storage(client, 'synthetic'), key=`${namespace}/${randomUUID()}.pittech`;
   await storage.put(key,file); await storage.put(key,file);
   await writeFile(file,'changed'); await assert.rejects(storage.put(key,file)); assert.equal(objects.get(key)?.toString(),'original');
   versioning='Enabled'; await assert.rejects(storage.delete(key)); assert.equal(objects.get(key)?.toString(),'original');
@@ -58,7 +58,7 @@ test('S3 sends atomic create-only uploads, never deletes publication fences, and
   versioning=undefined; unknown=true; await assert.rejects(storage.delete(key)); unknown=false;
   await storage.delete(key); await assert.rejects(storage.put(key,file)); await assert.rejects(storage.get(key)); assert.equal(objects.get(key)?.length,0);
   // Simulate a remote upload whose commit resumes after a deletion marker wins.
-  const late=`publications/${randomUUID()}.pittech`;
+  const late=`${namespace}/${randomUUID()}.pittech`;
   const entered=new Promise<void>(resolve=>{started=resolve;}); pause=()=>{};
   const upload=storage.put(late,file); const rejected=assert.rejects(upload); await entered;
   await storage.delete(late); const resume=pause!; pause=undefined; resume(); await rejected;

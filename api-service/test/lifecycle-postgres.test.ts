@@ -105,7 +105,7 @@ test('real Postgres lifecycle: reviewed anonymous/named content, scoped reports/
     const blockedStart=await auth.start({email:'synthetic-deleting@example.com',idempotencyId:randomUUID(),proofChallenge:proofHash(credential())});assert.equal((await admin.query('SELECT 1 FROM auth.challenges WHERE id=$1',[blockedStart.challengeId])).rowCount,0);
     await assert.rejects(admin.query('INSERT INTO auth.sessions(id,user_id,created_at,expires_at) VALUES($1,$2,$3,$4)',[randomUUID(),alice.userId,now,now+1000]),{code:'23514'});
     // A private-sync namespace requires its own owner-scoped purge adapter.
-    await admin.query('CREATE SCHEMA private_sync');await admin.query('CREATE TABLE private_sync.libraries(owner_id uuid,payload jsonb)');await admin.query('INSERT INTO private_sync.libraries VALUES($1,$3),($2,$3)',[alice.userId,bob.userId,{private:'Synthetic local mirror'}]);
+    await admin.query('CREATE SCHEMA IF NOT EXISTS private_sync');await admin.query('CREATE TABLE private_sync.libraries(owner_id uuid,payload jsonb)');await admin.query('INSERT INTO private_sync.libraries VALUES($1,$3),($2,$3)',[alice.userId,bob.userId,{private:'Synthetic local mirror'}]);
     await assert.rejects(lifePool.query('SELECT * FROM private_sync.libraries'),{code:'42501'});
     await deletion.sweepDeletion();assert.equal((await admin.query('SELECT 1 FROM auth.users WHERE id=$1',[alice.userId])).rowCount,1);
     const purger={purge:async(user:string)=>{await admin.query('DELETE FROM private_sync.libraries WHERE owner_id=$1',[user]);return true;}};

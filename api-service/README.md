@@ -188,3 +188,14 @@ to unconditional writers. The S3 adapter refuses completion if versioning state 
 unknown, enabled or suspended. Actual provider conditional-write and versioning
 API conformance, backup retention and marker metadata costs remain release gates.
 S3 requests use virtual-hosted URLs, matching Railway's documented bucket style.
+
+
+Private-sync draft: migration 006 and `operations/private-sync-runtime-role.sql`
+introduce only private ownership/lease metadata and lifecycle cleanup support.
+Apply the lifecycle role script first, then the private-sync grants before starting
+an upgraded lifecycle-enabled service; startup checks private cleanup access. Do
+not enable a sync UI or advertise backup: snapshot/photo API and strict native
+projection/durable application remain unfinished. No private payload is stored in
+Postgres. Encrypted private objects use their own `private-sync/` namespace and the
+same create-only/cleanup fences as publications. Provider conformance/retention
+still requires staging evidence. See `docs/online/14-private-sync.md`.

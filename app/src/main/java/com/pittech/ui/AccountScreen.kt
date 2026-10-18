@@ -2,6 +2,8 @@ package com.pittech.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -22,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -34,13 +37,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.AccountManager
 import com.pittech.data.AccountPresentation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-@Composable internal fun AccountDialog(account: AccountManager) {
+@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null) {
     val showing by account.showing.collectAsStateWithLifecycle()
     if(!showing)return
-    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
+    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
 }
-@Composable internal fun AccountContent(account: AccountManager) {
+@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null) {
     val state by account.presentation.collectAsStateWithLifecycle()
     var confirm by remember{mutableStateOf(false)}
     var reviewingDeletion by remember{mutableStateOf(false)}
@@ -68,6 +72,7 @@ import kotlinx.coroutines.delay
             TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
             TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
         }else AccountSignIn(account,state)
+        sync?.let{SyncSection(it,state.signedIn)}
         Text("Remove local journal",style=MaterialTheme.typography.titleMedium)
         Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
         TextButton(onClick={reviewingJournal=true},enabled=!state.busy,modifier=Modifier.testTag("local-journal-remove")){Text("Remove local journal")}
@@ -77,6 +82,48 @@ import kotlinx.coroutines.delay
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Sign out on this device?")},text={Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.")},confirmButton={TextButton(onClick={confirm=false;account.signOut()},modifier=Modifier.testTag("account-confirm-signout")){Text("Sign out")}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
     if(reviewingDeletion)AccountDeletionConfirmation(onCancel={reviewingDeletion=false},onConfirm={reviewingDeletion=false;account.requestDeletion()})
     if(reviewingJournal)LocalJournalRemovalConfirmation(onCancel={reviewingJournal=false},onConfirm={reviewingJournal=false;account.removeLocalJournal()})
+}
+@Composable private fun SyncSection(sync: com.pittech.data.PrivateSyncCoordinator, signedIn: Boolean) {
+    val state by sync.presentation.collectAsStateWithLifecycle()
+    var reviewing by remember{mutableStateOf(false)}
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(signedIn){sync.refresh()}
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        Text("Private sync",style=MaterialTheme.typography.titleMedium)
+        Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.",style=MaterialTheme.typography.bodySmall)
+        Text(state.status,Modifier.testTag("sync-status"))
+        state.detail?.let{Text(it,Modifier.testTag("sync-message"),style=MaterialTheme.typography.bodySmall)}
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            Button(onClick={scope.launch{sync.syncNow()}},enabled=!state.busy && signedIn && sync.enabled,modifier=Modifier.heightIn(min=48.dp).testTag("sync-now")){Text("Sync now")}
+            if(state.conflicts.isNotEmpty())Button(onClick={reviewing=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("sync-conflicts")){Text("Review conflicts (${state.conflicts.size})")}
+        }
+        if(state.busy)CircularProgressIndicator()
+    }
+    if(reviewing)SyncConflictDialog(sync,state.conflicts,state.busy,onClose={reviewing=false})
+}
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun SyncConflictDialog(sync: com.pittech.data.PrivateSyncCoordinator, conflicts: List<com.pittech.data.PrivateSyncConflictView>, busy: Boolean, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    AlertDialog(onDismissRequest=onClose,title={Text("Review synced edits")},text={
+        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+            Text("Two devices changed the same entry. Your journal keeps the current version until you choose.")
+            conflicts.forEach { conflict ->
+                Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Text(conflict.reason,style=MaterialTheme.typography.titleSmall)
+                    Text("Yours: ${conflict.mineSummary}")
+                    Text("Other device: ${conflict.theirsSummary}")
+                    // FlowRow: the three resolution buttons must all stay reachable on narrow
+                    // screens. A fixed Row pushed "Keep both" off-screen horizontally, where
+                    // taps landed outside the dialog and the resolution never fired.
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                        Button(onClick={scope.launch{sync.resolve(conflict.id,"mine")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-mine-${conflict.id}")){Text("Keep mine")}
+                        Button(onClick={scope.launch{sync.resolve(conflict.id,"theirs")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-theirs-${conflict.id}")){Text("Use theirs")}
+                        if(conflict.canKeepBoth)Button(onClick={scope.launch{sync.resolve(conflict.id,"both")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-both-${conflict.id}")){Text("Keep both")}
+                    }
+                }
+            }
+        }
+    },confirmButton={TextButton(onClick=onClose){Text("Done")}})
 }
 @Composable private fun AccountSignIn(account:AccountManager,state:AccountPresentation){
     var email by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}

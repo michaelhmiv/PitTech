@@ -144,7 +144,7 @@ fun PitTechApp(
     var myCookbook by rememberSaveable { mutableStateOf(false) }
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
-    AccountDialog(viewModel.account)
+    AccountDialog(viewModel.account, viewModel.sync)
     if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current

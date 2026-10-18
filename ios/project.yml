@@ -31,6 +31,12 @@ targets:
     platform: iOS
     sources:
       - path: PitTech
+      # The contract MUST be declared here (not under resources:): xcodegen
+      # demonstrably drops it from the app bundle when declared under
+      # resources: (it only ever reached PitTechTests.xctest), while the
+      # sources+buildPhase form copies it — the unit-test target proves it.
+      - path: Contracts/private-sync-projection-v1.json
+        buildPhase: resources
     resources:
       - path: PitTech/PrivacyInfo.xcprivacy
       - path: PitTech/TelemetryNotices.txt
@@ -84,6 +90,8 @@ targets:
         buildPhase: resources
       - path: PitTechTests/Fixtures/relay-android-cook-v1.pittech
         buildPhase: resources
+      - path: PitTechTests/Fixtures/sync-merge-v1.json
+        buildPhase: resources
       - path: PitTechTests/Fixtures/share-card-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/relay-links-v1.json
@@ -95,6 +103,10 @@ targets:
       - path: ../contracts/fixtures/public-native-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/source-review-v1.json
+        buildPhase: resources
+      - path: Contracts/private-sync-projection-v1.json
+        buildPhase: resources
+      - path: ../contracts/fixtures/private-sync-projection-cases-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/native-publication-android-v1.json
         buildPhase: resources

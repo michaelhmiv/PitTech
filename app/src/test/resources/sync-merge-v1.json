@@ -1,0 +1,870 @@
+{
+  "contractVersion": 1,
+  "cases": [
+    {
+      "name": "independent notes",
+      "base": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "second",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "second",
+            "title": "Alice",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        },
+        {
+          "recordType": "events",
+          "recordId": "third",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "third",
+            "title": "Bob",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "events",
+            "recordId": "note:12345678-1234-4234-8234-123456789abc",
+            "version": {
+              "counter": 1,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "note:12345678-1234-4234-8234-123456789abc",
+              "title": "Base",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          },
+          {
+            "recordType": "events",
+            "recordId": "second",
+            "version": {
+              "counter": 2,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "second",
+              "title": "Alice",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          },
+          {
+            "recordType": "events",
+            "recordId": "third",
+            "version": {
+              "counter": 2,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "third",
+              "title": "Bob",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [],
+        "blocked": false,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "same note and skewed phone clocks",
+      "base": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Alice 🌶️",
+            "occurredAtUtcMillis": 253402300799999
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Bob",
+            "occurredAtUtcMillis": 1
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "events",
+            "recordId": "note:12345678-1234-4234-8234-123456789abc",
+            "version": {
+              "counter": 2,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "note:12345678-1234-4234-8234-123456789abc",
+              "title": "Bob",
+              "occurredAtUtcMillis": 1
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "44f0c2d6461560fec7781dc72047b4d37f675681f839e38e92267d6dde7184bd",
+            "winner": {
+              "recordType": "events",
+              "recordId": "note:12345678-1234-4234-8234-123456789abc",
+              "version": {
+                "counter": 2,
+                "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "note:12345678-1234-4234-8234-123456789abc",
+                "title": "Bob",
+                "occurredAtUtcMillis": 1
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "events",
+              "recordId": "note:12345678-1234-4234-8234-123456789abc",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "note:12345678-1234-4234-8234-123456789abc",
+                "title": "Alice 🌶️",
+                "occurredAtUtcMillis": 253402300799999
+              },
+              "assetIds": []
+            },
+            "reason": "edit_edit"
+          }
+        ],
+        "blocked": false,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "offline edit versus deletion",
+      "base": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 500,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Alice 🌶️",
+            "occurredAtUtcMillis": 253402300799999
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": true,
+          "payload": null,
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "events",
+            "recordId": "note:12345678-1234-4234-8234-123456789abc",
+            "version": {
+              "counter": 2,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": true,
+            "payload": null,
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "b3112a03b0cf375e294f6c0f9fe3a2486696d8fd2c483ecd5dceca9853c0e288",
+            "winner": {
+              "recordType": "events",
+              "recordId": "note:12345678-1234-4234-8234-123456789abc",
+              "version": {
+                "counter": 2,
+                "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+              },
+              "deleted": true,
+              "payload": null,
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "events",
+              "recordId": "note:12345678-1234-4234-8234-123456789abc",
+              "version": {
+                "counter": 500,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "note:12345678-1234-4234-8234-123456789abc",
+                "title": "Alice 🌶️",
+                "occurredAtUtcMillis": 253402300799999
+              },
+              "assetIds": []
+            },
+            "reason": "delete_edit"
+          }
+        ],
+        "blocked": false,
+        "nextCounter": 501
+      }
+    },
+    {
+      "name": "immutable sample collision",
+      "base": [],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Alice",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Bob",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "sample",
+            "version": {
+              "counter": 2,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "sample",
+              "title": "Bob",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "3156abd30613f0a8f80bf1633b887b095eb4b27748b7ab61c0df52ebb45fa2c9",
+            "winner": {
+              "recordType": "readings",
+              "recordId": "sample",
+              "version": {
+                "counter": 2,
+                "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "sample",
+                "title": "Bob",
+                "occurredAtUtcMillis": 1000
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "readings",
+              "recordId": "sample",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "sample",
+                "title": "Alice",
+                "occurredAtUtcMillis": 1000
+              },
+              "assetIds": []
+            },
+            "reason": "immutable_identity"
+          }
+        ],
+        "blocked": true,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "immutable update on both peers",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Edited",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Edited",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "sample",
+            "version": {
+              "counter": 1,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "sample",
+              "title": "Base",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "b60ed4ad7456ab9de1f44eda140dd90df97842fd7ef0dfb5412b0ac8b7ff3741",
+            "winner": {
+              "recordType": "readings",
+              "recordId": "sample",
+              "version": {
+                "counter": 1,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "sample",
+                "title": "Base",
+                "occurredAtUtcMillis": 1000
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "readings",
+              "recordId": "sample",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "sample",
+                "title": "Edited",
+                "occurredAtUtcMillis": 1000
+              },
+              "assetIds": []
+            },
+            "reason": "immutable_identity"
+          }
+        ],
+        "blocked": true,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "immutable stamp reuse cannot hide divergent bytes",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Alice",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "sample",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "sample",
+            "title": "Bob",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "concurrent recipe revision branches",
+      "base": [],
+      "local": [
+        {
+          "recordType": "recipeRevisions",
+          "recordId": "revision-one",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "revision-one",
+            "title": "Alice",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "recipeRevisions",
+          "recordId": "revision-two",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "revision-two",
+            "title": "Bob",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "recipeRevisions",
+            "recordId": "revision-one",
+            "version": {
+              "counter": 2,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "revision-one",
+              "title": "Alice",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          },
+          {
+            "recordType": "recipeRevisions",
+            "recordId": "revision-two",
+            "version": {
+              "counter": 2,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "revision-two",
+              "title": "Bob",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [],
+        "blocked": false,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "equivalent content at newer logical version",
+      "base": [],
+      "local": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "events",
+            "recordId": "note:12345678-1234-4234-8234-123456789abc",
+            "version": {
+              "counter": 2,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "note:12345678-1234-4234-8234-123456789abc",
+              "title": "Base",
+              "occurredAtUtcMillis": 1000
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [],
+        "blocked": false,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "omission cannot delete",
+      "base": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "stamp reuse cannot change bytes",
+      "base": [],
+      "local": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Base",
+            "occurredAtUtcMillis": 1000
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "title": "Changed"
+          },
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    },
+    {
+      "name": "tombstones cannot be restored in place",
+      "base": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": true,
+          "payload": null,
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 3,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "note:12345678-1234-4234-8234-123456789abc",
+            "title": "Alice 🌶️",
+            "occurredAtUtcMillis": 253402300799999
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "events",
+          "recordId": "note:12345678-1234-4234-8234-123456789abc",
+          "version": {
+            "counter": 2,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": true,
+          "payload": null,
+          "assetIds": []
+        }
+      ],
+      "rejected": true
+    }
+  ]
+}

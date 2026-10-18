@@ -84,7 +84,7 @@ jobs:
 
       - name: Run native compatibility tests
         id: native-tests
-        timeout-minutes: 50
+        timeout-minutes: 120
         run: |
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')

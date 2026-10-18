@@ -1,0 +1,5237 @@
+{
+  "contractVersion": 1,
+  "recordTypes": {
+    "cooks": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "title": {
+            "type": "string",
+            "max": 32768
+          },
+          "status": {
+            "type": "string",
+            "max": 32768
+          },
+          "startedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "startedTimeZoneId": {
+            "type": "string",
+            "max": 32768
+          },
+          "endedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "nullable": true
+          },
+          "smokerName": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "initialSetpointValue": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0,
+            "nullable": true
+          },
+          "initialSetpointUnit": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updatedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "fuelType": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "woodOrPelletBlend": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "outdoorTemperatureValue": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0,
+            "nullable": true
+          },
+          "outdoorTemperatureUnit": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "weatherNotes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "windNotes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "startedAtUtcMillis",
+          "startedTimeZoneId",
+          "createdAtUtcMillis",
+          "updatedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": []
+    },
+    "dishes": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "name": {
+            "type": "string",
+            "max": 32768
+          },
+          "foodType": {
+            "type": "string",
+            "max": 32768
+          },
+          "cut": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "weightValue": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0,
+            "nullable": true
+          },
+          "weightUnit": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "pieceCount": {
+            "type": "integer",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "nullable": true
+          },
+          "startingCondition": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "boneIn": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "placement": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "prepNotes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updatedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "gradeOrSource": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "thicknessNotes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "name",
+          "foodType",
+          "createdAtUtcMillis",
+          "updatedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        }
+      ]
+    },
+    "ingredients": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200
+          },
+          "stage": {
+            "type": "string",
+            "max": 32768
+          },
+          "name": {
+            "type": "string",
+            "max": 32768
+          },
+          "brand": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "amountValue": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0,
+            "nullable": true
+          },
+          "amountUnit": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "appliedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "amountText": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "dishId",
+          "stage",
+          "name",
+          "createdAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "events": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "eventType": {
+            "type": "string",
+            "max": 32768
+          },
+          "title": {
+            "type": "string",
+            "max": 32768
+          },
+          "details": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "occurredAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "recordedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "timeZoneId": {
+            "type": "string",
+            "max": 32768
+          },
+          "source": {
+            "type": "string",
+            "max": 32768
+          },
+          "sourceDeviceId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updatedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "temperatureContextJson": {
+            "type": "json",
+            "refJson": "temperature",
+            "max": 16777216,
+            "nullable": true
+          },
+          "noteMetadataJson": {
+            "type": "json",
+            "refJson": "note",
+            "max": 16777216,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "eventType",
+          "title",
+          "occurredAtUtcMillis",
+          "recordedAtUtcMillis",
+          "timeZoneId",
+          "source",
+          "createdAtUtcMillis",
+          "updatedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "readings": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "probeId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "probeName": {
+            "type": "string",
+            "max": 32768
+          },
+          "measurementType": {
+            "type": "string",
+            "max": 32768
+          },
+          "value": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0
+          },
+          "unit": {
+            "type": "string",
+            "max": 32768
+          },
+          "measuredAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "timeZoneId": {
+            "type": "string",
+            "max": 32768
+          },
+          "source": {
+            "type": "string",
+            "max": 32768
+          },
+          "sourceDeviceId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "qualityStatus": {
+            "type": "string",
+            "max": 32768,
+            "default": "valid"
+          },
+          "recordedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "timestampBasis": {
+            "type": "string",
+            "max": 32768,
+            "default": "measurement"
+          },
+          "samplingIntervalMillis": {
+            "type": "integer",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "probeName",
+          "measurementType",
+          "value",
+          "unit",
+          "measuredAtUtcMillis",
+          "timeZoneId",
+          "source",
+          "recordedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        },
+        {
+          "field": "probeId",
+          "target": "probes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "targets": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "targetType": {
+            "type": "string",
+            "max": 32768
+          },
+          "value": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0
+          },
+          "unit": {
+            "type": "string",
+            "max": 32768
+          },
+          "scope": {
+            "type": "string",
+            "max": 32768
+          },
+          "explanation": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "sourceReference": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "targetType",
+          "value",
+          "unit",
+          "scope",
+          "createdAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "results": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "resultType": {
+            "type": "string",
+            "max": 32768
+          },
+          "numericValue": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0,
+            "nullable": true
+          },
+          "unit": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "textValue": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "recordedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "resultType",
+          "recordedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "devices": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "brand": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "deviceName": {
+            "type": "string",
+            "max": 32768
+          },
+          "role": {
+            "type": "string",
+            "max": 32768
+          },
+          "firmwareVersion": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "deviceName",
+          "role",
+          "createdAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        }
+      ]
+    },
+    "probes": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "deviceId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "max": 32768
+          },
+          "measurementType": {
+            "type": "string",
+            "max": 32768
+          },
+          "source": {
+            "type": "string",
+            "max": 32768
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "name",
+          "measurementType",
+          "source",
+          "createdAtUtcMillis"
+        ]
+      },
+      "omit": [
+        "assignedDishId"
+      ],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "deviceId",
+          "target": "devices",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "photos": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "eventId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "mimeType": {
+            "type": "string",
+            "max": 32768
+          },
+          "caption": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "capturedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "nullable": true
+          },
+          "addedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "temperatureContextJson": {
+            "type": "json",
+            "refJson": "temperature",
+            "max": 16777216,
+            "nullable": true
+          },
+          "assetId": {
+            "type": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "mimeType",
+          "addedAtUtcMillis",
+          "assetId"
+        ]
+      },
+      "omit": [
+        "relativePath",
+        "relativeFilePath",
+        "originalFileName",
+        "archivePath"
+      ],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        },
+        {
+          "field": "eventId",
+          "target": "events",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "recipes": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "name": {
+            "type": "string",
+            "max": 32768
+          },
+          "description": {
+            "type": "string",
+            "max": 32768
+          },
+          "tagsJson": {
+            "type": "json",
+            "refJson": "tags",
+            "max": 16777216
+          },
+          "currentRevisionId": {
+            "type": "id",
+            "max": 200
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updatedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "archivedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "nullable": true
+          },
+          "favorite": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "tagsJson",
+          "currentRevisionId",
+          "createdAtUtcMillis",
+          "updatedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "currentRevisionId",
+          "target": "recipeRevisions",
+          "same": {
+            "id": "recipeId"
+          }
+        }
+      ]
+    },
+    "recipeRevisions": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "recipeId": {
+            "type": "id",
+            "max": 200
+          },
+          "parentRevisionId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "sourceCookId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "sourceDishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "snapshotSchemaVersion": {
+            "type": "integer",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "snapshotJson": {
+            "type": "json",
+            "refJson": "recipe",
+            "max": 16777216
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "changeNotes": {
+            "type": "string",
+            "max": 32768
+          }
+        },
+        "required": [
+          "id",
+          "recipeId",
+          "revisionNumber",
+          "snapshotSchemaVersion",
+          "snapshotJson",
+          "createdAtUtcMillis",
+          "changeNotes"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "recipeId",
+          "target": "recipes"
+        },
+        {
+          "field": "parentRevisionId",
+          "target": "recipeRevisions",
+          "same": {
+            "recipeId": "recipeId"
+          },
+          "parentOrdinal": true
+        }
+      ]
+    },
+    "recipeAssets": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "recipeRevisionId": {
+            "type": "id",
+            "max": 200
+          },
+          "mimeType": {
+            "type": "string",
+            "max": 32768
+          },
+          "caption": {
+            "type": "string",
+            "max": 32768
+          },
+          "sourcePhotoId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "assetId": {
+            "type": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "recipeRevisionId",
+          "mimeType",
+          "caption",
+          "createdAtUtcMillis",
+          "assetId"
+        ]
+      },
+      "omit": [
+        "relativePath",
+        "relativeFilePath",
+        "originalFileName",
+        "archivePath"
+      ],
+      "references": [
+        {
+          "field": "recipeRevisionId",
+          "target": "recipeRevisions"
+        }
+      ]
+    },
+    "companionRecords": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "kind": {
+            "type": "string",
+            "max": 32768
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "max": 32768
+          },
+          "payload": {
+            "selectSibling": "kind",
+            "cases": {
+              "checklist": {
+                "ref": "checklist"
+              },
+              "equipment": {
+                "ref": "equipment"
+              },
+              "fuel": {
+                "ref": "fuel"
+              },
+              "prep_combo": {
+                "ref": "prep_combo"
+              },
+              "reference": {
+                "ref": "reference"
+              },
+              "playbook": {
+                "ref": "playbook"
+              },
+              "plan": {
+                "ref": "plan"
+              },
+              "alert": {
+                "ref": "alert"
+              },
+              "upcoming": {
+                "ref": "serve_plan"
+              },
+              "serve_goal": {
+                "ref": "serve_plan"
+              },
+              "sharing_draft": {
+                "ref": "sharing_document"
+              },
+              "collection_revision": {
+                "ref": "sharing_document"
+              },
+              "recipe_reference": {
+                "ref": "sharing_document"
+              },
+              "recipe_attempt": {
+                "ref": "recipe_attempt"
+              },
+              "guide_presentation": {
+                "ref": "guide_presentation"
+              }
+            }
+          },
+          "created": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updated": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "payload",
+          "created",
+          "updated"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        }
+      ],
+      "aliases": {
+        "createdAtUtcMillis": "created",
+        "updatedAtUtcMillis": "updated"
+      },
+      "parseJsonFields": [
+        "payload"
+      ],
+      "unsupportedKinds": []
+    },
+    "companionPhotos": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "recordId": {
+            "type": "id",
+            "max": 200
+          },
+          "mimeType": {
+            "type": "string",
+            "max": 32768
+          },
+          "caption": {
+            "type": "string",
+            "max": 32768
+          },
+          "dishIndex": {
+            "type": "integer",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "nullable": true
+          },
+          "action": {
+            "type": "string",
+            "max": 32768,
+            "nullable": true
+          },
+          "assetId": {
+            "type": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "recordId",
+          "mimeType",
+          "caption",
+          "assetId"
+        ]
+      },
+      "omit": [
+        "relativePath",
+        "relativeFilePath",
+        "originalFileName",
+        "archivePath"
+      ],
+      "references": [
+        {
+          "field": "recordId",
+          "target": "companionRecords"
+        }
+      ]
+    },
+    "mealPresets": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "name": {
+            "type": "string",
+            "max": 32768
+          },
+          "itemsJson": {
+            "type": "json",
+            "refJson": "presets",
+            "max": 16777216
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updatedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "itemsJson",
+          "createdAtUtcMillis",
+          "updatedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": []
+    },
+    "dishRecipeSources": {
+      "key": "dishId",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "dishId": {
+            "type": "id",
+            "max": 200
+          },
+          "recipeId": {
+            "type": "id",
+            "max": 200
+          },
+          "recipeRevisionId": {
+            "type": "id",
+            "max": 200
+          },
+          "appliedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "dishId",
+          "recipeId",
+          "recipeRevisionId",
+          "appliedAtUtcMillis"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "recipeId",
+          "target": "recipes"
+        },
+        {
+          "field": "recipeRevisionId",
+          "target": "recipeRevisions",
+          "same": {
+            "recipeId": "recipeId"
+          }
+        },
+        {
+          "field": "dishId",
+          "target": "dishes"
+        }
+      ]
+    },
+    "lifecycles": {
+      "key": "cookId",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "timingMode": {
+            "type": "string",
+            "enum": [
+              "legacy_preserved",
+              "explicit_phases"
+            ],
+            "default": "legacy_preserved"
+          }
+        },
+        "required": [
+          "cookId"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        }
+      ]
+    },
+    "targetHistory": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "targetType": {
+            "type": "string",
+            "max": 32768
+          },
+          "value": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0
+          },
+          "unit": {
+            "type": "string",
+            "max": 32768
+          },
+          "effectiveAt": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "targetType",
+          "value",
+          "unit",
+          "effectiveAt"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    },
+    "logReadingLinks": {
+      "key": "readingId",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "readingId": {
+            "type": "id",
+            "max": 200
+          },
+          "eventId": {
+            "type": "id",
+            "max": 200
+          }
+        },
+        "required": [
+          "readingId",
+          "eventId"
+        ]
+      },
+      "omit": [],
+      "references": [
+        {
+          "field": "eventId",
+          "target": "events"
+        },
+        {
+          "field": "readingId",
+          "target": "readings"
+        }
+      ]
+    },
+    "reminderRules": {
+      "key": "id",
+      "payload": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "id",
+            "max": 200
+          },
+          "cookId": {
+            "type": "id",
+            "max": 200
+          },
+          "dishId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "max": 32768
+          },
+          "kind": {
+            "type": "string",
+            "max": 32768
+          },
+          "triggerConfig": {
+            "type": "json",
+            "refJson": "trigger",
+            "max": 16777216
+          },
+          "sourceRecipeRevisionId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "sourceMilestoneId": {
+            "type": "id",
+            "max": 200,
+            "nullable": true
+          },
+          "createdAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "updatedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "min": -9007199254740990,
+            "max": 9007199254740990,
+            "default": 1
+          }
+        },
+        "required": [
+          "id",
+          "cookId",
+          "title",
+          "kind",
+          "triggerConfig",
+          "createdAtUtcMillis",
+          "updatedAtUtcMillis"
+        ]
+      },
+      "omit": [
+        "enabled",
+        "status"
+      ],
+      "references": [
+        {
+          "field": "cookId",
+          "target": "cooks"
+        },
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "same": {
+            "cookId": "cookId"
+          }
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "unsupported": {
+      "unsupported": true
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "max": 200
+      },
+      "max": 100
+    },
+    "temperature": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "fields": {
+          "name": {
+            "type": "string",
+            "max": 32768
+          },
+          "value": {
+            "type": "number",
+            "min": -1000000000000000.0,
+            "max": 1000000000000000.0
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "\u00b0F",
+              "\u00b0C"
+            ]
+          },
+          "observedAtUtcMillis": {
+            "type": "number",
+            "min": -9007199254740990,
+            "max": 9007199254740990
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "controller_cloud"
+            ]
+          },
+          "timestampBasis": {
+            "type": "string",
+            "enum": [
+              "measurement",
+              "cloud_receipt"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "unit",
+          "observedAtUtcMillis",
+          "source"
+        ]
+      },
+      "max": 12
+    },
+    "note": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "general",
+            "temperature",
+            "photo",
+            "action"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "dishIds": {
+          "type": "array",
+          "items": {
+            "type": "id",
+            "max": 200
+          },
+          "max": 100
+        },
+        "method": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "durationMillis": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "startedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "endedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "ingredients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "name": {
+                "type": "string",
+                "max": 32768
+              },
+              "stage": {
+                "type": "string",
+                "max": 32768
+              },
+              "brand": {
+                "type": "string",
+                "max": 32768
+              },
+              "amount": {
+                "type": "string",
+                "max": 32768
+              },
+              "unit": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "max": 100
+        }
+      },
+      "required": [
+        "version",
+        "category"
+      ]
+    },
+    "trigger": {
+      "select": "type",
+      "cases": {
+        "duration": {
+          "type": "object",
+          "fields": {
+            "version": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "enum": [
+                1
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "duration"
+              ]
+            },
+            "startedAt": {
+              "type": "number",
+              "min": -9007199254740990,
+              "max": 9007199254740990
+            },
+            "delayMillis": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990
+            }
+          },
+          "required": [
+            "version",
+            "type",
+            "startedAt",
+            "delayMillis"
+          ]
+        },
+        "clock": {
+          "type": "object",
+          "fields": {
+            "version": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "enum": [
+                1
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "clock"
+              ]
+            },
+            "at": {
+              "type": "number",
+              "min": -9007199254740990,
+              "max": 9007199254740990
+            }
+          },
+          "required": [
+            "version",
+            "type",
+            "at"
+          ]
+        },
+        "action": {
+          "type": "object",
+          "fields": {
+            "version": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "enum": [
+                1
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "action"
+              ]
+            },
+            "action": {
+              "type": "string",
+              "max": 32768
+            },
+            "offsetMillis": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990
+            },
+            "eventId": {
+              "type": "id",
+              "max": 200,
+              "nullable": true
+            }
+          },
+          "required": [
+            "version",
+            "type",
+            "action",
+            "offsetMillis"
+          ]
+        },
+        "historical": {
+          "type": "object",
+          "fields": {
+            "version": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "enum": [
+                1
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "historical"
+              ]
+            },
+            "anchorAction": {
+              "type": "string",
+              "max": 32768
+            },
+            "offsetMillis": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990
+            }
+          },
+          "required": [
+            "version",
+            "type",
+            "anchorAction",
+            "offsetMillis"
+          ]
+        },
+        "probe": {
+          "type": "object",
+          "fields": {
+            "version": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "enum": [
+                1
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "probe"
+              ]
+            },
+            "seriesId": {
+              "type": "string",
+              "max": 32768
+            },
+            "probeId": {
+              "type": "id",
+              "max": 200,
+              "nullable": true
+            },
+            "measurementType": {
+              "type": "string",
+              "max": 32768
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "above",
+                "below"
+              ]
+            },
+            "thresholdF": {
+              "type": "number",
+              "min": -1000000000000000.0,
+              "max": 1000000000000000.0
+            },
+            "sustainMillis": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990
+            },
+            "repeatMillis": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "nullable": true
+            },
+            "hysteresisF": {
+              "type": "number",
+              "min": -1000000000000000.0,
+              "max": 1000000000000000.0
+            }
+          },
+          "required": [
+            "version",
+            "type",
+            "seriesId",
+            "measurementType",
+            "direction",
+            "thresholdF"
+          ]
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 32768
+        },
+        "description": {
+          "type": "string",
+          "max": 32768
+        },
+        "tags": {
+          "ref": "tags"
+        },
+        "draft": {
+          "type": "object",
+          "fields": {
+            "title": {
+              "type": "string",
+              "max": 32768
+            },
+            "smoker": {
+              "type": "string",
+              "max": 32768
+            },
+            "setpoint": {
+              "type": "string",
+              "max": 32768
+            },
+            "unit": {
+              "type": "string",
+              "max": 32768
+            },
+            "notes": {
+              "type": "string",
+              "max": 32768
+            },
+            "fuel": {
+              "type": "string",
+              "max": 32768
+            },
+            "wood": {
+              "type": "string",
+              "max": 32768
+            },
+            "dishes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "name": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "foodType": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "cut": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weight": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weightUnit": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "placement": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "grade": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "thickness": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "prep": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "startingCondition": {
+                    "type": "string",
+                    "max": 32768,
+                    "nullable": true
+                  },
+                  "boneIn": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "ingredients": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "fields": {
+                        "name": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "stage": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "brand": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "amount": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "unit": {
+                          "type": "string",
+                          "max": 32768
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "max": 100
+                  }
+                },
+                "required": [
+                  "name",
+                  "foodType"
+                ]
+              },
+              "max": 30
+            }
+          },
+          "required": [
+            "title",
+            "dishes"
+          ]
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 200
+              },
+              "title": {
+                "type": "string",
+                "max": 32768
+              },
+              "details": {
+                "type": "string",
+                "max": 32768
+              },
+              "method": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              },
+              "offsetMillis": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990,
+                "nullable": true
+              },
+              "durationMillis": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990,
+                "nullable": true
+              },
+              "sourceEventId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "action": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ]
+          },
+          "max": 500
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "sourceEventId": {
+                "type": "id",
+                "max": 200
+              },
+              "occurredAtUtcMillis": {
+                "type": "number",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "timeZoneId": {
+                "type": "string",
+                "max": 32768
+              },
+              "title": {
+                "type": "string",
+                "max": 32768
+              },
+              "details": {
+                "type": "string",
+                "max": 32768
+              },
+              "action": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              },
+              "offsetMillis": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990,
+                "nullable": true
+              },
+              "temperatureContextJson": {
+                "type": "json",
+                "refJson": "temperature",
+                "max": 16777216,
+                "nullable": true
+              },
+              "noteMetadataJson": {
+                "type": "json",
+                "refJson": "note",
+                "max": 16777216,
+                "nullable": true
+              },
+              "sourceCookId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "sourceDishId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "recordedTemperatures": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "fields": {
+                    "sourceReadingId": {
+                      "type": "id",
+                      "max": 200,
+                      "nullable": true
+                    },
+                    "probeId": {
+                      "type": "id",
+                      "max": 200,
+                      "nullable": true
+                    },
+                    "sourceDishId": {
+                      "type": "id",
+                      "max": 200,
+                      "nullable": true
+                    },
+                    "probeName": {
+                      "type": "string",
+                      "max": 32768
+                    },
+                    "measurementType": {
+                      "type": "string",
+                      "max": 32768
+                    },
+                    "value": {
+                      "type": "number",
+                      "min": -1000000000000000.0,
+                      "max": 1000000000000000.0
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "\u00b0F",
+                        "\u00b0C"
+                      ]
+                    },
+                    "measuredAtUtcMillis": {
+                      "type": "number",
+                      "min": -9007199254740990,
+                      "max": 9007199254740990
+                    },
+                    "timeZoneId": {
+                      "type": "string",
+                      "max": 32768
+                    }
+                  },
+                  "required": [
+                    "sourceReadingId",
+                    "probeName",
+                    "measurementType",
+                    "value",
+                    "unit",
+                    "measuredAtUtcMillis",
+                    "timeZoneId"
+                  ]
+                },
+                "max": 100
+              }
+            },
+            "required": [
+              "sourceEventId",
+              "occurredAtUtcMillis",
+              "timeZoneId",
+              "title"
+            ]
+          },
+          "max": 5000
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "dish": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "type": {
+                "type": "string",
+                "max": 32768
+              },
+              "value": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "\u00b0F",
+                  "\u00b0C"
+                ]
+              },
+              "explanation": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              }
+            },
+            "required": [
+              "dish",
+              "type",
+              "value",
+              "unit"
+            ]
+          },
+          "max": 100
+        },
+        "resultNotes": {
+          "type": "string",
+          "max": 32768
+        },
+        "rating": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "smokingAnchorUtcMillis": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "preferredPitTemperatureF": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "servings": {
+          "type": "string",
+          "max": 32768
+        },
+        "cookAgain": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "publicSource": {
+          "type": "object",
+          "fields": {
+            "itemId": {
+              "type": "uuid"
+            },
+            "revisionId": {
+              "type": "uuid"
+            },
+            "displayName": {
+              "type": "string",
+              "max": 32768
+            },
+            "removed": {
+              "type": "boolean"
+            },
+            "relativeTiming": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "itemId",
+            "revisionId",
+            "displayName"
+          ],
+          "nullable": true
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "draft",
+        "instructions",
+        "observations",
+        "targets"
+      ]
+    },
+    "presets": {
+      "any": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "recipeRevisionId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "snapshotJson": {
+                "type": "json",
+                "refJson": "recipe",
+                "max": 16777216,
+                "nullable": true
+              },
+              "setupSnapshotJson": {
+                "type": "json",
+                "refJson": "recipe",
+                "max": 16777216,
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "max": 32768
+              },
+              "dishName": {
+                "type": "string",
+                "max": 32768
+              },
+              "included": {
+                "type": "boolean"
+              }
+            },
+            "required": []
+          },
+          "max": 30
+        },
+        {
+          "type": "object",
+          "fields": {
+            "version": {
+              "type": "integer",
+              "min": -9007199254740990,
+              "max": 9007199254740990,
+              "enum": [
+                1
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "recipeRevisionId": {
+                    "type": "id",
+                    "max": 200,
+                    "nullable": true
+                  },
+                  "snapshotJson": {
+                    "type": "json",
+                    "refJson": "recipe",
+                    "max": 16777216,
+                    "nullable": true
+                  },
+                  "setupSnapshotJson": {
+                    "type": "json",
+                    "refJson": "recipe",
+                    "max": 16777216,
+                    "nullable": true
+                  },
+                  "name": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "dishName": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "included": {
+                    "type": "boolean"
+                  }
+                },
+                "required": []
+              },
+              "max": 30
+            },
+            "setup": {
+              "type": "object",
+              "fields": {
+                "title": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "smoker": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "setpoint": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "unit": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "notes": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "fuel": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "wood": {
+                  "type": "string",
+                  "max": 32768
+                },
+                "dishes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "fields": {
+                      "name": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "foodType": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "cut": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "weight": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "weightUnit": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "placement": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "grade": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "thickness": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "prep": {
+                        "type": "string",
+                        "max": 32768
+                      },
+                      "startingCondition": {
+                        "type": "string",
+                        "max": 32768,
+                        "nullable": true
+                      },
+                      "boneIn": {
+                        "type": "boolean",
+                        "nullable": true
+                      },
+                      "ingredients": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "fields": {
+                            "name": {
+                              "type": "string",
+                              "max": 32768
+                            },
+                            "stage": {
+                              "type": "string",
+                              "max": 32768
+                            },
+                            "brand": {
+                              "type": "string",
+                              "max": 32768
+                            },
+                            "amount": {
+                              "type": "string",
+                              "max": 32768
+                            },
+                            "unit": {
+                              "type": "string",
+                              "max": 32768
+                            }
+                          },
+                          "required": [
+                            "name"
+                          ]
+                        },
+                        "max": 100
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "foodType"
+                    ]
+                  },
+                  "max": 30
+                }
+              },
+              "required": [
+                "title",
+                "dishes"
+              ]
+            }
+          },
+          "required": [
+            "version",
+            "items",
+            "setup"
+          ]
+        }
+      ]
+    },
+    "checklist": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 200
+              },
+              "text": {
+                "type": "string",
+                "max": 32768,
+                "nonBlank": true
+              },
+              "category": {
+                "type": "string",
+                "max": 32768
+              },
+              "done": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "text"
+            ]
+          },
+          "max": 200,
+          "uniqueBy": "id"
+        }
+      },
+      "required": [
+        "version",
+        "items"
+      ]
+    },
+    "equipment": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 32768,
+          "nonBlank": true
+        },
+        "fuel": {
+          "type": "string",
+          "max": 32768
+        },
+        "blend": {
+          "type": "string",
+          "max": 32768
+        },
+        "intervalHours": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0,
+          "nullable": true,
+          "exclusiveMin": 0
+        },
+        "maintainedHours": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0
+        },
+        "maintainedAt": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        }
+      },
+      "required": [
+        "version",
+        "name"
+      ]
+    },
+    "fuel": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "equipment": {
+          "type": "string",
+          "max": 32768,
+          "nonBlank": true
+        },
+        "kg": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0,
+          "exclusiveMin": 0
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "at": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "added",
+            "used"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "equipment",
+        "kg",
+        "at",
+        "type"
+      ]
+    },
+    "prep_combo": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 32768,
+          "nonBlank": true
+        },
+        "yield": {
+          "type": "number",
+          "min": 0,
+          "max": 1000000000000000.0,
+          "nullable": true,
+          "exclusiveMin": 0
+        },
+        "yieldUnit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "name": {
+                "type": "string",
+                "max": 32768
+              },
+              "stage": {
+                "type": "string",
+                "max": 32768
+              },
+              "brand": {
+                "type": "string",
+                "max": 32768
+              },
+              "amount": {
+                "type": "string",
+                "max": 32768
+              },
+              "unit": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "max": 100,
+          "min": 1
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "items"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200
+        },
+        "sourceCookId": {
+          "type": "id",
+          "max": 200
+        },
+        "sourceDishId": {
+          "type": "id",
+          "max": 200
+        },
+        "currentProbe": {
+          "type": "string",
+          "max": 32768
+        },
+        "sourceProbe": {
+          "type": "string",
+          "max": 32768
+        },
+        "anchor": {
+          "type": "string",
+          "enum": [
+            "food_on",
+            "wrap"
+          ]
+        },
+        "currentSeriesId": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "sourceSeriesId": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        }
+      },
+      "required": [
+        "version",
+        "dishId",
+        "sourceCookId",
+        "sourceDishId"
+      ]
+    },
+    "playbook": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 200,
+          "nonBlank": true
+        },
+        "draft": {
+          "type": "object",
+          "fields": {
+            "title": {
+              "type": "string",
+              "max": 32768
+            },
+            "smoker": {
+              "type": "string",
+              "max": 32768
+            },
+            "setpoint": {
+              "type": "string",
+              "max": 32768
+            },
+            "unit": {
+              "type": "string",
+              "max": 32768
+            },
+            "notes": {
+              "type": "string",
+              "max": 32768
+            },
+            "fuel": {
+              "type": "string",
+              "max": 32768
+            },
+            "wood": {
+              "type": "string",
+              "max": 32768
+            },
+            "dishes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "name": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "foodType": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "cut": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weight": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weightUnit": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "placement": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "grade": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "thickness": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "prep": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "startingCondition": {
+                    "type": "string",
+                    "max": 32768,
+                    "nullable": true
+                  },
+                  "boneIn": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "ingredients": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "fields": {
+                        "name": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "stage": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "brand": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "amount": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "unit": {
+                          "type": "string",
+                          "max": 32768
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "max": 100
+                  }
+                },
+                "required": [
+                  "name",
+                  "foodType"
+                ]
+              },
+              "max": 30
+            }
+          },
+          "required": [
+            "title",
+            "dishes"
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 200
+              },
+              "dish": {
+                "type": "integer",
+                "min": 0,
+                "max": 29,
+                "nullable": true
+              },
+              "action": {
+                "type": "string",
+                "max": 32768,
+                "enum": [
+                  "food_on",
+                  "spritz",
+                  "wrap",
+                  "check_in",
+                  "remove",
+                  "rest_start",
+                  "hold_start",
+                  "dish_done"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "max": 32768,
+                "nonBlank": true
+              },
+              "instructions": {
+                "type": "string",
+                "max": 32768
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "elapsed",
+                  "after_action",
+                  "temperature",
+                  "clock"
+                ]
+              },
+              "minutes": {
+                "type": "integer",
+                "min": 0,
+                "max": 100800
+              },
+              "temperatureF": {
+                "type": "number",
+                "min": 32,
+                "max": 600,
+                "nullable": true
+              },
+              "anchor": {
+                "type": "string",
+                "max": 32768,
+                "enum": [
+                  "food_on",
+                  "spritz",
+                  "wrap",
+                  "check_in",
+                  "remove",
+                  "rest_start",
+                  "hold_start",
+                  "dish_done"
+                ]
+              },
+              "clock": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0,
+                "nullable": true
+              },
+              "repeat": {
+                "type": "integer",
+                "min": 1,
+                "max": 10080,
+                "nullable": true
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "prep",
+                  "cooking",
+                  "resting",
+                  "holding"
+                ]
+              },
+              "observations": {
+                "type": "string",
+                "max": 32768
+              },
+              "probeName": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "id",
+              "action",
+              "title"
+            ]
+          },
+          "max": 100,
+          "uniqueBy": "id"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "dish": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "type": {
+                "type": "string",
+                "max": 32768
+              },
+              "value": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "\u00b0F",
+                  "\u00b0C"
+                ]
+              },
+              "explanation": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              }
+            },
+            "required": [
+              "dish",
+              "type",
+              "value",
+              "unit"
+            ]
+          },
+          "max": 100
+        },
+        "sourceCookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "revision": {
+          "type": "integer",
+          "min": 1,
+          "max": 9007199254740990
+        },
+        "previousRevisionId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "keepDoing": {
+          "type": "string",
+          "max": 32768
+        },
+        "changeNextTime": {
+          "type": "string",
+          "max": 32768
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "draft",
+        "steps"
+      ]
+    },
+    "plan": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "name": {
+          "type": "string",
+          "max": 200,
+          "nonBlank": true
+        },
+        "draft": {
+          "type": "object",
+          "fields": {
+            "title": {
+              "type": "string",
+              "max": 32768
+            },
+            "smoker": {
+              "type": "string",
+              "max": 32768
+            },
+            "setpoint": {
+              "type": "string",
+              "max": 32768
+            },
+            "unit": {
+              "type": "string",
+              "max": 32768
+            },
+            "notes": {
+              "type": "string",
+              "max": 32768
+            },
+            "fuel": {
+              "type": "string",
+              "max": 32768
+            },
+            "wood": {
+              "type": "string",
+              "max": 32768
+            },
+            "dishes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "name": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "foodType": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "cut": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weight": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "weightUnit": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "placement": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "grade": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "thickness": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "prep": {
+                    "type": "string",
+                    "max": 32768
+                  },
+                  "startingCondition": {
+                    "type": "string",
+                    "max": 32768,
+                    "nullable": true
+                  },
+                  "boneIn": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "ingredients": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "fields": {
+                        "name": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "stage": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "brand": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "amount": {
+                          "type": "string",
+                          "max": 32768
+                        },
+                        "unit": {
+                          "type": "string",
+                          "max": 32768
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    },
+                    "max": 100
+                  }
+                },
+                "required": [
+                  "name",
+                  "foodType"
+                ]
+              },
+              "max": 30
+            }
+          },
+          "required": [
+            "title",
+            "dishes"
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 200
+              },
+              "dish": {
+                "type": "integer",
+                "min": 0,
+                "max": 29,
+                "nullable": true
+              },
+              "action": {
+                "type": "string",
+                "max": 32768,
+                "enum": [
+                  "food_on",
+                  "spritz",
+                  "wrap",
+                  "check_in",
+                  "remove",
+                  "rest_start",
+                  "hold_start",
+                  "dish_done"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "max": 32768,
+                "nonBlank": true
+              },
+              "instructions": {
+                "type": "string",
+                "max": 32768
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "elapsed",
+                  "after_action",
+                  "temperature",
+                  "clock"
+                ]
+              },
+              "minutes": {
+                "type": "integer",
+                "min": 0,
+                "max": 100800
+              },
+              "temperatureF": {
+                "type": "number",
+                "min": 32,
+                "max": 600,
+                "nullable": true
+              },
+              "anchor": {
+                "type": "string",
+                "max": 32768,
+                "enum": [
+                  "food_on",
+                  "spritz",
+                  "wrap",
+                  "check_in",
+                  "remove",
+                  "rest_start",
+                  "hold_start",
+                  "dish_done"
+                ]
+              },
+              "clock": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0,
+                "nullable": true
+              },
+              "repeat": {
+                "type": "integer",
+                "min": 1,
+                "max": 10080,
+                "nullable": true
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "prep",
+                  "cooking",
+                  "resting",
+                  "holding"
+                ]
+              },
+              "observations": {
+                "type": "string",
+                "max": 32768
+              },
+              "probeName": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "id",
+              "action",
+              "title"
+            ]
+          },
+          "max": 100,
+          "uniqueBy": "id"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "dish": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "type": {
+                "type": "string",
+                "max": 32768
+              },
+              "value": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "°F",
+                  "°C"
+                ]
+              },
+              "explanation": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              }
+            },
+            "required": [
+              "dish",
+              "type",
+              "value",
+              "unit"
+            ]
+          },
+          "max": 100
+        },
+        "sourceCookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "revision": {
+          "type": "integer",
+          "min": 1,
+          "max": 9007199254740990
+        },
+        "previousRevisionId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "keepDoing": {
+          "type": "string",
+          "max": 32768
+        },
+        "changeNextTime": {
+          "type": "string",
+          "max": 32768
+        },
+        "dishIds": {
+          "type": "array",
+          "items": {
+            "type": "id",
+            "max": 200
+          },
+          "max": 30
+        },
+        "playbookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "progress": {
+          "type": "map",
+          "values": {
+            "type": "object",
+            "fields": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "done",
+                  "skipped"
+                ]
+              },
+              "eventIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "max": 200
+                }
+              },
+              "lastDoneAt": {
+                "type": "number",
+                "min": -9007199254740990,
+                "max": 9007199254740990,
+                "nullable": true
+              },
+              "occurrence": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740990
+              },
+              "skippedAnchorAt": {
+                "type": "number",
+                "min": -9007199254740990,
+                "max": 9007199254740990,
+                "nullable": true
+              }
+            },
+            "required": []
+          },
+          "maxKeys": 100
+        }
+      },
+      "required": [
+        "version",
+        "name",
+        "draft",
+        "steps",
+        "dishIds"
+      ]
+    },
+    "alert": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "target",
+            "pit_range",
+            "missing",
+            "offline"
+          ]
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "probeName": {
+          "type": "string",
+          "max": 32768
+        },
+        "targetF": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "lowF": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "highF": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "dwell": {
+          "type": "integer",
+          "min": 0,
+          "max": 3600000
+        },
+        "missing": {
+          "type": "integer",
+          "min": 60000,
+          "max": 3600000
+        },
+        "recoveryF": {
+          "type": "number",
+          "min": 0,
+          "max": 50
+        },
+        "repeat": {
+          "type": "integer",
+          "min": 300000,
+          "max": 9007199254740990
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "cooking",
+            "resting",
+            "holding"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "id",
+        "type"
+      ]
+    },
+    "serve_plan": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "book": {
+          "ref": "playbook"
+        },
+        "serveAt": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "zoneId": {
+          "type": "string",
+          "max": 32768
+        },
+        "buffer": {
+          "type": "integer",
+          "min": 0,
+          "max": 1440
+        },
+        "startedCookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "schedules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "dish": {
+                "type": "integer",
+                "min": 0,
+                "max": 29
+              },
+              "min": {
+                "type": "integer",
+                "min": 1,
+                "max": 100800
+              },
+              "max": {
+                "type": "integer",
+                "min": 1,
+                "max": 100800
+              },
+              "prep": {
+                "type": "integer",
+                "min": 0,
+                "max": 10080
+              },
+              "preheat": {
+                "type": "integer",
+                "min": 0,
+                "max": 10080
+              },
+              "rest": {
+                "type": "integer",
+                "min": 0,
+                "max": 10080
+              },
+              "hold": {
+                "type": "integer",
+                "min": 0,
+                "max": 10080
+              },
+              "pitF": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0,
+                "nullable": true
+              },
+              "method": {
+                "type": "string",
+                "max": 32768
+              },
+              "count": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "note": {
+                "type": "string",
+                "max": 32768
+              }
+            },
+            "required": [
+              "dish",
+              "min",
+              "max"
+            ]
+          },
+          "max": 30
+        }
+      },
+      "required": [
+        "version",
+        "book",
+        "serveAt",
+        "zoneId",
+        "schedules"
+      ]
+    },
+    "sharing_document": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "title": {
+          "type": "string",
+          "max": 160,
+          "nonBlank": true
+        },
+        "identityMode": {
+          "type": "string",
+          "enum": [
+            "named",
+            "anonymous"
+          ]
+        },
+        "sourceCookId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "heroPhotoId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "collectionId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "parentRevisionId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "sourceHistory": {
+          "ref": "cook_history"
+        },
+        "card": {
+          "ref": "share_card"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "id",
+                "max": 80
+              },
+              "sourceDishId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "sourceRevisionId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "snapshotJson": {
+                "type": "json",
+                "refJson": "recipe",
+                "max": 16777216
+              },
+              "story": {
+                "ref": "cook_story"
+              },
+              "included": {
+                "type": "boolean"
+              },
+              "includeStory": {
+                "type": "boolean"
+              },
+              "photoIds": {
+                "type": "array",
+                "items": {
+                  "type": "id",
+                  "max": 200
+                },
+                "max": 100
+              }
+            },
+            "required": [
+              "id",
+              "snapshotJson",
+              "story",
+              "included",
+              "includeStory",
+              "photoIds"
+            ]
+          },
+          "min": 1,
+          "max": 20,
+          "uniqueBy": "id"
+        }
+      },
+      "required": [
+        "version",
+        "title",
+        "identityMode",
+        "entries"
+      ]
+    },
+    "share_card": {
+      "type": "object",
+      "nullable": true,
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "hero": {
+          "type": "string",
+          "enum": [
+            "photo",
+            "chart",
+            "none"
+          ]
+        },
+        "cropX": {
+          "type": "number",
+          "min": 0,
+          "max": 1
+        },
+        "cropY": {
+          "type": "number",
+          "min": 0,
+          "max": 1
+        },
+        "zoom": {
+          "type": "number",
+          "min": 1,
+          "max": 3
+        },
+        "note": {
+          "type": "string",
+          "max": 4000
+        },
+        "includeVerdict": {
+          "type": "boolean"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "°C",
+            "°F"
+          ]
+        },
+        "theme": {
+          "type": "string",
+          "enum": [
+            "classic"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "hero",
+        "cropX",
+        "cropY",
+        "zoom",
+        "note",
+        "includeVerdict",
+        "unit",
+        "theme"
+      ]
+    },
+    "cook_story": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "attemptId": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true,
+          "nonBlank": true
+        },
+        "anchorUtcMillis": {
+          "type": "integer",
+          "min": 1,
+          "max": 253402300799999,
+          "nullable": true
+        },
+        "connectionGaps": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMin": 0
+          },
+          "max": 10000
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "sourceEventId": {
+                "type": "string",
+                "max": 32768
+              },
+              "occurredAtUtcMillis": {
+                "type": "number",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "timeZoneId": {
+                "type": "string",
+                "max": 32768
+              },
+              "title": {
+                "type": "string",
+                "max": 32768
+              },
+              "details": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              },
+              "action": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              },
+              "offsetMillis": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990,
+                "nullable": true
+              },
+              "temperatureContextJson": {
+                "type": "json",
+                "refJson": "temperature",
+                "max": 16777216,
+                "nullable": true
+              },
+              "noteMetadataJson": {
+                "type": "json",
+                "refJson": "note",
+                "max": 16777216,
+                "nullable": true
+              },
+              "sourceCookId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "sourceDishId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "recordedTemperatures": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "fields": {
+                    "sourceReadingId": {
+                      "type": "id",
+                      "max": 200,
+                      "nullable": true
+                    },
+                    "probeId": {
+                      "type": "id",
+                      "max": 200,
+                      "nullable": true
+                    },
+                    "sourceDishId": {
+                      "type": "id",
+                      "max": 200,
+                      "nullable": true
+                    },
+                    "probeName": {
+                      "type": "string",
+                      "max": 32768
+                    },
+                    "measurementType": {
+                      "type": "string",
+                      "max": 32768
+                    },
+                    "value": {
+                      "type": "number",
+                      "min": -1000000000000000.0,
+                      "max": 1000000000000000.0
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "°F",
+                        "°C"
+                      ]
+                    },
+                    "measuredAtUtcMillis": {
+                      "type": "number",
+                      "min": -9007199254740990,
+                      "max": 9007199254740990
+                    },
+                    "timeZoneId": {
+                      "type": "string",
+                      "max": 32768
+                    }
+                  },
+                  "required": [
+                    "sourceReadingId",
+                    "probeName",
+                    "measurementType",
+                    "value",
+                    "unit",
+                    "measuredAtUtcMillis",
+                    "timeZoneId"
+                  ]
+                },
+                "max": 100000
+              }
+            },
+            "required": [
+              "sourceEventId",
+              "occurredAtUtcMillis",
+              "timeZoneId",
+              "title"
+            ]
+          },
+          "max": 5000
+        },
+        "readings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "id": {
+                "type": "string",
+                "max": 128,
+                "nonBlank": true
+              },
+              "probeId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "probeName": {
+                "type": "string",
+                "max": 200
+              },
+              "measurementType": {
+                "type": "string",
+                "max": 32768,
+                "nonBlank": true
+              },
+              "value": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "°F",
+                  "°C"
+                ]
+              },
+              "measuredAtUtcMillis": {
+                "type": "number",
+                "min": 1,
+                "max": 253402300799999
+              },
+              "timeZoneId": {
+                "type": "string",
+                "max": 32768
+              },
+              "timestampBasis": {
+                "type": "string",
+                "max": 32768
+              },
+              "samplingIntervalMillis": {
+                "type": "integer",
+                "min": -9007199254740990,
+                "max": 9007199254740990
+              },
+              "qualityStatus": {
+                "type": "string",
+                "max": 32768
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "recorded"
+                ]
+              },
+              "sourceReadingId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              },
+              "sourceDishId": {
+                "type": "id",
+                "max": 200,
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "probeName",
+              "measurementType",
+              "value",
+              "unit",
+              "measuredAtUtcMillis",
+              "source"
+            ]
+          },
+          "max": 250000
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "type": {
+                "type": "string",
+                "max": 32768
+              },
+              "numericValue": {
+                "type": "number",
+                "min": -1000000000000000.0,
+                "max": 1000000000000000.0,
+                "nullable": true
+              },
+              "textValue": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              },
+              "unit": {
+                "type": "string",
+                "max": 32768,
+                "nullable": true
+              }
+            },
+            "required": [
+              "type",
+              "numericValue",
+              "textValue",
+              "unit"
+            ]
+          }
+        }
+      },
+      "required": [
+        "version",
+        "readings"
+      ]
+    },
+    "cook_history": {
+      "type": "object",
+      "nullable": true,
+      "fields": {
+        "schemaVersion": {
+          "type": "integer",
+          "min": 1,
+          "max": 9007199254740990
+        },
+        "preferences": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "cooks": {
+          "type": "array",
+          "items": {
+            "ref": "history_cook"
+          },
+          "min": 1,
+          "max": 1
+        },
+        "dishes": {
+          "type": "array",
+          "items": {
+            "ref": "history_dish"
+          },
+          "max": 1000000
+        },
+        "ingredients": {
+          "type": "array",
+          "items": {
+            "ref": "history_ingredient"
+          },
+          "max": 1000000
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "ref": "history_event"
+          },
+          "max": 1000000
+        },
+        "readings": {
+          "type": "array",
+          "items": {
+            "ref": "history_reading"
+          },
+          "max": 1000000
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "ref": "history_target"
+          },
+          "max": 1000000
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "ref": "history_result"
+          },
+          "max": 1000000
+        },
+        "probes": {
+          "type": "array",
+          "items": {
+            "ref": "history_probe"
+          },
+          "max": 1000000
+        },
+        "photos": {
+          "type": "array",
+          "items": {
+            "ref": "history_photo"
+          },
+          "max": 1000000
+        },
+        "logReadingLinks": {
+          "type": "array",
+          "items": {
+            "ref": "history_link"
+          },
+          "max": 1000000
+        },
+        "lifecycles": {
+          "type": "array",
+          "items": {
+            "ref": "history_lifecycle"
+          },
+          "max": 1000000
+        },
+        "targetHistory": {
+          "type": "array",
+          "items": {
+            "ref": "history_target_history"
+          },
+          "max": 1000000
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "preferences",
+        "cooks",
+        "dishes",
+        "ingredients",
+        "events",
+        "readings",
+        "targets",
+        "results",
+        "probes",
+        "photos",
+        "logReadingLinks",
+        "lifecycles",
+        "targetHistory"
+      ]
+    },
+    "history_cook": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "title": {
+          "type": "string",
+          "max": 32768
+        },
+        "status": {
+          "type": "string",
+          "max": 32768
+        },
+        "startedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "startedTimeZoneId": {
+          "type": "string",
+          "max": 32768
+        },
+        "endedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "initialSetpointValue": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "initialSetpointUnit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "createdAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "updatedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "fuelType": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "woodOrPelletBlend": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "outdoorTemperatureValue": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "outdoorTemperatureUnit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "startedAtUtcMillis",
+        "startedTimeZoneId",
+        "createdAtUtcMillis",
+        "updatedAtUtcMillis"
+      ]
+    },
+    "history_dish": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "name": {
+          "type": "string",
+          "max": 32768
+        },
+        "foodType": {
+          "type": "string",
+          "max": 32768
+        },
+        "cut": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "weightValue": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "weightUnit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "pieceCount": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "startingCondition": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "boneIn": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "placement": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "prepNotes": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "createdAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "updatedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "gradeOrSource": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "thicknessNotes": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "name",
+        "foodType",
+        "createdAtUtcMillis",
+        "updatedAtUtcMillis"
+      ]
+    },
+    "history_ingredient": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200
+        },
+        "stage": {
+          "type": "string",
+          "max": 32768
+        },
+        "name": {
+          "type": "string",
+          "max": 32768
+        },
+        "brand": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "amountValue": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "amountUnit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "appliedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "notes": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "createdAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "amountText": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "dishId",
+        "stage",
+        "name",
+        "createdAtUtcMillis"
+      ]
+    },
+    "history_event": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "eventType": {
+          "type": "string",
+          "max": 32768
+        },
+        "title": {
+          "type": "string",
+          "max": 32768
+        },
+        "details": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "occurredAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "recordedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "timeZoneId": {
+          "type": "string",
+          "max": 32768
+        },
+        "source": {
+          "type": "string",
+          "max": 32768
+        },
+        "createdAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "updatedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "temperatureContextJson": {
+          "type": "json",
+          "refJson": "temperature",
+          "max": 16777216,
+          "nullable": true
+        },
+        "noteMetadataJson": {
+          "type": "json",
+          "refJson": "note",
+          "max": 16777216,
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "eventType",
+        "title",
+        "occurredAtUtcMillis",
+        "recordedAtUtcMillis",
+        "timeZoneId",
+        "source",
+        "createdAtUtcMillis",
+        "updatedAtUtcMillis"
+      ]
+    },
+    "history_reading": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "probeId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "probeName": {
+          "type": "string",
+          "max": 32768
+        },
+        "measurementType": {
+          "type": "string",
+          "max": 32768
+        },
+        "value": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0
+        },
+        "unit": {
+          "type": "string",
+          "max": 32768
+        },
+        "measuredAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "timeZoneId": {
+          "type": "string",
+          "max": 32768
+        },
+        "source": {
+          "type": "string",
+          "max": 32768
+        },
+        "qualityStatus": {
+          "type": "string",
+          "max": 32768,
+          "default": "valid"
+        },
+        "recordedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "timestampBasis": {
+          "type": "string",
+          "max": 32768,
+          "default": "measurement"
+        },
+        "samplingIntervalMillis": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "probeName",
+        "measurementType",
+        "value",
+        "unit",
+        "measuredAtUtcMillis",
+        "timeZoneId",
+        "source",
+        "recordedAtUtcMillis"
+      ]
+    },
+    "history_target": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "targetType": {
+          "type": "string",
+          "max": 32768
+        },
+        "value": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0
+        },
+        "unit": {
+          "type": "string",
+          "max": 32768
+        },
+        "scope": {
+          "type": "string",
+          "max": 32768
+        },
+        "explanation": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "createdAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "targetType",
+        "value",
+        "unit",
+        "scope",
+        "createdAtUtcMillis"
+      ]
+    },
+    "history_result": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "resultType": {
+          "type": "string",
+          "max": 32768
+        },
+        "numericValue": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0,
+          "nullable": true
+        },
+        "unit": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "textValue": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "notes": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "recordedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "resultType",
+        "recordedAtUtcMillis"
+      ]
+    },
+    "history_probe": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "assignedDishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "name": {
+          "type": "string",
+          "max": 32768
+        },
+        "measurementType": {
+          "type": "string",
+          "max": 32768
+        },
+        "source": {
+          "type": "string",
+          "max": 32768
+        },
+        "createdAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "name",
+        "measurementType",
+        "source",
+        "createdAtUtcMillis"
+      ]
+    },
+    "history_photo": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "eventId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "mimeType": {
+          "type": "string",
+          "max": 32768
+        },
+        "caption": {
+          "type": "string",
+          "max": 32768,
+          "nullable": true
+        },
+        "capturedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "nullable": true
+        },
+        "addedAtUtcMillis": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        },
+        "originalFileName": {
+          "type": "string",
+          "max": 32768
+        },
+        "archivePath": {
+          "type": "string",
+          "max": 32768
+        },
+        "temperatureContextJson": {
+          "type": "json",
+          "refJson": "temperature",
+          "max": 16777216,
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "mimeType",
+        "addedAtUtcMillis"
+      ]
+    },
+    "history_link": {
+      "type": "object",
+      "fields": {
+        "readingId": {
+          "type": "id",
+          "max": 200
+        },
+        "eventId": {
+          "type": "id",
+          "max": 200
+        }
+      },
+      "required": [
+        "readingId",
+        "eventId"
+      ]
+    },
+    "history_lifecycle": {
+      "type": "object",
+      "fields": {
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "timingMode": {
+          "type": "string",
+          "enum": [
+            "legacy_preserved",
+            "explicit_phases"
+          ],
+          "default": "legacy_preserved"
+        }
+      },
+      "required": [
+        "cookId"
+      ]
+    },
+    "history_target_history": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "id",
+          "max": 200
+        },
+        "cookId": {
+          "type": "id",
+          "max": 200
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200,
+          "nullable": true
+        },
+        "targetType": {
+          "type": "string",
+          "max": 32768
+        },
+        "value": {
+          "type": "number",
+          "min": -1000000000000000.0,
+          "max": 1000000000000000.0
+        },
+        "unit": {
+          "type": "string",
+          "max": 32768
+        },
+        "effectiveAt": {
+          "type": "number",
+          "min": -9007199254740990,
+          "max": 9007199254740990
+        }
+      },
+      "required": [
+        "id",
+        "cookId",
+        "targetType",
+        "value",
+        "unit",
+        "effectiveAt"
+      ]
+    },
+    "recipe_attempt": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "dishId": {
+          "type": "id",
+          "max": 200
+        },
+        "revisionId": {
+          "type": "id",
+          "max": 200
+        },
+        "snapshot": {
+          "ref": "recipe"
+        },
+        "guide": {
+          "ref": "pinned_guide"
+        }
+      },
+      "required": [
+        "version",
+        "dishId",
+        "revisionId",
+        "snapshot"
+      ]
+    },
+    "pinned_guide": {
+      "type": "object",
+      "nullable": true,
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "revisionId": {
+          "type": "id",
+          "max": 200
+        },
+        "snapshot": {
+          "ref": "recipe"
+        },
+        "story": {
+          "ref": "cook_story"
+        }
+      },
+      "required": [
+        "version",
+        "revisionId",
+        "snapshot",
+        "story"
+      ]
+    },
+    "guide_presentation": {
+      "type": "object",
+      "fields": {
+        "version": {
+          "type": "integer",
+          "min": -9007199254740990,
+          "max": 9007199254740990,
+          "enum": [
+            1
+          ]
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "dishIds": {
+          "type": "array",
+          "items": {
+            "type": "id",
+            "max": 200
+          },
+          "max": 30,
+          "nullable": true
+        },
+        "channels": {
+          "type": "map",
+          "values": {
+            "type": "string",
+            "max": 32768
+          },
+          "maxKeys": 200
+        }
+      },
+      "required": [
+        "version",
+        "visible"
+      ]
+    }
+  },
+  "excludedRootFields": [
+    "schemaVersion",
+    "preferences",
+    "reminders",
+    "recordings",
+    "probeAssignments",
+    "activityTimers",
+    "reminderOccurrences"
+  ],
+  "releaseReady": false,
+  "excludedDocumentKinds": [
+    "monitor_status"
+  ],
+  "documentRules": {
+    "checklist": {
+      "scope": "cook"
+    },
+    "equipment": {
+      "scope": "global"
+    },
+    "prep_combo": {
+      "scope": "global"
+    },
+    "playbook": {
+      "scope": "global"
+    },
+    "fuel": {
+      "scope": "optional",
+      "sameFields": {
+        "cookId": "cookId"
+      }
+    },
+    "reference": {
+      "scope": "cook",
+      "references": [
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "sameCook": "$record"
+        },
+        {
+          "field": "sourceDishId",
+          "target": "dishes",
+          "sameCook": "sourceCookId",
+          "allowMissing": true
+        }
+      ]
+    },
+    "plan": {
+      "scope": "cook",
+      "omit": [
+        "paused",
+        "progress.*.notifiedOccurrence",
+        "progress.*.snoozedUntil"
+      ]
+    },
+    "alert": {
+      "scope": "cook",
+      "omit": [
+        "enabled",
+        "state"
+      ]
+    },
+    "upcoming": {
+      "scope": "global"
+    },
+    "serve_goal": {
+      "scope": "cook",
+      "sameFields": {
+        "startedCookId": "cookId"
+      }
+    },
+    "sharing_draft": {
+      "scope": "global"
+    },
+    "collection_revision": {
+      "scope": "global"
+    },
+    "recipe_reference": {
+      "scope": "global"
+    },
+    "recipe_attempt": {
+      "scope": "cook",
+      "references": [
+        {
+          "field": "dishId",
+          "target": "dishes",
+          "sameCook": "$record"
+        }
+      ]
+    },
+    "guide_presentation": {
+      "scope": "cook"
+    }
+  }
+}
