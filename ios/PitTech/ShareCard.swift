@@ -17,7 +17,7 @@ struct ShareCardOptions: Codable, Equatable, Sendable {
     func validate() throws {
         guard version == 1, ["photo", "chart", "none"].contains(hero), cropX.isFinite, cropY.isFinite,
               (0...1).contains(cropX), (0...1).contains(cropY), zoom.isFinite, (1...3).contains(zoom),
-              note.unicodeScalars.count <= 2000, ["auto", "°C", "°F"].contains(unit), theme == "classic" else { throw PitTechArchiveError.invalidArchive }
+              note.unicodeScalars.count <= 2000, ["auto", "°C", "°F"].contains(unit), ProCustomization.shareCardThemeIds.contains(theme) else { throw PitTechArchiveError.invalidArchive }
     }
 }
 struct PreparedNativeShareCard: Sendable { let content: JSONValue; let photo: Data? }
@@ -138,7 +138,10 @@ enum NativeShareCardContent {
 }
 
 @MainActor extension CookStore {
-    func prepareShareCard(_ id: String, relay: ShareCardRelay? = nil) async throws -> PreparedNativeShareCard {
+    /// Prepares the card for rendering. `themeOverride`/`paletteOverride` apply
+    /// the caller's entitlement-resolved Pro selections to the rendered copy
+    /// only; the sharing draft itself is never mutated.
+    func prepareShareCard(_ id: String, relay: ShareCardRelay? = nil, themeOverride: String? = nil, paletteOverride: String? = nil) async throws -> PreparedNativeShareCard {
         let document = try sharingDocument(id)
         var original: Data?
         if document.cardOptions.hero == "photo" {
@@ -147,10 +150,14 @@ enum NativeShareCardContent {
             original = try Data(contentsOf: photoURL(path))
         }
         let captured = original
-        return try await Task.detached(priority: .userInitiated) {
+        let prepared = try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             let photo = try captured.map { try NativeCookPackPhoto.derivative($0) }
             return try NativeShareCardContent.build(document, photo: photo, relay: relay)
         }.value
+        guard var root = prepared.content.objectValue, themeOverride != nil || paletteOverride != nil else { return prepared }
+        if let themeOverride { root["theme"] = .string(themeOverride) }
+        if let paletteOverride { root["palette"] = .string(paletteOverride) }
+        return PreparedNativeShareCard(content: .object(root), photo: prepared.photo)
     }
 }

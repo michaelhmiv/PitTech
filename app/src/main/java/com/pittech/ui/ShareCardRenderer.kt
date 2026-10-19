@@ -6,27 +6,61 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import com.pittech.data.PreparedShareCard
 import com.pittech.data.ShareCardContent
+import com.pittech.domain.ProCustomization
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlin.math.*
 
+/** Resolved card paint: a curated theme plus a chart palette, defaulting to
+ * the Classic treatment for unknown ids. Classic literals match the original
+ * hard-coded paint exactly, so existing pixel tests are unaffected. */
+internal data class ShareCardRenderTheme(val background: Int, val ink: Int, val supporting: Int, val accent: Int, val divider: Int, val palette: List<Int>) {
+    companion object {
+        fun resolve(themeId: String?, paletteId: String?): ShareCardRenderTheme {
+            val theme = ProCustomization.theme(themeId)
+            val palette = when {
+                paletteId != null && ProCustomization.chartPalettes.any { it.id == paletteId } -> ProCustomization.palette(paletteId)
+                theme.id == "sage-night" -> ProCustomization.palette("sage-night-chart")
+                else -> ProCustomization.palette("classic")
+            }
+            val dividerHex = when (theme.id) {
+                "ember" -> "#DECFBB"
+                "sage-night" -> "#3A3F33"
+                "parchment" -> "#E6DFCE"
+                else -> "#E2D9CD"
+            }
+            return ShareCardRenderTheme(
+                Color.parseColor(theme.background),
+                Color.parseColor(theme.ink),
+                Color.parseColor(theme.supporting),
+                Color.parseColor(theme.accent),
+                Color.parseColor(dividerHex),
+                palette.colors.map(Color::parseColor),
+            )
+        }
+    }
+}
+
 /** Fixed export pixels; the editor/preview retain system text scaling independently. */
 object ShareCardRenderer {
     const val WIDTH = 1080
     const val HEIGHT = 1350
-    private val ink = Color.rgb(36, 38, 34)
-    private val supporting = Color.rgb(81, 76, 69)
-    private val sage = Color.rgb(88, 102, 90)
-    private val palette = listOf(Color.rgb(176, 77, 46), sage, Color.rgb(65, 108, 138), Color.rgb(139, 93, 132), Color.rgb(161, 122, 44), Color.rgb(53, 125, 120))
     private fun objects(o: JSONObject, key: String) = o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+
+    /** Resolved render colors for one card. Unknown theme or palette ids fall
+     * back to the Classic treatment — never a crash, never an unpainted card. */
+    fun themeColors(themeId: String?, paletteId: String?): ShareCardRenderTheme = ShareCardRenderTheme.resolve(themeId, paletteId)
+
     fun render(input: PreparedShareCard): ByteArray {
         val root = JSONObject(input.content); require(root.getInt("version") == 1)
+        val colors = ShareCardRenderTheme.resolve(root.optString("theme", null), root.optString("palette", null))
+        val ink = colors.ink; val supporting = colors.supporting; val sage = colors.accent; val palette = colors.palette
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
         var cover: Bitmap? = null
         try {
-            val canvas = Canvas(bitmap); canvas.drawColor(Color.rgb(245, 240, 231))
+            val canvas = Canvas(bitmap); canvas.drawColor(colors.background)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
             fun text(value: String, x: Float, y: Float, width: Float, size: Float, lines: Int = 1, color: Int = ink, bold: Boolean = false): Float {
                 val count = value.codePointCount(0,value.length)
@@ -60,7 +94,7 @@ object ShareCardRenderer {
                     val crop = Rect(x,top,x+cropWidth,top+cropHeight)
                     val path = Path().apply { addRoundRect(rect, 24f, 24f, Path.Direction.CW) }
                     canvas.save(); canvas.clipPath(path); canvas.drawBitmap(image, crop, rect, paint); canvas.restore()
-                } else chart(canvas, root, rect, ::text)
+                } else chart(canvas, root, rect, colors, ::text)
                 y += height + 24f
             }
             if (milestones.isNotEmpty()) {
@@ -78,7 +112,7 @@ object ShareCardRenderer {
                 y += 100
             }
             if (note.isNotEmpty()) text("“$note”", left, y, width, 28f, 2)
-            paint.color = Color.rgb(226, 217, 205); canvas.drawLine(left, footer - 20, left + width, footer - 20, paint)
+            paint.color = colors.divider; canvas.drawLine(left, footer - 20, left + width, footer - 20, paint)
             if (relay != null) {
                 text("GET THE COOK PACK · ${relay.getString("code")}", left, footer, width, 28f, bold = true)
                 text(relay.getString("url").removePrefix("https://"), left, footer + 42, width, 24f, color = supporting)
@@ -88,7 +122,7 @@ object ShareCardRenderer {
             return ByteArrayOutputStream().use { output -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)); output.toByteArray() }
         } finally { cover?.recycle(); bitmap.recycle() }
     }
-    private fun chart(canvas: Canvas, root: JSONObject, rect: RectF,
+    private fun chart(canvas: Canvas, root: JSONObject, rect: RectF, colors: ShareCardRenderTheme,
         text: (String, Float, Float, Float, Float, Int, Int, Boolean) -> Float) {
         val curves = objects(root, "curves"); val all = curves.flatMap { c -> c.getJSONArray("segments").let { a -> (0 until a.length()).flatMap { i -> a.getJSONArray(i).let { s -> (0 until s.length()).map { s.getJSONObject(it) } } } } }
         require(all.isNotEmpty() && all.all { it.getDouble("x").isFinite() && it.getDouble("y").isFinite() }) { "These readings cannot be drawn. Choose No hero or share a Cook Pack." }
@@ -99,7 +133,8 @@ object ShareCardRenderer {
         fun x(v: Double) = p.left + ((v - x0) / (x1 - x0) * p.width()).toFloat()
         fun y(v: Double) = p.bottom - ((v - y0) / (y1 - y0) * p.height()).toFloat()
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2f }
-        repeat(3) { i -> val v = y0 + (y1 - y0) * i / 2; paint.color = Color.rgb(226,217,205); canvas.drawLine(p.left, y(v), p.right, y(v), paint); text(String.format(Locale.US,"%.0f",v),rect.left,y(v)-12,62f,18f,1,supporting,false) }
+        val supporting = colors.supporting; val palette = colors.palette
+        repeat(3) { i -> val v = y0 + (y1 - y0) * i / 2; paint.color = colors.divider; canvas.drawLine(p.left, y(v), p.right, y(v), paint); text(String.format(Locale.US,"%.0f",v),rect.left,y(v)-12,62f,18f,1,supporting,false) }
         text(root.getString("unit"), rect.left, rect.top - 8, 62f, 18f, 1, supporting, false)
         text("Simplified trace · ${curves.size} of ${root.getInt("channelCount")} channels",rect.right-370,rect.top-8,370f,18f,1,supporting,false)
         text("${String.format(Locale.US,"%.0f",x0)} → ${String.format(Locale.US,"%.0f",x1)} min since each dish's Food on", p.left, p.bottom + 8, p.width(), 19f, 1, supporting, false)

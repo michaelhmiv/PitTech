@@ -9,7 +9,7 @@ import kotlin.math.abs
 data class ShareCardOptions(val hero: String = "chart", val cropX: Double = 0.5, val cropY: Double = 0.5,
     val zoom: Double = 1.0, val note: String = "", val includeVerdict: Boolean = false, val unit: String = "auto", val theme: String = "classic") {
     fun encode(): JSONObject {
-        require(hero in setOf("photo", "chart", "none") && cropX.isFinite() && cropY.isFinite() && cropX in 0.0..1.0 && cropY in 0.0..1.0 && zoom.isFinite() && zoom in 1.0..3.0 && note.codePointCount(0,note.length) <= 2000 && unit in setOf("auto", "°C", "°F") && theme == "classic") { "Review the card's photo crop, note and units." }
+        require(hero in setOf("photo", "chart", "none") && cropX.isFinite() && cropY.isFinite() && cropX in 0.0..1.0 && cropY in 0.0..1.0 && zoom.isFinite() && zoom in 1.0..3.0 && note.codePointCount(0,note.length) <= 2000 && unit in setOf("auto", "°C", "°F") && theme in ProCustomization.shareCardThemeIds) { "Review the card's photo crop, note and units." }
         return JSONObject().put("version", 1).put("hero", hero).put("cropX", cropX).put("cropY", cropY).put("zoom", zoom)
             .put("note", note).put("includeVerdict", includeVerdict).put("unit", unit).put("theme", theme)
     }
@@ -105,7 +105,9 @@ object ShareCardContent {
     }
 }
 
-suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay? = null): PreparedShareCard {
+/** `themeOverride`/`paletteOverride` apply the caller's entitlement-resolved Pro
+ * selections to the rendered copy only; the sharing draft itself is never mutated. */
+suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay? = null, themeOverride: String? = null, paletteOverride: String? = null): PreparedShareCard {
     val record = get(id) ?: error("This sharing draft is unavailable."); val document = SharingDraftCodec.decode(record.payload)
     val photo = if (document.card.hero == "photo") {
         val hero = document.heroPhotoId ?: error("Choose an included cover photo.")
@@ -114,5 +116,10 @@ suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay
         val asset = assets(id).firstOrNull { it.id == hero } ?: error("This cover photo is unavailable.")
         CookPackPhoto.derivative(photoBytes(asset.relativePath) ?: error("This selected photo is unavailable."))
     } else null
-    return ShareCardContent.build(document, photo, relay)
+    val prepared = ShareCardContent.build(document, photo, relay)
+    if (themeOverride == null && paletteOverride == null) return prepared
+    val root = JSONObject(prepared.content)
+    if (themeOverride != null) root.put("theme", themeOverride)
+    if (paletteOverride != null) root.put("palette", paletteOverride)
+    return PreparedShareCard(root.toString(), prepared.photo)
 }

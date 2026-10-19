@@ -150,8 +150,9 @@ class ProPaywallContentTest {
             runBlocking { manager.loadProduct(); manager.refresh() }
             show(manager, previouslyEntitled = true)
             manager.openPro(ProPlacement.CURVES)
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-placeholder").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-curves").fetchSemanticsNodes().isNotEmpty() }
             compose.onAllNodesWithTag("pro-paywall").assertCountEquals(0)
+            compose.onAllNodesWithTag("pro-placeholder").assertCountEquals(0)
             compose.onAllNodesWithTag("pro-subscribe").assertCountEquals(0)
             compose.onNodeWithTag("pro-close").performClick()
             runBlocking { manager.subscribe(compose.activity) }
@@ -249,7 +250,7 @@ class ProPaywallContentTest {
             compose.onNodeWithTag("pro-pending").performScrollTo().assertIsDisplayed()
             assertFalse(api.calls.contains("/v1/me/purchases/verify"))
             billing.externalPurchases!!.invoke(ProStorePurchase("stub-token", acknowledged = false, pending = false))
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-placeholder").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-more-hub").fetchSemanticsNodes().isNotEmpty() }
             assertTrue(api.calls.contains("/v1/me/purchases/verify"))
             assertEquals(AdEntitlement.ENTITLED, manager.presentation.value.entitlement)
             assertEquals(ProPurchaseState.Idle, manager.presentation.value.purchaseState)
@@ -273,7 +274,7 @@ class ProPaywallContentTest {
             manager.openPro(ProPlacement.MORE)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-paywall").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-restore").performScrollTo().performClick()
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-placeholder").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-more-hub").fetchSemanticsNodes().isNotEmpty() }
             assertTrue(api.calls.contains("/v1/me/purchases/restore"))
             assertEquals(AdEntitlement.ENTITLED, manager.presentation.value.entitlement)
         } finally {
