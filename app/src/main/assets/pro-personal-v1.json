@@ -1,0 +1,152 @@
+{
+  "contractVersion": "pro-personal-v1",
+  "note": "Canonical slice-18 native fixture. Byte-identical copies live in app/src/main/assets/ and app/src/test/resources/; iOS consumes this file directly (see ios/project.yml). Libraries are versioned insights inputs (calculationVersion 1): all durations come from the PR 15 v1 engine, never from this file. Timestamps are fixed so every derived figure is deterministic. Cook A heats 8h and rests 50m; cook B heats 7h, rests 10m and holds 20m; cook C (no wrap) heats 11h 30m and rests 20m; cook D heats 1h 30m with no rating and no weight.",
+  "asOfUtcMillis": 1775600000000,
+  "titles": {
+    "cook-a": "Saturday pork butt",
+    "cook-b": "February pork butt",
+    "cook-c": "Whole packer brisket",
+    "cook-d": "Weeknight chicken",
+    "cook-s": "First ribs"
+  },
+  "libraries": {
+    "empty": {
+      "archive": {
+        "cooks": [],
+        "dishes": [],
+        "events": [],
+        "readings": [],
+        "results": [],
+        "lifecycles": []
+      }
+    },
+    "single": {
+      "archive": {
+        "cooks": [
+          { "id": "cook-s", "startedAtUtcMillis": 1767225600000, "endedAtUtcMillis": 1767247200000, "timingMode": "explicit_phases" }
+        ],
+        "dishes": [
+          { "id": "dish-s", "cookId": "cook-s", "cut": "Baby back", "weightValue": null, "weightUnit": null }
+        ],
+        "events": [
+          { "id": "e-s1", "cookId": "cook-s", "dishIds": ["dish-s"], "action": "food_on", "at": 1767225600000 },
+          { "id": "e-s2", "cookId": "cook-s", "dishIds": ["dish-s"], "action": "dish_done", "at": 1767243600000 }
+        ],
+        "readings": [
+          { "id": "r-s1", "cookId": "cook-s", "dishId": "dish-s", "probeId": "probe-s-food", "probeName": "Probe 1", "measurementType": "food", "value": 170.0, "unit": "°F", "measuredAtUtcMillis": 1767229200000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid" }
+        ],
+        "results": [
+          { "id": "res-s1", "cookId": "cook-s", "dishId": "dish-s", "resultType": "method", "numericValue": null, "textValue": "Smoked", "recordedAtUtcMillis": 1767247200000 },
+          { "id": "res-s2", "cookId": "cook-s", "dishId": "dish-s", "resultType": "overall_rating", "numericValue": 4.0, "textValue": null, "recordedAtUtcMillis": 1767247200000 }
+        ],
+        "lifecycles": [
+          { "cookId": "cook-s", "timingMode": "explicit_phases" }
+        ]
+      }
+    },
+    "many": {
+      "archive": {
+        "cooks": [
+          { "id": "cook-a", "startedAtUtcMillis": 1767225600000, "endedAtUtcMillis": 1767259800000, "timingMode": "explicit_phases" },
+          { "id": "cook-b", "startedAtUtcMillis": 1769904000000, "endedAtUtcMillis": 1769932800000, "timingMode": "explicit_phases" },
+          { "id": "cook-c", "startedAtUtcMillis": 1772409600000, "endedAtUtcMillis": 1772454600000, "timingMode": "explicit_phases" },
+          { "id": "cook-d", "startedAtUtcMillis": 1775001600000, "endedAtUtcMillis": 1775008800000, "timingMode": "explicit_phases" }
+        ],
+        "dishes": [
+          { "id": "dish-a", "cookId": "cook-a", "cut": "Boston butt", "weightValue": 8.0, "weightUnit": "lb" },
+          { "id": "dish-b", "cookId": "cook-b", "cut": "Boston butt", "weightValue": 3.5, "weightUnit": "kg" },
+          { "id": "dish-c", "cookId": "cook-c", "cut": "Whole packer", "weightValue": 14.0, "weightUnit": "lb" },
+          { "id": "dish-d", "cookId": "cook-d", "cut": "Thighs", "weightValue": null, "weightUnit": null }
+        ],
+        "events": [
+          { "id": "e-a1", "cookId": "cook-a", "dishIds": ["dish-a"], "action": "food_on", "at": 1767225600000 },
+          { "id": "e-a2", "cookId": "cook-a", "dishIds": ["dish-a"], "action": "wrap", "at": 1767237600000 },
+          { "id": "e-a3", "cookId": "cook-a", "dishIds": ["dish-a"], "action": "remove", "at": 1767254400000 },
+          { "id": "e-a4", "cookId": "cook-a", "dishIds": ["dish-a"], "action": "rest_start", "at": 1767255000000 },
+          { "id": "e-a5", "cookId": "cook-a", "dishIds": ["dish-a"], "action": "dish_done", "at": 1767258000000 },
+          { "id": "e-b1", "cookId": "cook-b", "dishIds": ["dish-b"], "action": "food_on", "at": 1769904000000 },
+          { "id": "e-b2", "cookId": "cook-b", "dishIds": ["dish-b"], "action": "wrap", "at": 1769914800000 },
+          { "id": "e-b3", "cookId": "cook-b", "dishIds": ["dish-b"], "action": "rest_start", "at": 1769929200000 },
+          { "id": "e-b4", "cookId": "cook-b", "dishIds": ["dish-b"], "action": "hold_start", "at": 1769929800000 },
+          { "id": "e-b5", "cookId": "cook-b", "dishIds": ["dish-b"], "action": "dish_done", "at": 1769931000000 },
+          { "id": "e-c1", "cookId": "cook-c", "dishIds": ["dish-c"], "action": "food_on", "at": 1772409600000 },
+          { "id": "e-c2", "cookId": "cook-c", "dishIds": ["dish-c"], "action": "remove", "at": 1772451000000 },
+          { "id": "e-c3", "cookId": "cook-c", "dishIds": ["dish-c"], "action": "rest_start", "at": 1772451600000 },
+          { "id": "e-c4", "cookId": "cook-c", "dishIds": ["dish-c"], "action": "dish_done", "at": 1772452800000 },
+          { "id": "e-d1", "cookId": "cook-d", "dishIds": ["dish-d"], "action": "food_on", "at": 1775001600000 },
+          { "id": "e-d2", "cookId": "cook-d", "dishIds": ["dish-d"], "action": "dish_done", "at": 1775007000000 }
+        ],
+        "readings": [
+          { "id": "r-a1", "cookId": "cook-a", "dishId": "dish-a", "probeId": "probe-a-food", "probeName": "Probe 1", "measurementType": "food", "value": 150.0, "unit": "°F", "measuredAtUtcMillis": 1767229200000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a2", "cookId": "cook-a", "dishId": "dish-a", "probeId": "probe-a-food", "probeName": "Probe 1", "measurementType": "food", "value": 165.0, "unit": "°F", "measuredAtUtcMillis": 1767232800000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a3", "cookId": "cook-a", "dishId": "dish-a", "probeId": "probe-a-food", "probeName": "Probe 1", "measurementType": "food", "value": 195.0, "unit": "°F", "measuredAtUtcMillis": 1767240000000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a4", "cookId": "cook-a", "dishId": "dish-a", "probeId": "probe-a-food", "probeName": "Probe 1", "measurementType": "food", "value": 203.0, "unit": "°F", "measuredAtUtcMillis": 1767254400000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a5", "cookId": "cook-a", "dishId": null, "probeId": "probe-a-pit", "probeName": "Pit", "measurementType": "pit", "value": 250.0, "unit": "°F", "measuredAtUtcMillis": 1767229200000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a6", "cookId": "cook-a", "dishId": null, "probeId": "probe-a-pit", "probeName": "Pit", "measurementType": "pit", "value": 255.0, "unit": "°F", "measuredAtUtcMillis": 1767232800000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a7", "cookId": "cook-a", "dishId": "dish-a", "probeId": "probe-a-food", "probeName": "Probe 1", "measurementType": "food", "value": 200.0, "unit": "°F", "measuredAtUtcMillis": 1767250800000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-a8", "cookId": "cook-a", "dishId": "dish-a", "probeId": "probe-a-food", "probeName": "Probe 1", "measurementType": "food", "value": 300.0, "unit": "K", "measuredAtUtcMillis": 1767229200000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-b1", "cookId": "cook-b", "dishId": "dish-b", "probeId": "probe-b-food", "probeName": "Probe 1", "measurementType": "food", "value": 70.0, "unit": "°C", "measuredAtUtcMillis": 1769907600000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-b2", "cookId": "cook-b", "dishId": "dish-b", "probeId": "probe-b-food", "probeName": "Probe 1", "measurementType": "food", "value": 80.0, "unit": "°C", "measuredAtUtcMillis": 1769914800000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-b3", "cookId": "cook-b", "dishId": "dish-b", "probeId": "probe-b-food", "probeName": "Probe 1", "measurementType": "food", "value": 90.0, "unit": "°C", "measuredAtUtcMillis": 1769925600000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-b4", "cookId": "cook-b", "dishId": null, "probeId": "probe-b-pit", "probeName": "Pit", "measurementType": "pit", "value": 120.0, "unit": "°C", "measuredAtUtcMillis": 1769907600000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-b5", "cookId": "cook-b", "dishId": null, "probeId": "probe-b-pit", "probeName": "Pit", "measurementType": "pit", "value": 125.0, "unit": "°C", "measuredAtUtcMillis": 1769914800000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-c1", "cookId": "cook-c", "dishId": "dish-c", "probeId": "probe-c-food", "probeName": "Probe 1", "measurementType": "food", "value": 150.0, "unit": "°F", "measuredAtUtcMillis": 1772416800000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-c2", "cookId": "cook-c", "dishId": "dish-c", "probeId": "probe-c-food", "probeName": "Probe 1", "measurementType": "food", "value": 170.0, "unit": "°F", "measuredAtUtcMillis": 1772431200000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-c3", "cookId": "cook-c", "dishId": "dish-c", "probeId": "probe-c-food", "probeName": "Probe 1", "measurementType": "food", "value": 200.0, "unit": "°F", "measuredAtUtcMillis": 1772449200000, "source": "controller_cloud", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-d1", "cookId": "cook-d", "dishId": "dish-d", "probeId": "probe-d-food", "probeName": "Probe 1", "measurementType": "food", "value": 160.0, "unit": "°F", "measuredAtUtcMillis": 1775003400000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid" },
+          { "id": "r-d2", "cookId": "cook-d", "dishId": "dish-d", "probeId": "probe-d-food", "probeName": "Probe 1", "measurementType": "food", "value": 175.0, "unit": "°F", "measuredAtUtcMillis": 1775005200000, "source": "manual", "sourceDeviceId": null, "qualityStatus": "valid" }
+        ],
+        "results": [
+          { "id": "res-a1", "cookId": "cook-a", "dishId": "dish-a", "resultType": "method", "numericValue": null, "textValue": "Smoked", "recordedAtUtcMillis": 1767259800000 },
+          { "id": "res-a2", "cookId": "cook-a", "dishId": "dish-a", "resultType": "overall_rating", "numericValue": 5.0, "textValue": null, "recordedAtUtcMillis": 1767259800000 },
+          { "id": "res-a3", "cookId": "cook-a", "dishId": "dish-a", "resultType": "cook_again", "numericValue": 1.0, "textValue": null, "recordedAtUtcMillis": 1767259800000 },
+          { "id": "res-a4", "cookId": "cook-a", "dishId": "dish-a", "resultType": "result_notes", "numericValue": null, "textValue": "Great bark", "recordedAtUtcMillis": 1767259800000 },
+          { "id": "res-b1", "cookId": "cook-b", "dishId": "dish-b", "resultType": "method", "numericValue": null, "textValue": "Pellet", "recordedAtUtcMillis": 1769932800000 },
+          { "id": "res-b2", "cookId": "cook-b", "dishId": "dish-b", "resultType": "overall_rating", "numericValue": 4.0, "textValue": null, "recordedAtUtcMillis": 1769932800000 },
+          { "id": "res-b3", "cookId": "cook-b", "dishId": "dish-b", "resultType": "cook_again", "numericValue": 0.0, "textValue": null, "recordedAtUtcMillis": 1769932800000 },
+          { "id": "res-c1", "cookId": "cook-c", "dishId": "dish-c", "resultType": "method", "numericValue": null, "textValue": "Oak smoke", "recordedAtUtcMillis": 1772454600000 },
+          { "id": "res-c2", "cookId": "cook-c", "dishId": "dish-c", "resultType": "overall_rating", "numericValue": 4.5, "textValue": null, "recordedAtUtcMillis": 1772454600000 },
+          { "id": "res-c3", "cookId": "cook-c", "dishId": "dish-c", "resultType": "cook_again", "numericValue": 1.0, "textValue": null, "recordedAtUtcMillis": 1772454600000 },
+          { "id": "res-d1", "cookId": "cook-d", "dishId": "dish-d", "resultType": "method", "numericValue": null, "textValue": "Grilled", "recordedAtUtcMillis": 1775008800000 }
+        ],
+        "lifecycles": [
+          { "cookId": "cook-a", "timingMode": "explicit_phases" },
+          { "cookId": "cook-b", "timingMode": "explicit_phases" },
+          { "cookId": "cook-c", "timingMode": "explicit_phases" },
+          { "cookId": "cook-d", "timingMode": "explicit_phases" }
+        ]
+      }
+    }
+  },
+  "customization": {
+    "themes": [
+      { "id": "classic", "name": "Classic", "pro": false, "background": "#F5F0E7", "ink": "#242622", "supporting": "#514C45", "accent": "#58665A" },
+      { "id": "ember", "name": "Ember", "pro": true, "background": "#FBF3E8", "ink": "#2B2118", "supporting": "#6B5B4C", "accent": "#B04D2E" },
+      { "id": "sage-night", "name": "Sage night", "pro": true, "background": "#23261F", "ink": "#F2EFE6", "supporting": "#B9B3A4", "accent": "#9DB29A" },
+      { "id": "parchment", "name": "Parchment", "pro": true, "background": "#FDFBF5", "ink": "#33302A", "supporting": "#6E675C", "accent": "#416C8A" }
+    ],
+    "chartPalettes": [
+      { "id": "classic", "name": "Classic", "pro": false, "intendedBackground": "#F5F0E7", "colors": ["#B04D2E", "#58665A", "#416C8A", "#8B5D84", "#A17A2C", "#357D78"] },
+      { "id": "color-vision-safe", "name": "Color-vision safe", "pro": true, "intendedBackground": "#F5F0E7", "colors": ["#0072B2", "#D55E00", "#00855F", "#A34D7E", "#2A7F9E", "#444444"] },
+      { "id": "high-contrast", "name": "High contrast", "pro": true, "intendedBackground": "#F5F0E7", "colors": ["#000000", "#005A9C", "#8B0000", "#006400", "#4B0082", "#8B4513"] },
+      { "id": "sage-night-chart", "name": "Sage night chart", "pro": true, "intendedBackground": "#23261F", "colors": ["#F0C987", "#A8D5BA", "#A8C8E8", "#D8B8E0", "#E8E18A", "#9AD5D0"] }
+    ],
+    "profileStyles": [
+      { "accent": "ember", "name": "Ember accent", "color": "#B04D2E" },
+      { "accent": "sage", "name": "Sage accent", "color": "#58665A" },
+      { "accent": "slate", "name": "Slate accent", "color": "#416C8A" }
+    ],
+    "profileLayouts": ["standard", "compact"],
+    "icons": [
+      { "id": "classic", "name": "Classic", "pro": false },
+      { "id": "ember", "name": "Ember", "pro": true },
+      { "id": "midnight", "name": "Midnight", "pro": true }
+    ]
+  },
+  "recap": {
+    "scope": { "period": "2026", "includedCooks": ["cook-a", "cook-b", "cook-c", "cook-d"], "sections": ["stats", "milestones", "best"] },
+    "expectedFull": { "title": "Year in Smoke · 2026", "dishCount": 4, "stats": ["Recorded cooks: 4", "Heating time: 28h", "Best recorded rating: 5 / 5"], "milestoneCount": 5 },
+    "scopeExcluded": { "period": "2026", "includedCooks": ["cook-a", "cook-b", "cook-c"], "sections": ["stats", "milestones", "best"] },
+    "expectedExcluded": { "title": "Year in Smoke · 2026", "dishCount": 3, "stats": ["Recorded cooks: 3", "Heating time: 26h 30m", "Best recorded rating: 5 / 5"] }
+  }
+}

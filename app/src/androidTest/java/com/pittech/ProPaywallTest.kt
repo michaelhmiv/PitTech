@@ -139,11 +139,12 @@ class ProPaywallTest {
         try {
             compose.setContent { PitTechTheme { ProGateDialog(subscription, previouslyEntitled = true, onSignIn = {}) } }
             subscription.openPro(ProPlacement.ANALYSIS)
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-placeholder").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-analysis").fetchSemanticsNodes().isNotEmpty() }
             compose.onAllNodesWithTag("pro-paywall").assertCountEquals(0)
+            compose.onAllNodesWithTag("pro-placeholder").assertCountEquals(0)
             compose.onAllNodesWithTag("pro-subscribe").assertCountEquals(0)
             compose.onNodeWithTag("pro-close").performClick()
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-placeholder").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-analysis").fetchSemanticsNodes().isEmpty() }
         } finally {
             subscription.stop()
         }
@@ -156,6 +157,10 @@ class ProPaywallTest {
             subscription.openPro(ProPlacement.CURVES)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-expired-fallback").fetchSemanticsNodes().isNotEmpty() }
             compose.onAllNodesWithTag("pro-placeholder").assertCountEquals(0)
+            compose.onAllNodesWithTag("pro-analysis").assertCountEquals(0)
+            compose.onAllNodesWithTag("pro-curves").assertCountEquals(0)
+            compose.onAllNodesWithTag("pro-customization").assertCountEquals(0)
+            compose.onAllNodesWithTag("pro-more-hub").assertCountEquals(0)
             compose.onNodeWithTag("pro-resubscribe").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-paywall").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-paywall-close").performClick()

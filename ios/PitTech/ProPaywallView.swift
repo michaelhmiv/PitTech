@@ -23,10 +23,17 @@ struct ProPaywallHost: View {
             case .paywall:
                 ProPaywallView(entry: entry)
             case .pro:
-                if entry == .benchmarks {
+                switch entry {
+                case .analysis:
+                    ProPersonalAnalysisView(entry: entry)
+                case .curves:
+                    ProAdvancedCurvesView(entry: entry)
+                case .benchmarks:
                     CommunityBenchmarksView(entry: entry)
-                } else {
-                    ProPlaceholderView(entry: entry)
+                case .themes:
+                    ProCustomizationView(entry: entry)
+                case .more:
+                    ProMoreHubView(entry: entry)
                 }
             case .expiredFallback:
                 ProExpiredFallbackView(entry: entry)
@@ -283,39 +290,6 @@ func proPreviewBullets(entry: ProPlacement) -> [String] {
             "Advanced curves with Food on and Wrap alignment",
             "Pro themes and app icons",
         ]
-    }
-}
-
-// MARK: - Pro placeholder (slice 18 fills the real views)
-
-struct ProPlaceholderView: View {
-    @Environment(ProSubscriptionCoordinator.self) private var pro
-    let entry: ProPlacement
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    SectionTitle(title: entry.title, subtitle: entry.preview)
-                    Text("This Pro view arrives with the next PitTech update. Your recorded cooks, exports, and free tools are unchanged.")
-                        .font(.subheadline)
-                        .foregroundStyle(PitTechStyle.supporting)
-                    Link("Manage subscription", destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("pro-manage")
-                }
-                .padding(20)
-            }
-            .accessibilityIdentifier("pro-placeholder")
-            .background(PitTechStyle.canvas.ignoresSafeArea())
-            .navigationTitle(entry.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { pro.closePaywall() }.accessibilityIdentifier("pro-close")
-                }
-            }
-        }
     }
 }
 

@@ -43,6 +43,7 @@ struct ShareCardPNGDocument: FileDocument {
 struct NativeShareCardPreview: View {
     @Environment(CookStore.self) private var store
     @Environment(ProSubscriptionCoordinator.self) private var pro
+    @Environment(ProCustomizationStore.self) private var customization
     @Environment(\.dismiss) private var dismiss
     let id: String
     var relay: ShareCardRelay? = nil
@@ -53,12 +54,19 @@ struct NativeShareCardPreview: View {
     @State private var retry = 0
     @State private var sharing = false
     @State private var saving = false
+    private var entitled: Bool { pro.entitlement == .entitled }
+    private var theme: ProCustomization.CardTheme {
+        ProCustomization.effectiveTheme(storedId: customization.themeId, entitled: entitled)
+    }
+    private var palette: ProCustomization.ChartPalette {
+        ProCustomization.effectivePalette(storedId: customization.paletteId, entitled: entitled)
+    }
     var body: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:16) {
                 if working { ProgressView("Preparing card…") }
                 if let bytes, let image = UIImage(data:bytes) { Image(uiImage:image).resizable().scaledToFit().accessibilityLabel("Exact exported card preview").accessibilityIdentifier("share-card-preview") }
-                Text("1080 × 1350 PNG · default theme").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                Text(theme.isPro ? "1080 × 1350 PNG · \(theme.name) theme" : "1080 × 1350 PNG · default theme").font(.caption).foregroundStyle(PitTechStyle.supporting)
                 ProEntryRow(entry: .themes)
                 if let error { Text(error).foregroundStyle(.red);Button("Retry image") { retry += 1 } }
                 Button("Share image") { sharing = true }.buttonStyle(.borderedProminent).frame(minHeight:44).disabled(bytes == nil || working).accessibilityIdentifier("card-share")
@@ -70,7 +78,7 @@ struct NativeShareCardPreview: View {
             .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Done") { dismiss() } } }
             .task(id:retry) {
                 working = true;error = nil
-                do { let prepared = try await store.prepareShareCard(id, relay: relay);try Task.checkCancellation();bytes = try NativeShareCardRenderer.render(prepared) }
+                do { let prepared = try await store.prepareShareCard(id, relay: relay, themeOverride: theme.id, paletteOverride: palette.id);try Task.checkCancellation();bytes = try NativeShareCardRenderer.render(prepared) }
                 catch is CancellationError { }
                 catch { self.error = error.localizedDescription }
                 working = false

@@ -40,7 +40,7 @@ class ProPaywallFlowTest {
     }
 
     private fun assertNoProSurface() {
-        for (tag in listOf("pro-paywall", "pro-loading", "pro-placeholder", "pro-expired-fallback")) {
+        for (tag in listOf("pro-paywall", "pro-loading", "pro-placeholder", "pro-analysis", "pro-curves", "pro-customization", "pro-more-hub", "pro-recap-scope", "pro-recap-preview", "pro-expired-fallback")) {
             compose.onAllNodesWithTag(tag, useUnmergedTree = true).assertCountEquals(0)
         }
     }

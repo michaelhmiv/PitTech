@@ -16,10 +16,16 @@ private struct CardLayout {
     static let supporting = Color(red: 81/255, green: 76/255, blue: 69/255)
     static let sage = Color(red: 88/255, green: 102/255, blue: 90/255)
     static let palette: [Color] = [Color(red:176/255,green:77/255,blue:46/255),sage,Color(red:65/255,green:108/255,blue:138/255),Color(red:139/255,green:93/255,blue:132/255),Color(red:161/255,green:122/255,blue:44/255),Color(red:53/255,green:125/255,blue:120/255)]
+    /// Resolved render colors for one card. Unknown theme or palette ids fall
+    /// back to the Classic treatment — never a crash, never an unpainted card.
+    static func themeColors(themeId: String?, paletteId: String?) -> ShareCardRenderTheme {
+        ShareCardRenderTheme.resolve(themeId: themeId, paletteId: paletteId)
+    }
     static func render(_ input: PreparedNativeShareCard) throws -> Data {
         guard let root = input.content.objectValue, root["version"]?.numberValue == 1 else { throw PitTechArchiveError.invalidArchive }
-        let layout = try layout(root), photo = try cover(input, rect: layout.hero)
-        let view = ShareCardPoster(root: root, layout: layout, photo: photo).frame(width: CGFloat(width), height: CGFloat(height)).environment(\.dynamicTypeSize, .medium).environment(\.colorScheme,.light)
+        let colors = ShareCardRenderTheme.resolve(themeId: root["theme"]?.stringValue, paletteId: root["palette"]?.stringValue)
+        let layout = try layout(root, colors: colors), photo = try cover(input, rect: layout.hero)
+        let view = ShareCardPoster(root: root, layout: layout, photo: photo, colors: colors).frame(width: CGFloat(width), height: CGFloat(height)).environment(\.dynamicTypeSize, .medium).environment(\.colorScheme,.light)
         let renderer = ImageRenderer(content: view); renderer.scale = 1; renderer.isOpaque = true
         guard let bytes = renderer.uiImage?.pngData() else { throw CookNoteError.missingPhoto }
         return bytes
@@ -36,9 +42,10 @@ private struct CardLayout {
         guard let cropped = image.cropping(to: crop) else { throw CookNoteError.missingPhoto }
         return UIImage(cgImage: cropped)
     }
-    private static func layout(_ root: [String: JSONValue]) throws -> CardLayout {
+    private static func layout(_ root: [String: JSONValue], colors: ShareCardRenderTheme) throws -> CardLayout {
         var result = CardLayout()
         let left = 72.0, width = 936.0
+        let ink = colors.ink, supporting = colors.supporting, sage = colors.accent
         @discardableResult func text(_ value: String, _ x: Double, _ y: Double, _ w: Double, _ size: Double, _ lines: Int = 1, _ color: Color = Color(red:36/255,green:38/255,blue:34/255), _ bold: Bool = false) -> Double {
             let display = shareCardLimited(value,600) + (value.unicodeScalars.count > 600 ? "…" : "")
             let font = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
@@ -81,7 +88,7 @@ private struct CardLayout {
                 text(item["value"]?.stringValue ?? "",left+Double(i)*cell,y+32,cell-16,31,1,ink,true)
             };y += 100
         }
-        if !note.isEmpty { text("“\(note)”",left,y,width,28,2) }
+        if !note.isEmpty { text("“\(note)”",left,y,width,28,2,ink) }
         result.divider = footer-20
         if let relay {
             text("GET THE COOK PACK · \(relay["code"]?.stringValue ?? "")",left,footer,width,28,1,ink,true)
@@ -91,25 +98,76 @@ private struct CardLayout {
         return result
     }
 }
+/// Resolved card paint: a curated theme plus a chart palette, defaulting to
+/// the Classic treatment for unknown ids. Classic literals match the original
+/// hard-coded paint exactly, so existing pixel tests are unaffected.
+struct ShareCardRenderTheme {
+    let background: Color
+    let ink: Color
+    let supporting: Color
+    let accent: Color
+    let divider: Color
+    let palette: [Color]
+
+    static func resolve(themeId: String?, paletteId: String?) -> ShareCardRenderTheme {
+        let theme = ProCustomization.theme(id: themeId)
+        let palette: ProCustomization.ChartPalette = {
+            if let paletteId, ProCustomization.chartPalettes.contains(where: { $0.id == paletteId }) {
+                return ProCustomization.palette(id: paletteId)
+            }
+            if theme.id == "sage-night" {
+                return ProCustomization.palette(id: "sage-night-chart")
+            }
+            return ProCustomization.palette(id: "classic")
+        }()
+        let dividerHex: String = switch theme.id {
+        case "ember": "#DECFBB"
+        case "sage-night": "#3A3F33"
+        case "parchment": "#E6DFCE"
+        default: "#E2D9CD"
+        }
+        return ShareCardRenderTheme(
+            background: Color(shareHex: theme.background),
+            ink: Color(shareHex: theme.ink),
+            supporting: Color(shareHex: theme.supporting),
+            accent: Color(shareHex: theme.accent),
+            divider: Color(shareHex: dividerHex),
+            palette: palette.colors.map { Color(shareHex: $0) }
+        )
+    }
+}
+
+private extension Color {
+    init(shareHex hex: String) {
+        let clean = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        let rgb = Int(clean, radix: 16) ?? 0
+        self.init(
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255
+        )
+    }
+}
+
 private struct ShareCardPoster: View {
-    let root: [String: JSONValue]; let layout: CardLayout; let photo: UIImage?
+    let root: [String: JSONValue]; let layout: CardLayout; let photo: UIImage?; let colors: ShareCardRenderTheme
     var body: some View {
         ZStack(alignment:.topLeading) {
-            Color(red:245/255,green:240/255,blue:231/255)
+            colors.background
             if let rect = layout.hero {
                 if let photo { Image(uiImage:photo).resizable().scaledToFill().frame(width:rect.width,height:rect.height).clipped().clipShape(RoundedRectangle(cornerRadius:24)).position(x:rect.midX,y:rect.midY) }
-                else { ShareCardChart(root:root).frame(width:rect.width,height:rect.height).position(x:rect.midX,y:rect.midY) }
+                else { ShareCardChart(root:root, colors:colors).frame(width:rect.width,height:rect.height).position(x:rect.midX,y:rect.midY) }
             }
             ForEach(layout.text) { item in
                 Text(item.value).font(.system(size:item.size,weight:item.bold ? .semibold : .regular)).foregroundStyle(item.color).lineLimit(item.lines).multilineTextAlignment(.leading)
                     .frame(width:item.rect.width,height:item.rect.height,alignment:.topLeading).clipped().position(x:item.rect.midX,y:item.rect.midY)
             }
-            Rectangle().fill(Color(red:226/255,green:217/255,blue:205/255)).frame(width:936,height:1).position(x:540,y:layout.divider)
+            Rectangle().fill(colors.divider).frame(width:936,height:1).position(x:540,y:layout.divider)
         }
     }
 }
 private struct ShareCardChart: View {
-    let root: [String: JSONValue]
+    let root: [String: JSONValue]; let colors: ShareCardRenderTheme
     var body: some View {
         Canvas { context,size in
             let curves = (root["curves"]?.arrayValue ?? []).compactMap(\.objectValue)
@@ -120,17 +178,17 @@ private struct ShareCardChart: View {
             guard (y1-y0).isFinite, y1 > y0 else { return }
             let p = CGRect(x:68,y:18,width:size.width-88,height:size.height-124)
             func point(_ value: [String:JSONValue]) -> CGPoint { CGPoint(x:p.minX+((value["x"]?.numberValue ?? 0)-x0)/(x1-x0)*p.width,y:p.maxY-((value["y"]?.numberValue ?? 0)-y0)/(y1-y0)*p.height) }
-            func text(_ value:String,_ x:Double,_ y:Double,_ size:Double,_ color:Color = NativeShareCardRenderer.supporting) { context.draw(Text(value).font(.system(size:size)).foregroundColor(color),at:CGPoint(x:x,y:y),anchor:.topLeading) }
+            func text(_ value:String,_ x:Double,_ y:Double,_ size:Double,_ color:Color? = nil) { context.draw(Text(value).font(.system(size:size)).foregroundColor(color ?? colors.supporting),at:CGPoint(x:x,y:y),anchor:.topLeading) }
             for i in 0..<3 {
                 let v = y0+(y1-y0)*Double(i)/2, at = point(["x":.number(x0),"y":.number(v)]).y
-                var path = Path();path.move(to:CGPoint(x:p.minX,y:at));path.addLine(to:CGPoint(x:p.maxX,y:at));context.stroke(path,with:.color(Color(red:226/255,green:217/255,blue:205/255)),lineWidth:2)
+                var path = Path();path.move(to:CGPoint(x:p.minX,y:at));path.addLine(to:CGPoint(x:p.maxX,y:at));context.stroke(path,with:.color(colors.divider),lineWidth:2)
                 text(String(format:"%.0f",v),0,at-12,18)
             }
             text(root["unit"]?.stringValue ?? "",0,-8,18)
             text("Simplified trace · \(curves.count) of \(Int(root["channelCount"]?.numberValue ?? Double(curves.count))) channels",size.width-370,-8,18)
             text(String(format:"%.0f → %.0f min since each dish's Food on",x0,x1),p.minX,p.maxY+8,19)
             for (i,curve) in curves.enumerated() {
-                let color = NativeShareCardRenderer.palette[i % NativeShareCardRenderer.palette.count]
+                let color = colors.palette[i % colors.palette.count]
                 for segment in curve["segments"]?.arrayValue ?? [] {
                     let points = (segment.arrayValue ?? []).compactMap(\.objectValue)
                     var line = Path()

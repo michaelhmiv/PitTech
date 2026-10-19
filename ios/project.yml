@@ -121,6 +121,8 @@ targets:
         buildPhase: resources
       - path: ../contracts/fixtures/community-benchmarks-v1.json
         buildPhase: resources
+      - path: ../contracts/fixtures/pro-personal-v1.json
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

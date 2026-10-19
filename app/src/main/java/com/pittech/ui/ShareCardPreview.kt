@@ -21,8 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
+import com.pittech.ads.AdEntitlement
 import com.pittech.data.prepareShareCard
+import com.pittech.domain.ProCustomization
 import com.pittech.domain.SharingDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,9 +83,13 @@ internal object ShareCardFiles {
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         if (uri != null) bytes?.let { image -> scope.launch { runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri,"w")?.use { it.write(image) } ?: kotlin.error("This image could not be saved.") } }.onFailure { error = it.message } } }
     }
-    LaunchedEffect(id,retry,relay?.code) {
+    val proState by viewModel.subscription.presentation.collectAsStateWithLifecycle()
+    val entitled = proState.entitlement == AdEntitlement.ENTITLED
+    val theme = ProCustomization.effectiveTheme(viewModel.proCustomization.themeId, entitled)
+    val palette = ProCustomization.effectivePalette(viewModel.proCustomization.paletteId, entitled)
+    LaunchedEffect(id,retry,relay?.code,theme.id,palette.id) {
         working = true; error = null
-        try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id, relay)) } }
+        try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id, relay, theme.id, palette.id)) } }
         catch (e: Exception) { error = e.message }
         finally { working = false }
     }
@@ -94,7 +101,7 @@ internal object ShareCardFiles {
                 Text("Share card", style = MaterialTheme.typography.titleLarge)
                 if (working) CircularProgressIndicator()
                 image?.let { Image(it.asImageBitmap(), contentDescription = "Exact exported card preview", modifier = Modifier.fillMaxWidth().aspectRatio(1080f/1350f).testTag("share-card-preview")) }
-                Text("1080 × 1350 PNG · default theme", style = MaterialTheme.typography.bodySmall)
+                Text(if (theme.isPro) "1080 × 1350 PNG · ${theme.name} theme" else "1080 × 1350 PNG · default theme", style = MaterialTheme.typography.bodySmall)
                 if (onProThemes != null) ProEntryRow(com.pittech.billing.ProPlacement.THEMES) { onProThemes() }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error); OutlinedButton({ retry++ }) { Text("Retry image") } }
                 Button(onClick = {

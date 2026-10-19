@@ -35,7 +35,7 @@ final class ProPaywallUITests: XCTestCase {
     }
 
     private func assertNoProSurface(app: XCUIApplication) {
-        for id in ["pro-paywall", "pro-loading", "pro-placeholder", "pro-expired-fallback"] {
+        for id in ["pro-paywall", "pro-loading", "pro-placeholder", "pro-analysis", "pro-curves", "pro-customization", "pro-more-hub", "pro-recap-scope", "pro-recap-preview", "pro-expired-fallback"] {
             XCTAssertFalse(app.scrollViews[id].exists, "no Pro surface may appear here: \(id)")
         }
     }
@@ -110,8 +110,9 @@ final class ProPaywallUITests: XCTestCase {
             let button = app.buttons["pro-entry-analysis"]
             reveal(button, app: app)
             button.tap()
-            XCTAssertTrue(app.scrollViews["pro-placeholder"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.scrollViews["pro-analysis"].waitForExistence(timeout: 10))
             XCTAssertFalse(app.scrollViews["pro-paywall"].exists)
+            XCTAssertFalse(app.scrollViews["pro-placeholder"].exists)
             XCTAssertFalse(app.buttons["pro-subscribe"].exists)
             app.buttons["pro-close"].tap()
             app.terminate()

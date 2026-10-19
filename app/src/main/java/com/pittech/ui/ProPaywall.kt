@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pittech.ads.AdEntitlement
 import com.pittech.billing.CommunityBenchmarksLoader
 import com.pittech.billing.ProDestination
 import com.pittech.billing.ProPlacement
@@ -43,6 +44,9 @@ import com.pittech.billing.proDestination
 import com.pittech.billing.proPreviewBullets
 import com.pittech.billing.proShowsPurchaseOffer
 import com.pittech.billing.title
+import com.pittech.domain.MemoryCustomizationBacking
+import com.pittech.domain.ProCustomizationStore
+import com.pittech.domain.ProPersonalLibrary
 import kotlinx.coroutines.launch
 
 /** One dialog for every Pro entry point. The destination follows the verified
@@ -53,6 +57,8 @@ internal fun ProGateDialog(
     previouslyEntitled: Boolean,
     onSignIn: () -> Unit,
     benchmarks: CommunityBenchmarksLoader = CommunityBenchmarksLoader(session = { null }),
+    personal: ProPersonalLibrary = ProPersonalLibrary.EMPTY,
+    customization: ProCustomizationStore = ProCustomizationStore(MemoryCustomizationBacking()),
 ) {
     val state by subscription.presentation.collectAsStateWithLifecycle()
     val entry = state.paywallEntry ?: return
@@ -62,13 +68,21 @@ internal fun ProGateDialog(
     // Subscribe button.
     val activity = LocalContext.current as? Activity
     val destination = proDestination(state.signedIn, state.entitlement, state.serverState, previouslyEntitled)
+    var showingRecap by remember(entry) { mutableStateOf(false) }
+    val entitled = state.entitlement == AdEntitlement.ENTITLED
     when (destination) {
         ProDestination.LOADING -> ProLoadingDialog(subscription, entry)
         ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, onSignIn, activity)
-        ProDestination.PRO -> if (entry == ProPlacement.BENCHMARKS) {
-            CommunityBenchmarksDialog(subscription, entry, benchmarks, onSignIn, activity)
+        ProDestination.PRO -> if (showingRecap && (entry == ProPlacement.ANALYSIS || entry == ProPlacement.MORE)) {
+            ProRecapDialog(subscription, personal, customization, entitled, onBack = { showingRecap = false })
         } else {
-            ProPlaceholderDialog(subscription, entry)
+            when (entry) {
+                ProPlacement.BENCHMARKS -> CommunityBenchmarksDialog(subscription, entry, benchmarks, onSignIn, activity)
+                ProPlacement.ANALYSIS -> ProPersonalAnalysisDialog(subscription, entry, personal, onRecap = { showingRecap = true })
+                ProPlacement.CURVES -> ProAdvancedCurvesDialog(subscription, entry, personal, customization, entitled)
+                ProPlacement.THEMES -> ProCustomizationDialog(subscription, entry, customization)
+                ProPlacement.MORE -> ProMoreHubDialog(subscription, entry, onRecap = { showingRecap = true })
+            }
         }
         ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, onSignIn, activity)
     }
@@ -232,28 +246,6 @@ private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlace
             dismissButton = { TextButton(onClick = { confirmingRelease = false }) { Text("Cancel") } },
         )
     }
-}
-
-@Composable
-private fun ProPlaceholderDialog(subscription: SubscriptionManager, entry: ProPlacement) {
-    val uri = LocalUriHandler.current
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
-            Column(Modifier.fillMaxWidth().testTag("pro-placeholder"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "This Pro view arrives with the next PitTech update. Your recorded cooks, exports, and free tools are unchanged.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                TextButton(onClick = { uri.openUri("https://play.google.com/store/account/subscriptions?package=com.pittech") }, modifier = Modifier.testTag("pro-manage")) {
-                    Text("Manage subscription")
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
 }
 
 @Composable
