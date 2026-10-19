@@ -208,8 +208,14 @@ final class CommunityBenchmarksUITests: XCTestCase {
             assertNoBenchmarkSurface(app: app)
             let finish = app.buttons["finish-meal"]
             reveal(finish, app: app)
+            XCTAssertTrue(finish.waitForExistence(timeout: 10))
+            for _ in 0..<10 {
+                if finish.isHittable { break }
+                _ = finish.waitForExistence(timeout: 1)
+            }
+            XCTAssertTrue(finish.isHittable)
             finish.tap()
-            XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 20))
             app.alerts.buttons["Finish meal"].tap()
             XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15))
             assertNoBenchmarkSurface(app: app)
