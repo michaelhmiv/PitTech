@@ -110,7 +110,7 @@ class ProPaywallContentTest {
         SubscriptionManager(billing, scope, api, { token }, true, MemorySubscriptionCacheStore())
 
     private fun show(manager: SubscriptionManager, previouslyEntitled: Boolean = false) {
-        compose.setContent { PitTechTheme { ProGateDialog(manager, previouslyEntitled) {} } }
+        compose.setContent { PitTechTheme { ProGateDialog(manager, previouslyEntitled, onSignIn = {}) } }
     }
 
     @Test

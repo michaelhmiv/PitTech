@@ -31,7 +31,9 @@ import Foundation
     }
 
     nonisolated static func emptyPayload() -> Data {
-        Data("""{"run":null,"figures":[]}""".utf8)
+        Data("""
+        {"run":null,"figures":[]}
+        """.utf8)
     }
 
     private struct StubAPI: NativeCommunityAPI {
