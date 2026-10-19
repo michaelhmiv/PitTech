@@ -42,6 +42,7 @@ struct ShareCardPNGDocument: FileDocument {
 }
 struct NativeShareCardPreview: View {
     @Environment(CookStore.self) private var store
+    @Environment(ProSubscriptionCoordinator.self) private var pro
     @Environment(\.dismiss) private var dismiss
     let id: String
     var relay: ShareCardRelay? = nil
@@ -58,6 +59,7 @@ struct NativeShareCardPreview: View {
                 if working { ProgressView("Preparing card…") }
                 if let bytes, let image = UIImage(data:bytes) { Image(uiImage:image).resizable().scaledToFit().accessibilityLabel("Exact exported card preview").accessibilityIdentifier("share-card-preview") }
                 Text("1080 × 1350 PNG · default theme").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                ProEntryRow(entry: .themes)
                 if let error { Text(error).foregroundStyle(.red);Button("Retry image") { retry += 1 } }
                 Button("Share image") { sharing = true }.buttonStyle(.borderedProminent).frame(minHeight:44).disabled(bytes == nil || working).accessibilityIdentifier("card-share")
                 Button("Save PNG") { saving = true }.buttonStyle(.bordered).frame(minHeight:44).disabled(bytes == nil || working).accessibilityIdentifier("card-save")

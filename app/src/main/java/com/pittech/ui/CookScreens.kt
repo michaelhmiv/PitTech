@@ -82,6 +82,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
 import com.pittech.CooksViewModel
+import com.pittech.ads.AdEntitlement
 import com.pittech.ads.shouldShowCookListNativeAd
 import com.pittech.R
 import com.pittech.data.CameraPhotoFiles
@@ -105,11 +106,13 @@ private enum class MainSection(val title: String, val icon: ImageVector) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun PitTechApp(
+internal fun PitTechApp(
     viewModel: CooksViewModel,
     themeMode: PitTechThemeMode,
     onThemeModeChange: (PitTechThemeMode) -> Unit,
     adsEnabled: Boolean = false,
+    entitlement: AdEntitlement = AdEntitlement.UNKNOWN,
+    previouslyEntitled: Boolean = false,
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
 ) {
@@ -145,6 +148,7 @@ fun PitTechApp(
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
     AccountDialog(viewModel.account, viewModel.sync)
+    ProGateDialog(viewModel.subscription, previouslyEntitled, onSignIn = { if (viewModel.account.enabled) viewModel.account.open() })
     if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -296,6 +300,8 @@ fun PitTechApp(
                 cooks = cooks,
                 playbooks = { UpcomingCooks(viewModel); PlaybookLibrary(viewModel) },
                 adsEnabled = adsEnabled,
+                entitlement = entitlement,
+                previouslyEntitled = previouslyEntitled,
                 error = saveError,
                 notice = notice,
                 modifier = Modifier.padding(padding),
@@ -320,6 +326,7 @@ fun PitTechApp(
                     isStartingCook = true
                 },
                 modifier = Modifier.padding(padding),
+                onProEntry = viewModel.subscription::openPro,
             )
             MainSection.MORE -> when (moreDestination) {
             "Devices" -> Column(Modifier.padding(padding).fillMaxSize()) {
@@ -349,7 +356,7 @@ fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
-            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null)
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null, onPro = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.MORE) })
             }
         }
     }
@@ -360,6 +367,8 @@ private fun CooksHome(
     playbooks: @Composable () -> Unit,
     cooks: List<CookWithDishes>,
     adsEnabled: Boolean,
+    entitlement: AdEntitlement,
+    previouslyEntitled: Boolean,
     error: String?,
     notice: String?,
     modifier: Modifier = Modifier,
@@ -369,7 +378,7 @@ private fun CooksHome(
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
-    val showCookListAd = shouldShowCookListNativeAd(adsEnabled)
+    val showCookListAd = shouldShowCookListNativeAd(adsEnabled, entitlement, previouslyEntitled)
     var showPlanning by rememberSaveable { mutableStateOf(false) }
 
     Column(
@@ -401,7 +410,7 @@ private fun CooksHome(
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
-        if (showCookListAd && activeCooks.isNotEmpty()) PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+        if (showCookListAd && activeCooks.isNotEmpty()) PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
 
         TextButton(onClick = { showPlanning = !showPlanning }, modifier = Modifier.testTag("home-planning-toggle")) { Text(if (showPlanning) "Hide planning" else "Planning and playbooks") }
         if (showPlanning) playbooks()
@@ -409,7 +418,7 @@ private fun CooksHome(
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Completed meals")
             if (showCookListAd && activeCooks.isEmpty()) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
             }
             finishedCooks.forEach { cook ->
                 CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) })
@@ -418,7 +427,7 @@ private fun CooksHome(
 
         if (cooks.isEmpty()) {
             if (showCookListAd) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled)
+                PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
             }
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

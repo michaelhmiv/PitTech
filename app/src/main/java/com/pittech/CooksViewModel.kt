@@ -66,6 +66,12 @@ class CooksViewModel(
         // The open detail would otherwise stick on "Opening cook…" for a deleted row.
         closeCook()
     })
+    internal val subscription = com.pittech.billing.SubscriptionManager(
+        com.pittech.billing.PlayProBillingClient(context,com.pittech.billing.ProProductConfiguration.productId),
+        viewModelScope,
+        session = { if(account.presentation.value.signedIn) runCatching { account.access() }.getOrNull() else null },
+        accountsEnabled = account.enabled,
+        cacheStore = com.pittech.billing.SharedPrefsSubscriptionCacheStore(context))
     internal val sync = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
         library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context)),
         projection = com.pittech.data.PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() }))

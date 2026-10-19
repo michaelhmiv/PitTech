@@ -9,10 +9,11 @@ final class NativeAdLoader: NSObject, NativeAdLoaderDelegate, AdLoaderDelegate {
     private(set) var ad: NativeAd?
     private var loader: AdLoader?
 
-    func load() {
+    func load(entitlement: AdEntitlementState = .unknown, previouslyEntitled: Bool = false, monitor: AdRequestMonitor = .shared) {
         guard ConsentInformation.shared.canRequestAds,
               let unitID = Bundle.main.object(forInfoDictionaryKey: "PITTECHNativeAdUnitID") as? String,
               !unitID.isEmpty else { return }
+        guard monitor.shouldAttempt(entitlement: entitlement, previouslyEntitled: previouslyEntitled) else { return }
 
         let loader = AdLoader(adUnitID: unitID, rootViewController: nil, adTypes: [.native], options: nil)
         loader.delegate = self
@@ -46,8 +47,8 @@ struct NativeAdCard: View {
             }
         }
         .task(id: consent.isAdsSDKReady) {
-            guard consent.canRequestAds, consent.isAdsSDKReady else { return }
-            loader.load()
+            guard consent.adsServingAllowed, consent.isAdsSDKReady else { return }
+            loader.load(entitlement: consent.entitlement, previouslyEntitled: consent.previouslyEntitled)
         }
     }
 }

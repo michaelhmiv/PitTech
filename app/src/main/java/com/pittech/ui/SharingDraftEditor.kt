@@ -125,7 +125,7 @@ import kotlinx.coroutines.sync.withLock
             }
         }
     }
-    if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false })
+    if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false },onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })
     if (publishing) PublicationDialog(id,viewModel,account,publisher) { publishing=false; act { reload() } }
     if (relayShare) RelayShareDialog(id, includeRecordedCook, viewModel) { relayShare = false }
     if (chooseRecipe) AlertDialog(onDismissRequest = { chooseRecipe = false }, title = { Text("Add a recipe") }, text = {

@@ -12,6 +12,9 @@ import { FileStorage, S3Storage, type Storage } from './storage.ts';
 import { PostgresRepository } from './repository.ts';
 import { Relay } from './relay.ts';
 import { linkConfig } from './web.ts';
+import { Subscriptions, PostgresBillingStore } from './subscriptions.ts';
+import { AppleStoreApi, type AppleTrust } from './subscriptions-apple.ts';
+import { PlayDeveloperApi } from './subscriptions-google.ts';
 import { SyncEncryption } from './sync-encryption.ts';
 import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
 import { PrivatePhotos } from './sync-photos.ts';
@@ -74,6 +77,52 @@ export function createRuntime() {
   // photo-capable values from the sync storage tests rather than the small snapshot-only ones.
   const syncLimits:SyncStorageLimits|undefined=syncEnabled?{ownerBytes:positiveDefault('PRIVATE_SYNC_LIMIT_OWNER_BYTES',64*1024**2),globalBytes:positiveDefault('PRIVATE_SYNC_LIMIT_GLOBAL_BYTES',128*1024**2),dailyBytes:positiveDefault('PRIVATE_SYNC_LIMIT_DAILY_BYTES',256*1024**2),dailyUploads:positiveDefault('PRIVATE_SYNC_LIMIT_DAILY_UPLOADS',200),ownerOperations:positiveDefault('PRIVATE_SYNC_LIMIT_OWNER_OPERATIONS',100)}:undefined;
   const sync=syncPool&&syncEncryption&&syncLimits?{snapshots:new PrivateSnapshots(syncPool,storage,syncEncryption,privateLibraryEnvelope,syncLimits),photos:new PrivatePhotos(syncPool,storage,syncEncryption,syncLimits)}:undefined;
-  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  // Subscriptions stay disabled until store products, sandbox evidence and the
+  // paywall inventory land; enabling requires a verified account backend.
+  const billingEnabled=process.env.SUBSCRIPTIONS_ENABLED==='true';
+  if(billingEnabled&&!authSecrets)throw new Error('Accounts required');
+  let subscriptions:Subscriptions|undefined,refreshOidcKeys:(() => Promise<void>)|undefined;
+  if(billingEnabled){
+    const appleConfig={bundleId:required('PRO_APPLE_BUNDLE_ID'),productId:required('PRO_APPLE_PRODUCT_ID')};
+    const googleConfig={packageName:required('PRO_GOOGLE_PACKAGE'),productId:required('PRO_GOOGLE_PRODUCT_ID')};
+    const trustMode=process.env.PRO_APPLE_TRUST_MODE??'chain';
+    let trust:AppleTrust;
+    if(trustMode==='pinned'){
+      let parsed:unknown;try{parsed=JSON.parse(required('PRO_APPLE_PINNED_KEYS'));}catch{throw new Error('Invalid Apple trust configuration');}
+      if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||!Object.values(parsed).every(v=>typeof v==='string'))throw new Error('Invalid Apple trust configuration');
+      trust={mode:'pinned',keys:new Map(Object.entries(parsed as Record<string,string>))};
+    }else if(trustMode==='chain'){
+      let roots:unknown;try{roots=JSON.parse(required('PRO_APPLE_ROOTS'));}catch{throw new Error('Invalid Apple trust configuration');}
+      if(!Array.isArray(roots)||!roots.length||!roots.every(r=>typeof r==='string'))throw new Error('Invalid Apple trust configuration');
+      trust={mode:'chain',roots};
+    }else throw new Error('Invalid Apple trust configuration');
+    const storeJson=async(response:Response)=>{try{return await response.json();}catch{return undefined;}};
+    const appleFetch=async(url:string,token:string)=>{
+      if(!url.startsWith('https://api.storekit.'))throw new Error('Invalid store host');
+      const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(10000)});
+      return {status:response.status,body:await storeJson(response)};
+    };
+    const appleApi=new AppleStoreApi({issuerId:required('PRO_APPLE_ISSUER_ID'),keyId:required('PRO_APPLE_KEY_ID'),privateKey:required('PRO_APPLE_PRIVATE_KEY').replace(/\\n/g,'\n'),bundleId:appleConfig.bundleId},appleFetch);
+    let serviceAccount:unknown;try{serviceAccount=JSON.parse(required('PRO_GOOGLE_SERVICE_ACCOUNT'));}catch{throw new Error('Invalid Play service configuration');}
+    const account=serviceAccount as Record<string,unknown>;
+    if(typeof account.client_email!=='string'||typeof account.private_key!=='string')throw new Error('Invalid Play service configuration');
+    const playFetch=async(url:string,init:{method:string;token?:string;body?:string;contentType?:string})=>{
+      if(!url.startsWith('https://oauth2.googleapis.com/')&&!url.startsWith('https://androidpublisher.googleapis.com/'))throw new Error('Invalid store host');
+      const headers:Record<string,string>={};if(init.token)headers.Authorization=`Bearer ${init.token}`;if(init.contentType)headers['Content-Type']=init.contentType;
+      const response=await fetch(url,{method:init.method,headers,body:init.body,signal:AbortSignal.timeout(10000)});
+      return {status:response.status,body:await storeJson(response)};
+    };
+    const playApi=new PlayDeveloperApi({clientEmail:account.client_email,privateKey:(account.private_key as string).replace(/\\n/g,'\n')},playFetch);
+    const oidcKeys=new Map<string,string>(),oidcAudience=required('PRO_GOOGLE_RTDN_AUDIENCE');
+    refreshOidcKeys=async()=>{
+      const response=await fetch('https://www.googleapis.com/oauth2/v3/certs',{signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw new Error('OIDC refresh failed');
+      const certs=await response.json() as Record<string,unknown>;
+      for(const [kid,pem] of Object.entries(certs))if(typeof pem==='string'&&pem.includes('BEGIN CERTIFICATE'))oidcKeys.set(kid,pem);
+      if(!oidcKeys.size)throw new Error('OIDC refresh failed');
+    };
+    subscriptions=new Subscriptions(new PostgresBillingStore(pool),{apple:{config:appleConfig,trust,api:appleApi},google:{config:googleConfig,api:playApi,oidcKeys,oidcAudience}});
+  }
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, refreshOidcKeys, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }
