@@ -153,6 +153,7 @@ enum ProCustomization {
 
     static func effectiveProfileLayout(identity: PublicIdentity, stored: String?, entitled: Bool) -> String {
         guard identity == .named, entitled, stored == "compact" else { return "standard" }
+        return "compact"
     }
 }
 
