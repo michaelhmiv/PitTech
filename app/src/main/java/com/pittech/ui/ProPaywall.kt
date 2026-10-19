@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pittech.billing.CommunityBenchmarksLoader
 import com.pittech.billing.ProDestination
 import com.pittech.billing.ProPlacement
 import com.pittech.billing.ProProductState
@@ -47,7 +48,12 @@ import kotlinx.coroutines.launch
 /** One dialog for every Pro entry point. The destination follows the verified
  * entitlement state; Live and Finish flows never open this dialog. */
 @Composable
-internal fun ProGateDialog(subscription: SubscriptionManager, previouslyEntitled: Boolean, onSignIn: () -> Unit) {
+internal fun ProGateDialog(
+    subscription: SubscriptionManager,
+    previouslyEntitled: Boolean,
+    onSignIn: () -> Unit,
+    benchmarks: CommunityBenchmarksLoader = CommunityBenchmarksLoader(session = { null }),
+) {
     val state by subscription.presentation.collectAsStateWithLifecycle()
     val entry = state.paywallEntry ?: return
     // Resolved here in the host screen's composition: inside the AlertDialog
@@ -59,7 +65,11 @@ internal fun ProGateDialog(subscription: SubscriptionManager, previouslyEntitled
     when (destination) {
         ProDestination.LOADING -> ProLoadingDialog(subscription, entry)
         ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, onSignIn, activity)
-        ProDestination.PRO -> ProPlaceholderDialog(subscription, entry)
+        ProDestination.PRO -> if (entry == ProPlacement.BENCHMARKS) {
+            CommunityBenchmarksDialog(subscription, entry, benchmarks, onSignIn, activity)
+        } else {
+            ProPlaceholderDialog(subscription, entry)
+        }
         ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, onSignIn, activity)
     }
 }
@@ -72,6 +82,7 @@ internal fun ProInsightsEntries(onEntry: (ProPlacement) -> Unit) {
         Text("Deeper analysis", style = MaterialTheme.typography.titleMedium)
         ProEntryRow(ProPlacement.ANALYSIS, onEntry)
         ProEntryRow(ProPlacement.CURVES, onEntry)
+        ProEntryRow(ProPlacement.BENCHMARKS, onEntry)
     }
 }
 
@@ -108,7 +119,7 @@ private fun ProLoadingDialog(subscription: SubscriptionManager, entry: ProPlacem
 }
 
 @Composable
-private fun ProPaywallDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
+internal fun ProPaywallDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
     AlertDialog(
         onDismissRequest = { subscription.closePaywall() },
         title = { Text("PitTech Pro") },

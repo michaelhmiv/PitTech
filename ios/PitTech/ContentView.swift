@@ -242,6 +242,7 @@ struct InsightsView: View {
                         Text("DEEPER ANALYSIS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                         ProEntryRow(entry: .analysis)
                         ProEntryRow(entry: .curves)
+                        ProEntryRow(entry: .benchmarks)
                     }
                 }
                 .padding(20)

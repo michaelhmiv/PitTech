@@ -72,6 +72,9 @@ class CooksViewModel(
         session = { if(account.presentation.value.signedIn) runCatching { account.access() }.getOrNull() else null },
         accountsEnabled = account.enabled,
         cacheStore = com.pittech.billing.SharedPrefsSubscriptionCacheStore(context))
+    internal val communityBenchmarks = com.pittech.billing.CommunityBenchmarksLoader(
+        session = { if(account.presentation.value.signedIn) runCatching { account.access() }.getOrNull() else null },
+        onAuthMismatch = { subscription.refresh() })
     internal val sync = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
         library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context)),
         projection = com.pittech.data.PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() }))

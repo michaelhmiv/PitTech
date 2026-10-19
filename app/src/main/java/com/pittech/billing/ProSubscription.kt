@@ -23,6 +23,7 @@ internal object ProProductConfiguration {
 internal enum class ProPlacement {
     ANALYSIS,
     CURVES,
+    BENCHMARKS,
     THEMES,
     MORE,
 }
@@ -31,6 +32,7 @@ internal val ProPlacement.title: String
     get() = when (this) {
         ProPlacement.ANALYSIS -> "Personal analysis"
         ProPlacement.CURVES -> "Advanced curves"
+        ProPlacement.BENCHMARKS -> "Community benchmarks"
         ProPlacement.THEMES -> "Pro themes"
         ProPlacement.MORE -> "PitTech Pro"
     }
@@ -39,6 +41,7 @@ internal val ProPlacement.preview: String
     get() = when (this) {
         ProPlacement.ANALYSIS -> "How your pork cooks compare, which recorded attempt you rated best, and how timing shifts across your recorded cuts and weights."
         ProPlacement.CURVES -> "Align recorded cooks at Food on and Wrap, and choose which measured sources to compare."
+        ProPlacement.BENCHMARKS -> "Typical heating times and temperature bands from eligible published cooks."
         ProPlacement.THEMES -> "Pro card themes, chart palettes, and app icons. Preview before applying."
         ProPlacement.MORE -> "An ad-free PitTech with deeper personal analysis, advanced curves, and Pro themes."
     }
@@ -55,6 +58,11 @@ internal fun proPreviewBullets(entry: ProPlacement): List<String> = when (entry)
         "Align recorded cooks at Food on and Wrap",
         "Choose which measured sources to compare",
         "Only real measurements — gaps stay visible",
+    )
+    ProPlacement.BENCHMARKS -> listOf(
+        "Typical heating times with sample counts",
+        "Temperature percentile bands from many cooks",
+        "Wrap and spritz shares, prevalence only",
     )
     ProPlacement.THEMES -> listOf(
         "Pro share-card themes",

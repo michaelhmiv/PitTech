@@ -23,7 +23,11 @@ struct ProPaywallHost: View {
             case .paywall:
                 ProPaywallView(entry: entry)
             case .pro:
-                ProPlaceholderView(entry: entry)
+                if entry == .benchmarks {
+                    CommunityBenchmarksView(entry: entry)
+                } else {
+                    ProPlaceholderView(entry: entry)
+                }
             case .expiredFallback:
                 ProExpiredFallbackView(entry: entry)
             }
@@ -259,6 +263,12 @@ func proPreviewBullets(entry: ProPlacement) -> [String] {
             "Align recorded cooks at Food on and Wrap",
             "Choose which measured sources to compare",
             "Only real measurements — gaps stay visible",
+        ]
+    case .benchmarks:
+        return [
+            "Typical heating times with sample counts",
+            "Temperature percentile bands from many cooks",
+            "Wrap and spritz shares, prevalence only",
         ]
     case .themes:
         return [
