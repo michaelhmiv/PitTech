@@ -20,7 +20,7 @@ enum NativeCommunityError: LocalizedError {
     }
 }
 
-protocol NativeCommunityAPI {
+protocol NativeCommunityBenchmarksAPI {
     func aggregates(bucket: String?, metric: String?, runId: String?, access: String?) async throws -> Data
     func jobRuns(limit: Int?, cursor: String?, access: String?) async throws -> Data
 }
@@ -28,7 +28,7 @@ protocol NativeCommunityAPI {
 /// Pro-authorized aggregate reads behind the same transport idiom as the
 /// subscription client: Bearer [REDACTED] session, no-store, bounded responses, no
 /// cookies or redirects. Filters validate client-side before any request.
-struct NativeCommunityClient: NativeCommunityAPI {
+struct NativeCommunityBenchmarksClient: NativeCommunityBenchmarksAPI {
     var configuration: URLSessionConfiguration?
 
     /// Latest runs carry every recorded cell plus curve intervals, so the

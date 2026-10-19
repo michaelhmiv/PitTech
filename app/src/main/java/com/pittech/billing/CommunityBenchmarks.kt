@@ -580,11 +580,10 @@ internal data class CommunityWrapSummary(
 private fun JSONObject.reqNumber(key: String): Double {
     if (isNull(key)) throw JSONException("missing $key")
     val value = opt(key) ?: throw JSONException("missing $key")
+    // Any Number: the org.json test classpath parses fractions as BigDecimal
+    // while the Android framework returns Double — both are recorded values.
     val number = when (value) {
-        is Int -> value.toDouble()
-        is Long -> value.toDouble()
-        is Double -> value
-        is Float -> value.toDouble()
+        is Number -> value.toDouble()
         else -> throw JSONException("bad $key")
     }
     if (!number.isFinite()) throw JSONException("bad $key")

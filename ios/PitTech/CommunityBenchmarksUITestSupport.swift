@@ -36,7 +36,7 @@ import Foundation
         """.utf8)
     }
 
-    private struct StubAPI: NativeCommunityAPI {
+    private struct StubAPI: NativeCommunityBenchmarksAPI {
         func aggregates(bucket: String?, metric: String?, runId: String?, access: String?) async throws -> Data {
             guard access != nil else { throw NativeCommunityError.status(401) }
             if CommandLine.arguments.contains("--community-unavailable") { throw NativeCommunityError.network }

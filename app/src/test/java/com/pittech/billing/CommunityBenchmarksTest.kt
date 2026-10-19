@@ -325,11 +325,14 @@ class CommunityBenchmarksTest {
             strings.addAll(card.lines)
             strings.addAll(card.notes)
         }
-        val banned = listOf("faster", "slower", "because", "caus", "predict", "safe", "doneness", "undercook", "overcook", "rank", "should", "leaderboard")
+        val banned = listOf("faster", "slower", "because", "caus", "predict", "safe", "doneness", "undercook", "overcook", "rank", "leaderboard")
         for (string in strings) {
             for (word in banned) {
                 assertFalse("$string contains $word", string.lowercase().contains(word))
             }
+            // "should" is a whole-word check: the cut name "shoulder" in a
+            // bucket line is a label, not a directive claim.
+            assertFalse("$string contains should", Regex("\\bshould\\b").containsMatchIn(string.lowercase()))
         }
         val curve = cards.single { it.title == "Temperature percentile bands" }
         assertTrue(curve.title.contains("percentile bands"))

@@ -6,7 +6,7 @@ import XCTest
 /// with its eligible n and compute date; suppressed cells stay honest; unknown
 /// or malformed figures fail closed to the unavailable state.
 @MainActor final class CommunityBenchmarksTests: XCTestCase {
-    private final class FakeAPI: NativeCommunityAPI, @unchecked Sendable {
+    private final class FakeAPI: NativeCommunityBenchmarksAPI, @unchecked Sendable {
         var aggregateCalls: [(bucket: String?, metric: String?, runId: String?)] = []
         var result: Result<Data, Error> = .failure(NativeCommunityError.network)
 
@@ -283,11 +283,14 @@ import XCTest
         for card in built.cards {
             strings += [card.title, card.bucketLine, card.coverageLine] + card.lines + card.notes
         }
-        let banned = ["faster", "slower", "because", "caus", "predict", "safe", "doneness", "undercook", "overcook", "rank", "should", "leaderboard"]
+        let banned = ["faster", "slower", "because", "caus", "predict", "safe", "doneness", "undercook", "overcook", "rank", "leaderboard"]
         for string in strings {
             for word in banned {
                 XCTAssertFalse(string.lowercased().contains(word), "\(string) contains \(word)")
             }
+            // "should" is a whole-word check: the cut name "shoulder" in a
+            // bucket line is a label, not a directive claim.
+            XCTAssertNil(string.lowercased().range(of: "\\bshould\\b", options: .regularExpression), "\(string) contains should")
         }
         let curve = try XCTUnwrap(built.cards.first { $0.title == "Temperature percentile bands" })
         XCTAssertTrue(curve.title.contains("percentile bands"))
@@ -347,7 +350,7 @@ import XCTest
     // MARK: - Typed client validation (no network)
 
     func testClientRejectsInvalidFiltersWithoutNetwork() async {
-        let client = NativeCommunityClient()
+        let client = NativeCommunityBenchmarksClient()
         let token = String(repeating: "A", count: 43)
         let invalid: [(bucket: String?, metric: String?, runId: String?, access: String)] = [
             ("evil", nil, nil, token),
@@ -376,7 +379,7 @@ import XCTest
     }
 
     func testJobRunsValidationRejectsBadLimitAndCursor() async {
-        let client = NativeCommunityClient()
+        let client = NativeCommunityBenchmarksClient()
         let token = String(repeating: "A", count: 43)
         let invalid: [(limit: Int?, cursor: String?)] = [(0, nil), (101, nil), (nil, "bad")]
         for call in invalid {

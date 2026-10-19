@@ -20,7 +20,7 @@ enum CommunityBenchmarksState: Equatable, Sendable {
 /// benchmarks view is shown: the view resets on disappear, so a removed or
 /// expired entitlement never keeps serving figures.
 @MainActor @Observable final class CommunityBenchmarksLoader {
-    private let api: any NativeCommunityAPI
+    private let api: any NativeCommunityBenchmarksAPI
     private let sessionProvider: () async -> String?
     private let onAuthMismatch: () async -> Void
 
@@ -28,7 +28,7 @@ enum CommunityBenchmarksState: Equatable, Sendable {
     private var mismatched = false
 
     init(
-        api: any NativeCommunityAPI = NativeCommunityClient(),
+        api: any NativeCommunityBenchmarksAPI = NativeCommunityBenchmarksClient(),
         sessionProvider: @escaping () async -> String?,
         onAuthMismatch: @escaping () async -> Void = {}
     ) {
