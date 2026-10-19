@@ -194,22 +194,22 @@ class ProPersonalTest {
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-customization").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-theme-ember").performScrollTo().performClick()
             compose.onNodeWithTag("pro-theme-apply-ember").performScrollTo().assertIsDisplayed().performClick()
-            compose.onNodeWithTag("pro-theme-applied-ember").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("pro-theme-applied-ember", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             assertEquals("ember", customization.themeId)
             compose.onNodeWithTag("pro-palette-color-vision-safe").performScrollTo().performClick()
             compose.onNodeWithTag("pro-palette-apply-color-vision-safe").performScrollTo().performClick()
-            compose.onNodeWithTag("pro-palette-applied-color-vision-safe").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("pro-palette-applied-color-vision-safe", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             assertEquals("color-vision-safe", customization.paletteId)
             compose.onNodeWithTag("pro-icon-ember").performScrollTo().performClick()
             compose.onNodeWithTag("pro-icon-apply-ember").performScrollTo().performClick()
-            compose.onNodeWithTag("pro-icon-applied-ember").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("pro-icon-applied-ember", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             assertEquals("ember", customization.iconId)
             compose.onNodeWithTag("pro-close").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-customization").fetchSemanticsNodes().isEmpty() }
             subscription.openPro(ProPlacement.THEMES)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-customization").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithTag("pro-theme-applied-ember").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithTag("pro-palette-applied-color-vision-safe").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("pro-theme-applied-ember", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("pro-palette-applied-color-vision-safe", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("pro-close").performClick()
         } finally {
             subscription.stop()
@@ -230,6 +230,10 @@ class ProPersonalTest {
             compose.onNodeWithTag("pro-recap-preview-button").performScrollTo().performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-recap-preview").fetchSemanticsNodes().isNotEmpty() }
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-recap-card").fetchSemanticsNodes().isNotEmpty() }
+            // The share action appears only once rendering finishes; wait for it
+            // before scrolling so the inserted card image cannot shift the
+            // preview layout mid-scroll (large-text failure at font 1.5).
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-recap-share").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("Year in Smoke · 2026").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("3 of 4 recorded cooks selected · 4 recorded milestones", substring = true).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("nothing here changes what is public", substring = true).performScrollTo().assertIsDisplayed()
