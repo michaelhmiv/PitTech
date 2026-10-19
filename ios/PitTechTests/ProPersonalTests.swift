@@ -126,7 +126,7 @@ import XCTest
         ])
         XCTAssertEqual(methods.coverage, "Wrap recorded for 2 of 4 dishes · rest recorded for 3 of 4 dishes · holding recorded for 1 of 4 dishes")
         for line in methods.lines {
-            XCTAssertFalse(line.contains("0m"), "a zero span must read as not recorded: \(line)")
+            XCTAssertFalse(line.contains(" 0m"), "a zero span must read as not recorded: \(line)")
         }
     }
 

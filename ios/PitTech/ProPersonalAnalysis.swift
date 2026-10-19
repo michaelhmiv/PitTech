@@ -262,6 +262,7 @@ enum ProPersonalAnalysis {
     /// span means nothing was recorded there, so it stays out of figures.
     static func positive(_ millis: Double?) -> Double? {
         guard let millis, millis > 0 else { return nil }
+        return millis
     }
 }
 

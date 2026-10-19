@@ -160,7 +160,7 @@ class ProPersonalTest {
         )
         assertEquals("Wrap recorded for 2 of 4 dishes · rest recorded for 3 of 4 dishes · holding recorded for 1 of 4 dishes", methods.coverage)
         for (line in methods.lines) {
-            assertFalse("a zero span must read as not recorded: $line", line.contains("0m"))
+            assertFalse("a zero span must read as not recorded: $line", line.contains(" 0m"))
         }
     }
 
