@@ -299,7 +299,12 @@ test('RTDN test deliveries and unknown purchases record without touching entitle
   assert.deepEqual(await service.rtdnPush(unknown, bearer(signOidc())), { outcome: 'recorded', note: 'unknown-transaction' });
   assert.equal(store.entitlements.size, 0);
   assert.deepEqual(await service.rtdnPush(unknown, bearer(signOidc())), { outcome: 'deduped', note: 'replay' });
-  const badOidc = signOidc().slice(0, -1) + 'A';
+  // Flip the FIRST signature character: the last base64url character of an
+  // ES256 signature carries padding bits, so tampering there often leaves the
+  // decoded signature unchanged (this assertion flaked ~40% of runs).
+  const oidcParts = signOidc().split('.');
+  oidcParts[2] = (oidcParts[2][0] === 'A' ? 'B' : 'A') + oidcParts[2].slice(1);
+  const badOidc = oidcParts.join('.');
   await assert.rejects(service.rtdnPush(unknown, bearer(badOidc)), { code: 'notification_rejected' });
   await assert.rejects(service.rtdnPush(unknown, undefined), { code: 'notification_rejected' });
   const wrongPackage = rtdnBody('synthetic-message-package', { ...rtdnSubscription('synthetic-unknown-token', 2), packageName: 'evil.app' });
