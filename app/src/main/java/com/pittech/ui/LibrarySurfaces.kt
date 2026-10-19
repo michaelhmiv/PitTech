@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -30,7 +31,7 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-@Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null, onCookbook: (() -> Unit)? = null, onCommunity: (() -> Unit)? = null) {
+@Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null, onCookbook: (() -> Unit)? = null, onCommunity: (() -> Unit)? = null, onPro: (() -> Unit)? = null) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
         MoreDestination("Settings & support", "Appearance, units, data and feedback", Icons.Filled.Settings, "more-settings", onSettings)
         MoreDestination("Import by code", "Preview a shared Cook Pack without an account", Icons.Filled.Explore, "more-relay-import", onImportCode)
         MoreDestination("My shared codes", "Renew or revoke codes created on this device", Icons.Filled.Explore, "more-relay-owned", onSharedCodes)
+        if (onPro != null) MoreDestination("PitTech Pro", "Ad-free cooking with deeper analysis", Icons.Filled.Star, "more-pro", onPro)
     }
 }
 

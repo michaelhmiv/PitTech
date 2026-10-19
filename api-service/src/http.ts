@@ -20,9 +20,11 @@ import type { AccountDeletion } from './account-deletion.ts';
 import type { CommunityLifecycle } from './community-lifecycle.ts';
 import { publicWebRoute, publicPage } from './publication-web.ts';
 import { privateSyncRoute, handlePrivateSync, type PrivateSyncServices } from './sync-http.ts';
+import { billingRoute, handleBilling } from './subscriptions-http.ts';
+import type { Subscriptions } from './subscriptions.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -33,7 +35,7 @@ function owner(req: IncomingMessage) {
   const secret = /^Bearer ([\w-]+)$/.exec(req.headers.authorization ?? '')?.[1] ?? ''; ownerHash(secret); return secret;
 }
 export function makeServer(relay: Relay, options: Options) {
-  const trust = proxyaddr.compile(options.trustedProxies ?? []); let active = 0, uploading = false;
+  const trust = proxyaddr.compile(options.trustedProxies ?? []); let active = 0, uploading = false, billing = 0;
   const root = options.tempRoot ?? tempRoot;
   const server = createServer({ maxHeaderSize: 8192 }, async (req, res) => {
     const requestId = randomUUID(), method = ['GET', 'POST', 'PUT', 'DELETE'].includes(req.method ?? '') ? req.method! : 'OTHER';
@@ -105,6 +107,13 @@ export function makeServer(relay: Relay, options: Options) {
         const bucket=Math.floor(relay.clock()/3600000),key='lifecycle:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'lifecycle:'+bucket);
         if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
         await handleLifecycle(req,res,lifecycle,options.auth,options.deletion,options.community);return;
+      }
+      const billingRouteMatch=billingRoute(req.url??'',method);
+      if(billingRouteMatch&&options.subscriptions){
+        route=billingRouteMatch;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const bucket=Math.floor(relay.clock()/3600000),key='billing:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'billing:'+bucket);
+        if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handleBilling(req,res,billingRouteMatch,options.auth,options.subscriptions,{claim:()=>{if(billing>=4)return false;billing++;return true;},release:()=>{billing--;}});return;
       }
       const pageRoute=method==='GET'?publicWebRoute(req.url??''):undefined;
       const publicRoute=publicationRoute(req.url??'',method);
@@ -179,6 +188,11 @@ export function makeServer(relay: Relay, options: Options) {
           invalid_pack: 'This file is not a supported Cook Pack. Export a new file and try again.',
           pack_too_large: 'Choose fewer photos or dishes, then try sharing again.',
           owner_required: 'The saved owner capability is required for this action.',
+          invalid_store_proof: 'The store could not verify this purchase. Restore your purchase and try again.',
+          unknown_store_product: 'This purchase is for a different product. Restore your purchase and try again.',
+          wrong_store_environment: 'This purchase receipt belongs to a different store environment. Restore your purchase and try again.',
+          notification_rejected: 'The store notification could not be verified.',
+          billing_busy: 'Subscription verification is busy. Your purchase is safe; try again shortly.',
           unavailable: 'This code is unavailable, expired or revoked.',
           rate_limited: 'Too many attempts. Wait before trying again.',
           uploads_paused: 'New uploads are paused. You can still share a file or image.',

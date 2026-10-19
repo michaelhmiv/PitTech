@@ -13,8 +13,11 @@ struct PitTechApp: App {
     @State private var account = NativeAccountCoordinator(cleanup: NativeAccountLocalCleanup.run)
     #endif
     @State private var sync: NativePrivateSyncCoordinator
+    @State private var pro: ProSubscriptionCoordinator
     init() {
-        _sync = State(initialValue: NativePrivateSyncCoordinator.forApp(store: _store.wrappedValue, account: _account.wrappedValue))
+        let account = _account.wrappedValue
+        _pro = State(initialValue: ProSubscriptionCoordinator.forApp(account: account))
+        _sync = State(initialValue: NativePrivateSyncCoordinator.forApp(store: _store.wrappedValue, account: account))
     }
 
     var body: some Scene {
@@ -32,8 +35,10 @@ struct PitTechApp: App {
                 .environment(communityControls)
                 .environment(account)
                 .environment(sync)
+                .environment(pro)
                 .environment(AdsConsentManager.shared)
                 .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
+                .onChange(of: account.stateUserId) { _, _ in Task { await pro.refresh() } }
                 .onChange(of: account.deletionRecord?.receipt?.deletionId) { _, _ in communityControls.reload(); community.controlsChanged() }
                 .tint(PitTechStyle.accent)
                 .modifier(ScreenshotTextSize())
@@ -52,6 +57,7 @@ struct PitTechApp: App {
                 }
                 .task {
                     account.removeJournal = { try store.removeLocalJournal() }
+                    pro.start()
                     communityControls.reload()
                     UNUserNotificationCenter.current().delegate = ReminderNotificationDelegate.shared
                     await store.refreshReminderDeliveryHistory()

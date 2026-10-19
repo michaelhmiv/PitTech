@@ -87,7 +87,7 @@ import java.time.Instant
             }
         }
     }
-    if (card) ShareCardPreview(id, viewModel, onPack = { card = false; onClose(); viewModel.createShareCookPack(id, includeHistory) }, onClose = { card = false }, relay = viewModel.relay.card(id, revision))
+    if (card) ShareCardPreview(id, viewModel, onPack = { card = false; onClose(); viewModel.createShareCookPack(id, includeHistory) }, onClose = { card = false }, relay = viewModel.relay.card(id, revision), onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })
 }
 
 @Composable internal fun SharedRelayCodesDialog(viewModel: CooksViewModel, onClose: () -> Unit) {

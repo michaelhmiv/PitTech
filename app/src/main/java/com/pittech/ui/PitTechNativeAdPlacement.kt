@@ -44,20 +44,26 @@ import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdLoaderCallba
 import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdRequest
 import com.google.android.libraries.ads.mobile.sdk.nativead.NativeAdView
 import com.pittech.BuildConfig
+import com.pittech.ads.AdEntitlement
+import com.pittech.ads.shouldAttemptAdRequest
 
 @Composable
-internal fun PitTechNativeAdPlacement(adsEnabled: Boolean) {
+internal fun PitTechNativeAdPlacement(
+    adsEnabled: Boolean,
+    entitlement: AdEntitlement = AdEntitlement.UNKNOWN,
+    previouslyEntitled: Boolean = false,
+) {
     val context = LocalContext.current
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val adState = remember { mutableStateOf<NativeAd?>(null) }
     val adUnitId = BuildConfig.PITTECH_NATIVE_AD_UNIT_ID
 
-    DisposableEffect(adsEnabled, adUnitId) {
+    DisposableEffect(adsEnabled, adUnitId, entitlement, previouslyEntitled) {
         var disposed = false
         var loadedAd: NativeAd? = null
         adState.value = null
 
-        if (adsEnabled) {
+        if (adsEnabled && shouldAttemptAdRequest(entitlement, previouslyEntitled)) {
             val request = NativeAdRequest.Builder(
                 adUnitId,
                 listOf(NativeAd.NativeAdType.NATIVE),

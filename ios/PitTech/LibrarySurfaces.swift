@@ -4,6 +4,7 @@ struct MoreView: View {
     @Environment(NativeRelayCoordinator.self) private var relay
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePublicCoordinator.self) private var community
+    @Environment(ProSubscriptionCoordinator.self) private var pro
     let runtime: NativeTelemetryRuntime
     var body: some View {
         NavigationStack {
@@ -37,6 +38,9 @@ struct MoreView: View {
                     NavigationLink { NativeSharedCodesView() } label: {
                         MoreDestinationLabel(title: "My shared codes", subtitle: "Renew or revoke codes created on this device", symbol: "square.and.arrow.up")
                     }.accessibilityIdentifier("more-relay-owned")
+                    Button { pro.openPro(.more) } label: {
+                        MoreDestinationLabel(title: "PitTech Pro", subtitle: "Ad-free cooking with deeper analysis", symbol: "sparkles")
+                    }.accessibilityIdentifier("more-pro")
                 }.padding(20)
             }.background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("More").navigationBarTitleDisplayMode(.inline)

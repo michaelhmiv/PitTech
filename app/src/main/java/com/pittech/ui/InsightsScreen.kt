@@ -39,11 +39,12 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun InsightsScreen(
+internal fun InsightsScreen(
     data: InsightsSnapshot,
     onOpenCook: (String) -> Unit,
     onStartCook: () -> Unit,
     modifier: Modifier = Modifier,
+    onProEntry: ((com.pittech.billing.ProPlacement) -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     var favoritesOnly by remember { mutableStateOf(false) }
@@ -93,7 +94,7 @@ fun InsightsScreen(
                 onValueChange = { query = it },
                 label = { Text("Find a cook or dish") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("insights-search"),
             )
             Text("Search cut, smoker, weight, rub, method or tags.", style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -120,6 +121,9 @@ fun InsightsScreen(
                     val ids = selected.map { it.cook.id }.toSet()
                     val startTimes = selected.associate { it.cook.id to it.cook.startedAtUtcMillis }
                     val names = selected.associate { it.cook.id to it.cook.title }
+                    comparisonDifferenceLines(selected, data.readings.filter { it.cookId in ids }, data.results.filter { it.cookId in ids }).forEachIndexed { index, line ->
+                        Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("comparison-line-$index"))
+                    }
                     TemperatureChart(data.readings.filter { it.cookId in ids }, cookNames = names, cookStartTimes = startTimes, connectionGaps = data.connectionGaps.filter { it.cookId in ids })
                     Text("Only recorded readings are shown. Empty periods remain empty.", style = MaterialTheme.typography.bodySmall)
                 }
@@ -137,7 +141,7 @@ fun InsightsScreen(
                     val rating = data.results.firstOrNull { it.cookId == item.cook.id && it.resultType == "overall_rating" }?.numericValue
                     val selectedForCompare = item.cook.id in selectedIds
                     Card(
-                        modifier = Modifier.fillMaxWidth().clickable {
+                        modifier = Modifier.fillMaxWidth().testTag("insights-cook-" + item.cook.id).clickable {
                             if (comparing && item.cook.status == CookStatus.COMPLETED) {
                                 if (selectedForCompare) selectedIds.remove(item.cook.id)
                                 else if (selectedIds.size < 4) selectedIds.add(item.cook.id)
@@ -182,6 +186,9 @@ fun InsightsScreen(
 
             }
 
+        }
+        if (onProEntry != null) {
+            ProInsightsEntries(onEntry = onProEntry)
         }
     }
 }

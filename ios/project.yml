@@ -37,6 +37,8 @@ targets:
       # sources+buildPhase form copies it — the unit-test target proves it.
       - path: Contracts/private-sync-projection-v1.json
         buildPhase: resources
+      - path: Contracts/insights-calculations-v1.json
+        buildPhase: resources
     resources:
       - path: PitTech/PrivacyInfo.xcprivacy
       - path: PitTech/TelemetryNotices.txt
@@ -57,6 +59,9 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         PITTECH_ADMOB_APP_ID: "ca-app-pub-3940256099942544~1458002511"
         PITTECH_NATIVE_AD_UNIT_ID: "ca-app-pub-3940256099942544/3986624511"
+        # Owner-gated: the monthly PitTech Pro product ID. Empty until the
+        # store product exists; the paywall treats empty as not-configured.
+        PITTECH_PRO_PRODUCT_ID: ""
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: PitTech/PitTech.entitlements
       configs:
@@ -107,6 +112,10 @@ targets:
       - path: Contracts/private-sync-projection-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/private-sync-projection-cases-v1.json
+        buildPhase: resources
+      - path: Contracts/insights-calculations-v1.json
+        buildPhase: resources
+      - path: ../contracts/fixtures/insights-calculations-cases-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/native-publication-android-v1.json
         buildPhase: resources

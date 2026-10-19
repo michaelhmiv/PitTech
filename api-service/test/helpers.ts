@@ -1,5 +1,8 @@
 import { ApiError, LIMITS, type Budgets } from '../src/core.ts';
 import { sameUpload, type Pack, type Repository } from '../src/repository.ts';
+import type { BillingStore, BindingConflict, EntitlementRecord, StoredTransaction } from '../src/subscriptions.ts';
+import type { StoreName } from '../src/subscriptions.ts';
+import type { StoreEnvironment } from '../src/subscriptions-apple.ts';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { readZip, writeZip } from '../src/zip.ts';
@@ -31,6 +34,47 @@ export class MemoryRepository implements Repository {
   }
   async deleted(pack: Pack) { if (this.packs.get(pack.code)?.leaseToken === pack.leaseToken) this.packs.delete(pack.code); }
   async prune(_now: number) { }
+}
+// Test-only billing store. Production always uses Postgres; no in-memory fallback exists.
+export class MemoryBillingStore implements BillingStore {
+  transactions = new Map<string, StoredTransaction>();
+  entitlements = new Map<string, EntitlementRecord>();
+  events = new Map<string, { store: StoreName; environment: StoreEnvironment; applied: boolean; note: string }>();
+  conflicts = new Map<string, BindingConflict>();
+  reconciliations: { accountId: string; environment: StoreEnvironment; from: string; to: string; reason: string; at: number }[] = [];
+  async transaction(store: StoreName, environment: StoreEnvironment, key: string) { return structuredClone(this.transactions.get(`${store}/${environment}/${key}`)); }
+  async insertTransaction(tx: StoredTransaction) {
+    const key = `${tx.store}/${tx.environment}/${tx.transactionKey}`;
+    if (this.transactions.has(key)) return false;
+    this.transactions.set(key, structuredClone(tx)); return true;
+  }
+  async updateTransaction(store: StoreName, environment: StoreEnvironment, key: string, patch: Partial<StoredTransaction>) {
+    const row = this.transactions.get(`${store}/${environment}/${key}`); if (row) this.transactions.set(`${store}/${environment}/${key}`, { ...row, ...structuredClone(patch) });
+  }
+  async entitlement(accountId: string, environment: StoreEnvironment) { return structuredClone(this.entitlements.get(`${accountId}/${environment}`)); }
+  async saveEntitlement(record: EntitlementRecord) { this.entitlements.set(`${record.accountId}/${record.environment}`, structuredClone(record)); }
+  async staleEntitlements(before: number, limit: number) {
+    return [...this.entitlements.values()].filter(r => ['active', 'grace', 'retry', 'paused', 'cancelled', 'pending'].includes(r.state) && r.lastVerifiedAt < before).sort((a, b) => a.lastVerifiedAt - b.lastVerifiedAt).slice(0, Math.max(1, Math.min(50, limit))).map(r => structuredClone(r));
+  }
+  async eventSeen(eventKey: string) { return this.events.has(eventKey); }
+  async recordEvent(eventKey: string, store: StoreName, environment: StoreEnvironment, applied: boolean, note: string) { if (!this.events.has(eventKey)) this.events.set(eventKey, { store, environment, applied, note }); }
+  async openConflict(store: StoreName, environment: StoreEnvironment, key: string, claimant: string) {
+    return structuredClone([...this.conflicts.values()].find(c => c.store === store && c.environment === environment && c.transactionKey === key && c.claimantAccount === claimant && c.state === 'open'));
+  }
+  async openConflictsFor(store: StoreName, environment: StoreEnvironment, key: string) {
+    return structuredClone([...this.conflicts.values()].filter(c => c.store === store && c.environment === environment && c.transactionKey === key && c.state === 'open'));
+  }
+  async insertConflict(conflict: BindingConflict) {
+    const existing = await this.openConflict(conflict.store, conflict.environment, conflict.transactionKey, conflict.claimantAccount);
+    if (existing) return existing;
+    this.conflicts.set(conflict.id, structuredClone(conflict)); return conflict;
+  }
+  async resolveConflict(id: string, state: BindingConflict['state'], now: number) {
+    const row = this.conflicts.get(id); if (row && row.state === 'open') this.conflicts.set(id, { ...row, state, resolvedAt: now });
+  }
+  async recordReconciliation(accountId: string, environment: StoreEnvironment, from: string, to: string, reason: string, now: number) {
+    this.reconciliations.push({ accountId, environment, from, to, reason, at: now });
+  }
 }
 export async function alter(platform: string, change: (data: Record<string, any>, manifest: Record<string, any>, files: Map<string, Buffer>) => void) {
   const files = await readZip(await readFile(golden(platform))), data = JSON.parse(files.get('data/pittech.json')!.toString()), manifest = JSON.parse(files.get('manifest.json')!.toString());

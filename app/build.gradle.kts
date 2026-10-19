@@ -7,6 +7,9 @@ plugins {
 val pittechVersionCode = providers.gradleProperty("pittechVersionCode").orNull?.toIntOrNull() ?: 1
 val pittechVersionName = providers.gradleProperty("pittechVersionName").orNull ?: "0.1.0"
 val pittechLiveAds = providers.gradleProperty("pittechLiveAds").orNull?.toBooleanStrictOrNull() ?: false
+// Owner-gated: the monthly PitTech Pro product ID. Empty until the store
+// product exists; the paywall treats empty as not-configured.
+val pittechProProductId = providers.gradleProperty("pittechProProductId").orNull ?: ""
 val admobAppId = "ca-app-pub-2708638041809482~5194145527"
 val testNativeAdUnitId = "ca-app-pub-3940256099942544/2247696110"
 val liveNativeAdUnitId = "ca-app-pub-2708638041809482/6602595967"
@@ -28,6 +31,7 @@ android {
         versionName = pittechVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
+        buildConfigField("String", "PITTECH_PRO_PRODUCT_ID", "\"$pittechProProductId\"")
         buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
         buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
     }
@@ -82,6 +86,11 @@ dependencies {
 
     implementation("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.4.0")
     implementation("com.google.android.ump:user-messaging-platform:4.0.0")
+
+    // Play Billing for the one monthly PitTech Pro product. Only long-stable
+    // base-artifact callback APIs are used (wrapped in coroutines); Play
+    // sandbox/test tracks use the same product ID as production.
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.foundation:foundation")

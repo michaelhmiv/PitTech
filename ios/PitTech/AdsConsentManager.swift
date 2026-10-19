@@ -10,8 +10,30 @@ final class AdsConsentManager {
     private(set) var canRequestAds = false
     private(set) var isPrivacyOptionsRequired = false
     private(set) var isAdsSDKReady = false
+    private(set) var entitlement = AdEntitlementState.unknown
+    private let entitlementStore: PreviouslyEntitledStore
     private var refreshedThisLaunch = false
     private var didStartMobileAds = false
+
+    init(entitlementStore: PreviouslyEntitledStore = UserDefaultsPreviouslyEntitledStore()) {
+        self.entitlementStore = entitlementStore
+    }
+
+    var previouslyEntitled: Bool { entitlementStore.previouslyEntitled }
+
+    /// Consent signal AND the entitlement gate. Entitled users — and unverified
+    /// previously entitled accounts — never reach an ad request.
+    var adsServingAllowed: Bool {
+        canRequestAds && shouldRequestAds(entitlement: entitlement, previouslyEntitled: previouslyEntitled)
+    }
+
+    /// Record one verified server cache outcome. Until the account backend
+    /// verifies a subscription this stays unknown and ads behave as today.
+    func updateEntitlement(_ state: AdEntitlementState) {
+        entitlement = state
+        if state == .entitled { entitlementStore.markEntitled() }
+        refreshStatus()
+    }
 
     func gatherConsent() {
         guard !refreshedThisLaunch else { return }
@@ -48,7 +70,7 @@ final class AdsConsentManager {
         canRequestAds = ConsentInformation.shared.canRequestAds
         isPrivacyOptionsRequired = ConsentInformation.shared.privacyOptionsRequirementStatus == .required
 
-        guard canRequestAds, !didStartMobileAds else { return }
+        guard adsServingAllowed, !didStartMobileAds else { return }
         didStartMobileAds = true
         MobileAds.shared.start { [weak self] _ in
             Task { @MainActor in self?.isAdsSDKReady = true }

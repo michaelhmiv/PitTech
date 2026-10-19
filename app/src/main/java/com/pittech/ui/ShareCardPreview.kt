@@ -73,7 +73,7 @@ internal object ShareCardFiles {
     }
 }
 
-@Composable internal fun ShareCardPreview(id: String, viewModel: CooksViewModel, onPack: () -> Unit, onClose: () -> Unit, relay: com.pittech.data.ShareCardRelay? = null) {
+@Composable internal fun ShareCardPreview(id: String, viewModel: CooksViewModel, onPack: () -> Unit, onClose: () -> Unit, relay: com.pittech.data.ShareCardRelay? = null, onProThemes: (() -> Unit)? = null) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var bytes by remember(id) { mutableStateOf<ByteArray?>(null) }; var error by remember(id) { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }; var working by remember { mutableStateOf(true) }
@@ -95,6 +95,7 @@ internal object ShareCardFiles {
                 if (working) CircularProgressIndicator()
                 image?.let { Image(it.asImageBitmap(), contentDescription = "Exact exported card preview", modifier = Modifier.fillMaxWidth().aspectRatio(1080f/1350f).testTag("share-card-preview")) }
                 Text("1080 × 1350 PNG · default theme", style = MaterialTheme.typography.bodySmall)
+                if (onProThemes != null) ProEntryRow(com.pittech.billing.ProPlacement.THEMES) { onProThemes() }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error); OutlinedButton({ retry++ }) { Text("Retry image") } }
                 Button(onClick = {
                     bytes?.let { value -> scope.launch {

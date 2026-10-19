@@ -24,6 +24,8 @@
 	<string>$(PITTECH_ADMOB_APP_ID)</string>
 	<key>PITTECHNativeAdUnitID</key>
 	<string>$(PITTECH_NATIVE_AD_UNIT_ID)</string>
+	<key>PITTECHProProductID</key>
+	<string>$(PITTECH_PRO_PRODUCT_ID)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos to include in your cook notes.</string>
 	<key>LSApplicationCategoryType</key>

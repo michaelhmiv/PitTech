@@ -40,7 +40,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-update-preview publication-failure source-change-review; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-update-preview publication-failure source-change-review pro-paywall; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -409,9 +409,9 @@ timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/andr
 companion_test_output="$output_dir/companion-tests.txt"
 echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest' \
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (24 tests)' "$companion_test_output"
+grep -q 'OK (45 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -532,6 +532,7 @@ if (( api_level == 36 )); then
   pull_app_screenshot publication-owner-edit-preview
   pull_app_screenshot publication-owner-update-preview
   pull_app_screenshot source-change-review
+  pull_app_screenshot pro-paywall
 fi
 
 if (( api_level >= 37 )); then
