@@ -12,6 +12,33 @@ final class ProPersonalUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
         let needsHittable = element.elementType == .button
         for _ in 0..<18 {
+            // Cook-screen branch, mirroring MealRecipeFlowsTests.reveal()'s
+            // cook-content branch exactly: the meal detail carries a fixed
+            // shortcut bar in a bottom safe-area inset ABOVE the tab bar, so the
+            // nav-to-tab window below would accept a button parked under that
+            // bar — reported hittable, but the tap lands on the bar and the
+            // expected alert never appears. Anchor gutter drags to the finite
+            // navigation bar and stop above the fixed quick actions.
+            let cookScroll = app.scrollViews["cook-content"]
+            let cookNav = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
+            let cookLog = app.buttons["meal-log"]
+            if cookScroll.exists, let cookNav, cookLog.exists, cookLog.isHittable, cookLog.frame.minY.isFinite {
+                let top = cookNav.frame.maxY + 10
+                let bottom = cookLog.frame.minY - 20
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
+                let down = element.exists && element.frame.minY < top
+                let span = max(60, (bottom - top) * 0.55)
+                let distance = element.exists ? (down ? top - element.frame.minY : element.frame.maxY - bottom) + 24 : span
+                let travel = min(span, max(60, distance))
+                let startY = down ? top + 24 : bottom - 24
+                let endY = down ? startY + travel : startY - travel
+                let origin = cookNav.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 32, dy: startY - cookNav.frame.minY))
+                let end = origin.withOffset(CGVector(dx: 32, dy: endY - cookNav.frame.minY))
+                start.press(forDuration: 0.01, thenDragTo: end)
+                continue
+            }
             let top = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable })?.frame.maxY ?? app.windows.firstMatch.frame.minY
             let bottom = app.tabBars.allElementsBoundByIndex.first(where: { $0.isHittable })?.frame.minY ?? app.windows.firstMatch.frame.maxY
             if element.waitForExistence(timeout: 1), !needsHittable || element.isHittable {
@@ -37,6 +64,15 @@ final class ProPersonalUITests: XCTestCase {
             XCTAssertTrue(element.exists && element.isHittable)
         } else {
             XCTAssertTrue(element.exists)
+        }
+        // Positional proof on the cook screen (mirrors MealRecipeFlowsTests):
+        // hittable alone has proven insufficient here — the button must rest
+        // above the fixed shortcut bar, never parked under it.
+        let log = app.buttons["meal-log"]
+        if app.scrollViews["cook-content"].exists, log.exists, log.isHittable,
+           let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }) {
+            XCTAssertGreaterThanOrEqual(element.frame.minY, navigation.frame.maxY + 10)
+            XCTAssertLessThanOrEqual(element.frame.maxY, log.frame.minY - 20)
         }
     }
 
@@ -190,7 +226,17 @@ final class ProPersonalUITests: XCTestCase {
             reveal(back, app: app)
             back.tap()
             XCTAssertTrue(app.scrollViews["pro-recap-scope"].waitForExistence(timeout: 10))
-            app.buttons["pro-close"].tap()
+            // The builder is pushed onto the analysis stack, so its nav bar
+            // carries the system back button — pro-close lives on the
+            // analysis toolbar underneath and does not exist while the
+            // builder is on top. Pop back like a user would, then close.
+            let backToAnalysis = app.navigationBars["Year in Smoke"].buttons.firstMatch
+            XCTAssertTrue(backToAnalysis.waitForExistence(timeout: 10))
+            backToAnalysis.tap()
+            XCTAssertTrue(app.scrollViews["pro-analysis"].waitForExistence(timeout: 10))
+            let close = app.buttons["pro-close"]
+            XCTAssertTrue(close.waitForExistence(timeout: 10))
+            close.tap()
             app.terminate()
         }
     }
