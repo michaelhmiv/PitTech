@@ -22,6 +22,18 @@ import { ApiError } from './core.ts';
 
 export type TemperatureUnit = '°C' | '°F';
 
+// Community v1 measured inputs carried for the real summarizers. All
+// temperatures are Celsius-only; offsets are story-relative milliseconds.
+// Measurements and gaps come from the public story's frozen arrays, sorted
+// deterministically; verdicts/ratings never enter these shapes.
+export type CommunityMeasurement = {
+  readonly offsetMillis: number;
+  readonly role: 'food' | 'pit';
+  readonly valueCelsius: number;
+  readonly quality: 'measured' | 'manual' | 'recovered';
+};
+export type CommunityGap = { readonly fromMillis: number; readonly toMillis: number };
+
 // Narrow contribution shape accepted at the projection boundary. Deliberately
 // minimal: original measured-attempt identity, dish identity, publication
 // status for eligibility, bucketing descriptors, and stub metric fields whose
@@ -40,6 +52,15 @@ export type RawContribution = {
   readonly method: string | null;
   readonly heatingMillis: number | null;
   readonly finalTemp: { readonly value: number; readonly unit: TemperatureUnit } | null;
+  // V1 measured inputs for the real summarizers. Optional on input so the
+  // framework's own fixtures (which predate v1) still validate; the projection
+  // fills defaults (null/false/empty) when absent. Production rows from
+  // extractRawContributions always carry these from the story.
+  readonly foodOnOffsetMillis?: number | null;
+  readonly wrapAtOffsetMillis?: number | null;
+  readonly spritzed?: boolean;
+  readonly measurements?: readonly CommunityMeasurement[];
+  readonly gaps?: readonly CommunityGap[];
 };
 
 // Projected output: normalized, deduplicated, Celsius-only. Downstream code
@@ -54,6 +75,11 @@ export type EligibleAttempt = {
   readonly method: string | null;
   readonly heatingMillis: number | null;
   readonly finalTempCelsius: number | null;
+  readonly foodOnOffsetMillis: number | null;
+  readonly wrapAtOffsetMillis: number | null;
+  readonly spritzed: boolean;
+  readonly measurements: readonly CommunityMeasurement[];
+  readonly gaps: readonly CommunityGap[];
 };
 
 const invalid = () => new ApiError(422, 'invalid_community_contribution');
@@ -71,9 +97,20 @@ const FORBIDDEN_KEYS = new Set([
   // verdict key for shape compatibility but structurally validates and never
   // extracts it, so verdicts/ratings cannot influence the projection.
 ]);
-const RAW_KEYS = ['itemId', 'revisionId', 'status', 'collectedAtMillis', 'attemptId',
+const RAW_KEYS_REQUIRED = ['itemId', 'revisionId', 'status', 'collectedAtMillis', 'attemptId',
   'dishId', 'foodType', 'cut', 'weightGrams', 'method', 'heatingMillis', 'finalTemp'].sort();
+// V1 measured inputs are optional on the boundary so pre-v1 fixtures still
+// validate; production rows always carry them. Unknown keys still throw.
+const RAW_KEYS_OPTIONAL = ['foodOnOffsetMillis', 'wrapAtOffsetMillis', 'spritzed', 'measurements', 'gaps'].sort();
+const RAW_KEYS_ALLOWED = new Set([...RAW_KEYS_REQUIRED, ...RAW_KEYS_OPTIONAL]);
 const KNOWN_STATUSES = new Set(['active', 'pending_review', 'unpublished', 'taken_down', 'purged']);
+
+// Recorded spritz/mop/spray milestone actions counted by wrap-spritz
+// prevalence. Exact normalized action match only; free-text mentions without a
+// spritz action do not count, so the figure stays deterministic.
+export const COMMUNITY_SPRITZ_ACTIONS_V1: readonly string[] = [
+  'mop', 'mopped', 'mopping', 'spray', 'sprayed', 'spraying', 'spritz', 'spritzed', 'spritzing',
+];
 
 // Temperature conventions follow the codebase: Cook Pack measurements carry an
 // explicit '°C'/'°F' unit (pack.ts) and public stories record valueCelsius
@@ -97,11 +134,57 @@ function nullableText(value: unknown, max: number): string | null {
   return text(value, max);
 }
 
+const MEASUREMENT_INPUT_KEYS = ['offsetMillis', 'quality', 'role', 'valueCelsius'].sort();
+const GAP_INPUT_KEYS = ['fromMillis', 'toMillis'].sort();
+const offsetOrNull = (value: unknown): value is number | null =>
+  value === null || (Number.isSafeInteger(value) && (value as number) >= -604800000 && (value as number) <= 2592000000);
+
+function contributionMeasurements(value: unknown): CommunityMeasurement[] {
+  if (!Array.isArray(value) || value.length > 250000) throw invalid();
+  const out: CommunityMeasurement[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+    const m = raw as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(m).sort()) !== JSON.stringify(MEASUREMENT_INPUT_KEYS)) throw invalid();
+    if (!Number.isSafeInteger(m.offsetMillis) || (m.offsetMillis as number) < -604800000 || (m.offsetMillis as number) > 2592000000) throw invalid();
+    if (m.role !== 'food' && m.role !== 'pit') throw invalid();
+    if (m.quality !== 'measured' && m.quality !== 'manual' && m.quality !== 'recovered') throw invalid();
+    if (typeof m.valueCelsius !== 'number' || !Number.isFinite(m.valueCelsius)) throw invalid();
+    toCelsius(m.valueCelsius, '°C');
+    out.push({ offsetMillis: m.offsetMillis as number, role: m.role, valueCelsius: m.valueCelsius, quality: m.quality });
+  }
+  out.sort((a, b) => a.offsetMillis - b.offsetMillis || (a.role < b.role ? -1 : a.role > b.role ? 1 : 0)
+    || a.valueCelsius - b.valueCelsius || (a.quality < b.quality ? -1 : a.quality > b.quality ? 1 : 0));
+  return out;
+}
+
+function contributionGaps(value: unknown): CommunityGap[] {
+  if (!Array.isArray(value) || value.length > 1000) throw invalid();
+  const out: CommunityGap[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+    const g = raw as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(g).sort()) !== JSON.stringify(GAP_INPUT_KEYS)) throw invalid();
+    if (!Number.isSafeInteger(g.fromMillis) || !Number.isSafeInteger(g.toMillis)) throw invalid();
+    const from = g.fromMillis as number, to = g.toMillis as number;
+    if (from < -604800000 || from > 2592000000 || to < -604800000 || to > 2592000000 || to < from) throw invalid();
+    out.push({ fromMillis: from, toMillis: to });
+  }
+  out.sort((a, b) => a.fromMillis - b.fromMillis || a.toMillis - b.toMillis);
+  const deduped: CommunityGap[] = [];
+  for (const gap of out) {
+    const last = deduped[deduped.length - 1];
+    if (!last || last.fromMillis !== gap.fromMillis || last.toMillis !== gap.toMillis) deduped.push(gap);
+  }
+  return deduped;
+}
+
 export function rawContribution(value: unknown): RawContribution {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
   const row = value as Record<string, unknown>;
   for (const key of Object.keys(row)) if (FORBIDDEN_KEYS.has(key)) throw forbidden();
-  if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(RAW_KEYS)) throw invalid();
+  for (const key of Object.keys(row)) if (!RAW_KEYS_ALLOWED.has(key)) throw invalid();
+  for (const key of RAW_KEYS_REQUIRED) if (!(key in row)) throw invalid();
   if (!uuid(row.itemId) || !uuid(row.revisionId)) throw invalid();
   if (typeof row.status !== 'string' || !KNOWN_STATUSES.has(row.status)) throw invalid();
   if (!Number.isSafeInteger(row.collectedAtMillis) || (row.collectedAtMillis as number) < 0) throw invalid();
@@ -120,7 +203,16 @@ export function rawContribution(value: unknown): RawContribution {
     if (JSON.stringify(Object.keys(entry).sort()) !== JSON.stringify(['unit', 'value'])) throw invalid();
     toCelsius(entry.value as number, entry.unit as TemperatureUnit);
   }
-  return row as unknown as RawContribution;
+  if ('foodOnOffsetMillis' in row && !offsetOrNull(row.foodOnOffsetMillis)) throw invalid();
+  if ('wrapAtOffsetMillis' in row && !offsetOrNull(row.wrapAtOffsetMillis)) throw invalid();
+  if ('spritzed' in row && typeof row.spritzed !== 'boolean') throw invalid();
+  // Normalize v1 arrays deterministically so direct fixtures and story-derived
+  // rows project identically. A fresh object is returned; the caller's input
+  // is never mutated.
+  const normalized: Record<string, unknown> = { ...row };
+  if ('measurements' in row) normalized.measurements = contributionMeasurements(row.measurements);
+  if ('gaps' in row) normalized.gaps = contributionGaps(row.gaps);
+  return normalized as unknown as RawContribution;
 }
 
 // Dedupe identity scheme: original measured-attempt ID + dish identity.
@@ -165,29 +257,154 @@ export function projectEligibleAttempts(input: readonly unknown[], cutoffMillis:
     const first = ordered[0];
     const heating = first.heatingMillis;
     const celsius = first.finalTemp === null ? null : toCelsius(first.finalTemp.value, first.finalTemp.unit);
+    const firstFoodOn = first.foodOnOffsetMillis ?? null;
+    const firstWrap = first.wrapAtOffsetMillis ?? null;
+    const firstSpritzed = first.spritzed ?? false;
+    const firstMeasurements = [...(first.measurements ?? [])];
+    const firstGaps = [...(first.gaps ?? [])];
+    const firstMeasurementsJson = JSON.stringify(firstMeasurements);
+    const firstGapsJson = JSON.stringify(firstGaps);
     for (const other of ordered.slice(1)) {
       const otherCelsius = other.finalTemp === null ? null : toCelsius(other.finalTemp.value, other.finalTemp.unit);
       if (other.heatingMillis !== heating || otherCelsius !== celsius) throw conflict();
+      // V1 measured inputs are frozen facts too: same attempt+dish must carry
+      // the same story-derived values, or the group conflicts instead of merging.
+      const otherFoodOn = other.foodOnOffsetMillis ?? null;
+      const otherWrap = other.wrapAtOffsetMillis ?? null;
+      const otherSpritzed = other.spritzed ?? false;
+      const otherMeasurementsJson = JSON.stringify([...(other.measurements ?? [])]);
+      const otherGapsJson = JSON.stringify([...(other.gaps ?? [])]);
+      if (otherFoodOn !== firstFoodOn || otherWrap !== firstWrap || otherSpritzed !== firstSpritzed
+        || otherMeasurementsJson !== firstMeasurementsJson || otherGapsJson !== firstGapsJson) throw conflict();
     }
     attempts.push({
       key, attemptId: first.attemptId, dishId: first.dishId,
       foodType: first.foodType, cut: first.cut, weightGrams: first.weightGrams, method: first.method,
       heatingMillis: heating, finalTempCelsius: celsius,
+      foodOnOffsetMillis: firstFoodOn, wrapAtOffsetMillis: firstWrap, spritzed: firstSpritzed,
+      measurements: firstMeasurements, gaps: firstGaps,
     });
   }
   return attempts;
 }
 
-// Story shape accepted from the allowlisted SQL projection. Only measured
-// fields are read; channels/milestones/gaps/verdicts are tolerated for shape
-// compatibility but never extracted, so verdicts/ratings cannot influence the
-// projection (no author ranking from inferred quality). Anything outside the
-// known story keys is rejected; known-sensitive keys are forbidden outright.
+// Story shape accepted from the allowlisted SQL projection. Measured fields,
+// channel identities (for gap validation), milestone actions (wrap/spritz),
+// and gap ranges are read; verdicts/ratings are validated for shape but never
+// extracted, so no quality signal exists to rank by. Anything outside the known
+// story keys is rejected; known-sensitive keys are forbidden outright.
 const STORY_KEYS = ['attemptId', 'channels', 'foodOffOffsetMillis', 'foodOnOffsetMillis',
   'gaps', 'measurements', 'milestones', 'verdict'].sort();
 const MEASUREMENT_KEYS = ['channelId', 'offsetMillis', 'quality', 'role', 'valueCelsius'].sort();
 const offset = (value: unknown): value is number | null =>
   value === null || (Number.isSafeInteger(value) && (value as number) >= -604800000 && (value as number) <= 2592000000);
+
+const MILESTONE_KEYS = ['action', 'id', 'offsetMillis', 'text'].sort();
+const GAP_KEYS = ['channelId', 'fromMillis', 'toMillis'].sort();
+const CHANNEL_KEYS = ['id', 'label', 'role'].sort();
+
+type StoryMilestone = { id: string; offsetMillis: number; action: string };
+type StoryChannel = { id: string; role: string };
+
+function storyMilestones(value: unknown): StoryMilestone[] {
+  if (!Array.isArray(value) || value.length > 1000) throw invalid();
+  const out: StoryMilestone[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+    const m = raw as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(m).sort()) !== JSON.stringify(MILESTONE_KEYS)) throw invalid();
+    if (!uuid(m.id)) throw invalid();
+    if (!Number.isSafeInteger(m.offsetMillis) || (m.offsetMillis as number) < -604800000 || (m.offsetMillis as number) > 2592000000) throw invalid();
+    if (typeof m.action !== 'string' || (m.action as string).length > 80) throw invalid();
+    if (typeof m.text !== 'string' || (m.text as string).length > 2000) throw invalid();
+    out.push({ id: m.id as string, offsetMillis: m.offsetMillis as number, action: m.action as string });
+  }
+  return out;
+}
+
+function storyChannels(value: unknown): StoryChannel[] {
+  if (!Array.isArray(value) || value.length > 32) throw invalid();
+  const out: StoryChannel[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+    const c = raw as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(c).sort()) !== JSON.stringify(CHANNEL_KEYS)) throw invalid();
+    if (typeof c.id !== 'string' || (c.id as string).length > 80 || (c.id as string).length < 1) throw invalid();
+    if (c.role !== 'food' && c.role !== 'pit') throw invalid();
+    if (typeof c.label !== 'string' || (c.label as string).length > 160) throw invalid();
+    out.push({ id: c.id as string, role: c.role as string });
+  }
+  return out;
+}
+
+function storyGaps(value: unknown, channels: readonly StoryChannel[]): CommunityGap[] {
+  if (!Array.isArray(value) || value.length > 1000) throw invalid();
+  const ids = new Set(channels.map((c) => c.id));
+  const out: CommunityGap[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+    const g = raw as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(g).sort()) !== JSON.stringify(GAP_KEYS)) throw invalid();
+    if (typeof g.channelId !== 'string' || !ids.has(g.channelId as string)) throw invalid();
+    if (!Number.isSafeInteger(g.fromMillis) || !Number.isSafeInteger(g.toMillis)) throw invalid();
+    const from = g.fromMillis as number, to = g.toMillis as number;
+    if (from < -604800000 || from > 2592000000 || to < -604800000 || to > 2592000000 || to < from) throw invalid();
+    out.push({ fromMillis: from, toMillis: to });
+  }
+  out.sort((a, b) => a.fromMillis - b.fromMillis || a.toMillis - b.toMillis);
+  return out.filter((gap, i, arr) => i === 0 || gap.fromMillis !== arr[i - 1].fromMillis || gap.toMillis !== arr[i - 1].toMillis);
+}
+
+/** V1 measured inputs derived from a public story. Wrap is the first `wrap`
+ * milestone ordered by (offsetMillis, id) per the v1 wrapAt meaning; spritz is
+ * an exact normalized-action match against COMMUNITY_SPRITZ_ACTIONS_V1.
+ * Measurements and gaps are sorted/deduped deterministically. Verdicts are
+ * validated for shape but never extracted. */
+export function storyV1Fields(story: unknown): Pick<RawContribution,
+  'foodOnOffsetMillis' | 'wrapAtOffsetMillis' | 'spritzed' | 'measurements' | 'gaps'> {
+  if (!story || typeof story !== 'object' || Array.isArray(story)) throw invalid();
+  const row = story as Record<string, unknown>;
+  for (const key of Object.keys(row)) if (FORBIDDEN_KEYS.has(key)) throw forbidden();
+  for (const key of Object.keys(row)) if (!STORY_KEYS.includes(key)) throw invalid();
+  const channels = storyChannels(row.channels);
+  const milestones = storyMilestones(row.milestones);
+  const gaps = storyGaps(row.gaps, channels);
+  if (!row.verdict || typeof row.verdict !== 'object' || Array.isArray(row.verdict)) throw invalid();
+  if (!uuid(row.attemptId) || !offset(row.foodOnOffsetMillis) || !offset(row.foodOffOffsetMillis)) throw invalid();
+  const on = row.foodOnOffsetMillis as number | null, off = row.foodOffOffsetMillis as number | null;
+  if (on !== null && off !== null && off < on) throw invalid();
+  if (!Array.isArray(row.measurements) || row.measurements.length > 250000) throw invalid();
+  const measurements: CommunityMeasurement[] = [];
+  for (const raw of row.measurements) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+    const m = raw as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(m).sort()) !== JSON.stringify(MEASUREMENT_KEYS)) throw invalid();
+    if (typeof m.channelId !== 'string' || (m.channelId as string).length > 80) throw invalid();
+    if (!offset(m.offsetMillis) || m.offsetMillis === null) throw invalid();
+    if (m.role !== 'food' && m.role !== 'pit') throw invalid();
+    if (m.quality !== 'measured' && m.quality !== 'manual' && m.quality !== 'recovered') throw invalid();
+    if (typeof m.valueCelsius !== 'number' || !Number.isFinite(m.valueCelsius)) throw invalid();
+    toCelsius(m.valueCelsius, '°C');
+    measurements.push({
+      offsetMillis: m.offsetMillis as number, role: m.role,
+      valueCelsius: m.valueCelsius, quality: m.quality,
+    });
+  }
+  measurements.sort((a, b) => a.offsetMillis - b.offsetMillis || (a.role < b.role ? -1 : a.role > b.role ? 1 : 0)
+    || a.valueCelsius - b.valueCelsius || (a.quality < b.quality ? -1 : a.quality > b.quality ? 1 : 0));
+  const wraps = milestones
+    .filter((m) => m.action.trim().toLowerCase() === 'wrap')
+    .sort((a, b) => a.offsetMillis - b.offsetMillis || (a.id < b.id ? -1 : 1));
+  const spritzed = milestones.some((m) =>
+    (COMMUNITY_SPRITZ_ACTIONS_V1 as readonly string[]).includes(m.action.trim().toLowerCase()));
+  return {
+    foodOnOffsetMillis: on,
+    wrapAtOffsetMillis: wraps.length ? wraps[0].offsetMillis : null,
+    spritzed,
+    measurements,
+    gaps,
+  };
+}
 
 /** Non-authoritative stub derivation from a public measured story. Slice 15's
  * calculation contract replaces these derivations with reviewed metric inputs;
@@ -245,11 +462,14 @@ export function extractRawContributions(rows: readonly unknown[]): RawContributi
     const story = row.story as Record<string, unknown> | null;
     if (!story || (story as { attemptId?: unknown }).attemptId !== row.attempt_id) throw invalid();
     const fields = storyStubFields(story);
+    const v1 = storyV1Fields(story);
     return rawContribution({
       itemId: row.item_id, revisionId: row.revision_id, status: 'active',
       collectedAtMillis: collected, attemptId: row.attempt_id, dishId: row.dish_id,
       foodType: row.food_type, cut: row.cut, weightGrams: row.weight_grams, method: row.method,
       heatingMillis: fields.heatingMillis, finalTemp: fields.finalTemp,
+      foodOnOffsetMillis: v1.foodOnOffsetMillis, wrapAtOffsetMillis: v1.wrapAtOffsetMillis,
+      spritzed: v1.spritzed, measurements: v1.measurements, gaps: v1.gaps,
     });
   });
 }

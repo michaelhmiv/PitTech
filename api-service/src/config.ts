@@ -19,6 +19,7 @@ import { SyncEncryption } from './sync-encryption.ts';
 import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
 import { PrivatePhotos } from './sync-photos.ts';
 import { privateLibraryEnvelope } from './sync-projection.ts';
+import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
 
 const required = (name: string) => { const value = process.env[name]; if (!value) throw new Error('Missing configuration'); return value; };
 function positive(name: string) { const n = Number(required(name)); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
@@ -123,6 +124,11 @@ export function createRuntime() {
     };
     subscriptions=new Subscriptions(new PostgresBillingStore(pool),{apple:{config:appleConfig,trust,api:appleApi},google:{config:googleConfig,api:playApi,oidcKeys,oidcAudience}});
   }
-  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, refreshOidcKeys, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  // Community aggregation stays off unless explicitly enabled. When on, the job
+  // persists via the isolated aggregation tables through the allowlisted
+  // projection only (least-privilege runtime role in production).
+  const communityAggregationEnabled=process.env.COMMUNITY_AGGREGATION_ENABLED==='true';
+  const communityAggregates=communityAggregationEnabled?new CommunityAggregates(new PostgresCommunityStore(pool),Date.now):undefined;
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, refreshOidcKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }
