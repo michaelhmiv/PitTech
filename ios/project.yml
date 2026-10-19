@@ -119,6 +119,8 @@ targets:
         buildPhase: resources
       - path: ../contracts/fixtures/native-publication-android-v1.json
         buildPhase: resources
+      - path: ../contracts/fixtures/community-benchmarks-v1.json
+        buildPhase: resources
     dependencies:
       - target: PitTech
     settings:

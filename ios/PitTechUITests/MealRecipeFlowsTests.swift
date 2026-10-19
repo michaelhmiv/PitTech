@@ -116,8 +116,10 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let status = app.staticTexts["sync-status"]; reveal(status, app: app)
                 XCTAssertEqual(status.label, "Conflicts to review")
                 let review = app.buttons["sync-conflicts"]; reveal(review, app: app); review.tap()
-                XCTAssertTrue(app.staticTexts["Yours: Note \"Local title\""].waitForExistence(timeout: 10))
-                XCTAssertTrue(app.staticTexts["Other device: Note \"Remote title\""].waitForExistence(timeout: 10))
+                let yours = app.staticTexts["Yours: Note \"Local title\""]; reveal(yours, app: app)
+                XCTAssertTrue(yours.waitForExistence(timeout: 10))
+                let theirs = app.staticTexts["Other device: Note \"Remote title\""]; reveal(theirs, app: app)
+                XCTAssertTrue(theirs.waitForExistence(timeout: 10))
                 if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
                 let action = app.buttons[choice]; reveal(action, app: app); action.tap()
                 // The conflict resolves offline; the review list empties without an upload claim.

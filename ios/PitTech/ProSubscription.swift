@@ -23,6 +23,7 @@ enum ProProductConfiguration {
 enum ProPlacement: String, Sendable, CaseIterable {
     case analysis
     case curves
+    case benchmarks
     case themes
     case more
 
@@ -30,6 +31,7 @@ enum ProPlacement: String, Sendable, CaseIterable {
         switch self {
         case .analysis: return "Personal analysis"
         case .curves: return "Advanced curves"
+        case .benchmarks: return "Community benchmarks"
         case .themes: return "Pro themes"
         case .more: return "PitTech Pro"
         }
@@ -41,6 +43,8 @@ enum ProPlacement: String, Sendable, CaseIterable {
             return "How your pork cooks compare, which recorded attempt you rated best, and how timing shifts across your recorded cuts and weights."
         case .curves:
             return "Align recorded cooks at Food on and Wrap, and choose which measured sources to compare."
+        case .benchmarks:
+            return "Typical heating times and temperature bands from eligible published cooks."
         case .themes:
             return "Pro card themes, chart palettes, and app icons. Preview before applying."
         case .more:

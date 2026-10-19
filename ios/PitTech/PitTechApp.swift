@@ -14,9 +14,11 @@ struct PitTechApp: App {
     #endif
     @State private var sync: NativePrivateSyncCoordinator
     @State private var pro: ProSubscriptionCoordinator
+    @State private var benchmarks: CommunityBenchmarksLoader
     init() {
         let account = _account.wrappedValue
         _pro = State(initialValue: ProSubscriptionCoordinator.forApp(account: account))
+        _benchmarks = State(initialValue: CommunityBenchmarksLoader.forApp(account: account, pro: _pro.wrappedValue))
         _sync = State(initialValue: NativePrivateSyncCoordinator.forApp(store: _store.wrappedValue, account: account))
     }
 
@@ -36,6 +38,7 @@ struct PitTechApp: App {
                 .environment(account)
                 .environment(sync)
                 .environment(pro)
+                .environment(benchmarks)
                 .environment(AdsConsentManager.shared)
                 .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
                 .onChange(of: account.stateUserId) { _, _ in Task { await pro.refresh() } }

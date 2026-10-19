@@ -1,4 +1,4 @@
-# PR 17 — Community aggregate pipeline, backend completion (done; native cards pending)
+# PR 17 — Community aggregate pipeline, backend completion (done); native cards (implemented, Actions pending)
 
 The backend-prep half built the aggregation job scaffolding, deduplication,
 forbidden-input guards, removal propagation, and the n=9/n=10
@@ -235,15 +235,124 @@ paused (or cancelled-but-paid-through). Signed-out callers get 401
 `pro_required` with no figures. Routes are absent (404) unless both
 subscriptions and community aggregation are enabled.
 
+## Native benchmark cards (both clients)
+
+The native lane consumes the read API above with the same meanings, counts,
+and fixtures on both clients. Cards live behind the existing slice-16
+entitlement/paywall machinery — no second gate, no second purchase offer.
+
+### Placement
+
+One Pro entry, "Community benchmarks", inside advanced Insights next to the
+slice-16 entries:
+
+| Surface | iOS | Android |
+|---|---|---|
+| Insights entry row | `ContentView.swift` DEEPER ANALYSIS + `ProEntryRow(entry: .benchmarks)` | `ProPaywall.kt` `ProInsightsEntries` + `ProPlacement.BENCHMARKS` row |
+| Gate host | `ProPaywallHost`: `.pro` + `.benchmarks` renders `CommunityBenchmarksView`; every other entry keeps its slice-18 placeholder | `ProGateDialog`: `PRO` + `BENCHMARKS` renders `CommunityBenchmarksDialog`; every other entry keeps its placeholder |
+| Loader lifetime | `CommunityBenchmarksLoader` in the app environment, reset on view disappear | `CommunityBenchmarksLoader` on `CooksViewModel`, reset on dispose |
+
+Entry preview: "Typical heating times and temperature bands from eligible
+published cooks." Paywall bullets: typical heating times with sample counts,
+temperature percentile bands from many cooks, wrap and spritz shares
+(prevalence only).
+
+### Per-metric rendering
+
+One card per (bucket, metric) figure, in recorded order. Titles: "Typical
+heating time", "Temperature percentile bands", "Stall summary", "Wrap and
+spritz prevalence". Every card shows its bucket line ("Pork butt / shoulder ·
+Medium · Method: smoke"), the figure exactly as recorded, and the coverage
+line ("10 eligible cooks · Computed 2026-10-18") with the UTC DATE displayed
+verbatim (never parsed into a timezone-shifted date).
+
+- Heating: median, middle half (p25–p75), recorded range (min–max).
+- Curves: one block per recorded interval ("+0:00–0:15") with per-band
+  p10/p50/p90 plus that band's own n and coverage ("n=10, 100% of cooks").
+  Suppressed bands (n < 10, null percentiles) render their n and coverage
+  with the 10-cook threshold ("Food band hidden: 3 of 10 cooks in this
+  interval (30%). Bands need 10 cooks."). Every curve card carries "Percentile
+  bands summarize many cooks. They are not one cook's readings." — bands are
+  never presented as recorded individual measurements.
+- Stall: n, nStalled, prevalence, median start/length/temperature, plus the
+  recorded note that sparse attempts are excluded from n, never interpolated.
+  An empty stalled subset shows "No stalled cooks in this group.", never
+  zeroed medians.
+- Wrap/spritz: wrap share, spritz-or-mop share, per-method shares, plus the
+  "Prevalence only" note. Prevalence only — no causation language anywhere.
+
+Group labels keep pork loin ("Pork loin") and pork butt ("Pork butt /
+shoulder") separate; all nine taxonomy groups have distinct labels (pinned by
+test). Shared formatting rules: millis to "5h 30m"/"1h"/"45m", elapsed to
+"+0:15", shares to whole percent, temperatures as recorded °C.
+
+### State matrix
+
+| State | UI (both clients) |
+|---|---|
+| Entitled + visible figure | Card with figure, n, compute date |
+| Entitled + `insufficient_data` | Honest card: "Not enough cooks yet", eligible n ("9 of 10 eligible cooks recorded"), the 10-distinct-cook threshold, compute date; never a partial figure. A normal supported state — it never blocks the personal (slice 18) entry points |
+| Entitled + `run: null` | Honest empty state, no invented figures |
+| Signed-out (401) | Contextual sign-in + paywall preview at the entry point (slice-16 pattern); the loader performs no network call |
+| Authenticated non-Pro (403 `pro_required`) | Paywall with preview (slice-16 pattern), no figures, no second-subscription offer when covered |
+| Unknown/loading entitlement | Neutral loading state; never a paywall flash and never a content flash (the slice-16 matrix, unchanged) |
+| Offline / network error / 404 (feature disabled) | Graceful unavailable state ("Community benchmarks are unavailable right now. Your cooks, exports, and free tools are unchanged.") with Try again; an active cook is never interrupted |
+| Stale entitled cache rejected by the server (401/403) | One silent entitlement refresh, then the same contextual paywall — with no figures decoded or rendered |
+
+### Plumbing and strictness
+
+- Typed clients (`CommunityBenchmarksClient` on both platforms) follow the
+  subscription/account client idioms: Bearer [REDACTED] session from the existing
+  vault/coordinator, no-store, bounded responses (256 KiB for full latest runs),
+  no cookies or redirects. Bucket/metric/runId and job-runs limit/cursor
+  validate client-side before any request; only the two merged routes are
+  called (cards read the latest run; job-runs pagination is client-supported
+  for later run selection).
+- Strict decoding fails closed: unknown metric IDs, misshapen figures, bad
+  dates, and status/summary mismatches map the whole response to the
+  unavailable state — never a crash, never a render.
+- Summaries the client cannot represent (for example a curve whose `kind` is
+  not `percentile-bands`, or an undecodable interval/band) are omitted with
+  their coverage note (n + compute date) intact — never rendered as zero, and
+  a figure is never partially rendered.
+- Figures live only while the benchmarks view is shown (reset on
+  disappear/dispose). No persisted figure cache exists, so a removed or
+  expired entitlement cannot keep serving figures; the gate owns access.
+- Hard prohibitions, asserted in tests: no author ranking, no claim that
+  community norms establish safe doneness, no causation language for
+  wrap/spritz/method prevalence.
+
+### Tests
+
+Fixture-driven suites on both clients consume the same
+`contracts/fixtures/community-benchmarks-v1.json` payloads (byte-identical
+copies in `app/src/main/assets/`, `app/src/test/resources/`, and the iOS test
+bundle): n=10 visible figures, the n=9 `insufficient_data` card, the
+`run: null` empty state, curve per-interval suppression, the stall
+sparse-exclusion note, and wrap/spritz prevalence. State tests cover
+signed-out, non-Pro, entitled, unknown/loading, offline/error, and the stale
+403 → paywall convergence. Wording-guard tests forbid ranking, safe-doneness,
+and causation language and require the percentile-band label.
+
+- iOS: `CommunityBenchmarksTests` (21 unit tests) +
+  `CommunityBenchmarksUITests` (9 UI tests at both text sizes).
+- Android: JVM `CommunityBenchmarksTest` (20) + `CommunityBenchmarksClientTest`
+  (2), plus `CommunityBenchmarksTest` (9 stub-driven UI tests) and
+  `CommunityBenchmarksFlowTest` (3 real-navigation tests); the companion
+  selector in `scripts/run-emulator-ui-tests.sh` moves from `OK (45 tests)`
+  to `OK (57 tests)`.
+
 ## Honest remains
 
-- Native benchmark cards and their empty states (next lane; same meanings,
-  counts, and coverage explanations on both clients).
 - Store/sandbox purchase evidence and installed-link checks (owner-gated).
 - Cutoff sequences (cutoffs remain timestamps).
 - Per-cell incremental refresh remains a deferred optimization that must
   preserve byte-identical outputs.
+- No Actions evidence yet for the native lane: the clients and their tests
+  were written by construction against the inspected native patterns (no SDK
+  or Xcode in this environment); `ios-build.yml` (unit + UI at both text
+  sizes) and `android-build.yml` (JVM tests plus the API 36 font 1.15/1.5
+  emulator lanes with the updated companion count) are the proof gates.
 
-No Actions evidence yet for this lane: the modules and new tests were written
-by construction against the inspected backend patterns; `online-services.yml`
-(typecheck, unit + real-Postgres gates, container checks) is the proof gate.
+The backend lane's proof gate remains `online-services.yml` (typecheck, unit +
+real-Postgres gates, container checks).

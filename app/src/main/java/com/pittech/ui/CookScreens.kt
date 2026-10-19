@@ -148,7 +148,7 @@ internal fun PitTechApp(
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
     AccountDialog(viewModel.account, viewModel.sync)
-    ProGateDialog(viewModel.subscription, previouslyEntitled, onSignIn = { if (viewModel.account.enabled) viewModel.account.open() })
+    ProGateDialog(viewModel.subscription, previouslyEntitled, onSignIn = { if (viewModel.account.enabled) viewModel.account.open() }, benchmarks = viewModel.communityBenchmarks)
     if (sharedCodes) SharedRelayCodesDialog(viewModel) { sharedCodes = false }
     var isStartingCook by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
