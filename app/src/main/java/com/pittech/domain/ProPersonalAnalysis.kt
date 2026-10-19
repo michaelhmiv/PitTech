@@ -119,7 +119,7 @@ object ProPersonalAnalysis {
             cook.dishes.map { dish ->
                 val cut = dish.cut?.trim().orEmpty()
                 DishRow(
-                    cook.id,
+                    cook.cookId,
                     titles[cook.cookId] ?: cook.cookId,
                     if (cut.isEmpty()) "Cut not recorded" else cut,
                     dish,

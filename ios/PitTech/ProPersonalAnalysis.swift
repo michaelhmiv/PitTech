@@ -238,8 +238,8 @@ enum ProPersonalAnalysis {
         let lines = rows.map { row -> String in
             let wrap: String
             switch (row.metrics.wrapAt, row.metrics.foodOnAt) {
-            case let (wrap?, foodOn?):
-                wrap = "wrapped \(formatElapsed(wrap - foodOn)) after Food on"
+            case let (wrapAt?, foodOnAt?):
+                wrap = "wrapped \(formatElapsed(wrapAt - foodOnAt)) after Food on"
             case (.some, .none):
                 wrap = "wrapped (Food on not recorded)"
             case (.none, _):

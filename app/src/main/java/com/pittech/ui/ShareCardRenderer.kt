@@ -16,7 +16,7 @@ import kotlin.math.*
 /** Resolved card paint: a curated theme plus a chart palette, defaulting to
  * the Classic treatment for unknown ids. Classic literals match the original
  * hard-coded paint exactly, so existing pixel tests are unaffected. */
-internal data class ShareCardRenderTheme(val background: Int, val ink: Int, val supporting: Int, val accent: Int, val divider: Int, val palette: List<Int>) {
+data class ShareCardRenderTheme(val background: Int, val ink: Int, val supporting: Int, val accent: Int, val divider: Int, val palette: List<Int>) {
     companion object {
         fun resolve(themeId: String?, paletteId: String?): ShareCardRenderTheme {
             val theme = ProCustomization.theme(themeId)
