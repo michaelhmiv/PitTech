@@ -162,12 +162,12 @@ enum ProCustomization {
 /// CookStore library preferences (`setPreference`, the same store as theme
 /// mode and units); tests use the dictionary backing.
 /// Main-actor confined like its owners; no cross-actor sharing.
-protocol ProCustomizationBacking: AnyObject {
+@MainActor protocol ProCustomizationBacking: AnyObject {
     func value(_ key: String) -> String?
     func set(_ value: String, _ key: String)
 }
 
-final class CookStoreCustomizationBacking: ProCustomizationBacking {
+@MainActor final class CookStoreCustomizationBacking: ProCustomizationBacking {
     private let store: CookStore
 
     init(store: CookStore) {
@@ -183,7 +183,7 @@ final class CookStoreCustomizationBacking: ProCustomizationBacking {
     }
 }
 
-final class DictionaryCustomizationBacking: ProCustomizationBacking {
+@MainActor final class DictionaryCustomizationBacking: ProCustomizationBacking {
     private var values: [String: String] = [:]
 
     func value(_ key: String) -> String? { values[key] }
