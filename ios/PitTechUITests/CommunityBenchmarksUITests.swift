@@ -8,11 +8,44 @@ final class CommunityBenchmarksUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<12 {
-            if element.waitForExistence(timeout: 1), element.isHittable { return }
-            app.swipeUp()
+        // The benchmarks/paywall destination is a sheet with its own ScrollView:
+        // swiping the application window does not reliably scroll that sheet, and
+        // off-viewport SwiftUI content is not in the AX hierarchy until scrolled
+        // into view. Scroll the sheet's scroll view itself with direction-aware
+        // servo drags (mirroring MealRecipeFlowsTests.reveal()'s generic branch).
+        let needsHittable = element.elementType == .button
+        for _ in 0..<18 {
+            let top = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable })?.frame.maxY ?? app.windows.firstMatch.frame.minY
+            let bottom = app.tabBars.allElementsBoundByIndex.first(where: { $0.isHittable })?.frame.minY ?? app.windows.firstMatch.frame.maxY
+            if element.waitForExistence(timeout: 1), !needsHittable || element.isHittable {
+                if element.frame.minY >= top && element.frame.maxY <= bottom - 8 { return }
+            }
+            let scroll = ["community-benchmarks", "pro-paywall"].compactMap { id -> XCUIElement? in
+                let candidate = app.scrollViews[id]
+                return candidate.exists && candidate.isHittable ? candidate : nil
+            }.first ?? app.scrollViews.allElementsBoundByIndex.first(where: { $0.isHittable })
+            if let scroll, scroll.exists && scroll.isHittable, scroll.frame.height.isFinite, scroll.frame.height > 0 {
+                // Servo drags, not full-screen flings: a fling's displacement exceeds the
+                // nav-to-tab acceptance window for tall large-text rows, so the top-edge
+                // direction rule limit-cycles (up, down, up, ...) without ever landing
+                // in-window. Capping each step at the remaining distance makes overshoot
+                // impossible, so the same direction rule converges instead of oscillating.
+                let down = element.exists && element.frame.minY < top + 8
+                let span = max(60, (bottom - top) * 0.25)
+                let distance = element.exists ? (down ? top - element.frame.minY : element.frame.maxY - (bottom - 8)) + 24 : span
+                let travel = min(span, max(60, distance)) / scroll.frame.height
+                let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.5 + travel : 0.5 - travel))
+                start.press(forDuration: 0.01, thenDragTo: end)
+            } else if let scroll, scroll.exists && scroll.isHittable {
+                if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
+            } else { app.swipeUp() }
         }
-        XCTAssertTrue(element.exists && element.isHittable)
+        if needsHittable {
+            XCTAssertTrue(element.exists && element.isHittable)
+        } else {
+            XCTAssertTrue(element.exists)
+        }
     }
 
     private func launch(extra: [String] = [], large: Bool = false) -> XCUIApplication {

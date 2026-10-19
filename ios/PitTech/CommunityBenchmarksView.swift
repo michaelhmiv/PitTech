@@ -11,74 +11,78 @@ struct CommunityBenchmarksView: View {
     let entry: ProPlacement
 
     var body: some View {
-        switch benchmarks.state {
-        case .signedOut, .forbidden:
-            // A stale entitled cache the server rejects converges through the
-            // loader's one refresh, then lands on the same contextual paywall
-            // the gate shows — with no figures decoded or rendered.
-            ProPaywallView(entry: entry)
-        default:
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        SectionTitle(title: entry.title, subtitle: entry.preview)
-                        switch benchmarks.state {
-                        case .loading:
-                            ProgressView("Loading community benchmarks…")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .frame(minHeight: 44)
-                        case .loaded(let snapshot):
-                            ForEach(snapshot.cards, id: \.testTag) { card in
-                                CommunityBenchmarkCard(card: card)
-                            }
-                            ForEach(snapshot.omitted, id: \.testTag) { omitted in
-                                CommunityOmittedNote(omitted: omitted)
-                            }
-                        case .empty:
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("No community figures yet")
-                                    .font(.headline)
-                                Text("Benchmarks appear here when eligible published cooks are recorded. Your personal tools and Pro entries are unchanged.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(PitTechStyle.supporting)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
-                            .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                        case .unavailable:
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Community benchmarks are unavailable right now.")
-                                    .font(.headline)
-                                Text("Your cooks, exports, and free tools are unchanged.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(PitTechStyle.supporting)
-                                Button("Try again") { Task { await benchmarks.load() } }
-                                    .buttonStyle(.bordered)
+        Group {
+            switch benchmarks.state {
+            case .signedOut, .forbidden:
+                // A stale entitled cache the server rejects converges through the
+                // loader's one refresh, then lands on the same contextual paywall
+                // the gate shows — with no figures decoded or rendered.
+                ProPaywallView(entry: entry)
+            default:
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            SectionTitle(title: entry.title, subtitle: entry.preview)
+                            switch benchmarks.state {
+                            case .loading:
+                                ProgressView("Loading community benchmarks…")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .frame(minHeight: 44)
-                                    .accessibilityIdentifier("community-retry")
+                            case .loaded(let snapshot):
+                                ForEach(snapshot.cards, id: \.testTag) { card in
+                                    CommunityBenchmarkCard(card: card)
+                                }
+                                ForEach(snapshot.omitted, id: \.testTag) { omitted in
+                                    CommunityOmittedNote(omitted: omitted)
+                                }
+                            case .empty:
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("No community figures yet")
+                                        .font(.headline)
+                                    Text("Benchmarks appear here when eligible published cooks are recorded. Your personal tools and Pro entries are unchanged.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(PitTechStyle.supporting)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(18)
+                                .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                            case .unavailable:
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Community benchmarks are unavailable right now.")
+                                        .font(.headline)
+                                    Text("Your cooks, exports, and free tools are unchanged.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(PitTechStyle.supporting)
+                                    Button("Try again") { Task { await benchmarks.load() } }
+                                        .buttonStyle(.bordered)
+                                        .frame(minHeight: 44)
+                                        .accessibilityIdentifier("community-retry")
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(18)
+                                .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                            case .signedOut, .forbidden:
+                                EmptyView()
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
-                            .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                        case .signedOut, .forbidden:
-                            EmptyView()
                         }
+                        .padding(20)
                     }
-                    .padding(20)
-                }
-                .accessibilityIdentifier(benchmarksAccessibilityId)
-                .background(PitTechStyle.canvas.ignoresSafeArea())
-                .navigationTitle(entry.title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { pro.closePaywall() }.accessibilityIdentifier("pro-close")
+                    .accessibilityIdentifier(benchmarksAccessibilityId)
+                    .background(PitTechStyle.canvas.ignoresSafeArea())
+                    .navigationTitle(entry.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { pro.closePaywall() }.accessibilityIdentifier("pro-close")
+                        }
                     }
                 }
             }
-            .task { await benchmarks.load() }
-            .onDisappear { benchmarks.reset() }
         }
+        // Load once per presentation; reset only when the whole destination is
+        // dismissed. State-branch flips (loading<->paywall) must not reset or reload.
+        .task { await benchmarks.load() }
+        .onDisappear { benchmarks.reset() }
     }
 
     private var benchmarksAccessibilityId: String {
