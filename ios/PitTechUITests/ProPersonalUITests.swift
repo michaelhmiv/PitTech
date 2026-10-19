@@ -226,7 +226,17 @@ final class ProPersonalUITests: XCTestCase {
             reveal(back, app: app)
             back.tap()
             XCTAssertTrue(app.scrollViews["pro-recap-scope"].waitForExistence(timeout: 10))
-            app.buttons["pro-close"].tap()
+            // The builder is pushed onto the analysis stack, so its nav bar
+            // carries the system back button — pro-close lives on the
+            // analysis toolbar underneath and does not exist while the
+            // builder is on top. Pop back like a user would, then close.
+            let backToAnalysis = app.navigationBars["Year in Smoke"].buttons.firstMatch
+            XCTAssertTrue(backToAnalysis.waitForExistence(timeout: 10))
+            backToAnalysis.tap()
+            XCTAssertTrue(app.scrollViews["pro-analysis"].waitForExistence(timeout: 10))
+            let close = app.buttons["pro-close"]
+            XCTAssertTrue(close.waitForExistence(timeout: 10))
+            close.tap()
             app.terminate()
         }
     }
