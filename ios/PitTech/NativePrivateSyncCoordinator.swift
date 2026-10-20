@@ -56,10 +56,10 @@ private struct NativeSyncAuthLost: Error {}
         throw NativeSyncError.invalid
     }
 
-    func refresh() { publish(bindUser(), busy: false) }
+    func refresh() { publish(bindUser(), busy: presentation.busy) }
 
     func setAutomatic(_ value: Bool) {
-        guard enabled, let user = bindUser(), var state = try? store.load(user), !value || (state.lastSyncedAt > 0 && (try? store.libraryAccount()) == user) else { return }
+        guard !presentation.busy, enabled, let user = bindUser(), var state = try? store.load(user), !value || (state.lastSyncedAt > 0 && (try? store.libraryAccount()) == user) else { return }
         state.automatic = value
         do { try store.save(user, state) } catch { return }
         if !value { automaticTask?.cancel(); automaticTask = nil }

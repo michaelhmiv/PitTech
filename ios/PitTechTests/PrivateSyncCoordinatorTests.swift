@@ -2,6 +2,29 @@ import XCTest
 @testable import PitTech
 
 @MainActor final class PrivateSyncCoordinatorTests: XCTestCase {
+    func testAccountScreenRefreshKeepsInFlightSyncAndJournalRemovalGuarded() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); seedLibrary(store)
+        let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
+        let (sync, _) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
+        let commit = api.commitHandler
+        defer { api.commitHandler = commit }
+        api.commitHandler = { bytes, mutation in
+            sync.refresh()
+            XCTAssertTrue(sync.presentation.busy)
+            XCTAssertThrowsError(try sync.detachLibrary()) { error in
+                guard let removal = error as? LocalJournalRemovalError, case .syncing = removal else { return XCTFail("Journal removal must wait for sync") }
+            }
+            XCTAssertEqual(try journal.libraryAccount(), self.userA)
+            return try commit(bytes, mutation)
+        }
+        await sync.syncNow()
+        XCTAssertEqual(api.puts.count, 1)
+        XCTAssertFalse(sync.presentation.busy)
+        XCTAssertEqual(try journal.load(userA).serverVersion, 1)
+    }
+
     func testAutomaticSyncRequiresExplicitAttachmentOptInAndCurrentLibraryAccount() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
