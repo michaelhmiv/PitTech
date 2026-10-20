@@ -177,9 +177,12 @@ import XCTest
         api.entitlementState = "active"
         await coordinator.refresh()
         XCTAssertEqual(coordinator.entitlement, .entitled)
-        XCTAssertEqual(reported, [.entitled])
+        // Binding the first account clears any previous owner's state before verification.
+        XCTAssertEqual(reported, [.unknown, .entitled])
         let monitor = AdRequestMonitor()
-        XCTAssertFalse(monitor.shouldAttempt(entitlement: coordinator.entitlement, previouslyEntitled: true))
+        for state in reported {
+            XCTAssertFalse(monitor.shouldAttempt(entitlement: state, previouslyEntitled: true))
+        }
         XCTAssertTrue(monitor.attempts.isEmpty)
     }
 

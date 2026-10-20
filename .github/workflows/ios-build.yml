@@ -84,6 +84,17 @@ jobs:
                       failures(data)
                       print("Previous failing test nodes:")
                       print(json.dumps(found[:30], indent=2)[:60000])
+          for name in ("native-tests.log", "focused-tests.log"):
+              for path in root.rglob(name):
+                  print("Previous assertion locations:", name)
+                  matches = 0
+                  with path.open(errors="replace") as stream:
+                      for line in stream:
+                          if "error: -[" in line or ("Test Case" in line and "failed" in line):
+                              print(line.rstrip()[:2500])
+                              matches += 1
+                              if matches >= 50:
+                                  break
           PY
 
   simulator-build:
@@ -131,6 +142,15 @@ jobs:
           # device signature's entitlement blob. The real Keychain tests below
           # verify access, device-only accessibility, replacement and deletion.
           codesign --verify --verbose build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
+
+      - name: Run online regressions before the complete native suite
+        id: focused-native-tests
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
+          xcrun simctl shutdown all || true
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/ios-focused.xcresult -only-testing:PitTechTests/OnlineConfigurationTests -only-testing:PitTechTests/SubscriptionEntitlementTests -only-testing:PitTechTests/ProPaywallTests -only-testing:PitTechUITests/MealRecipeFlowsTests/testAnonymousReportRecoveryAndPublisherBlockAtBothTextSizes CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/focused-tests.log
 
       - name: Build and inspect unsigned public Simulator configuration
         run: |
@@ -180,15 +200,17 @@ jobs:
       - name: Export native UI screenshots and retain test diagnostics
         if: always()
         run: |
-          if [[ -f build/ios-tests.xcresult/Info.plist ]]; then
+          result_bundle=build/ios-tests.xcresult
+          if [[ ! -f "$result_bundle/Info.plist" ]]; then result_bundle=build/ios-focused.xcresult; fi
+          if [[ -f "$result_bundle/Info.plist" ]]; then
             mkdir -p build/native-ui-evidence
-            xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/native-test-summary.json
+            xcrun xcresulttool get test-results summary --path "$result_bundle" > build/native-test-summary.json
             python3 -c 'import json; print("Current native test summary:"); print(json.dumps(json.load(open("build/native-test-summary.json")), indent=2)[:60000])'
-            xcrun xcresulttool get test-results tests --path build/ios-tests.xcresult > build/native-test-cases.json
-            xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/native-ui-evidence
+            xcrun xcresulttool get test-results tests --path "$result_bundle" > build/native-test-cases.json
+            xcrun xcresulttool export attachments --path "$result_bundle" --output-path build/native-ui-evidence
             # Upload a closed archive, never a live Staging directory that Xcode
             # can rename while upload-artifact enumerates it after a timeout.
-            ditto -c -k --keepParent build/ios-tests.xcresult build/native-tests.xcresult.zip
+            ditto -c -k --keepParent "$result_bundle" build/native-tests.xcresult.zip
           else
             echo "The result bundle did not finalize; retaining the test log and fresh writer exports."
           fi
@@ -202,6 +224,7 @@ jobs:
             build/native-test-summary.json
             build/native-test-cases.json
             build/native-tests.log
+            build/focused-tests.log
             build/native-writer-tests.log
           if-no-files-found: warn
           retention-days: 14
