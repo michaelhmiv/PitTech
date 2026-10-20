@@ -93,6 +93,13 @@ import kotlinx.coroutines.launch
         Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.",style=MaterialTheme.typography.bodySmall)
         Text(state.status,Modifier.testTag("sync-status"))
         state.detail?.let{Text(it,Modifier.testTag("sync-message"),style=MaterialTheme.typography.bodySmall)}
+        if (state.lastSyncedAt > 0 && signedIn && sync.enabled) {
+            Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                Checkbox(state.automatic,{ value -> scope.launch { sync.setAutomatic(value) } },enabled=!state.busy,modifier=Modifier.testTag("sync-automatic"))
+                Text("Keep this library in sync while the app is open",Modifier.weight(1f))
+            }
+            Text("Checks when you return to the app and after saved changes. Offline changes wait for a connection.",style=MaterialTheme.typography.bodySmall)
+        }
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             Button(onClick={scope.launch{sync.syncNow()}},enabled=!state.busy && signedIn && sync.enabled,modifier=Modifier.heightIn(min=48.dp).testTag("sync-now")){Text("Sync now")}
             if(state.conflicts.isNotEmpty())Button(onClick={reviewing=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("sync-conflicts")){Text("Review conflicts (${state.conflicts.size})")}

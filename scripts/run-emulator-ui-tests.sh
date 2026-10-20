@@ -10,7 +10,10 @@ else
   system_image="system-images;android-${api_level};google_apis;x86_64"
 fi
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"
+# setup-android adds its selected release to PATH; a preinstalled `latest`
+# directory can still point at old tools that misidentify API 37 as android-0.
+avdmanager_bin="$(command -v avdmanager || true)"
+if [[ -z "$avdmanager_bin" ]]; then avdmanager_bin="$sdk_root/cmdline-tools/latest/bin/avdmanager"; fi
 emulator_bin="$sdk_root/emulator/emulator"
 output_dir="${GITHUB_WORKSPACE:-$(pwd)}/app/build/ci-emulator"
 emulator_pid=""
@@ -69,6 +72,11 @@ printf 'no\n' | "$avdmanager_bin" create avd \
 
 avd_config="$ANDROID_AVD_HOME/${avd_name}.avd/config.ini"
 if (( api_level >= 37 )); then
+  if ! grep -Eq '^target=android-37(\.0)?$' "$ANDROID_AVD_HOME/${avd_name}.ini"; then
+    echo "The AVD tools did not recognize API 37; refusing an android-0 graphics configuration." >&2
+    cat "$ANDROID_AVD_HOME/${avd_name}.ini" >&2
+    exit 1
+  fi
   if [[ ! -f "$avd_config" ]]; then
     echo "The emulator AVD config was not created: $avd_config" >&2
     exit 1
@@ -393,7 +401,7 @@ echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest,com.pittech.data.PublicationAcceptanceTest,com.pittech.data.LocalJournalRemovalTest,com.pittech.data.PrivateSyncStoreTest,com.pittech.data.PrivateSyncApplyTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (40 tests)' "$recipe_test_output"
+grep -q 'OK (41 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"

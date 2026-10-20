@@ -15,6 +15,30 @@ import org.junit.runner.RunWith
 import java.util.UUID
 
 @RunWith(AndroidJUnit4::class) class PrivateSyncApplyTest {
+    @Test fun remoteFinishAndDeletionCancelOnlyThatMealsRuntime(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val photos = PhotoStorage(context); val repo = CookRepository(db, photos)
+            val cook = repo.startCook(NewCookDraft("Finishing")); val other = repo.startCook(NewCookDraft("Still cooking"))
+            db.activityTimerDao().insert(ActivityTimer("timer-finish", cook, null, "Rest", null, 1000, null, null, "note-finish", "running"))
+            db.activityTimerDao().insert(ActivityTimer("timer-other", other, null, "Hold", null, 1000, null, null, "note-other", "running"))
+            db.recordingDao().saveRecording(CookRecordingEntity(cook, "device", "key", CookRecordingEntity.RECORDING, "°F", 1000, 1000))
+            val rule = ReminderRepository(db).save(cook, null, "Check", ReminderTrigger.Duration(1000, 600000))
+            val library = PrivateSyncRoomLibrary(db, repo, photos)
+            val rows = library.archive().getJSONArray("cooks")
+            val ended = (0 until rows.length()).map { rows.getJSONObject(it) }.single { it.getString("id") == cook }
+                .put("status", "completed").put("endedAtUtcMillis", System.currentTimeMillis())
+            library.apply(PrivateSyncApplyPlan(listOf(PrivateSyncUpsert("cooks", cook, ended)), emptyList(), emptyMap()))
+            assertEquals("cancelled", db.activityTimerDao().get("timer-finish")!!.status)
+            assertEquals("running", db.activityTimerDao().get("timer-other")!!.status)
+            assertEquals(CookRecordingEntity.STOPPED, db.recordingDao().getRecording(cook)!!.status)
+            assertFalse(db.reminderDao().rule(rule)!!.enabled)
+            library.apply(PrivateSyncApplyPlan(emptyList(), listOf(PrivateSyncDelete("cooks", cook)), emptyMap()))
+            assertNull(db.cookDao().getCook(cook)); assertNotNull(db.cookDao().getCook(other))
+            assertEquals("running", db.activityTimerDao().get("timer-other")!!.status)
+        } finally { db.close() }
+    }
     private fun eventJson(id: String, cookId: String, title: String) = JSONObject()
         .put("id", id).put("cookId", cookId).put("eventType", "note").put("title", title).put("occurredAtUtcMillis", 1000)
         .put("recordedAtUtcMillis", 1000).put("timeZoneId", "UTC").put("source", "manual").put("createdAtUtcMillis", 1000).put("updatedAtUtcMillis", 2000)

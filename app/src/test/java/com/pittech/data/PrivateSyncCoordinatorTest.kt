@@ -12,6 +12,22 @@ import java.io.File
 import java.io.IOException
 
 class PrivateSyncCoordinatorTest {
+    @Test fun automaticSyncRequiresExplicitAttachmentOptInAndTheCurrentLibraryAccount() = runTest {
+        val library = FakeLibrary(archive("cooks" to cook()))
+        val api = FakeApi(); val store = PrivateSyncMemoryStore(); val session = FakeSession(userA)
+        val sync = coordinator(store = store, session = session, api = api, library = library, scope = this)
+        sync.syncNow(automatic = true); sync.setAutomatic(true)
+        assertTrue(api.puts.isEmpty()); assertFalse(store.load(userA).automatic)
+        sync.syncNow(); assertEquals(1, api.puts.size)
+        sync.syncNow(automatic = true); assertEquals(1, api.puts.size)
+        sync.setAutomatic(true); assertTrue(store.load(userA).automatic)
+        sync.syncNow(automatic = true); assertTrue(api.puts.size > 1)
+        val requests = api.puts.size
+        store.save(userB, PrivateSyncState(account = userB, lastSyncedAt = 1000, automatic = true))
+        session.user = userB; sync.syncNow(automatic = true)
+        assertEquals(requests, api.puts.size); assertEquals(userA, store.libraryAccount())
+        sync.detachLibrary(); assertNull(store.libraryAccount()); assertEquals(requests, api.puts.size)
+    }
     private val userA = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
     private val userB = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
     private val deviceB = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"

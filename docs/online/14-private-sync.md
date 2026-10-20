@@ -259,7 +259,7 @@ services, require fresh Actions evidence before any release statement.
 Both clients now implement the full device side of this slice. Sync stays
 disabled by default (`AccountProtocol.ENABLED` / `NativeAccountProtocol.enabled`
 are `false`); nothing here turns it on for users. Local writes stay
-authoritative and are never blocked: sync runs only on explicit `syncNow()`,
+authoritative and are never blocked: first attachment uses explicit `syncNow()`, with opted-in foreground reconciliation afterward,
 only for the current session account.
 
 Android (`app/src/main/java/com/pittech/data/`, `ui/`, `CooksViewModel.kt`):
@@ -349,3 +349,23 @@ existing revision UUID or invalid ancestry. The portable field format is unchang
 Shared vectors and native migration/import regressions cover these corrections.
 Release verification is recorded separately after Actions, not inferred from code.
 The full accounts/social/sync/deletion release gate remains in force.
+
+### Foreground opportunities and local reconciliation
+
+Sync now remains the explicit first library attachment. After a successful sync,
+users may opt this device/account into foreground reconciliation. The choice and
+attached-library account marker stay in private device metadata, outside archives.
+An account switch cannot automatically upload an unrelated journal, even when that
+other account has an old synced base. Sign-in alone never attaches a library.
+Foreground/user-write opportunities coalesce and are bounded to one automatic
+attempt per 30 seconds; leaving the foreground cancels scheduled work. No cloud
+polling or background wake guarantee is introduced. Ordinary restore stays inactive.
+
+Applying a finished/deleted meal cancels only its local active timers/recording and
+notifications, after an atomic data apply. Completed timer history and unrelated
+meals remain intact. Account removal also purges the association marker. Library
+commit and another phone's eventual application remain separate facts.
+
+A local-only journal removal first detaches this device's sync association and
+pending outbox. It cannot turn an empty device library into server-deletion
+tombstones; a subsequent attachment requires an explicit Sync now action.

@@ -2,6 +2,40 @@ import XCTest
 @testable import PitTech
 
 @MainActor final class PrivateSyncCoordinatorTests: XCTestCase {
+    func testAutomaticSyncRequiresExplicitAttachmentOptInAndCurrentLibraryAccount() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); seedLibrary(store)
+        let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
+        let (sync, session) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
+        await sync.syncNow(automatic: true); sync.setAutomatic(true)
+        XCTAssertEqual(api.puts.count, 0); XCTAssertNotEqual(try journal.load(userA).automatic, true)
+        await sync.syncNow(); XCTAssertEqual(api.puts.count, 1)
+        await sync.syncNow(automatic: true); XCTAssertEqual(api.puts.count, 1)
+        sync.setAutomatic(true); XCTAssertEqual(try journal.load(userA).automatic, true)
+        await sync.syncNow(automatic: true); XCTAssertGreaterThan(api.puts.count, 1)
+        let requests = api.puts.count
+        var other = NativePrivateSyncState(account: userB); other.lastSyncedAt = 1000; other.automatic = true; try journal.save(userB, other)
+        session.user = userB; await sync.syncNow(automatic: true)
+        XCTAssertEqual(api.puts.count, requests); XCTAssertEqual(try journal.libraryAccount(), userA)
+        try sync.detachLibrary(); XCTAssertNil(try journal.libraryAccount()); XCTAssertEqual(api.puts.count, requests)
+    }
+
+    func testRemoteFinishAndDeletionReconcileLocalTimers() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); seedLibrary(store)
+        try store.startActivityTimer(cookId: "cook-1", dishId: "dish-1", title: "Rest", method: nil, target: nil)
+        let timer = try XCTUnwrap(store.library.activityTimers.first?.objectValue?["id"]?.stringValue)
+        var cook = try XCTUnwrap(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library.cooks[0])).objectValue)
+        cook["status"] = .string("completed"); cook["endedAtUtcMillis"] = .number(2000)
+        let adapter = NativeCookStoreSyncLibrary(store)
+        try adapter.apply(NativeSyncApplyPlan(upserts: [NativeSyncUpsert(type: "cooks", id: "cook-1", payload: cook)], deletes: [], attachments: [:]))
+        XCTAssertEqual(store.library.activityTimers.first?.objectValue?["status"]?.stringValue, "cancelled")
+        XCTAssertEqual(store.library.activityTimers.first?.objectValue?["id"]?.stringValue, timer)
+        try adapter.apply(NativeSyncApplyPlan(upserts: [], deletes: [NativeSyncDelete(type: "dishes", id: "dish-1"), NativeSyncDelete(type: "cooks", id: "cook-1")], attachments: [:]))
+        XCTAssertTrue(store.library.cooks.isEmpty); XCTAssertTrue(store.library.activityTimers.isEmpty)
+    }
     private let userA = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
     private let userB = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
     private let deviceB = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"

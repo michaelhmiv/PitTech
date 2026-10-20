@@ -62,6 +62,7 @@ class CooksViewModel(
         com.pittech.data.PrivateSyncStore(context).purgeAccount(user)
         communityControls.reload();publicDiscovery.controlsChanged()
     },removeJournal={
+        sync.detachLibrary()
         com.pittech.data.LocalJournalRemoval(app.database,com.pittech.data.PhotoStorage(context)).remove()
         // The open detail would otherwise stick on "Opening cook…" for a deleted row.
         closeCook()
@@ -79,7 +80,7 @@ class CooksViewModel(
         com.pittech.domain.SharedPrefsCustomizationBacking(context),
         com.pittech.domain.PackageManagerProIconController(context))
     internal val sync = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
-        library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context)),
+        library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context), context),
         projection = com.pittech.data.PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() }))
     internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes
@@ -211,8 +212,18 @@ class CooksViewModel(
         val now = System.currentTimeMillis()
         app.recordingRepository.assignProbe(probeId, cookId, dishId, now, movedAt ?: now)
     }, onFinished)
+    private val syncChanges = object : androidx.room.InvalidationTracker.Observer("cooks", "dishes", "ingredients", "timeline_events", "devices", "probes", "sensor_readings", "targets", "cook_results", "photos", "saved_recipes", "recipe_revisions", "recipe_assets", "meal_presets", "dish_recipe_sources", "companion_records", "companion_photos", "log_reading_links", "cook_lifecycle", "target_history", "reminder_rules") {
+        override fun onInvalidated(tables: Set<String>) { viewModelScope.launch { sync.requestAutomaticSync() } }
+    }
     init {
+        app.database.invalidationTracker.addObserver(syncChanges)
         viewModelScope.launch(Dispatchers.IO) { runCatching { pruneStaleShareArchives() } }
+    }
+
+    override fun onCleared() {
+        app.database.invalidationTracker.removeObserver(syncChanges)
+        sync.pauseAutomaticSync()
+        super.onCleared()
     }
 
     private val _equipmentSummaries = MutableStateFlow<List<com.pittech.data.EquipmentSummary>>(emptyList())
@@ -802,6 +813,7 @@ class CooksViewModel(
             try {
                 block()
                 succeeded = true
+                sync.requestAutomaticSync()
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

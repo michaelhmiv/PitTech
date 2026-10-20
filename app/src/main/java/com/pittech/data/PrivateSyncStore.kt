@@ -41,12 +41,13 @@ internal data class PrivateSyncState(
     val lastSyncedAt: Long = 0,
     val outcome: String = "ok",
     val message: String? = null,
+    val automatic: Boolean = false,
 ) {
     fun json() = JSONObject().put("version", 1).put("account", account).put("serverVersion", serverVersion).put("maxCounter", maxCounter)
         .put("base", JSONArray(base)).put("conflicts", JSONArray(conflicts)).put("resolved", JSONArray(resolved))
         .put("pending", pending).put("mutationId", mutationId ?: JSONObject.NULL).put("mutationSha", mutationSha ?: JSONObject.NULL)
         .put("photos", JSONObject().apply { photos.forEach { (key, entry) -> put(key, entry.json()) } })
-        .put("lastSyncedAt", lastSyncedAt).put("outcome", outcome).put("message", message ?: JSONObject.NULL)
+        .put("lastSyncedAt", lastSyncedAt).put("outcome", outcome).put("message", message ?: JSONObject.NULL).put("automatic", automatic)
     companion object {
         fun parse(user: String, o: JSONObject): PrivateSyncState {
             require(o.getInt("version") == 1 && o.getString("account") == user)
@@ -70,13 +71,15 @@ internal data class PrivateSyncState(
             val outcome = o.getString("outcome"); require(outcome in setOf("ok", "waiting", "retry"))
             return PrivateSyncState(user, serverVersion, maxCounter, base.toString(), conflicts.toString(), resolved,
                 o.getBoolean("pending"), mutationId, mutationSha, entries, o.getLong("lastSyncedAt"), outcome,
-                if (o.isNull("message")) null else o.getString("message").take(500))
+                if (o.isNull("message")) null else o.getString("message").take(500), o.optBoolean("automatic", false))
         }
     }
 }
 
 internal interface PrivateSyncStorage {
     fun deviceId(): String
+    fun libraryAccount(): String?
+    fun attachLibrary(user: String)
     fun load(user: String): PrivateSyncState
     fun save(user: String, state: PrivateSyncState)
     fun purgeAccount(user: String)
@@ -91,6 +94,9 @@ internal class PrivateSyncMemoryStore : PrivateSyncStorage {
     private val states = mutableMapOf<String, PrivateSyncState>()
     private val bodies = mutableMapOf<String, ByteArray>()
     private var device: String? = null
+    private var libraryOwner: String? = null
+    @Synchronized override fun libraryAccount(): String? = libraryOwner
+    @Synchronized override fun attachLibrary(user: String) { require(publicationUuid(user)); libraryOwner = user }
     private val staging by lazy { java.nio.file.Files.createTempDirectory("private-sync-staging-").toFile() }
     @Synchronized override fun deviceId(): String = device ?: UUID.randomUUID().toString().also { device = it }
     @Synchronized override fun load(user: String): PrivateSyncState = states[user] ?: PrivateSyncState(account = user)
@@ -99,6 +105,7 @@ internal class PrivateSyncMemoryStore : PrivateSyncStorage {
         states[user] = PrivateSyncState.parse(user, state.json())
     }
     @Synchronized override fun purgeAccount(user: String) {
+        if (libraryOwner == user) libraryOwner = null
         states.remove(user)
         bodies.keys.filter { it.startsWith("$user|") }.forEach { bodies.remove(it) }
         staging.listFiles().orEmpty().filter { it.name.startsWith("$user.") && it.extension == "body" }.forEach { it.delete() }
@@ -129,6 +136,13 @@ internal class PrivateSyncStore(val directory: File) : PrivateSyncStorage {
         private const val BODY_LIMIT = 32 * 1024 * 1024 + 1024
     }
     private fun stateFile(user: String): File { require(publicationUuid(user)); return File(directory, RelayProtocol.hash(user.toByteArray()) + ".json") }
+    override fun libraryAccount(): String? = synchronized(lock) {
+        val file = File(directory, "library-account.json")
+        if (!file.exists()) null else JSONObject(String(bounded(AtomicFile(file).openRead(), 1024), Charsets.UTF_8)).getString("account").also { require(publicationUuid(it)) }
+    }
+    override fun attachLibrary(user: String) = synchronized(lock) {
+        require(publicationUuid(user)); write(File(directory, "library-account.json"), JSONObject().put("account", user).toString().toByteArray())
+    }
     override fun deviceId(): String = synchronized(lock) {
         check(directory.isDirectory || directory.mkdirs())
         val file = File(directory, "device.json")
@@ -168,6 +182,7 @@ internal class PrivateSyncStore(val directory: File) : PrivateSyncStorage {
     }
     /** Remove the body's exact retry bytes first; the durable reference survives an interruption. */
     override fun purgeAccount(user: String) = synchronized(lock) {
+        if (libraryAccount() == user) AtomicFile(File(directory, "library-account.json")).delete()
         val pending = runCatching { load(user) }.getOrNull()
         pending?.mutationId?.let { bodyFile(user, it).delete() }
         directory.listFiles().orEmpty().filter { it.name.startsWith(RelayProtocol.hash(user.toByteArray()) + ".") && it.extension == "body" }.forEach { it.delete() }

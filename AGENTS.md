@@ -53,6 +53,8 @@ GitHub issues; this file holds the durable rules of the road.
    sharing ownership, Cook Pack exchange, guides, native share-card pixels,
    dense-document persistence and workbook tests.
    Keep its expected test counts aligned with the explicit class selectors.
+   iOS runs isolated UI classes on three simulator workers; unit/fixture
+   production remains serial and no suites are omitted.
    iOS retains compact test-result JSON separately from full screenshots and
    xcresult diagnostics so failures can be inspected without downloading video.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
@@ -120,6 +122,10 @@ The owner requires iOS/Android parity going forward:
 - Native public archive builders export selected sharing drafts only. Saved public
   stories retain their public-only gap/quality/verdict contract; edited instructions
   never replace frozen measured facts. Both native writers emit CI fixtures.
+- Room schema 11 permits immutable recipe branches with equal display ordinals.
+  Revision/parent UUIDs identify branches; never renumber their stored contents.
+  Manual reading corrections keep note links; automatic samples and provenance
+  remain immutable. See `docs/online/14-private-sync.md`.
 - Private sync uses the explicitly reviewed `contracts/private-sync-projection-v1.json`
   allowlist, not a generic archive import or automatically generated model dump.
   Unsupported authored documents stop the complete projection; local settings,

@@ -9,15 +9,15 @@ internal data class PrivateSyncDelete(val type: String, val id: String)
 internal data class PrivateSyncApplyPlan(val upserts: List<PrivateSyncUpsert>, val deletes: List<PrivateSyncDelete>, val attachments: Map<String, ByteArray>)
 
 /** Library boundary for private sync. Build reads the full journal; apply writes one
- * validated merge result. Recording, probe-assignment, timer, occurrence and delivery
- * state are never touched here. */
+ * validated merge result. Runtime activation never imports; finishing/deleting a
+ * meal only cancels that meal's local recording, timers and deliveries. */
 internal interface PrivateSyncLibrary {
     suspend fun archive(): JSONObject
     suspend fun photoBytes(type: String, id: String): PrivateSyncPhotoSource?
     suspend fun apply(plan: PrivateSyncApplyPlan)
 }
 
-internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, private val repository: CookRepository, private val photos: PhotoStorage) : PrivateSyncLibrary {
+internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, private val repository: CookRepository, private val photos: PhotoStorage, private val context: android.content.Context? = null) : PrivateSyncLibrary {
     /** Test seam, invoked inside the apply transaction. Null in production. */
     internal var applyInterceptor: (suspend () -> Unit)? = null
     override suspend fun archive(): JSONObject = archiveSnapshotJson(repository.exportSnapshot(), null)
@@ -31,6 +31,12 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
     }
     override suspend fun apply(plan: PrivateSyncApplyPlan) {
         plan.upserts.forEach { require(it.payload.optString(keyField(it.type), "") == it.id) { "A synced entry does not match its identity." } }
+        val terminal = plan.deletes.filter { it.type == "cooks" }.map { it.id }.toSet() +
+            plan.upserts.filter { it.type == "cooks" && (it.payload.optString("status") == "completed" || !it.payload.isNull("endedAtUtcMillis")) }.map { it.id }
+        val deletedRules = plan.deletes.filter { it.type == "reminderRules" }.map { it.id }.toSet()
+        val rulesToCancel = database.reminderDao().rules().filter { it.cookId in terminal || it.id in deletedRules }
+        val legacyToCancel = database.cookDao().getAllReminders().filter { it.cookId in terminal }
+        val companionsToCancel = database.companionDao().all().filter { it.cookId in terminal }
         val written = mutableListOf<String>()
         // Tombstoned and relocated photo paths must be captured before the transaction deletes them.
         val removed = mutableListOf<String>()
@@ -51,12 +57,33 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
                 applyDeletes(plan.deletes)
                 applyInterceptor?.invoke()
                 applyUpserts(plan.upserts, plan.attachments.keys)
+                for (cookId in terminal) {
+                    repository.activities.cancelForCook(cookId)
+                    database.recordingDao().getRecording(cookId)?.let { row ->
+                        database.recordingDao().saveRecording(row.copy(status = CookRecordingEntity.STOPPED, pendingSetpoint = null, pendingSetpointCount = 0))
+                    }
+                    repository.cancelPendingCookReminders(cookId)
+                    for (rule in database.reminderDao().rules().filter { it.cookId == cookId }) {
+                        database.reminderDao().putRule(rule.copy(enabled = false, status = "cancelled"))
+                        database.reminderDao().history(rule.id).filter { it.status in setOf("queued", "scheduled", "delivered") }.forEach {
+                            database.reminderDao().putOccurrence(it.copy(status = "cancelled", active = false))
+                        }
+                    }
+                }
             }
         } catch (failure: Throwable) {
             for (path in written) try { photos.delete(path) } catch (_: Exception) { }
             throw failure
         }
         for (path in removed) try { photos.delete(path) } catch (_: Exception) { }
+        context?.let { ctx ->
+            rulesToCancel.forEach { com.pittech.UnifiedReminderNotifications.cancel(ctx, it) }
+            legacyToCancel.forEach { com.pittech.CookReminderNotifications.cancel(ctx, it.id, it.cookId) }
+            companionsToCancel.forEach { row -> when (row.kind) {
+                "plan" -> com.pittech.domain.CookPlanEngine.decode(row.payload).book.steps.forEach { com.pittech.CookGuidanceNotifications.cancel(ctx, checkNotNull(row.cookId), it.id) }
+                "alert" -> { com.pittech.CookGuidanceNotifications.cancelAlarm(ctx, checkNotNull(row.cookId), row.id); com.pittech.CookAlertNotifications.cancel(ctx, row.id) }
+            } }
+        }
     }
     private suspend fun photoRowPath(type: String, id: String): String? = when (type) {
         "photos" -> database.experienceDao().photo(id)?.relativePath
@@ -120,7 +147,10 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
                 "devices" -> { val prior = devices[row.id]; val next = decodeDevice(o); if (prior == null) cook.insertDevicesIgnoringDuplicates(listOf(next)) else if (prior != next) cook.updateTelemetryDevice(next) }
                 "probes" -> { val prior = probes[row.id]; val next = decodeProbe(o); if (prior == null) cook.insertProbesIgnoringDuplicates(listOf(next)) else if (prior != next) cook.updateProbe(next) }
                 "events" -> { val prior = events[row.id]; val next = decodeEvent(o); if (prior == null) { cook.insertEventsIgnoringDuplicates(listOf(next)); check(cook.getTimelineEvent(next.id) != null) } else if (prior != next) cook.updateTimelineEvent(next) }
-                "readings" -> { val prior = readings[row.id]; val next = decodeReading(o); if (prior == null) cook.insertReadingsIgnoringDuplicates(listOf(next)) else if (prior != next) cook.updateSensorReading(next) }
+                "readings" -> { val prior = readings[row.id]; val next = decodeReading(o); if (prior == null) cook.insertReadingsIgnoringDuplicates(listOf(next)) else if (prior != next) {
+                    require(prior.source == "manual" && next.source == "manual" && prior.cookId == next.cookId && prior.sourceDeviceId == next.sourceDeviceId && prior.timestampBasis == next.timestampBasis && prior.samplingIntervalMillis == next.samplingIntervalMillis) { "An automatic sample or its provenance cannot be rewritten." }
+                    cook.updateSensorReading(next)
+                } }
                 "ingredients" -> cook.saveIngredient(decodeIngredient(o))
                 "targets" -> { val prior = targets[row.id]; val next = decodeTarget(o); if (prior == null) cook.insertTargetsIgnoringDuplicates(listOf(next)) else if (prior != next) cook.updateTarget(next) }
                 "results" -> cook.upsertResult(decodeResult(o))

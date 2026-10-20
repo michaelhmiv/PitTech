@@ -36,6 +36,8 @@ struct NativePrivateSyncState: Codable, Equatable {
     var lastSyncedAt: Int64 = 0
     var outcome = "ok"
     var message: String?
+    // Optional preserves decoding of existing v1 account-bound ledgers.
+    var automatic: Bool?
     func validated(for user: String) throws -> Self {
         var copy = self
         guard version == 1, account == user, (0...9_007_199_254_740_990).contains(serverVersion), (1...9_007_199_254_740_990).contains(maxCounter),
@@ -56,6 +58,8 @@ struct NativePrivateSyncState: Codable, Equatable {
 
 protocol NativePrivateSyncStorage: AnyObject {
     func deviceId() throws -> String
+    func libraryAccount() throws -> String?
+    func attachLibrary(_ user: String) throws
     func load(_ user: String) throws -> NativePrivateSyncState
     func save(_ user: String, _ state: NativePrivateSyncState) throws
     func purgeAccount(_ user: String) throws
@@ -70,6 +74,9 @@ final class NativePrivateSyncMemoryStore: NativePrivateSyncStorage {
     private var states: [String: NativePrivateSyncState] = [:]
     private var bodies: [String: Data] = [:]
     private var device: String?
+    private var libraryOwner: String?
+    func libraryAccount() throws -> String? { lock.lock(); defer { lock.unlock() }; return libraryOwner }
+    func attachLibrary(_ user: String) throws { guard UUID(uuidString: user) != nil else { throw NativeSyncError.invalid }; lock.lock(); defer { lock.unlock() }; libraryOwner = user }
     private let lock = NSLock()
     func deviceId() throws -> String { lock.lock(); defer { lock.unlock() }; if device == nil { device = UUID().uuidString.lowercased() }; return device! }
     func load(_ user: String) throws -> NativePrivateSyncState { lock.lock(); defer { lock.unlock() }; return states[user] ?? NativePrivateSyncState(account: user) }
@@ -78,7 +85,7 @@ final class NativePrivateSyncMemoryStore: NativePrivateSyncStorage {
         let round = try JSONDecoder().decode(NativePrivateSyncState.self, from: try JSONEncoder().encode(state))
         lock.lock(); defer { lock.unlock() }; states[user] = try round.validated(for: user)
     }
-    func purgeAccount(_ user: String) throws { lock.lock(); defer { lock.unlock() }; states.removeValue(forKey: user); bodies = bodies.filter { !$0.key.hasPrefix(user + "|") } }
+    func purgeAccount(_ user: String) throws { lock.lock(); defer { lock.unlock() }; if libraryOwner == user { libraryOwner = nil }; states.removeValue(forKey: user); bodies = bodies.filter { !$0.key.hasPrefix(user + "|") } }
     func bodyURL(_ user: String, _ mutationId: String) throws -> URL {
         guard UUID(uuidString: user) != nil, UUID(uuidString: mutationId) != nil else { throw NativeSyncError.invalid }
         return FileManager.default.temporaryDirectory.appendingPathComponent(user + "." + mutationId + ".body")
@@ -99,6 +106,21 @@ final class NativePrivateSyncStore: NativePrivateSyncStorage {
     private static let stateLimit = 72 * 1024 * 1024
     private static let bodyLimit = 32 * 1024 * 1024 + 1024
     init(directory: URL) { self.directory = directory }
+    func libraryAccount() throws -> String? {
+        lock.lock(); defer { lock.unlock() }
+        let url = try prepared().appendingPathComponent("library-account.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let bytes = try Data(contentsOf: url); guard bytes.count <= 1024 else { throw NativeSyncError.invalid }
+        let user = try JSONDecoder().decode(String.self, from: bytes)
+        guard UUID(uuidString: user) != nil else { throw NativeSyncError.invalid }; return user
+    }
+    func attachLibrary(_ user: String) throws {
+        guard UUID(uuidString: user) != nil else { throw NativeSyncError.invalid }
+        lock.lock(); defer { lock.unlock() }
+        let url = try prepared().appendingPathComponent("library-account.json")
+        try JSONEncoder().encode(user).write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+    }
     convenience init() throws {
         let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         self.init(directory: root.appendingPathComponent("PrivateSync-v1", isDirectory: true))
@@ -147,6 +169,8 @@ final class NativePrivateSyncStore: NativePrivateSyncStorage {
     /** Remove the body's exact retry bytes first; the durable reference survives an interruption. */
     func purgeAccount(_ user: String) throws {
         lock.lock(); defer { lock.unlock() }
+        let association = try prepared().appendingPathComponent("library-account.json")
+        if let bytes = try? Data(contentsOf: association), (try? JSONDecoder().decode(String.self, from: bytes)) == user { try FileManager.default.removeItem(at: association) }
         let url = try stateURL(user)
         if let id = (try? JSONDecoder().decode(NativePrivateSyncState.self, from: Data(contentsOf: url)))?.mutationId { try? FileManager.default.removeItem(at: bodyFileURL(user, id)) }
         let prefix = NativeRelayProtocol.hash(Data(user.utf8)) + "."

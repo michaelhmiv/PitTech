@@ -62,7 +62,7 @@ final class PrivateSyncProtocolTests: XCTestCase {
         struct Vector: Decodable { let name: String; let base: [NativeSyncRecord]; let local: [NativeSyncRecord]; let remote: [NativeSyncRecord]; let rejected: Bool? }
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "sync-merge-v1", withExtension: "json"))
         let vectors = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url))
-        XCTAssertEqual(vectors.contractVersion, 1); XCTAssertEqual(vectors.cases.count, 11)
+        XCTAssertEqual(vectors.contractVersion, 1); XCTAssertEqual(vectors.cases.count, 16)
         for vector in vectors.cases where vector.rejected != true {
             let merged = try NativePrivateSyncMerge.merge(base: vector.base, local: vector.local, remote: vector.remote)
             let body = try NativePrivateSyncProtocol.putBody(baseVersion: 0, mutationId: UUID().uuidString.lowercased(), deviceId: deviceA, records: merged.records, retained: [], fresh: merged.conflicts, resolved: [], serverConflictIds: [])

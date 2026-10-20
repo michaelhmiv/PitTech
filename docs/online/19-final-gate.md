@@ -5,8 +5,7 @@ is flipped and no capability is enabled in this stage. This doc records:
 
 1. The Apple guideline 2.5.19 dormant-feature audit (inventory + review notes).
 2. The CommunityBenchmarks iOS UI failure diagnosis and fix (Task 1).
-3. The iOS CI timeout problem as an owner-gated open item (not fixed here:
-   workflow edits are owner-gated) and the unverified remainder it leaves.
+3. The historical iOS timeout and its verified resolution, plus current cleanup evidence.
 
 ## 1. Dormant-feature audit (Apple guideline 2.5.19)
 
@@ -146,7 +145,7 @@ Punch list (exact):
    still owner-gated: currently iOS ships Google test IDs everywhere and the
    paywall reports not-configured. Add them in the owner session before a
    monetized submission.
-4. Resolve the iOS CI timeout item (§5) and verify the §6 remainder before
+4. Verify current-head cleanup checks (§5–6) before
    declaring stage 19 green.
 5. Do not flip any (b) server flag in production ahead of its documented
    phase gate; `PUBLIC_API_ENABLED` additionally requires both `*_READY`
@@ -200,34 +199,33 @@ profiles in UI tests; account/pro refreshes are fast-path async), launch-arg
 differences (all three Live/Finish tests launch identically), stale element
 handles (XCUIElement queries re-resolve).
 
-## 5. iOS CI timeout — OWNER-GATED open item (documented, not edited)
+## 5. iOS timeout resolution and complete evidence
 
-Do not edit `.github/workflows/ios-build.yml` in automation; Michael applies
-this in his signed-in session.
+The 120-minute timeout at `24b4093` was a historical failure. Current main
+`5eacb00` already has 240-minute job and native-test caps. The complete iOS
+run [39325946232](https://github.com/michaelhmiv/PitTech/actions/runs/39325946232)
+passed: its retained native-test summary reports **247 passed, zero failures,
+zero skips**. Compatibility tests, actual native writer exports, screenshots and
+the public Simulator inspection all completed successfully. The formerly
+unstarted ProPersonal cases are no longer an unverified remainder for that head.
 
-Problem: the `simulator-build` job cap and the test-step cap are both 120
-minutes, too small for the current suite (slice 18 added 18 UI tests). The
-`24b4093` run hit the 120-minute job cap at 120m56s: 238/241 started tests
-passed, 1 failed (the §4 test), and 7 ProPersonal UI tests never started.
+PR #122 keeps all tests and enables three isolated UI-test workers to reduce
+serial runtime; unit/fixture production stays serial. Its own exact-head results
+are separate acceptance evidence and must be recorded before merging.
 
-Exact lines to change (read-only reference):
+## 6. Foundation cleanup and remaining release gates
 
-- `.github/workflows/ios-build.yml:37` — job `simulator-build`:
-  `timeout-minutes: 120`
-- `.github/workflows/ios-build.yml:87` — step `Run native compatibility
-  tests`: `timeout-minutes: 120`
+PR #122 addresses manual-reading corrections, concurrent immutable recipe branches,
+foreground sync consent/account attachment, local finish/deletion reconciliation
+and the Android cookbook failure. It does not implement MCP or enable accounts.
+The API 37 advisory failure on `5eacb00` was a system_server TaskSnapshotPersister
+SIGABRT (`hasReadColorBufferDma`), followed by system-wide DeadSystemExceptions.
+The emulator script now uses the SDK action's selected AVD tools from PATH and
+checks the API 37 target before boot. Retain real restart/UI evidence; do not
+call an advisory graphics crash an app data failure or hide a failed test.
 
-Recommendation: raise both caps to 240, or split the UI suite into two jobs
-(e.g. Pro/community suites separate from core flows) so each stays under 120
-minutes with headroom. Either is a two-line (or job-split) change confined
-to `ios-build.yml`; no app or test code changes with it. Re-run the full iOS
-job after the change and confirm 241/241 started with zero timeouts.
-
-## 6. Unverified remainder (owner-gated dependency)
-
-The 7 ProPersonal UI tests that never started at `24b4093` — Themes
-in-flight + RecapBuilder, NonProPaywall, UnknownEntitlement, ExpiredFallback,
-RenderedAnalysisBannedWords, LiveAndFinishNoProSurfaces — can only be verified
-by a full iOS run once the §5 timeout is raised. Stated plainly: stage 19 is
-not green until that run completes. (The §4 fix also covers the
-LiveAndFinishNoProSurfaces flow, but CI is the proof.)
+Release still requires the integrated accounts/social/sync/deletion operational
+gates, isolated deployed storage/roles and actual store-product/provider evidence.
+Merged source and a complete Simulator run do not prove deployed cloud sync or
+a successful store purchase. See `STAGING.md`, `14-private-sync.md` and
+`16-subscriptions.md` for those remaining requirements.

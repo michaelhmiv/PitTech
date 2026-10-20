@@ -75,7 +75,11 @@ targets:
           DEVELOPMENT_TEAM: "R42LWFBXBH"
           PROVISIONING_PROFILE_SPECIFIER: "PitTech App Store CI"
     scheme:
-      testTargets: [PitTechTests, PitTechUITests]
+      testTargets:
+        - name: PitTechTests
+          parallelizable: false
+        - name: PitTechUITests
+          parallelizable: true
       gatherCoverageData: false
   PitTechTests:
     type: bundle.unit-test

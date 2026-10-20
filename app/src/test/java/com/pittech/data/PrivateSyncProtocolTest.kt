@@ -63,7 +63,7 @@ class PrivateSyncProtocolTest {
 
     @Test fun sharedMergeVectorsProduceUploadableEnvelopesWithValidConflictIds() {
         val fixture = JSONObject(checkNotNull(javaClass.getResourceAsStream("/sync-merge-v1.json")).bufferedReader().use { it.readText() })
-        val cases = fixture.getJSONArray("cases"); assertEquals(11, cases.length())
+        val cases = fixture.getJSONArray("cases"); assertEquals(16, cases.length())
         for (i in 0 until cases.length()) {
             val vector = cases.getJSONObject(i)
             if (vector.optBoolean("rejected")) continue
