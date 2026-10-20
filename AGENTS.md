@@ -53,8 +53,9 @@ GitHub issues; this file holds the durable rules of the road.
    sharing ownership, Cook Pack exchange, guides, native share-card pixels,
    dense-document persistence and workbook tests.
    Keep its expected test counts aligned with the explicit class selectors.
-   iOS runs isolated UI classes on three simulator workers; unit/fixture
-   production remains serial and no suites are omitted.
+   iOS runs the complete unit/UI suite on one simulator worker. Multiple hosted
+   simulators caused runner-launch and UI-query failures. Writer fixtures run
+   again after UI teardown so container resets cannot remove their CI exports.
    iOS retains compact test-result JSON separately from full screenshots and
    xcresult diagnostics so failures can be inspected without downloading video.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its

@@ -209,9 +209,11 @@ zero skips**. Compatibility tests, actual native writer exports, screenshots and
 the public Simulator inspection all completed successfully. The formerly
 unstarted ProPersonal cases are no longer an unverified remainder for that head.
 
-PR #122 keeps all tests and enables three isolated UI-test workers to reduce
-serial runtime; unit/fixture production stays serial. Its own exact-head results
-are separate acceptance evidence and must be recorded before merging.
+PR #122 retains the complete unit/UI suite on one simulator worker. Multiple
+hosted simulators produced runner-launch and UI-query failures. Native writer
+fixtures run again after UI teardown, with a fresh timestamp fence, so their
+collection does not depend on suite order. The PR's exact-head results are
+separate acceptance evidence and must be recorded before merging.
 
 ## 6. Foundation cleanup and remaining release gates
 
