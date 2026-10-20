@@ -38,7 +38,7 @@ internal class PrivateSyncCoordinator(
     private val _presentation = MutableStateFlow(PrivateSyncPresentation())
     val presentation = _presentation.asStateFlow()
     private var automaticJob: kotlinx.coroutines.Job? = null
-    private var lastAutomaticAt = 0L
+    private var lastAutomaticAt: Long? = null
     private var automaticForeground = false
 
     /** First attachment is always explicit. This device/account opt-in is never synced. */
@@ -57,7 +57,8 @@ internal class PrivateSyncCoordinator(
         if (!enabled || !automaticForeground || _presentation.value.busy || automaticJob?.isActive == true) return
         automaticJob = scope.launch {
             kotlinx.coroutines.delay(1500)
-            kotlinx.coroutines.delay((30_000L - (now() - lastAutomaticAt)).coerceAtLeast(0))
+            val wait = lastAutomaticAt?.let { (30_000L - (System.nanoTime() / 1_000_000L - it)).coerceAtLeast(0) } ?: 0L
+            kotlinx.coroutines.delay(wait)
             syncNow(automatic = true)
         }
     }
@@ -94,7 +95,7 @@ internal class PrivateSyncCoordinator(
             val user = current ?: return@withLock
             val state = withContext(Dispatchers.IO) { store.load(user) }
             if (!enabled || !state.automatic || state.lastSyncedAt <= 0 || withContext(Dispatchers.IO) { store.libraryAccount() } != user) return@withLock
-            lastAutomaticAt = now()
+            lastAutomaticAt = System.nanoTime() / 1_000_000L
         } else if (enabled && current != null) {
             withContext(Dispatchers.IO) {
                 if (store.libraryAccount() != current) store.save(current, store.load(current).copy(automatic = false))

@@ -56,14 +56,13 @@ class CooksViewModel(
             cache = com.pittech.data.PublicCache(context, "test-" + java.util.UUID.randomUUID().toString()))
     }
     internal val communityControls = com.pittech.data.CommunityControls(com.pittech.data.CommunityVault(context),viewModelScope)
-    internal val account = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope,cleanup={ user ->
+    internal val account: com.pittech.data.AccountManager = com.pittech.data.AccountManager(com.pittech.data.AccountVault(context), viewModelScope,cleanup={ user ->
         com.pittech.data.PublicationOperationsStore(context).purgeAccount(user)
         com.pittech.data.CommunityVault(context).purgeAccount(user)
         com.pittech.data.PrivateSyncStore(context).purgeAccount(user)
         communityControls.reload();publicDiscovery.controlsChanged()
     },removeJournal={
-        sync.detachLibrary()
-        com.pittech.data.LocalJournalRemoval(app.database,com.pittech.data.PhotoStorage(context)).remove()
+        com.pittech.data.LocalJournalRemoval(app.database,com.pittech.data.PhotoStorage(context)).remove { detachSyncForJournal() }
         // The open detail would otherwise stick on "Opening cook…" for a deleted row.
         closeCook()
     })
@@ -79,9 +78,10 @@ class CooksViewModel(
     internal val proCustomization = com.pittech.domain.ProCustomizationStore(
         com.pittech.domain.SharedPrefsCustomizationBacking(context),
         com.pittech.domain.PackageManagerProIconController(context))
-    internal val sync = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
+    internal val sync: com.pittech.data.PrivateSyncCoordinator = com.pittech.data.PrivateSyncCoordinator(com.pittech.data.PrivateSyncStore(context), com.pittech.data.AccountPublicationSession(account), viewModelScope,
         library = com.pittech.data.PrivateSyncRoomLibrary(app.database, repository, com.pittech.data.PhotoStorage(context), context),
         projection = com.pittech.data.PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use { it.readText() }))
+    private suspend fun detachSyncForJournal() { sync.detachLibrary() }
     internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing

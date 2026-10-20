@@ -67,19 +67,22 @@ import java.util.UUID
             val repo = CookRepository(db, photos)
             val cook = repo.startCook(NewCookDraft("Ribs", dishes = listOf(DishDraft("Rack", "Pork"))))
             val removal = LocalJournalRemoval(db, photos)
-            try { removal.remove(); fail("Active cook removed") } catch (blocked: LocalJournalRemovalBlocked) { assertTrue(blocked.message!!.contains("active cook")) }
+            var detached = false
+            try { removal.remove { detached = true }; fail("Active cook removed") } catch (blocked: LocalJournalRemovalBlocked) { assertTrue(blocked.message!!.contains("active cook")) }
             repo.pauseCook(cook)
-            try { removal.remove(); fail("Paused cook removed") } catch (blocked: LocalJournalRemovalBlocked) { assertTrue(blocked.message!!.contains("active cook")) }
+            try { removal.remove { detached = true }; fail("Paused cook removed") } catch (blocked: LocalJournalRemovalBlocked) { assertTrue(blocked.message!!.contains("active cook")) }
             repo.resumeCook(cook)
             repo.completeCook(cook)
             // completeCook stops recordings, so the in-progress row is written directly afterwards.
             val now = System.currentTimeMillis()
             db.recordingDao().saveRecording(CookRecordingEntity(cook, "device", "controller", CookRecordingEntity.RECORDING, "F", now, now))
-            try { removal.remove(); fail("In-progress recording removed") } catch (blocked: LocalJournalRemovalBlocked) { assertTrue(blocked.message!!.contains("recording")) }
+            try { removal.remove { detached = true }; fail("In-progress recording removed") } catch (blocked: LocalJournalRemovalBlocked) { assertTrue(blocked.message!!.contains("recording")) }
+            assertFalse(detached)
             assertEquals(1, db.cookDao().getAllCooks().size)
             assertEquals(1, db.recordingDao().getAllRecordings().size)
             db.recordingDao().saveRecording(db.recordingDao().getRecording(cook)!!.copy(status = CookRecordingEntity.STOPPED))
-            removal.remove()
+            removal.remove { detached = true }
+            assertTrue(detached)
             assertTrue(db.cookDao().getAllCooks().isEmpty())
             assertTrue(db.recordingDao().getAllRecordings().isEmpty())
         } finally { db.close(); context.deleteDatabase(name) }

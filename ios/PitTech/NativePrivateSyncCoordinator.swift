@@ -75,7 +75,7 @@ private struct NativeSyncAuthLost: Error {}
             defer { if self.automaticGeneration == generation { self.automaticTask = nil } }
             do {
                 try await Task.sleep(for: .milliseconds(1500))
-                let wait = max(0, 30_000 - (self.now() - self.lastAutomaticAt))
+                let wait = max(0, 30_000 - (Int64(ProcessInfo.processInfo.systemUptime * 1000) - self.lastAutomaticAt))
                 if wait > 0 { try await Task.sleep(for: .milliseconds(wait)) }
                 try Task.checkCancellation()
                 await self.syncNow(automatic: true)
@@ -109,7 +109,7 @@ private struct NativeSyncAuthLost: Error {}
         guard !presentation.busy else { return }
         if automatic {
             guard enabled, let user = bindUser(), let state = try? store.load(user), state.automatic == true, state.lastSyncedAt > 0, (try? store.libraryAccount()) == user else { return }
-            lastAutomaticAt = now()
+            lastAutomaticAt = Int64(ProcessInfo.processInfo.systemUptime * 1000)
         } else if enabled, let user = bindUser() {
             do {
                 if try store.libraryAccount() != user { var state = try store.load(user); state.automatic = false; try store.save(user, state) }

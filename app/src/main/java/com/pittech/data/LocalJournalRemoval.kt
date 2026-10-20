@@ -33,11 +33,12 @@ internal class LocalJournalRemoval(
     private val database: PitTechDatabase,
     private val photos: PhotoStorage,
 ) {
-    suspend fun remove() {
+    suspend fun remove(beforeRemove: suspend () -> Unit = {}) {
         if (database.cookDao().getAllCooks().any { it.status != CookStatus.COMPLETED })
             throw LocalJournalRemovalBlocked("Finish or stop the active cook first. Removing the local journal never interrupts a cook in progress.")
         if (database.recordingDao().getActiveRecording() != null)
             throw LocalJournalRemovalBlocked("Stop the in-progress recording first. Removing the local journal never interrupts a recording in progress.")
+        beforeRemove()
         database.clearAllTables()
         photos.clearJournalFiles()
     }
