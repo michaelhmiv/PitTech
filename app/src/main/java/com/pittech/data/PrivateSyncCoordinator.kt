@@ -106,13 +106,17 @@ internal class PrivateSyncCoordinator(
         try {
             attempt()
         } catch (e: CancellationException) {
-            publishBind(busy = false); throw e
+            throw e
         } catch (e: Exception) {
             boundUser?.let { user ->
                 val state = withContext(Dispatchers.IO) { store.load(user) }
                 withContext(Dispatchers.IO) { store.save(user, state.copy(outcome = "retry", message = "Private sync needs a retry. Your local journal is unchanged.")) }
             }
             publishBind(busy = false)
+        } finally {
+            // Lifecycle cancellation also cancels suspendable ledger reads. Release
+            // the UI guard directly so a foreground opportunity can retry the outbox.
+            _presentation.value = _presentation.value.copy(busy = false)
         }
     }
 
@@ -159,9 +163,11 @@ internal class PrivateSyncCoordinator(
             withContext(Dispatchers.IO) { store.save(user, state) }
             publishBind(busy = false)
         } catch (e: CancellationException) {
-            publishBind(busy = false); throw e
+            throw e
         } catch (e: Exception) {
             publishBind(busy = false)
+        } finally {
+            _presentation.value = _presentation.value.copy(busy = false)
         }
     }
 
