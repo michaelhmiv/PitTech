@@ -108,9 +108,12 @@ import java.util.UUID
         val photos = PhotoStorage(context)
         val tag = UUID.randomUUID().toString().take(8)
         val photoNew = "sync-$tag-rollback"
+        val photoExisting = "sync-$tag-existing"
         try {
             val repo = CookRepository(db, photos)
             val cook = repo.startCook(NewCookDraft("Rollback meal"))
+            photos.writeImported("photos/$photoExisting.jpg", "original-photo".toByteArray())
+            db.cookDao().insertPhotos(listOf(PhotoEntity(photoExisting, cook, null, null, "$photoExisting.jpg", "photos/$photoExisting.jpg", "image/jpeg", null, null, 1000, null)))
             db.cookDao().insertEventsIgnoringDuplicates(listOf(TimelineEventEntity("note-1", cook, null, "note", "Original", null, 1000, 1000, "UTC", "manual", null, 1000, 1000, null, null)))
             val before = archiveSnapshotJson(repo.exportSnapshot(), null).toString()
             val library = PrivateSyncRoomLibrary(db, repo, photos)
@@ -121,9 +124,10 @@ import java.util.UUID
                         PrivateSyncUpsert("events", "note-1", eventJson("note-1", cook, "Clobbered")),
                         PrivateSyncUpsert("events", "note-9", eventJson("note-9", cook, "Partial")),
                         PrivateSyncUpsert("photos", photoNew, JSONObject().put("id", photoNew).put("cookId", cook).put("mimeType", "image/jpeg").put("addedAtUtcMillis", 2000)),
+                        PrivateSyncUpsert("photos", photoExisting, JSONObject().put("id", photoExisting).put("cookId", cook).put("mimeType", "image/jpeg").put("addedAtUtcMillis", 2000)),
                     ),
                     deletes = emptyList(),
-                    attachments = mapOf(photoNew to "partial-bytes".toByteArray()),
+                    attachments = mapOf(photoNew to "partial-bytes".toByteArray(), photoExisting to "replacement-photo".toByteArray()),
                 ))
                 fail()
             } catch (_: Exception) { }
@@ -131,9 +135,10 @@ import java.util.UUID
             assertEquals(before, archiveSnapshotJson(repo.exportSnapshot(), null).toString())
             assertNull(db.cookDao().getTimelineEvent("note-9"))
             assertNull(photos.read("photos/$photoNew.jpg"))
+            assertArrayEquals("original-photo".toByteArray(), photos.read("photos/$photoExisting.jpg"))
             assertEquals("Original", db.cookDao().getTimelineEvent("note-1")!!.title)
         } finally {
-            runCatching { runBlocking { photos.delete("photos/$photoNew.jpg") } }
+            runCatching { runBlocking { photos.delete("photos/$photoNew.jpg"); photos.delete("photos/$photoExisting.jpg") } }
             db.close()
         }
     }

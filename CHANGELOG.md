@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Fixed
+- A failed private-sync apply restores existing photo bytes instead of deleting the original file during rollback on either platform.
 - Draft private sync offers an account-bound choice to reconcile while the app is open, after explicit library attachment. Remote Finish/deletion cancels that meal's local timers, recording and notifications.
 - Draft private sync on Android and iOS accepts manual-temperature corrections while preserving automatic measurements and recoverable conflicting edits.
 - Offline recipe branches keep their original contents and parent links when two devices save the same version number. Branch choices are labeled separately; Android upgrades its local database without replacing cooking history.

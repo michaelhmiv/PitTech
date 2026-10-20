@@ -465,6 +465,19 @@ import XCTest
         XCTAssertEqual(before, try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library)))
         XCTAssertEqual(eventRow(store, "note-1")?["title"], .string("Original"))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        let oldPhoto = store.photoURL("attachments/rollback-existing.jpg")
+        try FileManager.default.createDirectory(at: oldPhoto.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("original-photo".utf8).write(to: oldPhoto)
+        store.library.photos.append(.object(["id": .string("rollback-existing"), "cookId": .string("cook-1"), "archivePath": .string("attachments/rollback-existing.jpg"), "mimeType": .string("image/jpeg"), "addedAtUtcMillis": .number(1000)]))
+        store.save()
+        let beforePhotos = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library))
+        let adapter = NativeCookStoreSyncLibrary(store)
+        XCTAssertThrowsError(try adapter.apply(NativeSyncApplyPlan(upserts: [
+            NativeSyncUpsert(type: "photos", id: "rollback-existing", payload: ["id": .string("rollback-existing"), "cookId": .string("cook-1"), "mimeType": .string("image/jpeg"), "addedAtUtcMillis": .number(2000)]),
+            NativeSyncUpsert(type: "unsupported", id: "invalid", payload: ["id": .string("invalid")])
+        ], deletes: [], attachments: ["rollback-existing": Data("replacement-photo".utf8)])))
+        XCTAssertEqual(try Data(contentsOf: oldPhoto), Data("original-photo".utf8))
+        XCTAssertEqual(beforePhotos, try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library)))
     }
 
     func testImportedRulesArriveInactiveAndMonitoringIsPreserved() async throws {

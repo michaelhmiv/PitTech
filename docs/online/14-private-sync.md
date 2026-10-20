@@ -369,3 +369,7 @@ commit and another phone's eventual application remain separate facts.
 A local-only journal removal first detaches this device's sync association and
 pending outbox. It cannot turn an empty device library into server-deletion
 tombstones; a subsequent attachment requires an explicit Sync now action.
+
+Photo apply keeps a private disk rollback copy before replacing an existing file.
+A rejected data transaction restores the original bytes, rather than deleting the
+previous photo. Both native failure-path regressions cover existing owned photos.

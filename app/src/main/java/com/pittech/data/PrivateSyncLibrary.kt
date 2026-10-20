@@ -38,6 +38,7 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
         val legacyToCancel = database.cookDao().getAllReminders().filter { it.cookId in terminal }
         val companionsToCancel = database.companionDao().all().filter { it.cookId in terminal }
         val written = mutableListOf<String>()
+        val backups = mutableMapOf<String, java.io.File>()
         // Tombstoned and relocated photo paths must be captured before the transaction deletes them.
         val removed = mutableListOf<String>()
         for (tombstone in plan.deletes.filter { it.type in setOf("photos", "recipeAssets", "companionPhotos") }) photoRowPath(tombstone.type, tombstone.id)?.let { removed += it }
@@ -50,8 +51,14 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
                 require(bytes.isNotEmpty() && bytes.size <= PrivateSyncProtocol.MAX_PHOTO_BYTES)
                 val row = plan.upserts.firstOrNull { it.id == id && it.type in setOf("photos", "recipeAssets", "companionPhotos") } ?: error("An attachment has no synced entry.")
                 val path = photoPath(row)
-                photos.writeImported(path, bytes)
+                val destination = java.io.File(checkNotNull(photos.uri(path).path))
+                if (destination.isFile) {
+                    val backup = java.io.File.createTempFile(".sync-rollback-", ".tmp", destination.parentFile)
+                    destination.copyTo(backup, overwrite = true)
+                    backups[path] = backup
+                }
                 written += path
+                photos.writeImported(path, bytes)
             }
             database.withTransaction {
                 applyDeletes(plan.deletes)
@@ -72,9 +79,17 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
                 }
             }
         } catch (failure: Throwable) {
-            for (path in written) try { photos.delete(path) } catch (_: Exception) { }
+            for (path in written) {
+                val backup = backups[path]
+                if (backup == null) try { photos.delete(path) } catch (_: Exception) { }
+                else {
+                    val destination = java.io.File(checkNotNull(photos.uri(path).path))
+                    if (!backup.renameTo(destination)) failure.addSuppressed(java.io.IOException("An original photo is retained in a private recovery file."))
+                }
+            }
             throw failure
         }
+        backups.values.forEach { it.delete() }
         for (path in removed) try { photos.delete(path) } catch (_: Exception) { }
         context?.let { ctx ->
             rulesToCancel.forEach { com.pittech.UnifiedReminderNotifications.cancel(ctx, it) }
@@ -93,7 +108,9 @@ internal class PrivateSyncRoomLibrary(private val database: PitTechDatabase, pri
     }
     private fun keyField(type: String) = when (type) { "dishRecipeSources" -> "dishId"; "lifecycles" -> "cookId"; "logReadingLinks" -> "readingId"; else -> "id" }
     private fun photoExtension(mime: String) = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
-    private fun photoPath(row: PrivateSyncUpsert) = "photos/${row.id}.${photoExtension(row.payload.optString("mimeType", "image/jpeg"))}"
+    private fun photoPath(row: PrivateSyncUpsert) = "photos/${row.id}.${photoExtension(row.payload.optString("mimeType", "image/jpeg"))}".also {
+        require(row.id.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "Invalid synced photo identity." }
+    }
     private suspend fun applyDeletes(deletes: List<PrivateSyncDelete>) {
         val cook = database.cookDao(); val experience = database.experienceDao(); val recipes = database.recipeDao(); val companion = database.companionDao(); val reminders = database.reminderDao()
         // Children before parents; cascades make repeats harmless.
