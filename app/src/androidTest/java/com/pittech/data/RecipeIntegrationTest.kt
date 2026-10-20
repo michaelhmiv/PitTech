@@ -58,6 +58,19 @@ class RecipeIntegrationTest {
             val conflict = preview.snapshot.copy(recipeRevisions = preview.snapshot.recipeRevisions.map { it.copy(snapshotJson = RecipeSnapshotCodec.encode(snapshot.copy(name = "Tampered"))) })
             try { restored.importSnapshot(conflict, preview.attachments); fail("Conflicting immutable revision accepted") } catch (_: IllegalArgumentException) { }
             assertEquals(snapshot, RecipeSnapshotCodec.decode(other.recipeDao().revisions().single().snapshotJson))
+            // Two offline children may both be version 2. Their UUIDs and parents,
+            // not the presentation ordinal, identify the immutable histories.
+            val parent = preview.snapshot.recipeRevisions.single()
+            val left = parent.copy(id = "branch-left", parentRevisionId = parent.id, revisionNumber = 2)
+            val right = parent.copy(id = "branch-right", parentRevisionId = parent.id, revisionNumber = 2,
+                snapshotJson = RecipeSnapshotCodec.encode(snapshot.copy(name = "Smokier mac")))
+            val branches = preview.snapshot.copy(recipeRevisions = listOf(parent, left, right))
+            restored.importSnapshot(branches, preview.attachments)
+            restored.importSnapshot(branches, preview.attachments)
+            assertEquals(setOf(parent.id, left.id, right.id), other.recipeDao().revisions().map { it.id }.toSet())
+            assertEquals(saved.currentRevisionId, other.recipeDao().recipe(saved.id)!!.currentRevisionId)
+            val roundTrip = ByteArrayOutputStream(); PitTechDataTransfer(context, restored).writeZip(roundTrip)
+            assertEquals(3, transfer.previewImport(ByteArrayInputStream(roundTrip.toByteArray())).snapshot.recipeRevisions.size)
             val invalid = preview.snapshot.copy(recipes = preview.snapshot.recipes.map { it.copy(currentRevisionId = "missing") })
             try { restored.importSnapshot(invalid, preview.attachments); fail("Invalid ownership accepted") } catch (_: IllegalArgumentException) { }
         } finally { other.close() }

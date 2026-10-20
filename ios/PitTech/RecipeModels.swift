@@ -93,11 +93,10 @@ extension PitTechLibrary {
             guard let current = r["currentRevisionId"]?.stringValue, revisionIndex[current]?["recipeId"] == r["id"],
                   let name = r["name"]?.stringValue, !name.isEmpty else { throw PitTechArchiveError.invalidArchive }
         }
-        var numbers = Set<String>()
         for r in revisionIndex.values {
             guard let recipe = r["recipeId"]?.stringValue, recipeIndex[recipe] != nil,
                   let number = r["revisionNumber"]?.numberValue, number > 0, number.rounded() == number,
-                  numbers.insert("\(recipe):\(number)").inserted, r["snapshotSchemaVersion"]?.numberValue == 1,
+                  r["snapshotSchemaVersion"]?.numberValue == 1,
                   let raw = r["snapshotJson"]?.stringValue else { throw PitTechArchiveError.invalidArchive }
             _ = try RecipeSnapshot.decode(raw)
             if let parentId = r["parentRevisionId"]?.stringValue {
@@ -142,9 +141,6 @@ extension PitTechLibrary {
                 if let id = row.objectValue?["id"]?.stringValue, let saved = existing[id], saved != row { throw PitTechArchiveError.invalidArchive }
             }
         }
-        for row in imported.recipeRevisions {
-            guard let o = row.objectValue else { throw PitTechArchiveError.invalidArchive }
-            if recipeRevisions.contains(where: { $0.objectValue?["recipeId"] == o["recipeId"] && $0.objectValue?["revisionNumber"] == o["revisionNumber"] && $0.objectValue?["id"] != o["id"] }) { throw PitTechArchiveError.invalidArchive }
-        }
+        // Distinct immutable IDs may be sibling branches with the same display ordinal.
     }
 }

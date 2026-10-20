@@ -144,7 +144,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     LaunchedEffect(selected) { assets = viewModel.recipes.assets(selected) }
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(recipe.name) }, text = {
         Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { "Version ${it.revisionNumber}" }.orEmpty(), history.sortedByDescending { it.revisionNumber }.map { "Version ${it.revisionNumber}" }, { label -> selected = history.first { "Version ${it.revisionNumber}" == label }.id })
+            SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { recipeVersionLabel(it, history) }.orEmpty(), history.sortedWith(compareByDescending<RecipeRevision> { it.revisionNumber }.thenBy { it.id }).map { recipeVersionLabel(it, history) }, { label -> selected = history.first { recipeVersionLabel(it, history) == label }.id })
             Text(if (selected == recipe.currentRevisionId) "Preferred version" else "Previous version")
             if (revision?.sourceCookId != null) Text(if (revision.sourceCookId in cookIds) "Saved from your meal history." else "Source meal is unavailable. Saved instructions and reference photos remain available.")
             snapshot?.publicSource?.let { source ->

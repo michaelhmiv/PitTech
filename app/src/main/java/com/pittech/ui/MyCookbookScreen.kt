@@ -21,6 +21,8 @@ import org.json.JSONObject
 @Composable internal fun MyCookbookDialog(viewModel: CooksViewModel, account: AccountManager = viewModel.account, writer: PublicationWriter = viewModel.publicationWriter, onClose: () -> Unit) {
     val state by account.presentation.collectAsStateWithLifecycle()
     val scope=rememberCoroutineScope(); val uri=LocalUriHandler.current
+    val focus=androidx.compose.ui.platform.LocalFocusManager.current
+    val contentScroll=rememberScrollState()
     var loadedUser by remember { mutableStateOf<String?>(null) }; var items by remember { mutableStateOf<List<JSONObject>>(emptyList()) }; var cursor by remember { mutableStateOf<String?>(null) }
     var handle by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }; var isPublic by remember { mutableStateOf(false) }
     var profileReviewStatus by remember { mutableStateOf<String?>(null) }
@@ -53,7 +55,7 @@ import org.json.JSONObject
         handle=if(profile.isNull("handle"))"" else profile.getString("handle"); name=profile.getString("displayName"); isPublic=profile.getBoolean("isPublic"); profileReviewStatus=profile.optString("reviewStatus").takeIf{it.isNotEmpty()}; preview=null; loadItems(false)
     }
     fun run(action: suspend () -> Unit) {
-        if(busy)return; busy=true; message=null
+        if(busy)return; focus.clearFocus(); busy=true; message=null
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. Your saved request remains available."; try { pendingPreview() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) {
@@ -63,7 +65,7 @@ import org.json.JSONObject
     ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy)onClose() }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row { Text("My cookbook",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(1f).verticalScroll(contentScroll),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 if(!state.signedIn) {
                     Text("Your public cookbook and publications belong to your signed-in account. Your private library stays on this device.")
                     Button(onClick={ signingIn=true }) { Text("Sign in") }
@@ -112,6 +114,7 @@ import org.json.JSONObject
                             try {
                                 writer.ownedArchive(receipt,file);val prepared=withContext(Dispatchers.IO) { pendingPublication(file) }
                                 check(user==account.publicationUserId() && user==loadedUser);ownerPreview=prepared;ownerReceipt=receipt;ownerUser=user
+                                contentScroll.scrollTo(0)
                             } finally { file.delete() }
                         } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-edit-"+item.getString("id"))) { Text("Preview an editable private copy") }
                         if(status=="active")TextButton(onClick={ uri.openUri("https://pittech.app/c/"+item.getString("id")) }) { Text("Open publication") }

@@ -32,8 +32,8 @@ import java.time.format.DateTimeFormatter
         Column(Modifier.heightIn(max = 720.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Previous cook and this cook", style = MaterialTheme.typography.titleLarge)
             Text(data.dishes.firstOrNull { it.id == dishId }?.name.orEmpty())
-            val versions = revisions.filter { it.recipeId == source?.recipeId }.sortedByDescending { it.revisionNumber }
-            val labels = versions.map { "Version ${it.revisionNumber}${if (it.id == source?.recipeRevisionId) " · used in this meal" else ""}${if (headers.firstOrNull { h -> h.id == it.recipeId }?.currentRevisionId == it.id) " · preferred" else ""}" }
+            val versions = revisions.filter { it.recipeId == source?.recipeId }.sortedWith(compareByDescending<RecipeRevision> { it.revisionNumber }.thenBy { it.id })
+            val labels = versions.map { recipeVersionLabel(it, versions) + "${if (it.id == source?.recipeRevisionId) " · used in this meal" else ""}${if (headers.firstOrNull { h -> h.id == it.recipeId }?.currentRevisionId == it.id) " · preferred" else ""}" }
             ChoiceField("Historical version", versions.indexOfFirst { it.id == revisionId }.takeIf { it >= 0 }?.let { labels[it] } ?: "Choose version", labels) { revisionId = versions[labels.indexOf(it)].id }
             val revision = versions.firstOrNull { it.id == revisionId }
             val snapshot = revision?.let { RecipeSnapshotCodec.decode(it.snapshotJson) }

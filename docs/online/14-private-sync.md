@@ -331,3 +331,21 @@ evidence, staging verification including the `private_assets_unavailable`
 422 reset path and photo SHA-mismatch rotation, and the full accounts /
 social / sync / deletion enablement gate. No backup success claim is made
 by this draft.
+
+## Foundation corrections (October 19, 2026)
+
+Manual readings are authored observations, matching both native note editors. A
+correction retains the reading identity and its note links. Owner/cook, source,
+source device and acquisition basis/cadence cannot change. Concurrent corrections
+retain both values in an ordinary edit conflict; automatic samples and immutable
+recipe contents remain protected by both merge and server-commit validation.
+
+Recipe UUIDs and parent UUIDs identify immutable branches. Siblings can share a
+display version number; choosing a preferred revision still uses its UUID. Room
+11 replaces the unique display-ordinal index with a nonunique index. Both native
+archive validators/importers accept these branches and still reject rewriting an
+existing revision UUID or invalid ancestry. The portable field format is unchanged.
+
+Shared vectors and native migration/import regressions cover these corrections.
+Release verification is recorded separately after Actions, not inferred from code.
+The full accounts/social/sync/deletion release gate remains in force.

@@ -11,6 +11,12 @@ enum RecipeError: LocalizedError, Equatable {
 }
 
 @MainActor extension CookStore {
+    func recipeVersionLabel(_ id: String) -> String {
+        guard let revision = recipeRevision(id), let number = revision["revisionNumber"]?.numberValue else { return "Version" }
+        let siblings = library.recipeRevisions.compactMap(\.objectValue).filter { $0["recipeId"] == revision["recipeId"] && $0["revisionNumber"] == revision["revisionNumber"] }.compactMap { $0["id"]?.stringValue }.sorted()
+        return "Version \(Int(number))" + (siblings.count > 1 ? " · branch \((siblings.firstIndex(of: id) ?? 0) + 1)" : "")
+    }
+
     func recipe(_ id: String) -> [String: JSONValue]? { library.recipes.first { $0.objectValue?["id"]?.stringValue == id }?.objectValue }
     func recipeRevision(_ id: String) -> [String: JSONValue]? { library.recipeRevisions.first { $0.objectValue?["id"]?.stringValue == id }?.objectValue }
     func recipeSnapshot(_ revisionId: String) throws -> RecipeSnapshot {

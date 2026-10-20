@@ -8,6 +8,12 @@ internal object PrivateSyncMerge {
     private const val MAX=9007199254740991L
     private val types=setOf("cooks","dishes","ingredients","events","readings","targets","results","devices","probes","photos","recipes","recipeRevisions","recipeAssets","companionRecords","companionPhotos","mealPresets","dishRecipeSources","lifecycles","targetHistory","logReadingLinks","reminderRules")
     private val immutable=setOf("readings","recipeRevisions")
+    internal fun manualReadingEdit(a:JSONObject,b:JSONObject):Boolean {
+        val x=a.optJSONObject("payload")?:return false;val y=b.optJSONObject("payload")?:return false
+        return a.optString("recordType")=="readings" && b.optString("recordType")=="readings" && a.optString("recordId")==b.optString("recordId") &&
+            !a.optBoolean("deleted") && !b.optBoolean("deleted") && x.optString("source")=="manual" && y.optString("source")=="manual" &&
+            listOf("id","cookId","sourceDeviceId","timestampBasis","samplingIntervalMillis").all{stable(x.opt(it))==stable(y.opt(it))}
+    }
     private data class Row(val type:String,val id:String,val counter:Long,val client:String,val deleted:Boolean,val payload:JSONObject?,val assets:List<String>){
         val key get()="$type|$id"
         fun json()=JSONObject().put("recordType",type).put("recordId",id).put("version",JSONObject().put("counter",counter).put("clientId",client)).put("deleted",deleted).put("payload",payload?.let{JSONObject(it.toString())}?:JSONObject.NULL).put("assetIds",JSONArray(assets))
@@ -69,7 +75,7 @@ internal object PrivateSyncMerge {
             val orderW=compareValuesBy(winner,loser,{it.getJSONObject("version").getLong("counter")},{it.getJSONObject("version").getString("clientId")})
             require(orderW!=0)
             if(reason=="delete_edit")require(deleted.first && !deleted.second)
-            else{require(!deleted.first && !deleted.second);if(reason=="immutable_identity")require(field(winner,"recordType") in immutable)else require(field(winner,"recordType") !in immutable && orderW>0)}
+            else{require(!deleted.first && !deleted.second);if(reason=="immutable_identity")require(field(winner,"recordType") in immutable)else require((field(winner,"recordType") !in immutable || manualReadingEdit(winner,loser)) && orderW>0)}
         }
     }
     private val order=compareBy<Row>{it.counter}.thenBy{it.client}
@@ -84,13 +90,13 @@ internal object PrivateSyncMerge {
             val old=base[key];val a=local[key];val b=remote[key]
             if(old!=null){require(a!=null && b!=null);for(r in listOf(a,b))if(!r.same(old)){require(r.counter>old.counter && (!old.deleted || r.deleted))}
                 require(order.compare(a,b)!=0 || a.same(b))
-                if(!old.deleted && old.type in immutable){val bad=listOf(a,b).filter{!it.deleted && it.content()!=old.content()}.distinctBy{stable(it.json())}.sortedWith(order);if(bad.isNotEmpty()){records+=old;bad.forEach{conflict(old,it,"immutable_identity")};continue}}
+                if(!old.deleted && old.type in immutable){val bad=listOf(a,b).filter{!it.deleted && it.content()!=old.content() && !manualReadingEdit(old.json(),it.json())}.distinctBy{stable(it.json())}.sortedWith(order);if(bad.isNotEmpty()){records+=old;bad.forEach{conflict(old,it,"immutable_identity")};continue}}
             }
             if(a==null || b==null){records+=checkNotNull(a?:b);continue};if(a.same(b)){records+=a;continue};require(order.compare(a,b)!=0)
             val changedA=old==null || !a.same(old);val changedB=old==null || !b.same(old)
             if(!changedA || !changedB){records+=if(changedA)a else b;continue}
             val deletion=a.deleted!=b.deleted;val winner=if(deletion){if(a.deleted)a else b}else if(order.compare(a,b)>0)a else b;val loser=if(winner===a)b else a;records+=winner
-            if(a.content()!=b.content())conflict(winner,loser,if(deletion)"delete_edit" else if(winner.type in immutable)"immutable_identity" else "edit_edit")
+            if(a.content()!=b.content())conflict(winner,loser,if(deletion)"delete_edit" else if(winner.type in immutable && !manualReadingEdit(a.json(),b.json()))"immutable_identity" else "edit_edit")
         }
         val output=JSONArray(records.map{it.json()});rows(output)
         val observed=(base.values+local.values+remote.values).maxOfOrNull{it.counter}?:0L;require(observed<MAX-1)

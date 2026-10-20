@@ -318,7 +318,7 @@ class PrivateSyncCoordinatorTest {
     }
 
     @Test fun immutableRewriteBlocksCommitWhilePreservingBothVersions() = runTest {
-        val library = FakeLibrary(archive("cooks" to cook(), "dishes" to dish(), "readings" to readingRow()))
+        val library = FakeLibrary(archive("cooks" to cook(), "dishes" to dish(), "readings" to readingRow().put("source", "controller_cloud")))
         val api = FakeApi(); val store = PrivateSyncMemoryStore()
         val sync = coordinator(store = store, api = api, library = library, scope = this)
         sync.syncNow()

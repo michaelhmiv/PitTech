@@ -33,13 +33,18 @@ class ReminderMigrationTest {
             old.execSQL("INSERT INTO recipe_revisions(id,recipeId,revisionNumber,snapshotSchemaVersion,snapshotJson,createdAtUtcMillis,changeNotes) VALUES('revision','recipe',1,1,?,42,'')", arrayOf(snapshot))
             old.version = 9
         } finally { old.close() }
-        val room = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_9_10).build()
+        val room = Room.databaseBuilder(context, PitTechDatabase::class.java, name).addMigrations(PitTechDatabase.MIGRATION_9_10, PitTechDatabase.MIGRATION_10_11).build()
         try {
             assertEquals(42L, room.cookDao().getCook("meal")!!.startedAtUtcMillis)
             assertEquals("ingredient", room.cookDao().getAllIngredients().single().id)
             assertEquals(4.0, room.cookDao().getAllIngredients().single().amountValue!!, 0.0)
             assertNull(room.cookDao().getAllIngredients().single().amountText)
             assertEquals(snapshot, room.recipeDao().revision("revision")!!.snapshotJson)
+            val original = room.recipeDao().revision("revision")!!
+            room.recipeDao().insertRevision(original.copy(id = "branch-a", parentRevisionId = original.id, revisionNumber = 2))
+            room.recipeDao().insertRevision(original.copy(id = "branch-b", parentRevisionId = original.id, revisionNumber = 2))
+            assertEquals(3, room.recipeDao().history("recipe").size)
+            assertEquals("revision", room.recipeDao().recipe("recipe")!!.currentRevisionId)
             assertTrue(room.reminderDao().rules().isEmpty()); assertTrue(room.reminderDao().occurrences().isEmpty())
             room.openHelper.writableDatabase.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
         } finally { room.close(); context.deleteDatabase(name) }

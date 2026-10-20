@@ -865,6 +865,666 @@
         }
       ],
       "rejected": true
+    },
+    {
+      "name": "manual correction keeps its reading and note-link identity",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 160,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "manual-reading",
+            "version": {
+              "counter": 2,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "manual-reading",
+              "cookId": "meal",
+              "source": "manual",
+              "sourceDeviceId": null,
+              "timestampBasis": "measurement",
+              "samplingIntervalMillis": 0,
+              "value": 160,
+              "unit": "°F"
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [],
+        "blocked": false,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "concurrent manual corrections retain both values for review",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 160,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 3,
+            "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 165,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "manual-reading",
+            "version": {
+              "counter": 3,
+              "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "manual-reading",
+              "cookId": "meal",
+              "source": "manual",
+              "sourceDeviceId": null,
+              "timestampBasis": "measurement",
+              "samplingIntervalMillis": 0,
+              "value": 165,
+              "unit": "°F"
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "e2a9cd39ced40fad9a710eda2b1b24ef99647ac8c641900ceb0c3d3671bd659a",
+            "winner": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 3,
+                "clientId": "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "manual",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 165,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "manual",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 160,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "reason": "edit_edit"
+          }
+        ],
+        "blocked": false,
+        "nextCounter": 4
+      }
+    },
+    {
+      "name": "automatic samples still reject rewriting measured history",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "controller_cloud",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "controller_cloud",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 160,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "controller_cloud",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "manual-reading",
+            "version": {
+              "counter": 1,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "manual-reading",
+              "cookId": "meal",
+              "source": "controller_cloud",
+              "sourceDeviceId": null,
+              "timestampBasis": "measurement",
+              "samplingIntervalMillis": 0,
+              "value": 150,
+              "unit": "°F"
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "7ba40298b8e1efe2e4dab0efdbc0399b928c30e5f2fa8fef0653ca71b13ac1e7",
+            "winner": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 1,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "controller_cloud",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 150,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "controller_cloud",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 160,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "reason": "immutable_identity"
+          }
+        ],
+        "blocked": true,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "manual correction cannot move a reading to another meal",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "another-meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 160,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "manual-reading",
+            "version": {
+              "counter": 1,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "manual-reading",
+              "cookId": "meal",
+              "source": "manual",
+              "sourceDeviceId": null,
+              "timestampBasis": "measurement",
+              "samplingIntervalMillis": 0,
+              "value": 150,
+              "unit": "°F"
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "7ba40298b8e1efe2e4dab0efdbc0399b928c30e5f2fa8fef0653ca71b13ac1e7",
+            "winner": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 1,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "manual",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 150,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "another-meal",
+                "source": "manual",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 160,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "reason": "immutable_identity"
+          }
+        ],
+        "blocked": true,
+        "nextCounter": 3
+      }
+    },
+    {
+      "name": "manual correction cannot fabricate automatic provenance",
+      "base": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "local": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 2,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "controller_cloud",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 160,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "remote": [
+        {
+          "recordType": "readings",
+          "recordId": "manual-reading",
+          "version": {
+            "counter": 1,
+            "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+          },
+          "deleted": false,
+          "payload": {
+            "id": "manual-reading",
+            "cookId": "meal",
+            "source": "manual",
+            "sourceDeviceId": null,
+            "timestampBasis": "measurement",
+            "samplingIntervalMillis": 0,
+            "value": 150,
+            "unit": "°F"
+          },
+          "assetIds": []
+        }
+      ],
+      "expected": {
+        "records": [
+          {
+            "recordType": "readings",
+            "recordId": "manual-reading",
+            "version": {
+              "counter": 1,
+              "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+            },
+            "deleted": false,
+            "payload": {
+              "id": "manual-reading",
+              "cookId": "meal",
+              "source": "manual",
+              "sourceDeviceId": null,
+              "timestampBasis": "measurement",
+              "samplingIntervalMillis": 0,
+              "value": 150,
+              "unit": "°F"
+            },
+            "assetIds": []
+          }
+        ],
+        "conflicts": [
+          {
+            "id": "7ba40298b8e1efe2e4dab0efdbc0399b928c30e5f2fa8fef0653ca71b13ac1e7",
+            "winner": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 1,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "manual",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 150,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "loser": {
+              "recordType": "readings",
+              "recordId": "manual-reading",
+              "version": {
+                "counter": 2,
+                "clientId": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+              },
+              "deleted": false,
+              "payload": {
+                "id": "manual-reading",
+                "cookId": "meal",
+                "source": "controller_cloud",
+                "sourceDeviceId": null,
+                "timestampBasis": "measurement",
+                "samplingIntervalMillis": 0,
+                "value": 160,
+                "unit": "°F"
+              },
+              "assetIds": []
+            },
+            "reason": "immutable_identity"
+          }
+        ],
+        "blocked": true,
+        "nextCounter": 3
+      }
     }
   ]
 }

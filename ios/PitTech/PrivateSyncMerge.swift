@@ -24,6 +24,12 @@ struct NativeSyncMergeResult: Codable, Equatable { var records: [NativeSyncRecor
 enum NativePrivateSyncMerge {
     static let types: Set<String> = ["cooks", "dishes", "ingredients", "events", "readings", "targets", "results", "devices", "probes", "photos", "recipes", "recipeRevisions", "recipeAssets", "companionRecords", "companionPhotos", "mealPresets", "dishRecipeSources", "lifecycles", "targetHistory", "logReadingLinks", "reminderRules"]
     private static let immutable: Set<String> = ["readings", "recipeRevisions"]
+    static func manualReadingEdit(_ a: NativeSyncRecord, _ b: NativeSyncRecord) -> Bool {
+        guard a.recordType == "readings", b.recordType == "readings", a.recordId == b.recordId,
+              !a.deleted, !b.deleted, let x = a.payload, let y = b.payload,
+              x["source"]?.stringValue == "manual", y["source"]?.stringValue == "manual" else { return false }
+        return ["id", "cookId", "sourceDeviceId", "timestampBasis", "samplingIntervalMillis"].allSatisfy { (x[$0] ?? .null) == (y[$0] ?? .null) }
+    }
     private static let maximum: Int64 = 9_007_199_254_740_991
     private static func bytes<T: Encodable>(_ value: T) throws -> Int { let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]; return try encoder.encode(value).count }
     private static func bounded(_ value: JSONValue, depth: Int = 0) throws {
@@ -63,7 +69,7 @@ enum NativePrivateSyncMerge {
             else {
                 guard !conflict.winner.deleted, !conflict.loser.deleted else { throw NativeSyncError.invalid }
                 if conflict.reason == "immutable_identity" { guard immutable.contains(conflict.winner.recordType) else { throw NativeSyncError.invalid } }
-                else { guard !immutable.contains(conflict.winner.recordType), less(conflict.loser, conflict.winner) else { throw NativeSyncError.invalid } }
+                else { guard (!immutable.contains(conflict.winner.recordType) || manualReadingEdit(conflict.winner, conflict.loser)), less(conflict.loser, conflict.winner) else { throw NativeSyncError.invalid } }
             }
         }
     }
@@ -83,7 +89,7 @@ enum NativePrivateSyncMerge {
                 for r in [a, b] where r != prior { guard r.version.counter > prior.version.counter, !prior.deleted || r.deleted else { throw NativeSyncError.invalid } }
                 guard a.version != b.version || a == b else { throw NativeSyncError.invalid }
                 if !prior.deleted && immutable.contains(prior.recordType) {
-                    var bad = [a, b].filter { !$0.deleted && !$0.sameContent(prior) }; if bad.count == 2 && bad[0] == bad[1] { bad.removeLast() }
+                    var bad = [a, b].filter { !$0.deleted && !$0.sameContent(prior) && !manualReadingEdit(prior, $0) }; if bad.count == 2 && bad[0] == bad[1] { bad.removeLast() }
                     if !bad.isEmpty { records.append(prior); for r in bad.sorted(by: less) { conflict(prior, r, "immutable_identity") }; continue }
                 }
             }
@@ -94,7 +100,7 @@ enum NativePrivateSyncMerge {
             if !changedA || !changedB { records.append(changedA ? a : b); continue }
             let deletion = a.deleted != b.deleted, winner = deletion ? (a.deleted ? a : b) : (less(a, b) ? b : a)
             let loser = winner == a ? b : a; records.append(winner)
-            if !a.sameContent(b) { conflict(winner, loser, deletion ? "delete_edit" : immutable.contains(winner.recordType) ? "immutable_identity" : "edit_edit") }
+            if !a.sameContent(b) { conflict(winner, loser, deletion ? "delete_edit" : immutable.contains(winner.recordType) && !manualReadingEdit(a, b) ? "immutable_identity" : "edit_edit") }
         }
         try validate(records)
         let observed = (base + local + remote).reduce(Int64(0)) { max($0, $1.version.counter) }

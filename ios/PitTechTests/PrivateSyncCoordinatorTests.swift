@@ -309,7 +309,7 @@ import XCTest
         let store = CookStore(directory: folder)
         seedLibrary(store)
         var library = store.library
-        library.readings = [.object(["id": .string("reading-1"), "cookId": .string("cook-1"), "probeName": .string("Pit"), "measurementType": .string("temperature"), "value": .number(74), "unit": .string("°C"), "measuredAtUtcMillis": .number(1000), "timeZoneId": .string("UTC"), "source": .string("manual"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1000), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(15000)])]
+        library.readings = [.object(["id": .string("reading-1"), "cookId": .string("cook-1"), "probeName": .string("Pit"), "measurementType": .string("temperature"), "value": .number(74), "unit": .string("°C"), "measuredAtUtcMillis": .number(1000), "timeZoneId": .string("UTC"), "source": .string("controller_cloud"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1000), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(15000)])]
         store.library = library; store.save()
         let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
         let (sync, _) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))

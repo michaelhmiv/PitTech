@@ -1,4 +1,4 @@
-import{readFile}from'node:fs/promises';import{Ajv2020}from'ajv/dist/2020.js';import formats from'ajv-formats';import{ApiError,digest}from'./core.ts';import{stable}from'./pack.ts';import{syncRecords,type SyncRecord,type SyncConflict}from'./sync-merge.ts';
+import{readFile}from'node:fs/promises';import{Ajv2020}from'ajv/dist/2020.js';import formats from'ajv-formats';import{ApiError,digest}from'./core.ts';import{stable}from'./pack.ts';import{syncRecords,manualReadingEdit,type SyncRecord,type SyncConflict}from'./sync-merge.ts';
 export type SyncEnvelope={contractVersion:1;baseVersion:number;mutationId:string;clientId:string;records:SyncRecord[];conflicts:SyncConflict[];resolvedConflictIds?:string[]};
 const ajv=new Ajv2020({strict:true,strictTypes:false});formats.default(ajv);const schema=ajv.compile(JSON.parse(await readFile(new URL('../../contracts/sync.schema.json',import.meta.url),'utf8')));
 const invalid=(code='invalid_sync_envelope')=>new ApiError(422,code);
@@ -17,7 +17,7 @@ export function syncEnvelope(value:unknown):SyncEnvelope{
   else {
    if(c.winner.deleted||c.loser.deleted)throw invalid();
    if(c.reason==='immutable_identity'){if(!['readings','recipeRevisions'].includes(c.winner.recordType))throw invalid();}
-   else if(['readings','recipeRevisions'].includes(c.winner.recordType)||order(c.winner,c.loser)<=0)throw invalid();
+   else if((['readings','recipeRevisions'].includes(c.winner.recordType)&&!manualReadingEdit(c.winner,c.loser))||order(c.winner,c.loser)<=0)throw invalid();
   }
  }
  return e;
@@ -36,7 +36,7 @@ export function syncTransition(previous:SyncEnvelope|undefined,next:SyncEnvelope
   if(!prior)continue;
   if(prior.deleted&&!r.deleted)throw invalid('sync_restore_requires_new_identity');
   if(order(r,prior)===0)throw invalid('sync_stamp_reused');
-  if(!prior.deleted&&!r.deleted&&['readings','recipeRevisions'].includes(r.recordType)&&content(r)!==content(prior))throw invalid('immutable_sync_identity');
+  if(!prior.deleted&&!r.deleted&&['readings','recipeRevisions'].includes(r.recordType)&&content(r)!==content(prior)&&!manualReadingEdit(prior,r))throw invalid('immutable_sync_identity');
   if(order(r,prior)<=0){if(!(r.deleted&&!prior.deleted&&proof(r,prior,'delete_edit')))throw invalid('sync_clock_not_advanced');}
   else if(r.version.counter===prior.version.counter&&content(r)!==content(prior)&&!proof(r,prior,r.deleted?'delete_edit':'edit_edit'))throw invalid('sync_conflict_copy_required');
  }

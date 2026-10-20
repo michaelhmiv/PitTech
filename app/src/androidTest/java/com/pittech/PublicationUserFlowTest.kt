@@ -84,7 +84,11 @@ import java.util.UUID
     }
     private fun waitFor(tag: String) {
         try { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() } }
-        catch(error: Throwable) { compose.onRoot(useUnmergedTree=true).printToLog("PublicationFailure"); screenshot("publication-failure"); throw error }
+        catch(error: Throwable) {
+            runCatching { compose.onAllNodes(isRoot(),useUnmergedTree=true).fetchSemanticsNodes().indices.forEach { index -> compose.onAllNodes(isRoot(),useUnmergedTree=true)[index].printToLog("PublicationFailure") } }
+            runCatching { screenshot("publication-failure") }
+            throw error
+        }
     }
     private fun screenshot(name: String) { compose.waitForIdle();InstrumentationRegistry.getInstrumentation().waitForIdleSync();val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot(); val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }; file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle() }
     private class API: PublicationAPI {
