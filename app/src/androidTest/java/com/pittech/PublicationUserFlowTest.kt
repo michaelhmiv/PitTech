@@ -73,9 +73,11 @@ import java.util.UUID
             compose.onNodeWithTag("cookbook-edit-dddddddd-dddd-4ddd-dddd-dddddddddddd").performScrollTo().performClick()
             waitFor("cookbook-create-editing-draft"); compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo(); screenshot("publication-owner-edit-preview")
             compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick();waitFor("sharing-title")
-            compose.onNodeWithTag("sharing-title").performScrollTo().performTextReplacement("Owner revised title")
+            compose.onNodeWithTag("sharing-title").performScrollTo().performClick().performTextReplacement("Owner revised title")
+            compose.waitUntil(10000) { keyboardVisible() }
             compose.onNodeWithTag("sharing-title").assertIsFocused()
             compose.onNodeWithTag("sharing-publish").assertIsDisplayed().assertIsEnabled();screenshot("publication-owner-draft-before-publish");semantics("publication-before-publish-tree")
+            assertTrue("The publication preview must be reachable with the keyboard open",keyboardVisible())
             compose.onNodeWithTag("sharing-publish").performClick();waitFor("publication-prepare")
             compose.onNodeWithTag("publication-prepare").performScrollTo().performClick();waitFor("publication-confirm")
             compose.onNodeWithTag("publication-confirm").performScrollTo().assertTextEquals("Publish this update").assertIsNotEnabled();screenshot("publication-owner-update-preview")
@@ -92,6 +94,10 @@ import java.util.UUID
             runCatching { screenshot("publication-failure") }
             throw error
         }
+    }
+    private fun keyboardVisible(): Boolean = compose.runOnIdle {
+        val roots=if(android.os.Build.VERSION.SDK_INT>=29)android.view.inspector.WindowInspector.getGlobalWindowViews() else listOf(compose.activity.window.decorView)
+        roots.any { androidx.core.view.ViewCompat.getRootWindowInsets(it)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())==true }
     }
     private fun semantics(name: String) {
         val roots=compose.onAllNodes(isRoot(),useUnmergedTree=true)
