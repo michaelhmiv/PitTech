@@ -61,7 +61,7 @@ import org.json.JSONObject
         loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; profileReviewStatus=null; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null
         if(loadedUser!=null)try { reload() } catch(e: Exception) { message=e.message }
     }
-    if(editingDraft==null)ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy)onClose() }) {
+    if(editingDraft==null)ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy && editingDraft==null)onClose() }) {
         val focus=androidx.compose.ui.platform.LocalFocusManager.current
         val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         fun submit(action: suspend () -> Unit) { focus.clearFocus(); keyboard?.hide(); run(action) }

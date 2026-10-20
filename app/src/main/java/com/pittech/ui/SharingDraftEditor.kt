@@ -63,7 +63,9 @@ import kotlinx.coroutines.sync.withLock
         saved = false; delay(500)
         withContext(NonCancellable) { try { persist(value); error = null } catch (e: Exception) { error = e.message } }
     }
-    if (!publishing) ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { act { persist(); onClose() } }) {
+    // Removing this sheet to open its preview can finish an in-flight dismissal.
+    // That callback must not close the editor which owns the new preview.
+    if (!publishing) ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { if (!publishing) act { persist(); onClose() } }) {
         val focus = androidx.compose.ui.platform.LocalFocusManager.current
         val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

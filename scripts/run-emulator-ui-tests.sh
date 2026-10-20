@@ -43,9 +43,14 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-update-preview publication-failure source-change-review pro-paywall; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-draft-before-publish publication-owner-update-preview publication-failure source-change-review pro-paywall; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
+      fi
+    done
+    for tree in publication-before-publish-tree publication-failure-tree; do
+      if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${tree}.txt"; then
+        timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${tree}.txt" > "$output_dir/${tree}.txt"
       fi
     done
   fi
@@ -538,6 +543,7 @@ if (( api_level == 36 )); then
   pull_app_screenshot publication-complete
   pull_app_screenshot publication-cookbook
   pull_app_screenshot publication-owner-edit-preview
+  pull_app_screenshot publication-owner-draft-before-publish
   pull_app_screenshot publication-owner-update-preview
   pull_app_screenshot source-change-review
   pull_app_screenshot pro-paywall

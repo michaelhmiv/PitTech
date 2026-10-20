@@ -74,7 +74,7 @@ import java.util.UUID
             waitFor("cookbook-create-editing-draft"); compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo(); screenshot("publication-owner-edit-preview")
             compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick();waitFor("sharing-title")
             compose.onNodeWithTag("sharing-title").performScrollTo().performTextReplacement("Owner revised title")
-            compose.onNodeWithTag("sharing-publish").performScrollTo().assertIsDisplayed().assertIsEnabled();screenshot("publication-owner-draft-before-publish")
+            compose.onNodeWithTag("sharing-publish").performScrollTo().assertIsDisplayed().assertIsEnabled();screenshot("publication-owner-draft-before-publish");semantics("publication-before-publish-tree")
             compose.onNodeWithTag("sharing-publish").performClick();waitFor("publication-prepare")
             compose.onNodeWithTag("publication-prepare").performScrollTo().performClick();waitFor("publication-confirm")
             compose.onNodeWithTag("publication-confirm").performScrollTo().assertTextEquals("Publish this update").assertIsNotEnabled();screenshot("publication-owner-update-preview")
@@ -87,9 +87,15 @@ import java.util.UUID
         try { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() } }
         catch(error: Throwable) {
             runCatching { compose.onAllNodes(isRoot(),useUnmergedTree=true).fetchSemanticsNodes().indices.forEach { index -> compose.onAllNodes(isRoot(),useUnmergedTree=true)[index].printToLog("PublicationFailure") } }
+            runCatching { semantics("publication-failure-tree") }
             runCatching { screenshot("publication-failure") }
             throw error
         }
+    }
+    private fun semantics(name: String) {
+        val roots=compose.onAllNodes(isRoot(),useUnmergedTree=true)
+        val text=roots.fetchSemanticsNodes().indices.joinToString("\n\n") { roots[it].printToString() }
+        File(compose.activity.filesDir,"pittech-ui-test/$name.txt").apply { parentFile!!.mkdirs();writeText(text) }
     }
     private fun screenshot(name: String) { compose.waitForIdle();InstrumentationRegistry.getInstrumentation().waitForIdleSync();val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot(); val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }; file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle() }
     private class API: PublicationAPI {
