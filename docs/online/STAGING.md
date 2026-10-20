@@ -45,7 +45,7 @@ private storage wiring and the operational gates below remain incomplete.
 Finish database bootstrap and least-privilege migration/runtime role setup using
 the reviewed operations SQL. Keep the admin/migrator credential out of API and
 sweeper configurations. Supply private bucket connection references only after
-provisioning is explicitly authorized; never route to a public database proxy or
+provisioning completes; never route to a public database proxy or
 public bucket. Add a separately pinned scheduled sweeper. The current API is
 intentionally missing runtime database/storage credentials and fails closed.
 The pinned cleanup revision includes auth, sync and billing code. Their flags
@@ -55,5 +55,13 @@ Then verify actual ingress/proxy trust and host access-log redaction, DNS/TLS,
 private storage permissions, worst-case memory/latency, restart/lease recovery,
 expiry/revocation/deletion, budget alerts and current pricing. Prepare separate
 native staging origins and capability namespaces before connecting an installed
-app; current production-origin clients are not staging proof. Accepting staged
-changes requires explicit deployment authorization; no such apply occurred.
+app; current production-origin clients are not staging proof. On October 20,
+the owner authorized completing this online deployment and Firebase test
+distribution. Runtime inputs and live verification remain prerequisites;
+no staged changes have been applied. See issue #123 and
+`20-online-enablement.md` for the current sequence.
+
+Fresh email inventory on October 20: `auth.pittech.app` is verified;
+`auth-staging.pittech.app` exists but is failed (DKIM and SPF records failed,
+tracking CNAME not started). Repair the staging domain's actual DNS records and
+verify delivery before enabling its authentication mailer.

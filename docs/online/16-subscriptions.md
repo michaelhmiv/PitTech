@@ -24,14 +24,20 @@ App Store Server API client with an explicit per-environment host; sandbox and
 production never mix.
 
 `api-service/src/subscriptions-google.ts` verifies purchases through
-`purchases.subscriptionsv2` with a service-account client. The package name is
+`purchases.subscriptionsv2` (the `/tokens/{token}` resource) with a service-account
+client. Acknowledgement uses `purchases.subscriptions/{productId}/tokens/{token}:acknowledge`;
+404 and other failed acknowledgements never grant entitlement. The package name is
 the service's own configuration, so app association holds by construction; the
 product ID is validated on the response. Test-track purchases resolve to the
 sandbox environment from the store's own `testPurchase` marker. Pending
 acknowledgements are acknowledged during verification (Play acknowledgment
 within its required lifecycle) and retried on every reconcile. RTDN pushes
-authenticate via OIDC bearer (Google certificates, refreshed hourly; pinned
-keys in tests), then validate the envelope, package, and subscription.
+authenticate via OIDC bearer (Google JWKS, refreshed every five minutes with
+HTTP cache expiry and atomic key replacement; generated keys in tests), then
+validate the configured push service-account email, `email_verified`, audience,
+envelope, package, and subscription. `PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL` is
+required when subscriptions are enabled; it identifies the Pub/Sub push identity,
+which is separate from the Play API service-account credential.
 
 Verification records are `store-verification-v1`: store, transaction identity,
 product, environment, purchase/expiry timestamps, auto-renew status,

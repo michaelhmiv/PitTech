@@ -1,0 +1,94 @@
+# Online enablement and full-feature test delivery
+
+Status: active rollout plan, October 20, 2026. Source baseline: main `743b6a5ab0f0b7c952355b26b891d02063e4a732`. This extends issue #89's implemented slices; it does not rebuild their domain features. Michael has requested online features to become usable and an explicitly dispatched Firebase build for hands-on testing. MCP #114 is fully planned and paused while this work is completed.
+
+## Outcome and authorization
+
+Deliver real account sign-in, private sync including photos, public discovery/publishing with reporting/blocking/deletion, and verified Pro access on Android and iOS. Preserve offline logging, local records, free exports and the five read-only Beta equipment providers. Produce an installable Firebase test release and an honest checklist of observed and still-unverified physical/store behaviors.
+
+The October 20 instruction authorizes preparing and performing the necessary non-destructive online deployment and distributing the tested build to the existing Firebase tester group. Complete the documented release checks before enablement. Do not request the same authorization again merely because an older status file says deployment was not yet authorized. Console login, legal/financial agreements, credentials unavailable through the current connections, and automatic approval-review rejections may still require Michael directly. Never substitute fake Pro access for a verified purchase.
+
+## Verified baseline
+
+| Area | Current evidence | Remaining work |
+|---|---|---|
+| Source | #89 slices 00–19 and cleanup #122 merged. Room 11, portable archive 10. #122's tested tree passed backend 170, Android JVM 376/all three emulator lanes and iOS 250 unit/UI tests. | Keep the source/operational distinction. The post-merge Android push run 39432333361 has a required API 36/font 1.5 failure (standard lane passed); inspect and resolve it before distribution. iOS push run 39432333021 was still running at audit. |
+| Native accounts/sync/community | Compile-time account flags false; discovery defaults false. Foreground sync is optional after explicit library attachment; credentials/settings/activation remain device-local. | Enable both clients together only after the complete deployed account/community/sync/deletion phase passes. Keep ordinary restore inactive. |
+| Backend | Auth, publications/lifecycle, encrypted sync/photo CAS, store verification and analysis foundations exist. No MCP implementation exists. | Fix the actual store-adapter gaps below, bootstrap least-privilege runtime logins, configure the deployment and prove live flows. |
+| Railway staging | Project 5437a627-75bc-4750-9677-c2bcc63d82b8; environment 66718bed-3e9f-4372-88d9-3e3969a3b59f. 37 pending non-destructive changes; API/Postgres/private bucket are staged-create, with no API deployment/domain. Source main pinned to 500c8368. | Wire private DB/storage credentials and roles, migrations, scheduled cleanup, keys, origin/DNS/TLS and bounded budgets before deployment. Pin the reviewed rollout commit, not the obsolete feature branch or an unreviewed moving head. |
+| Production | PitTech project currently has Feedback Relay and Privacy only. | Add/review the online stack after isolated staging acceptance. Preserve those existing services and unrelated projects. |
+| Email | auth.pittech.app verified. Resend's fresh read shows auth-staging.pittech.app exists but is failed: DKIM, SPF MX/TXT failed and tracking CNAME not started. | Repair the actual staging DNS records, verify delivery, use separate domain-scoped sending keys; do not rely on stale October 15 status text. |
+| Stores | Native product identifiers empty; real store provider configuration/evidence not complete. | Configure one monthly product per store, localized pricing, server credentials, notifications and license/sandbox tests. No annual/web checkout or client-driven unlock. |
+| Firebase | Existing main-only workflow builds/signs com.pittech.dev with test ads and distributes to pittech-dev; requires exact-main Android push success. | Feed approved online/build/product configuration into it, retain artifact/release links, and dispatch after the deployed functionality is usable. |
+
+The connected browser currently reports no originating browser context. GitHub/Railway/Resend connected APIs remain available; no Railway or gh CLI is installed. Store consoles, DNS not exposed by a connector, repository-secret administration and manual workflow dispatch need an available authorized browser/CLI. Record concrete unavailable capabilities rather than claiming that code or config has been applied.
+
+## Delivery sequence
+
+| Slice | Concrete work | Acceptance before moving on |
+|---|---|---|
+| R0 — Plan and evidence | Preserve the complete MCP plan in #114, track this rollout, refresh baseline/status and identify actual external access needs. | One durable plan, explicit source/runtime/store/distribution states, no unresolved scope hidden behind “implemented.” |
+| R1 — Runtime and billing readiness | Correct Google Play subscription GET/acknowledgement resource paths; reject failed acknowledgement instead of treating 404 as success. Read Google's JWKS in its actual format with atomic key rotation/expiry; bind RTDN to the configured verified Pub/Sub service-account identity. Supply a separately scoped migration/bootstrap path and required container operations files. Audit the runtime flag/storage/key/role matrix. | Backend Actions: strict typecheck, real Postgres migrations/role isolation, provider-format/HTTP contract tests, verified/invalid notification fixtures, restart/retry behavior, production image and fail-closed startup. No local test/build substitutes. |
+| R2 — Deployed isolated online stack | Configure/provision staging Postgres and private object storage; bootstrap migrations and the reviewed NOLOGIN/runtime role grants with separate API, lifecycle and sync logins. Wire key references, domain-scoped email key, HTTPS origins/DNS and sweeper. Resolve staging mail DNS. Pin/deploy the tested source. | Terminal deployment success plus DB/storage/readiness checks, actual sign-in delivery, restart recovery, limits/redaction and deletion cleanup. No public database proxy, public bucket or administrator URL in API/sweeper. |
+| R3 — Stores and native test configuration | Configure Play/Apple monthly products and notification providers. Add reviewed build-time online/API-origin/store-environment configuration on both clients with production-safe defaults and strict origin validation. Fix native sandbox refresh/reconcile routing: current purchase verification may return sandbox, but refresh/reconcile currently default to production. Resolve Firebase/Play package identities below. | Signed artifact inspection; authorized real sandbox/license purchase, acknowledgement, restore, renewal/cancel/refund/revoke and cross-device entitlement refresh. Sandbox records never grant production entitlement; the client cannot select the verification result's environment. |
+| R4 — Complete native phase enablement | Enable account/community/private sync together in the approved test/release configuration after R2/R3 acceptance. Review projection releaseReady marker with its full coverage/evidence instead of flipping it alone. Update privacy/disclosures/review notes to the shipped behavior. Reconcile applicable open App Store readiness/ads/screenshot PRs separately. | Android API 36 standard/large text + upgrade/restart and full iOS unit/UI on one Simulator worker. Actual native writer fixtures, screenshots and live Android↔iOS sync/account/deletion walkthroughs. Source/CI evidence is not physical/store proof. |
+| R5 — Production readiness | Apply the reviewed production stack/config after staging, preserving environment-specific keys, DB roles, object namespaces and limits. Configure api.pittech.app/pittech.app association files and native release identities; demonstrate backup/restore, key rotation, retention and incident switches. | Live account/sync/publication/deletion/store smoke checks, HTTPS/deep-link installation evidence, no private data in public APIs/aggregates/logs, operator reporting/moderation working and runtime costs/budgets inspected. |
+| R6 — Firebase and test handoff | Merge verified source as permitted by the ongoing implementation instruction, wait for successful Android checks on that exact main SHA, then explicitly dispatch Firebase with confirm_distribution=true. Supply approved product/origin/env values through CI configuration. Retain signed APK, version/source SHA, release notes and Firebase tester link; provide Play test link where purchase testing requires it. | Observe the workflow's terminal success and actual Firebase release/upload result. Download/install path works; features call the intended live backend. Do not distribute the current disabled build and call it the requested online test release. |
+
+R1 can proceed while console access is restored. R2/R3 can be prepared together; the complete phase gate governs R4. Missing store or physical evidence stays explicitly open rather than being replaced with mocks. A blocker in one external console does not stop independent code/docs/CI work.
+
+## Deployment and role design
+
+Use the existing Node 22 production image and reviewed migrations. Both 007 migrations have distinct names and recorded hashes; do not rename or rewrite shipped migrations. The image must include reviewed operations SQL if a one-off bootstrap service uses it.
+
+Run schema migrations/bootstrap in a dedicated, private, one-off administrator/migrator context. Revoke PUBLIC schema-creation privileges before validating runtime grants. API login inherits only the relay/auth/publication/billing/public-only aggregate roles needed by enabled modules; lifecycle and private sync retain dedicated pools/logins. Grant no runtime principal schema ownership, superuser, role creation or migration access. Check account/lifecycle fencing and object reference cleanup using runtime credentials.
+
+Use Railway variable references for private database hosts and bucket connection values. Generate independent account, lifecycle, rate-HMAC and versioned private-sync encryption keys; keep raw secrets out of the repo, test fixtures, shell history and logs. Separate staging/production. Use migration idempotency and expand/backfill/contract changes rather than destructive resets.
+
+Separate one-off migrations from periodic runtime cleanup. Prove relay expiry, private upload abandonment, account/object purges, auth delivery/pruning, store reconciliation and public-only aggregates actually execute after restarts; review least privileges for every scheduled context. Verify the pending initial patch only after all required service configuration is concrete. User authorization now exists for this rollout, but missing runtime inputs are still real technical prerequisites.
+
+## Firebase, Play and entitlement test contract
+
+The existing Firebase package is **com.pittech.dev**. The Play package is **com.pittech**. A Play product belongs to its registered package: installing the Dev APK does not make the production package's purchase sheet available.
+
+Preferred delivery preserves the side-by-side Firebase Dev install for account/sync/journal testing and uses a Play internal/closed-test com.pittech build from the same tested source for real Play Billing. If the owner needs the purchase sheet inside the Firebase-distributed APK itself, add a Firebase app/distribution variant for the actual Play package after verifying the signing/install path and license tester account. Do not silently change the existing Dev package or wipe the installed journal. Back up before any necessary signing/package replacement.
+
+Both builds use server-verified entitlement; test and production purchase records stay separate. Make the test environment an explicit approved build/deployment setting, not a guessed query based on an unverified token. Sandbox refresh/reconcile must retain the selected test context, and account switching must clear another account's cache. Verify cross-platform account behavior explicitly. No fake product price, hidden entitlement override or “unlock all” testing flag replaces billing.
+
+The final handoff must say which APK/link supports purchase testing and which supports the remaining online features. “Fully testable” includes clear limits, rather than treating a successful Firebase upload as functional acceptance.
+
+## Required end-to-end walkthrough
+
+1. Install/update with an existing journal and active-meal preservation; ordinary offline logging/export still works.
+2. Sign in by real code/link; expired/scanner-prefetched/wrong-device challenges behave correctly. Sign out and recover safely.
+3. Explicitly attach a populated phone library; sync meals/recipes and real photos to another account-matched device. Independent offline edits survive; same-record conflicts remain recoverable.
+4. Exercise manual-reading correction, equal-ordinal recipe branches, interrupted photo resume, account switch and rollback. No automatic sample rewrite or local runtime activation on restore.
+5. Remote Finish/delete reconciles only the affected device activity; local journal clear detaches without deleting the cloud library.
+6. Signed-out discovery/save/cook; deliberate publication with exact selected data/credit; owner edit, report, block and unpublish. Anonymous/public paths never see private libraries.
+7. Delete a real test account, including original public/private objects and sessions; independent other-owner copies survive. Demonstrate a late upload cannot revive purged bytes.
+8. Real sandbox/license purchase, renewal/expiry/cancel/refund/revoke, restore/account binding, ad removal and free fallback. No cook interruption or private loss.
+9. Verify installed native links, expected host/certificate identities and accessibility at both required text sizes.
+10. Observe Firebase release success and the intended deployed backend from the installed APK. Record live/store/device evidence separately from automated fixtures.
+
+## Completion ledger
+
+- [x] MCP #114 fully planned through M0–M8, with continuous parity enforcement and photos; implementation paused.
+- [x] Source/runtime/email/Firebase package baseline audited.
+- [ ] R1 runtime/provider fixes pass exact-head Actions.
+- [ ] Staging resources, mail DNS/delivery, keys and least-privilege bootstrap complete.
+- [ ] Store products/provider access/notifications and native test context configured.
+- [ ] Complete account/community/sync/deletion phase enabled and verified on both platforms.
+- [ ] Production rollout acceptance and required physical/store evidence complete.
+- [ ] Exact-main Android checks pass; Firebase action succeeds; downloadable release and walkthrough supplied.
+
+## Primary references
+
+- Existing product/phase decisions: issue #89 and docs/ONLINE_SERVICES_PR_PLAN.md.
+- Code/role policies: AGENTS.md, docs/online/{08-auth,09-native-accounts,13-lifecycle,14-private-sync,16-subscriptions,19-final-gate,STAGING}.md.
+- Google subscription GET: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/get
+- Google acknowledgement: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/acknowledge
+- Google signing-key discovery: https://accounts.google.com/.well-known/openid-configuration
+- Pub/Sub push identity checks: https://docs.cloud.google.com/pubsub/docs/authenticate-push-subscriptions
+- Licensed/sideloaded billing tests: https://developer.android.com/google/play/billing/test
+- Firebase distribution: https://firebase.google.com/docs/app-distribution/android/distribute-cli
+

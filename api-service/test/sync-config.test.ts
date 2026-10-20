@@ -8,6 +8,7 @@ import { createRuntime } from '../src/config.ts';
 import { privateLibraryEnvelope } from '../src/sync-projection.ts';
 import { PrivatePhotos } from '../src/sync-photos.ts';
 import { PrivateSnapshots, type SyncStorageLimits } from '../src/sync-snapshots.ts';
+import { applePublicPem, appleConfig, googleConfig, oidcAudience, oidcEmail, oidcPublicJwk, rtdnBody, signOidc } from './billing-fixtures.ts';
 
 const directory = await mkdtemp(join(tmpdir(), 'pittech-sync-config-'));
 after(() => rm(directory, { recursive: true, force: true }));
@@ -93,6 +94,35 @@ function swap(key: string, value: string | undefined, pattern: RegExp) {
     else process.env[key] = saved;
   }
 }
+
+test('enabled billing requires a configured push identity and refreshes the production JWKS adapter', async t => {
+  withEnv(t, {
+    ...enabled().env,
+    SUBSCRIPTIONS_ENABLED: 'true',
+    PRO_APPLE_BUNDLE_ID: appleConfig.bundleId, PRO_APPLE_PRODUCT_ID: appleConfig.productId,
+    PRO_APPLE_TRUST_MODE: 'pinned', PRO_APPLE_PINNED_KEYS: JSON.stringify({ synthetic: applePublicPem }),
+    PRO_APPLE_ISSUER_ID: 'synthetic-issuer', PRO_APPLE_KEY_ID: 'synthetic-key', PRO_APPLE_PRIVATE_KEY: 'unused-synthetic-key',
+    PRO_GOOGLE_PACKAGE: googleConfig.packageName, PRO_GOOGLE_PRODUCT_ID: googleConfig.productId,
+    PRO_GOOGLE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'synthetic@test.iam.gserviceaccount.com', private_key: 'unused-synthetic-key' }),
+    PRO_GOOGLE_RTDN_AUDIENCE: oidcAudience, PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL: oidcEmail,
+  });
+  swap('PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL', undefined, /Missing configuration/);
+  swap('PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL', 'not-a-push-service-account', /Invalid Pub\/Sub push identity/);
+  const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+    calls.push(String(url));
+    return Response.json({ keys: [oidcPublicJwk] }, { headers: { 'Cache-Control': 'max-age=3600' } });
+  });
+  const runtime = createRuntime();
+  try {
+    await runtime.refreshOidcKeys!();
+    assert.deepEqual(calls, ['https://www.googleapis.com/oauth2/v3/certs']);
+    await assert.rejects(runtime.subscriptions!.rtdnPush(
+      rtdnBody('synthetic-wrong-push-identity', { packageName: googleConfig.packageName, testNotification: {} }),
+      `Bearer ${signOidc({ email: 'wrong@synthetic.iam.gserviceaccount.com' }, Date.now())}`,
+    ), { code: 'notification_rejected' });
+  } finally { await runtime.close(); }
+});
 
 test('private sync stays disabled by default with no services or routes', async t => {
   withEnv(t, { ...quiet, ...base });

@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Fixed
+- Draft online billing uses Google's documented subscription lookup/acknowledgement routes and refreshed signing keys, and accepts renewal notifications only from the configured verified push identity. Store setup and live verification remain required before purchases are available.
 - A failed private-sync apply restores existing photo bytes instead of deleting the original file during rollback on either platform.
 - Draft private sync offers an account-bound choice to reconcile while the app is open, after explicit library attachment. Remote Finish/deletion cancels that meal's local timers, recording and notifications.
 - Draft private sync on Android and iOS accepts manual-temperature corrections while preserving automatic measurements and recoverable conflicting edits.

@@ -3,8 +3,15 @@
 Owner authorized implementation on October 14, including the deletion amendment.
 Baseline: `82cbe1b335499aba561fc58c91d727055b8ce4fc`. Store-launch PRs #77/#78/#88
 remain separate. No online phase is released until its complete parity gate passes.
-Slices 00–18 are merged (PRs #92–#120); head main `6e78653`. Slice 19 is in
-progress; see `19-final-gate.md`.
+Slices 00–19 and cleanup #122 are merged; main `743b6a5` carries the tested
+cleanup tree (backend 170, Android JVM 376/all emulator lanes, iOS 250 unit/UI).
+The online stack is still undeployed and disabled. Owner authorization on
+October 20 now covers making it usable and a Firebase test distribution; the
+remaining rollout is tracked in #123 and `20-online-enablement.md`.
+Historical checkpoints below are source evidence, not a live-service claim.
+The post-merge Android push run 39432333361 requires investigation/rerun of its
+API 36/font 1.5 process crash before exact-main distribution; iOS push verification
+was still running when the rollout audit began.
 
 | PR | Deliverable | State | Evidence |
 |---|---|---|---|

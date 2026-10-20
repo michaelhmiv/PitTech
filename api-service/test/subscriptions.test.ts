@@ -9,7 +9,7 @@ import { PlayDeveloperApi } from '../src/subscriptions-google.ts';
 import { Subscriptions, deriveAppleState, deriveGoogleState, projectCache, transitionEntitlement, ENTITLEMENT_CACHE_VERSION, OFFLINE_WINDOW_MS } from '../src/subscriptions.ts';
 import { MemoryBillingStore } from './helpers.ts';
 import {
-  NOW, MONTH, appleConfig, googleConfig, appleTrust, applePublicPem, oidcKeySet, oidcAudience,
+  NOW, MONTH, appleConfig, googleConfig, appleTrust, applePublicPem, oidcKeySet, oidcAudience, oidcEmail,
   signApple, appleTransaction, appleRenewal, appleStatusBody, appleNotificationBody,
   stubAppleApi, stubPlayApi, signOidc, googleSubscription, rtdnBody, rtdnSubscription, type StubApple,
 } from './billing-fixtures.ts';
@@ -21,7 +21,7 @@ function setup() {
   const store = new MemoryBillingStore(), apple = stubAppleApi(), play = stubPlayApi();
   const service = new Subscriptions(store, {
     apple: { config: appleConfig, trust: appleTrust, api: apple.api },
-    google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience },
+    google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience, oidcEmail },
   }, clock);
   return { store, apple, play, service };
 }
@@ -119,7 +119,8 @@ test('Google verification enforces app association and acknowledges pending purc
   const result = await service.verifyPurchase(account, { store: 'google', purchaseToken: 'synthetic-token-ack' });
   assert.equal(result.cache.state, 'active'); assert.equal(play.acknowledged.length, 1);
   assert.ok(play.calls[0].url === 'https://oauth2.googleapis.com/token');
-  assert.ok(play.calls[1].url.includes(`/applications/${googleConfig.packageName}/purchases/subscriptionsv2/synthetic-token-ack`));
+  assert.equal(play.calls[1].url, `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${googleConfig.packageName}/purchases/subscriptionsv2/tokens/synthetic-token-ack`);
+  assert.equal(play.acknowledged[0], `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${googleConfig.packageName}/purchases/subscriptions/${googleConfig.productId}/tokens/synthetic-token-ack:acknowledge`);
   play.subscription.body = googleSubscription({ lineItems: [{ productId: 'someone-elses-product', expiryTime: new Date(NOW + MONTH).toISOString(), autoRenewingPlan: { autoRenewEnabled: true } }] });
   await assert.rejects(service.verifyPurchase(randomUUID(), { store: 'google', purchaseToken: 'synthetic-token-product' }), { code: 'unknown_store_product' });
   play.subscription.status = 404;
@@ -139,6 +140,20 @@ test('a stronger live binding shadows a weaker second purchase instead of mergin
   assert.equal(shadowed.cache.state, 'active');
   const record = await service.cache(account, 'production');
   assert.equal(record.verifiedUntil, new Date(NOW + MONTH).toISOString());
+});
+
+test('failed Google acknowledgement never grants Pro and the same verified purchase can retry', async () => {
+  for (const status of [404, 403, 500]) {
+    const { store, play, service } = setup(), account = randomUUID();
+    play.subscription.body = googleSubscription({ acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING' });
+    play.acknowledgement.status = status;
+    await assert.rejects(service.verifyPurchase(account, { store: 'google', purchaseToken: 'synthetic-retry-token' }), { code: 'store_unavailable' });
+    assert.equal(store.entitlements.size, 0);
+    play.acknowledgement.status = 200;
+    const result = await service.verifyPurchase(account, { store: 'google', purchaseToken: 'synthetic-retry-token' });
+    assert.equal(result.cache.state, 'active');
+    assert.equal(play.acknowledged.length, 2);
+  }
 });
 
 test('tampered, future-dated, wrong-environment and wrong-product proofs are rejected; expired transactions never activate', async () => {
@@ -307,6 +322,13 @@ test('RTDN test deliveries and unknown purchases record without touching entitle
   const badOidc = oidcParts.join('.');
   await assert.rejects(service.rtdnPush(unknown, bearer(badOidc)), { code: 'notification_rejected' });
   await assert.rejects(service.rtdnPush(unknown, undefined), { code: 'notification_rejected' });
+  for (const claims of [
+    { email: 'other@synthetic.iam.gserviceaccount.com' }, { email: undefined },
+    { email_verified: false }, { email_verified: 'true' }, { email_verified: undefined },
+    { aud: 'https://wrong-audience.example' }, { exp: Math.floor(NOW / 1000) },
+  ]) await assert.rejects(service.rtdnPush(unknown, bearer(signOidc(claims))), { code: 'notification_rejected' });
+  const wrongTestPackage = rtdnBody('synthetic-wrong-test-package', { packageName: 'evil.app', testNotification: {} });
+  await assert.rejects(service.rtdnPush(wrongTestPackage, bearer(signOidc())), { code: 'notification_rejected' });
   const wrongPackage = rtdnBody('synthetic-message-package', { ...rtdnSubscription('synthetic-unknown-token', 2), packageName: 'evil.app' });
   await assert.rejects(service.rtdnPush(wrongPackage, bearer(signOidc())), { code: 'notification_rejected' });
   const wrongProduct = rtdnBody('synthetic-message-product', { version: '1.0', packageName: googleConfig.packageName, eventTimeMillis: String(NOW), subscriptionNotification: { version: '1.0', notificationType: 2, purchaseToken: 'synthetic-unknown-token', subscriptionId: 'evil-product' } });
@@ -359,8 +381,8 @@ test('store API clients sign requests and select the environment host explicitly
   await play.api.subscription('synthetic-client-token', googleConfig.packageName);
   assert.equal(play.calls[0].url, 'https://oauth2.googleapis.com/token'); assert.equal(play.calls[0].method, 'POST');
   assert.ok(play.calls[1].url.includes(encodeURIComponent(googleConfig.packageName)));
-  await play.api.acknowledge('synthetic-client-token', googleConfig.packageName);
-  assert.ok(play.acknowledged[0].endsWith(':acknowledge'));
+  await play.api.acknowledge('synthetic-client-token', googleConfig.packageName, googleConfig.productId);
+  assert.equal(play.acknowledged[0], `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${googleConfig.packageName}/purchases/subscriptions/${googleConfig.productId}/tokens/synthetic-client-token:acknowledge`);
   const failing = new PlayDeveloperApi({ clientEmail: 'synthetic@test.iam.gserviceaccount.com', privateKey: 'unused' }, async url => url === 'https://oauth2.googleapis.com/token' ? { status: 500, body: {} } : { status: 200, body: googleSubscription() });
   await assert.rejects(failing.subscription('synthetic-client-token', googleConfig.packageName), { code: 'store_unavailable' });
 });

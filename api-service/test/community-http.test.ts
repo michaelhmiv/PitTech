@@ -12,7 +12,7 @@ import { COMMUNITY_TAXONOMY_V1 } from '../src/community-taxonomy.ts';
 import { COMMUNITY_METRICS_V1 } from '../src/community-aggregation.ts';
 import { MemoryRepository, MemoryBillingStore, budgets } from './helpers.ts';
 import {
-  NOW, appleConfig, googleConfig, appleTrust, oidcKeySet, oidcAudience,
+  NOW, appleConfig, googleConfig, appleTrust, oidcKeySet, oidcAudience, oidcEmail,
   signApple, appleTransaction, stubAppleApi, stubPlayApi,
 } from './billing-fixtures.ts';
 
@@ -38,7 +38,7 @@ async function setup(t: { after: (fn: () => void) => void }) {
   } as unknown as Authentication;
   const service = new Subscriptions(billing, {
     apple: { config: appleConfig, trust: appleTrust, api: apple.api },
-    google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience },
+    google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience, oidcEmail },
   }, () => NOW);
   const store = new MemoryJobRunStore();
   const aggregates = new CommunityAggregates(store, () => NOW);
