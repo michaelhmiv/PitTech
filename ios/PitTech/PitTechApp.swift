@@ -3,6 +3,7 @@ import UserNotifications
 
 @main
 struct PitTechApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var store = CookStore()
     @State private var relay = NativeRelayCoordinator()
     @State private var community = NativePublicCoordinator.forApp()
@@ -44,6 +45,8 @@ struct PitTechApp: App {
                 .environment(customization)
                 .environment(AdsConsentManager.shared)
                 .onChange(of: account.stateUserId) { _, _ in community.controlsChanged() }
+                .onChange(of: account.stateUserId) { _, _ in sync.refresh() }
+                .onChange(of: scenePhase) { _, phase in if phase == .active { sync.resumeAutomaticSync() } else { sync.pauseAutomaticSync() } }
                 .onChange(of: account.stateUserId) { _, _ in Task { await pro.refresh() } }
                 .onChange(of: account.deletionRecord?.receipt?.deletionId) { _, _ in communityControls.reload(); community.controlsChanged() }
                 .tint(PitTechStyle.accent)
@@ -62,6 +65,9 @@ struct PitTechApp: App {
                     }
                 }
                 .task {
+                    store.onLibrarySaved = { sync.requestAutomaticSync() }
+                    store.onBeforeLocalJournalRemoval = { try sync.detachLibrary() }
+                    if scenePhase == .active { sync.resumeAutomaticSync() }
                     account.removeJournal = { try store.removeLocalJournal() }
                     pro.start()
                     communityControls.reload()

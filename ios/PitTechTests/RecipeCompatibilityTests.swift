@@ -25,6 +25,16 @@ final class RecipeCompatibilityTests: XCTestCase {
         row["snapshotJson"] = .string(snapshot.replacingOccurrences(of: "\"Mac\"", with: "\"Spicy\""))
         invalid.recipeRevisions[0] = .object(row)
         XCTAssertThrowsError(try library.rejectRecipeConflicts(invalid))
+        var branched = library
+        var left = library.recipeRevisions[0].objectValue!
+        left["id"] = .string("branch-a"); left["parentRevisionId"] = .string("revision"); left["revisionNumber"] = .number(2)
+        var right = left; right["id"] = .string("branch-b"); right["changeNotes"] = .string("Another phone")
+        branched.recipeRevisions += [.object(left), .object(right)]
+        try branched.validateRecipes(); try library.rejectRecipeConflicts(branched)
+        let branchRoundTrip = try JSONDecoder().decode(PitTechLibrary.self, from: JSONEncoder().encode(branched))
+        try branchRoundTrip.validateRecipes()
+        XCTAssertEqual(branchRoundTrip.recipeRevisions.count, 3)
+        XCTAssertEqual(branchRoundTrip.recipes[0].objectValue?["currentRevisionId"]?.stringValue, "revision")
     }
     func testMissingAnchorsAndLegacyArchiveRemainUninvented() throws {
         let old = try JSONDecoder().decode(PitTechLibrary.self, from: Data("{\"schemaVersion\":6}".utf8))

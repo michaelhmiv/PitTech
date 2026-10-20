@@ -32,6 +32,15 @@ class MainActivity : ComponentActivity() {
         CooksViewModel.Factory(app.cookRepository, app.dataTransfer, app)
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.sync.resumeAutomaticSync()
+    }
+    override fun onPause() {
+        viewModel.sync.pauseAutomaticSync()
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleReminderIntent(intent)

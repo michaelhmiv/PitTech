@@ -97,7 +97,6 @@ class RecipeRepository(private val database: PitTechDatabase, private val photoS
         val existingPresets = dao.presets().associateBy { it.id }
         s.recipeRevisions.forEach { revision ->
             require(existingRevisions[revision.id]?.let { it == revision } != false) { "A recipe revision conflicts with saved history." }
-            require(existingRevisions.values.none { it.recipeId == revision.recipeId && it.revisionNumber == revision.revisionNumber && it.id != revision.id }) { "A recipe version number conflicts with saved history." }
         }
         s.recipeAssets.forEach { asset -> require(existingAssets[asset.id]?.let { it == asset } != false) { "A recipe photo conflicts with saved history." } }
         val otherPhotos = database.cookDao().getAllPhotos().map { it.id }.toSet() + database.companionDao().photos().map { it.id }

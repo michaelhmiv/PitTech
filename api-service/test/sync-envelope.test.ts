@@ -2,6 +2,21 @@ import{test}from'node:test';import assert from'node:assert/strict';import{random
 const alice='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',bob='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
 const row=(text:string,counter=1,clientId=alice):SyncRecord=>({recordType:'events',recordId:'note',version:{counter,clientId},deleted:false,payload:{title:text},assetIds:[]});
 const envelope=(records:SyncRecord[],clientId=alice):SyncEnvelope=>({contractVersion:1,mutationId:randomUUID(),baseVersion:0,clientId,records,conflicts:[]});
+test('manual corrections commit and retain concurrent edits while telemetry provenance stays immutable',()=>{
+ const sample:SyncRecord={...row(''),recordType:'readings',payload:{id:'note',cookId:'meal',source:'manual',value:150,unit:'°F'}};
+ const corrected:SyncRecord={...sample,version:{counter:2,clientId:alice},payload:{...sample.payload,value:160}};
+ syncTransition(syncEnvelope(envelope([sample])),syncEnvelope(envelope([corrected])));
+ const remote:SyncRecord={...corrected,version:{counter:3,clientId:bob},payload:{...sample.payload,value:165}};
+ const merged=mergeSync([sample],[corrected],[remote]);
+ const next=syncEnvelope({...envelope(merged.records,bob),conflicts:merged.conflicts});syncTransition(envelope([corrected]),next);
+ assert.equal(next.conflicts[0].loser.payload!.value,160);
+ for(const field of ['cookId','source','sourceDeviceId','timestampBasis','samplingIntervalMillis']){
+  const forged:SyncRecord={...corrected,payload:{...corrected.payload,[field]:'forged'}};
+  assert.throws(()=>syncTransition(envelope([sample]),syncEnvelope(envelope([forged]))),field);
+ }
+ const automatic={...sample,payload:{...sample.payload,source:'controller_cloud'}};
+ assert.throws(()=>syncTransition(envelope([automatic]),syncEnvelope(envelope([corrected]))));
+});
 test('snapshot metadata rejects missing tombstones, device takeover and rewriting an immutable sample',()=>{
  const base=syncEnvelope(envelope([row('Base')]));syncTransition(base,syncEnvelope(envelope([row('Edit',2)])));
  assert.throws(()=>syncTransition(base,syncEnvelope(envelope([]))));assert.throws(()=>syncTransition(base,syncEnvelope(envelope([row('Edit',2,bob)]))));

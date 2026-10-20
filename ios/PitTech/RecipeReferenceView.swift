@@ -22,7 +22,7 @@ struct RecipeReferenceView: View {
         List {
             Section {
                 Picker("Historical version", selection: $revisionId) { ForEach(versions.indices, id: \.self) { index in let row = versions[index]
-                    if let id = row["id"]?.stringValue { Text("Version \(Int(row["revisionNumber"]?.numberValue ?? 0))\(id == source?["recipeRevisionId"]?.stringValue ? " · used in this meal" : "")\(store.recipe(row["recipeId"]?.stringValue ?? "")?["currentRevisionId"]?.stringValue == id ? " · preferred" : "")").tag(id) }
+                    if let id = row["id"]?.stringValue { Text("\(store.recipeVersionLabel(id))\(id == source?["recipeRevisionId"]?.stringValue ? " · used in this meal" : "")\(store.recipe(row["recipeId"]?.stringValue ?? "")?["currentRevisionId"]?.stringValue == id ? " · preferred" : "")").tag(id) }
                 } }
             }
             if let snapshot {

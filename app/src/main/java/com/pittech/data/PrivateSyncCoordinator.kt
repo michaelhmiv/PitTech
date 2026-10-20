@@ -18,10 +18,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.UUID
 
-internal data class PrivateSyncPresentation(val status: String = "Sync is off", val detail: String? = null, val lastSyncedAt: Long = 0, val conflicts: List<PrivateSyncConflictView> = emptyList(), val busy: Boolean = false, val signedIn: Boolean = false)
+internal data class PrivateSyncPresentation(val status: String = "Sync is off", val detail: String? = null, val lastSyncedAt: Long = 0, val conflicts: List<PrivateSyncConflictView> = emptyList(), val busy: Boolean = false, val signedIn: Boolean = false, val automatic: Boolean = false)
 
 /** Device-authoritative private sync. Local writes always complete first; network work is
- * queued here. Sync runs only on explicit request, only for the current session account,
+ * queued here. First attachment is explicit; opted-in foreground opportunities use only the current account,
  * and stays disabled until the accounts/social/sync/deletion phase passes. */
 internal class PrivateSyncCoordinator(
     private val store: PrivateSyncStorage,
@@ -37,6 +37,39 @@ internal class PrivateSyncCoordinator(
     private var boundUser: String? = null
     private val _presentation = MutableStateFlow(PrivateSyncPresentation())
     val presentation = _presentation.asStateFlow()
+    private var automaticJob: kotlinx.coroutines.Job? = null
+    private var lastAutomaticAt: Long? = null
+    private var automaticForeground = false
+
+    /** First attachment is always explicit. This device/account opt-in is never synced. */
+    suspend fun setAutomatic(value: Boolean) = mutex.withLock {
+        val user = bind() ?: return@withLock
+        if (!enabled) return@withLock
+        val state = withContext(Dispatchers.IO) { store.load(user) }
+        if (value && (state.lastSyncedAt <= 0 || withContext(Dispatchers.IO) { store.libraryAccount() } != user)) return@withLock
+        withContext(Dispatchers.IO) { store.save(user, state.copy(automatic = value)) }
+        if (!value) { automaticJob?.cancel(); automaticJob = null }
+        publishBind(busy = false)
+    }
+
+    /** Coalesce foreground/user-write opportunities; never start an unattended polling loop. */
+    fun requestAutomaticSync() {
+        if (!enabled || !automaticForeground || _presentation.value.busy || automaticJob?.isActive == true) return
+        automaticJob = scope.launch {
+            kotlinx.coroutines.delay(1500)
+            val wait = lastAutomaticAt?.let { (30_000L - (System.nanoTime() / 1_000_000L - it)).coerceAtLeast(0) } ?: 0L
+            kotlinx.coroutines.delay(wait)
+            syncNow(automatic = true)
+        }
+    }
+    fun resumeAutomaticSync() { automaticForeground = true; requestAutomaticSync() }
+    fun pauseAutomaticSync() { automaticForeground = false; automaticJob?.cancel(); automaticJob = null }
+    /** A device-only clear must never become cloud deletion tombstones. */
+    suspend fun detachLibrary() = mutex.withLock {
+        pauseAutomaticSync()
+        withContext(Dispatchers.IO) { store.libraryAccount()?.let { store.purgeAccount(it) } }
+        publishBind(busy = false)
+    }
 
     fun refresh() { scope.launch { mutex.withLock { bind(); publishBind(busy = false) } } }
 
@@ -56,18 +89,34 @@ internal class PrivateSyncCoordinator(
         return user
     }
 
-    suspend fun syncNow() = mutex.withLock {
+    suspend fun syncNow(automatic: Boolean = false) = mutex.withLock {
+        val current = bind()
+        if (automatic) {
+            val user = current ?: return@withLock
+            val state = withContext(Dispatchers.IO) { store.load(user) }
+            if (!enabled || !state.automatic || state.lastSyncedAt <= 0 || withContext(Dispatchers.IO) { store.libraryAccount() } != user) return@withLock
+            lastAutomaticAt = System.nanoTime() / 1_000_000L
+        } else if (enabled && current != null) {
+            withContext(Dispatchers.IO) {
+                if (store.libraryAccount() != current) store.save(current, store.load(current).copy(automatic = false))
+                store.attachLibrary(current)
+            }
+        }
         publishBind(busy = true)
         try {
             attempt()
         } catch (e: CancellationException) {
-            publishBind(busy = false); throw e
+            throw e
         } catch (e: Exception) {
             boundUser?.let { user ->
                 val state = withContext(Dispatchers.IO) { store.load(user) }
                 withContext(Dispatchers.IO) { store.save(user, state.copy(outcome = "retry", message = "Private sync needs a retry. Your local journal is unchanged.")) }
             }
             publishBind(busy = false)
+        } finally {
+            // Lifecycle cancellation also cancels suspendable ledger reads. Release
+            // the UI guard directly so a foreground opportunity can retry the outbox.
+            _presentation.value = _presentation.value.copy(busy = false)
         }
     }
 
@@ -114,9 +163,11 @@ internal class PrivateSyncCoordinator(
             withContext(Dispatchers.IO) { store.save(user, state) }
             publishBind(busy = false)
         } catch (e: CancellationException) {
-            publishBind(busy = false); throw e
+            throw e
         } catch (e: Exception) {
             publishBind(busy = false)
+        } finally {
+            _presentation.value = _presentation.value.copy(busy = false)
         }
     }
 
@@ -521,7 +572,7 @@ internal class PrivateSyncCoordinator(
             state.outcome == "retry" -> "Retry needed"
             else -> "Last synced " + if (state.lastSyncedAt <= 0) "never" else DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).format(Instant.ofEpochMilli(state.lastSyncedAt).atZone(ZoneId.systemDefault()))
         }
-        _presentation.value = PrivateSyncPresentation(status, state.message, state.lastSyncedAt, conflicts, busy, true)
+        _presentation.value = PrivateSyncPresentation(status, state.message, state.lastSyncedAt, conflicts, busy, true, state.automatic && withContext(Dispatchers.IO) { store.libraryAccount() } == user)
     }
 
     private fun liveProjected(records: JSONArray): JSONArray {

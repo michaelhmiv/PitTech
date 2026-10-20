@@ -6,6 +6,13 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ## [Unreleased]
 
+### Fixed
+- A failed private-sync apply restores existing photo bytes instead of deleting the original file during rollback on either platform.
+- Draft private sync offers an account-bound choice to reconcile while the app is open, after explicit library attachment. Remote Finish/deletion cancels that meal's local timers, recording and notifications.
+- Draft private sync on Android and iOS accepts manual-temperature corrections while preserving automatic measurements and recoverable conflicting edits.
+- Offline recipe branches keep their original contents and parent links when two devices save the same version number. Branch choices are labeled separately; Android upgrades its local database without replacing cooking history.
+- Android cookbook editing dismisses the keyboard, reveals its private editing preview and keeps the publishing flow reachable at enlarged text sizes.
+
 ### Added
 - PitTech Pro personal views on both clients, behind the existing subscription gate: compare your recorded cooks of a cut, see the attempt you rated best, review timing across your recorded cuts and weights, note wrap and rest differences, and align recorded temperature curves at Food on or Wrap — all computed on-device from your own library, working offline, with honest notes wherever cooks are missing weights, anchors, or ratings.
 - PitTech Pro Year in Smoke recap builder on both clients: pick a period, choose exactly which cooks and sections appear, preview the exact shareable card, then share it explicitly. Unselected cooks never appear, and including a cook in a recap never publishes anything.

@@ -37,7 +37,7 @@ object RecipeArchive {
         unique(s.recipeAssets.map { it.id } + s.photos.map { it.id } + s.companionPhotos.map { it.id })
         val recipes = s.recipes.associateBy { it.id }; val revisions = s.recipeRevisions.associateBy { it.id }
         require(s.recipes.all { it.name.isNotBlank() && revisions[it.currentRevisionId]?.recipeId == it.id && JSONArray(it.tagsJson).length() <= 100 }) { "Invalid preferred recipe version." }
-        require(s.recipeRevisions.map { it.recipeId to it.revisionNumber }.distinct().size == s.recipeRevisions.size)
+        // Sibling branches can share a display ordinal; immutable UUIDs remain unique.
         s.recipeRevisions.forEach { revision ->
             require(revision.recipeId in recipes && revision.revisionNumber > 0 && revision.snapshotSchemaVersion == 1)
             val parent = revision.parentRevisionId?.let { revisions[it] ?: error("Missing parent recipe revision.") }

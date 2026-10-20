@@ -5,8 +5,8 @@ struct NativeSyncDelete { var type: String; var id: String }
 struct NativeSyncApplyPlan { var upserts: [NativeSyncUpsert]; var deletes: [NativeSyncDelete]; var attachments: [String: Data] }
 
 /** Library boundary for private sync. Build reads the full journal; apply writes one
- * validated merge result. Recording, probe-assignment, timer, occurrence and delivery
- * state are never touched here. */
+ * validated merge result. Runtime activation never imports; finishing/deleting a
+ * meal only cancels that meal's local recording, timers and deliveries. */
 @MainActor protocol NativeSyncLibrary: AnyObject {
     func archive() throws -> JSONValue
     func photoData(type: String, id: String) throws -> (Data, String)?
@@ -28,32 +28,68 @@ struct NativeSyncApplyPlan { var upserts: [NativeSyncUpsert]; var deletes: [Nati
         for upsert in plan.upserts { guard upsert.payload[NativePrivateSyncProtocol.keyField(upsert.type)]?.stringValue == upsert.id else { throw NativeSyncError.invalid } }
         var next = store.library
         var copied: [URL] = []
+        var backups: [URL: URL] = [:]
         // Tombstoned and relocated photo paths must be captured before the rows change.
         var removed: [URL] = []
         for tombstone in plan.deletes where Self.photoKinds.contains(tombstone.type) {
             if let path = rows(next, tombstone.type).first(where: { $0.objectValue?[NativePrivateSyncProtocol.keyField(tombstone.type)]?.stringValue == tombstone.id })?.objectValue?["archivePath"]?.stringValue { removed.append(store.photoURL(path)) }
         }
         for upsert in plan.upserts where plan.attachments[upsert.id] != nil {
-            if let path = rows(next, upsert.type).first(where: { $0.objectValue?[NativePrivateSyncProtocol.keyField(upsert.type)]?.stringValue == upsert.id })?.objectValue?["archivePath"]?.stringValue, path != photoPath(upsert) { removed.append(store.photoURL(path)) }
+            if let path = rows(next, upsert.type).first(where: { $0.objectValue?[NativePrivateSyncProtocol.keyField(upsert.type)]?.stringValue == upsert.id })?.objectValue?["archivePath"]?.stringValue, path != (try photoPath(upsert)) { removed.append(store.photoURL(path)) }
         }
         do {
             try FileManager.default.createDirectory(at: store.photoURL("attachments"), withIntermediateDirectories: true)
             for (id, bytes) in plan.attachments {
                 guard let upsert = plan.upserts.first(where: { $0.id == id && Self.photoKinds.contains($0.type) }), (1...NativePrivateSyncProtocol.maxPhotoBytes).contains(bytes.count) else { throw NativeSyncError.invalid }
-                let url = store.photoURL(photoPath(upsert))
-                try bytes.write(to: url, options: .atomic)
+                let url = store.photoURL(try photoPath(upsert))
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let backup = store.photoURL("attachments/.sync-rollback-" + UUID().uuidString)
+                    try FileManager.default.copyItem(at: url, to: backup)
+                    backups[url] = backup
+                }
                 copied.append(url)
+                try bytes.write(to: url, options: .atomic)
             }
             for tombstone in plan.deletes { next = try removing(next, tombstone) }
             for upsert in plan.upserts { next = try overlaying(next, upsert, relocated: plan.attachments[upsert.id] != nil) }
+            let removedCooks = Set(store.library.cooks.map(\.id)).subtracting(next.cooks.map(\.id))
+            let terminal = removedCooks.union(next.cooks.filter { !$0.isActive }.map(\.id))
+            let removedRules = Set(store.library.reminderRules.compactMap { $0.objectValue?["id"]?.stringValue }).subtracting(next.reminderRules.compactMap { $0.objectValue?["id"]?.stringValue })
+            let canceledRules = removedRules.union(store.library.reminderRules.compactMap { row -> String? in
+                guard let o = row.objectValue, let cook = o["cookId"]?.stringValue, terminal.contains(cook) else { return nil }; return o["id"]?.stringValue
+            })
+            let cancellations = store.library.reminderOccurrences.compactMap { row -> String? in
+                guard let o = row.objectValue, let rule = o["ruleId"]?.stringValue, canceledRules.contains(rule), let id = o["id"]?.stringValue else { return nil }; return "meal-reminder:" + id
+            }
+            func cancelRuntime(_ rows: [JSONValue], status: String, active: Set<String>) -> [JSONValue] {
+                rows.compactMap { row in
+                    guard var o = row.objectValue, let cook = o["cookId"]?.stringValue else { return row }
+                    if removedCooks.contains(cook) { return nil }
+                    if terminal.contains(cook), active.contains(o["status"]?.stringValue ?? "") { o["status"] = .string(status) }
+                    return .object(o)
+                }
+            }
+            next.activityTimers = cancelRuntime(next.activityTimers, status: "cancelled", active: ["running"])
+            next.recordings = cancelRuntime(next.recordings, status: "stopped", active: ["recording", "paused", "connecting", "recovering"])
+            next.reminders = cancelRuntime(next.reminders, status: "cancelled", active: ["pending", "scheduled"])
+            next.probeAssignments.removeAll { removedCooks.contains($0.objectValue?["cookId"]?.stringValue ?? "") }
+            next.reminderOccurrences.removeAll { removedRules.contains($0.objectValue?["ruleId"]?.stringValue ?? "") }
             // The merged library must validate exactly like an archive import before it replaces anything.
             try next.validateCookExperience()
             let prior = store.library; store.library = next; store.save()
             guard store.saveError == nil else { store.library = prior; throw NativeSyncError.invalid }
+            store.submitReminderSchedules(NativeReminderReconciliation(cancellations: cancellations))
         } catch {
-            for url in copied { try? FileManager.default.removeItem(at: url) }
+            for url in copied {
+                if let backup = backups[url] {
+                    // The original stays in its recovery file if storage prevents restore.
+                    try Data(contentsOf: backup).write(to: url, options: .atomic)
+                    try FileManager.default.removeItem(at: backup)
+                } else { try? FileManager.default.removeItem(at: url) }
+            }
             throw error
         }
+        for backup in backups.values { try? FileManager.default.removeItem(at: backup) }
         for url in removed { try? FileManager.default.removeItem(at: url) }
     }
     private func rows(_ library: PitTechLibrary, _ type: String) -> [JSONValue] {
@@ -104,8 +140,14 @@ struct NativeSyncApplyPlan { var upserts: [NativeSyncUpsert]; var deletes: [Nati
             // Overlay portable fields over the local row, preserving device-only keys such
             // as archive paths and rule activation. Existing local state is never armed.
             var merged = value[index].objectValue ?? [:]
+            let changed = upsert.payload.contains { (merged[$0.key] ?? .null) != $0.value }
+            if changed && upsert.type == "recipeRevisions" { throw NativeSyncError.invalid }
+            if changed && upsert.type == "readings" {
+                guard merged["source"]?.stringValue == "manual", upsert.payload["source"]?.stringValue == "manual",
+                      ["id", "cookId", "sourceDeviceId", "timestampBasis", "samplingIntervalMillis"].allSatisfy({ (merged[$0] ?? .null) == (upsert.payload[$0] ?? .null) }) else { throw NativeSyncError.invalid }
+            }
             for (field, content) in upsert.payload { merged[field] = content }
-            if relocated, Self.photoKinds.contains(upsert.type) { merged["archivePath"] = .string(photoPath(upsert)) }
+            if relocated, Self.photoKinds.contains(upsert.type) { merged["archivePath"] = .string(try photoPath(upsert)) }
             if upsert.type == "companionRecords" {
                 if let created = merged["created"]?.numberValue { merged["createdAtUtcMillis"] = .number(created) }
                 if let updated = merged["updated"]?.numberValue { merged["updatedAtUtcMillis"] = .number(updated) }
@@ -123,7 +165,7 @@ struct NativeSyncApplyPlan { var upserts: [NativeSyncUpsert]; var deletes: [Nati
                 if let updated = row["updated"]?.numberValue { row["updatedAtUtcMillis"] = .number(updated) }
             }
             if Self.photoKinds.contains(upsert.type) {
-                row["archivePath"] = .string(photoPath(upsert))
+                row["archivePath"] = .string(try photoPath(upsert))
                 if upsert.type == "photos" { row["originalFileName"] = .string(upsert.id + "." + photoExtension(upsert.payload["mimeType"]?.stringValue ?? "image/jpeg")) }
             }
             value.append(.object(row))
@@ -131,5 +173,8 @@ struct NativeSyncApplyPlan { var upserts: [NativeSyncUpsert]; var deletes: [Nati
         return setting(library, upsert.type, value)
     }
     private func photoExtension(_ mime: String) -> String { mime == "image/png" ? "png" : mime == "image/webp" ? "webp" : "jpg" }
-    private func photoPath(_ row: NativeSyncUpsert) -> String { "attachments/" + row.id + "." + photoExtension(row.payload["mimeType"]?.stringValue ?? "image/jpeg") }
+    private func photoPath(_ row: NativeSyncUpsert) throws -> String {
+        guard row.id.range(of: "^[A-Za-z0-9_-]{1,80}$", options: .regularExpression) != nil else { throw NativeSyncError.invalid }
+        return "attachments/" + row.id + "." + photoExtension(row.payload["mimeType"]?.stringValue ?? "image/jpeg")
+    }
 }

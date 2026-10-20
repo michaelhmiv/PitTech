@@ -48,6 +48,7 @@ import kotlinx.coroutines.sync.withLock
     val exporting by viewModel.busy.collectAsStateWithLifecycle()
     val exportError by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope(); val lock = remember { Mutex() }
+    val contentScroll = rememberScrollState()
     val recipes by remember { viewModel.recipes.observeRecipes() }.collectAsStateWithLifecycle(emptyList())
     suspend fun reload() { record = viewModel.sharing.get(id) ?: kotlin.error("Draft unavailable."); document = SharingDraftCodec.decode(record!!.payload); saved = true }
     suspend fun persist(value: SharingDocument = document!!) = lock.withLock {
@@ -62,13 +63,16 @@ import kotlinx.coroutines.sync.withLock
         saved = false; delay(500)
         withContext(NonCancellable) { try { persist(value); error = null } catch (e: Exception) { error = e.message } }
     }
-    ModalBottomSheet(onDismissRequest = { act { persist(); onClose() } }) {
+    // Only the active editor sheet handles its dismissal callbacks.
+    if (!publishing) ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { if (!publishing) act { persist(); onClose() } }) {
+        val focus = androidx.compose.ui.platform.LocalFocusManager.current
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text("Sharing draft", style = MaterialTheme.typography.titleLarge); Text(if (saved) "Saved on this device" else "Saving edits…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 TextButton(onClick = { act { persist(); onClose() } }, enabled = !busy) { Text("Done") }
             }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(1f).verticalScroll(contentScroll), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 document?.let { current ->
                     Text("Choose exactly what you want to share. Your original meal stays unchanged.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(current.title, { document = current.copy(title = it.take(160)) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth().testTag("sharing-title"))
@@ -115,7 +119,6 @@ import kotlinx.coroutines.sync.withLock
                     OutlinedButton({ act { persist(); cardPreview = true } }, enabled = !busy && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-preview-card")) { Text("Preview share card") }
                     OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton(onClick = { act { persist(); relayShare = true } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-relay")) { Text("Share by code") }
-                    if(publishingEnabled)OutlinedButton(onClick={ act { persist(); publishing=true } },enabled=!busy && current.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
                     exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }
@@ -123,6 +126,9 @@ import kotlinx.coroutines.sync.withLock
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(24.dp))
             }
+            // Keep the next action reachable while title editing owns the keyboard.
+            // Focus-driven bring-into-view scrolling must not move this tap target.
+            if(publishingEnabled && document!=null)OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().padding(bottom=12.dp).heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
         }
     }
     if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false },onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })

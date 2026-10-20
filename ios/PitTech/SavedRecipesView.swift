@@ -206,7 +206,7 @@ struct SavedRecipeDetailView: View {
     private var revisionId: String { selectedRevision.isEmpty ? recipe["currentRevisionId"]?.stringValue ?? "" : selectedRevision }
     var body: some View {
         List {
-            Picker("Version", selection: Binding(get: { revisionId }, set: { selectedRevision = $0 })) { ForEach(history.compactMap { $0["id"]?.stringValue }, id: \.self) { id in Text("Version \(Int(store.recipeRevision(id)?["revisionNumber"]?.numberValue ?? 1))").tag(id) } }
+            Picker("Version", selection: Binding(get: { revisionId }, set: { selectedRevision = $0 })) { ForEach(history.compactMap { $0["id"]?.stringValue }, id: \.self) { id in Text(store.recipeVersionLabel(id)).tag(id) } }
             Text(revisionId == recipe["currentRevisionId"]?.stringValue ? "Preferred version" : "Previous version")
             if let snapshot = try? store.recipeSnapshot(revisionId) {
                 if let source = snapshot.publicSource {

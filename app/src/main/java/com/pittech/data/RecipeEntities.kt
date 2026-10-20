@@ -19,7 +19,7 @@ data class SavedRecipe(
 
 @Entity(tableName = "recipe_revisions", foreignKeys = [ForeignKey(entity = SavedRecipe::class,
     parentColumns = ["id"], childColumns = ["recipeId"], onDelete = ForeignKey.CASCADE)],
-    indices = [Index("recipeId"), Index(value = ["recipeId", "revisionNumber"], unique = true)])
+    indices = [Index("recipeId"), Index(value = ["recipeId", "revisionNumber"])])
 data class RecipeRevision(
     @PrimaryKey val id: String,
     val recipeId: String,
@@ -32,6 +32,12 @@ data class RecipeRevision(
     val createdAtUtcMillis: Long,
     val changeNotes: String,
 )
+
+/** Keep branch choices distinct without rewriting immutable revision ordinals. */
+fun recipeVersionLabel(revision: RecipeRevision, history: List<RecipeRevision>): String {
+    val siblings = history.filter { it.recipeId == revision.recipeId && it.revisionNumber == revision.revisionNumber }.sortedBy { it.id }
+    return "Version ${revision.revisionNumber}" + if (siblings.size > 1) " · branch ${siblings.indexOfFirst { it.id == revision.id } + 1}" else ""
+}
 
 @Entity(tableName = "dish_recipe_sources", foreignKeys = [ForeignKey(entity = DishEntity::class,
     parentColumns = ["id"], childColumns = ["dishId"], onDelete = ForeignKey.CASCADE)])
@@ -61,7 +67,7 @@ interface RecipeDao {
     @Query("SELECT * FROM meal_presets") fun observePresets(): Flow<List<MealPreset>>
     @Query("SELECT * FROM recipe_revisions") suspend fun revisions(): List<RecipeRevision>
     @Query("SELECT * FROM recipe_revisions WHERE id = :id") suspend fun revision(id: String): RecipeRevision?
-    @Query("SELECT * FROM recipe_revisions WHERE recipeId = :recipeId ORDER BY revisionNumber DESC") suspend fun history(recipeId: String): List<RecipeRevision>
+    @Query("SELECT * FROM recipe_revisions WHERE recipeId = :recipeId ORDER BY revisionNumber DESC, id ASC") suspend fun history(recipeId: String): List<RecipeRevision>
     // No update/upsert API: every saved revision is immutable.
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertRevision(revision: RecipeRevision)
     @Query("SELECT * FROM recipe_assets") suspend fun assets(): List<RecipeAsset>

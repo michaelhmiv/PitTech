@@ -2,6 +2,63 @@ import XCTest
 @testable import PitTech
 
 @MainActor final class PrivateSyncCoordinatorTests: XCTestCase {
+    func testAccountScreenRefreshKeepsInFlightSyncAndJournalRemovalGuarded() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); seedLibrary(store)
+        let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
+        let (sync, _) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
+        let commit = api.commitHandler
+        defer { api.commitHandler = commit }
+        api.commitHandler = { bytes, mutation in
+            sync.refresh()
+            XCTAssertTrue(sync.presentation.busy)
+            XCTAssertThrowsError(try sync.detachLibrary()) { error in
+                guard let removal = error as? LocalJournalRemovalError, case .syncing = removal else { return XCTFail("Journal removal must wait for sync") }
+            }
+            XCTAssertEqual(try journal.libraryAccount(), self.userA)
+            return try commit(bytes, mutation)
+        }
+        await sync.syncNow()
+        XCTAssertEqual(api.puts.count, 1)
+        XCTAssertFalse(sync.presentation.busy)
+        XCTAssertEqual(try journal.load(userA).serverVersion, 1)
+    }
+
+    func testAutomaticSyncRequiresExplicitAttachmentOptInAndCurrentLibraryAccount() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); seedLibrary(store)
+        let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
+        let (sync, session) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
+        await sync.syncNow(automatic: true); sync.setAutomatic(true)
+        XCTAssertEqual(api.puts.count, 0); XCTAssertNotEqual(try journal.load(userA).automatic, true)
+        await sync.syncNow(); XCTAssertEqual(api.puts.count, 1)
+        await sync.syncNow(automatic: true); XCTAssertEqual(api.puts.count, 1)
+        sync.setAutomatic(true); XCTAssertEqual(try journal.load(userA).automatic, true)
+        await sync.syncNow(automatic: true); XCTAssertGreaterThan(api.puts.count, 1)
+        let requests = api.puts.count
+        var other = NativePrivateSyncState(account: userB); other.lastSyncedAt = 1000; other.automatic = true; try journal.save(userB, other)
+        session.user = userB; await sync.syncNow(automatic: true)
+        XCTAssertEqual(api.puts.count, requests); XCTAssertEqual(try journal.libraryAccount(), userA)
+        try sync.detachLibrary(); XCTAssertNil(try journal.libraryAccount()); XCTAssertEqual(api.puts.count, requests)
+    }
+
+    func testRemoteFinishAndDeletionReconcileLocalTimers() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); seedLibrary(store)
+        try store.startActivityTimer(cookId: "cook-1", dishId: "dish-1", title: "Rest", method: nil, target: nil)
+        let timer = try XCTUnwrap(store.library.activityTimers.first?.objectValue?["id"]?.stringValue)
+        var cook = try XCTUnwrap(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library.cooks[0])).objectValue)
+        cook["status"] = .string("completed"); cook["endedAtUtcMillis"] = .number(2000)
+        let adapter = NativeCookStoreSyncLibrary(store)
+        try adapter.apply(NativeSyncApplyPlan(upserts: [NativeSyncUpsert(type: "cooks", id: "cook-1", payload: cook)], deletes: [], attachments: [:]))
+        XCTAssertEqual(store.library.activityTimers.first?.objectValue?["status"]?.stringValue, "cancelled")
+        XCTAssertEqual(store.library.activityTimers.first?.objectValue?["id"]?.stringValue, timer)
+        try adapter.apply(NativeSyncApplyPlan(upserts: [], deletes: [NativeSyncDelete(type: "dishes", id: "dish-1"), NativeSyncDelete(type: "cooks", id: "cook-1")], attachments: [:]))
+        XCTAssertTrue(store.library.cooks.isEmpty); XCTAssertTrue(store.library.activityTimers.isEmpty)
+    }
     private let userA = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
     private let userB = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
     private let deviceB = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
@@ -309,7 +366,7 @@ import XCTest
         let store = CookStore(directory: folder)
         seedLibrary(store)
         var library = store.library
-        library.readings = [.object(["id": .string("reading-1"), "cookId": .string("cook-1"), "probeName": .string("Pit"), "measurementType": .string("temperature"), "value": .number(74), "unit": .string("°C"), "measuredAtUtcMillis": .number(1000), "timeZoneId": .string("UTC"), "source": .string("manual"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1000), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(15000)])]
+        library.readings = [.object(["id": .string("reading-1"), "cookId": .string("cook-1"), "probeName": .string("Pit"), "measurementType": .string("temperature"), "value": .number(74), "unit": .string("°C"), "measuredAtUtcMillis": .number(1000), "timeZoneId": .string("UTC"), "source": .string("controller_cloud"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1000), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(15000)])]
         store.library = library; store.save()
         let api = FakeAPI(); let journal = NativePrivateSyncMemoryStore()
         let (sync, _) = try coordinator(store: journal, api: api, library: NativeCookStoreSyncLibrary(store))
@@ -431,6 +488,19 @@ import XCTest
         XCTAssertEqual(before, try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library)))
         XCTAssertEqual(eventRow(store, "note-1")?["title"], .string("Original"))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        let oldPhoto = store.photoURL("attachments/rollback-existing.jpg")
+        try FileManager.default.createDirectory(at: oldPhoto.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("original-photo".utf8).write(to: oldPhoto)
+        store.library.photos.append(.object(["id": .string("rollback-existing"), "cookId": .string("cook-1"), "archivePath": .string("attachments/rollback-existing.jpg"), "mimeType": .string("image/jpeg"), "addedAtUtcMillis": .number(1000)]))
+        store.save()
+        let beforePhotos = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library))
+        let adapter = NativeCookStoreSyncLibrary(store)
+        XCTAssertThrowsError(try adapter.apply(NativeSyncApplyPlan(upserts: [
+            NativeSyncUpsert(type: "photos", id: "rollback-existing", payload: ["id": .string("rollback-existing"), "cookId": .string("cook-1"), "mimeType": .string("image/jpeg"), "addedAtUtcMillis": .number(2000)]),
+            NativeSyncUpsert(type: "unsupported", id: "invalid", payload: ["id": .string("invalid")])
+        ], deletes: [], attachments: ["rollback-existing": Data("replacement-photo".utf8)])))
+        XCTAssertEqual(try Data(contentsOf: oldPhoto), Data("original-photo".utf8))
+        XCTAssertEqual(beforePhotos, try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(store.library)))
     }
 
     func testImportedRulesArriveInactiveAndMonitoringIsPreserved() async throws {

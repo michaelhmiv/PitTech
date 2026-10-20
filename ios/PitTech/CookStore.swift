@@ -7,6 +7,8 @@ import ZIPFoundation
 final class CookStore {
     var library = PitTechLibrary()
     private(set) var saveError: String?
+    @ObservationIgnored var onLibrarySaved: (() -> Void)?
+    @ObservationIgnored var onBeforeLocalJournalRemoval: (() throws -> Void)?
 
     var noteDrafts: [CookNoteDraft] = []
     var deletedNote: DeletedNativeNote?
@@ -539,6 +541,7 @@ final class CookStore {
             try? fileURL.setResourceValues(values)
             saveError = nil
             submitReminderSchedules(reminderSchedules)
+            onLibrarySaved?()
         } catch {
             saveError = "PitTech couldn't save this change. Check available storage and try again."
         }

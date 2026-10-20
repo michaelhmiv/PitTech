@@ -15,6 +15,30 @@ import org.junit.runner.RunWith
 import java.util.UUID
 
 @RunWith(AndroidJUnit4::class) class PrivateSyncApplyTest {
+    @Test fun remoteFinishAndDeletionCancelOnlyThatMealsRuntime(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val photos = PhotoStorage(context); val repo = CookRepository(db, photos)
+            val cook = repo.startCook(NewCookDraft("Finishing")); val other = repo.startCook(NewCookDraft("Still cooking"))
+            db.activityTimerDao().insert(ActivityTimer("timer-finish", cook, null, "Rest", null, 1000, null, null, "note-finish", "running"))
+            db.activityTimerDao().insert(ActivityTimer("timer-other", other, null, "Hold", null, 1000, null, null, "note-other", "running"))
+            db.recordingDao().saveRecording(CookRecordingEntity(cook, "device", "key", CookRecordingEntity.RECORDING, "°F", 1000, 1000))
+            val rule = ReminderRepository(db).save(cook, null, "Check", ReminderTrigger.Duration(1000, 600000))
+            val library = PrivateSyncRoomLibrary(db, repo, photos)
+            val rows = library.archive().getJSONArray("cooks")
+            val ended = (0 until rows.length()).map { rows.getJSONObject(it) }.single { it.getString("id") == cook }
+                .put("status", "completed").put("endedAtUtcMillis", System.currentTimeMillis())
+            library.apply(PrivateSyncApplyPlan(listOf(PrivateSyncUpsert("cooks", cook, ended)), emptyList(), emptyMap()))
+            assertEquals("cancelled", db.activityTimerDao().get("timer-finish")!!.status)
+            assertEquals("running", db.activityTimerDao().get("timer-other")!!.status)
+            assertEquals(CookRecordingEntity.STOPPED, db.recordingDao().getRecording(cook)!!.status)
+            assertFalse(db.reminderDao().rule(rule)!!.enabled)
+            library.apply(PrivateSyncApplyPlan(emptyList(), listOf(PrivateSyncDelete("cooks", cook)), emptyMap()))
+            assertNull(db.cookDao().getCook(cook)); assertNotNull(db.cookDao().getCook(other))
+            assertEquals("running", db.activityTimerDao().get("timer-other")!!.status)
+        } finally { db.close() }
+    }
     private fun eventJson(id: String, cookId: String, title: String) = JSONObject()
         .put("id", id).put("cookId", cookId).put("eventType", "note").put("title", title).put("occurredAtUtcMillis", 1000)
         .put("recordedAtUtcMillis", 1000).put("timeZoneId", "UTC").put("source", "manual").put("createdAtUtcMillis", 1000).put("updatedAtUtcMillis", 2000)
@@ -84,9 +108,12 @@ import java.util.UUID
         val photos = PhotoStorage(context)
         val tag = UUID.randomUUID().toString().take(8)
         val photoNew = "sync-$tag-rollback"
+        val photoExisting = "sync-$tag-existing"
         try {
             val repo = CookRepository(db, photos)
             val cook = repo.startCook(NewCookDraft("Rollback meal"))
+            photos.writeImported("photos/$photoExisting.jpg", "original-photo".toByteArray())
+            db.cookDao().insertPhotos(listOf(PhotoEntity(photoExisting, cook, null, null, "$photoExisting.jpg", "photos/$photoExisting.jpg", "image/jpeg", null, null, 1000, null)))
             db.cookDao().insertEventsIgnoringDuplicates(listOf(TimelineEventEntity("note-1", cook, null, "note", "Original", null, 1000, 1000, "UTC", "manual", null, 1000, 1000, null, null)))
             val before = archiveSnapshotJson(repo.exportSnapshot(), null).toString()
             val library = PrivateSyncRoomLibrary(db, repo, photos)
@@ -97,9 +124,10 @@ import java.util.UUID
                         PrivateSyncUpsert("events", "note-1", eventJson("note-1", cook, "Clobbered")),
                         PrivateSyncUpsert("events", "note-9", eventJson("note-9", cook, "Partial")),
                         PrivateSyncUpsert("photos", photoNew, JSONObject().put("id", photoNew).put("cookId", cook).put("mimeType", "image/jpeg").put("addedAtUtcMillis", 2000)),
+                        PrivateSyncUpsert("photos", photoExisting, JSONObject().put("id", photoExisting).put("cookId", cook).put("mimeType", "image/jpeg").put("addedAtUtcMillis", 2000)),
                     ),
                     deletes = emptyList(),
-                    attachments = mapOf(photoNew to "partial-bytes".toByteArray()),
+                    attachments = mapOf(photoNew to "partial-bytes".toByteArray(), photoExisting to "replacement-photo".toByteArray()),
                 ))
                 fail()
             } catch (_: Exception) { }
@@ -107,9 +135,10 @@ import java.util.UUID
             assertEquals(before, archiveSnapshotJson(repo.exportSnapshot(), null).toString())
             assertNull(db.cookDao().getTimelineEvent("note-9"))
             assertNull(photos.read("photos/$photoNew.jpg"))
+            assertArrayEquals("original-photo".toByteArray(), photos.read("photos/$photoExisting.jpg"))
             assertEquals("Original", db.cookDao().getTimelineEvent("note-1")!!.title)
         } finally {
-            runCatching { runBlocking { photos.delete("photos/$photoNew.jpg") } }
+            runCatching { runBlocking { photos.delete("photos/$photoNew.jpg"); photos.delete("photos/$photoExisting.jpg") } }
             db.close()
         }
     }

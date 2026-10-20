@@ -8,12 +8,13 @@ struct NativePrivateSyncPresentation {
     var conflicts: [NativePrivateSyncConflictView] = []
     var busy = false
     var signedIn = false
+    var automatic = false
 }
 
 private struct NativeSyncAuthLost: Error {}
 
 /** Device-authoritative private sync. Local writes always complete first; network work is
- * queued here. Sync runs only on explicit request, only for the current session account,
+ * queued here. First attachment is explicit; opted-in foreground opportunities use only the current account,
  * and stays disabled until the accounts/social/sync/deletion phase passes. */
 @MainActor @Observable final class NativePrivateSyncCoordinator {
     private let store: any NativePrivateSyncStorage
@@ -26,6 +27,10 @@ private struct NativeSyncAuthLost: Error {}
     private var boundUser: String?
     private var downloadCache: [String: Data] = [:]
     private(set) var presentation = NativePrivateSyncPresentation()
+    @ObservationIgnored private var automaticTask: Task<Void, Never>?
+    @ObservationIgnored private var lastAutomaticAt: Int64 = 0
+    @ObservationIgnored private var automaticForeground = false
+    @ObservationIgnored private var automaticGeneration = 0
     nonisolated init(store: any NativePrivateSyncStorage, session: any NativePublicationSession, api: any NativePrivateSyncAPI = NativePrivateSyncClient(), library: any NativeSyncLibrary, projection: NativePrivateSyncProjection?, enabled: Bool = NativeAccountProtocol.enabled, now: @escaping () -> Int64 = { Int64(Date.now.timeIntervalSince1970 * 1000) }) {
         self.store = store; self.session = session; self.api = api; self.library = library; self.projection = projection; self.enabled = enabled; self.now = now
     }
@@ -51,7 +56,40 @@ private struct NativeSyncAuthLost: Error {}
         throw NativeSyncError.invalid
     }
 
-    func refresh() { publish(bindUser(), busy: false) }
+    func refresh() { publish(bindUser(), busy: presentation.busy) }
+
+    func setAutomatic(_ value: Bool) {
+        guard !presentation.busy, enabled, let user = bindUser(), var state = try? store.load(user), !value || (state.lastSyncedAt > 0 && (try? store.libraryAccount()) == user) else { return }
+        state.automatic = value
+        do { try store.save(user, state) } catch { return }
+        if !value { automaticTask?.cancel(); automaticTask = nil }
+        publish(user, busy: false)
+    }
+
+    func requestAutomaticSync() {
+        guard enabled, automaticForeground, !presentation.busy, automaticTask == nil else { return }
+        automaticGeneration += 1
+        let generation = automaticGeneration
+        automaticTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.automaticGeneration == generation { self.automaticTask = nil } }
+            do {
+                try await Task.sleep(for: .milliseconds(1500))
+                let wait = max(0, 30_000 - (Int64(ProcessInfo.processInfo.systemUptime * 1000) - self.lastAutomaticAt))
+                if wait > 0 { try await Task.sleep(for: .milliseconds(wait)) }
+                try Task.checkCancellation()
+                await self.syncNow(automatic: true)
+            } catch { }
+        }
+    }
+    func resumeAutomaticSync() { automaticForeground = true; requestAutomaticSync() }
+    func pauseAutomaticSync() { automaticForeground = false; automaticGeneration += 1; automaticTask?.cancel(); automaticTask = nil }
+    func detachLibrary() throws {
+        guard !presentation.busy else { throw LocalJournalRemovalError.syncing }
+        pauseAutomaticSync()
+        if let user = try store.libraryAccount() { try store.purgeAccount(user) }
+        publish(bindUser(), busy: false)
+    }
 
     /** Bind the current session account. A switch or sign-out cancels that account's
      * pending upload; the acknowledged base stays so the same account can resume, and
@@ -67,8 +105,17 @@ private struct NativeSyncAuthLost: Error {}
         boundUser = user
     }
 
-    func syncNow() async {
+    func syncNow(automatic: Bool = false) async {
         guard !presentation.busy else { return }
+        if automatic {
+            guard enabled, let user = bindUser(), let state = try? store.load(user), state.automatic == true, state.lastSyncedAt > 0, (try? store.libraryAccount()) == user else { return }
+            lastAutomaticAt = Int64(ProcessInfo.processInfo.systemUptime * 1000)
+        } else if enabled, let user = bindUser() {
+            do {
+                if try store.libraryAccount() != user { var state = try store.load(user); state.automatic = false; try store.save(user, state) }
+                try store.attachLibrary(user)
+            } catch { return }
+        }
         publish(bindUser(), busy: true)
         do { try await attempt() } catch is CancellationError { publish(boundUser, busy: false) } catch {
             if let user = boundUser, var state = try? store.load(user) {
@@ -541,7 +588,7 @@ private struct NativeSyncAuthLost: Error {}
             let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .short
             status = "Last synced " + formatter.string(from: Date(timeIntervalSince1970: Double(state.lastSyncedAt) / 1000))
         }
-        presentation = NativePrivateSyncPresentation(status: status, detail: state.message, lastSyncedAt: state.lastSyncedAt, conflicts: conflicts, busy: busy, signedIn: true)
+        presentation = NativePrivateSyncPresentation(status: status, detail: state.message, lastSyncedAt: state.lastSyncedAt, conflicts: conflicts, busy: busy, signedIn: true, automatic: state.automatic == true && (try? store.libraryAccount()) == user)
     }
 
     private func liveProjected(_ records: [NativeSyncRecord]) -> [NativePrivateProjectedRecord] {

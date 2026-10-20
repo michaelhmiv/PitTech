@@ -73,8 +73,12 @@ import java.util.UUID
             compose.onNodeWithTag("cookbook-edit-dddddddd-dddd-4ddd-dddd-dddddddddddd").performScrollTo().performClick()
             waitFor("cookbook-create-editing-draft"); compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo(); screenshot("publication-owner-edit-preview")
             compose.onNodeWithTag("cookbook-create-editing-draft").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick();waitFor("sharing-title")
-            compose.onNodeWithTag("sharing-title").performScrollTo().performTextReplacement("Owner revised title")
-            compose.onNodeWithTag("sharing-publish").performScrollTo().performClick();waitFor("publication-prepare")
+            compose.onNodeWithTag("sharing-title").performScrollTo().performClick().performTextReplacement("Owner revised title")
+            compose.waitUntil(10000) { keyboardVisible() }
+            compose.onNodeWithTag("sharing-title").assertIsFocused()
+            compose.onNodeWithTag("sharing-publish").assertIsDisplayed().assertIsEnabled();screenshot("publication-owner-draft-before-publish");semantics("publication-before-publish-tree")
+            assertTrue("The publication preview must be reachable with the keyboard open",keyboardVisible())
+            compose.onNodeWithTag("sharing-publish").performClick();waitFor("publication-prepare")
             compose.onNodeWithTag("publication-prepare").performScrollTo().performClick();waitFor("publication-confirm")
             compose.onNodeWithTag("publication-confirm").performScrollTo().assertTextEquals("Publish this update").assertIsNotEnabled();screenshot("publication-owner-update-preview")
             compose.onNodeWithTag("publication-reviewed").performScrollTo().performClick();compose.onNodeWithTag("publication-confirm").performScrollTo().performClick();waitFor("publication-complete")
@@ -84,7 +88,21 @@ import java.util.UUID
     }
     private fun waitFor(tag: String) {
         try { compose.waitUntil(20000) { compose.onAllNodesWithTag(tag,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() } }
-        catch(error: Throwable) { compose.onRoot(useUnmergedTree=true).printToLog("PublicationFailure"); screenshot("publication-failure"); throw error }
+        catch(error: Throwable) {
+            runCatching { compose.onAllNodes(isRoot(),useUnmergedTree=true).fetchSemanticsNodes().indices.forEach { index -> compose.onAllNodes(isRoot(),useUnmergedTree=true)[index].printToLog("PublicationFailure") } }
+            runCatching { semantics("publication-failure-tree") }
+            runCatching { screenshot("publication-failure") }
+            throw error
+        }
+    }
+    private fun keyboardVisible(): Boolean = compose.runOnIdle {
+        val roots=if(android.os.Build.VERSION.SDK_INT>=29)android.view.inspector.WindowInspector.getGlobalWindowViews() else listOf(compose.activity.window.decorView)
+        roots.any { androidx.core.view.ViewCompat.getRootWindowInsets(it)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())==true }
+    }
+    private fun semantics(name: String) {
+        val roots=compose.onAllNodes(isRoot(),useUnmergedTree=true)
+        val text=roots.fetchSemanticsNodes().indices.joinToString("\n\n") { roots[it].printToString() }
+        File(compose.activity.filesDir,"pittech-ui-test/$name.txt").apply { parentFile!!.mkdirs();writeText(text) }
     }
     private fun screenshot(name: String) { compose.waitForIdle();InstrumentationRegistry.getInstrumentation().waitForIdleSync();val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot(); val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }; file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle() }
     private class API: PublicationAPI {

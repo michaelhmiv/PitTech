@@ -46,6 +46,10 @@ struct NativeAccountView: View {
                 Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(.footnote)
                 Text(sync.presentation.status).accessibilityIdentifier("sync-status")
                 if let detail = sync.presentation.detail { Text(detail).font(.footnote).accessibilityIdentifier("sync-message") }
+                if sync.presentation.lastSyncedAt > 0 && account.signedIn && sync.enabled {
+                    Toggle("Keep this library in sync while the app is open", isOn: Binding(get: { sync.presentation.automatic }, set: { sync.setAutomatic($0) })).disabled(sync.presentation.busy).accessibilityIdentifier("sync-automatic")
+                    Text("Checks when you return to the app and after saved changes. Offline changes wait for a connection.").font(.footnote)
+                }
                 Button("Sync now") { Task { await sync.syncNow() } }.disabled(sync.presentation.busy || !account.signedIn || !sync.enabled).accessibilityIdentifier("sync-now")
                 if !sync.presentation.conflicts.isEmpty { Button("Review conflicts (\(sync.presentation.conflicts.count))") { reviewingSync = true }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-conflicts") }
                 if sync.presentation.busy { ProgressView("Syncing…") }

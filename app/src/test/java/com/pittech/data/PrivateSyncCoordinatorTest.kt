@@ -1,7 +1,11 @@
 package com.pittech.data
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
@@ -12,6 +16,56 @@ import java.io.File
 import java.io.IOException
 
 class PrivateSyncCoordinatorTest {
+    @Test fun cancellingAutomaticUploadClearsBusyAndKeepsExactRetryBytes() = runTest {
+        val library = FakeLibrary(archive("cooks" to cook()))
+        val api = FakeApi(); val store = PrivateSyncMemoryStore()
+        val entered = CompletableDeferred<Pair<ByteArray, String>>()
+        var interrupt = false
+        val interruptible = object : PrivateSyncAPI by api {
+            override suspend fun commit(body: ByteArray, mutationId: String, access: String): JSONObject {
+                if (interrupt) {
+                    entered.complete(body.copyOf() to mutationId)
+                    awaitCancellation()
+                }
+                return api.commit(body, mutationId, access)
+            }
+        }
+        val sync = coordinator(store = store, api = interruptible, library = library, scope = this)
+        sync.syncNow(); sync.setAutomatic(true)
+        library.current.getJSONArray("cooks").getJSONObject(0).put("title", "Edited offline")
+        interrupt = true
+        val request = launch { sync.syncNow(automatic = true) }
+        val upload = entered.await()
+        assertTrue(sync.presentation.value.busy)
+        request.cancelAndJoin()
+        assertFalse(sync.presentation.value.busy)
+        assertTrue(store.load(userA).pending)
+        assertEquals(upload.second, store.load(userA).mutationId)
+        assertArrayEquals(upload.first, store.readBody(userA, upload.second))
+        interrupt = false
+        sync.syncNow(automatic = true)
+        assertArrayEquals(upload.first, api.puts.last().first)
+        assertEquals(upload.second, api.puts.last().second)
+        assertFalse(sync.presentation.value.busy)
+        assertNull(store.load(userA).mutationId)
+    }
+
+    @Test fun automaticSyncRequiresExplicitAttachmentOptInAndTheCurrentLibraryAccount() = runTest {
+        val library = FakeLibrary(archive("cooks" to cook()))
+        val api = FakeApi(); val store = PrivateSyncMemoryStore(); val session = FakeSession(userA)
+        val sync = coordinator(store = store, session = session, api = api, library = library, scope = this)
+        sync.syncNow(automatic = true); sync.setAutomatic(true)
+        assertTrue(api.puts.isEmpty()); assertFalse(store.load(userA).automatic)
+        sync.syncNow(); assertEquals(1, api.puts.size)
+        sync.syncNow(automatic = true); assertEquals(1, api.puts.size)
+        sync.setAutomatic(true); assertTrue(store.load(userA).automatic)
+        sync.syncNow(automatic = true); assertTrue(api.puts.size > 1)
+        val requests = api.puts.size
+        store.save(userB, PrivateSyncState(account = userB, lastSyncedAt = 1000, automatic = true))
+        session.user = userB; sync.syncNow(automatic = true)
+        assertEquals(requests, api.puts.size); assertEquals(userA, store.libraryAccount())
+        sync.detachLibrary(); assertNull(store.libraryAccount()); assertEquals(requests, api.puts.size)
+    }
     private val userA = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
     private val userB = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
     private val deviceB = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
@@ -318,7 +372,7 @@ class PrivateSyncCoordinatorTest {
     }
 
     @Test fun immutableRewriteBlocksCommitWhilePreservingBothVersions() = runTest {
-        val library = FakeLibrary(archive("cooks" to cook(), "dishes" to dish(), "readings" to readingRow()))
+        val library = FakeLibrary(archive("cooks" to cook(), "dishes" to dish(), "readings" to readingRow().put("source", "controller_cloud")))
         val api = FakeApi(); val store = PrivateSyncMemoryStore()
         val sync = coordinator(store = store, api = api, library = library, scope = this)
         sync.syncNow()

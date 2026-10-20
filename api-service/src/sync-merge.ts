@@ -5,6 +5,13 @@ export type SyncRecord={recordType:string;recordId:string;version:{counter:numbe
 export type SyncConflict={id:string;winner:SyncRecord;loser:SyncRecord;reason:'edit_edit'|'delete_edit'|'immutable_identity'};
 export const SYNC_RECORD_TYPES=['cooks','dishes','ingredients','events','readings','targets','results','devices','probes','photos','recipes','recipeRevisions','recipeAssets','companionRecords','companionPhotos','mealPresets','dishRecipeSources','lifecycles','targetHistory','logReadingLinks','reminderRules'];
 const immutable=new Set(['readings','recipeRevisions']);
+/** Manual observations are authored entries. Their provenance/owner cannot change;
+ * automatic samples and immutable recipe bodies are never editable in place. */
+export function manualReadingEdit(a:SyncRecord,b:SyncRecord):boolean{
+ return a.recordType==='readings'&&b.recordType==='readings'&&a.recordId===b.recordId&&
+  !a.deleted&&!b.deleted&&a.payload?.source==='manual'&&b.payload?.source==='manual'&&
+  ['id','cookId','sourceDeviceId','timestampBasis','samplingIntervalMillis'].every(k=>stable(a.payload?.[k]??null)===stable(b.payload?.[k]??null));
+}
 const invalid=(code='invalid_sync_records')=>new ApiError(422,code);
 const key=(r:SyncRecord)=>r.recordType+'|'+r.recordId;
 const content=(r:SyncRecord)=>stable({deleted:r.deleted,payload:r.payload,assetIds:r.assetIds});
@@ -39,12 +46,12 @@ export function mergeSync(baseInput:unknown,localInput:unknown,remoteInput:unkno
   for(const r of [a,b])if(old&&r&&!equal(r,old)){if(r.version.counter<=old.version.counter)throw invalid('sync_clock_not_advanced');if(old.deleted&&!r.deleted)throw invalid('sync_restore_requires_new_identity');}
   if(a&&b&&!equal(a,b)&&order(a,b)===0)throw invalid('sync_stamp_reused');
   if(old&&!old.deleted&&immutable.has(old.recordType)){
-   const bad=[a!,b!].filter(r=>!r.deleted&&content(r)!==content(old));if(bad.length){records.push(old);for(const r of [...new Map(bad.map(r=>[stable(r),r])).values()].sort(order))conflict(old,r,'immutable_identity');continue;}
+   const bad=[a!,b!].filter(r=>!r.deleted&&content(r)!==content(old)&&!manualReadingEdit(old,r));if(bad.length){records.push(old);for(const r of [...new Map(bad.map(r=>[stable(r),r])).values()].sort(order))conflict(old,r,'immutable_identity');continue;}
   }
   if(!a||!b){records.push((a??b)!);continue;}if(equal(a,b)){records.push(a);continue;}if(order(a,b)===0)throw invalid('sync_stamp_reused');
   const changedA=!old||!equal(a,old),changedB=!old||!equal(b,old);if(!changedA||!changedB){records.push(changedA?a:b);continue;}
   const deletion=a.deleted!==b.deleted,winner=deletion?(a.deleted?a:b):order(a,b)>0?a:b,loser=winner===a?b:a;records.push(winner);
-  if(content(a)!==content(b))conflict(winner,loser,deletion?'delete_edit':immutable.has(winner.recordType)?'immutable_identity':'edit_edit');
+  if(content(a)!==content(b))conflict(winner,loser,deletion?'delete_edit':immutable.has(winner.recordType)&&!manualReadingEdit(a,b)?'immutable_identity':'edit_edit');
  }
  syncRecords(records);let observed=0;for(const map of [base,local,remote])for(const r of map.values())observed=Math.max(observed,r.version.counter);
  if(observed>=Number.MAX_SAFE_INTEGER-1)throw invalid('sync_clock_exhausted');

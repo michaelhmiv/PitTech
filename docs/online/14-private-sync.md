@@ -259,7 +259,7 @@ services, require fresh Actions evidence before any release statement.
 Both clients now implement the full device side of this slice. Sync stays
 disabled by default (`AccountProtocol.ENABLED` / `NativeAccountProtocol.enabled`
 are `false`); nothing here turns it on for users. Local writes stay
-authoritative and are never blocked: sync runs only on explicit `syncNow()`,
+authoritative and are never blocked: first attachment uses explicit `syncNow()`, with opted-in foreground reconciliation afterward,
 only for the current session account.
 
 Android (`app/src/main/java/com/pittech/data/`, `ui/`, `CooksViewModel.kt`):
@@ -331,3 +331,45 @@ evidence, staging verification including the `private_assets_unavailable`
 422 reset path and photo SHA-mismatch rotation, and the full accounts /
 social / sync / deletion enablement gate. No backup success claim is made
 by this draft.
+
+## Foundation corrections (October 19, 2026)
+
+Manual readings are authored observations, matching both native note editors. A
+correction retains the reading identity and its note links. Owner/cook, source,
+source device and acquisition basis/cadence cannot change. Concurrent corrections
+retain both values in an ordinary edit conflict; automatic samples and immutable
+recipe contents remain protected by both merge and server-commit validation.
+
+Recipe UUIDs and parent UUIDs identify immutable branches. Siblings can share a
+display version number; choosing a preferred revision still uses its UUID. Room
+11 replaces the unique display-ordinal index with a nonunique index. Both native
+archive validators/importers accept these branches and still reject rewriting an
+existing revision UUID or invalid ancestry. The portable field format is unchanged.
+
+Shared vectors and native migration/import regressions cover these corrections.
+Release verification is recorded separately after Actions, not inferred from code.
+The full accounts/social/sync/deletion release gate remains in force.
+
+### Foreground opportunities and local reconciliation
+
+Sync now remains the explicit first library attachment. After a successful sync,
+users may opt this device/account into foreground reconciliation. The choice and
+attached-library account marker stay in private device metadata, outside archives.
+An account switch cannot automatically upload an unrelated journal, even when that
+other account has an old synced base. Sign-in alone never attaches a library.
+Foreground/user-write opportunities coalesce and are bounded to one automatic
+attempt per 30 seconds; leaving the foreground cancels scheduled work. No cloud
+polling or background wake guarantee is introduced. Ordinary restore stays inactive.
+
+Applying a finished/deleted meal cancels only its local active timers/recording and
+notifications, after an atomic data apply. Completed timer history and unrelated
+meals remain intact. Account removal also purges the association marker. Library
+commit and another phone's eventual application remain separate facts.
+
+A local-only journal removal first detaches this device's sync association and
+pending outbox. It cannot turn an empty device library into server-deletion
+tombstones; a subsequent attachment requires an explicit Sync now action.
+
+Photo apply keeps a private disk rollback copy before replacing an existing file.
+A rejected data transaction restores the original bytes, rather than deleting the
+previous photo. Both native failure-path regressions cover existing owned photos.

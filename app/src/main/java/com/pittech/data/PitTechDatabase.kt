@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CookLogDraft::class,
         TargetHistory::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class PitTechDatabase : RoomDatabase() {
@@ -43,6 +43,15 @@ abstract class PitTechDatabase : RoomDatabase() {
     abstract fun experienceDao(): CookExperienceDao
 
     companion object {
+        // A revision UUID and its immutable parent identify a branch. Two offline
+        // devices may legitimately both save version 2 of the same recipe.
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("DROP INDEX IF EXISTS index_recipe_revisions_recipeId_revisionNumber")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_revisions_recipeId_revisionNumber ON recipe_revisions(recipeId, revisionNumber)")
+            }
+        }
+
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("CREATE TABLE IF NOT EXISTS reminder_rules (id TEXT NOT NULL PRIMARY KEY, cookId TEXT NOT NULL, dishId TEXT, title TEXT NOT NULL, kind TEXT NOT NULL, triggerConfig TEXT NOT NULL, sourceRecipeRevisionId TEXT, sourceMilestoneId TEXT, enabled INTEGER NOT NULL, status TEXT NOT NULL, createdAtUtcMillis INTEGER NOT NULL, updatedAtUtcMillis INTEGER NOT NULL, schemaVersion INTEGER NOT NULL, FOREIGN KEY(cookId) REFERENCES cooks(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(dishId) REFERENCES dishes(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
