@@ -170,7 +170,7 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     assert.equal(stagedDetail.media[0].url,`https://api-staging.pittech.app/v1/recipes/${staged.id}/assets/${assetId}`);
     assert.equal(stagedDetail.credit.profileUrl,'https://staging.pittech.app/p/staging_cook');
     assert.equal((await staging.profile('staging_cook')).items[0].url,staged.url);
-    const stagedServer=makeServer(relay,{ipKey:'x'.repeat(32),publications:staging,links:linkConfig({ONLINE_ENVIRONMENT:'staging'})});
+    const stagedServer=makeServer(relay,{ipKey:'x'.repeat(32),uploadsEnabled:false,publications:staging,links:linkConfig({ONLINE_ENVIRONMENT:'staging'})});
     stagedServer.listen(0,'127.0.0.1');await once(stagedServer,'listening');
     try{
       const origin=`http://127.0.0.1:${(stagedServer.address() as {port:number}).port}`;

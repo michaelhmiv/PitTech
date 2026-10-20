@@ -34,7 +34,7 @@ jobs:
           gradle-version: '9.6.1'
       - name: Compile the staging APK and verify the shared profile contract
         run: >-
-          gradle --no-daemon assembleDev testDevUnitTest
+          gradle --no-daemon assembleDev testDebugUnitTest
           --tests com.pittech.online.OnlineConfigurationTest
           -PpittechOnlineEnvironment=staging
           -PpittechOnlineEnabled=true
@@ -73,7 +73,7 @@ jobs:
           name: android-online-profile-evidence
           path: |
             build/online-profiles/**
-            app/build/test-results/testDevUnitTest/**
+            app/build/test-results/testDebugUnitTest/**
           retention-days: 7
 
   ios-staging:
