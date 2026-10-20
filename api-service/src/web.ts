@@ -1,15 +1,21 @@
+import { onlineEnvironment, type OnlineEnvironment } from './online-environment.ts';
 import { normalizeCode } from './core.ts';
 import type { Pack } from './repository.ts';
 
-export type LinkConfig = { appleAppIds: string[]; androidCertificates: string[]; appleStoreUrl?: string };
+export type LinkConfig = { appleAppIds: string[]; androidCertificates: string[]; appleStoreUrl?: string; androidPackageName?: string; online?: OnlineEnvironment };
 export function linkConfig(env: NodeJS.ProcessEnv): LinkConfig {
+  const online = onlineEnvironment(env.ONLINE_ENVIRONMENT);
+  const androidPackageName = env.ANDROID_APP_LINK_PACKAGE ?? (online.environment === 'staging' ? 'com.pittech.dev' : 'com.pittech');
+  const allowedPackages = online.environment === 'staging' ? ['com.pittech.dev', 'com.pittech.debug', 'com.pittech'] : ['com.pittech'];
+  if (!allowedPackages.includes(androidPackageName)) throw new Error('Invalid Android app association package');
   const appleAppIds = (env.APPLE_APP_IDS ?? '').split(',').map(x => x.trim()).filter(Boolean);
   const androidCertificates = (env.ANDROID_APP_LINK_CERTIFICATES ?? '').split(',').map(x => x.trim()).filter(Boolean);
   if (appleAppIds.some(x => !/^[A-Z0-9]{10}\.com\.pittech(?:\.[a-z]+)?$/.test(x)) ||
       androidCertificates.some(x => !/^(?:[A-F\d]{2}:){31}[A-F\d]{2}$/.test(x))) throw new Error('Invalid app association configuration');
+  if (appleAppIds.some(id => online.environment === 'production' ? !/^[A-Z0-9]{10}\.com\.pittech$/.test(id) : !/^[A-Z0-9]{10}\.com\.pittech(?:\.staging)?$/.test(id))) throw new Error('App association environment mismatch');
   const appleStoreUrl = env.APPLE_APP_STORE_URL;
   if (appleStoreUrl && !/^https:\/\/apps\.apple\.com\/[a-z]{2}\/app\/(?:[a-z\d-]+\/)?id\d+$/.test(appleStoreUrl)) throw new Error('Invalid store URL');
-  return { appleAppIds, androidCertificates, appleStoreUrl };
+  return { appleAppIds, androidCertificates, appleStoreUrl, androidPackageName, online };
 }
 export function association(path: string, config: LinkConfig) {
   if (path === '/.well-known/apple-app-site-association') return config.appleAppIds.length ? {
@@ -17,7 +23,7 @@ export function association(path: string, config: LinkConfig) {
   } : undefined;
   if (path === '/.well-known/assetlinks.json') return config.androidCertificates.length ? [{
     relation: ['delegate_permission/common.handle_all_urls'],
-    target: { namespace: 'android_app', package_name: 'com.pittech', sha256_cert_fingerprints: config.androidCertificates },
+    target: { namespace: 'android_app', package_name: config.androidPackageName ?? 'com.pittech', sha256_cert_fingerprints: config.androidCertificates },
   }] : undefined;
   return undefined;
 }
@@ -28,7 +34,7 @@ export function landing(raw: string, pack: Pack | undefined, now: number, config
   const content = available ? `<p class="eyebrow">A COOK PACK FOR YOU</p><h1>Bring this cook into PitTech</h1>
     <p>${pack!.dishes} selected ${pack!.dishes === 1 ? 'dish' : 'dishes'} · ${pack!.kind === 'cook' ? 'Recorded meal' : pack!.kind === 'collection' ? 'Meal collection' : 'Recipe'}</p>
     <p>Preview the pack in the app, then choose exactly what to save. An account is optional.</p>
-    <a class="button" href="pittech://share/${code}">Open in PitTech</a>
+    <a class="button" href="${config.online?.linkScheme ?? 'pittech'}://share/${code}">Open in PitTech</a>
     <label for="code">Or enter this code in More → Import by code</label><input id="code" readonly value="${code}" aria-label="Cook Pack code">
     <p>Available until ${new Date(pack!.expiresAt).toISOString().slice(0, 10)} UTC. Anyone with this code can access the selected pack.</p>` :
     '<p class="eyebrow">COOK PACK UNAVAILABLE</p><h1>This code is unavailable</h1><p>It may have expired, been revoked, or been entered incorrectly. Check the code or ask the sender for a new share. Your saved recipes remain on your device.</p>';

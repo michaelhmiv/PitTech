@@ -68,7 +68,7 @@ enum ProProductState: Equatable, Sendable {
         ownerIdProvider: @escaping () -> String?,
         accountsEnabled: Bool,
         cacheStore: ProCacheStore = ProCacheStore(),
-        initialEnvironment: SubscriptionEnvironment = .production,
+        initialEnvironment: SubscriptionEnvironment = NativeOnlineConfiguration.current.sandbox ? .sandbox : .production,
         now: @escaping () -> Date = Date.init,
         onEntitlement: @escaping (AdEntitlementState) -> Void = { _ in }
     ) {
@@ -446,8 +446,8 @@ enum ProProductState: Equatable, Sendable {
 /// keeps Pro offline for the server's bounded window. Never grants anything
 /// the server did not verify.
 struct ProCacheStore {
-    private let key = "pittech-subscription-cache-v2"
-    private let legacyKey = "pittech-subscription-cache-v1"
+    private let key = NativeOnlineConfiguration.current.scopedName("pittech-subscription-cache-v2")
+    private let legacyKey = NativeOnlineConfiguration.current.scopedName("pittech-subscription-cache-v1")
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {

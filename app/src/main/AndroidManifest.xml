@@ -56,33 +56,33 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="pittech.app" android:pathPrefix="/c/" />
-                <data android:scheme="https" android:host="pittech.app" android:pathPrefix="/p/" />
+                <data android:scheme="https" android:host="${pittechPublicHost}" android:pathPrefix="/c/" />
+                <data android:scheme="https" android:host="${pittechPublicHost}" android:pathPrefix="/p/" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="pittech" android:host="recipe" />
-                <data android:scheme="pittech" android:host="profile" />
+                <data android:scheme="${pittechLinkScheme}" android:host="recipe" />
+                <data android:scheme="${pittechLinkScheme}" android:host="profile" />
             </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="pittech.app" android:pathPrefix="/s/" />
+                <data android:scheme="https" android:host="${pittechPublicHost}" android:pathPrefix="/s/" />
             </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="pittech.app" android:path="/auth" />
+                <data android:scheme="https" android:host="${pittechPublicHost}" android:path="/auth" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="pittech" android:host="share" />
+                <data android:scheme="${pittechLinkScheme}" android:host="share" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

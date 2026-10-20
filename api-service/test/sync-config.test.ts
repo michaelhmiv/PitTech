@@ -28,6 +28,8 @@ const base: Record<string, string> = {
   TRUSTED_PROXY_CIDRS: '',
 };
 const quiet: Record<string, string | undefined> = {
+  ONLINE_ENVIRONMENT: undefined,
+  ANDROID_APP_LINK_PACKAGE: undefined,
   APPLE_APP_STORE_URL: undefined,
   AUTH_ENABLED: undefined,
   AUTH_HASH_KEY: undefined,
@@ -254,4 +256,15 @@ test('private sync constructs production services on the dedicated pool with the
     assert.equal((sync.snapshots as unknown as { project: unknown }).project, privateLibraryEnvelope);
     assert.equal((sync.snapshots as unknown as { encryption: unknown }).encryption, (sync.photos as unknown as { encryption: unknown }).encryption);
   } finally { await runtime.close(); }
+});
+
+test('staging runtime refuses production authentication origins before opening pools', t => {
+  withEnv(t, { ...enabled().env, ONLINE_ENVIRONMENT: 'staging' });
+  assert.throws(() => createRuntime(), /Authentication origin does not match online environment/);
+  process.env.AUTH_PUBLIC_ORIGIN = 'https://staging.pittech.app';
+  process.env.AUTH_FROM = 'signin@auth-staging.pittech.app';
+  const runtime = createRuntime();
+  t.after(() => runtime.close());
+  assert.equal(runtime.options.links.online?.environment, 'staging');
+  assert.equal(runtime.options.links.androidPackageName, 'com.pittech.dev');
 });

@@ -1,8 +1,9 @@
 # PR 09 — Native account sessions
 
 Both native clients implement the PR 08 proof-bound email code/link contract.
-Account entry points remain disabled by a source constant in both release and
-Debug builds. Isolated automation injects a memory vault and local test API;
+Account entry points default off through explicit build configuration in all
+configurations; the staging and production profiles select their own origins,
+link identities and credential namespaces. Isolated automation injects a memory vault and local test API;
 there is no test switch that contacts a live account service. The complete
 accounts/social/sync/deletion phase must pass before enabling these entry points.
 
@@ -28,7 +29,7 @@ requires a new sign-in. Challenges are pruned from device storage after 15
 minutes on restart. Failed device storage prevents outbound sign-in requests.
 Network errors retain exact pending operations; they never silently generate a
 new refresh UUID. No email/code/token/provider response is logged or returned
-in error text. All credential transport uses the fixed HTTPS API origin,
+in error text. All credential transport uses the profile's fixed HTTPS API origin,
 no redirects/cookies/cache and an 8 KiB JSON response bound.
 
 The shared `auth-native-v1.json` fixture is consumed by both native unit suites

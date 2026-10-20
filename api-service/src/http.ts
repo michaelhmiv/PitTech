@@ -134,7 +134,7 @@ export function makeServer(relay: Relay, options: Options) {
         if(!await relay.repository.rate(key,method==='GET'?120:60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
         if(pageRoute){
           res.setHeader('Content-Type','text/html; charset=utf-8');
-          res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; img-src https://api.pittech.app; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+          res.setHeader('Content-Security-Policy',`default-src 'none'; style-src 'unsafe-inline'; img-src ${options.links?.online?.apiOrigin ?? 'https://api.pittech.app'}; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
           res.setHeader('X-Robots-Tag','noindex, nofollow');
           res.end(await publicPage(req.url!,options.publications,options.links??{appleAppIds:[],androidCertificates:[]},await requestAudience(req,options.auth,options.community)));return;
         }

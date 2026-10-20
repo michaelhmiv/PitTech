@@ -155,7 +155,7 @@ struct NativeSubscriptionClient: NativeSubscriptionAPI {
     func call(_ path: String, body: [String: Any]? = nil, access: String? = nil) async throws -> Data {
         let read = path == "/v1/me/entitlement" || path == "/v1/me/entitlement?environment=sandbox"
         guard read || ["/v1/me/entitlement/reconcile", "/v1/me/purchases/verify", "/v1/me/purchases/restore", "/v1/me/purchases/release"].contains(path) else { throw NativeSubscriptionError.invalid }
-        var request = URLRequest(url: URL(string: "https://api.pittech.app" + path)!)
+        var request = URLRequest(url: URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + path)!)
         request.httpMethod = read ? "GET" : "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")

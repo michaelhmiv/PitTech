@@ -24,7 +24,7 @@ final class NativeRelayTransport: NSObject, URLSessionDataDelegate, URLSessionTa
     private var failure: Error?
     private var progress: (@Sendable (Int64, Int64) -> Void)?
     func run(_ request: URLRequest, upload: URL? = nil, download: URL? = nil, progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) async throws -> NativeRelayResponse {
-        guard request.url?.scheme == "https", request.url?.host == "api.pittech.app" else { throw NativeRelayError.message("The relay address is invalid.") }
+        guard NativeOnlineConfiguration.current.acceptsAPI(request.url) else { throw NativeRelayError.message("The relay address is invalid.") }
         self.target = download; self.progress = progress
         return try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in

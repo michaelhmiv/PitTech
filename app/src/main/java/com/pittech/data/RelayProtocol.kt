@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
@@ -8,8 +10,9 @@ import java.util.Locale
 
 object RelayProtocol {
     const val MAX_BYTES = 64L * 1024 * 1024
-    const val API = "https://api.pittech.app"
-    fun code(input: String): String {
+    val API: String get() = OnlineConfiguration.current.apiOrigin
+    fun code(input: String): String = code(input, OnlineConfiguration.current)
+    internal fun code(input: String, configuration: OnlineConfiguration): String {
         require(input.length <= 256) { "Enter the complete Cook Pack code." }
         val trimmed = input.trim()
         val raw = if (trimmed.contains("://")) {
@@ -17,8 +20,8 @@ object RelayProtocol {
             val path = uri.rawPath ?: error("This share link is not supported.")
             require(uri.rawUserInfo == null && uri.port == -1 && uri.rawQuery == null && uri.rawFragment == null && '%' !in path) { "This share link is not supported." }
             val prefix = when {
-                uri.scheme.equals("https", true) && uri.host.equals("pittech.app", true) -> "/s/"
-                uri.scheme.equals("pittech", true) && uri.host.equals("share", true) -> "/"
+                uri.scheme.equals("https", true) && uri.rawAuthority == configuration.publicHost -> "/s/"
+                uri.scheme == configuration.linkScheme && uri.host.equals("share", true) -> "/"
                 else -> error("Only PitTech share links are supported.")
             }
             require(uri.path.startsWith(prefix) && uri.path.removePrefix(prefix).isNotEmpty() && '/' !in uri.path.removePrefix(prefix)) { "Enter a complete share link." }
@@ -28,7 +31,7 @@ object RelayProtocol {
         require(compact.matches(Regex("[0-9A-F]{16}"))) { "Enter all 16 letters and numbers from the Cook Pack code." }
         return compact.chunked(4).joinToString("-")
     }
-    fun link(code: String) = "https://pittech.app/s/" + this.code(code)
+    fun link(code: String) = "${OnlineConfiguration.current.publicOrigin}/s/" + this.code(code)
     fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     fun hash(file: java.io.File): String {
         val digest = MessageDigest.getInstance("SHA-256")

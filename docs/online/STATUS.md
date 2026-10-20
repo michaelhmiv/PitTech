@@ -8,6 +8,16 @@ Actions 39449305667 passed 178 tests with zero skips. Native billing environment
 and account-cache fixes are in review, not yet verified on their final SHA.
 See [STAGING.md](STAGING.md) and [20-online-enablement.md](20-online-enablement.md).
 
+The staging hostnames api-staging.pittech.app and staging.pittech.app now have
+propagated CNAMEs, verified ownership and valid TLS. Email DNS was retriggered
+and is pending verification. A private storage/role probe is prepared, not run:
+Railway refused its first deployment with "Deploys have been paused temporarily"
+and retained a source update in a pending patch. The API and database remain
+healthy on their previous pinned backend. Browser/store setup and manual Firebase
+dispatch remain unavailable without the originating connected browser context.
+The profile and distribution preparation in PR #124 does not claim operational
+acceptance or successful distribution.
+
 # Issue #89 delivery status
 
 Owner authorized implementation on October 14, including the deletion amendment.
@@ -15,13 +25,15 @@ Baseline: `82cbe1b335499aba561fc58c91d727055b8ce4fc`. Store-launch PRs #77/#78/#
 remain separate. No online phase is released until its complete parity gate passes.
 Slices 00–19 and cleanup #122 are merged; main `743b6a5` carries the tested
 cleanup tree (backend 170, Android JVM 376/all emulator lanes, iOS 250 unit/UI).
-The online stack is still undeployed and disabled. Owner authorization on
+The isolated staging foundation is deployed; online features remain disabled. Owner authorization on
 October 20 now covers making it usable and a Firebase test distribution; the
 remaining rollout is tracked in #123 and `20-online-enablement.md`.
 Historical checkpoints below are source evidence, not a live-service claim.
-The post-merge Android push run 39432333361 requires investigation/rerun of its
-API 36/font 1.5 process crash before exact-main distribution; iOS push verification
-was still running when the rollout audit began.
+The post-merge Android push run 39432333361 passed on retry. At rollout head
+40504b6, all Android lanes, backend, bundle and public-artifact checks passed.
+iOS stopped compiling the subscription test (missing try), fixed in 6ec3029;
+that head started a fresh native run. The newer profile changes require their own
+exact-head Actions acceptance. No online Firebase build has been distributed.
 
 | PR | Deliverable | State | Evidence |
 |---|---|---|---|

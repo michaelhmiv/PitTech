@@ -18,7 +18,7 @@ struct NativePublicationReceipt: Codable, Equatable, Sendable {
     var status: String? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, revision > 0,
-              url == "https://pittech.app/c/" + id, (kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true), (status.map({ ["active", "pending_review"].contains($0) }) ?? true) else { throw NativePublicationError.invalid }
+              url == "\(NativeOnlineConfiguration.current.publicOrigin)/c/" + id, (kind.map({ ["recipe", "collection", "attempt"].contains($0) }) ?? true), (status.map({ ["active", "pending_review"].contains($0) }) ?? true) else { throw NativePublicationError.invalid }
     }
 }
 struct NativePublicationOperation: Codable {
@@ -60,7 +60,7 @@ private struct NativePublicationState: Codable {
 @MainActor final class NativePublicationOperationsStore {
     let directory: URL
     init(directory: URL? = nil) {
-        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PublicationOperations-v1", isDirectory: true)
+        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(NativeOnlineConfiguration.current.scopedName("PublicationOperations-v1"), isDirectory: true)
     }
     private func prepareDirectory() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -183,7 +183,7 @@ struct NativePublicationClient: NativePublicationAPI {
     var configuration: URLSessionConfiguration?
     private func request(_ path: String, access: String) throws -> URLRequest {
         guard NativeAccountProtocol.credential(access) else { throw NativePublicationError.invalid }
-        var request = URLRequest(url: URL(string: "https://api.pittech.app" + path)!); request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
+        var request = URLRequest(url: URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + path)!); request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control"); request.setValue("application/json", forHTTPHeaderField: "Accept"); return request
     }
     func read(_ path: String, access: String) async throws -> Data {

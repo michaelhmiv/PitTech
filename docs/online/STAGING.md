@@ -64,7 +64,7 @@ not measured production capacity or pricing commitments.
 - Repair `auth-staging.pittech.app` DNS. Resend's October 20 read shows DKIM and
   SPF MX/TXT failed and tracking CNAME not started; `auth.pittech.app` is verified.
   Use a separate domain-scoped staging sending key, sender and HTTPS origin.
-- Attach and verify the intended staging API/public origins, TLS, association
+- Both staging origins now have valid DNS/TLS. Verify their association
   files and both native staging identities. A generated Railway health domain
   is not installed deep-link or native staging evidence.
 - Verify private object create/read/replay/delete behavior, ingress/proxy trust,
@@ -78,3 +78,33 @@ The owner authorized the online deployment and Firebase test distribution on
 October 20. Missing inputs, live verification and blocked console capabilities
 remain prerequisites; another general deployment confirmation is not required.
 See issue #123 and `20-online-enablement.md` for the complete delivery sequence.
+
+## Latest continuation checkpoint
+
+Both custom hostnames are now present on the API and were read back as verified
+with valid certificates: `api-staging.pittech.app` CNAME
+`5w9pj6wa.up.railway.app`, and `staging.pittech.app` CNAME
+`r1h17h7b.up.railway.app`. That resolves DNS/TLS only; association identities
+and installed native links still require release evidence.
+
+`PitTechReadiness` (`fc44071f-a2f5-4c1a-8e70-694b6eb6a33e`) is a private
+one-off probe with no domain or admin database URL. It is not deployed.
+Its source attach was refused with "Deploys have been paused temporarily" and
+left a pending source patch. Inspect that patch before accepting further changes.
+The source-reviewed replacement probe lives at `api-service/src/staging-readiness.ts`.
+After its exact backend head passes CI, point the service at that commit and use
+`node --max-old-space-size=256 src/staging-readiness.ts`. It verifies restricted
+runtime connections and forbidden reads, private object access, identical retry,
+changed-body rejection, deletion and late-upload fences in all three namespaces.
+It only cleans up its own random synthetic keys and logs sanitized step labels.
+
+Resend verification was retriggered; the latest read is pending. Required DNS
+records remain available in the Resend domain details. No staging sending key is
+configured on the API yet. No real sign-in email or purchase is claimed.
+
+The continuation adds a shared `ONLINE_ENVIRONMENT` backend profile and matching
+native build profiles; production remains the default and every online flag stays
+off. Before enabling the isolated stack, set `ONLINE_ENVIRONMENT=staging`,
+`AUTH_PUBLIC_ORIGIN=https://staging.pittech.app`, the matching domain-scoped sender
+and credentials, and actual staging association identities. Do not deploy a new
+head until its backend checks pass.

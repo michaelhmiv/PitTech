@@ -21,7 +21,7 @@ struct NativePublicItem: Decodable, Identifiable {
         let profileUrl: String?
         func validate() throws {
             guard displayName.utf16.count <= 160 else { throw NativePublicError.invalid }
-            if let profileUrl { guard try NativePublicLink.destination(profileUrl).hasPrefix("profile:"), profileUrl.hasPrefix("https://pittech.app/p/") else { throw NativePublicError.invalid } }
+            if let profileUrl { guard try NativePublicLink.destination(profileUrl).hasPrefix("profile:"), profileUrl.hasPrefix("\(NativeOnlineConfiguration.current.publicOrigin)/p/") else { throw NativePublicError.invalid } }
         }
     }
     let id: String
@@ -62,7 +62,7 @@ struct NativePublicDetail: Decodable {
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, (1...160).contains(title.utf16.count), credit.displayName.utf16.count <= 160,
               publisherAlias.map({ UUID(uuidString: $0) != nil }) ?? true, (1...20).contains(recipes.count), media.count <= 600, Set(media.map(\.id)).count == media.count, (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks) else { throw NativePublicError.invalid }
         for medium in media {
-            guard UUID(uuidString: medium.id) != nil, medium.url == "https://api.pittech.app/v1/recipes/\(id)/assets/\(medium.id)",
+            guard UUID(uuidString: medium.id) != nil, medium.url == "\(NativeOnlineConfiguration.current.apiOrigin)/v1/recipes/\(id)/assets/\(medium.id)",
                   medium.sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil, ["image/jpeg", "image/png", "image/webp"].contains(medium.mimeType) else { throw NativePublicError.invalid }
         }
         for recipe in recipes {
@@ -79,7 +79,7 @@ protocol NativePublicAPI {
 struct NativePublicClient: NativePublicAPI {
     private func request(_ path: String) throws -> URLRequest {
         guard path.range(of: "^/v1/profiles/[a-z0-9_]{3,24}(\\?cursor=[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil || path.hasPrefix("/v1/discover?") || path.range(of: "^/v1/recipes/[a-fA-F0-9-]{36}(/pack|/assets/[a-fA-F0-9-]{36})?$", options: .regularExpression) != nil,
-              let url = URL(string: "https://api.pittech.app" + path), url.host == "api.pittech.app", url.fragment == nil else { throw NativePublicError.invalid }
+              let url = URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + path), NativeOnlineConfiguration.current.acceptsAPI(url) else { throw NativePublicError.invalid }
         var request = URLRequest(url: url); request.setValue("no-store", forHTTPHeaderField: "Cache-Control"); request.setValue("application/json", forHTTPHeaderField: "Accept"); let aliases = try NativeCommunityVault.aliases(); if !aliases.isEmpty { request.setValue(aliases.joined(separator: ","), forHTTPHeaderField: "X-PitTech-Blocks") }; if let session = try NativeCommunityVault.publicAccount() { request.setValue("Bearer " + session.accessToken, forHTTPHeaderField: "Authorization") }; return request
     }
     func json(_ path: String) async throws -> Data {
@@ -102,7 +102,7 @@ struct NativePublicClient: NativePublicAPI {
 }
 actor NativePublicCache {
     private let directory: URL
-    init(directory: URL? = nil) { self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PublicBrowsing-v1", isDirectory: true) }
+    init(directory: URL? = nil) { self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(NativeOnlineConfiguration.current.scopedName("PublicBrowsing-v1"), isDirectory: true) }
     private func file(_ key: String) -> URL { directory.appendingPathComponent(NativeRelayProtocol.hash(Data(key.utf8)) + ".data") }
     func read(_ key: String, limit: Int = 8 * 1024 * 1024) throws -> Data? {
         let url = file(key); guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -138,7 +138,7 @@ actor NativePublicCache {
     private(set) var appliedSort = "liked"
     private(set) var appliedFood = ""
     private(set) var appliedQuery = ""
-    init(enabled: Bool = false, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache(), audience: @escaping () throws -> String = NativeCommunityVault.cacheAudience) { self.enabled = enabled; self.api = api; self.cache = cache; self.audience = audience }
+    init(enabled: Bool = NativeOnlineConfiguration.current.enabled, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache(), audience: @escaping () throws -> String = NativeCommunityVault.cacheAudience) { self.enabled = enabled; self.api = api; self.cache = cache; self.audience = audience }
     private func pagePath(sort: String, food: String, query: String, cursor: String? = nil) -> String {
         var parts = URLComponents(); parts.path = "/v1/discover"; parts.queryItems = [URLQueryItem(name: "sort", value: sort), URLQueryItem(name: "food", value: food), URLQueryItem(name: "q", value: query)] + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
         return parts.string!

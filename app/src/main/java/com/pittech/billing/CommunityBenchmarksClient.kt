@@ -1,5 +1,7 @@
 package com.pittech.billing
 
+import com.pittech.online.OnlineConfiguration
+
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -42,7 +44,7 @@ internal class CommunityBenchmarksClient(client: OkHttpClient = OkHttpClient()) 
         if (metric != null) require(CommunityBenchmarks.metricAllowed(metric))
         if (runId != null) require(CommunityBenchmarks.runIdValid(runId))
         require(access != null && com.pittech.data.AccountProtocol.credential(access))
-        val url = ("https://api.pittech.app" + CommunityBenchmarks.AGGREGATES_PATH).toHttpUrl().newBuilder()
+        val url = ("${OnlineConfiguration.current.apiOrigin}" + CommunityBenchmarks.AGGREGATES_PATH).toHttpUrl().newBuilder()
         if (bucket != null) url.addQueryParameter("bucket", bucket)
         if (metric != null) url.addQueryParameter("metric", metric)
         if (runId != null) url.addQueryParameter("runId", runId)
@@ -53,7 +55,7 @@ internal class CommunityBenchmarksClient(client: OkHttpClient = OkHttpClient()) 
         if (limit != null) require(CommunityBenchmarks.jobRunsLimitValid(limit))
         if (cursor != null) require(CommunityBenchmarks.runIdValid(cursor))
         require(access != null && com.pittech.data.AccountProtocol.credential(access))
-        val url = ("https://api.pittech.app" + CommunityBenchmarks.JOB_RUNS_PATH).toHttpUrl().newBuilder()
+        val url = ("${OnlineConfiguration.current.apiOrigin}" + CommunityBenchmarks.JOB_RUNS_PATH).toHttpUrl().newBuilder()
         if (limit != null) url.addQueryParameter("limit", limit.toString())
         if (cursor != null) url.addQueryParameter("cursor", cursor)
         return get(url.build().toString(), access)

@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +44,7 @@ internal data class CommunityControlsState(val session:String,val generation:Str
 }
 internal interface CommunityStorage{fun load():CommunityControlsState?;fun save(value:CommunityControlsState)}
 internal class CommunityVault(context:Context):CommunityStorage{
-    private val vault=AccountVault(context,"community-controls")
+    private val vault=AccountVault(context,OnlineConfiguration.current.scopedName("community-controls"))
     private val accountVault=AccountVault(context)
     override fun load():CommunityControlsState?{val bytes=vault.loadBytes()?:return null;return try{CommunityControlsState.parse(JSONObject(String(bytes,Charsets.UTF_8)))}finally{bytes.fill(0)}}
     override fun save(value:CommunityControlsState){value.validate();val bytes=value.json().toString().toByteArray();try{vault.saveBytes(bytes)}finally{bytes.fill(0)}}
@@ -59,7 +61,7 @@ internal class CommunityClient(client:OkHttpClient=OkHttpClient()):CommunityAPI{
     private val client=client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(CookieJar.NO_COOKIES).cache(null).callTimeout(30,TimeUnit.SECONDS).build()
     override suspend fun call(path:String,body:String?,access:String?,session:String):JSONObject{
         require(AccountProtocol.credential(session) && (body?.toByteArray()?.size?:0)<=8192 && (path in setOf("/v1/reports","/v1/me/blocks") || path.matches(Regex("/v1/reports/[a-fA-F0-9-]{36}"))) && (path!="/v1/reports" || body!=null))
-        val builder=Request.Builder().url("https://api.pittech.app$path").header("Accept","application/json").header("Cache-Control","no-store").header("X-PitTech-Report-Session",session)
+        val builder=Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Accept","application/json").header("Cache-Control","no-store").header("X-PitTech-Report-Session",session)
         if(body!=null)builder.post(body.toRequestBody("application/json".toMediaType()))
         if(access!=null){require(AccountProtocol.credential(access));builder.header("Authorization","Bearer $access")}
         return suspendCancellableCoroutine{c->val call=client.newCall(builder.build());c.invokeOnCancellation{call.cancel()};call.enqueue(object:Callback{

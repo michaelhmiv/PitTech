@@ -12,12 +12,12 @@ The October 20 instruction authorizes preparing and performing the necessary non
 
 | Area | Current evidence | Remaining work |
 |---|---|---|
-| Source | #89 slices 00–19 and cleanup #122 merged. Room 11, portable archive 10. #122's tested tree passed backend 170, Android JVM 376/all three emulator lanes and iOS 250 unit/UI tests. | Keep the source/operational distinction. The post-merge Android push run 39432333361 passed on its second attempt. The rollout head 5d246b2 passes standard API 36 and advisory API 37; its API 36/font 1.5 run hit a captured native ART/Chromium WebView SIGSEGV and needs a clean required-lane result. iOS push run 39432333021 remains running at this checkpoint. |
+| Source | #89 slices 00–19 and cleanup #122 merged. Room 11, portable archive 10. #122's tested tree passed backend 170, Android JVM 376/all three emulator lanes and iOS 250 unit/UI tests. | Keep the source/operational distinction. The post-merge Android push run 39432333361 passed on its second attempt. All Android lanes and backend/bundle/public checks passed at 40504b6. The iOS test-compile error was fixed in 6ec3029. New profile changes need their own exact-head acceptance. |
 | Native accounts/sync/community | Compile-time account flags false; discovery defaults false. Foreground sync is optional after explicit library attachment; credentials/settings/activation remain device-local. | Enable both clients together only after the complete deployed account/community/sync/deletion phase passes. Keep ordinary restore inactive. |
 | Backend | Auth, publications/lifecycle, encrypted sync/photo CAS, store verification and analysis foundations exist. No MCP implementation exists. | Provider and runtime-bootstrap fixes pass all 178 backend tests at 5d246b2 (Actions 39449305667); the isolated staging foundation is deployed. Complete native billing context/account fixes, service activation and live-flow evidence. |
 | Railway staging | Project 5437a627-75bc-4750-9677-c2bcc63d82b8; environment 66718bed-3e9f-4372-88d9-3e3969a3b59f. 77 reviewed non-destructive additions applied October 20. API/Postgres/private bucket and private bootstrap are provisioned; backend source pinned to 5d246b2. Bootstrap logged runtime_bootstrap_ready; API HTTPS /healthz returns 200/ok. | Separate restricted runtime DB logins, key references and private bucket wiring are in place. Verify object operations, scheduled cleanup, email/DNS/TLS and full account/sync/deletion flows before activation; all online flags remain false. See STAGING.md for actual deployments and limits. |
 | Production | PitTech project currently has Feedback Relay and Privacy only. | Add/review the online stack after isolated staging acceptance. Preserve those existing services and unrelated projects. |
-| Email | auth.pittech.app verified. Resend's fresh read shows auth-staging.pittech.app exists but is failed: DKIM, SPF MX/TXT failed and tracking CNAME not started. | Repair the actual staging DNS records, verify delivery, use separate domain-scoped sending keys; do not rely on stale October 15 status text. |
+| Email | auth.pittech.app verified. Resend's fresh read shows auth-staging.pittech.app was failed; verification has been retriggered and is pending. | Verify the actual staging DNS records and delivery, use separate domain-scoped sending keys; do not rely on stale October 15 status text. |
 | Stores | Native product identifiers empty; real store provider configuration/evidence not complete. | Configure one monthly product per store, localized pricing, server credentials, notifications and license/sandbox tests. No annual/web checkout or client-driven unlock. |
 | Firebase | Existing main-only workflow builds/signs com.pittech.dev with test ads and distributes to pittech-dev; requires exact-main Android push success. | Feed approved online/build/product configuration into it, retain artifact/release links, and dispatch after the deployed functionality is usable. |
 
@@ -92,3 +92,51 @@ The final handoff must say which APK/link supports purchase testing and which su
 - Licensed/sideloaded billing tests: https://developer.android.com/google/play/billing/test
 - Firebase distribution: https://firebase.google.com/docs/app-distribution/android/distribute-cli
 
+
+## Build profiles and continuation evidence
+
+PR #124 now prepares the complete first-party profile boundary. Android uses
+`-PpittechOnlineEnvironment=production|staging` and the independent
+`-PpittechOnlineEnabled=true|false` flag; defaults are production and false.
+The Dev package remains `com.pittech.dev`. A release for the registered Play
+package can use staging only with `-PpittechStoreSandboxBuild=true` and test ads.
+
+iOS Debug/Release keep the existing production identity and disabled online
+entry. The Staging configuration uses `com.pittech.staging`, test ads,
+`staging.pittech.app` links and the `pittech-staging` custom scheme.
+StoreSandbox retains `com.pittech` for real App Store sandbox receipts, uses the
+staging API and test ads, and also defaults online entry off. Enabling either
+test configuration requires `PITTECH_ONLINE_ENABLED=YES`. These configurations
+do not register products, create signing identities or grant Pro entitlement.
+
+Both clients select endpoints, response-link validation, device credential
+services, public caches, pending publication/relay/sync files and entitlement
+caches consistently. Production storage names are preserved without migration;
+staging cannot adopt a production account or resume its pending upload.
+The backend selects `ONLINE_ENVIRONMENT=staging` with matching email origin;
+publication receipts, asset/profile URLs, web app-opening links and association
+files follow that profile. Staging Android associations default to the Dev
+package, with an explicit registered-package option for store sandbox testing.
+The shared fixture is `contracts/fixtures/online-environments-v1.json`.
+`online-profile-checks.yml` compiles and inspects both native staging artifacts
+without making live authenticated requests; the normal suites retain offline,
+account-switch, retry and data-preservation coverage.
+
+Firebase dispatch now selects offline/staging/production explicitly. Online
+distribution requires the corresponding repository variable
+`PITTECH_STAGING_ONLINE_READY=true` or `PITTECH_PRODUCTION_ONLINE_READY=true`,
+the real `PITTECH_PRO_MONTHLY_PRODUCT_ID`, successful profile inspection for the
+exact main commit, and the existing exact-main Android gate. Set readiness
+markers only after the complete deployed walkthrough and store acceptance above;
+they are evidence of reviewed readiness, not a substitute for those checks.
+Release notes identify the selected environment and explain that the Dev package
+requires a companion registered-package Play build for purchase-sheet testing.
+
+Observed before these new profile changes: all Android/backend/bundle/public
+checks passed at 40504b6; iOS had one missing `try` in the subscription assertion,
+fixed in 6ec3029. Both custom staging domains now have valid DNS/TLS. Email-domain
+verification is pending. The private role/object probe has not run: Railway
+temporarily refused deployment and left a pending source patch. Browser access
+is unavailable in this chat, so store-console setup, repository variable
+administration and manual workflow dispatch still need that connection.
+MCP #114 remains paused. No online Firebase release has been dispatched.

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleURLTypes</key>
-	<array><dict><key>CFBundleURLName</key><string>com.pittech.share</string><key>CFBundleURLSchemes</key><array><string>pittech</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
+	<array><dict><key>CFBundleURLName</key><string>com.pittech.share</string><key>CFBundleURLSchemes</key><array><string>$(PITTECH_LINK_SCHEME)</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
 	<key>CFBundleDisplayName</key>
 	<string>PitTech</string>
 	<key>CFBundleIconName</key>
@@ -50,6 +50,16 @@
 	<string>$(PITTECH_NATIVE_AD_UNIT_ID)</string>
 	<key>PITTECHProProductID</key>
 	<string>$(PITTECH_PRO_PRODUCT_ID)</string>
+	<key>PITTECHOnlineEnvironment</key>
+	<string>$(PITTECH_ONLINE_ENVIRONMENT)</string>
+	<key>PITTECHOnlineEnabled</key>
+	<string>$(PITTECH_ONLINE_ENABLED)</string>
+	<key>PITTECHStoreSandboxBuild</key>
+	<string>$(PITTECH_STORE_SANDBOX_BUILD)</string>
+	<key>PITTECHPublicHost</key>
+	<string>$(PITTECH_PUBLIC_HOST)</string>
+	<key>PITTECHLinkScheme</key>
+	<string>$(PITTECH_LINK_SCHEME)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos to include in your cook notes.</string>
 	<key>LSApplicationCategoryType</key>

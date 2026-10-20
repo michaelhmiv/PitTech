@@ -1,0 +1,124 @@
+name: Online profile checks
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', 'ios/**', 'contracts/**', '.github/workflows/online-profile-checks.yml']
+  pull_request:
+    branches: [main]
+    paths: ['app/**', 'ios/**', 'contracts/**', '.github/workflows/online-profile-checks.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: online-profiles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-staging:
+    name: Inspect Android staging profile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager --install --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '9.6.1'
+      - name: Compile the staging APK and verify the shared profile contract
+        run: >-
+          gradle --no-daemon assembleDev testDevUnitTest
+          --tests com.pittech.online.OnlineConfigurationTest
+          -PpittechOnlineEnvironment=staging
+          -PpittechOnlineEnabled=true
+          -PpittechLiveAds=false
+      - name: Inspect the packaged links and generated configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/online-profiles
+          "${ANDROID_SDK_ROOT}/build-tools/37.0.0/aapt2" dump xmltree app/build/outputs/apk/dev/app-dev-unsigned.apk --file AndroidManifest.xml > build/online-profiles/android-manifest.txt
+          cp app/build/generated/source/buildConfig/dev/com/pittech/BuildConfig.java build/online-profiles/
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("build/online-profiles/android-manifest.txt").read_text()
+          config = Path("build/online-profiles/BuildConfig.java").read_text()
+          for expected in ['com.pittech.dev', 'staging.pittech.app', 'pittech-staging']:
+              assert expected in manifest, expected
+          assert '"pittech.app"' not in manifest
+          assert '"pittech"' not in manifest
+          assert 'PITTECH_ONLINE_ENVIRONMENT = "staging"' in config
+          assert 'PITTECH_ONLINE_ENABLED = true' in config
+          assert 'ca-app-pub-3940256099942544/2247696110' in config
+          PY
+      - name: Reject unapproved staging builds for the Play package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gradle --no-daemon :app:preReleaseBuild -PpittechOnlineEnvironment=staging -PpittechOnlineEnabled=true > build/online-profiles/release-guard.txt 2>&1; then
+            echo "::error::A staging Play package built without explicit sandbox configuration."
+            exit 1
+          fi
+          grep -F 'Staging requires Dev/Debug or an explicit store sandbox build.' build/online-profiles/release-guard.txt
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: android-online-profile-evidence
+          path: |
+            build/online-profiles/**
+            app/build/test-results/testDevUnitTest/**
+          retention-days: 7
+
+  ios-staging:
+    name: Inspect iOS staging profile
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - run: brew install xcodegen
+      - run: xcodegen generate
+        working-directory: ios
+      - name: Compile the isolated staging app and its tests without contacting a live API
+        shell: bash
+        run: |
+          set -euo pipefail
+          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Staging -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath build/ios-staging CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES PITTECH_ONLINE_ENABLED=YES build-for-testing
+      - name: Inspect the compiled app identity, online profile and associated domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --verify --verbose build/ios-staging/Build/Products/Staging-iphonesimulator/PitTech.app
+          mkdir -p build/online-profiles
+          python3 - <<'PY'
+          import hashlib, json, plistlib
+          from pathlib import Path
+          app = Path("build/ios-staging/Build/Products/Staging-iphonesimulator/PitTech.app")
+          info = plistlib.loads((app / "Info.plist").read_bytes())
+          expected = {"CFBundleIdentifier": "com.pittech.staging", "PITTECHOnlineEnvironment": "staging", "PITTECHOnlineEnabled": "YES", "PITTECHPublicHost": "staging.pittech.app", "PITTECHLinkScheme": "pittech-staging", "PITTECHNativeAdUnitID": "ca-app-pub-3940256099942544/3986624511"}
+          for key, value in expected.items():
+              assert info[key] == value, (key, info.get(key))
+          schemes = [scheme for entry in info["CFBundleURLTypes"] for scheme in entry["CFBundleURLSchemes"]]
+          assert schemes == ["pittech-staging"], schemes
+          # Simulator signing embeds entitlements in the executable's __TEXT section.
+          executable = (app / info["CFBundleExecutable"]).read_bytes()
+          assert b"applinks:staging.pittech.app" in executable
+          assert b"applinks:pittech.app" not in executable
+          evidence = {**expected, "executableSHA256": hashlib.sha256(executable).hexdigest(), "associatedDomain": "applinks:staging.pittech.app"}
+          Path("build/online-profiles/ios-profile.json").write_text(json.dumps(evidence, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ios-online-profile-evidence
+          path: |
+            build/online-profiles/**
+            build/ios-staging/Build/Products/Staging-iphonesimulator/PitTech.app/Info.plist
+          retention-days: 7

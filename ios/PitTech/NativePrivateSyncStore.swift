@@ -123,7 +123,7 @@ final class NativePrivateSyncStore: NativePrivateSyncStorage {
     }
     convenience init() throws {
         let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        self.init(directory: root.appendingPathComponent("PrivateSync-v1", isDirectory: true))
+        self.init(directory: root.appendingPathComponent(NativeOnlineConfiguration.current.scopedName("PrivateSync-v1"), isDirectory: true))
     }
     private func prepared() throws -> URL {
         var directory = directory

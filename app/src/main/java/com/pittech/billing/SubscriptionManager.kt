@@ -1,5 +1,7 @@
 package com.pittech.billing
 
+import com.pittech.online.OnlineConfiguration
+
 import android.app.Activity
 import android.content.Context
 import com.pittech.ads.AdEntitlement
@@ -50,7 +52,7 @@ internal interface SubscriptionCacheStore {
 }
 
 internal class SharedPrefsSubscriptionCacheStore(context: Context) : SubscriptionCacheStore {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(OnlineConfiguration.current.scopedName(PREFS_NAME), Context.MODE_PRIVATE)
 
     override fun load(ownerId: String): SubscriptionCache? {
         // The old cache has no account identity and cannot safely be adopted.
@@ -100,7 +102,7 @@ internal class SubscriptionManager(
     val accountsEnabled: Boolean,
     private val cacheStore: SubscriptionCacheStore,
     private val ownerId: suspend () -> String?,
-    private val initialEnvironment: SubscriptionEnvironment = SubscriptionEnvironment.PRODUCTION,
+    private val initialEnvironment: SubscriptionEnvironment = if (OnlineConfiguration.current.sandbox) SubscriptionEnvironment.SANDBOX else SubscriptionEnvironment.PRODUCTION,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val mutex = Mutex()

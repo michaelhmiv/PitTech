@@ -1,5 +1,7 @@
 package com.pittech.billing
 
+import com.pittech.online.OnlineConfiguration
+
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -35,7 +37,7 @@ internal class SubscriptionClient(client: OkHttpClient = OkHttpClient()) : Subsc
     override suspend fun call(path: String, body: JSONObject?, access: String?): JSONObject {
         val read = path == "/v1/me/entitlement" || path == "/v1/me/entitlement?environment=sandbox"
         require(read || path in setOf("/v1/me/entitlement/reconcile", "/v1/me/purchases/verify", "/v1/me/purchases/restore", "/v1/me/purchases/release"))
-        val request = Request.Builder().url("https://api.pittech.app$path").header("Accept", "application/json").header("Cache-Control", "no-store")
+        val request = Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Accept", "application/json").header("Cache-Control", "no-store")
         if (read) {
             require(body == null)
             request.get()

@@ -14,6 +14,9 @@ GitHub issues; this file holds the durable rules of the road.
 - `api-service/` — draft anonymous Cook Pack relay and optional passwordless
   auth, public publications and the private-sync draft; separate `relay` / `auth` / `publications` / `private_sync` Postgres schemas and private object storage. `online-services.yml` verifies the backend;
   its review copy/application patch lives in `ci-proposals/`.
+- `online-profile-checks.yml` builds and inspects isolated staging identities and
+  link configuration on both clients. `contracts/fixtures/online-environments-v1.json`
+  keeps backend/native origins, schemes and retry namespaces aligned.
 - `store-assets/`, `distribution/` — store listing material.
 
 ## Scanning the repo efficiently
@@ -152,7 +155,7 @@ The owner requires iOS/Android parity going forward:
   see `docs/online/11-discovery.md`. Never display that coordinate origin as a
   recorded calendar date or feed private libraries into public read paths.
 - Account sessions use a separate device-only Keychain/Keystore namespace and never
-  enter exports or relay storage. Account entry remains disabled until the entire
+  enter exports or relay storage. Account entry defaults off in build configuration until the entire
   accounts/social/sync/deletion phase passes. See `docs/online/09-native-accounts.md`.
 - Code/link sharing keeps owner capabilities in device-only Keychain/Keystore
   storage outside library exports. Incoming links open a preview flow; they
@@ -171,6 +174,14 @@ another permission request. MCP #114 is fully planned and paused for this rollou
 foundation is deployed (see `docs/online/STAGING.md`); online feature flags stay
 off until full operational acceptance. The companion emulator selector now
 requires 71 tests, including persistent subscription-cache account isolation.
+Native online configuration selects production or staging with fixed first-party
+origins, separate credential/retry/cache namespaces and explicit enablement (off
+by default). iOS Staging is com.pittech.staging; Android Dev stays com.pittech.dev.
+Real store sandbox builds keep the registered store identity and need the explicit
+sandbox configuration. Never infer paid access from the chosen build profile.
+Firebase online dispatch also requires completed environment acceptance markers;
+its Dev package supports account/sync testing, while Play purchases need the
+registered package. See docs/online/20-online-enablement.md.
 
 If your change alters the repo layout, the workflows and what they prove,
 signing, the ads setup, or any rule above, update this file in the same PR.
