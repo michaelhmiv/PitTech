@@ -95,7 +95,7 @@ jobs:
 
       - name: Collect fresh native writer exports
         id: portable-fixtures
-        if: always() && steps.native-tests.outcome != 'skipped'
+        if: always() && !cancelled() && steps.native-tests.outcome != 'skipped'
         timeout-minutes: 15
         run: |
           set -euo pipefail
