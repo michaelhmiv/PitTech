@@ -60,6 +60,7 @@ jobs:
           fi
           python3 - "$report_dir" <<'PY'
           import json, pathlib, sys
+          from collections import deque
           root = pathlib.Path(sys.argv[1])
           for name in ("native-test-summary.json", "native-test-cases.json"):
               for path in root.rglob(name):
@@ -89,9 +90,11 @@ jobs:
                   print("Previous assertion locations:", name)
                   matches = 0
                   with path.open(errors="replace") as stream:
+                      context = deque(maxlen=45)
                       for line in stream:
+                          context.append(line.rstrip()[:2500])
                           if "error: -[" in line or ("Test Case" in line and "failed" in line):
-                              print(line.rstrip()[:2500])
+                              print("\n".join(context))
                               matches += 1
                               if matches >= 50:
                                   break

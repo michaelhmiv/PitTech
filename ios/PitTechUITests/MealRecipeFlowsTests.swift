@@ -2,7 +2,7 @@ import XCTest
 
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
-    private func reveal(_ element: XCUIElement, app: XCUIApplication) {
+    private func reveal(_ element: XCUIElement, app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         for attempt in 0..<18 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
@@ -78,7 +78,12 @@ final class MealRecipeFlowsTests: XCTestCase {
                 if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
-        XCTAssertTrue(element.exists && element.isHittable)
+        if !element.exists || !element.isHittable {
+            capture("Unreachable requested action")
+            print("Requested element: \(element)")
+            print(app.debugDescription)
+        }
+        XCTAssertTrue(element.exists && element.isHittable, "The requested action must be reachable.", file: file, line: line)
         let log = app.buttons["meal-log"]
         if app.scrollViews["cook-content"].exists, log.exists, log.isHittable,
            let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }) {
