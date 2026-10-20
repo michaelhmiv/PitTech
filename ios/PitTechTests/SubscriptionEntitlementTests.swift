@@ -62,7 +62,7 @@ import XCTest
         """.utf8))
         XCTAssertEqual(unknown.entitlement(), .unknown)
         XCTAssertFalse(unknown.offlineUsable())
-        XCTAssertThrowsError(SubscriptionEntitlementCache.decode(Data(json.replacingOccurrences(of: "\"production\"", with: "\"other\"").utf8)))
+        XCTAssertThrowsError(try SubscriptionEntitlementCache.decode(Data(json.replacingOccurrences(of: "\"production\"", with: "\"other\"").utf8)))
     }
 
     func testConsentManagerPersistsPreviouslyEntitledAndHoldsAdsWhileUnverified() {
