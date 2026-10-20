@@ -21,7 +21,7 @@ The October 20 instruction authorizes preparing and performing the necessary non
 | Stores | Native product identifiers empty; real store provider configuration/evidence not complete. | Configure one monthly product per store, localized pricing, server credentials, notifications and license/sandbox tests. No annual/web checkout or client-driven unlock. |
 | Firebase | Existing main-only workflow builds/signs com.pittech.dev with test ads and distributes to pittech-dev; requires exact-main Android push success. | Feed approved online/build/product configuration into it, retain artifact/release links, and dispatch after the deployed functionality is usable. |
 
-The connected browser currently reports no originating browser context. GitHub/Railway/Resend connected APIs remain available; no Railway or gh CLI is installed. Store consoles, DNS not exposed by a connector, repository-secret administration and manual workflow dispatch need an available authorized browser/CLI. Record concrete unavailable capabilities rather than claiming that code or config has been applied.
+The connected local browser currently reports no originating browser context. A cloud Play Console navigation was blocked by automatic approval review because it redirected to `google.play` outside the approved `play.google.com` origin; do not work around that rejection. GitHub/Railway/Resend connected APIs remain available; no Railway or gh CLI is installed. Store consoles, DNS not exposed by a connector, repository-secret administration and manual workflow dispatch need an available authorized browser/CLI. Record concrete unavailable capabilities rather than claiming that code or config has been applied.
 
 ## Delivery sequence
 

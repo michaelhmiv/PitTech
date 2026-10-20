@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Fixed
+- Android's unified-note UI test waits for the meal controls to finish loading before tapping the temperature shortcut.
 - Draft online billing uses Google's documented subscription lookup/acknowledgement routes and refreshed signing keys, and accepts renewal notifications only from the configured verified push identity. Store setup and live verification remain required before purchases are available.
 - A failed private-sync apply restores existing photo bytes instead of deleting the original file during rollback on either platform.
 - Draft private sync offers an account-bound choice to reconcile while the app is open, after explicit library attachment. Remote Finish/deletion cancels that meal's local timers, recording and notifications.
@@ -15,6 +16,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 - Android cookbook editing dismisses the keyboard, reveals its private editing preview and keeps the publishing flow reachable at enlarged text sizes.
 
 ### Added
+- A private one-off database bootstrap prepares reviewed migrations and separate restricted API, lifecycle and sync logins, with real-Postgres checks for idempotency and unexpected privileges. This prepares online deployment; it does not enable accounts by itself.
 - PitTech Pro personal views on both clients, behind the existing subscription gate: compare your recorded cooks of a cut, see the attempt you rated best, review timing across your recorded cuts and weights, note wrap and rest differences, and align recorded temperature curves at Food on or Wrap — all computed on-device from your own library, working offline, with honest notes wherever cooks are missing weights, anchors, or ratings.
 - PitTech Pro Year in Smoke recap builder on both clients: pick a period, choose exactly which cooks and sections appear, preview the exact shareable card, then share it explicitly. Unselected cooks never appear, and including a cook in a recap never publishes anything.
 - PitTech Pro customization on both clients: share-card themes, contrast-verified chart palettes including a color-vision-safe set, restrained named-profile presentation, and app-icon variants — every look previewed before applying, with a readable free fallback when Pro ends that keeps your saved exports and recorded cooks untouched.
