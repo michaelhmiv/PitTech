@@ -153,12 +153,13 @@ struct NativeSubscriptionClient: NativeSubscriptionAPI {
     var configuration: URLSessionConfiguration?
 
     func call(_ path: String, body: [String: Any]? = nil, access: String? = nil) async throws -> Data {
-        guard ["/v1/me/entitlement", "/v1/me/entitlement/reconcile", "/v1/me/purchases/verify", "/v1/me/purchases/restore", "/v1/me/purchases/release"].contains(path) else { throw NativeSubscriptionError.invalid }
+        let read = path == "/v1/me/entitlement" || path == "/v1/me/entitlement?environment=sandbox"
+        guard read || ["/v1/me/entitlement/reconcile", "/v1/me/purchases/verify", "/v1/me/purchases/restore", "/v1/me/purchases/release"].contains(path) else { throw NativeSubscriptionError.invalid }
         var request = URLRequest(url: URL(string: "https://api.pittech.app" + path)!)
-        request.httpMethod = (path == "/v1/me/entitlement") ? "GET" : "POST"
+        request.httpMethod = read ? "GET" : "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        if path != "/v1/me/entitlement" {
+        if !read {
             request.httpBody = try JSONSerialization.data(withJSONObject: body ?? [:])
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         } else if body != nil {

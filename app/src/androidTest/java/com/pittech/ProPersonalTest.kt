@@ -108,7 +108,7 @@ class ProPersonalTest {
     private fun manager(api: FakeAPI = FakeAPI(), token: String? = "A".repeat(43)): SubscriptionManager {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scopes.add(scope)
-        val manager = SubscriptionManager(FakeBilling(), scope, api, { token }, true, MemorySubscriptionCacheStore())
+        val manager = SubscriptionManager(FakeBilling(), scope, api, { token }, true, MemorySubscriptionCacheStore(), ownerId = { token?.let { "stub-account" } })
         runBlocking { manager.loadProduct(); manager.refresh() }
         return manager
     }

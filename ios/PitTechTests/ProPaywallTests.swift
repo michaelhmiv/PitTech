@@ -42,25 +42,32 @@ import XCTest
         var throwOnEntitlement = false
         var conflictRecovery: String?
         var verifyNote = "stub-verified"
+        var verifiedEnvironment = "production"
+        var bodies: [[String: Any]?] = []
+        var onCall: ((String) -> Void)?
+        var beforeResponse: ((String) async -> Void)?
 
-        private func cacheData(state: String, verified: Bool) throws -> Data {
+        private func cacheData(state: String, verified: Bool, environment: String = "production") throws -> Data {
             let json = """
-            {"version":"entitlement-cache-v1","environment":"production","verified":\(verified ? "true" : "false"),"state":"\(state)","verifiedUntil":"2026-11-17T12:00:00.000Z","lastVerifiedAt":"2026-10-18T12:00:00.000Z","offlineValidUntil":"2026-10-25T12:00:00.000Z","contractVersion":"store-verification-v1"}
+            {"version":"entitlement-cache-v1","environment":"\(environment)","verified":\(verified ? "true" : "false"),"state":"\(state)","verifiedUntil":"2026-11-17T12:00:00.000Z","lastVerifiedAt":"2026-10-18T12:00:00.000Z","offlineValidUntil":"2026-10-25T12:00:00.000Z","contractVersion":"store-verification-v1"}
             """
             return Data(json.utf8)
         }
 
         func call(_ path: String, body: [String: Any]?, access: String?) async throws -> Data {
             calls.append(path)
+            bodies.append(body)
+            onCall?(path)
+            await beforeResponse?(path)
             guard access != nil else { throw NativeSubscriptionError.status(401) }
             switch path {
-            case "/v1/me/entitlement":
+            case "/v1/me/entitlement", "/v1/me/entitlement?environment=sandbox":
                 if throwOnEntitlement { throw NativeSubscriptionError.network }
                 let verified = entitlementVerified ?? (entitlementState != "unknown")
-                return try cacheData(state: entitlementState, verified: verified)
+                return try cacheData(state: entitlementState, verified: verified, environment: path.hasSuffix("=sandbox") ? "sandbox" : "production")
             case "/v1/me/entitlement/reconcile":
                 let verified = entitlementVerified ?? (entitlementState != "unknown")
-                return try cacheData(state: entitlementState, verified: verified)
+                return try cacheData(state: entitlementState, verified: verified, environment: XCTUnwrap(body?["environment"] as? String))
             case "/v1/me/purchases/verify":
                 if throwOnVerify { throw NativeSubscriptionError.network }
                 XCTAssertEqual(body?["store"] as? String, "apple")
@@ -78,12 +85,12 @@ import XCTest
         }
 
         private func outcomeObject(state: String) throws -> [String: Any] {
-            let cache = try JSONSerialization.jsonObject(with: cacheData(state: state, verified: true))
+            let cache = try JSONSerialization.jsonObject(with: cacheData(state: state, verified: true, environment: verifiedEnvironment))
             var outcome: [String: Any] = [
                 "cache": cache,
                 "applied": conflictRecovery == nil,
                 "note": verifyNote,
-                "transaction": ["store": "apple", "environment": "production", "transactionKey": "stub-transaction", "evidenceRef": String(repeating: "a", count: 64)],
+                "transaction": ["store": "apple", "environment": verifiedEnvironment, "transactionKey": "stub-transaction", "evidenceRef": String(repeating: "a", count: 64)],
             ]
             if let recovery = conflictRecovery {
                 outcome["conflict"] = ["id": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", "state": "open", "recovery": recovery]
@@ -104,6 +111,7 @@ import XCTest
             store: store,
             api: api,
             sessionProvider: { token },
+            ownerIdProvider: { token == nil ? nil : "stub-account" },
             accountsEnabled: true,
             cacheStore: ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!),
             onEntitlement: { [weak self] in self?.reported.append($0) }
@@ -304,6 +312,7 @@ import XCTest
             store: FakeStore(),
             api: api,
             sessionProvider: { tokenBox.token },
+            ownerIdProvider: { tokenBox.token == nil ? nil : "stub-account" },
             accountsEnabled: true,
             cacheStore: ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!),
             onEntitlement: { [weak self] in self?.reported.append($0) }
@@ -344,13 +353,142 @@ import XCTest
         let cache = try SubscriptionEntitlementCache.decode(Data("""
         {"version":"entitlement-cache-v1","environment":"production","verified":true,"state":"active","verifiedUntil":"2026-11-17T12:00:00.000Z","lastVerifiedAt":"2026-10-18T12:00:00.000Z","offlineValidUntil":"2026-10-25T12:00:00.000Z","contractVersion":"store-verification-v1"}
         """.utf8))
-        cacheStore.save(cache)
-        let loaded = try XCTUnwrap(cacheStore.load())
+        cacheStore.save(cache, ownerId: "stub-account")
+        let loaded = try XCTUnwrap(cacheStore.load(ownerId: "stub-account"))
         XCTAssertEqual(loaded, cache)
         XCTAssertTrue(loaded.offlineUsable(now: Date(timeIntervalSince1970: 1_792_324_800)))
         XCTAssertFalse(loaded.offlineUsable(now: Date(timeIntervalSince1970: 1_792_324_800 + 604_801)))
         cacheStore.clear()
-        XCTAssertNil(cacheStore.load())
+        XCTAssertNil(cacheStore.load(ownerId: "stub-account"))
+    }
+
+    func testSandboxVerificationKeepsRefreshReconcileAndRestartInTheSandboxLane() async throws {
+        let cacheStore = ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!)
+        let api = FakeAPI(); api.verifiedEnvironment = "sandbox"
+        let store = FakeStore()
+        store.purchaseResult = .purchased(ProStoreTransaction(transactionId: "stub-transaction", signedTransaction: "stub-jws"))
+        func create() -> ProSubscriptionCoordinator {
+            ProSubscriptionCoordinator(store: store, api: api, sessionProvider: { String(repeating: "A", count: 43) },
+                ownerIdProvider: { "account-a" }, accountsEnabled: true, cacheStore: cacheStore)
+        }
+        let coordinator = create()
+        await coordinator.loadProduct(); await coordinator.refresh(); await coordinator.subscribe()
+        XCTAssertEqual(coordinator.cache?.environment, "sandbox")
+        api.entitlementState = "active"
+        await coordinator.refresh()
+        XCTAssertEqual(api.calls.last, "/v1/me/entitlement?environment=sandbox")
+        await coordinator.reconcile()
+        XCTAssertEqual((api.bodies.last ?? nil)?["environment"] as? String, "sandbox")
+        let restarted = create(); await restarted.refresh()
+        XCTAssertEqual(api.calls.last, "/v1/me/entitlement?environment=sandbox")
+        XCTAssertEqual(restarted.entitlement, .entitled)
+    }
+
+    func testApprovedSandboxReadContextDoesNotChangeTheProductionDefault() async {
+        let api = FakeAPI(); api.entitlementState = "none"
+        let coordinator = ProSubscriptionCoordinator(store: FakeStore(), api: api,
+            sessionProvider: { String(repeating: "A", count: 43) }, ownerIdProvider: { "account-a" }, accountsEnabled: true,
+            cacheStore: ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!), initialEnvironment: .sandbox)
+        await coordinator.refresh(); await coordinator.reconcile()
+        XCTAssertEqual(api.calls, ["/v1/me/entitlement?environment=sandbox", "/v1/me/entitlement/reconcile"])
+        XCTAssertEqual((api.bodies.last ?? nil)?["environment"] as? String, "sandbox")
+        XCTAssertEqual(coordinator.entitlement, .notEntitled)
+        let (production, _, productionAPI) = makeCoordinator()
+        await production.refresh()
+        XCTAssertEqual(productionAPI.calls.last, "/v1/me/entitlement")
+    }
+
+    func testProductionRefreshStartedBeforeSandboxVerificationCannotOverwriteTheNewCache() async {
+        let api = FakeAPI(); api.verifiedEnvironment = "sandbox"
+        let store = FakeStore(); store.purchaseResult = .purchased(ProStoreTransaction(transactionId: "stub-transaction", signedTransaction: "stub-jws"))
+        let (coordinator, _, _) = makeCoordinator(store: store, api: api)
+        await coordinator.loadProduct(); await coordinator.refresh()
+        api.beforeResponse = { path in
+            if path == "/v1/me/entitlement" {
+                api.beforeResponse = nil
+                await coordinator.subscribe()
+            }
+        }
+        await coordinator.refresh()
+        api.beforeResponse = nil
+        XCTAssertEqual(coordinator.cache?.environment, "sandbox")
+        XCTAssertEqual(coordinator.entitlement, .entitled)
+        XCTAssertEqual(store.finished, ["stub-transaction"])
+    }
+
+    func testSwitchingAccountsClearsPaidCacheAndReleaseReferenceWhenTheServerIsOffline() async {
+        var owner = "account-a"
+        let api = FakeAPI()
+        let store = FakeStore(); store.purchaseResult = .purchased(ProStoreTransaction(transactionId: "stub-transaction", signedTransaction: "stub-jws"))
+        let cacheStore = ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!)
+        let coordinator = ProSubscriptionCoordinator(store: store, api: api, sessionProvider: { String(repeating: "A", count: 43) },
+            ownerIdProvider: { owner }, accountsEnabled: true, cacheStore: cacheStore)
+        await coordinator.loadProduct(); await coordinator.refresh(); await coordinator.subscribe()
+        XCTAssertEqual(coordinator.entitlement, .entitled)
+        XCTAssertNotNil(coordinator.lastTransaction)
+        owner = "account-b"; api.throwOnEntitlement = true
+        await coordinator.refresh()
+        XCTAssertTrue(coordinator.signedIn)
+        XCTAssertNil(coordinator.cache)
+        XCTAssertNil(coordinator.lastTransaction)
+        XCTAssertEqual(coordinator.entitlement, .unknown)
+        await coordinator.releasePurchase()
+        XCTAssertFalse(api.calls.contains("/v1/me/purchases/release"))
+        XCTAssertNil(cacheStore.load(ownerId: "account-b"))
+    }
+
+    func testOfflineAccessTokenRefreshKeepsOnlyTheSameOwnersBoundedCache() async {
+        var token: String? = String(repeating: "A", count: 43)
+        var clock = Date(timeIntervalSince1970: 1_792_497_600) // October 20, 2026
+        let api = FakeAPI(); api.entitlementState = "active"
+        let cacheStore = ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!)
+        func create(_ owner: String) -> ProSubscriptionCoordinator {
+            ProSubscriptionCoordinator(store: FakeStore(), api: api, sessionProvider: { token }, ownerIdProvider: { owner },
+                accountsEnabled: true, cacheStore: cacheStore, now: { clock })
+        }
+        let coordinator = create("account-a"); await coordinator.refresh()
+        token = nil
+        let offline = create("account-a"); await offline.refresh()
+        XCTAssertTrue(offline.signedIn)
+        XCTAssertEqual(offline.entitlement, .entitled)
+        clock = clock.addingTimeInterval(7 * 86400)
+        await offline.refresh()
+        XCTAssertNil(offline.cache)
+        XCTAssertEqual(offline.entitlement, .unknown)
+        let otherAccount = create("account-b"); await otherAccount.refresh()
+        XCTAssertEqual(otherAccount.entitlement, .unknown)
+        XCTAssertNil(cacheStore.load(ownerId: "account-b"))
+        XCTAssertEqual(api.calls.count, 1)
+    }
+
+    func testPurchaseResponseAfterAnAccountSwitchCannotUnlockOrFinishForTheNewOwner() async {
+        var owner = "account-a"
+        let api = FakeAPI()
+        let store = FakeStore(); store.purchaseResult = .purchased(ProStoreTransaction(transactionId: "stub-transaction", signedTransaction: "stub-jws"))
+        let coordinator = ProSubscriptionCoordinator(store: store, api: api, sessionProvider: { String(repeating: "A", count: 43) },
+            ownerIdProvider: { owner }, accountsEnabled: true,
+            cacheStore: ProCacheStore(defaults: UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!))
+        await coordinator.loadProduct(); await coordinator.refresh()
+        api.onCall = { if $0 == "/v1/me/purchases/verify" { owner = "account-b" } }
+        await coordinator.subscribe()
+        XCTAssertEqual(coordinator.entitlement, .unknown)
+        XCTAssertNil(coordinator.cache)
+        XCTAssertNil(coordinator.lastTransaction)
+        XCTAssertTrue(store.finished.isEmpty)
+    }
+
+    func testDurableCacheRejectsOtherOwnersAndNeverAdoptsTheLegacyUnboundRecord() throws {
+        let defaults = UserDefaults(suiteName: "ProPaywallTests-\(UUID().uuidString)")!
+        let store = ProCacheStore(defaults: defaults)
+        let cache = SubscriptionEntitlementCache(version: "entitlement-cache-v1", environment: "sandbox", verified: true,
+            state: "active", verifiedUntil: nil, lastVerifiedAt: nil, offlineValidUntil: nil, contractVersion: "store-verification-v1")
+        defaults.set(try cache.encoded(), forKey: "pittech-subscription-cache-v1")
+        XCTAssertNil(store.load(ownerId: "account-a"))
+        XCTAssertNil(defaults.data(forKey: "pittech-subscription-cache-v1"))
+        store.save(cache, ownerId: "account-a")
+        XCTAssertEqual(ProCacheStore(defaults: defaults).load(ownerId: "account-a"), cache)
+        XCTAssertNil(store.load(ownerId: "account-b"))
+        XCTAssertNil(store.load(ownerId: "account-a"))
     }
 
     // MARK: - No purchase popup interrupts Live or Finish

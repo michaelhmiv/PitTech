@@ -1,3 +1,13 @@
+## October 20 online rollout checkpoint
+
+MCP #114 is fully planned and paused for online enablement #123. Isolated
+Railway staging is now provisioned at `5d246b2`: restricted runtime bootstrap
+reported readiness and the API HTTPS health check returned `200/ok`. All online
+feature flags remain off pending complete operational acceptance. Backend
+Actions 39449305667 passed 178 tests with zero skips. Native billing environment
+and account-cache fixes are in review, not yet verified on their final SHA.
+See [STAGING.md](STAGING.md) and [20-online-enablement.md](20-online-enablement.md).
+
 # Issue #89 delivery status
 
 Owner authorized implementation on October 14, including the deletion amendment.

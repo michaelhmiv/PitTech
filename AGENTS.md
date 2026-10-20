@@ -167,7 +167,10 @@ Online enablement is tracked in issue #123 and `docs/online/20-online-enablement
 On October 20 the owner authorized completing the online rollout and distributing
 the tested build through Firebase. Missing runtime/store inputs and verification
 remain real prerequisites; older “awaiting authorization” notes do not require
-another permission request. MCP #114 is fully planned and paused for this rollout.
+another permission request. MCP #114 is fully planned and paused for this rollout. The isolated staging
+foundation is deployed (see `docs/online/STAGING.md`); online feature flags stay
+off until full operational acceptance. The companion emulator selector now
+requires 71 tests, including persistent subscription-cache account isolation.
 
 If your change alters the repo layout, the workflows and what they prove,
 signing, the ads setup, or any rule above, update this file in the same PR.

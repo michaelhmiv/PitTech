@@ -15,6 +15,15 @@ enum ProProductConfiguration {
     static var isConfigured: Bool { !productId.isEmpty }
 }
 
+/// A read context selects a separate server record and cannot grant Pro.
+/// Purchase verification derives its environment from verified store evidence.
+enum SubscriptionEnvironment: String, Sendable {
+    case production, sandbox
+    var entitlementPath: String {
+        self == .sandbox ? "/v1/me/entitlement?environment=sandbox" : "/v1/me/entitlement"
+    }
+}
+
 // MARK: - Store-facing value types (StoreKit stays behind the client protocol)
 
 // The slice-15 free-feature inventory is the do-not-touch list: every gate

@@ -424,7 +424,7 @@ echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest,com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (70 tests)' "$companion_test_output"
+grep -q 'OK (71 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"

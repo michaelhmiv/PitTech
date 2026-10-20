@@ -7,6 +7,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 ## [Unreleased]
 
 ### Fixed
+- Draft Android and iOS subscription refresh/restore keeps the server-verified store environment and an account-bound offline cache. Switching accounts or receiving a late purchase response cannot reuse another account’s Pro access or purchase-management reference.
 - Android's unified-note UI test waits for the meal controls to finish loading before tapping the temperature shortcut.
 - Draft online billing uses Google's documented subscription lookup/acknowledgement routes and refreshed signing keys, and accepts renewal notifications only from the configured verified push identity. Store setup and live verification remain required before purchases are available.
 - A failed private-sync apply restores existing photo bytes instead of deleting the original file during rollback on either platform.

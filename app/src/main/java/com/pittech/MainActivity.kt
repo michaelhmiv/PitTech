@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
                     // A fresh sign-in re-verifies the subscription silently;
                     // entitlement transitions never interrupt an active cook.
                     launch {
-                        viewModel.account.presentation.map { it.signedIn }.distinctUntilChanged().collect {
+                        viewModel.account.presentation.map { viewModel.account.publicationUserId() }.distinctUntilChanged().collect {
                             viewModel.subscription.refresh()
                         }
                     }

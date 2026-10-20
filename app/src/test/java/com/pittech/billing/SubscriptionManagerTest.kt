@@ -51,19 +51,22 @@ class SubscriptionManagerTest {
         var throwOnVerify: Boolean = false,
         var throwOnEntitlement: Boolean = false,
         var conflictRecovery: String? = null,
+        var verifiedEnvironment: String = "production",
     ) : SubscriptionAPI {
         val calls = mutableListOf<String>()
+        val bodies = mutableListOf<JSONObject?>()
+        var onCall: ((String) -> Unit)? = null
 
-        private fun cache(state: String, verified: Boolean): JSONObject = JSONObject(
+        private fun cache(state: String, verified: Boolean, environment: String = "production"): JSONObject = JSONObject(
             """{"version":"entitlement-cache-v1","environment":"production","verified":$verified,"state":"$state","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1"}""",
-        )
+        ).put("environment", environment)
 
         private fun outcome(state: String): JSONObject {
             val outcome = JSONObject()
-                .put("cache", cache(state, true))
+                .put("cache", cache(state, true, verifiedEnvironment))
                 .put("applied", conflictRecovery == null)
                 .put("note", "stub-verified")
-                .put("transaction", JSONObject().put("store", "google").put("environment", "production").put("transactionKey", "stub-ref").put("evidenceRef", "a".repeat(64)))
+                .put("transaction", JSONObject().put("store", "google").put("environment", verifiedEnvironment).put("transactionKey", "stub-ref").put("evidenceRef", "a".repeat(64)))
             if (conflictRecovery != null) {
                 outcome.put("conflict", JSONObject().put("id", "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa").put("state", "open").put("recovery", conflictRecovery))
             }
@@ -72,13 +75,15 @@ class SubscriptionManagerTest {
 
         override suspend fun call(path: String, body: JSONObject?, access: String?): JSONObject {
             calls.add(path)
+            bodies.add(body)
+            onCall?.invoke(path)
             require(access != null)
             return when (path) {
-                "/v1/me/entitlement" -> run {
+                "/v1/me/entitlement", "/v1/me/entitlement?environment=sandbox" -> run {
                     if (throwOnEntitlement) throw SubscriptionFailure()
-                    cache(entitlementState, entitlementState != "unknown")
+                    cache(entitlementState, entitlementState != "unknown", if (path.endsWith("=sandbox")) "sandbox" else "production")
                 }
-                "/v1/me/entitlement/reconcile" -> cache(entitlementState, entitlementState != "unknown")
+                "/v1/me/entitlement/reconcile" -> cache(entitlementState, entitlementState != "unknown", body!!.getString("environment"))
                 "/v1/me/purchases/verify" -> run {
                     if (throwOnVerify) throw SubscriptionFailure()
                     require(body!!.getString("store") == "google")
@@ -100,7 +105,7 @@ class SubscriptionManagerTest {
         api: FakeAPI = FakeAPI(),
         token: String? = "A".repeat(43),
     ) = Triple(
-        SubscriptionManager(billing, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), api, { token }, true, MemorySubscriptionCacheStore()),
+        SubscriptionManager(billing, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), api, { token }, true, MemorySubscriptionCacheStore(), ownerId = { token?.let { "stub-account" } }),
         billing,
         api,
     )
@@ -237,7 +242,7 @@ class SubscriptionManagerTest {
     fun signOutClearsTheCacheSoAccountsNeverShareEntitlement() = runTest {
         var token: String? = "A".repeat(43)
         val api = FakeAPI(entitlementState = "active")
-        val manager = SubscriptionManager(FakeBilling(), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), api, { token }, true, MemorySubscriptionCacheStore())
+        val manager = SubscriptionManager(FakeBilling(), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), api, { token }, true, MemorySubscriptionCacheStore(), ownerId = { token?.let { "stub-account" } })
         manager.refresh()
         assertEquals(AdEntitlement.ENTITLED, manager.presentation.value.entitlement)
         token = null
@@ -284,5 +289,102 @@ class SubscriptionManagerTest {
         assertEquals(ProPlacement.ANALYSIS, manager.presentation.value.paywallEntry)
         manager.closePaywall()
         assertNull(manager.presentation.value.paywallEntry)
+    }
+
+    @Test
+    fun sandboxVerificationKeepsRefreshReconcileAndRestartInTheSandboxLane() = runTest {
+        val store = MemorySubscriptionCacheStore()
+        val api = FakeAPI(verifiedEnvironment = "sandbox")
+        val billing = FakeBilling(launch = ProPurchaseOutcome.Purchased(ProStorePurchase("stub-token", false, false)))
+        fun create() = SubscriptionManager(billing, this, api, { "A".repeat(43) }, true, store, ownerId = { "account-a" })
+        val manager = create()
+        manager.loadProduct(); manager.refresh(); manager.subscribe(null)
+        assertEquals("sandbox", manager.presentation.value.cache?.environment)
+        api.entitlementState = "active"
+        manager.refresh()
+        assertEquals("/v1/me/entitlement?environment=sandbox", api.calls.last())
+        manager.reconcile()
+        assertEquals("sandbox", api.bodies.last()!!.getString("environment"))
+        val restarted = create()
+        restarted.refresh()
+        assertEquals("/v1/me/entitlement?environment=sandbox", api.calls.last())
+        assertEquals(AdEntitlement.ENTITLED, restarted.entitlement.value)
+    }
+
+    @Test
+    fun approvedSandboxReadContextDoesNotChangeTheProductionDefault() = runTest {
+        val api = FakeAPI(entitlementState = "none")
+        val manager = SubscriptionManager(FakeBilling(), this, api, { "A".repeat(43) }, true,
+            MemorySubscriptionCacheStore(), ownerId = { "account-a" }, initialEnvironment = SubscriptionEnvironment.SANDBOX)
+        manager.refresh(); manager.reconcile()
+        assertEquals(listOf("/v1/me/entitlement?environment=sandbox", "/v1/me/entitlement/reconcile"), api.calls)
+        assertEquals("sandbox", api.bodies.last()!!.getString("environment"))
+        assertEquals(AdEntitlement.NOT_ENTITLED, manager.entitlement.value)
+        val (production, _, productionApi) = this@SubscriptionManagerTest.manager()
+        production.refresh()
+        assertEquals("/v1/me/entitlement", productionApi.calls.last())
+    }
+
+    @Test
+    fun switchingAccountsClearsPaidCacheAndReleaseReferenceEvenWhenTheServerIsOffline() = runTest {
+        var owner = "account-a"
+        val api = FakeAPI()
+        val billing = FakeBilling(launch = ProPurchaseOutcome.Purchased(ProStorePurchase("stub-token", false, false)))
+        val store = MemorySubscriptionCacheStore()
+        val manager = SubscriptionManager(billing, this, api, { "A".repeat(43) }, true, store, ownerId = { owner })
+        manager.loadProduct(); manager.refresh(); manager.subscribe(null)
+        assertEquals(AdEntitlement.ENTITLED, manager.entitlement.value)
+        assertTrue(manager.presentation.value.hasRelease)
+        owner = "account-b"; api.throwOnEntitlement = true
+        manager.refresh()
+        assertTrue(manager.presentation.value.signedIn)
+        assertNull(manager.presentation.value.cache)
+        assertFalse(manager.presentation.value.hasRelease)
+        assertEquals(AdEntitlement.UNKNOWN, manager.entitlement.value)
+        manager.releasePurchase()
+        assertFalse(api.calls.contains("/v1/me/purchases/release"))
+        assertNull(store.load("account-b"))
+    }
+
+    @Test
+    fun offlineAccessTokenRefreshKeepsOnlyTheSameOwnersBoundedCache() = runTest {
+        var token: String? = "A".repeat(43)
+        var clock = java.time.Instant.parse("2026-10-20T12:00:00Z").toEpochMilli()
+        val api = FakeAPI(entitlementState = "active")
+        val store = MemorySubscriptionCacheStore()
+        fun create(owner: String) = SubscriptionManager(FakeBilling(), this, api, { token }, true, store,
+            ownerId = { owner }, now = { clock })
+        val manager = create("account-a")
+        manager.refresh()
+        token = null
+        val offline = create("account-a")
+        offline.refresh()
+        assertTrue(offline.presentation.value.signedIn)
+        assertEquals(AdEntitlement.ENTITLED, offline.entitlement.value)
+        clock = java.time.Instant.parse("2026-10-26T12:00:00Z").toEpochMilli()
+        offline.refresh()
+        assertEquals(AdEntitlement.UNKNOWN, offline.entitlement.value)
+        assertNull(offline.presentation.value.cache)
+        val otherAccount = create("account-b")
+        otherAccount.refresh()
+        assertEquals(AdEntitlement.UNKNOWN, otherAccount.entitlement.value)
+        assertNull(store.load("account-b"))
+        assertEquals(1, api.calls.size)
+    }
+
+    @Test
+    fun purchaseResponseAfterAnAccountSwitchCannotUnlockOrAcknowledgeForTheNewOwner() = runTest {
+        var owner = "account-a"
+        val api = FakeAPI()
+        val billing = FakeBilling(launch = ProPurchaseOutcome.Purchased(ProStorePurchase("stub-token", false, false)))
+        val manager = SubscriptionManager(billing, this, api, { "A".repeat(43) }, true,
+            MemorySubscriptionCacheStore(), ownerId = { owner })
+        manager.loadProduct(); manager.refresh()
+        api.onCall = { if (it == "/v1/me/purchases/verify") owner = "account-b" }
+        manager.subscribe(null)
+        assertEquals(AdEntitlement.UNKNOWN, manager.entitlement.value)
+        assertNull(manager.presentation.value.cache)
+        assertFalse(manager.presentation.value.hasRelease)
+        assertTrue(billing.acknowledged.isEmpty())
     }
 }

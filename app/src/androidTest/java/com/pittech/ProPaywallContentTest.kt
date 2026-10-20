@@ -107,7 +107,26 @@ class ProPaywallContentTest {
     }
 
     private fun manager(scope: CoroutineScope, billing: FakeBilling, api: FakeAPI, token: String? = this.token) =
-        SubscriptionManager(billing, scope, api, { token }, true, MemorySubscriptionCacheStore())
+        SubscriptionManager(billing, scope, api, { token }, true, MemorySubscriptionCacheStore(), ownerId = { token?.let { "stub-account" } })
+
+    @Test
+    fun durableEntitlementCacheRejectsAnotherAccountAndDiscardsTheUnboundLegacyCache() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val prefs = context.getSharedPreferences("pittech-subscriptions", android.content.Context.MODE_PRIVATE)
+        val store = com.pittech.billing.SharedPrefsSubscriptionCacheStore(context)
+        val cache = com.pittech.billing.SubscriptionCache.parse(JSONObject(
+            """{"version":"entitlement-cache-v1","environment":"sandbox","verified":true,"state":"active","verifiedUntil":null,"lastVerifiedAt":null,"offlineValidUntil":null,"contractVersion":"store-verification-v1"}"""))
+        store.clear()
+        try {
+            prefs.edit().putString("entitlement_cache_v1", cache.json().toString()).commit()
+            assertNull(store.load("account-a"))
+            assertFalse(prefs.contains("entitlement_cache_v1"))
+            store.save("account-a", cache)
+            assertEquals(cache, com.pittech.billing.SharedPrefsSubscriptionCacheStore(context).load("account-a"))
+            assertNull(store.load("account-b"))
+            assertNull(store.load("account-a"))
+        } finally { store.clear() }
+    }
 
     private fun show(manager: SubscriptionManager, previouslyEntitled: Boolean = false) {
         compose.setContent { PitTechTheme { ProGateDialog(manager, previouslyEntitled, onSignIn = {}) } }

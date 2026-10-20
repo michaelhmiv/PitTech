@@ -63,7 +63,11 @@ struct SubscriptionEntitlementCache: Codable, Equatable, Sendable {
             if let date = plain.date(from: string) { return date }
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO-8601 date")
         })
-        return try decoder.decode(SubscriptionEntitlementCache.self, from: data)
+        let cache = try decoder.decode(SubscriptionEntitlementCache.self, from: data)
+        guard SubscriptionEnvironment(rawValue: cache.environment) != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid store environment"))
+        }
+        return cache
     }
 
     /// Contract-form JSON that round-trips through `decode(_:)`. The default

@@ -62,6 +62,7 @@ import XCTest
         """.utf8))
         XCTAssertEqual(unknown.entitlement(), .unknown)
         XCTAssertFalse(unknown.offlineUsable())
+        XCTAssertThrowsError(SubscriptionEntitlementCache.decode(Data(json.replacingOccurrences(of: "\"production\"", with: "\"other\"").utf8)))
     }
 
     func testConsentManagerPersistsPreviouslyEntitledAndHoldsAdsWhileUnverified() {
@@ -77,4 +78,76 @@ import XCTest
         XCTAssertFalse(shouldRequestAds(entitlement: manager.entitlement, previouslyEntitled: manager.previouslyEntitled))
         XCTAssertFalse(manager.adsServingAllowed)
     }
+}
+
+final class SubscriptionTransportTests: XCTestCase {
+    func testExactSandboxReadIsAnAuthenticatedGetWithBoundedResponsesAndNoRedirects() async throws {
+        for path in ["/v1/me/entitlement", "/v1/me/entitlement?environment=sandbox"] {
+            for status in [200, 302, 401, 999] {
+                let id = UUID().uuidString
+                SubscriptionURLProtocol.set(id, path: path, status: status)
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [SubscriptionURLProtocol.self]
+                configuration.httpAdditionalHeaders = ["X-Subscription-Test": id]
+                do {
+                    let data = try await NativeSubscriptionClient(configuration: configuration).call(path, body: nil, access: String(repeating: "A", count: 43))
+                    XCTAssertEqual(status, 200)
+                    XCTAssertEqual(data, Data("{}".utf8))
+                } catch {
+                    XCTAssertNotEqual(status, 200)
+                    XCTAssertFalse(error.localizedDescription.contains("private-provider-diagnostic"))
+                }
+            }
+        }
+    }
+
+    func testUnapprovedQueriesAndReadBodiesAreRejectedBeforeNetworkAccess() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SubscriptionURLProtocol.self]
+        let client = NativeSubscriptionClient(configuration: configuration)
+        for path in ["/v1/me/entitlement?environment=production", "/v1/me/entitlement?environment=sandbox&environment=production",
+                     "/v1/me/entitlement?environment=sandbox#fragment", "/v1/me/purchases/verify?environment=sandbox"] {
+            do {
+                _ = try await client.call(path, body: nil, access: String(repeating: "A", count: 43))
+                XCTFail("Unapproved query accepted")
+            } catch NativeSubscriptionError.invalid {} catch { XCTFail("Unexpected error: \(error)") }
+        }
+        do {
+            _ = try await client.call("/v1/me/entitlement?environment=sandbox", body: [:], access: String(repeating: "A", count: 43))
+            XCTFail("GET body accepted")
+        } catch NativeSubscriptionError.invalid {} catch { XCTFail("Unexpected error: \(error)") }
+    }
+}
+
+private final class SubscriptionURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var fixtures: [String: (path: String, status: Int)] = [:]
+    static func set(_ id: String, path: String, status: Int) {
+        lock.lock(); defer { lock.unlock() }
+        fixtures[id] = (path, status)
+    }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock()
+        let fixture = Self.fixtures.removeValue(forKey: request.value(forHTTPHeaderField: "X-Subscription-Test") ?? "")
+        Self.lock.unlock()
+        guard let fixture else {
+            XCTFail("Unexpected network access")
+            client?.urlProtocol(self, didFailWithError: NativeSubscriptionError.invalid)
+            return
+        }
+        XCTAssertEqual(request.url?.absoluteString, "https://api.pittech.app" + fixture.path)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertNil(request.httpBody)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "A", count: 43))
+        let bytes = fixture.status == 999 ? Data(repeating: 120, count: 65537) : Data((fixture.status == 200 ? "{}" : "private-provider-diagnostic").utf8)
+        let response = HTTPURLResponse(url: request.url!, statusCode: fixture.status == 999 ? 200 : fixture.status,
+            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json", "Location": "https://attacker.invalid/", "Set-Cookie": "sensitive=discard"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: bytes)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

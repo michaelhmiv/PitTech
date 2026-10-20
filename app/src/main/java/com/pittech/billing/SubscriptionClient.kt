@@ -33,9 +33,10 @@ internal class SubscriptionClient(client: OkHttpClient = OkHttpClient()) : Subsc
     private val client = client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(okhttp3.CookieJar.NO_COOKIES).cache(null).callTimeout(30, TimeUnit.SECONDS).build()
 
     override suspend fun call(path: String, body: JSONObject?, access: String?): JSONObject {
-        require(path in setOf("/v1/me/entitlement", "/v1/me/entitlement/reconcile", "/v1/me/purchases/verify", "/v1/me/purchases/restore", "/v1/me/purchases/release"))
+        val read = path == "/v1/me/entitlement" || path == "/v1/me/entitlement?environment=sandbox"
+        require(read || path in setOf("/v1/me/entitlement/reconcile", "/v1/me/purchases/verify", "/v1/me/purchases/restore", "/v1/me/purchases/release"))
         val request = Request.Builder().url("https://api.pittech.app$path").header("Accept", "application/json").header("Cache-Control", "no-store")
-        if (path == "/v1/me/entitlement") {
+        if (read) {
             require(body == null)
             request.get()
         } else {
