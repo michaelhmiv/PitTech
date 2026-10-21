@@ -71,7 +71,7 @@ async function ensureApple(path, token, matches, createPath, body, stage) {
   insist(found.length <= 1, stage, 'AMBIGUOUS_EXISTING_RESOURCE');
   if (!found.length) {
     const result = await postJson(appleRoot + createPath, token, body, stage);
-    if (result.data?.id) report.lastCreatedAppleResource = { type: result.data.type, id: result.data.id, stage };
+    if (result.data?.id) { report.lastCreatedAppleResource = { type: result.data.type, id: result.data.id, stage }; (report.createdAppleResources ??= []).push(report.lastCreatedAppleResource); }
     found = (await appleCollection(path, token)).filter(matches);
   }
   insist(found.length === 1, stage, 'CREATION_NOT_CONFIRMED');
@@ -118,26 +118,39 @@ async function configureApple() {
   insist(subscription.attributes?.subscriptionPeriod === 'ONE_MONTH', 'apple_product_readback', 'MONTHLY_CONTRACT_MISMATCH');
   await ensureApple('/v1/subscriptions/' + subscription.id + '/subscriptionLocalizations?limit=200', token, item => item.attributes?.locale === 'en-US', '/v1/subscriptionLocalizations',
     { data: { type: 'subscriptionLocalizations', attributes: { name: 'PitTech Pro', locale: 'en-US', description: 'Ad-free cooking, personal analysis, and themes.' }, relationships: { subscription: { data: { type: 'subscriptions', id: subscription.id } } } } }, 'apple_localize_subscription');
+  // UPFRONT pays for this ONE_MONTH period. Apple's MONTHLY plan is a
+  // 12-month installment commitment and is outside this product's contract.
+  const availability = await ensureApple('/v1/subscriptions/' + subscription.id + '/planAvailabilities?limit=200', token, item => item.attributes?.planType === 'UPFRONT', '/v1/subscriptionPlanAvailabilities',
+    { data: { type: 'subscriptionPlanAvailabilities', attributes: { planType: 'UPFRONT', availableInNewTerritories: false }, relationships: {
+      subscription: { data: { type: 'subscriptions', id: subscription.id } },
+      availableTerritories: { data: [{ type: 'territories', id: 'USA' }] }
+    } } }, 'apple_configure_one_month_availability');
+  const territories = await appleCollection('/v1/subscriptionPlanAvailabilities/' + availability.id + '/availableTerritories?limit=200', token);
+  insist(territories.length === 1 && territories[0].id === 'USA', 'apple_availability_readback', 'UNEXPECTED_TERRITORY_AVAILABILITY');
   const points = await appleCollection('/v1/subscriptions/' + subscription.id + '/pricePoints?filter[territory]=USA&include=territory&limit=8000', token);
   const target = points.filter(item => Number(item.attributes?.customerPrice) === 3);
   insist(target.length === 1, 'apple_us_price', 'EXACT_USD_3_PRICE_POINT_NOT_AVAILABLE');
-  const prices = await appleCollection('/v1/subscriptions/' + subscription.id + '/prices?filter[territory]=USA&include=subscriptionPricePoint&limit=200', token);
+  const prices = await appleCollection('/v1/subscriptions/' + subscription.id + '/prices?filter[planType]=UPFRONT&filter[territory]=USA&include=subscriptionPricePoint&limit=200', token);
   insist(prices.every(item => item.relationships?.subscriptionPricePoint?.data?.id === target[0].id), 'apple_us_price', 'EXISTING_PRICE_REQUIRES_REVIEW');
   if (!prices.length) await postJson(appleRoot + '/v1/subscriptionPrices', token, {
-    data: { type: 'subscriptionPrices', attributes: { preserveCurrentPrice: true }, relationships: {
+    data: { type: 'subscriptionPrices', attributes: { startDate: null, planType: 'UPFRONT' }, relationships: {
       subscription: { data: { type: 'subscriptions', id: subscription.id } },
       subscriptionPricePoint: { data: { type: 'subscriptionPricePoints', id: target[0].id } }
     } }
   }, 'apple_set_initial_us_price');
-  const finalPrices = await appleCollection('/v1/subscriptions/' + subscription.id + '/prices?filter[territory]=USA&include=subscriptionPricePoint&limit=200', token);
+  const finalPrices = await appleCollection('/v1/subscriptions/' + subscription.id + '/prices?filter[planType]=UPFRONT&filter[territory]=USA&include=subscriptionPricePoint&limit=200', token);
   insist(finalPrices.some(item => item.relationships?.subscriptionPricePoint?.data?.id === target[0].id), 'apple_price_readback', 'PRICE_NOT_CONFIRMED');
   const final = await getJson(appleRoot + '/v1/subscriptions/' + subscription.id, token, 'apple_product_readback');
-  return { ok: true, productId, appId: apps[0].id, groupId: group.id, groupVersionId: groupVersion.id, subscriptionId: subscription.id, subscriptionPeriod: final.data?.attributes?.subscriptionPeriod, state: final.data?.attributes?.state, usCustomerPrice: target[0].attributes.customerPrice, reviewSubmitted: false, availabilityConfigured: false };
+  return { ok: true, productId, appId: apps[0].id, groupId: group.id, groupVersionId: groupVersion.id, subscriptionId: subscription.id, subscriptionPeriod: final.data?.attributes?.subscriptionPeriod, state: final.data?.attributes?.state, usCustomerPrice: target[0].attributes.customerPrice, reviewSubmitted: false, planType: 'UPFRONT', availabilityConfigured: true, territories: ['USA'] };
 }
 insist(process.env.STORE_SETUP_CONFIRM === 'configure-single-monthly-product', 'configuration', 'SETUP_CONFIRM_REQUIRED');
-try { report.google = await configureGoogle(); } catch (error) { report.google = failure(error, 'google'); }
+const provider = requireEnv('STORE_SETUP_PROVIDER');
+insist(['apple', 'both'].includes(provider), 'configuration', 'INVALID_PROVIDER_SELECTION');
+report.selectedProvider = provider;
+if (provider === 'both') { try { report.google = await configureGoogle(); } catch (error) { report.google = failure(error, 'google'); } }
+else report.google = { ok: false, blocked: true, code: 'PERMISSION_DENIED', observedRunId: '39525750420', attemptedThisRun: false };
 try { report.apple = await configureApple(); } catch (error) { report.apple = failure(error, 'apple'); }
 await mkdir('store-readiness', { recursive: true });
 await writeFile('store-readiness/monthly-product-setup.json', JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
 console.info(JSON.stringify(report, null, 2));
-if (!report.google.ok || !report.apple.ok) process.exitCode = 1;
+if ((provider === 'both' && !report.google.ok) || !report.apple.ok) process.exitCode = 1;

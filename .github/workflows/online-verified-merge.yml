@@ -1,0 +1,40 @@
+name: Merge verified online candidate
+
+on:
+  push:
+    branches: [work/online-signing-evidence]
+    paths:
+      - .github/workflows/online-verified-merge.yml
+      - .github/scripts/online-verified-merge.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pittech-merge-online-candidate-124
+  cancel-in-progress: false
+
+jobs:
+  verified-merge:
+    name: Merge PR 124 only after all six exact-source workflows pass
+    if: github.repository == 'michaelhmiv/PitTech' && github.ref == 'refs/heads/work/online-signing-evidence'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Wait for the exact candidate, then perform the owner-authorized merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/online-verified-merge.py
+      - name: Retain source, check and merge evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-online-verified-merge
+          path: verified-merge/result.json
+          if-no-files-found: error
+          retention-days: 30
