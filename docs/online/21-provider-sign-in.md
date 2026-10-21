@@ -482,10 +482,9 @@ Native (existing suites, fakes only — no live Apple/Google call anywhere):
 - The Play app-signing certificate fingerprint is still unknown (same gap
   as `assetlinks.json`). Google sign-in on production-package builds
   cannot be verified until it is read from Play Console and registered.
-- Sign in with Apple on the staging App ID (`com.pittech.staging`) gives
-  staging testers a real Apple prompt against a non-store build —
-  acceptable for TestFlight/internal staging, but the owner should
-  confirm staging Apple sign-ins may use personal Apple IDs.
+- Sign in with Apple on the staging App ID (`com.pittech.staging`):
+  RESOLVED by the owner (2026-10-21) — staging testers using their
+  personal Apple IDs against the staging build is fine.
 - Detach/unlink: RESOLVED by the owner (2026-10-21). No detach in this
   slice; every account keeps email as a second working authenticator
   alongside its provider (see section 2), and a wrong attach beyond
