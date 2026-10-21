@@ -192,8 +192,13 @@ exact-main CI is established through the connected GitHub integration, never
 assumed from a workflow-token merge. The retained CI-only operations under
 `.github/scripts/online-*` (public signer evidence, read-only store inventory,
 idempotent Apple draft completion) are dispatch-only on main. Apple's monthly
-product is a draft; Play pricing access and staging mail are still
-blocked. See docs/online/20-online-enablement.md.
+product is a draft (state MISSING_METADATA). Play: the `pittech.pro.monthly`
+draft exists — created 2026-10-21 after the CI publisher identity received
+"Manage store presence" (base plan `monthly`, state DRAFT, US $3). Staging
+mail is still blocked: pittech.app was purchased through Railway Domains, so
+Railway manages its DNS, and the four Resend staging records go in through
+the Railway API once it recovers from the 2026-10-21 platform incident.
+See docs/online/20-online-enablement.md.
 
 If your change alters the repo layout, the workflows and what they prove,
 signing, the ads setup, or any rule above, update this file in the same PR.

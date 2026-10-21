@@ -1,7 +1,11 @@
 # Provider sign-in — Sign in with Apple (iOS) and Sign in with Google (Android)
 
 Implementation plan for issue #123, from the owner's 2026-10-21 decision.
-Not yet implemented. Email code/link sign-in (PR 08/09) stays as the recovery
+Implemented 2026-10-21: backend PR #127 (main `adcaf40`), iOS PR #128 (main
+`306c479`), Android PR #130. Code on all three slices is inert until the
+deployment's provider configuration is installed (`AUTH_APPLE_AUDIENCES`,
+`AUTH_GOOGLE_WEB_CLIENT_ID`) and accounts are enabled at staging acceptance.
+Email code/link sign-in (PR 08/09) stays as the recovery
 and cross-platform bridge; provider sign-in is an additional authenticator on
 the same account, never a parallel account system. This slice lands before
 staging activation: staging acceptance step 2 expands to cover it (see
