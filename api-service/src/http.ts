@@ -69,7 +69,9 @@ export function makeServer(relay: Relay, options: Options) {
         res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
         res.end(operatorPage(nonce));return;
       }
-      const authRoute = ['/v1/auth/challenges', '/v1/auth/verify', '/v1/auth/refresh', '/v1/auth/logout', '/v1/me'].includes(req.url ?? '') ? req.url! : undefined;
+      const providerRoutes = options.auth?.providers ? ['/v1/auth/provider/challenges', '/v1/auth/provider/verify', '/v1/me/identities'] : [];
+      if (options.auth?.providers?.apple && options.deletion) providerRoutes.push('/v1/auth/apple/notifications');
+      const authRoute = ['/v1/auth/challenges', '/v1/auth/verify', '/v1/auth/refresh', '/v1/auth/logout', '/v1/me', ...providerRoutes].includes(req.url ?? '') ? req.url! : undefined;
       if (authRoute && options.auth && (method === 'POST' && authRoute !== '/v1/me' || method === 'GET' && authRoute === '/v1/me')) {
         route = authRoute;
         if (active >= 2) throw new ApiError(503, 'temporarily_unavailable'); active++; counted = true;
@@ -87,7 +89,15 @@ export function makeServer(relay: Relay, options: Options) {
         if (authRoute === '/v1/auth/challenges') json(202, await options.auth.start({ email: body.email, idempotencyId: body.idempotencyId, proofChallenge: body.proofChallenge }));
         else if (authRoute === '/v1/auth/verify') json(200, await options.auth.verify({ challengeId: body.challengeId, verifier: body.verifier, code: body.code, token: body.token, idempotencyId: body.idempotencyId }));
         else if (authRoute === '/v1/auth/refresh') json(200, await options.auth.refresh(body.refreshToken, body.idempotencyId));
-        else { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
+        else if (authRoute === '/v1/auth/logout') { await options.auth.logout(body.refreshToken); res.statusCode = 204; res.end(); }
+        else if (authRoute === '/v1/auth/provider/challenges') {
+          const header = req.headers.authorization, bearer = header === undefined ? undefined : /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header)?.[1];
+          if (header !== undefined && bearer === undefined) throw new ApiError(401, 'sign_in_unavailable');
+          json(202, await options.auth.startProvider({ provider: body.provider, idempotencyId: body.idempotencyId, proofChallenge: body.proofChallenge }, bearer));
+        }
+        else if (authRoute === '/v1/auth/provider/verify') json(200, await options.auth.verifyProvider({ challengeId: body.challengeId, verifier: body.verifier, idToken: body.idToken, idempotencyId: body.idempotencyId }));
+        else if (authRoute === '/v1/me/identities') json(200, await options.auth.attachIdentity(/^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '')?.[1], { challengeId: body.challengeId, verifier: body.verifier, idToken: body.idToken, idempotencyId: body.idempotencyId }));
+        else json(200, await options.auth.appleNotification({ signedPayload: body.signedPayload }));
         return;
       }
       const syncRoute = privateSyncRoute(req.url ?? '', method);
@@ -206,6 +216,7 @@ export function makeServer(relay: Relay, options: Options) {
           rate_limited: 'Too many attempts. Wait before trying again.',
           uploads_paused: 'New uploads are paused. You can still share a file or image.',
           retry_content_changed: 'This retry contains different content. Start a new share.',
+          identity_link_required: 'Sign in with your existing method first, then add this sign-in in account settings.',
           pro_required: 'Community benchmarks need PitTech Pro. Your personal analysis is unchanged.',
           unknown_community_run: 'This aggregate run is unavailable. Try the latest figures instead.',
           invalid_community_filter: 'This benchmark filter is not supported. Choose a listed bucket or metric.',

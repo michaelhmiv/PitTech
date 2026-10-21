@@ -5,7 +5,8 @@ export interface GoogleOidcKeys {
   has(id: string): boolean;
 }
 
-const endpoint = 'https://www.googleapis.com/oauth2/v3/certs';
+export const GOOGLE_CERTS_ENDPOINT = 'https://www.googleapis.com/oauth2/v3/certs';
+export const APPLE_KEYS_ENDPOINT = 'https://appleid.apple.com/auth/keys';
 const unavailable = () => new Error('OIDC signing keys unavailable');
 
 /** Google's discovery document names a JWKS endpoint, not a kid -> PEM map. */
@@ -37,13 +38,15 @@ export class GoogleOidcKeyCache implements GoogleOidcKeys {
   private validUntil = 0;
   private request: typeof fetch;
   private clock: () => number;
-  constructor(request: typeof fetch = fetch, clock: () => number = Date.now) {
-    this.request = request; this.clock = clock;
+  private endpoint: string;
+  constructor(request: typeof fetch = fetch, clock: () => number = Date.now, endpoint: string = GOOGLE_CERTS_ENDPOINT) {
+    if (endpoint !== GOOGLE_CERTS_ENDPOINT && endpoint !== APPLE_KEYS_ENDPOINT) throw new Error('Unknown OIDC key endpoint');
+    this.request = request; this.clock = clock; this.endpoint = endpoint;
   }
   get(id: string): string | undefined { return this.clock() < this.validUntil ? this.keys.get(id) : undefined; }
   has(id: string): boolean { return this.get(id) !== undefined; }
   async refresh(): Promise<void> {
-    const response = await this.request(endpoint, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+    const response = await this.request(this.endpoint, { redirect: 'error', signal: AbortSignal.timeout(10000) });
     if (!response.ok || !response.body) { await response.body?.cancel(); throw unavailable(); }
     const reader = response.body.getReader(), chunks: Buffer[] = [];
     let size = 0;
