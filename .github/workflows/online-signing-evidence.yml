@@ -1,0 +1,75 @@
+name: Dev app link signing identity
+
+on:
+  push:
+    branches: [work/online-signing-evidence]
+    paths: [.github/workflows/online-signing-evidence.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pittech-online-signing-evidence
+  cancel-in-progress: true
+
+jobs:
+  public-certificate:
+    name: Export public Firebase Dev signing identity
+    if: github.repository == 'michaelhmiv/PitTech'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Export only the existing upload key's public certificate
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Required signing secret $variable is not configured."
+              exit 1
+            fi
+          done
+          secret_dir=$(mktemp -d "$RUNNER_TEMP/pittech-public-certificate.XXXXXX")
+          trap 'rm -rf "$secret_dir"' EXIT
+          chmod 700 "$secret_dir"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$secret_dir/upload.jks"
+          chmod 600 "$secret_dir/upload.jks"
+          mkdir -p public-signing-identity
+          if ! keytool -exportcert -rfc -keystore "$secret_dir/upload.jks" \
+            -alias "$ANDROID_KEY_ALIAS" -storepass:env ANDROID_KEYSTORE_PASSWORD \
+            -file public-signing-identity/upload-certificate.pem > "$secret_dir/keytool.log" 2>&1; then
+            echo "::error::Public certificate export failed; private key material was not exported."
+            exit 1
+          fi
+          fingerprint=$(openssl x509 -in public-signing-identity/upload-certificate.pem -noout -fingerprint -sha256)
+          fingerprint="${fingerprint#*=}"
+          python3 - "$fingerprint" <<'PY'
+          import json, os, re, sys
+          from pathlib import Path
+          fingerprint = sys.argv[1]
+          if not re.fullmatch(r"(?:[A-F0-9]{2}:){31}[A-F0-9]{2}", fingerprint):
+              raise SystemExit("Invalid certificate fingerprint")
+          evidence = {
+              "packageName": "com.pittech.dev",
+              "signingIdentity": "Existing Android upload key used by firebase-dev-distribution.yml",
+              "sha256CertificateFingerprint": fingerprint,
+              "sourceSha": os.environ["GITHUB_SHA"],
+              "runId": os.environ["GITHUB_RUN_ID"],
+              "purpose": "Configure the staging assetlinks.json association; no app was distributed"
+          }
+          Path("public-signing-identity/evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+          print(json.dumps(evidence, indent=2))
+          PY
+
+      - name: Retain public certificate and association evidence
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-dev-signing-identity
+          path: public-signing-identity/
+          if-no-files-found: error
+          retention-days: 30
