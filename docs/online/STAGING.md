@@ -1,110 +1,132 @@
 # Isolated Railway staging
 
-Updated October 20, 2026. The **PitTech Staging** foundation is now provisioned
-and running in its separate project. Production's Feedback Relay and Privacy
-services were not changed. Automatic PR deployments remain disabled; the API
-and one-off bootstrap are pinned to the tested source below.
+Updated October 20, 2026, evening in New York. The isolated foundation,
+private runtime/storage probe and staging API deployments have completed
+successfully. Online features remain off while mail, stores and complete
+account/community/sync/deletion acceptance are unfinished.
 
-| Resource | ID / observed configuration |
+| Resource | Observed configuration |
 |---|---|
-| Project | `5437a627-75bc-4750-9677-c2bcc63d82b8` |
-| Environment | `66718bed-3e9f-4372-88d9-3e3969a3b59f` (`staging`) |
-| Applied patch | `57a0ad2f-188f-4139-855f-39ec60cb12b4`; 77 reviewed non-destructive additions, applied October 20 |
-| API | `51a318b0-73a9-4637-bae9-298b2ddf7634`; source `5d246b2f68bb18c4f4ee73fc54c5516a7344da6c`, `api-service/Dockerfile`, `/healthz`; one `iad` replica |
-| API deployment | `bffac66c-4456-47e0-94df-fb57bb49a503`; observed `SUCCESS` |
-| Health endpoint | `https://pittechapi-staging.up.railway.app/healthz`; actual HTTPS response `200`, `{"status":"ok"}` |
-| Private bootstrap | `37ec1f42-86f7-48c3-ace8-881f262a8188`; same pinned image, one `iad` replica; `node --max-old-space-size=256 src/bootstrap.ts`; restart `NEVER`; no domain |
-| Bootstrap deployment | `3e7c7ea5-c39d-4cdc-853c-7f40c436d959`; observed `SUCCESS`, sanitized log `runtime_bootstrap_ready` |
-| Postgres | `e197d93d-3d7d-40a9-a92f-825e3909ce3a`; `postgres:16`, private only; one `iad` replica |
-| Postgres deployment | `16863bf5-5306-4d74-ac22-58c3ba66c0dd`; observed `SUCCESS` |
+| Project / environment | `5437a627-75bc-4750-9677-c2bcc63d82b8` / `66718bed-3e9f-4372-88d9-3e3969a3b59f` (`staging`) |
+| API | `51a318b0-73a9-4637-bae9-298b2ddf7634`; source `9ee2e2d748271ed4f5bb26358dfbde700e5d0680`; `api-service/Dockerfile`; one `iad` replica |
+| Latest API deployment | `22329c13-36bd-4bab-9a3a-debe941e4150`, `SUCCESS`; deployment metadata confirms `9ee2e2d` |
+| API health | `https://api-staging.pittech.app/healthz` returned `200/ok`; deployment `2143a30f-0eae-4c74-a261-0cc1818b39dc` also recovered to `200/ok` after an explicit restart |
+| Public origin | `https://staging.pittech.app`; valid DNS/TLS |
+| Private bootstrap | `37ec1f42-86f7-48c3-ace8-881f262a8188`; initial tested source `5d246b2`; `node --max-old-space-size=256 src/bootstrap.ts`; restart `NEVER`; no domain |
+| Bootstrap deployment | `3e7c7ea5-c39d-4cdc-853c-7f40c436d959`, `SUCCESS`; `runtime_bootstrap_ready` |
+| Private readiness service | `fc44071f-a2f5-4c1a-8e70-694b6eb6a33e`; `node --max-old-space-size=256 src/staging-readiness.ts`; restart `NEVER`; no domain or administrator URL |
+| Readiness deployment | `8ed0e6fd-5487-444c-9b37-33f112937d02`, `SUCCESS`; all seven expected readiness labels observed |
+| Postgres | `e197d93d-3d7d-40a9-a92f-825e3909ce3a`; `postgres:16`; private only; one `iad` replica |
+| Postgres deployment | `16863bf5-5306-4d74-ac22-58c3ba66c0dd`, `SUCCESS` |
 | Database volume | `2e413ebe-4e90-4636-9583-ce063cd79b7a`; 1,024 MB at `/var/lib/postgresql/data` |
-| Private bucket | `e48016ca-1b62-439d-b883-1e9619659793`; `PitTechRelayPacks`, provisioned in `iad` |
-| Object connection | Provider endpoint `https://t3.storageapi.dev`, SDK region `auto`, virtual-host URLs; values confirmed after provisioning |
+| Private bucket | `e48016ca-1b62-439d-b883-1e9619659793`; `PitTechRelayPacks`, `iad`; endpoint `https://t3.storageapi.dev`, region `auto`, virtual-host URLs |
 
-## What the deployment proves
+## Observed foundation evidence
 
-Backend Actions [39449305667](https://github.com/michaelhmiv/PitTech/actions/runs/39449305667)
-passes at the deployed SHA: 178 tests, zero failures/skips, strict typecheck,
-real Postgres 16 and production-container checks. This includes Google provider
-routing/JWKS/notification identity and bootstrap role/idempotency tests.
+Backend [Actions 39513125120](https://github.com/michaelhmiv/PitTech/actions/runs/39513125120)
+passed at the deployed source: 181 tests with no skips, strict typecheck,
+real Postgres 16 and production-container checks. It covers Google provider
+routing/acknowledgement/JWKS/notification identity, role/bootstrap idempotency
+and the shared environment profile.
 
-The private bootstrap applied the eight existing versioned migrations and the
-reviewed operations SQL, revoked PUBLIC schema creation, created independent
-restricted API/lifecycle/sync logins, and actually connected with all three
-runtime passwords before logging readiness. API startup then successfully
-queried its relay schema before serving its health endpoint. Runtime passwords,
-auth/lifecycle/sync keys and private DB/object connection values exist only in
-Railway's secret variables/references. The API has no administrator URL.
+The bootstrap applied the eight versioned migrations and reviewed operations
+SQL, revoked PUBLIC schema creation, created independent restricted
+API/lifecycle/sync logins and connected with each runtime password. Existing
+passwords are not silently rotated. Administrator credentials remain confined
+to the private bootstrap service; the API and readiness service have none.
+See `api-service/operations/BOOTSTRAP.md`.
 
-Reference variables establish Postgres → bootstrap → API ordering when the
-staged batch is applied. A later independent deployment does not rerun that
-batch ordering; keep migration/runtime readiness explicit. The bootstrap is an
-initial private job, not a periodic worker or API runtime credential source
-that may be published. Idempotent reruns do not rotate existing passwords.
-See `api-service/operations/BOOTSTRAP.md` for the command and privilege checks.
+The deployed probe logged `database_api_ready`, `database_lifecycle_ready`,
+`database_sync_ready`, `relay_storage_ready`, `publications_storage_ready`,
+`private-sync_storage_ready` and `staging_foundation_readiness_ready`. It
+verified the expected runtime usernames, permitted and forbidden reads, private
+object access, identical-body retries, changed-body rejection, provider
+versioning checks, deletion and late-upload fences. It removed only its own
+fresh synthetic probe keys. These are actual provider results, not only mocks.
 
-## Features still gated
+Railway's readiness service config retains the `62017a3` pin while deployment
+metadata reports `9ee2e2d`. The backend tree is identical between those commits.
+Keep both observations; do not infer the executed commit from config alone.
+The current API's deployment metadata independently confirms `9ee2e2d`.
+
+## Native origins and association identities
+
+`ONLINE_ENVIRONMENT=staging`, `AUTH_PUBLIC_ORIGIN=https://staging.pittech.app`
+and `AUTH_FROM=signin@auth-staging.pittech.app` are configured. Both custom
+hosts have valid TLS; their CNAME targets are `5w9pj6wa.up.railway.app`
+(API) and `r1h17h7b.up.railway.app` (public web).
+
+The staging Apple association includes `R42LWFBXBH.com.pittech.staging` and
+the registered `R42LWFBXBH.com.pittech` store-sandbox identity. The latter
+requires the explicit native StoreSandbox configuration; it does not change
+the production app's associated-domain entitlement.
+
+The live Android `assetlinks.json` returned 200 with `com.pittech.dev` and
+the exact existing Firebase Dev upload certificate fingerprint:
+
+`63:BA:B5:50:81:BA:92:FE:A8:81:7E:55:F0:F8:B2:C9:A8:3C:1D:C1:2A:E8:F0:CE:07:F0:6F:A5:59:5D:7E:2C`
+
+The public certificate/evidence is retained in
+[Actions 39524579064](https://github.com/michaelhmiv/PitTech/actions/runs/39524579064).
+No private key was exported. Installed native-link verification is still
+required. Play-signed store-sandbox builds additionally need the actual Play
+app-signing certificate and an association that supports their registered
+package alongside Dev; do not reuse the upload certificate as Play proof.
+
+## Mail and store status
+
+Name.com is authoritative for `pittech.app`. Public DNS returned NXDOMAIN for
+all four required `auth-staging` records; Resend reports verification failed.
+The secure DNS-account sign-in was not completed and will not be requested
+again without an instruction to sign in. No staging sending key is installed.
+`auth.pittech.app` remains verified; production sender credentials are not a
+replacement for isolated staging mail. Real delivery is unverified.
+
+[Catalog inventory 39525212355](https://github.com/michaelhmiv/PitTech/actions/runs/39525212355)
+read both stores through existing CI credentials and confirmed empty catalogs.
+Apple configuration then completed in
+[Actions 39526241364](https://github.com/michaelhmiv/PitTech/actions/runs/39526241364):
+
+| Apple field | Verified value |
+|---|---|
+| App / group | `6821518899` / `22498644` |
+| Product / subscription | `pittech.pro.monthly` / `6825135995` |
+| Group draft version | `11a44c93-51f5-47fb-a901-0c725df5627e` |
+| Period / US price | `ONE_MONTH` / USD 3.00 |
+| Payment / territory | `UPFRONT` for that one-month period / `USA` |
+| State | `MISSING_METADATA`; no review submission |
+
+English group/product metadata is present. Apple's `MONTHLY` plan type is a
+12-month installment commitment, so it was not used for this month-to-month
+product. Review metadata, server credentials/notifications and real sandbox
+purchase/renewal/restore/revocation evidence remain open.
+
+The Play credential can read the catalog but pricing conversion was rejected
+with HTTP 403 `PERMISSION_DENIED` in
+[Actions 39525750420](https://github.com/michaelhmiv/PitTech/actions/runs/39525750420).
+No Play product was created and that denied operation was not retried through
+another identity. Appropriate app-level catalog/pricing access is required.
+
+## Feature gates, limits and remaining acceptance
 
 `RELAY_UPLOADS_ENABLED`, `AUTH_ENABLED`, `ACCOUNT_LIFECYCLE_ENABLED`,
 `PUBLIC_API_ENABLED`, `PRIVATE_SYNC_ENABLED`, `SUBSCRIPTIONS_ENABLED` and
-`COMMUNITY_AGGREGATION_ENABLED` remain false. The health response does not prove
-account sign-in, sync, publishing, store purchases or object write/delete
-permissions. No Firebase release has been distributed for this rollout.
+`COMMUNITY_AGGREGATION_ENABLED` remain false. No online Firebase release has
+been distributed. No store purchase or complete live account/sync flow is
+claimed from the foundation probe or catalog setup.
 
-The API and Postgres have ceilings of one vCPU and 1,000,000,000 bytes RAM per
-replica. The one-off bootstrap has a 256 MB JavaScript heap limit; the connector
-rejected setting its container CPU/RAM limits, so no container ceiling is claimed
-for that job. Conservative relay test caps remain 1 GiB stored, 128 MiB/day and
-ten uploads/day. Prepared sync limits are 128 MiB/owner, 512 MiB globally,
-128 MiB/day, 200 uploads/day and 1,000 owner operations. These are ceilings,
-not measured production capacity or pricing commitments.
+The API/Postgres ceilings remain one vCPU and 1,000,000,000 bytes RAM per
+replica. The private jobs use a 256 MB JavaScript heap limit. Relay caps remain
+1 GiB stored, 128 MiB/day and ten uploads/day. Prepared sync caps remain
+128 MiB/owner, 512 MiB globally, 128 MiB/day, 200 uploads/day and 1,000 owner
+operations. These are configured ceilings, not measured capacity or prices.
 
-## Remaining operational acceptance
+Remaining acceptance includes actual sign-in delivery, complete account/
+community/sync/photos/deletion flows, expiry and scheduled cleanup, lease
+recovery, proxy/log-redaction checks, backup/restore, key rotation, budget
+alerts, installed links and both stores' actual purchase lifecycle evidence.
 
-- Repair `auth-staging.pittech.app` DNS. Resend's October 20 read shows DKIM and
-  SPF MX/TXT failed and tracking CNAME not started; `auth.pittech.app` is verified.
-  Use a separate domain-scoped staging sending key, sender and HTTPS origin.
-- Both staging origins now have valid DNS/TLS. Verify their association
-  files and both native staging identities. A generated Railway health domain
-  is not installed deep-link or native staging evidence.
-- Verify private object create/read/replay/delete behavior, ingress/proxy trust,
-  hosting log redaction, expiry/revocation/deletion, restart/lease recovery,
-  scheduled cleanup, backup/restore, key rotation and budget alerts.
-- Finish real store products/credentials/notifications and native sandbox/test
-  package checks. Complete account/community/sync/deletion acceptance before
-  enabling the matching native feature configuration.
-
-The owner authorized the online deployment and Firebase test distribution on
-October 20. Missing inputs, live verification and blocked console capabilities
-remain prerequisites; another general deployment confirmation is not required.
-See issue #123 and `20-online-enablement.md` for the complete delivery sequence.
-
-## Latest continuation checkpoint
-
-Both custom hostnames are now present on the API and were read back as verified
-with valid certificates: `api-staging.pittech.app` CNAME
-`5w9pj6wa.up.railway.app`, and `staging.pittech.app` CNAME
-`r1h17h7b.up.railway.app`. That resolves DNS/TLS only; association identities
-and installed native links still require release evidence.
-
-`PitTechReadiness` (`fc44071f-a2f5-4c1a-8e70-694b6eb6a33e`) is a private
-one-off probe with no domain or admin database URL. It is not deployed.
-Its source attach was refused with "Deploys have been paused temporarily" and
-left a pending source patch. Inspect that patch before accepting further changes.
-The source-reviewed replacement probe lives at `api-service/src/staging-readiness.ts`.
-After its exact backend head passes CI, point the service at that commit and use
-`node --max-old-space-size=256 src/staging-readiness.ts`. It verifies restricted
-runtime connections and forbidden reads, private object access, identical retry,
-changed-body rejection, deletion and late-upload fences in all three namespaces.
-It only cleans up its own random synthetic keys and logs sanitized step labels.
-
-Resend verification was retriggered; the latest read is pending. Required DNS
-records remain available in the Resend domain details. No staging sending key is
-configured on the API yet. No real sign-in email or purchase is claimed.
-
-The continuation adds a shared `ONLINE_ENVIRONMENT` backend profile and matching
-native build profiles; production remains the default and every online flag stays
-off. Before enabling the isolated stack, set `ONLINE_ENVIRONMENT=staging`,
-`AUTH_PUBLIC_ORIGIN=https://staging.pittech.app`, the matching domain-scoped sender
-and credentials, and actual staging association identities. Do not deploy a new
-head until its backend checks pass.
+The owner has authorized the rollout and Firebase distribution. Complete
+available work without another general permission request; missing access
+and verification remain technical prerequisites. See issue #123 and
+`20-online-enablement.md`.

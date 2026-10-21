@@ -1,0 +1,37 @@
+name: Complete Apple monthly Pro draft
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pittech-monthly-store-configuration
+  cancel-in-progress: false
+
+jobs:
+  monthly-products:
+    name: Complete Apple one-month pricing and availability
+    if: github.repository == 'michaelhmiv/PitTech'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create and verify monthly store drafts
+        env:
+          STORE_SETUP_CONFIRM: configure-single-monthly-product
+          STORE_SETUP_PROVIDER: apple
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: node .github/scripts/online-store-drafts.mjs
+      - name: Retain the sanitized product configuration report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-monthly-store-configuration
+          path: store-readiness/monthly-product-setup.json
+          if-no-files-found: error
+          retention-days: 30
