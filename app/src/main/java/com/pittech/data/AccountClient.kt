@@ -20,7 +20,7 @@ internal fun interface AccountAPI { suspend fun call(path: String, body: JSONObj
 internal class AccountClient(client: OkHttpClient = OkHttpClient()) : AccountAPI {
     private val client = client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(okhttp3.CookieJar.NO_COOKIES).cache(null).callTimeout(30,TimeUnit.SECONDS).build()
     override suspend fun call(path: String, body: JSONObject?, access: String?): JSONObject {
-        require(path in setOf("/v1/auth/challenges","/v1/auth/verify","/v1/auth/refresh","/v1/auth/logout","/v1/me","/v1/me/deletion","/v1/deletion/recover","/v1/deletion/status"))
+        require(path in setOf("/v1/auth/challenges","/v1/auth/verify","/v1/auth/refresh","/v1/auth/logout","/v1/me","/v1/me/deletion","/v1/deletion/recover","/v1/deletion/status","/v1/auth/provider/challenges","/v1/auth/provider/verify","/v1/me/identities"))
         val request = Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Accept","application/json").header("Cache-Control","no-store")
         if (body != null) { val bytes = body.toString().toByteArray(); require(bytes.size <= 8192); request.post(bytes.toRequestBody("application/json".toMediaType())) }
         if (access != null) { require(AccountProtocol.credential(access)); request.header("Authorization","Bearer $access") }

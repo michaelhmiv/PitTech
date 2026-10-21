@@ -43,11 +43,28 @@ class OnlineConfigurationTest {
         }
     }
 
+    @Test fun googlePackagesAndAdvertisementFollowTheSharedEnvironments() {
+        val rows = fixture().getJSONArray("profiles")
+        for (i in 0 until rows.length()) {
+            val row = rows.getJSONObject(i)
+            val config = OnlineConfiguration(row.getString("environment"))
+            val packages = row.getJSONArray("googlePackages")
+            assertEquals((0 until packages.length()).map { packages.getString(it) }, config.googlePackages)
+            for (packageName in config.googlePackages) assertTrue(config.advertisesGoogleSignIn(packageName))
+            assertFalse(config.advertisesGoogleSignIn("com.pittech.unconfigured"))
+        }
+        assertTrue(OnlineConfiguration("staging").advertisesGoogleSignIn("com.pittech"))
+        assertFalse(OnlineConfiguration("staging").advertisesGoogleSignIn("com.pittech.debug"))
+        assertFalse(OnlineConfiguration("production").advertisesGoogleSignIn("com.pittech.dev"))
+        assertFalse(OnlineConfiguration("production").advertisesGoogleSignIn("com.pittech.debug"))
+    }
+
     @Test fun unknownProfilesAreRejectedAndCurrentBuildUsesItsExplicitGate() {
         val invalid = fixture().getJSONArray("invalidEnvironments")
         for (i in 0 until invalid.length()) assertThrows(IllegalArgumentException::class.java) { OnlineConfiguration(invalid.getString(i), enabled = true) }
         assertEquals(BuildConfig.PITTECH_ONLINE_ENVIRONMENT, OnlineConfiguration.current.environment)
         assertEquals(BuildConfig.PITTECH_ONLINE_ENABLED, OnlineConfiguration.current.enabled)
         assertEquals(BuildConfig.PITTECH_ONLINE_ENABLED, AccountProtocol.ENABLED)
+        assertEquals(BuildConfig.PITTECH_GOOGLE_WEB_CLIENT_ID, OnlineConfiguration.current.googleWebClientId)
     }
 }

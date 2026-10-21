@@ -1,5 +1,6 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,8 +12,8 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
 
-internal data class AccountPresentation(val signedIn: Boolean = false, val challengeEmail: String? = null, val canResend: Boolean = true, val interruptedVerification: Boolean = false, val pendingLink: Boolean = false, val busy: Boolean = false, val message: String? = null, val deletion: DeletionRecord? = null)
-internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis, private val cleanup: (String) -> Unit = {}, private val removeJournal: (suspend () -> Unit)? = null) {
+internal data class AccountPresentation(val signedIn: Boolean = false, val challengeEmail: String? = null, val canResend: Boolean = true, val interruptedVerification: Boolean = false, val pendingLink: Boolean = false, val busy: Boolean = false, val message: String? = null, val deletion: DeletionRecord? = null, val accountEmail: String? = null, val googleLinked: Boolean = false)
+internal class AccountManager(private val storage: AccountStorage, private val scope: CoroutineScope, private val api: AccountAPI = AccountClient(), val enabled: Boolean = AccountProtocol.ENABLED, private val now: () -> Long = System::currentTimeMillis, private val cleanup: (String) -> Unit = {}, private val removeJournal: (suspend () -> Unit)? = null, private val googleWebClientId: String = OnlineConfiguration.current.googleWebClientId, private val googleAdvertised: Boolean = OnlineConfiguration.current.advertisesGoogleSignIn(), private val google: GoogleIdProvider = CredentialManagerGoogleId(googleWebClientId)) {
     private var state = AccountState()
     private var storageReady = true
     private val mutex = Mutex()
@@ -23,11 +24,13 @@ internal class AccountManager(private val storage: AccountStorage, private val s
     val showing = _showing.asStateFlow()
     fun open() { _showing.value = true }
     fun close() { _showing.value = false }
+    /** No dead buttons: the provider entry needs accounts, an advertised package and a configured web client ID. */
+    val googleSignInAvailable: Boolean get() = enabled && googleAdvertised && googleWebClientId.isNotEmpty()
     fun tick() { _presentation.value = _presentation.value.copy(canResend=state.challenge?.let { now()-it.created >= 60000 } ?: true) }
-    init { try { state = storage.load(); state.deletion?.validate(); if(state.deletion?.receipt!=null)runCatching{cleanupAcceptedDeletion()}; if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null));
+    init { try { state = storage.load(); state.deletion?.validate(); if(state.deletion?.receipt!=null)runCatching{cleanupAcceptedDeletion()}; if(state.challenge?.let { now()-it.created >= 900000 } == true) save(state.copy(challenge=null)); if(state.providerChallenge?.let { now()-it.created >= 900000 } == true) save(state.copy(providerChallenge=null));
         state.session?.let { it.validate(); if(Instant.parse(it.sessionExpiresAt).toEpochMilli() <= now()) save(AccountState(logoutToken=it.refreshToken,deletion=state.deletion)) }; publish() } catch (_: Exception) { storageReady = false; publish(message="This device's account storage is unavailable. Your local cookbook is unchanged.") } }
     private fun publish(busy: Boolean = false, message: String? = null) {
-        _presentation.value = AccountPresentation(state.session != null,state.challenge?.email,state.challenge?.let { now()-it.created >= 60000 } ?: true,state.challenge?.operation != null,link != null,busy,message,state.deletion)
+        _presentation.value = AccountPresentation(state.session != null,state.challenge?.email,state.challenge?.let { now()-it.created >= 60000 } ?: true,state.challenge?.operation != null,link != null,busy,message,state.deletion,if(state.deletion==null)state.accountEmail else null,state.deletion==null && state.linkedProviders?.contains("google")==true)
     }
     private fun save(next: AccountState) { storage.save(next); state = next }
     private fun ready() { if(!enabled) throw AccountFailure(503); check(storageReady) }
@@ -77,12 +80,82 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         try {
             val session = AccountSession.parse(api.call("/v1/auth/verify",body,null))
             state.deletion?.userId?.let{owner->if(owner!=session.userId){runCatching{api.call("/v1/auth/logout",JSONObject().put("refreshToken",session.refreshToken),null)};error("Verify the original account.")}}
-            save(state.copy(session=session,challenge=null,refreshOperation=null)); link=null
+            save(state.copy(session=session,challenge=null,providerChallenge=null,refreshOperation=null)); link=null
             publish(message="Signed in. Your local cookbook is unchanged.")
         } catch(e: AccountFailure) {
             if(e.status == 401) { save(state.copy(challenge=challenge.copy(operation=null,secret=null))); link=null }
             throw e
         }
+    }
+    /** Reuse the live pending provider challenge for this operation, or persist a fresh one. The id,
+     * verifier and operation are always persisted before any provider UI is presented, so a lost
+     * response retries the exact exchange and a restart cannot orphan the proof. */
+    private fun providerChallenge(bound: Boolean): ProviderChallenge {
+        val pending = state.providerChallenge
+        if(pending != null && pending.provider == "google" && pending.bound == bound && now()-pending.created < 900000) {
+            if(pending.operation == null) { val next = pending.copy(operation=UUID.randomUUID().toString()); save(state.copy(providerChallenge=next)); return next }
+            return pending
+        }
+        val fresh = ProviderChallenge(UUID.randomUUID().toString(),"google",AccountProtocol.verifier(),now(),UUID.randomUUID().toString(),bound)
+        save(state.copy(providerChallenge=fresh)); return fresh
+    }
+    /** Proof-bound Sign in with Google while signed out. The stored proof hash is the request nonce;
+     * the ID token is exchanged with the raw verifier. Sheet dismissal and no-credential stay silent
+     * and keep the pending challenge; a 409 directs to the existing method, then attach. */
+    fun signInWithGoogle(host: GoogleSignInHost) = perform {
+        require(state.deletion?.receipt == null); require(state.session == null); flushLogout()
+        val challenge = providerChallenge(false)
+        val created = try { api.call("/v1/auth/provider/challenges",JSONObject().put("provider","google").put("idempotencyId",challenge.id).put("proofChallenge",AccountProtocol.proof(challenge.verifier)),null) }
+        catch(e: AccountFailure) { if(e.status == 401) { publish(message="Sign in with Google is unavailable. Try email sign-in instead."); return@perform }; throw e }
+        require(created.getString("challengeId") == challenge.id && created.getInt("expiresInSeconds") == 900)
+        val idToken = try { google.authorize(host,AccountProtocol.proof(challenge.verifier)) }
+        catch(e: GoogleIdCancellation) { return@perform }
+        catch(e: CancellationException) { throw e }
+        catch(e: Exception) { publish(message="Sign in with Google is unavailable. Try email sign-in instead."); return@perform }
+        try {
+            val session = AccountSession.parse(api.call("/v1/auth/provider/verify",JSONObject().put("challengeId",challenge.id).put("verifier",challenge.verifier).put("idToken",idToken).put("idempotencyId",challenge.operation),null))
+            state.deletion?.userId?.let{owner->if(owner!=session.userId){runCatching{api.call("/v1/auth/logout",JSONObject().put("refreshToken",session.refreshToken),null)};error("Verify the original account.")}}
+            save(state.copy(session=session,challenge=null,providerChallenge=null,refreshOperation=null)); link=null
+            runCatching { refreshAccount() }
+            publish(message="Signed in with Google. Your local cookbook is unchanged.")
+        } catch(e: AccountFailure) {
+            if(e.status == 409 || e.status == 401) { save(state.copy(providerChallenge=state.providerChallenge?.copy(operation=null))); publish(message=if(e.status == 409) "Sign in with your existing method first, then add Google sign-in in account settings." else "This Google sign-in expired or is unavailable. Try again, or sign in by email first and then add Google sign-in in account settings."); return@perform }
+            throw e
+        }
+    }
+    /** Attach Google sign-in to the signed-in account: the only linking path. The challenge is
+     * created bound to this account, so the exchange can only link here. No new session is issued. */
+    fun attachGoogle(host: GoogleSignInHost) = perform {
+        if(state.deletion != null || state.session == null) { publish(message="Sign in again to reconnect. Your local cookbook is unchanged."); return@perform }
+        val token = try { accessLocked() }
+        catch(e: AccountFailure) { if(e.status == 401) { publish(message="Sign in again to reconnect. Your local cookbook is unchanged."); return@perform }; throw e }
+        val challenge = providerChallenge(true)
+        val created = try { api.call("/v1/auth/provider/challenges",JSONObject().put("provider","google").put("idempotencyId",challenge.id).put("proofChallenge",AccountProtocol.proof(challenge.verifier)),token) }
+        catch(e: AccountFailure) { if(e.status == 401) { publish(message="Sign in with Google is unavailable. Try email sign-in instead."); return@perform }; throw e }
+        require(created.getString("challengeId") == challenge.id && created.getInt("expiresInSeconds") == 900)
+        val idToken = try { google.authorize(host,AccountProtocol.proof(challenge.verifier)) }
+        catch(e: GoogleIdCancellation) { return@perform }
+        catch(e: CancellationException) { throw e }
+        catch(e: Exception) { publish(message="Sign in with Google is unavailable. Try email sign-in instead."); return@perform }
+        try {
+            val providers = api.call("/v1/me/identities",JSONObject().put("challengeId",challenge.id).put("verifier",challenge.verifier).put("idToken",idToken).put("idempotencyId",challenge.operation),token).optJSONArray("identities")?.let { array -> List(array.length()) { array.optJSONObject(it)?.optString("provider") } } ?: emptyList()
+            require(providers.contains("google"))
+            save(state.copy(providerChallenge=null,linkedProviders=providers.filter { it == "apple" || it == "google" }.filterNotNull()))
+            runCatching { refreshAccount() }
+            publish(message="Google sign-in is linked. Email sign-in still works as a backup.")
+        } catch(e: AccountFailure) {
+            if(e.status == 409 || e.status == 401) { save(state.copy(providerChallenge=state.providerChallenge?.copy(operation=null))); publish(message=if(e.status == 409) "Sign in with your existing method first, then add Google sign-in in account settings." else "Couldn't add Google sign-in. Try again."); return@perform }
+            throw e
+        }
+    }
+    /** The session's account email and linked providers from GET /v1/me. Unknown fields are
+     * ignored; only apple/google providers are kept. */
+    private suspend fun refreshAccount() {
+        val session = state.session ?: throw AccountFailure(401)
+        val reply = api.call("/v1/me",null,session.accessToken)
+        require(reply.getString("id") == session.userId)
+        val identities = reply.optJSONArray("identities")?.let { array -> List(array.length()) { array.optJSONObject(it)?.optString("provider") }.filter { it == "apple" || it == "google" }.filterNotNull() }
+        save(state.copy(accountEmail=reply.optString("email",null)?.ifEmpty { null },linkedProviders=identities ?: state.linkedProviders))
     }
     /** Serialized refresh shares the resulting access credential; ambiguous responses keep the same operation UUID. */
     suspend fun publicationUserId(): String? = mutex.withLock { if(state.deletion==null)state.session?.userId else null }
@@ -105,9 +178,9 @@ internal class AccountManager(private val storage: AccountStorage, private val s
         publish(busy=true)
         scope.launch {
             try {
-                val token = access()
+                access()
                 mutex.withLock {
-                    val reply = api.call("/v1/me",null,token); require(reply.getString("id") == state.session?.userId)
+                    refreshAccount()
                     publish(message="Your session is active.")
                 }
             } catch(e: Exception) {

@@ -30,4 +30,17 @@ class AccountClientTest {
         val huge=OkHttpClient.Builder().addInterceptor { chain -> Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("synthetic").body("x".repeat(8193).toResponseBody()).build() }.build()
         try { AccountClient(huge).call("/v1/me",null,null); fail("Oversized response accepted") } catch(_: AccountFailure) { }
     }
+    @Test fun providerRoutesShareTheBoundedAuthenticatedTransport() = runBlocking {
+        for(path in listOf("/v1/auth/provider/challenges","/v1/auth/provider/verify","/v1/me/identities")) {
+            var calls=0
+            val client=OkHttpClient.Builder().addInterceptor { chain ->
+                calls++; val request=chain.request()
+                assertEquals("https://api.pittech.app$path",request.url.toString())
+                assertEquals("Bearer "+"A".repeat(43),request.header("Authorization"))
+                Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("synthetic").body("{}".toResponseBody("application/json".toMediaType())).build()
+            }.build()
+            AccountClient(client).call(path,JSONObject(),"A".repeat(43)); assertEquals(1,calls)
+        }
+        try { AccountClient().call("/v1/auth/apple/notifications",JSONObject(),null); fail("Unlisted route accepted") } catch(_: IllegalArgumentException) { }
+    }
 }

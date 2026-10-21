@@ -152,7 +152,8 @@ jobs:
             "-PpittechVersionName=$DEV_VERSION_NAME" \
             "-PpittechOnlineEnvironment=$PITTECH_DISTRIBUTION_ONLINE_ENVIRONMENT" \
             "-PpittechOnlineEnabled=$PITTECH_DISTRIBUTION_ONLINE_ENABLED" \
-            "-PpittechProProductId=$PITTECH_DISTRIBUTION_PRODUCT_ID"
+            "-PpittechProProductId=$PITTECH_DISTRIBUTION_PRODUCT_ID" \
+            "-PpittechGoogleWebClientId=${{ vars.PITTECH_GOOGLE_WEB_CLIENT_ID }}"
 
       - name: Sign the Dev APK with the existing Android upload key
         env:

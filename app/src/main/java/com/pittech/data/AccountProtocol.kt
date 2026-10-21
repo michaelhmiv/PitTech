@@ -2,6 +2,7 @@ package com.pittech.data
 
 import com.pittech.online.OnlineConfiguration
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
@@ -51,9 +52,14 @@ internal data class AccountChallenge(val id: String, val email: String, val veri
     fun json() = JSONObject().put("id",id).put("email",email).put("verifier",verifier).put("created",created).put("accepted",accepted).put("operation",operation ?: JSONObject.NULL).put("secret",secret ?: JSONObject.NULL).put("isLink",isLink)
     companion object { fun parse(o: JSONObject) = AccountChallenge(o.getString("id"),o.getString("email"),o.getString("verifier"),o.getLong("created"),o.getBoolean("accepted"),o.nullString("operation"),o.nullString("secret"),o.getBoolean("isLink")) }
 }
-internal data class AccountState(val challenge: AccountChallenge? = null, val session: AccountSession? = null, val refreshOperation: String? = null, val logoutToken: String? = null, val deletion: DeletionRecord? = null) {
+internal data class ProviderChallenge(val id: String, val provider: String, val verifier: String, val created: Long, val operation: String? = null, val bound: Boolean) {
+    override fun toString() = "ProviderChallenge(redacted)"
+    fun json() = JSONObject().put("id",id).put("provider",provider).put("verifier",verifier).put("created",created).put("operation",operation ?: JSONObject.NULL).put("bound",bound)
+    companion object { fun parse(o: JSONObject) = ProviderChallenge(o.getString("id"),o.getString("provider"),o.getString("verifier"),o.getLong("created"),o.nullString("operation"),o.getBoolean("bound")) }
+}
+internal data class AccountState(val challenge: AccountChallenge? = null, val session: AccountSession? = null, val refreshOperation: String? = null, val logoutToken: String? = null, val deletion: DeletionRecord? = null, val providerChallenge: ProviderChallenge? = null, val accountEmail: String? = null, val linkedProviders: List<String>? = null) {
     override fun toString() = "AccountState(redacted)"
-    fun json() = JSONObject().put("challenge",challenge?.json() ?: JSONObject.NULL).put("session",session?.json() ?: JSONObject.NULL).put("refreshOperation",refreshOperation ?: JSONObject.NULL).put("logoutToken",logoutToken ?: JSONObject.NULL).put("deletion",deletion?.json() ?: JSONObject.NULL)
-    companion object { fun parse(o: JSONObject) = AccountState(o.optJSONObject("challenge")?.let(AccountChallenge::parse),o.optJSONObject("session")?.let(AccountSession::parse),o.nullString("refreshOperation"),o.nullString("logoutToken"),o.optJSONObject("deletion")?.let(DeletionRecord::parse)) }
+    fun json() = JSONObject().put("challenge",challenge?.json() ?: JSONObject.NULL).put("session",session?.json() ?: JSONObject.NULL).put("refreshOperation",refreshOperation ?: JSONObject.NULL).put("logoutToken",logoutToken ?: JSONObject.NULL).put("deletion",deletion?.json() ?: JSONObject.NULL).put("providerChallenge",providerChallenge?.json() ?: JSONObject.NULL).put("accountEmail",accountEmail ?: JSONObject.NULL).put("linkedProviders",if(linkedProviders==null)JSONObject.NULL else JSONArray(linkedProviders))
+    companion object { fun parse(o: JSONObject) = AccountState(o.optJSONObject("challenge")?.let(AccountChallenge::parse),o.optJSONObject("session")?.let(AccountSession::parse),o.nullString("refreshOperation"),o.nullString("logoutToken"),o.optJSONObject("deletion")?.let(DeletionRecord::parse),o.optJSONObject("providerChallenge")?.let(ProviderChallenge::parse),o.nullString("accountEmail"),o.optJSONArray("linkedProviders")?.let { array -> List(array.length()) { array.getString(it) } }) }
 }
 private fun JSONObject.nullString(key: String) = if (isNull(key)) null else getString(key)

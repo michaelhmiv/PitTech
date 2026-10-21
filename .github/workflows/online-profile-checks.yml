@@ -39,6 +39,7 @@ jobs:
           -PpittechOnlineEnvironment=staging
           -PpittechOnlineEnabled=true
           -PpittechLiveAds=false
+          -PpittechGoogleWebClientId=${{ vars.PITTECH_GOOGLE_WEB_CLIENT_ID }}
       - name: Inspect the packaged links and generated configuration
         shell: bash
         run: |
@@ -47,6 +48,7 @@ jobs:
           "${ANDROID_SDK_ROOT}/build-tools/37.0.0/aapt2" dump xmltree app/build/outputs/apk/dev/app-dev-unsigned.apk --file AndroidManifest.xml > build/online-profiles/android-manifest.txt
           cp app/build/generated/source/buildConfig/dev/com/pittech/BuildConfig.java build/online-profiles/
           python3 - <<'PY'
+          import json, re
           from pathlib import Path
           manifest = Path("build/online-profiles/android-manifest.txt").read_text()
           config = Path("build/online-profiles/BuildConfig.java").read_text()
@@ -57,6 +59,11 @@ jobs:
           assert 'PITTECH_ONLINE_ENVIRONMENT = "staging"' in config
           assert 'PITTECH_ONLINE_ENABLED = true' in config
           assert 'ca-app-pub-3940256099942544/2247696110' in config
+          web_client = re.search(r'PITTECH_GOOGLE_WEB_CLIENT_ID = "(.*)"', config)
+          assert web_client is not None
+          assert web_client.group(1) == "" or re.fullmatch(r"[A-Za-z0-9-]+\.apps\.googleusercontent\.com", web_client.group(1)), web_client.group(1)
+          staging = next(profile for profile in json.loads(Path("contracts/fixtures/online-environments-v1.json").read_text())["profiles"] if profile["environment"] == "staging")
+          assert "com.pittech.dev" in staging["googlePackages"]
           PY
       - name: Reject unapproved staging builds for the Play package
         shell: bash

@@ -9,7 +9,8 @@
       "linkScheme": "pittech",
       "scopedName": "saved-retry-v1",
       "sandbox": false,
-      "appleAudiences": ["com.pittech"]
+      "appleAudiences": ["com.pittech"],
+      "googlePackages": ["com.pittech"]
     },
     {
       "environment": "staging",
@@ -19,7 +20,8 @@
       "linkScheme": "pittech-staging",
       "scopedName": "saved-retry-v1-staging",
       "sandbox": true,
-      "appleAudiences": ["com.pittech.staging", "com.pittech"]
+      "appleAudiences": ["com.pittech.staging", "com.pittech"],
+      "googlePackages": ["com.pittech.dev", "com.pittech"]
     }
   ],
   "invalidEnvironments": [

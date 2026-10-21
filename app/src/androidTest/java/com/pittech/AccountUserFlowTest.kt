@@ -1,6 +1,10 @@
 package com.pittech
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -200,6 +204,72 @@ import android.graphics.Bitmap
             screenshot("account-local-journal-removed")
             assertNull(storage.value.session);assertNull(storage.value.deletion)
         }finally{scope.cancel()}
+    }
+    @Test fun googleSignInButtonSignsInAndSettingsShowBothAuthenticators() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+        val storage=object : AccountStorage {
+            var value=AccountState()
+            override fun load()=value
+            override fun save(value: AccountState) { this.value=value }
+        }
+        val fake=object : GoogleIdProvider {
+            val nonces=mutableListOf<String>()
+            override suspend fun authorize(host: GoogleSignInHost, nonce: String): String { nonces+=nonce; return "fake-google-id-token" }
+        }
+        val api=AccountAPI { path,body,_ ->
+            if(path=="/v1/auth/provider/challenges") JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900)
+            else if(path=="/v1/auth/provider/verify") { require(body!!.getString("idToken")=="fake-google-id-token"); AccountSession("A".repeat(43),"A".repeat(43),"2100-01-01T00:00:00.000Z","2100-02-01T00:00:00.000Z","12345678-1234-4234-8234-123456789abc").json() }
+            else { require(path=="/v1/me"); JSONObject().put("id","12345678-1234-4234-8234-123456789abc").put("email","cook@example.com").put("identities",JSONArray().put(JSONObject().put("provider","google"))) }
+        }
+        val account=AccountManager(storage,scope,api,true,googleWebClientId="synthetic-web-client.apps.googleusercontent.com",googleAdvertised=true,google=fake)
+        try {
+            compose.setContent { PitTechTheme { AccountContent(account) } }
+            compose.onNodeWithTag("account-google-signin").performScrollTo().assertIsDisplayed().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("account-signed-in").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("account-auth-email").assertTextContains("cook@example.com", substring=true)
+            compose.onNodeWithTag("account-auth-google").assertIsDisplayed()
+            assertEquals(1,fake.nonces.size)
+        } finally { scope.cancel() }
+    }
+    @Test fun googleAttachLinksWhileSignedInAndButtonHidesWhenUnconfigured() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+        fun storage(session: AccountSession?) = object : AccountStorage {
+            var value=AccountState(session=session)
+            override fun load()=value
+            override fun save(value: AccountState) { this.value=value }
+        }
+        val fake=object : GoogleIdProvider {
+            override suspend fun authorize(host: GoogleSignInHost, nonce: String) = "fake-google-id-token"
+        }
+        val api=AccountAPI { path,body,_ ->
+            if(path=="/v1/auth/provider/challenges") JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900)
+            else if(path=="/v1/me/identities") JSONObject().put("identities",JSONArray().put(JSONObject().put("provider","google")))
+            else { require(path=="/v1/me"); JSONObject().put("id","12345678-1234-4234-8234-123456789abc").put("email","cook@example.com").put("identities",JSONArray().put(JSONObject().put("provider","google"))) }
+        }
+        val session=AccountSession("A".repeat(43),"A".repeat(43),"2100-01-01T00:00:00.000Z","2100-02-01T00:00:00.000Z","12345678-1234-4234-8234-123456789abc")
+        try {
+            val signedIn=storage(session)
+            val account=AccountManager(signedIn,scope,api,true,googleWebClientId="synthetic-web-client.apps.googleusercontent.com",googleAdvertised=true,google=fake)
+            // One setContent per activity: the hidden matrix swaps the manager through
+            // snapshot state under key(), which disposes the previous account subtree.
+            var current by mutableStateOf<AccountManager>(account)
+            compose.setContent { PitTechTheme { key(current) { AccountContent(current) } } }
+            compose.onNodeWithTag("account-google-attach").performScrollTo().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("account-auth-google").fetchSemanticsNodes().isNotEmpty() }
+            assertEquals(session.refreshToken,signedIn.value.session?.refreshToken)
+            val hidden=listOf(
+                AccountManager(storage(null),scope,api,false,googleWebClientId="synthetic-web-client.apps.googleusercontent.com",googleAdvertised=true,google=fake),
+                AccountManager(storage(null),scope,api,true,googleWebClientId="synthetic-web-client.apps.googleusercontent.com",googleAdvertised=false,google=fake),
+                AccountManager(storage(null),scope,api,true,googleWebClientId="",googleAdvertised=true,google=fake),
+                AccountManager(storage(session),scope,api,true,googleWebClientId="",googleAdvertised=true,google=fake)
+            )
+            for(hiddenAccount in hidden) {
+                compose.runOnIdle { current=hiddenAccount }
+                compose.waitForIdle()
+                compose.onAllNodesWithTag("account-google-signin").assertCountEquals(0)
+                compose.onAllNodesWithTag("account-google-attach").assertCountEquals(0)
+            }
+        } finally { scope.cancel() }
     }
     private fun screenshot(name: String) {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
