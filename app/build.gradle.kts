@@ -20,6 +20,11 @@ require(pittechProProductId.matches(Regex("[A-Za-z0-9._-]{0,200}"))) { "Invalid 
 val pittechStoreSandboxBuild = providers.gradleProperty("pittechStoreSandboxBuild").orNull?.let {
     requireNotNull(it.toBooleanStrictOrNull()) { "pittechStoreSandboxBuild must be true or false." }
 } ?: false
+// Sign in with Google audience: the server (web) OAuth client ID. A public
+// identifier, not a secret. Empty means the Google button is never rendered;
+// no placeholder ID is ever compiled in.
+val pittechGoogleWebClientId = providers.gradleProperty("pittechGoogleWebClientId").orNull ?: ""
+require(pittechGoogleWebClientId.isEmpty() || pittechGoogleWebClientId.matches(Regex("[A-Za-z0-9-]+\\.apps\\.googleusercontent\\.com"))) { "Invalid Google web client ID." }
 require(!pittechStoreSandboxBuild || pittechOnlineEnvironment == "staging" && !pittechLiveAds) {
     "Store sandbox builds require staging and test ads."
 }
@@ -49,6 +54,7 @@ android {
         buildConfigField("String", "PITTECH_PRO_PRODUCT_ID", "\"$pittechProProductId\"")
         buildConfigField("String", "PITTECH_ONLINE_ENVIRONMENT", "\"${pittechOnlineEnvironment}\"")
         buildConfigField("boolean", "PITTECH_ONLINE_ENABLED", pittechOnlineEnabled.toString())
+        buildConfigField("String", "PITTECH_GOOGLE_WEB_CLIENT_ID", "\"$pittechGoogleWebClientId\"")
         manifestPlaceholders["pittechPublicHost"] = pittechPublicHost
         manifestPlaceholders["pittechLinkScheme"] = pittechLinkScheme
         buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
@@ -110,6 +116,18 @@ dependencies {
     // base-artifact callback APIs are used (wrapped in coroutines); Play
     // sandbox/test tracks use the same product ID as production.
     implementation("com.android.billingclient:billing-ktx:9.1.0")
+
+    // Sign in with Google: Credential Manager plus the Google ID option/token
+    // types. Pinned stable releases from Google Maven; the public release
+    // graph audit records them. Accounts on/off is a boolean Gradle property,
+    // not a build variant, so excluding these when disabled would fork
+    // compilation of GoogleIdProvider.kt and fragment the build cache for no
+    // runtime gain: the libraries run no code on their own, and AccountManager
+    // never touches Credential Manager unless accounts are enabled, the
+    // package is advertised and PITTECH_GOOGLE_WEB_CLIENT_ID is configured.
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.1")
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.foundation:foundation")

@@ -175,7 +175,8 @@ another permission request. MCP #114 is fully planned and paused for this rollou
 foundation and private runtime/storage probe have passed; the API is deployed at
 backend-tested 9ee2e2d (see `docs/online/STAGING.md`). Online feature flags stay
 off until full operational acceptance. The companion emulator selector now
-requires 71 tests, including persistent subscription-cache account isolation.
+requires 73 tests, including persistent subscription-cache account isolation
+and Google provider sign-in/attach.
 Native online configuration selects production or staging with fixed first-party
 origins, separate credential/retry/cache namespaces and explicit enablement (off
 by default). iOS Staging is com.pittech.staging; Android Dev stays com.pittech.dev.

@@ -1,5 +1,6 @@
 package com.pittech.ui
 
+import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -28,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.AccountManager
 import com.pittech.data.AccountPresentation
+import com.pittech.data.ActivityGoogleSignInHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -68,6 +71,9 @@ import kotlinx.coroutines.launch
             if(deletion.receipt==null && !state.signedIn){Text("Verify the original account email to retry this device’s saved request. Another account cannot take over the request.");AccountSignIn(account,state)}
         }else if(state.signedIn){
             Text("Signed in",Modifier.testTag("account-signed-in"),style=MaterialTheme.typography.titleMedium)
+            state.accountEmail?.let{Text("Email sign-in: $it",Modifier.testTag("account-auth-email"))}
+            if(state.googleLinked)Text("Google sign-in is linked.",Modifier.testTag("account-auth-google"))
+            else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
             Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
             TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
             TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
@@ -137,6 +143,7 @@ import kotlinx.coroutines.launch
     val keyboard=LocalSoftwareKeyboardController.current
     OutlinedTextField(email,{email=it},label={Text("Email address")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth().testTag("account-email"))
     Button(onClick={keyboard?.hide();account.start(email)},enabled=!state.busy && email.isNotEmpty(),modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("account-start")){Text("Send sign-in email")}
+    if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={keyboard?.hide();account.signInWithGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("account-google-signin")){Text("Continue with Google")}}}
     state.challengeEmail?.let{address->
         Text("Enter the six-digit code sent to $address. You can open the email on another device.")
         OutlinedTextField(code,{code=it},label={Text("Six-digit code")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),modifier=Modifier.fillMaxWidth().testTag("account-code"))

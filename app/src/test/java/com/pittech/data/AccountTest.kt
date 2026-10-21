@@ -1,6 +1,10 @@
 package com.pittech.data
 
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialInterruptedException
+import androidx.credentials.exceptions.NoCredentialException
 import kotlinx.coroutines.*
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -13,6 +17,12 @@ class AccountTest {
     }
     private fun fixture() = JSONObject(javaClass.classLoader!!.getResourceAsStream("auth-native-v1.json")!!.bufferedReader().use { it.readText() })
     private val token = "A".repeat(43)
+    private object TestHost : GoogleSignInHost
+    private class FakeGoogle(var result: Result<String> = Result.success("fake-google-id-token")) : GoogleIdProvider {
+        val nonces = mutableListOf<String>()
+        override suspend fun authorize(host: GoogleSignInHost, nonce: String): String { nonces += nonce; return result.getOrThrow() }
+    }
+    private val webClientId = "synthetic-web-client.apps.googleusercontent.com"
     private fun session(expired: Boolean = false, rotated: Boolean = false) = AccountSession(if(rotated) "B".repeat(42)+"A" else token,token,if(expired) "2000-01-01T00:00:00.000Z" else "2100-01-01T00:00:00.000Z","2100-02-01T00:00:00.000Z","12345678-1234-4234-8234-123456789abc")
     @Test fun sharedProofCanonicalLinksAndEmailCasesAgreeWithTheBackend() {
         val f=fixture(); assertEquals(f.getString("proof"),AccountProtocol.proof(f.getString("verifier")))
@@ -167,6 +177,147 @@ class AccountTest {
             }
         }
         val account=AccountManager(memory,this,api,true);account.requestDeletion();yield();assertEquals(2,calls);assertEquals(1,refreshed);assertNull(memory.value.session)
+    }
+    @Test fun providerNonceIsTheProofHashBothClientsAndTheBackendShare() {
+        val provider=fixture().getJSONObject("provider")
+        assertEquals(provider.getString("nonce"),AccountProtocol.proof(provider.getString("verifier")))
+    }
+    @Test fun googleSignInPersistsChallengePresentsProofNonceAndRetriesLostResponses() = runBlocking {
+        val memory=Memory(); val fake=FakeGoogle(); val challenges=mutableListOf<String>(); val verifies=mutableListOf<String>(); var verifyCalls=0; var loseVerify=true
+        val api=AccountAPI { path,body,_ ->
+            if(path=="/v1/auth/provider/challenges") {
+                assertNotNull(memory.value.providerChallenge); assertEquals("google",body!!.getString("provider"))
+                challenges+=body.toString()
+                JSONObject().put("challengeId",body.getString("idempotencyId")).put("expiresInSeconds",900)
+            } else if(path=="/v1/me") JSONObject().put("id","12345678-1234-4234-8234-123456789abc").put("email","cook@example.com").put("identities",JSONArray().put(JSONObject().put("provider","google")))
+            else {
+                assertEquals("/v1/auth/provider/verify",path); assertNotNull(memory.value.providerChallenge!!.operation)
+                assertEquals("fake-google-id-token",body!!.getString("idToken")); verifyCalls++
+                if(verifies.isEmpty()) verifies+=body.toString() else assertEquals(verifies[0],body.toString())
+                if(loseVerify) { loseVerify=false; throw AccountFailure() }; session().json()
+            }
+        }
+        val first=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        first.signInWithGoogle(TestHost); yield()
+        assertFalse(first.presentation.value.signedIn)
+        assertEquals("Couldn't complete sign-in. Retry the same request when you're online.",first.presentation.value.message)
+        assertNotNull(memory.value.providerChallenge?.operation)
+        val second=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        second.signInWithGoogle(TestHost); yield()
+        assertTrue(second.presentation.value.signedIn)
+        assertEquals("Signed in with Google. Your local cookbook is unchanged.",second.presentation.value.message)
+        assertNull(memory.value.providerChallenge)
+        assertEquals(2,challenges.size); assertEquals(challenges[0],challenges[1]); assertEquals(2,verifyCalls)
+        val proof=AccountProtocol.proof(JSONObject(verifies[0]).getString("verifier"))
+        assertEquals(listOf(proof,proof),fake.nonces)
+        assertEquals(proof,JSONObject(challenges[0]).getString("proofChallenge"))
+        assertEquals("cook@example.com",second.presentation.value.accountEmail); assertTrue(second.presentation.value.googleLinked)
+        assertFalse(ProviderChallenge("id","google","distinctive-verifier-value",0,"op",false).toString().contains("distinctive-verifier-value"))
+    }
+    @Test fun googleSheetCancellationStaysSilentAndKeepsPendingChallenge() = runBlocking {
+        val memory=Memory(); val fake=FakeGoogle(Result.failure(GoogleIdCancellation())); val paths=mutableListOf<String>()
+        val api=AccountAPI { path,body,_ -> paths+=path; assertEquals("/v1/auth/provider/challenges",path); JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900) }
+        val account=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        account.signInWithGoogle(TestHost); yield()
+        assertNull(account.presentation.value.message); assertFalse(account.presentation.value.signedIn)
+        assertEquals(listOf("/v1/auth/provider/challenges"),paths)
+        assertNotNull(memory.value.providerChallenge); assertNotNull(memory.value.providerChallenge?.operation); assertEquals(1,fake.nonces.size)
+    }
+    @Test fun onlySheetDismissalAndNoCredentialStaySilent() {
+        assertTrue(googleIdSilenced(GetCredentialCancellationException()))
+        assertTrue(googleIdSilenced(NoCredentialException()))
+        assertFalse(googleIdSilenced(GetCredentialInterruptedException()))
+    }
+    @Test fun googleSheetFailureFallsBackToEmail() = runBlocking {
+        val memory=Memory(); val fake=FakeGoogle(Result.failure(GetCredentialInterruptedException()))
+        val api=AccountAPI { _,body,_ -> JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900) }
+        val account=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        account.signInWithGoogle(TestHost); yield()
+        assertEquals("Sign in with Google is unavailable. Try email sign-in instead.",account.presentation.value.message)
+        assertFalse(account.presentation.value.signedIn); assertNotNull(memory.value.providerChallenge)
+    }
+    @Test fun googleAttachLinksWhileSignedInWithoutANewSession() = runBlocking {
+        val memory=Memory(AccountState(session=session())); val fake=FakeGoogle(); var identitiesCalls=0
+        val api=AccountAPI { path,body,access ->
+            if(path=="/v1/auth/provider/challenges") { assertEquals(true,memory.value.providerChallenge?.bound); assertEquals(token,access); JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900) }
+            else if(path=="/v1/me/identities") { identitiesCalls++; assertEquals(true,memory.value.providerChallenge?.bound); assertEquals(token,access); JSONObject().put("identities",JSONArray().put(JSONObject().put("provider","google"))) }
+            else { assertEquals("/v1/me",path); JSONObject().put("id","12345678-1234-4234-8234-123456789abc").put("email","cook@example.com").put("identities",JSONArray().put(JSONObject().put("provider","google"))) }
+        }
+        val account=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        account.attachGoogle(TestHost); yield()
+        assertEquals(1,identitiesCalls); assertTrue(account.presentation.value.googleLinked)
+        assertEquals("cook@example.com",account.presentation.value.accountEmail)
+        assertEquals(token,memory.value.session?.refreshToken); assertNull(memory.value.providerChallenge)
+        assertEquals("Google sign-in is linked. Email sign-in still works as a backup.",account.presentation.value.message)
+        assertEquals(1,fake.nonces.size)
+    }
+    @Test fun googleSignInConflictDirectsToExistingMethodThenAttach() = runBlocking {
+        val memory=Memory()
+        val api=AccountAPI { path,body,_ ->
+            if(path=="/v1/auth/provider/challenges") JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900)
+            else { assertEquals("/v1/auth/provider/verify",path); throw AccountFailure(409) }
+        }
+        val account=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=FakeGoogle())
+        account.signInWithGoogle(TestHost); yield()
+        assertEquals("Sign in with your existing method first, then add Google sign-in in account settings.",account.presentation.value.message)
+        assertFalse(account.presentation.value.signedIn)
+        assertNotNull(memory.value.providerChallenge); assertNull(memory.value.providerChallenge?.operation)
+    }
+    @Test fun googleSignInWithoutEmailDirectsToEmailThenAttach() = runBlocking {
+        val memory=Memory()
+        val api=AccountAPI { path,body,_ ->
+            if(path=="/v1/auth/provider/challenges") JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900)
+            else { assertEquals("/v1/auth/provider/verify",path); throw AccountFailure(401) }
+        }
+        val account=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=FakeGoogle())
+        account.signInWithGoogle(TestHost); yield()
+        assertEquals("This Google sign-in expired or is unavailable. Try again, or sign in by email first and then add Google sign-in in account settings.",account.presentation.value.message)
+        assertFalse(account.presentation.value.signedIn)
+        assertNotNull(memory.value.providerChallenge); assertNull(memory.value.providerChallenge?.operation)
+    }
+    @Test fun googleAttachConflictAndRejectionKeepGuidance() = runBlocking {
+        for((status,expected) in listOf(409 to "Sign in with your existing method first, then add Google sign-in in account settings.",401 to "Couldn't add Google sign-in. Try again.")) {
+            val memory=Memory(AccountState(session=session()))
+            val api=AccountAPI { path,body,_ ->
+                if(path=="/v1/auth/provider/challenges") JSONObject().put("challengeId",body!!.getString("idempotencyId")).put("expiresInSeconds",900)
+                else { assertEquals("/v1/me/identities",path); throw AccountFailure(status) }
+            }
+            val account=AccountManager(memory,this,api,true,googleWebClientId=webClientId,googleAdvertised=true,google=FakeGoogle())
+            account.attachGoogle(TestHost); yield()
+            assertEquals(expected,account.presentation.value.message)
+            assertTrue(account.presentation.value.signedIn); assertFalse(account.presentation.value.googleLinked)
+            assertNotNull(memory.value.providerChallenge)
+        }
+    }
+    @Test fun googleButtonNeedsAccountsAdvertisedDeploymentAndClientId() = runBlocking {
+        fun manager(enabled: Boolean,advertised: Boolean,clientId: String,scope: CoroutineScope) = AccountManager(Memory(),scope,AccountAPI { _,_,_ -> JSONObject() },enabled,googleWebClientId=clientId,googleAdvertised=advertised,google=FakeGoogle())
+        assertTrue(manager(true,true,webClientId,this).googleSignInAvailable)
+        assertFalse(manager(false,true,webClientId,this).googleSignInAvailable)
+        assertFalse(manager(true,false,webClientId,this).googleSignInAvailable)
+        assertFalse(manager(true,true,"",this).googleSignInAvailable)
+        val fake=FakeGoogle(); var calls=0
+        val disabled=AccountManager(Memory(),this,AccountAPI { _,_,_ -> calls++; JSONObject() },false,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        disabled.signInWithGoogle(TestHost); yield(); disabled.attachGoogle(TestHost); yield()
+        assertEquals(0,calls); assertTrue(fake.nonces.isEmpty())
+        assertEquals(AccountFailure(503).message,disabled.presentation.value.message)
+    }
+    @Test fun googleChallengeUnavailableFallsBackToEmail() = runBlocking {
+        val fake=FakeGoogle()
+        val account=AccountManager(Memory(),this,AccountAPI { _,_,_ -> throw AccountFailure(401) },true,googleWebClientId=webClientId,googleAdvertised=true,google=fake)
+        account.signInWithGoogle(TestHost); yield()
+        assertEquals("Sign in with Google is unavailable. Try email sign-in instead.",account.presentation.value.message)
+        assertTrue(fake.nonces.isEmpty()); assertFalse(account.presentation.value.signedIn)
+    }
+    @Test fun checkSessionStoresAccountEmailAndLinkedProviders() = runBlocking {
+        val memory=Memory(AccountState(session=session()))
+        val account=AccountManager(memory,this,AccountAPI { path,_,_ ->
+            assertEquals("/v1/me",path)
+            JSONObject().put("id","12345678-1234-4234-8234-123456789abc").put("email","cook@example.com").put("identities",JSONArray().put(JSONObject().put("provider","google")).put(JSONObject().put("provider","unknown-future")))
+        },true)
+        account.checkSession(); yield()
+        assertEquals("Your session is active.",account.presentation.value.message)
+        assertEquals("cook@example.com",account.presentation.value.accountEmail)
+        assertTrue(account.presentation.value.googleLinked)
     }
 
 }
