@@ -48,10 +48,12 @@ exact-head Actions acceptance. No online Firebase build has been distributed.
 
 2026-10-21 (#123): operations integration PR #125 merged at `b945e9a` with both
 exact-main gates green. Provider sign-in (owner decision; plan doc 21) merged as
-backend PR #127 and iOS PR #128, Android in PR #130; Google OAuth clients created
-in GCP project `pittech-529a1`. The Play `pittech.pro.monthly` draft now exists
-(created after the "Manage store presence" grant; DRAFT, US $3); the Apple draft
-remains MISSING_METADATA. Staging mail and deployment reconciliation wait on
+backend PR #127, iOS PR #128 and Android PR #130 (main `dfaacb3`); Google OAuth
+clients created in GCP project `pittech-529a1`. The Play `pittech.pro.monthly`
+draft now exists (created after the "Manage store presence" grant; DRAFT, US $3)
+and Play RTDN is wired console-side with a successful test notification; the
+Apple draft remains MISSING_METADATA (the App Review screenshot was never
+uploaded — it gates submission, not sandbox testing). Staging mail and deployment reconciliation wait on
 Railway's platform incident — the API is unavailable while staging itself stays
 live and fail-closed.
 

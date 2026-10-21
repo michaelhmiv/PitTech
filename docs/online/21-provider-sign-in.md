@@ -2,7 +2,7 @@
 
 Implementation plan for issue #123, from the owner's 2026-10-21 decision.
 Implemented 2026-10-21: backend PR #127 (main `adcaf40`), iOS PR #128 (main
-`306c479`), Android PR #130. Code on all three slices is inert until the
+`306c479`), Android PR #130 (main `dfaacb3`). Code on all three slices is inert until the
 deployment's provider configuration is installed (`AUTH_APPLE_AUDIENCES`,
 `AUTH_GOOGLE_WEB_CLIENT_ID`) and accounts are enabled at staging acceptance.
 Email code/link sign-in (PR 08/09) stays as the recovery
