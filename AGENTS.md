@@ -171,7 +171,8 @@ On October 20 the owner authorized completing the online rollout and distributin
 the tested build through Firebase. Missing runtime/store inputs and verification
 remain real prerequisites; older “awaiting authorization” notes do not require
 another permission request. MCP #114 is fully planned and paused for this rollout. The isolated staging
-foundation is deployed (see `docs/online/STAGING.md`); online feature flags stay
+foundation and private runtime/storage probe have passed; the API is deployed at
+backend-tested 9ee2e2d (see `docs/online/STAGING.md`). Online feature flags stay
 off until full operational acceptance. The companion emulator selector now
 requires 71 tests, including persistent subscription-cache account isolation.
 Native online configuration selects production or staging with fixed first-party
@@ -181,7 +182,11 @@ Real store sandbox builds keep the registered store identity and need the explic
 sandbox configuration. Never infer paid access from the chosen build profile.
 Firebase online dispatch also requires completed environment acceptance markers;
 its Dev package supports account/sync testing, while Play purchases need the
-registered package. See docs/online/20-online-enablement.md.
+registered package. CI-only operations under `.github/scripts/online-*` preserve
+public signer/store receipts and guard the authorized #124 merge without changing
+its candidate. Keep main push/profile CI explicit after workflow-token merges.
+Apple's monthly product is a draft; Play pricing access and staging mail are still
+blocked. See docs/online/20-online-enablement.md.
 
 If your change alters the repo layout, the workflows and what they prove,
 signing, the ads setup, or any rule above, update this file in the same PR.

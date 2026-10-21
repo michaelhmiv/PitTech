@@ -1,22 +1,33 @@
-## October 20 online rollout checkpoint
+## October 20 evening online rollout checkpoint
 
-MCP #114 is fully planned and paused for online enablement #123. Isolated
-Railway staging is now provisioned at `5d246b2`: restricted runtime bootstrap
-reported readiness and the API HTTPS health check returned `200/ok`. All online
-feature flags remain off pending complete operational acceptance. Backend
-Actions 39449305667 passed 178 tests with zero skips. Native billing environment
-and account-cache fixes are in review, not yet verified on their final SHA.
-See [STAGING.md](STAGING.md) and [20-online-enablement.md](20-online-enablement.md).
+PR #124's candidate is `9ee2e2d`. Backend/container checks passed 181 tests
+with no skips; all Android emulator lanes, both native staging inspections,
+the Play bundle and public audit passed. Focused online iOS regressions
+passed; the complete serial iOS run 39513125256 is still in progress.
 
-The staging hostnames api-staging.pittech.app and staging.pittech.app now have
-propagated CNAMEs, verified ownership and valid TLS. Email DNS was retriggered
-and is pending verification. A private storage/role probe is prepared, not run:
-Railway refused its first deployment with "Deploys have been paused temporarily"
-and retained a source update in a pending patch. The API and database remain
-healthy on their previous pinned backend. Browser/store setup and manual Firebase
-dispatch remain unavailable without the originating connected browser context.
-The profile and distribution preparation in PR #124 does not claim operational
-acceptance or successful distribution.
+The isolated API is deployed at that tested source. Its private probe actually
+verified restricted DB access and storage/replay/deletion fences; explicit
+restart recovered to 200/ok. Both native association files are served, and
+Android Dev matches the public certificate extracted from the existing CI key.
+
+Apple's `pittech.pro.monthly` draft has a one-month period, English metadata
+and a verified US $3 price. Review metadata and real purchases remain open.
+Play catalog reads work, but pricing configuration returned PERMISSION_DENIED.
+All four staging email DNS records are absent; DNS sign-in was not completed.
+No staging sending key is installed. All online flags remain false.
+
+The isolated operations branch `work/online-signing-evidence` preserves these
+receipts and runs a bounded exact-source merge guard for #124. It verifies
+all six required workflows, the PR head and tested main base before merging;
+a changed source/base or failed workflow stops it. Actions 39526241615 is
+still waiting for iOS. GITHUB_TOKEN merges do not trigger normal push CI;
+after the guarded merge, integrate the verified operations/checkpoint through
+the connected GitHub app, run Android checks on that resulting main SHA, and
+explicitly dispatch the online-profile workflow on the same main SHA before
+Firebase. Never infer that a workflow-token merge started those push gates.
+
+MCP #114 stays planned and paused. See [STAGING.md](STAGING.md) and
+[20-online-enablement.md](20-online-enablement.md) for remaining acceptance.
 
 # Issue #89 delivery status
 
