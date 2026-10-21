@@ -87,12 +87,21 @@ function parseAppleIdAuth(capabilities) {
   return { present: true, enabled: true, capabilityId: matches[0].id ?? null, enabledSource: 'presence' };
 }
 async function appleSignInWithApple(token) {
+  // A read-only inventory reports per-call outcomes instead of failing the
+  // whole Apple section on the first rejected call: a rejected read is data
+  // (stage + status + code), and the remaining identifiers still report.
   const entries = [];
   for (const identifier of signInWithAppleIdentifiers) {
-    const records = await appleList('/v1/bundleIds?filter[identifier]=' + encodeURIComponent(identifier), token, 'apple_siwa');
-    if (records.length > 1) throw Object.assign(new Error(), { stage: 'apple_siwa', code: 'AMBIGUOUS_BUNDLE_ID' });
+    let records;
+    try {
+      records = await appleList('/v1/bundleIds?filter[identifier]=' + encodeURIComponent(identifier), token, 'apple_siwa');
+    } catch (error) { entries.push({ identifier, found: null, lookup: failure(error, 'apple_siwa') }); continue; }
+    if (records.length > 1) { entries.push({ identifier, found: null, lookup: { ok: false, stage: 'apple_siwa', code: 'AMBIGUOUS_BUNDLE_ID' } }); continue; }
     if (!records.length) { entries.push({ identifier, found: false }); continue; }
-    const capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities?limit=200', token, 'apple_siwa');
+    let capabilities;
+    try {
+      capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities?limit=200', token, 'apple_siwa');
+    } catch (error) { entries.push({ identifier, found: true, bundleId: records[0].id, capabilitiesRead: failure(error, 'apple_siwa') }); continue; }
     entries.push({
       identifier, found: true, bundleId: records[0].id, name: records[0].attributes?.name ?? null, platform: records[0].attributes?.platform ?? null,
       capabilityTypes: capabilities.map(item => item?.attributes?.capabilityType).filter(type => typeof type === 'string'),
