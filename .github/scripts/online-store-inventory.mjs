@@ -14,6 +14,8 @@ function requireEnv(name) {
   return value;
 }
 async function responseJson(response, stage) {
+  // An empty successful collection may be returned as HTTP 204.
+  if (response.status === 204) return {};
   let body;
   try { body = await response.json(); } catch { throw Object.assign(new Error(), { stage, status: response.status, code: 'INVALID_JSON' }); }
   if (!response.ok) {
