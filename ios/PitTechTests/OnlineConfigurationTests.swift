@@ -42,6 +42,19 @@ final class OnlineConfigurationTests: XCTestCase {
         }
     }
 
+    func testAppleAudiencesAndAdvertisementFollowTheSharedEnvironments() throws {
+        for row in try XCTUnwrap(fixture()["profiles"] as? [[String: Any]]) {
+            let config = try NativeOnlineConfiguration(environment: XCTUnwrap(row["environment"] as? String))
+            let audiences = try XCTUnwrap(row["appleAudiences"] as? [String])
+            XCTAssertEqual(config.appleAudiences, audiences)
+            for audience in audiences { XCTAssertTrue(config.advertisesAppleSignIn(bundleIdentifier: audience), audience) }
+            XCTAssertFalse(config.advertisesAppleSignIn(bundleIdentifier: "com.pittech.unconfigured"))
+            XCTAssertFalse(config.advertisesAppleSignIn(bundleIdentifier: nil))
+        }
+        XCTAssertTrue(try NativeOnlineConfiguration(environment: "staging").advertisesAppleSignIn(bundleIdentifier: "com.pittech"))
+        XCTAssertFalse(try NativeOnlineConfiguration(environment: "production").advertisesAppleSignIn(bundleIdentifier: "com.pittech.staging"))
+    }
+
     func testUnknownProfilesAreRejectedAndEnablementIsExplicit() throws {
         for environment in try XCTUnwrap(fixture()["invalidEnvironments"] as? [String]) {
             XCTAssertThrowsError(try NativeOnlineConfiguration(environment: environment, enabled: true))

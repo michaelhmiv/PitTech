@@ -2,6 +2,10 @@
   "verifier": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
   "proof": "ea866a757e4c38babfa8127cbe9a409d3e1f93a00ff1488ff735fcf917afffd0",
   "challengeId": "12345678-1234-4234-8234-123456789abc",
+  "provider": {
+    "verifier": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "nonce": "ea866a757e4c38babfa8127cbe9a409d3e1f93a00ff1488ff735fcf917afffd0"
+  },
   "validLinks": [
     "https://pittech.app/auth#challenge=12345678-1234-4234-8234-123456789abc&token=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
   ],
