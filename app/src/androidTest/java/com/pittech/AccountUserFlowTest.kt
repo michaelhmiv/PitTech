@@ -1,6 +1,10 @@
 package com.pittech
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -246,7 +250,10 @@ import android.graphics.Bitmap
         try {
             val signedIn=storage(session)
             val account=AccountManager(signedIn,scope,api,true,googleWebClientId="synthetic-web-client.apps.googleusercontent.com",googleAdvertised=true,google=fake)
-            compose.setContent { PitTechTheme { AccountContent(account) } }
+            // One setContent per activity: the hidden matrix swaps the manager through
+            // snapshot state under key(), which disposes the previous account subtree.
+            var current by mutableStateOf<AccountManager>(account)
+            compose.setContent { PitTechTheme { key(current) { AccountContent(current) } } }
             compose.onNodeWithTag("account-google-attach").performScrollTo().performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("account-auth-google").fetchSemanticsNodes().isNotEmpty() }
             assertEquals(session.refreshToken,signedIn.value.session?.refreshToken)
@@ -257,7 +264,7 @@ import android.graphics.Bitmap
                 AccountManager(storage(session),scope,api,true,googleWebClientId="",googleAdvertised=true,google=fake)
             )
             for(hiddenAccount in hidden) {
-                compose.setContent { PitTechTheme { AccountContent(hiddenAccount) } }
+                compose.runOnIdle { current=hiddenAccount }
                 compose.waitForIdle()
                 compose.onAllNodesWithTag("account-google-signin").assertCountEquals(0)
                 compose.onAllNodesWithTag("account-google-attach").assertCountEquals(0)
