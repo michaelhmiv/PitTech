@@ -165,8 +165,13 @@ export class Authentication {
       const row = (await client.query<ProviderChallenge>('SELECT * FROM auth.provider_challenges WHERE id=$1 FOR UPDATE', [id])).rows[0];
       if (!row || Number(row.expires_at) <= now || !equalHash(row.proof_hash, proof)) return invalid;
       if (row.consumed_at != null) {
-        if (claims && row.exchange_id === input.idempotencyId && row.exchange_envelope && Number(row.exchange_expires_at) > now)
-          return { status: 'session', session: this.secrets.open('provider-exchange/' + id, row.exchange_envelope) as AuthSession } as Outcome;
+        if (claims && row.exchange_id === input.idempotencyId && row.exchange_envelope && Number(row.exchange_expires_at) > now) {
+          // Exact retry only: the envelope is bound to the subject that
+          // consumed the challenge, so a different provider token on the
+          // same proof/idempotency pair can never replay the session.
+          const envelope = this.secrets.open('provider-exchange/' + id, row.exchange_envelope) as { session: AuthSession; subjectKey: string };
+          if (envelope.subjectKey === subjectKey) return { status: 'session', session: envelope.session } as Outcome;
+        }
         return invalid;
       }
       if (row.attempts >= AUTH.attempts) return invalid;
@@ -181,7 +186,7 @@ export class Authentication {
         const sessionId = randomUUID(), expires = now + AUTH.sessionMs;
         await client.query('INSERT INTO auth.sessions(id,user_id,created_at,expires_at) VALUES($1,$2,$3,$4)', [sessionId, live!.user_id, now, expires]);
         const session = await this.tokens(client, sessionId, live!.user_id, expires);
-        await client.query('UPDATE auth.provider_challenges SET exchange_id=$2,exchange_envelope=$3,exchange_expires_at=$4 WHERE id=$1', [id, input.idempotencyId, this.secrets.seal('provider-exchange/' + id, session), Math.min(now + 30_000, Number(row.expires_at))]);
+        await client.query('UPDATE auth.provider_challenges SET exchange_id=$2,exchange_envelope=$3,exchange_expires_at=$4 WHERE id=$1', [id, input.idempotencyId, this.secrets.seal('provider-exchange/' + id, { session, subjectKey }), Math.min(now + 30_000, Number(row.expires_at))]);
         return { status: 'session', session } as Outcome;
       }
       const user = (await client.query<{ id: string }>('INSERT INTO auth.users VALUES($1,$2,$3) ON CONFLICT(email) DO UPDATE SET email=EXCLUDED.email RETURNING id', [candidate, usableEmail!, now])).rows[0];
@@ -191,7 +196,7 @@ export class Authentication {
       const sessionId = randomUUID(), expires = now + AUTH.sessionMs;
       await client.query('INSERT INTO auth.sessions(id,user_id,created_at,expires_at) VALUES($1,$2,$3,$4)', [sessionId, user.id, now, expires]);
       const session = await this.tokens(client, sessionId, user.id, expires);
-      await client.query('UPDATE auth.provider_challenges SET exchange_id=$2,exchange_envelope=$3,exchange_expires_at=$4 WHERE id=$1', [id, input.idempotencyId, this.secrets.seal('provider-exchange/' + id, session), Math.min(now + 30_000, Number(row.expires_at))]);
+      await client.query('UPDATE auth.provider_challenges SET exchange_id=$2,exchange_envelope=$3,exchange_expires_at=$4 WHERE id=$1', [id, input.idempotencyId, this.secrets.seal('provider-exchange/' + id, { session, subjectKey }), Math.min(now + 30_000, Number(row.expires_at))]);
       return { status: 'session', session } as Outcome;
     });
     if (result.status === 'invalid') throw unavailable();
@@ -255,13 +260,16 @@ export class Authentication {
         await client.query('UPDATE auth.provider_challenges SET attempts=attempts+1,consumed_at=CASE WHEN attempts+1>=5 THEN $2 ELSE consumed_at END WHERE id=$1', [id, now]);
         return invalid;
       }
+      const subjectKey = this.secrets.hash('provider/' + provider, claims.sub);
       if (row.consumed_at != null) {
-        if (row.exchange_id === input.idempotencyId && row.exchange_envelope && Number(row.exchange_expires_at) > now)
-          return { status: 'linked', identities: (this.secrets.open('provider-attach/' + id, row.exchange_envelope) as IdentityList).identities } as Outcome;
+        if (row.exchange_id === input.idempotencyId && row.exchange_envelope && Number(row.exchange_expires_at) > now) {
+          // Exact retry only, bound to the consuming subject (as in verify).
+          const envelope = this.secrets.open('provider-attach/' + id, row.exchange_envelope) as IdentityList & { subjectKey: string };
+          if (envelope.subjectKey === subjectKey) return { status: 'linked', identities: envelope.identities } as Outcome;
+        }
         return invalid;
       }
       if (row.attempts >= AUTH.attempts) return invalid;
-      const subjectKey = this.secrets.hash('provider/' + provider, claims.sub);
       const live = (await client.query<{ user_id: string }>('SELECT user_id FROM auth.provider_identities WHERE provider=$1 AND subject_key=$2', [provider, subjectKey])).rows[0];
       const mine = (await client.query<{ subject_key: string }>('SELECT subject_key FROM auth.provider_identities WHERE user_id=$1 AND provider=$2', [user.id, provider])).rows[0];
       const valid = (!live || live.user_id === user.id) && (!mine || mine.subject_key === subjectKey);
@@ -273,7 +281,7 @@ export class Authentication {
       const check = (await client.query<{ user_id: string; subject_key: string }>('SELECT user_id,subject_key FROM auth.provider_identities WHERE user_id=$1 AND provider=$2', [user.id, provider])).rows[0];
       if (!check || check.subject_key !== subjectKey) return { status: 'link-required' } as Outcome;
       const identities = (await client.query<{ provider: string }>('SELECT provider FROM auth.provider_identities WHERE user_id=$1 ORDER BY provider', [user.id])).rows.map(entry => ({ provider: entry.provider }));
-      await client.query('UPDATE auth.provider_challenges SET exchange_id=$2,exchange_envelope=$3,exchange_expires_at=$4 WHERE id=$1', [id, input.idempotencyId, this.secrets.seal('provider-attach/' + id, { identities }), Math.min(now + 30_000, Number(row.expires_at))]);
+      await client.query('UPDATE auth.provider_challenges SET exchange_id=$2,exchange_envelope=$3,exchange_expires_at=$4 WHERE id=$1', [id, input.idempotencyId, this.secrets.seal('provider-attach/' + id, { identities, subjectKey }), Math.min(now + 30_000, Number(row.expires_at))]);
       return { status: 'linked', identities } as Outcome;
     });
     if (result.status === 'invalid') throw unavailable();
