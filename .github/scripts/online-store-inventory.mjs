@@ -100,7 +100,7 @@ async function appleSignInWithApple(token) {
     if (!records.length) { entries.push({ identifier, found: false }); continue; }
     let capabilities;
     try {
-      capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities?limit=200', token, 'apple_siwa');
+      capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities', token, 'apple_siwa');
     } catch (error) { entries.push({ identifier, found: true, bundleId: records[0].id, capabilitiesRead: failure(error, 'apple_siwa') }); continue; }
     entries.push({
       identifier, found: true, bundleId: records[0].id, name: records[0].attributes?.name ?? null, platform: records[0].attributes?.platform ?? null,
