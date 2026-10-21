@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool,PoolClient } from 'pg';
-import { ApiError } from './core.ts';
+import { ApiError,digest } from './core.ts';
 import { AuthSecrets,credential,equalHash,isCredential } from './auth-credentials.ts';
 import { deletion,recovery,fields,uuid,requestHash,lockAccount,type DeletionReceipt } from './lifecycle-contract.ts';
 import { LifecycleMailFailure,type LifecycleMailer,type LifecycleMail } from './lifecycle-email.ts';
@@ -32,12 +32,45 @@ export class AccountDeletion {
       await client.query('INSERT INTO moderation.deletions(id,operation_id,user_id,proof_hash,request_hash,status_hash,receipt_envelope,state,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,\'queued\',$8)',[id,request.operationId,user.id,request.proofChallenge,hash,this.secrets.hash('deletion-status/'+id,statusToken),this.secrets.seal('deletion-receipt/'+id,receipt),now]);
       await client.query('INSERT INTO auth.account_lifecycle(user_id,deleting,updated_at) VALUES($1,true,$2) ON CONFLICT(user_id) DO UPDATE SET deleting=true,updated_at=$2',[user.id,now]);
       await client.query('DELETE FROM auth.sessions WHERE user_id=$1',[user.id]);await client.query('DELETE FROM auth.challenges WHERE email=$1',[account.email]);
+      await client.query('DELETE FROM auth.provider_challenges WHERE user_id=$1',[user.id]);
       await client.query('UPDATE publications.profiles SET is_public=false WHERE user_id=$1',[user.id]);
       await client.query('UPDATE publications.items SET status=\'purged\',current_revision_id=NULL WHERE author_id=$1',[user.id]);
       // Preserve live upload leases to reduce contention. Storage cleanup replaces
       // bytes with a create-only fence; lease expiry alone is not a write fence.
       await client.query('UPDATE publications.objects SET state=\'deleting\',lease_until=GREATEST(lease_until,$2) WHERE owner_id=$1',[user.id,now+60000]);
       return receipt;
+    });
+  }
+  /** Provider-initiated deletion (Sign in with Apple account-delete /
+   * consent-revoked). Reproduces request()'s account-side effects under a
+   * server-derived operation identifier; no proof or receipt capability is
+   * issued, and the existing sweep consumes the job. Idempotent. */
+  async requestForAppleEvent(input:{operationId:string;userId:string}):Promise<{deletionId:string;state:string}>{
+    if(!uuid(input.operationId)||!uuid(input.userId))throw new ApiError(503,'temporarily_unavailable');
+    return this.tx(async client=>{
+      const prior=(await client.query<Job>('SELECT * FROM moderation.deletions WHERE operation_id=$1',[input.operationId])).rows[0];
+      if(prior)return {deletionId:prior.id,state:prior.state};
+      const hint=(await client.query('SELECT id,email FROM auth.users WHERE id=$1',[input.userId])).rows[0] as {id:string;email:string}|undefined;
+      if(!hint)return {deletionId:'',state:'unknown-account'};
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,890008))',[this.hashEmail(hint.email)]);
+      await lockAccount(client,input.userId);
+      const applied=(await client.query<Job>('SELECT * FROM moderation.deletions WHERE operation_id=$1',[input.operationId])).rows[0];
+      if(applied)return {deletionId:applied.id,state:applied.state};
+      const userJob=(await client.query<Job>('SELECT * FROM moderation.deletions WHERE user_id=$1',[input.userId])).rows[0];
+      if(userJob)return {deletionId:userJob.id,state:userJob.state};
+      const account=(await client.query('SELECT id,email FROM auth.users WHERE id=$1',[input.userId])).rows[0] as {id:string;email:string}|undefined;
+      if(!account)return {deletionId:'',state:'unknown-account'};
+      const id=randomUUID(),now=this.clock(),statusToken=credential();
+      // Placeholder proof material satisfies the job's integrity checks but is
+      // discarded unissued: no device can recover or poll this provider job.
+      await client.query('INSERT INTO moderation.deletions(id,operation_id,user_id,proof_hash,request_hash,status_hash,receipt_envelope,state,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,\'queued\',$8)',[id,input.operationId,input.userId,digest('apple-event-proof/'+input.operationId),digest('apple-event-request/'+input.operationId),this.secrets.hash('deletion-status/'+id,statusToken),this.secrets.seal('deletion-receipt/'+id,{deletionId:id,statusToken,state:'queued'}),now]);
+      await client.query('INSERT INTO auth.account_lifecycle(user_id,deleting,updated_at) VALUES($1,true,$2) ON CONFLICT(user_id) DO UPDATE SET deleting=true,updated_at=$2',[input.userId,now]);
+      await client.query('DELETE FROM auth.sessions WHERE user_id=$1',[input.userId]);await client.query('DELETE FROM auth.challenges WHERE email=$1',[account.email]);
+      await client.query('DELETE FROM auth.provider_challenges WHERE user_id=$1',[input.userId]);
+      await client.query('UPDATE publications.profiles SET is_public=false WHERE user_id=$1',[input.userId]);
+      await client.query('UPDATE publications.items SET status=\'purged\',current_revision_id=NULL WHERE author_id=$1',[input.userId]);
+      await client.query('UPDATE publications.objects SET state=\'deleting\',lease_until=GREATEST(lease_until,$2) WHERE owner_id=$1',[input.userId,now+60000]);
+      return {deletionId:id,state:'queued'};
     });
   }
   async recover(input:unknown){
@@ -93,6 +126,7 @@ export class AccountDeletion {
       await client.query('INSERT INTO moderation.notices(id,deletion_id,kind,envelope,state,next_attempt,created_at) VALUES($1,$2,\'deletion_complete\',$3,\'pending\',$4,$4)',[noticeId,job.id,this.secrets.seal('notice/'+noticeId,mail),now]);
       await client.query('DELETE FROM publications.profiles WHERE user_id=$1',[user]);
       await client.query('DELETE FROM auth.challenges WHERE email=$1',[account.email]);
+      await client.query('DELETE FROM auth.provider_challenges WHERE user_id=$1',[user]);
       // Remove all identifying ownership and original lineage. Keep a stub only
       // when an independently owned revision or parent relation refers to its ID.
       const ids=(await client.query('SELECT id FROM publications.items WHERE author_id=$1',[user])).rows.map(row=>row.id);

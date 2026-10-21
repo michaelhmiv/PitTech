@@ -268,3 +268,68 @@ test('staging runtime refuses production authentication origins before opening p
   assert.equal(runtime.options.links.online?.environment, 'staging');
   assert.equal(runtime.options.links.androidPackageName, 'com.pittech.dev');
 });
+
+test('provider sign-in stays off unless deployment audiences are configured', async t => {
+  const { env } = enabled();
+  withEnv(t, { ...env, AUTH_APPLE_AUDIENCES: undefined, AUTH_GOOGLE_WEB_CLIENT_ID: undefined });
+  const runtime = createRuntime();
+  try {
+    assert.ok(runtime.auth);
+    assert.equal(runtime.auth.providers, undefined);
+    assert.equal(runtime.refreshProviderKeys, undefined);
+  } finally { await runtime.close(); }
+});
+
+test('provider sign-in requires accounts and complete per-provider configuration', async t => {
+  const { env } = enabled();
+  withEnv(t, { ...env, AUTH_APPLE_AUDIENCES: 'app.pittech.synthetic', AUTH_GOOGLE_WEB_CLIENT_ID: undefined, PRO_APPLE_ROOTS: undefined, PRO_APPLE_TRUST_MODE: undefined });
+  swap('AUTH_ENABLED', undefined, /Accounts required/);
+  swap('PRO_APPLE_ROOTS', undefined, /Invalid Apple trust configuration/);
+  swap('PRO_APPLE_ROOTS', 'not-json', /Invalid Apple trust configuration/);
+  swap('PRO_APPLE_ROOTS', '[]', /Invalid Apple trust configuration/);
+  swap('AUTH_APPLE_AUDIENCES', 'not a bundle id!', /Invalid provider configuration/);
+  swap('AUTH_APPLE_AUDIENCES', 'app.pittech.synthetic,,app.pittech.synthetic.staging', /Invalid provider configuration/);
+  swap('AUTH_GOOGLE_WEB_CLIENT_ID', 'not-a-client-id', /Invalid provider configuration/);
+  swap('AUTH_GOOGLE_WEB_CLIENT_ID', 'synthetic-web-client.apps.googleusercontent.com.evil.invalid', /Invalid provider configuration/);
+});
+
+test('provider sign-in configures per-provider audiences, keys and refresh', async t => {
+  withEnv(t, {
+    ...enabled().env,
+    AUTH_APPLE_AUDIENCES: 'app.pittech.synthetic.staging,app.pittech.synthetic,app.pittech.synthetic',
+    AUTH_GOOGLE_WEB_CLIENT_ID: 'synthetic-web-client.apps.googleusercontent.com',
+    PRO_APPLE_ROOTS: JSON.stringify(['synthetic-root']),
+  });
+  const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+    calls.push(String(url));
+    return Response.json({ keys: [oidcPublicJwk] }, { headers: { 'Cache-Control': 'max-age=3600' } });
+  });
+  const runtime = createRuntime();
+  try {
+    assert.deepEqual(runtime.auth?.providers?.apple?.audiences, ['app.pittech.synthetic.staging', 'app.pittech.synthetic']);
+    assert.equal(runtime.auth?.providers?.google?.webClientId, 'synthetic-web-client.apps.googleusercontent.com');
+    assert.equal(runtime.auth?.providers?.deletion, undefined);
+    await runtime.refreshProviderKeys!();
+    assert.deepEqual(calls, ['https://appleid.apple.com/auth/keys', 'https://www.googleapis.com/oauth2/v3/certs']);
+  } finally { await runtime.close(); }
+});
+
+test('provider notifications wire the lifecycle deletion entry only when accounts can delete', async t => {
+  withEnv(t, {
+    ...enabled().env,
+    AUTH_APPLE_AUDIENCES: 'app.pittech.synthetic',
+    AUTH_GOOGLE_WEB_CLIENT_ID: undefined,
+    PRO_APPLE_ROOTS: JSON.stringify(['synthetic-root']),
+    ACCOUNT_LIFECYCLE_ENABLED: 'true',
+    LIFECYCLE_DATABASE_URL: 'postgres://localhost:5432/pittech_lifecycle',
+    LIFECYCLE_HASH_KEY: credential(),
+    LIFECYCLE_ENCRYPTION_KEY: credential(),
+  });
+  const runtime = createRuntime();
+  try {
+    assert.ok(runtime.auth?.providers?.apple);
+    assert.equal(runtime.auth?.providers?.google, undefined);
+    assert.equal(runtime.auth?.providers?.deletion, runtime.deletion);
+  } finally { await runtime.close(); }
+});

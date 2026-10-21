@@ -6,11 +6,12 @@ import { productionCommunityLoad, startCommunityScheduler } from './community-sc
 try {
   const runtime = createRuntime();
   await runtime.pool.query('SELECT 1 FROM relay.packs LIMIT 1');
-  if (runtime.auth) await runtime.pool.query('SELECT 1 FROM auth.challenges LIMIT 1');
+  if (runtime.auth) { await runtime.pool.query('SELECT 1 FROM auth.challenges LIMIT 1'); await runtime.pool.query('SELECT 1 FROM auth.provider_identities LIMIT 1'); }
   if (runtime.publications) await runtime.pool.query('SELECT 1 FROM publications.items LIMIT 1');
   if(runtime.lifecyclePool){await runtime.lifecyclePool.query('SELECT 1 FROM moderation.deletions LIMIT 1');await runtime.lifecyclePool.query('SELECT 1 FROM private_sync.accounts LIMIT 1');}
   if(runtime.syncPool)await runtime.syncPool.query('SELECT 1 FROM private_sync.accounts LIMIT 1');
   if(runtime.subscriptions){await runtime.pool.query('SELECT 1 FROM billing.entitlements LIMIT 1');try{await runtime.refreshOidcKeys?.();}catch{console.error('billing_oidc_deferred');}}
+  if(runtime.refreshProviderKeys){try{await runtime.refreshProviderKeys();}catch{console.error('provider_oidc_deferred');}}
   if(runtime.communityAggregates)await runtime.pool.query('SELECT 1 FROM community_aggregation.job_runs LIMIT 1');
   await pruneUploads(tempRoot);
   const server = makeServer(runtime.relay, { ...runtime.options, log: value => console.info(JSON.stringify(value)) });
@@ -21,8 +22,9 @@ try {
     try { await runtime.relay.sweep(); if(runtime.publications)await runtime.publications.sweep(); if(runtime.deletion)await runtime.deletion.sweepDeletion(); if(runtime.subscriptions)await runtime.subscriptions.reconcileStale(86400000,20); await pruneUploads(tempRoot); if (runtime.relay.storage instanceof FileStorage) await runtime.relay.storage.prune(Date.now()); }
     catch { console.error('relay_cleanup_deferred'); } finally { sweeping = false; }
   }, 60000); timer.unref();
-  const oidcTimer = runtime.subscriptions ? setInterval(async () => {
+  const oidcTimer = runtime.subscriptions || runtime.refreshProviderKeys ? setInterval(async () => {
     try { await runtime.refreshOidcKeys?.(); } catch { console.error('billing_oidc_deferred'); }
+    try { await runtime.refreshProviderKeys?.(); } catch { console.error('provider_oidc_deferred'); }
   }, 300000) : undefined; oidcTimer?.unref();
   let mailing = false;
   const authTimer = runtime.auth ? setInterval(async () => {

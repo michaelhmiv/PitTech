@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { GoogleOidcKeyCache, googleSigningKeys } from '../src/google-oidc-keys.ts';
+import { APPLE_KEYS_ENDPOINT, GOOGLE_CERTS_ENDPOINT, GoogleOidcKeyCache, googleSigningKeys } from '../src/google-oidc-keys.ts';
 import { verifyOidcBearer } from '../src/subscriptions-google.ts';
 import { NOW, oidcAudience, oidcEmail, oidcPublicJwk, signOidc } from './billing-fixtures.ts';
 
@@ -53,6 +53,16 @@ test('untrusted key shapes, private keys, duplicates and weak RSA keys fail clos
     { keys: [{ ...oidcPublicJwk, use: 'enc' }] },
     { keys: [{ ...weak, kid: 'weak', alg: 'RS256', use: 'sig' }] },
   ]) assert.throws(() => googleSigningKeys(value), /OIDC signing keys unavailable/);
+});
+
+test('the cache is parameterized by issuer endpoint with the Google default; unknown endpoints fail closed', async () => {
+  const seen: unknown[] = [];
+  const apple = new GoogleOidcKeyCache(async url => { seen.push(url); return Response.json({ keys: [oidcPublicJwk] }, { headers: { 'Cache-Control': 'max-age=10' } }); }, Date.now, APPLE_KEYS_ENDPOINT);
+  await apple.refresh();
+  assert.deepEqual(seen, [APPLE_KEYS_ENDPOINT]);
+  assert.equal(apple.has('synthetic-oidc-key'), true);
+  assert.throws(() => new GoogleOidcKeyCache(fetch, Date.now, 'https://attacker.invalid/certs'), /Unknown OIDC key endpoint/);
+  assert.equal(GOOGLE_CERTS_ENDPOINT, 'https://www.googleapis.com/oauth2/v3/certs');
 });
 
 test('oversized responses and stale cache headers cannot install keys; excessive lifetimes are capped', async () => {

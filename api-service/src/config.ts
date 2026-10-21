@@ -21,11 +21,31 @@ import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
 import { PrivatePhotos } from './sync-photos.ts';
 import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
-import { GoogleOidcKeyCache } from './google-oidc-keys.ts';
+import { APPLE_KEYS_ENDPOINT, GOOGLE_CERTS_ENDPOINT, GoogleOidcKeyCache } from './google-oidc-keys.ts';
+import type { ProviderServices } from './auth-providers.ts';
 
 const required = (name: string) => { const value = process.env[name]; if (!value) throw new Error('Missing configuration'); return value; };
 function positive(name: string) { const n = Number(required(name)); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
 function positiveDefault(name: string, fallback: number) { const raw = process.env[name]; if (raw === undefined) return fallback; const n = Number(raw); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
+function appleAudiences(): string[] | undefined {
+  const raw = process.env.AUTH_APPLE_AUDIENCES;
+  if (raw === undefined || raw === '') return undefined;
+  const audiences = [...new Set(raw.split(',').map(entry => entry.trim()))];
+  if (!audiences.length || audiences.some(entry => entry.length > 255 || !/^[A-Za-z0-9]+([.-][A-Za-z0-9]+)*$/.test(entry))) throw new Error('Invalid provider configuration');
+  return audiences;
+}
+function googleWebClientId(): string | undefined {
+  const raw = process.env.AUTH_GOOGLE_WEB_CLIENT_ID;
+  if (raw === undefined || raw === '') return undefined;
+  if (raw.length > 256 || !/^[A-Za-z0-9-]+\.apps\.googleusercontent\.com$/.test(raw)) throw new Error('Invalid provider configuration');
+  return raw;
+}
+function appleChainRoots(): string[] {
+  let roots: unknown;
+  try { roots = JSON.parse(required('PRO_APPLE_ROOTS')); } catch { throw new Error('Invalid Apple trust configuration'); }
+  if (!Array.isArray(roots) || !roots.length || !roots.every(root => typeof root === 'string')) throw new Error('Invalid Apple trust configuration');
+  return roots;
+}
 export function createRuntime() {
   const online = onlineEnvironment(process.env.ONLINE_ENVIRONMENT);
   if (process.env.AUTH_ENABLED === 'true' && process.env.AUTH_PUBLIC_ORIGIN !== online.publicOrigin) throw new Error('Authentication origin does not match online environment');
@@ -47,9 +67,10 @@ export function createRuntime() {
   const relay = new Relay(new PostgresRepository(pool), storage, budgets);
   const port = Number(process.env.PORT ?? 3000); if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid port');
   const authSecrets=process.env.AUTH_ENABLED==='true'?new AuthSecrets(required('AUTH_HASH_KEY'),required('AUTH_ENCRYPTION_KEY')):undefined;
-  const auth = authSecrets ? new Authentication(pool,
-    authSecrets,
-    new ResendAuthMailer(required('RESEND_API_KEY'), required('AUTH_FROM'), required('AUTH_PUBLIC_ORIGIN')), positive('AUTH_DAILY_EMAIL_LIMIT')) : undefined;
+  // Provider sign-in rides AUTH_ENABLED: audiences and the Google web client
+  // come from deployment config, and email-only deployments set neither.
+  const appleAudienceList=appleAudiences(),googleClientId=googleWebClientId();
+  if((appleAudienceList||googleClientId)&&!authSecrets)throw new Error('Accounts required');
   const lifecycleEnabled=process.env.ACCOUNT_LIFECYCLE_ENABLED==='true';
   if(lifecycleEnabled&&!authSecrets)throw new Error('Accounts required');
   const lifecycleUrl=lifecycleEnabled?required('LIFECYCLE_DATABASE_URL'):undefined;
@@ -60,6 +81,19 @@ export function createRuntime() {
   lifecyclePool?.on('error',()=>console.error('lifecycle_database_connection_error'));
   const community=lifecyclePool&&lifecycleSecrets?new CommunityLifecycle(lifecyclePool,lifecycleSecrets,Date.now,storage):undefined;
   const deletion=lifecyclePool&&lifecycleSecrets?new AccountDeletion(lifecyclePool,lifecycleSecrets,storage,new ResendLifecycleMailer(required('RESEND_API_KEY'),required('AUTH_FROM'),required('AUTH_PUBLIC_ORIGIN')),email=>authSecrets!.hash('email',email),Date.now,new PrivateSyncPurger(lifecyclePool,storage)):undefined;
+  let refreshProviderKeys:(() => Promise<void>)|undefined,providers:ProviderServices|undefined;
+  if(appleAudienceList||googleClientId){
+    const appleKeys=new GoogleOidcKeyCache(fetch,Date.now,APPLE_KEYS_ENDPOINT),googleKeys=new GoogleOidcKeyCache(fetch,Date.now,GOOGLE_CERTS_ENDPOINT);
+    refreshProviderKeys=async()=>{if(appleAudienceList)await appleKeys.refresh();if(googleClientId)await googleKeys.refresh();};
+    const next:ProviderServices={};
+    if(appleAudienceList)next.apple={audiences:appleAudienceList,keys:appleKeys,trust:{mode:'chain',roots:appleChainRoots()}};
+    if(googleClientId)next.google={webClientId:googleClientId,keys:googleKeys};
+    if(deletion)next.deletion=deletion;
+    providers=next;
+  }
+  const auth = authSecrets ? new Authentication(pool,
+    authSecrets,
+    new ResendAuthMailer(required('RESEND_API_KEY'), required('AUTH_FROM'), required('AUTH_PUBLIC_ORIGIN')), positive('AUTH_DAILY_EMAIL_LIMIT'), Date.now, providers) : undefined;
   if(process.env.PUBLIC_API_ENABLED==='true'&&(!auth||!community||!deletion||process.env.PUBLIC_MODERATION_READY!=='true'||process.env.ACCOUNT_DELETION_READY!=='true'))throw new Error('Complete phase required');
   if(process.env.PUBLIC_API_ENABLED==='true'&&budgets.storageBytes+positive('PUBLIC_STORAGE_MAX_BYTES')>positive('TOTAL_OBJECT_STORAGE_MAX_BYTES'))throw new Error('Combined storage budget exceeds cap');
   const publications=process.env.PUBLIC_API_ENABLED==='true'?new Publications(pool,storage,{storageBytes:positive('PUBLIC_STORAGE_MAX_BYTES'),dailyBytes:positive('PUBLIC_DAILY_BYTES'),dailyWrites:positive('PUBLIC_DAILY_WRITES')},Date.now,true,handle=>lifecycleSecrets!.hash('retired-handle',handle),online):undefined;
@@ -97,9 +131,7 @@ export function createRuntime() {
       if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||!Object.values(parsed).every(v=>typeof v==='string'))throw new Error('Invalid Apple trust configuration');
       trust={mode:'pinned',keys:new Map(Object.entries(parsed as Record<string,string>))};
     }else if(trustMode==='chain'){
-      let roots:unknown;try{roots=JSON.parse(required('PRO_APPLE_ROOTS'));}catch{throw new Error('Invalid Apple trust configuration');}
-      if(!Array.isArray(roots)||!roots.length||!roots.every(r=>typeof r==='string'))throw new Error('Invalid Apple trust configuration');
-      trust={mode:'chain',roots};
+      trust={mode:'chain',roots:appleChainRoots()};
     }else throw new Error('Invalid Apple trust configuration');
     const storeJson=async(response:Response)=>{try{return await response.json();}catch{return undefined;}};
     const appleFetch=async(url:string,token:string)=>{
@@ -129,6 +161,6 @@ export function createRuntime() {
   // projection only (least-privilege runtime role in production).
   const communityAggregationEnabled=process.env.COMMUNITY_AGGREGATION_ENABLED==='true';
   const communityAggregates=communityAggregationEnabled?new CommunityAggregates(new PostgresCommunityStore(pool),Date.now):undefined;
-  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, refreshOidcKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }

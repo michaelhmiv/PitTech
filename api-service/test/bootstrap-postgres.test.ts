@@ -30,7 +30,7 @@ test('real Postgres bootstrap creates reusable isolated logins and refuses privi
     await admin.query('GRANT CREATE ON SCHEMA public TO PUBLIC');
     await bootstrapRuntime(admin, passwords);
     const migrations = (await admin.query('SELECT name,sha256 FROM relay.schema_migrations ORDER BY name')).rows;
-    assert.equal(migrations.length, 8);
+    assert.equal(migrations.length, 9);
     await bootstrapRuntime(admin, passwords);
     assert.deepEqual((await admin.query('SELECT name,sha256 FROM relay.schema_migrations ORDER BY name')).rows, migrations);
     const runtime = {} as Record<keyof typeof runtimeLogins, Pool>;
