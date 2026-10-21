@@ -166,7 +166,7 @@ export class Authentication {
       if (!row || Number(row.expires_at) <= now || !equalHash(row.proof_hash, proof)) return invalid;
       if (row.consumed_at != null) {
         if (claims && row.exchange_id === input.idempotencyId && row.exchange_envelope && Number(row.exchange_expires_at) > now)
-          return { status: 'session', session: this.secrets.open('provider-exchange/' + id, row.exchange_envelope) as AuthSession };
+          return { status: 'session', session: this.secrets.open('provider-exchange/' + id, row.exchange_envelope) as AuthSession } as Outcome;
         return invalid;
       }
       if (row.attempts >= AUTH.attempts) return invalid;
@@ -257,7 +257,7 @@ export class Authentication {
       }
       if (row.consumed_at != null) {
         if (row.exchange_id === input.idempotencyId && row.exchange_envelope && Number(row.exchange_expires_at) > now)
-          return { status: 'linked', identities: (this.secrets.open('provider-attach/' + id, row.exchange_envelope) as IdentityList).identities };
+          return { status: 'linked', identities: (this.secrets.open('provider-attach/' + id, row.exchange_envelope) as IdentityList).identities } as Outcome;
         return invalid;
       }
       if (row.attempts >= AUTH.attempts) return invalid;
