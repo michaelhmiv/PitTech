@@ -1,0 +1,31 @@
+name: Online store catalog inventory
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog:
+    name: Read existing Play and App Store subscription catalogs
+    if: github.repository == 'michaelhmiv/PitTech'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Inspect subscription products through the existing CI credentials
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: node .github/scripts/online-store-inventory.mjs
+      - name: Retain only the sanitized catalog report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-online-store-inventory
+          path: store-readiness/catalog-inventory.json
+          if-no-files-found: error
+          retention-days: 30
