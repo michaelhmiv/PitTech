@@ -51,7 +51,11 @@ GitHub issues; this file holds the durable rules of the road.
    API 36 is the gate; the API 37 job is advisory), `play-bundle.yml` and
    `play-closed-testing.yml` (Google Play), `firebase-dev-distribution.yml`
    (dev builds), `feedback-relay.yml`, `online-services.yml` (Node 22,
-   real Postgres 16, relay contracts/security and production-container checks).
+   real Postgres 16, relay contracts/security and production-container checks),
+   `online-store-inventory.yml` / `online-store-drafts.yml` (dispatch-only
+   store reads/writes), `online-store-paywall-capture.yml` (dispatch-only Pro
+   paywall review capture), `online-store-review-screenshot.yml`
+   (dispatch-only review-screenshot upload).
    The core data gate in `scripts/run-emulator-ui-tests.sh` explicitly includes
    sharing ownership, Cook Pack exchange, guides, native share-card pixels,
    dense-document persistence and workbook tests.
