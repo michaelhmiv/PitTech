@@ -231,9 +231,18 @@ account's `users.email`), one Apple identity, one Google identity
   entitlement holder and one deletion target. Subscription account-binding
   (PR 16) is unaffected: it binds store purchases to the account, not to
   an authenticator.
-- Detach is out of scope for this slice. Deletion removes identity rows by
-  cascade; an account always retains its email authenticator, so no
-  lock-out state is reachable through provider flows.
+- **Email is a first-class second authenticator on every account**
+  (owner ruling, 2026-10-21). An account created through a provider can
+  sign in with email code/link at the account's email — including an
+  Apple private-relay address, which forwards — exactly as an
+  email-created account can. The account surface presents both methods,
+  so if one authenticator goes bust the other still works. This is the
+  resilience story for the slice; there is no separate recovery flow.
+- Detach is out of scope, by the same owner ruling: if a user attaches
+  the wrong provider account, the remedies are the second authenticator
+  above or account deletion. Deletion removes identity rows by cascade;
+  an account always retains its email authenticator, so no lock-out
+  state is reachable through provider flows.
 
 ## 3. iOS client
 
@@ -477,8 +486,7 @@ Native (existing suites, fakes only — no live Apple/Google call anywhere):
   staging testers a real Apple prompt against a non-store build —
   acceptable for TestFlight/internal staging, but the owner should
   confirm staging Apple sign-ins may use personal Apple IDs.
-- Detach/unlink is deferred. If a user attaches the wrong Google account,
-  the only remedy in this slice is account deletion. Confirm that is
-  acceptable for launch, or detach becomes a small follow-up (it needs a
-  "keep at least one working authenticator" rule, which email already
-  satisfies).
+- Detach/unlink: RESOLVED by the owner (2026-10-21). No detach in this
+  slice; every account keeps email as a second working authenticator
+  alongside its provider (see section 2), and a wrong attach beyond
+  that is the user's own problem — account deletion is the remedy.
