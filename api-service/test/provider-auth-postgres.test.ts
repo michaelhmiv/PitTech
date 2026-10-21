@@ -317,6 +317,18 @@ test('real Postgres provider auth: proof-bound Apple/Google exchange, no silent 
     assert.equal((await admin.query('SELECT count(*) FROM auth.sessions')).rows[0].count, '0');
     assert.equal((await admin.query('SELECT count(*) FROM auth.apple_notification_receipts')).rows[0].count, '6');
   } finally {
-    await Promise.all([admin.end(), authPool.end(), lifePool.end(), control.query(`DROP DATABASE ${database} WITH (FORCE)`).then(() => control.end()), rm(root, { recursive: true, force: true })]);
+    // Close every pool before dropping the isolated test database, in the
+    // publications-suite order: a FORCE drop racing an open pool emits
+    // uncaught pg errors that make a successful test appear to fail.
+    try { await admin.end(); } finally {
+      try { await authPool.end(); } finally {
+        try { await lifePool.end(); } finally {
+          try { await control.query(`DROP DATABASE ${database}`); } finally {
+            await control.end();
+            await rm(root, { recursive: true, force: true });
+          }
+        }
+      }
+    }
   }
 });
