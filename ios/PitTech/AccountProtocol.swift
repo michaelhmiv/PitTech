@@ -44,6 +44,7 @@ enum NativeAccountProtocol {
 
 enum NativeAccountError: LocalizedError {
     case invalid, unavailable, network, status(Int)
+    case providerUnavailable, identityLinkRequired, providerSignInUnavailable, providerAttachFailed
     var errorDescription: String? {
         switch self {
         case .invalid: return "Check the email, code or sign-in link and try again."
@@ -51,6 +52,10 @@ enum NativeAccountError: LocalizedError {
         case .network: return "Couldn't reach PitTech. Retry the same request when you're online."
         case .status(401): return "This sign-in has expired or is unavailable. Request a new code."
         case .status(429): return "Too many attempts. Wait a minute before trying again."
+        case .providerUnavailable: return "Sign in with Apple is unavailable. Try email sign-in instead."
+        case .identityLinkRequired: return "Sign in with your existing method first, then add Apple sign-in in account settings."
+        case .providerSignInUnavailable: return "This Apple sign-in expired or is unavailable. Try again, or sign in by email first and then add Apple sign-in in account settings."
+        case .providerAttachFailed: return "Couldn't add Apple sign-in. Try again."
         default: return "PitTech couldn't complete sign-in. Retry later."
         }
     }
@@ -76,12 +81,26 @@ struct NativeAccountChallenge: Codable {
     var secret: String?
     var isLink = false
 }
+/// Proof-bound provider challenge. The id, verifier and operation persist before
+/// the provider UI is presented so a lost response retries the exact exchange.
+/// `bound` marks challenges created with an access bearer for attach.
+struct NativeProviderChallenge: Codable {
+    let id: String
+    let provider: String
+    let verifier: String
+    let created: Date
+    var operation: String?
+    let bound: Bool
+}
 struct NativeAccountState: Codable {
     var challenge: NativeAccountChallenge?
     var session: NativeAccountSession?
     var refreshOperation: String?
     var logoutToken: String?
     var deletion: NativeDeletionRecord?
+    var providerChallenge: NativeProviderChallenge?
+    var accountEmail: String?
+    var linkedProviders: [String]?
 }
 protocol NativeAccountStorage { func load() throws -> NativeAccountState; func save(_ value: NativeAccountState) throws }
 struct NativeAccountVault: NativeAccountStorage {

@@ -1,9 +1,11 @@
 import SwiftUI
+import AuthenticationServices
 
 struct NativeAccountView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePrivateSyncCoordinator.self) private var sync
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var email = ""
     @State private var code = ""
     @State private var confirmingSignOut = false
@@ -37,6 +39,14 @@ struct NativeAccountView: View {
             } else if account.signedIn {
                 Section("Account") {
                     Text("Signed in").accessibilityIdentifier("account-signed-in")
+                    if let email = account.accountEmail {
+                        Text("Email sign-in: \(email)").privacySensitive().accessibilityIdentifier("account-auth-email")
+                    }
+                    if account.appleLinked {
+                        Text("Apple sign-in is linked.").accessibilityIdentifier("account-auth-apple")
+                    } else if account.appleSignInAvailable {
+                        Button("Add Apple sign-in") { Task { await account.attachApple() } }.disabled(account.busy).accessibilityIdentifier("account-apple-attach")
+                    }
                     Button("Check connection") { Task { await account.checkSession() } }.disabled(account.busy)
                     Button("Sign out", role: .destructive) { confirmingSignOut = true }.disabled(account.busy)
                     Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
@@ -81,6 +91,12 @@ struct NativeAccountView: View {
             TextField("Email address", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().focused($focused, equals: .email).privacySensitive().accessibilityIdentifier("account-email")
             Button("Send sign-in email") { focused = nil; Task { await account.start(email) } }.disabled(account.busy || email.isEmpty).accessibilityIdentifier("account-start")
         }
+        if account.appleSignInAvailable {
+            Section("Sign in with Apple") {
+                AppleSignInButton(style: colorScheme == .dark ? .white : .black, enabled: !account.busy) { Task { await account.signInWithApple() } }
+                    .frame(height: 44)
+            }
+        }
         if let address = account.challengeEmail {
             Section("Check your email") {
                 Text("Enter the six-digit code sent to \(address). You can open the email on another device.").privacySensitive()
@@ -90,6 +106,29 @@ struct NativeAccountView: View {
                 Text("Codes expire after 15 minutes. Wait at least a minute before requesting another.").font(.footnote)
             }
         }
+    }
+}
+/// Apple's provided Sign in with Apple button. The tap runs the coordinator's
+/// proof-bound flow (challenge first, sheet second), so the sheet itself is
+/// presented programmatically rather than through SignInWithAppleButton.
+private struct AppleSignInButton: UIViewRepresentable {
+    let style: ASAuthorizationAppleIDButton.Style
+    let enabled: Bool
+    let action: () -> Void
+    func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
+        let button = ASAuthorizationAppleIDButton(type: .continue, style: style)
+        button.accessibilityIdentifier = "account-apple-signin"
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
+        return button
+    }
+    func updateUIView(_ view: ASAuthorizationAppleIDButton, context: Context) {
+        view.isEnabled = enabled
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+    final class Coordinator: NSObject {
+        let action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tapped() { action() }
     }
 }
 private struct NativeDeletionReviewView: View {

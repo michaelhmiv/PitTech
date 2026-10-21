@@ -8,7 +8,8 @@
       "publicOrigin": "https://pittech.app",
       "linkScheme": "pittech",
       "scopedName": "saved-retry-v1",
-      "sandbox": false
+      "sandbox": false,
+      "appleAudiences": ["com.pittech"]
     },
     {
       "environment": "staging",
@@ -17,7 +18,8 @@
       "publicOrigin": "https://staging.pittech.app",
       "linkScheme": "pittech-staging",
       "scopedName": "saved-retry-v1-staging",
-      "sandbox": true
+      "sandbox": true,
+      "appleAudiences": ["com.pittech.staging", "com.pittech"]
     }
   ],
   "invalidEnvironments": [

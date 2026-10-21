@@ -17,6 +17,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 - Android cookbook editing dismisses the keyboard, reveals its private editing preview and keeps the publishing flow reachable at enlarged text sizes.
 
 ### Added
+- iOS post-launch draft: prepare optional Sign in with Apple as an additional account authenticator alongside email code/link sign-in, with attach-while-signed-in from account settings. Android provider sign-in follows separately for parity; account access stays disabled until the complete release is ready.
 - Android and iOS online build profiles keep staging sign-in links, sessions, cloud retries, community caches and subscription state separate from production. Shared backend/native checks inspect the generated test-app identities and links; online release flags remain off until deployed acceptance is complete.
 - A private one-off database bootstrap prepares reviewed migrations and separate restricted API, lifecycle and sync logins, with real-Postgres checks for idempotency and unexpected privileges. This prepares online deployment; it does not enable accounts by itself.
 - PitTech Pro personal views on both clients, behind the existing subscription gate: compare your recorded cooks of a cut, see the attempt you rated best, review timing across your recorded cuts and weights, note wrap and rest differences, and align recorded temperature curves at Food on or Wrap — all computed on-device from your own library, working offline, with honest notes wherever cooks are missing weights, anchors, or ratings.

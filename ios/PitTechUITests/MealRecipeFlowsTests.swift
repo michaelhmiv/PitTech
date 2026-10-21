@@ -211,7 +211,9 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); app.tabBars.buttons["More"].tap()
             let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
-            let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10)); email.tap(); email.typeText("cook@example.com")
+            let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10))
+            XCTAssertFalse(app.buttons["account-apple-signin"].exists)
+            email.tap(); email.typeText("cook@example.com")
             app.buttons["Hide keyboard"].tap()
             let start = app.buttons["account-start"]; reveal(start, app: app); start.tap()
             let code = app.textFields["account-code"]; reveal(code, app: app); XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("123456")
@@ -233,6 +235,29 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native account signed out large text" : "Native account signed out")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
             XCTAssertFalse(app.staticTexts["Signed in"].exists)
+            app.terminate()
+        }
+    }
+    func testAppleSignInAndAttachLinkProvidersAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-apple-ui-test"] + (large ? ["--screenshot-large-text"] : [])
+            app.launch(); app.tabBars.buttons["More"].tap()
+            let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
+            let apple = app.buttons["account-apple-signin"]; reveal(apple, app: app)
+            XCTAssertTrue(apple.waitForExistence(timeout: 10))
+            capture(large ? "Native account Apple sign in large text" : "Native account Apple sign in")
+            apple.tap()
+            let signedIn = app.staticTexts["account-signed-in"]; reveal(signedIn, app: app)
+            let email = app.staticTexts["account-auth-email"]; reveal(email, app: app)
+            XCTAssertTrue(email.waitForExistence(timeout: 10))
+            let attach = app.buttons["account-apple-attach"]; reveal(attach, app: app)
+            XCTAssertTrue(attach.waitForExistence(timeout: 10))
+            capture(large ? "Native account attach Apple large text" : "Native account attach Apple")
+            attach.tap()
+            let linked = app.staticTexts["account-auth-apple"]; reveal(linked, app: app)
+            XCTAssertTrue(linked.waitForExistence(timeout: 10))
+            capture(large ? "Native account Apple linked large text" : "Native account Apple linked")
             app.terminate()
         }
     }

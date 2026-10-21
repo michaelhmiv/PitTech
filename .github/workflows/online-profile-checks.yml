@@ -111,7 +111,10 @@ jobs:
           executable = (app / info["CFBundleExecutable"]).read_bytes()
           assert b"applinks:staging.pittech.app" in executable
           assert b"applinks:pittech.app" not in executable
-          evidence = {**expected, "executableSHA256": hashlib.sha256(executable).hexdigest(), "associatedDomain": "applinks:staging.pittech.app"}
+          assert b"com.apple.developer.applesignin" in executable
+          staging = next(profile for profile in json.loads(Path("contracts/fixtures/online-environments-v1.json").read_text())["profiles"] if profile["environment"] == "staging")
+          assert info["CFBundleIdentifier"] in staging["appleAudiences"]
+          evidence = {**expected, "executableSHA256": hashlib.sha256(executable).hexdigest(), "associatedDomain": "applinks:staging.pittech.app", "appleAudience": info["CFBundleIdentifier"]}
           Path("build/online-profiles/ios-profile.json").write_text(json.dumps(evidence, indent=2) + "\n")
           PY
       - uses: actions/upload-artifact@v6

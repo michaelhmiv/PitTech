@@ -18,6 +18,16 @@ struct NativeOnlineConfiguration: Equatable, Sendable {
     var publicOrigin: String { "https://" + publicHost }
     var linkScheme: String { sandbox ? "pittech-staging" : "pittech" }
     func scopedName(_ productionName: String) -> String { sandbox ? productionName + "-staging" : productionName }
+    /// Bundle IDs the deployment's Apple audience set accepts. The staging set
+    /// covers both the staging identity and the registered identity the approved
+    /// store-sandbox build keeps; production accepts the registered identity only.
+    var appleAudiences: [String] { sandbox ? ["com.pittech.staging", "com.pittech"] : ["com.pittech"] }
+    /// No provider button ships in a build whose deployment cannot verify that
+    /// provider's tokens: the running bundle must be an accepted Apple audience.
+    func advertisesAppleSignIn(bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> Bool {
+        guard let bundleIdentifier else { return false }
+        return appleAudiences.contains(bundleIdentifier)
+    }
     func acceptsAPI(_ input: URL?) -> Bool {
         guard let input, let parts = URLComponents(url: input, resolvingAgainstBaseURL: false) else { return false }
         return parts.scheme == "https" && parts.host == apiHost && parts.port == nil &&

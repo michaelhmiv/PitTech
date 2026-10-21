@@ -66,8 +66,9 @@ GitHub issues; this file holds the durable rules of the road.
    profile via the App Store Connect API on every run. Never add steps that
    assume local keychains, exported .p12 files, or manually created
    certificates/profiles.
-   It enables Associated Domains before creating the profile. The app's
-   `PitTech.entitlements` and the final HTTPS association files must match.
+   It enables Associated Domains and Sign in with Apple before creating the
+   profile. The app's `PitTech.entitlements` and the final HTTPS association
+   files must match.
 3. **Workflow files:** editing `.github/workflows/*` requires the GitHub App's
    Workflows repository permission. This connection successfully installed the
    backend workflow on October 15. Verify the actual write and Actions result;

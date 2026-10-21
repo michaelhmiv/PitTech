@@ -456,6 +456,10 @@ jobs:
               call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
                   "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
                   "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+          if not any(c.get("attributes", {}).get("capabilityType") == "APPLE_ID_AUTH" for c in capabilities):
+              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
+                  "attributes": {"capabilityType": "APPLE_ID_AUTH"},
+                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
 
           profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:

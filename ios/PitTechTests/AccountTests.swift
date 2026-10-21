@@ -13,6 +13,14 @@ import Security
         let handler: ([String: String], String) async throws -> Data
         func call(_ path: String, body: [String: String]?, access: String?) async throws -> Data { try await handler(body ?? [:], path) }
     }
+    private final class AppleSpy {
+        var nonces: [String] = []
+        var result: Result<String, Error> = .success("fake-apple-id-token")
+    }
+    private struct FakeApple: AppleAuthorizing {
+        let spy: AppleSpy
+        @MainActor func authorize(nonce: String) async throws -> String { spy.nonces.append(nonce); return try spy.result.get() }
+    }
     private var token: String { String(repeating: "A", count: 43) }
     private func session(expired: Bool = false, rotated: Bool = false) -> NativeAccountSession {
         NativeAccountSession(accessToken: rotated ? String(repeating: "B", count: 42) + "A" : token, refreshToken: token,
@@ -25,6 +33,8 @@ import Security
     func testSharedProofLinksAndEmailContract() throws {
         let f = try fixture(), verifier = try XCTUnwrap(f["verifier"] as? String)
         XCTAssertEqual(NativeAccountProtocol.proof(verifier), f["proof"] as? String)
+        let provider = try XCTUnwrap(f["provider"] as? [String: String])
+        XCTAssertEqual(NativeAccountProtocol.proof(try XCTUnwrap(provider["verifier"])), provider["nonce"])
         XCTAssertTrue(NativeAccountProtocol.credential(try NativeAccountProtocol.verifier()))
         for value in try XCTUnwrap(f["validLinks"] as? [String]) { XCTAssertEqual(try NativeAccountProtocol.link(XCTUnwrap(URL(string: value))).0, f["challengeId"] as? String) }
         for value in try XCTUnwrap(f["invalidLinks"] as? [String]) { XCTAssertThrowsError(try NativeAccountProtocol.link(XCTUnwrap(URL(string: value))), value) }
@@ -212,6 +222,172 @@ import Security
         }
         let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api)
         await account.requestDeletion(); XCTAssertEqual(calls, 2); XCTAssertEqual(refreshed, 1); XCTAssertNil(memory.value.session)
+    }
+    func testAppleSignInPersistsChallengePresentsProofNonceAndRetriesLostResponses() async throws {
+        let memory = Memory(), spy = AppleSpy(), result = try JSONEncoder().encode(session())
+        var challenges: [[String: String]] = [], verifies: [[String: String]] = [], verifyCalls = 0, loseVerify = true
+        let api = API { body, path in
+            if path == "/v1/auth/provider/challenges" {
+                XCTAssertNotNil(memory.value.providerChallenge)
+                XCTAssertEqual(body["provider"], "apple")
+                challenges.append(body)
+                return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+            }
+            if path == "/v1/me" {
+                return try JSONSerialization.data(withJSONObject: ["id": "12345678-1234-4234-8234-123456789abc", "email": "cook@example.com", "identities": [["provider": "apple"]]])
+            }
+            XCTAssertEqual(path, "/v1/auth/provider/verify")
+            XCTAssertNotNil(memory.value.providerChallenge?.operation)
+            XCTAssertEqual(body["idToken"], "fake-apple-id-token")
+            verifyCalls += 1
+            if let first = verifies.first { XCTAssertEqual(body, first) } else { verifies.append(body) }
+            if loseVerify { loseVerify = false; throw NativeAccountError.network }
+            return result
+        }
+        let first = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await first.signInWithApple()
+        XCTAssertFalse(first.signedIn)
+        XCTAssertEqual(first.message, "Couldn't reach PitTech. Retry the same request when you're online.")
+        XCTAssertNotNil(memory.value.providerChallenge?.operation)
+        let second = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await second.signInWithApple()
+        XCTAssertTrue(second.signedIn)
+        XCTAssertEqual(second.message, "Signed in with Apple. Your local cookbook is unchanged.")
+        XCTAssertNil(memory.value.providerChallenge)
+        XCTAssertEqual(challenges.count, 2); XCTAssertEqual(challenges[0], challenges[1])
+        XCTAssertEqual(verifyCalls, 2)
+        let proof = NativeAccountProtocol.proof(verifies[0]["verifier"]!)
+        XCTAssertEqual(spy.nonces, [proof, proof])
+        XCTAssertEqual(challenges[0]["proofChallenge"], proof)
+        XCTAssertEqual(second.accountEmail, "cook@example.com")
+        XCTAssertTrue(second.appleLinked)
+    }
+    func testAppleSheetCancellationStaysSilentAndKeepsPendingChallenge() async throws {
+        let memory = Memory(), spy = AppleSpy()
+        spy.result = .failure(AppleAuthorizationCancelled())
+        var paths: [String] = []
+        let api = API { body, path in
+            paths.append(path)
+            XCTAssertEqual(path, "/v1/auth/provider/challenges")
+            return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await account.signInWithApple()
+        XCTAssertNil(account.message)
+        XCTAssertFalse(account.signedIn)
+        XCTAssertEqual(paths, ["/v1/auth/provider/challenges"])
+        XCTAssertNotNil(memory.value.providerChallenge)
+        XCTAssertNotNil(memory.value.providerChallenge?.operation)
+        XCTAssertEqual(spy.nonces.count, 1)
+    }
+    func testAppleAttachLinksWhileSignedInWithoutANewSession() async throws {
+        let memory = Memory(); memory.value.session = session()
+        let spy = AppleSpy()
+        var identitiesCalls = 0
+        let api = API { body, path in
+            if path == "/v1/auth/provider/challenges" {
+                XCTAssertEqual(memory.value.providerChallenge?.bound, true)
+                return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+            }
+            if path == "/v1/me/identities" {
+                identitiesCalls += 1
+                XCTAssertEqual(memory.value.providerChallenge?.bound, true)
+                return try JSONSerialization.data(withJSONObject: ["identities": [["provider": "apple"]]])
+            }
+            XCTAssertEqual(path, "/v1/me")
+            return try JSONSerialization.data(withJSONObject: ["id": "12345678-1234-4234-8234-123456789abc", "email": "cook@example.com", "identities": [["provider": "apple"]]])
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await account.attachApple()
+        XCTAssertEqual(identitiesCalls, 1)
+        XCTAssertTrue(account.appleLinked)
+        XCTAssertEqual(account.accountEmail, "cook@example.com")
+        XCTAssertEqual(memory.value.session?.refreshToken, token)
+        XCTAssertNil(memory.value.providerChallenge)
+        XCTAssertEqual(account.message, "Apple sign-in is linked. Email sign-in still works as a backup.")
+        XCTAssertEqual(spy.nonces.count, 1)
+    }
+    func testAppleSignInConflictDirectsToExistingMethodThenAttach() async throws {
+        let memory = Memory(), spy = AppleSpy()
+        let api = API { body, path in
+            if path == "/v1/auth/provider/challenges" {
+                return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+            }
+            XCTAssertEqual(path, "/v1/auth/provider/verify")
+            throw NativeAccountError.status(409)
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await account.signInWithApple()
+        XCTAssertEqual(account.message, "Sign in with your existing method first, then add Apple sign-in in account settings.")
+        XCTAssertFalse(account.signedIn)
+        XCTAssertNotNil(memory.value.providerChallenge)
+        XCTAssertNil(memory.value.providerChallenge?.operation)
+    }
+    func testAppleSignInWithoutEmailDirectsToEmailThenAttach() async throws {
+        let memory = Memory(), spy = AppleSpy()
+        let api = API { body, path in
+            if path == "/v1/auth/provider/challenges" {
+                return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+            }
+            XCTAssertEqual(path, "/v1/auth/provider/verify")
+            throw NativeAccountError.status(401)
+        }
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await account.signInWithApple()
+        XCTAssertEqual(account.message, "This Apple sign-in expired or is unavailable. Try again, or sign in by email first and then add Apple sign-in in account settings.")
+        XCTAssertFalse(account.signedIn)
+        XCTAssertNotNil(memory.value.providerChallenge)
+        XCTAssertNil(memory.value.providerChallenge?.operation)
+    }
+    func testAppleAttachConflictAndRejectionKeepGuidance() async throws {
+        for (status, expected) in [(409, "Sign in with your existing method first, then add Apple sign-in in account settings."), (401, "Couldn't add Apple sign-in. Try again.")] {
+            let memory = Memory(); memory.value.session = session()
+            let api = API { body, path in
+                if path == "/v1/auth/provider/challenges" {
+                    return try JSONSerialization.data(withJSONObject: ["challengeId": body["idempotencyId"]!, "expiresInSeconds": 900])
+                }
+                XCTAssertEqual(path, "/v1/me/identities")
+                throw NativeAccountError.status(status)
+            }
+            let account = NativeAccountCoordinator(enabled: true, vault: memory, api: api, apple: FakeApple(spy: AppleSpy()), appleSignInAdvertised: true)
+            await account.attachApple()
+            XCTAssertEqual(account.message, expected, "status \(status)")
+            XCTAssertTrue(account.signedIn)
+            XCTAssertFalse(account.appleLinked)
+            XCTAssertNotNil(memory.value.providerChallenge)
+        }
+    }
+    func testAppleButtonNeedsAccountsAndAnAdvertisedDeployment() async throws {
+        XCTAssertTrue(NativeAccountCoordinator(enabled: true, vault: Memory(), appleSignInAdvertised: true).appleSignInAvailable)
+        XCTAssertFalse(NativeAccountCoordinator(enabled: true, vault: Memory(), appleSignInAdvertised: false).appleSignInAvailable)
+        XCTAssertFalse(NativeAccountCoordinator(enabled: false, vault: Memory(), appleSignInAdvertised: true).appleSignInAvailable)
+        let memory = Memory(), spy = AppleSpy()
+        var calls = 0
+        let disabled = NativeAccountCoordinator(enabled: false, vault: memory, api: API { _, _ in calls += 1; return Data() }, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await disabled.signInWithApple()
+        await disabled.attachApple()
+        XCTAssertEqual(calls, 0)
+        XCTAssertTrue(spy.nonces.isEmpty)
+        XCTAssertEqual(disabled.message, NativeAccountError.unavailable.localizedDescription)
+    }
+    func testAppleChallengeUnavailableFallsBackToEmail() async throws {
+        let memory = Memory(), spy = AppleSpy()
+        let deployed = NativeAccountCoordinator(enabled: true, vault: memory, api: API { _, _ in throw NativeAccountError.status(401) }, apple: FakeApple(spy: spy), appleSignInAdvertised: true)
+        await deployed.signInWithApple()
+        XCTAssertEqual(deployed.message, "Sign in with Apple is unavailable. Try email sign-in instead.")
+        XCTAssertTrue(spy.nonces.isEmpty)
+        XCTAssertFalse(deployed.signedIn)
+    }
+    func testCheckSessionStoresAccountEmailAndLinkedProviders() async throws {
+        let memory = Memory(); memory.value.session = session()
+        let account = NativeAccountCoordinator(enabled: true, vault: memory, api: API { _, path in
+            XCTAssertEqual(path, "/v1/me")
+            return try JSONSerialization.data(withJSONObject: ["id": "12345678-1234-4234-8234-123456789abc", "email": "cook@example.com", "identities": [["provider": "apple"], ["provider": "unknown-future"]]])
+        })
+        await account.checkSession()
+        XCTAssertEqual(account.message, "Your session is active.")
+        XCTAssertEqual(account.accountEmail, "cook@example.com")
+        XCTAssertEqual(account.linkedProviders, ["apple"])
     }
 
 }

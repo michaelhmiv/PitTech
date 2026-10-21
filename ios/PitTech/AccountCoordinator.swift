@@ -5,6 +5,8 @@ import Observation
     let enabled: Bool
     private let vault: any NativeAccountStorage
     private let api: any NativeAccountAPI
+    private let apple: any AppleAuthorizing
+    private let appleSignInAdvertised: Bool
     private let cleanup: (String) throws -> Void
     var removeJournal: (@MainActor () throws -> Void)?
     private var state = NativeAccountState()
@@ -16,16 +18,23 @@ import Observation
     private(set) var pendingLink: String?
     var challengeEmail: String? { state.challenge?.email }
     var signedIn: Bool { state.session != nil }
+    /// No dead buttons: the provider entry needs accounts and a deployment
+    /// whose Apple audience set accepts this build's bundle ID.
+    var appleSignInAvailable: Bool { enabled && appleSignInAdvertised }
+    var accountEmail: String? { state.deletion == nil ? state.accountEmail : nil }
+    var linkedProviders: [String] { state.deletion == nil ? (state.linkedProviders ?? []) : [] }
+    var appleLinked: Bool { linkedProviders.contains("apple") }
     var stateUserId: String? { state.deletion == nil ? state.session?.userId : nil }
     var deletionRecord: NativeDeletionRecord? { state.deletion }
     var canResend: Bool { state.challenge.map { Date().timeIntervalSince($0.created) >= 60 } ?? true }
     var interruptedVerification: Bool { state.challenge?.operation != nil }
-    init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient(), cleanup: @escaping (String) throws -> Void = { _ in }, removeJournal: (@MainActor () throws -> Void)? = nil) {
-        self.enabled = enabled; self.vault = vault; self.api = api; self.cleanup = cleanup; self.removeJournal = removeJournal
+    init(enabled: Bool = NativeAccountProtocol.enabled, vault: any NativeAccountStorage = NativeAccountVault(), api: any NativeAccountAPI = NativeAccountClient(), apple: any AppleAuthorizing = NativeAppleAuthorizer(), appleSignInAdvertised: Bool = NativeOnlineConfiguration.current.advertisesAppleSignIn(), cleanup: @escaping (String) throws -> Void = { _ in }, removeJournal: (@MainActor () throws -> Void)? = nil) {
+        self.enabled = enabled; self.vault = vault; self.api = api; self.apple = apple; self.appleSignInAdvertised = appleSignInAdvertised; self.cleanup = cleanup; self.removeJournal = removeJournal
         do {
             state = try vault.load(); try state.deletion?.validate()
             if state.deletion?.receipt != nil { do { try cleanupAcceptedDeletion() } catch { message = "Device account metadata cleanup needs a retry. Your journal is unchanged." } }
             if let challenge = state.challenge, Date().timeIntervalSince(challenge.created) >= 900 { state.challenge = nil; try vault.save(state) }
+            if let provider = state.providerChallenge, Date().timeIntervalSince(provider.created) >= 900 { state.providerChallenge = nil; try vault.save(state) }
             if let session = state.session {
                 try session.validate()
                 if try NativeAccountProtocol.date(session.sessionExpiresAt) <= Date() {
@@ -97,13 +106,126 @@ import Observation
                     _ = try? await self.api.call("/v1/auth/logout", body: ["refreshToken": session.refreshToken], access: nil)
                     throw NativeAccountError.invalid
                 }
-                var next = self.state; next.session = session; next.challenge = nil; next.refreshOperation = nil; try self.save(next)
+                var next = self.state; next.session = session; next.challenge = nil; next.providerChallenge = nil; next.refreshOperation = nil; try self.save(next)
                 self.pendingLink = nil; self.message = "Signed in. Your local cookbook is unchanged."
             } catch NativeAccountError.status(401) {
                 challenge.operation = nil; challenge.secret = nil; var next = self.state; next.challenge = challenge; try self.save(next)
                 self.pendingLink = nil; throw NativeAccountError.status(401)
             }
         }
+    }
+    /// Reuse the live pending provider challenge for this operation, or persist a
+    /// fresh one. The id, verifier and operation are always persisted before
+    /// any provider UI is presented, so a lost response retries the exact
+    /// exchange and a restart cannot orphan the proof.
+    private func providerChallenge(bound: Bool) throws -> NativeProviderChallenge {
+        if var pending = state.providerChallenge, pending.provider == "apple", pending.bound == bound, Date().timeIntervalSince(pending.created) < 900 {
+            if pending.operation == nil {
+                pending.operation = UUID().uuidString.lowercased()
+                var next = state; next.providerChallenge = pending; try save(next)
+            }
+            return pending
+        }
+        let fresh = NativeProviderChallenge(id: UUID().uuidString.lowercased(), provider: "apple", verifier: try NativeAccountProtocol.verifier(), created: .now, operation: UUID().uuidString.lowercased(), bound: bound)
+        var next = state; next.providerChallenge = fresh; try save(next)
+        return fresh
+    }
+    /// Proof-bound Sign in with Apple while signed out. The stored proof hash
+    /// is the Apple request nonce; the identity token is exchanged with the
+    /// raw verifier. Sheet dismissal is silent and keeps the pending
+    /// challenge; a 409 directs to the existing method, then attach.
+    func signInWithApple() async {
+        await perform {
+            guard self.state.deletion?.receipt == nil else { throw NativeAccountError.invalid }
+            guard self.state.session == nil else { throw NativeAccountError.invalid }
+            try await self.flushLogout()
+            let challenge = try self.providerChallenge(bound: false)
+            let created: Data
+            do {
+                created = try await self.api.call("/v1/auth/provider/challenges", body: ["provider": "apple", "idempotencyId": challenge.id, "proofChallenge": NativeAccountProtocol.proof(challenge.verifier)], access: nil)
+            } catch NativeAccountError.status(401) { throw NativeAccountError.providerUnavailable }
+            let reply = try JSONSerialization.jsonObject(with: created) as? [String: Any]
+            guard reply?["challengeId"] as? String == challenge.id, reply?["expiresInSeconds"] as? Int == 900 else { throw NativeAccountError.invalid }
+            let idToken: String
+            do {
+                idToken = try await self.apple.authorize(nonce: NativeAccountProtocol.proof(challenge.verifier))
+            } catch is AppleAuthorizationCancelled { return }
+            do {
+                let bytes = try await self.api.call("/v1/auth/provider/verify", body: ["challengeId": challenge.id, "verifier": challenge.verifier, "idToken": idToken, "idempotencyId": challenge.operation!], access: nil)
+                let session = try JSONDecoder().decode(NativeAccountSession.self, from: bytes); try session.validate()
+                if let owner = self.state.deletion?.userId, owner != session.userId {
+                    _ = try? await self.api.call("/v1/auth/logout", body: ["refreshToken": session.refreshToken], access: nil)
+                    throw NativeAccountError.invalid
+                }
+                var next = self.state; next.session = session; next.challenge = nil; next.providerChallenge = nil; next.refreshOperation = nil; try self.save(next)
+                self.pendingLink = nil
+                try? await self.refreshAccount()
+                self.message = "Signed in with Apple. Your local cookbook is unchanged."
+            } catch NativeAccountError.status(let code) {
+                var next = self.state
+                if var pending = next.providerChallenge { pending.operation = nil; next.providerChallenge = pending; try self.save(next) }
+                if code == 409 { throw NativeAccountError.identityLinkRequired }
+                if code == 401 { throw NativeAccountError.providerSignInUnavailable }
+                throw NativeAccountError.status(code)
+            }
+        }
+    }
+    /// Attach Apple sign-in to the signed-in account: the only linking path.
+    /// The challenge is created bound to this account, so the exchange can
+    /// only link here. Like checkSession this reads its access credential
+    /// before taking the busy lock, which accountAccess refuses to cross.
+    func attachApple() async {
+        guard !busy else { return }
+        message = nil
+        do {
+            try requireReady()
+            guard state.deletion == nil, state.session != nil else { throw NativeAccountError.status(401) }
+            let token = try await access()
+            busy = true; defer { busy = false }
+            let challenge = try self.providerChallenge(bound: true)
+            let created: Data
+            do {
+                created = try await self.api.call("/v1/auth/provider/challenges", body: ["provider": "apple", "idempotencyId": challenge.id, "proofChallenge": NativeAccountProtocol.proof(challenge.verifier)], access: token)
+            } catch NativeAccountError.status(401) { throw NativeAccountError.providerUnavailable }
+            let reply = try JSONSerialization.jsonObject(with: created) as? [String: Any]
+            guard reply?["challengeId"] as? String == challenge.id, reply?["expiresInSeconds"] as? Int == 900 else { throw NativeAccountError.invalid }
+            let idToken: String
+            do {
+                idToken = try await self.apple.authorize(nonce: NativeAccountProtocol.proof(challenge.verifier))
+            } catch is AppleAuthorizationCancelled { return }
+            do {
+                let bytes = try await self.api.call("/v1/me/identities", body: ["challengeId": challenge.id, "verifier": challenge.verifier, "idToken": idToken, "idempotencyId": challenge.operation!], access: token)
+                let list = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
+                let providers = (list?["identities"] as? [[String: Any]])?.compactMap { $0["provider"] as? String } ?? []
+                guard providers.contains("apple") else { throw NativeAccountError.invalid }
+                var next = self.state; next.providerChallenge = nil
+                next.linkedProviders = providers.filter { $0 == "apple" || $0 == "google" }
+                try self.save(next)
+                try? await self.refreshAccount()
+                self.message = "Apple sign-in is linked. Email sign-in still works as a backup."
+            } catch NativeAccountError.status(let code) {
+                var next = self.state
+                if var pending = next.providerChallenge { pending.operation = nil; next.providerChallenge = pending; try self.save(next) }
+                if code == 409 { throw NativeAccountError.identityLinkRequired }
+                throw NativeAccountError.providerAttachFailed
+            }
+        } catch NativeAccountError.status(401) { message = "Sign in again to reconnect. Your local cookbook is unchanged." }
+        catch is CancellationError { message = "Request interrupted. Retry to recover the same sign-in." }
+        catch { message = (error as? NativeAccountError)?.localizedDescription ?? "Account storage is unavailable. Try again on this device." }
+    }
+    /// The session's account email and linked providers from GET /v1/me.
+    /// Unknown fields are ignored; only apple/google providers are kept.
+    private func refreshAccount() async throws {
+        guard let session = state.session else { throw NativeAccountError.status(401) }
+        let data = try await api.call("/v1/me", body: nil, access: session.accessToken)
+        let reply = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard reply?["id"] as? String == session.userId else { throw NativeAccountError.invalid }
+        var next = state
+        next.accountEmail = reply?["email"] as? String
+        if let identities = reply?["identities"] as? [[String: Any]] {
+            next.linkedProviders = identities.compactMap { $0["provider"] as? String }.filter { $0 == "apple" || $0 == "google" }
+        }
+        try save(next)
     }
     /// Single-flight refresh; persist the operation before sending, including across app restarts.
     func access(forceRefresh: Bool = false) async throws -> String { try await accountAccess(forceRefresh: forceRefresh) }
@@ -130,12 +252,10 @@ import Observation
     func checkSession() async {
         guard !busy else { return }
         do {
-            let token = try await access()
+            _ = try await access()
             // Gate further UI operations while validating the current account.
             busy = true; defer { busy = false }
-            let data = try await api.call("/v1/me", body: nil, access: token)
-            let reply = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            guard reply?["id"] as? String == state.session?.userId else { throw NativeAccountError.invalid }
+            try await refreshAccount()
             message = "Your session is active."
         } catch NativeAccountError.status(401) { try? save(NativeAccountState(deletion: state.deletion)); message = "Sign in again to reconnect. Your local cookbook is unchanged." }
         catch { message = "Couldn't reconnect. Your local cookbook is available offline." }
