@@ -48,10 +48,12 @@ export function stubAppleApi(): StubApple {
 const oidcKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
 export const oidcPublicPem = oidcKeys.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 export const oidcAudience = 'https://pittech.example/rtdn';
+export const oidcEmail = 'pubsub-push@synthetic.iam.gserviceaccount.com';
+export const oidcPublicJwk = { ...oidcKeys.publicKey.export({ format: 'jwk' }), kid: 'synthetic-oidc-key', alg: 'RS256', use: 'sig' };
 export const oidcKeySet = new Map([['synthetic-oidc-key', oidcPublicPem]]);
 export function signOidc(overrides: Record<string, unknown> = {}, now = NOW, header: Record<string, unknown> = {}): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
-  const input = encode({ alg: 'RS256', kid: 'synthetic-oidc-key', typ: 'JWT', ...header }) + '.' + encode({ iss: 'https://accounts.google.com', aud: oidcAudience, iat: Math.floor(now / 1000), exp: Math.floor(now / 1000) + 3600, ...overrides });
+  const input = encode({ alg: 'RS256', kid: 'synthetic-oidc-key', typ: 'JWT', ...header }) + '.' + encode({ iss: 'https://accounts.google.com', aud: oidcAudience, email: oidcEmail, email_verified: true, iat: Math.floor(now / 1000), exp: Math.floor(now / 1000) + 3600, ...overrides });
   const signer = createSign('RSA-SHA256'); signer.update(input); signer.end();
   return input + '.' + signer.sign(oidcKeys.privateKey).toString('base64url');
 }
@@ -64,17 +66,17 @@ export function googleSubscription(overrides: Record<string, unknown> = {}, now 
     ...overrides,
   };
 }
-export type StubPlay = { api: PlayDeveloperApi; calls: { url: string; method: string }[]; acknowledged: string[]; subscription: { body: unknown; status: number } };
+export type StubPlay = { api: PlayDeveloperApi; calls: { url: string; method: string }[]; acknowledged: string[]; acknowledgement: { status: number }; subscription: { body: unknown; status: number } };
 export function stubPlayApi(): StubPlay {
-  const calls: { url: string; method: string }[] = [], acknowledged: string[] = [], subscription = { body: undefined as unknown, status: 200 };
+  const calls: { url: string; method: string }[] = [], acknowledged: string[] = [], acknowledgement = { status: 200 }, subscription = { body: undefined as unknown, status: 200 };
   const api = new PlayDeveloperApi({ clientEmail: 'synthetic@test.iam.gserviceaccount.com', privateKey: oidcKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() },
     async (url, init) => {
       calls.push({ url, method: init.method });
       if (url === 'https://oauth2.googleapis.com/token') return { status: 200, body: { access_token: 'synthetic-access-token' } };
-      if (url.endsWith(':acknowledge')) { acknowledged.push(url); return { status: 200, body: {} }; }
+      if (url.endsWith(':acknowledge')) { acknowledged.push(url); return { status: acknowledgement.status, body: {} }; }
       return { status: subscription.status, body: subscription.body };
     });
-  return { api, calls, acknowledged, subscription };
+  return { api, calls, acknowledged, acknowledgement, subscription };
 }
 export function rtdnBody(messageId: string, inner: Record<string, unknown>): Record<string, unknown> {
   return { message: { data: Buffer.from(JSON.stringify(inner)).toString('base64'), messageId, publishTime: new Date(NOW).toISOString() }, subscription: 'projects/synthetic/subscriptions/rtdn' };

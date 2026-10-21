@@ -8,6 +8,12 @@ on:
         required: true
         type: boolean
         default: false
+      online_environment:
+        description: Choose offline, accepted isolated staging, or accepted production online services.
+        required: true
+        type: choice
+        options: [offline, staging, production]
+        default: offline
 
 concurrency:
   group: pittech-firebase-dev
@@ -65,6 +71,43 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" | jq -e \
             '.type == "service_account" and (.private_key | type == "string")' >/dev/null
 
+      - name: Select only an accepted online deployment
+        env:
+          SELECTED_ONLINE_ENVIRONMENT: ${{ inputs.online_environment }}
+          STAGING_ONLINE_READY: ${{ vars.PITTECH_STAGING_ONLINE_READY }}
+          PRODUCTION_ONLINE_READY: ${{ vars.PITTECH_PRODUCTION_ONLINE_READY }}
+          MONTHLY_PRODUCT_ID: ${{ vars.PITTECH_PRO_MONTHLY_PRODUCT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          online_enabled=false
+          online_environment=production
+          product_id=""
+          case "$SELECTED_ONLINE_ENVIRONMENT" in
+            offline) ;;
+            staging|production)
+              if [[ "$SELECTED_ONLINE_ENVIRONMENT" == "staging" ]]; then ready="$STAGING_ONLINE_READY"; else ready="$PRODUCTION_ONLINE_READY"; fi
+              if [[ "$ready" != "true" || -z "$MONTHLY_PRODUCT_ID" ]]; then
+                echo "::error::Complete deployed account/sync/community/deletion and store acceptance before distributing an online build."
+                exit 1
+              fi
+              profile_runs=$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/online-profile-checks.yml/runs?head_sha=$GITHUB_SHA&per_page=30")
+              jq -e '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success" and .head_sha == env.GITHUB_SHA)] | length > 0' <<< "$profile_runs" > /dev/null
+              online_enabled=true
+              online_environment="$SELECTED_ONLINE_ENVIRONMENT"
+              product_id="$MONTHLY_PRODUCT_ID"
+              ;;
+            *) echo "::error::Unsupported online deployment."; exit 1 ;;
+          esac
+          if [[ ! "$product_id" =~ ^[A-Za-z0-9._-]{0,200}$ ]]; then
+            echo "::error::Invalid monthly product identifier."
+            exit 1
+          fi
+          echo "PITTECH_DISTRIBUTION_ONLINE_ENVIRONMENT=$online_environment" >> "$GITHUB_ENV"
+          echo "PITTECH_DISTRIBUTION_ONLINE_ENABLED=$online_enabled" >> "$GITHUB_ENV"
+          echo "PITTECH_DISTRIBUTION_PRODUCT_ID=$product_id" >> "$GITHUB_ENV"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v6
         with:
@@ -98,11 +141,18 @@ jobs:
           echo "name=0.1.${SOURCE_RUN_NUMBER}-dev" >> "$GITHUB_OUTPUT"
 
       - name: Build the Dev APK with test ads
-        run: >-
-          gradle --no-daemon assembleDev
-          -PpittechLiveAds=false
-          -PpittechVersionCode=${{ steps.version.outputs.code }}
-          -PpittechVersionName=${{ steps.version.outputs.name }}
+        shell: bash
+        env:
+          DEV_VERSION_CODE: ${{ steps.version.outputs.code }}
+          DEV_VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          gradle --no-daemon assembleDev \
+            -PpittechLiveAds=false \
+            "-PpittechVersionCode=$DEV_VERSION_CODE" \
+            "-PpittechVersionName=$DEV_VERSION_NAME" \
+            "-PpittechOnlineEnvironment=$PITTECH_DISTRIBUTION_ONLINE_ENVIRONMENT" \
+            "-PpittechOnlineEnabled=$PITTECH_DISTRIBUTION_ONLINE_ENABLED" \
+            "-PpittechProProductId=$PITTECH_DISTRIBUTION_PRODUCT_ID"
 
       - name: Sign the Dev APK with the existing Android upload key
         env:
@@ -151,6 +201,21 @@ jobs:
           --version "$VERSION_NAME"
           --repo "$REPO_NAME"
           --output "$RUNNER_TEMP/pittech-dev-notes.txt"
+
+      - name: Include the tested online environment and purchase-testing limit in release notes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "pittech-dev-notes.txt"
+          enabled = os.environ["PITTECH_DISTRIBUTION_ONLINE_ENABLED"] == "true"
+          profile = os.environ["PITTECH_DISTRIBUTION_ONLINE_ENVIRONMENT"] if enabled else "offline"
+          extra = "\nOnline services: " + profile + ".\n"
+          if enabled:
+              extra += "Accounts, private sync and community use this environment. The side-by-side com.pittech.dev install does not support the com.pittech Play subscription purchase sheet; use the matching Play test-track build for real purchases.\n"
+          path.write_text(path.read_text() + extra)
+          PY
 
       - name: Distribute to the internal Firebase group
         env:

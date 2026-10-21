@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -43,7 +45,7 @@ internal class PrivateSyncClient(client: OkHttpClient = OkHttpClient()) : Privat
     private val client = client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(okhttp3.CookieJar.NO_COOKIES).cache(null).callTimeout(120, TimeUnit.SECONDS).build()
     private fun request(path: String, access: String): Request.Builder {
         require(AccountProtocol.credential(access))
-        return Request.Builder().url("https://api.pittech.app$path").header("Authorization", "Bearer $access").header("Accept", "application/json").header("Cache-Control", "no-store")
+        return Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Authorization", "Bearer $access").header("Accept", "application/json").header("Cache-Control", "no-store")
     }
     private fun photoPath(assetId: String, suffix: String = ""): String {
         require(publicationUuid(assetId) && assetId == assetId.lowercase())
@@ -57,7 +59,7 @@ internal class PrivateSyncClient(client: OkHttpClient = OkHttpClient()) : Privat
     override suspend fun beginPhoto(assetId: String, bytes: Long, mime: String, sha: String, access: String): JSONObject {
         require(bytes in 1..PrivateSyncProtocol.MAX_PHOTO_BYTES && mime in setOf("image/jpeg", "image/png", "image/webp") && sha.matches(Regex("[a-f0-9]{64}")))
         val body = JSONObject().put("assetId", assetId).put("bytes", bytes).put("mimeType", mime).put("sha256", sha).toString().toByteArray()
-        return call(Request.Builder().url("https://api.pittech.app/v1/sync/photos").header("Authorization", "Bearer $access").header("Accept", "application/json").header("Cache-Control", "no-store").header("Idempotency-Key", assetId).post(body.toRequestBody("application/json".toMediaType())).build(), 8192)
+        return call(Request.Builder().url("${OnlineConfiguration.current.apiOrigin}/v1/sync/photos").header("Authorization", "Bearer $access").header("Accept", "application/json").header("Cache-Control", "no-store").header("Idempotency-Key", assetId).post(body.toRequestBody("application/json".toMediaType())).build(), 8192)
     }
     override suspend fun photoStatus(assetId: String, access: String): JSONObject = call(request(photoPath(assetId, "/status"), access).get().build(), 8192)
     override suspend fun putPart(assetId: String, index: Int, chunk: ByteArray, access: String): JSONObject {

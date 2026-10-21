@@ -46,7 +46,7 @@ protocol NativeCommunityStorage {
     func save(_ value: NativeCommunityControlsState) throws
 }
 struct NativeCommunityVault: NativeCommunityStorage {
-    private let vault = NativeAccountVault(service: "com.pittech.community-controls.production.v1")
+    private let vault = NativeAccountVault(service: NativeOnlineConfiguration.current.scopedName("com.pittech.community-controls.production.v1"))
     func load() throws -> NativeCommunityControlsState? {
         guard let bytes = try vault.loadBytes() else { return nil }
         let state = try JSONDecoder().decode(NativeCommunityControlsState.self, from: bytes); try state.validate(); return state
@@ -68,7 +68,7 @@ struct NativeCommunityClient: NativeCommunityAPI {
         guard NativeAccountProtocol.credential(session), body.map({ $0.count <= 8192 }) ?? true,
               ["/v1/reports", "/v1/me/blocks"].contains(path) || path.range(of: "^/v1/reports/[a-fA-F0-9-]{36}$", options: .regularExpression) != nil,
               path != "/v1/reports" || body != nil else { throw NativePublicError.invalid }
-        var request = URLRequest(url: URL(string: "https://api.pittech.app" + path)!)
+        var request = URLRequest(url: URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + path)!)
         request.httpMethod = body == nil ? "GET" : "POST"; request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Accept"); request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue(session, forHTTPHeaderField: "X-PitTech-Report-Session")

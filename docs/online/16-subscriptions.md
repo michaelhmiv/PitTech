@@ -24,14 +24,20 @@ App Store Server API client with an explicit per-environment host; sandbox and
 production never mix.
 
 `api-service/src/subscriptions-google.ts` verifies purchases through
-`purchases.subscriptionsv2` with a service-account client. The package name is
+`purchases.subscriptionsv2` (the `/tokens/{token}` resource) with a service-account
+client. Acknowledgement uses `purchases.subscriptions/{productId}/tokens/{token}:acknowledge`;
+404 and other failed acknowledgements never grant entitlement. The package name is
 the service's own configuration, so app association holds by construction; the
 product ID is validated on the response. Test-track purchases resolve to the
 sandbox environment from the store's own `testPurchase` marker. Pending
 acknowledgements are acknowledged during verification (Play acknowledgment
 within its required lifecycle) and retried on every reconcile. RTDN pushes
-authenticate via OIDC bearer (Google certificates, refreshed hourly; pinned
-keys in tests), then validate the envelope, package, and subscription.
+authenticate via OIDC bearer (Google JWKS, refreshed every five minutes with
+HTTP cache expiry and atomic key replacement; generated keys in tests), then
+validate the configured push service-account email, `email_verified`, audience,
+envelope, package, and subscription. `PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL` is
+required when subscriptions are enabled; it identifies the Pub/Sub push identity,
+which is separate from the Play API service-account credential.
 
 Verification records are `store-verification-v1`: store, transaction identity,
 product, environment, purchase/expiry timestamps, auto-renew status,
@@ -255,3 +261,31 @@ real personal-analysis, advanced-curve, recap, and Pro-theme content, and
 the store slice publishes PitTech-hosted subscription terms. Runtime
 evidence (Actions runs, staging verification) is still required; this draft
 was written without a local build.
+
+
+## Online enablement follow-up (October 20)
+
+Both native coordinators persist an account-bound v2 envelope around the
+unchanged entitlement-cache-v1 server contract. Legacy caches without an owner
+are discarded and reverified. Local account identity is separate from the
+network access token, so a failed offline token refresh keeps only that owner's
+recent active/grace cache within the server window. Sign-out, deletion and
+account switches clear entitlement and transaction-management references; late
+responses cannot apply to the replacement account or finish its store delivery.
+
+Production is the default read context. An approved test configuration may
+select sandbox reads, and a verified purchase adopts the server-derived
+environment for subsequent refresh/reconcile and restart. Only the exact
+`?environment=sandbox` GET query is additionally allowlisted; reconcile sends
+its selected environment explicitly. These are separate server record reads,
+never proof of entitlement or a client-controlled purchase verification result.
+The response environment must match a read request. Store verification and
+backend sandbox/production isolation remain authoritative.
+
+Regression coverage includes sandbox purchase → refresh/reconcile → restart,
+production defaults, direct account replacement with an offline backend, bounded
+offline access-token refresh, late purchase responses, persistent-cache ownership
+and legacy invalidation, and strict native transports. Actions evidence on the
+final implementation SHA is required before these follow-up changes are marked
+verified. Store credentials, real purchases and deployed phase acceptance remain
+open in issue #123.

@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import { migrate } from '../src/migrate.ts';
 import { Subscriptions, PostgresBillingStore } from '../src/subscriptions.ts';
 import {
-  NOW, MONTH, appleConfig, googleConfig, appleTrust, oidcKeySet, oidcAudience,
+  NOW, MONTH, appleConfig, googleConfig, appleTrust, oidcKeySet, oidcAudience, oidcEmail,
   signApple, appleTransaction, appleRenewal, appleStatusBody, appleNotificationBody,
   stubAppleApi, stubPlayApi, signOidc, googleSubscription, rtdnBody, rtdnSubscription,
 } from './billing-fixtures.ts';
@@ -27,7 +27,7 @@ test('real Postgres billing: verified bindings dedupe, conflicts persist with re
     const apple = stubAppleApi(), play = stubPlayApi();
     const service = new Subscriptions(new PostgresBillingStore(billingPool), {
       apple: { config: appleConfig, trust: appleTrust, api: apple.api },
-      google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience },
+      google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience, oidcEmail },
     }, () => now);
     const alice = randomUUID(), bob = randomUUID(), original = '2000001000000000';
     const proof = signApple(appleTransaction({ originalTransactionId: original, transactionId: '2000001000000001' }));

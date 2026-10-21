@@ -7,8 +7,8 @@ enum NativeRelayError: LocalizedError {
 }
 enum NativeRelayProtocol {
     static let maximumBytes: Int64 = 64 * 1024 * 1024
-    static let api = URL(string: "https://api.pittech.app")!
-    static func code(_ input: String) throws -> String {
+    static let api = URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)")!
+    static func code(_ input: String, configuration: NativeOnlineConfiguration = .current) throws -> String {
         guard input.utf8.count <= 256 else { throw NativeRelayError.message("Enter the complete Cook Pack code.") }
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let raw: String
@@ -16,8 +16,8 @@ enum NativeRelayProtocol {
             guard let url = URLComponents(string: trimmed), url.user == nil, url.password == nil, url.port == nil,
                   url.query == nil, url.fragment == nil, !url.percentEncodedPath.contains("%") else { throw NativeRelayError.message("This share link is not supported.") }
             let prefix: String
-            if url.scheme?.lowercased() == "https" && url.host?.lowercased() == "pittech.app" { prefix = "/s/" }
-            else if url.scheme?.lowercased() == "pittech" && url.host?.lowercased() == "share" { prefix = "/" }
+            if url.scheme?.lowercased() == "https" && url.host == configuration.publicHost { prefix = "/s/" }
+            else if url.scheme == configuration.linkScheme && url.host?.lowercased() == "share" { prefix = "/" }
             else { throw NativeRelayError.message("Only PitTech share links are supported.") }
             guard url.path.hasPrefix(prefix) else { throw NativeRelayError.message("Enter a complete share link.") }
             raw = String(url.path.dropFirst(prefix.count))
@@ -28,7 +28,7 @@ enum NativeRelayProtocol {
         let characters = Array(compact)
         return stride(from: 0, to: 16, by: 4).map { String(characters[$0..<($0 + 4)]) }.joined(separator: "-")
     }
-    static func link(_ code: String) throws -> URL { URL(string: "https://pittech.app/s/" + (try self.code(code)))! }
+    static func link(_ code: String) throws -> URL { URL(string: "\(NativeOnlineConfiguration.current.publicOrigin)/s/" + (try self.code(code)))! }
     static func hash(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
     static func date(_ value: String) -> Date? {
         let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

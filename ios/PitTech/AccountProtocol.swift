@@ -4,7 +4,7 @@ import Security
 
 /// Accounts remain unavailable until the complete accounts/social/sync/deletion phase is approved.
 enum NativeAccountProtocol {
-    static let enabled = false
+    static var enabled: Bool { NativeOnlineConfiguration.current.enabled }
     static func verifier() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { throw NativeAccountError.invalid }
@@ -24,9 +24,9 @@ enum NativeAccountProtocol {
         return value
     }
     /// Only the exact production origin, path and canonical fragment are accepted. Never exchange on receipt.
-    static func link(_ input: URL) throws -> (String, String) {
+    static func link(_ input: URL, configuration: NativeOnlineConfiguration = .current) throws -> (String, String) {
         guard input.absoluteString.count <= 256, let parts = URLComponents(url: input, resolvingAgainstBaseURL: false),
-              parts.scheme == "https", parts.host == "pittech.app", parts.port == nil, parts.user == nil, parts.password == nil,
+              parts.scheme == "https", parts.host == configuration.publicHost, parts.port == nil, parts.user == nil, parts.password == nil,
               parts.percentEncodedPath == "/auth", parts.query == nil, let fragment = parts.percentEncodedFragment else { throw NativeAccountError.invalid }
         let fields = fragment.components(separatedBy: "&")
         guard fields.count == 2, fields[0].hasPrefix("challenge="), fields[1].hasPrefix("token=") else { throw NativeAccountError.invalid }
@@ -85,7 +85,7 @@ struct NativeAccountState: Codable {
 }
 protocol NativeAccountStorage { func load() throws -> NativeAccountState; func save(_ value: NativeAccountState) throws }
 struct NativeAccountVault: NativeAccountStorage {
-    var service = "com.pittech.account.production.v1"
+    var service = NativeOnlineConfiguration.current.scopedName("com.pittech.account.production.v1")
     private var key: [String: Any] { [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "state", kSecAttrSynchronizable as String: false] }
     func load() throws -> NativeAccountState {
         guard let bytes = try loadBytes() else { return NativeAccountState() }

@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -14,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 internal interface AccountStorage { fun load(): AccountState; fun save(value: AccountState) }
 /** Separate device-only namespace, absent from Room, preferences and archive exports. */
-internal class AccountVault(context: Context, private val namespace: String = "production") : AccountStorage {
+internal class AccountVault(context: Context, private val namespace: String = OnlineConfiguration.current.environment) : AccountStorage {
     init { require(namespace.matches(Regex("[a-z0-9-]{1,64}"))) }
     private val file = File(context.noBackupFilesDir, "account-$namespace-v1/state").also { check(it.parentFile!!.exists() || it.parentFile!!.mkdirs()) }
     private val alias = "pittech-account-$namespace-v1"

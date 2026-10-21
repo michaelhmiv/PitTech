@@ -71,6 +71,7 @@ class CooksViewModel(
         viewModelScope,
         session = { if(account.presentation.value.signedIn) runCatching { account.access() }.getOrNull() else null },
         accountsEnabled = account.enabled,
+        ownerId = { if(account.enabled) account.publicationUserId() else null },
         cacheStore = com.pittech.billing.SharedPrefsSubscriptionCacheStore(context))
     internal val communityBenchmarks = com.pittech.billing.CommunityBenchmarksLoader(
         session = { if(account.presentation.value.signedIn) runCatching { account.access() }.getOrNull() else null },

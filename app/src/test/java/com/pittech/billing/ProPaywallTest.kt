@@ -110,6 +110,7 @@ class ProPaywallTest {
             scope = scope,
             api = api,
             session = { token },
+            ownerId = { token?.let { "stub-account" } },
             accountsEnabled = true,
             cacheStore = MemorySubscriptionCacheStore(),
         )
@@ -299,6 +300,7 @@ class ProPaywallTest {
             scope = this,
             api = api,
             session = { box.token },
+            ownerId = { box.token?.let { "stub-account" } },
             accountsEnabled = true,
             cacheStore = MemorySubscriptionCacheStore(),
         )
@@ -334,13 +336,13 @@ class ProPaywallTest {
                     """"offlineValidUntil":"2026-10-25T12:00:00.000Z","contractVersion":"store-verification-v1"}""",
             ),
         )
-        store.save(cache)
-        val loaded = store.load()!!
+        store.save("stub-account", cache)
+        val loaded = store.load("stub-account")!!
         assertEquals(cache, loaded)
         assertTrue(loaded.offlineUsable(1_792_324_800_000L))
         assertFalse(loaded.offlineUsable(1_792_324_800_000L + 604_801_000L))
         store.clear()
-        assertNull(store.load())
+        assertNull(store.load("stub-account"))
     }
 
     @Test

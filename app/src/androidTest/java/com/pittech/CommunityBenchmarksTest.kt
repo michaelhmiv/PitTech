@@ -113,7 +113,7 @@ class CommunityBenchmarksTest {
     private fun manager(api: FakeSubscriptionAPI = FakeSubscriptionAPI(), token: String? = "A".repeat(43)): SubscriptionManager {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scopes.add(scope)
-        val manager = SubscriptionManager(FakeBilling(), scope, api, { token }, true, MemorySubscriptionCacheStore())
+        val manager = SubscriptionManager(FakeBilling(), scope, api, { token }, true, MemorySubscriptionCacheStore(), ownerId = { token?.let { "stub-account" } })
         runBlocking { manager.loadProduct(); manager.refresh() }
         return manager
     }

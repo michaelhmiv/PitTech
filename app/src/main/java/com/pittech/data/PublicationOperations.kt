@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import android.content.Context
 import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +34,7 @@ internal class AccountPublicationSession(private val account: AccountManager): P
 }
 internal fun publicationUuid(value: String) = value.matches(Regex("[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"))
 internal data class PublicationReceipt(val id: String, val revisionId: String, val revision: Int, val url: String, val kind: String? = null, val status: String? = null) {
-    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "https://pittech.app/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt")) && (status==null || status in setOf("active","pending_review"))) }
+    fun validate() { require(publicationUuid(id) && publicationUuid(revisionId) && revision > 0 && url == "${OnlineConfiguration.current.publicOrigin}/c/$id" && (kind==null || kind in setOf("recipe","collection","attempt")) && (status==null || status in setOf("active","pending_review"))) }
     fun json() = JSONObject().put("id",id).put("revisionId",revisionId).put("revision",revision).put("url",url).put("kind",kind ?: JSONObject.NULL).put("status",status ?: JSONObject.NULL)
     companion object { fun parse(o: JSONObject) = PublicationReceipt(o.getString("id"),o.getString("revisionId"),o.getInt("revision"),o.getString("url"),if(o.isNull("kind"))null else o.getString("kind"),if(o.isNull("status"))null else o.getString("status")).also { it.validate() } }
 }
@@ -53,7 +55,7 @@ internal data class PublicationOperation(val id: String, val userId: String, val
 }
 /** Device-only, one durable exact request per account. Credentials are never persisted here. */
 internal class PublicationOperationsStore(val directory: File) {
-    constructor(context: Context): this(File(context.noBackupFilesDir,"publication-operations-v1"))
+    constructor(context: Context): this(File(context.noBackupFilesDir,OnlineConfiguration.current.scopedName("publication-operations-v1")))
     companion object { private val lock=Any() }
     private fun stateFile(user: String): File { require(publicationUuid(user)); return File(directory,RelayProtocol.hash(user.toByteArray())+".json") }
     private fun bounded(input: InputStream): ByteArray = input.use {
@@ -152,7 +154,7 @@ internal interface PublicationAPI {
 internal class PublicationClient(client: OkHttpClient = OkHttpClient()): PublicationAPI {
     private val client=client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(CookieJar.NO_COOKIES).cache(null).callTimeout(90,TimeUnit.SECONDS).build()
     private fun request(path: String, access: String): Request.Builder {
-        require(AccountProtocol.credential(access)); return Request.Builder().url("https://api.pittech.app$path").header("Authorization","Bearer $access").header("Accept","application/json").header("Cache-Control","no-store")
+        require(AccountProtocol.credential(access)); return Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Authorization","Bearer $access").header("Accept","application/json").header("Cache-Control","no-store")
     }
     override suspend fun read(path: String, access: String): JSONObject {
         val parts=path.split('/'); val exactOwner=parts.size==5 && parts[0]=="" && parts[1]=="v1" && parts[2]=="me" && parts[3]=="recipes" && publicationUuid(parts[4])

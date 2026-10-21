@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -30,7 +32,7 @@ internal class RelayClient(private val base: String = RelayProtocol.API, client:
     }
     private fun request(path: String): Request.Builder {
         val origin = java.net.URI(base)
-        require(origin.scheme == "https" && origin.host == "api.pittech.app" && origin.port == -1 && origin.rawUserInfo == null && origin.path.isNullOrEmpty() && origin.rawQuery == null && origin.rawFragment == null)
+        require(origin.scheme == "https" && origin.rawAuthority == OnlineConfiguration.current.apiHost && origin.port == -1 && origin.rawUserInfo == null && origin.path.isNullOrEmpty() && origin.rawQuery == null && origin.rawFragment == null)
         return Request.Builder().url(base + path).header("Accept", "application/json").header("Cache-Control", "no-store")
     }
     suspend fun upload(value: RelayOwnedShare, source: File, progress: (Long, Long) -> Unit): RelayReceipt {

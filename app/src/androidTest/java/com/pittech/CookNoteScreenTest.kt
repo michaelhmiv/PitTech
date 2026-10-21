@@ -20,7 +20,8 @@ class CookNoteScreenTest {
         val id = runBlocking(Dispatchers.IO) { app.database.clearAllTables(); app.cookRepository.startCook(NewCookDraft("Unified note cook", dishes = listOf(DishDraft("Brisket", "beef")))) }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Unified note cook").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Unified note cook").performClick()
-        compose.onNodeWithTag("timeline-add-temperature", useUnmergedTree = true).performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-add-temperature", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("timeline-add-temperature", useUnmergedTree = true).assertIsDisplayed().performClick()
         compose.onNodeWithTag("timeline-entry-details").performTextInput("Bark is set")
         compose.onNodeWithTag("temperature-value").performTextInput("165")
         closeFocusedSoftKeyboard()

@@ -1,3 +1,4 @@
+import { onlineEnvironment } from './online-environment.ts';
 import { CommunityLifecycle } from './community-lifecycle.ts';
 import { AccountDeletion } from './account-deletion.ts';
 import { PrivateSyncPurger } from './sync-purge.ts';
@@ -20,11 +21,14 @@ import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
 import { PrivatePhotos } from './sync-photos.ts';
 import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
+import { GoogleOidcKeyCache } from './google-oidc-keys.ts';
 
 const required = (name: string) => { const value = process.env[name]; if (!value) throw new Error('Missing configuration'); return value; };
 function positive(name: string) { const n = Number(required(name)); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
 function positiveDefault(name: string, fallback: number) { const raw = process.env[name]; if (raw === undefined) return fallback; const n = Number(raw); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Invalid limit'); return n; }
 export function createRuntime() {
+  const online = onlineEnvironment(process.env.ONLINE_ENVIRONMENT);
+  if (process.env.AUTH_ENABLED === 'true' && process.env.AUTH_PUBLIC_ORIGIN !== online.publicOrigin) throw new Error('Authentication origin does not match online environment');
   const ipKey = required('RATE_HMAC_KEY'); if (ipKey.length < 32) throw new Error('Invalid HMAC key');
   const url = required('DATABASE_URL'); if (!['postgres:', 'postgresql:'].includes(new URL(url).protocol)) throw new Error('Invalid database URL');
   const budgets = { storageBytes: positive('STORAGE_MAX_BYTES'), dailyBytes: positive('DAILY_UPLOAD_MAX_BYTES'), dailyUploads: positive('DAILY_UPLOAD_MAX_COUNT') };
@@ -58,7 +62,7 @@ export function createRuntime() {
   const deletion=lifecyclePool&&lifecycleSecrets?new AccountDeletion(lifecyclePool,lifecycleSecrets,storage,new ResendLifecycleMailer(required('RESEND_API_KEY'),required('AUTH_FROM'),required('AUTH_PUBLIC_ORIGIN')),email=>authSecrets!.hash('email',email),Date.now,new PrivateSyncPurger(lifecyclePool,storage)):undefined;
   if(process.env.PUBLIC_API_ENABLED==='true'&&(!auth||!community||!deletion||process.env.PUBLIC_MODERATION_READY!=='true'||process.env.ACCOUNT_DELETION_READY!=='true'))throw new Error('Complete phase required');
   if(process.env.PUBLIC_API_ENABLED==='true'&&budgets.storageBytes+positive('PUBLIC_STORAGE_MAX_BYTES')>positive('TOTAL_OBJECT_STORAGE_MAX_BYTES'))throw new Error('Combined storage budget exceeds cap');
-  const publications=process.env.PUBLIC_API_ENABLED==='true'?new Publications(pool,storage,{storageBytes:positive('PUBLIC_STORAGE_MAX_BYTES'),dailyBytes:positive('PUBLIC_DAILY_BYTES'),dailyWrites:positive('PUBLIC_DAILY_WRITES')},Date.now,true,handle=>lifecycleSecrets!.hash('retired-handle',handle)):undefined;
+  const publications=process.env.PUBLIC_API_ENABLED==='true'?new Publications(pool,storage,{storageBytes:positive('PUBLIC_STORAGE_MAX_BYTES'),dailyBytes:positive('PUBLIC_DAILY_BYTES'),dailyWrites:positive('PUBLIC_DAILY_WRITES')},Date.now,true,handle=>lifecycleSecrets!.hash('retired-handle',handle),online):undefined;
   const syncEnabled=process.env.PRIVATE_SYNC_ENABLED==='true';
   if(syncEnabled&&!authSecrets)throw new Error('Accounts required');
   const syncUrl=syncEnabled?required('PRIVATE_SYNC_DATABASE_URL'):undefined;
@@ -114,15 +118,11 @@ export function createRuntime() {
       return {status:response.status,body:await storeJson(response)};
     };
     const playApi=new PlayDeveloperApi({clientEmail:account.client_email,privateKey:(account.private_key as string).replace(/\\n/g,'\n')},playFetch);
-    const oidcKeys=new Map<string,string>(),oidcAudience=required('PRO_GOOGLE_RTDN_AUDIENCE');
-    refreshOidcKeys=async()=>{
-      const response=await fetch('https://www.googleapis.com/oauth2/v3/certs',{signal:AbortSignal.timeout(10000)});
-      if(!response.ok)throw new Error('OIDC refresh failed');
-      const certs=await response.json() as Record<string,unknown>;
-      for(const [kid,pem] of Object.entries(certs))if(typeof pem==='string'&&pem.includes('BEGIN CERTIFICATE'))oidcKeys.set(kid,pem);
-      if(!oidcKeys.size)throw new Error('OIDC refresh failed');
-    };
-    subscriptions=new Subscriptions(new PostgresBillingStore(pool),{apple:{config:appleConfig,trust,api:appleApi},google:{config:googleConfig,api:playApi,oidcKeys,oidcAudience}});
+    const oidcKeys=new GoogleOidcKeyCache(),oidcAudience=required('PRO_GOOGLE_RTDN_AUDIENCE');
+    const oidcEmail=required('PRO_GOOGLE_RTDN_SERVICE_ACCOUNT_EMAIL');
+    if(!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.gserviceaccount\.com$/.test(oidcEmail))throw new Error('Invalid Pub/Sub push identity');
+    refreshOidcKeys=()=>oidcKeys.refresh();
+    subscriptions=new Subscriptions(new PostgresBillingStore(pool),{apple:{config:appleConfig,trust,api:appleApi},google:{config:googleConfig,api:playApi,oidcKeys,oidcAudience,oidcEmail}});
   }
   // Community aggregation stays off unless explicitly enabled. When on, the job
   // persists via the isolated aggregation tables through the allowlisted

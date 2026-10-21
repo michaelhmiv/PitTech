@@ -4,6 +4,11 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+  Staging: debug
+  StoreSandbox: release
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -62,9 +67,31 @@ targets:
         # Owner-gated: the monthly PitTech Pro product ID. Empty until the
         # store product exists; the paywall treats empty as not-configured.
         PITTECH_PRO_PRODUCT_ID: ""
+        PITTECH_ONLINE_ENVIRONMENT: "production"
+        PITTECH_ONLINE_ENABLED: "NO"
+        PITTECH_STORE_SANDBOX_BUILD: "NO"
+        PITTECH_PUBLIC_HOST: "pittech.app"
+        PITTECH_LINK_SCHEME: "pittech"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: PitTech/PitTech.entitlements
       configs:
+        Staging:
+          PRODUCT_BUNDLE_IDENTIFIER: com.pittech.staging
+          PITTECH_ONLINE_ENVIRONMENT: "staging"
+          PITTECH_ONLINE_ENABLED: "NO"
+          PITTECH_PUBLIC_HOST: "staging.pittech.app"
+          PITTECH_LINK_SCHEME: "pittech-staging"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
+        StoreSandbox:
+          PITTECH_ONLINE_ENVIRONMENT: "staging"
+          PITTECH_ONLINE_ENABLED: "NO"
+          PITTECH_STORE_SANDBOX_BUILD: "YES"
+          PITTECH_PUBLIC_HOST: "staging.pittech.app"
+          PITTECH_LINK_SCHEME: "pittech-staging"
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          DEVELOPMENT_TEAM: "R42LWFBXBH"
+          PROVISIONING_PROFILE_SPECIFIER: "PitTech App Store CI"
         Release:
           # App Store builds sign manually with the CI-generated profile.
           # Scoped to this target only: Swift Package targets (GoogleMobileAds,
@@ -102,6 +129,8 @@ targets:
       - path: ../contracts/fixtures/relay-links-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/auth-native-v1.json
+        buildPhase: resources
+      - path: ../contracts/fixtures/online-environments-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/public-links-v1.json
         buildPhase: resources

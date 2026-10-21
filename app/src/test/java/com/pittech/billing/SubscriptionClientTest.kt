@@ -68,4 +68,26 @@ class SubscriptionClientTest {
             fail("GET with body accepted")
         } catch (_: IllegalArgumentException) { }
     }
+
+    @Test
+    fun onlyTheExactSandboxReadQueryIsAllowedAndItStaysAnAuthenticatedGet(): Unit = runBlocking {
+        var calls = 0
+        val client = SubscriptionClient(OkHttpClient.Builder().addInterceptor { chain ->
+            calls++
+            val request = chain.request()
+            assertEquals("https://api.pittech.app/v1/me/entitlement?environment=sandbox", request.url.toString())
+            assertEquals("GET", request.method)
+            assertNull(request.body)
+            assertEquals("Bearer " + "A".repeat(43), request.header("Authorization"))
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("synthetic")
+                .body("{}".toResponseBody()).build()
+        }.build())
+        client.call("/v1/me/entitlement?environment=sandbox", null, "A".repeat(43))
+        for (path in listOf("/v1/me/entitlement?environment=production", "/v1/me/entitlement?environment=sandbox&environment=production",
+            "/v1/me/entitlement?environment=sandbox#fragment", "/v1/me/purchases/verify?environment=sandbox")) {
+            try { client.call(path, null, "A".repeat(43)); fail("Unapproved query accepted") } catch (_: IllegalArgumentException) { }
+        }
+        try { client.call("/v1/me/entitlement?environment=sandbox", JSONObject(), "A".repeat(43)); fail("GET body accepted") } catch (_: IllegalArgumentException) { }
+        assertEquals(1, calls)
+    }
 }

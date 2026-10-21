@@ -40,7 +40,7 @@ struct NativeCommunityBenchmarksClient: NativeCommunityBenchmarksAPI {
         if let metric, !CommunityBenchmarks.metricAllowed(metric) { throw NativeCommunityError.invalid }
         if let runId, !CommunityBenchmarks.runIdValid(runId) { throw NativeCommunityError.invalid }
         guard let access, NativeAccountProtocol.credential(access) else { throw NativeCommunityError.invalid }
-        var components = URLComponents(string: "https://api.pittech.app" + CommunityBenchmarks.aggregatesPath)!
+        var components = URLComponents(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + CommunityBenchmarks.aggregatesPath)!
         var items: [URLQueryItem] = []
         if let bucket { items.append(URLQueryItem(name: "bucket", value: bucket)) }
         if let metric { items.append(URLQueryItem(name: "metric", value: metric)) }
@@ -53,7 +53,7 @@ struct NativeCommunityBenchmarksClient: NativeCommunityBenchmarksAPI {
         if let limit, !CommunityBenchmarks.jobRunsLimitValid(limit) { throw NativeCommunityError.invalid }
         if let cursor, !CommunityBenchmarks.runIdValid(cursor) { throw NativeCommunityError.invalid }
         guard let access, NativeAccountProtocol.credential(access) else { throw NativeCommunityError.invalid }
-        var components = URLComponents(string: "https://api.pittech.app" + CommunityBenchmarks.jobRunsPath)!
+        var components = URLComponents(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + CommunityBenchmarks.jobRunsPath)!
         var items: [URLQueryItem] = []
         if let limit { items.append(URLQueryItem(name: "limit", value: String(limit))) }
         if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }

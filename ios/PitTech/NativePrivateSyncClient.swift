@@ -39,7 +39,7 @@ final class NativeSyncTransport: NSObject, URLSessionDataDelegate, URLSessionTas
     private var httpStatus = 0
     private var errorBody = Data()
     func run(_ request: URLRequest, upload: Data? = nil, download: URL? = nil) async throws {
-        guard request.url?.scheme == "https", request.url?.host == "api.pittech.app" else { throw NativeSyncError.invalid }
+        guard NativeOnlineConfiguration.current.acceptsAPI(request.url) else { throw NativeSyncError.invalid }
         self.target = download
         try await withTaskCancellationHandler(operation: {
             _ = try await withCheckedThrowingContinuation { continuation in
@@ -109,7 +109,7 @@ struct NativePrivateSyncClient: NativePrivateSyncAPI {
     var configuration: URLSessionConfiguration?
     private func request(_ path: String, access: String) throws -> URLRequest {
         guard NativeAccountProtocol.credential(access) else { throw NativeSyncError.invalid }
-        var request = URLRequest(url: URL(string: "https://api.pittech.app" + path)!)
+        var request = URLRequest(url: URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + path)!)
         request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")

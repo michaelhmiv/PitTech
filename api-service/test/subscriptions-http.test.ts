@@ -9,7 +9,7 @@ import type { Authentication } from '../src/auth.ts';
 import { Subscriptions } from '../src/subscriptions.ts';
 import { MemoryRepository, MemoryBillingStore, budgets } from './helpers.ts';
 import {
-  NOW, MONTH, appleConfig, googleConfig, appleTrust, oidcKeySet, oidcAudience,
+  NOW, MONTH, appleConfig, googleConfig, appleTrust, oidcKeySet, oidcAudience, oidcEmail,
   signApple, appleTransaction, appleRenewal, appleStatusBody, appleNotificationBody,
   stubAppleApi, stubPlayApi, signOidc, googleSubscription, rtdnBody, rtdnSubscription,
 } from './billing-fixtures.ts';
@@ -20,7 +20,7 @@ async function setup(t: { after: (fn: () => void) => void }) {
   const auth = { user: async (token: unknown) => { if (token !== access) throw new ApiError(401, 'authentication_required'); return { id: userId, email: 'synthetic-billing@example.com' }; } } as unknown as Authentication;
   const service = new Subscriptions(store, {
     apple: { config: appleConfig, trust: appleTrust, api: apple.api },
-    google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience },
+    google: { config: googleConfig, api: play.api, oidcKeys: oidcKeySet, oidcAudience, oidcEmail },
   }, () => NOW);
   const logs: unknown[] = [];
   const storage = { put: async () => {}, get: async () => Buffer.alloc(0), delete: async () => {} };

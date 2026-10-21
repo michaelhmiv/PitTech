@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.AtomicFile
@@ -36,7 +38,7 @@ internal data class PublicDetail(val id: String,val revisionId: String,val paylo
         val value=PublicDetail(o.getString("id"),o.getString("revisionId"),o.getJSONObject("payload"),o.getJSONObject("credit").getString("displayName"),media,o.getJSONObject("credit").optString("profileUrl").takeIf { it.isNotEmpty() },if(o.isNull("publisherAlias"))null else o.getString("publisherAlias"))
         require(publicUUID(value.id) && publicUUID(value.revisionId) && value.title.length in 1..160 && value.credit.length <= 160 && (value.publisherAlias==null || publicUUID(value.publisherAlias)) && value.recipes.size in 1..20 && media.size <= 600 && media.map { it.getString("id") }.distinct().size == media.size)
         value.recipes.forEach { r-> require(publicUUID(r.getString("id")) && r.getString("title").length in 1..160 && r.optString("description").length <= 2000 && r.getJSONArray("ingredients").length() <= 100 && r.getJSONArray("instructions").length() <= 100) }
-        media.forEach { m->require(publicUUID(m.getString("id")) && m.getString("url") == "https://api.pittech.app/v1/recipes/${value.id}/assets/${m.getString("id")}" && m.getString("sha256").matches(Regex("[a-f0-9]{64}")) && m.getString("mimeType") in setOf("image/jpeg","image/png","image/webp")) }
+        media.forEach { m->require(publicUUID(m.getString("id")) && m.getString("url") == "${OnlineConfiguration.current.apiOrigin}/v1/recipes/${value.id}/assets/${m.getString("id")}" && m.getString("sha256").matches(Regex("[a-f0-9]{64}")) && m.getString("mimeType") in setOf("image/jpeg","image/png","image/webp")) }
         value.profileUrl?.let { require(PublicLink.destination(it).startsWith("profile:")) }
         return value
     } }
@@ -51,7 +53,7 @@ internal class PublicClient(client: OkHttpClient = OkHttpClient(),private val bl
     private val client=client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(CookieJar.NO_COOKIES).cache(null).callTimeout(30,TimeUnit.SECONDS).build()
     private fun request(path: String): Request.Builder {
         require(path.matches(Regex("/v1/profiles/[a-z0-9_]{3,24}(\\?cursor=[a-fA-F0-9-]{36})?")) || path.startsWith("/v1/discover?") || path.matches(Regex("/v1/recipes/[a-fA-F0-9-]{36}(/pack|/assets/[a-fA-F0-9-]{36})?")))
-        val request=Request.Builder().url("https://api.pittech.app$path").header("Cache-Control","no-store").header("Accept","application/json")
+        val request=Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Cache-Control","no-store").header("Accept","application/json")
         val aliases=blocks();require(aliases.size<=100 && aliases.all(::publicUUID));if(aliases.isNotEmpty())request.header("X-PitTech-Blocks",aliases.joinToString(","))
         access()?.let{require(AccountProtocol.credential(it));request.header("Authorization","Bearer $it")};return request
     }
@@ -94,7 +96,7 @@ internal class PublicClient(client: OkHttpClient = OkHttpClient(),private val bl
         }
     }
 }
-internal class PublicCache(context: Context,namespace: String = "production") {
+internal class PublicCache(context: Context,namespace: String = OnlineConfiguration.current.environment) {
     init { require(namespace.matches(Regex("[a-z0-9-]{1,64}"))) }
     private val directory=File(context.noBackupFilesDir,"public-browsing-$namespace-v1").apply { check(exists() || mkdirs()) }
     private fun file(key: String)=File(directory,RelayProtocol.hash(key.toByteArray())+".data")
@@ -111,7 +113,7 @@ internal class PublicCache(context: Context,namespace: String = "production") {
     }
 }
 internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null)
-internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = false,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()}) {
+internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = OnlineConfiguration.current.enabled,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()}) {
     private val _state=MutableStateFlow(PublicPresentation());val state=_state.asStateFlow()
     private val _linkSequence=MutableStateFlow(0L);val linkSequence=_linkSequence.asStateFlow()
     private var profileJob: Job?=null;private var profileReturn: String?=null
@@ -168,7 +170,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
                 val rows=json.getJSONArray("items");require(rows.length()<=20)
                 val items=mutableListOf<PublicItem>()
                 for(i in 0 until rows.length()) {
-                    val row=rows.getJSONObject(i);val id=row.getString("id");require(publicUUID(id) && row.getString("url")=="https://pittech.app/c/$id")
+                    val row=rows.getJSONObject(i);val id=row.getString("id");require(publicUUID(id) && row.getString("url")=="${OnlineConfiguration.current.publicOrigin}/c/$id")
                     try {
                         val raw=JSONObject(String(api.json("/v1/recipes/$id"),Charsets.UTF_8));val detail=PublicDetail.parse(raw)
                         require(detail.id==id && detail.payload.getString("identityMode")=="named")

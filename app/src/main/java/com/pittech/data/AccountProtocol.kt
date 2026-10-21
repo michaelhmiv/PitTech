@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
@@ -11,7 +13,7 @@ import java.util.UUID
 
 internal object AccountProtocol {
     // Enable only with the completed accounts/social/sync/deletion phase.
-    const val ENABLED = false
+    val ENABLED: Boolean get() = OnlineConfiguration.current.enabled
     fun verifier(): String = ByteArray(32).also { SecureRandom().nextBytes(it) }.let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
     fun credential(value: String): Boolean = value.matches(Regex("[A-Za-z0-9_-]{43}")) && runCatching { Base64.getUrlEncoder().withoutPadding().encodeToString(Base64.getUrlDecoder().decode(value)) == value }.getOrDefault(false)
     fun proof(verifier: String): String = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -20,10 +22,10 @@ internal object AccountProtocol {
         require(input.length <= 254 && input.all { it.code < 128 } && value.substringAfter('@').split('.').all { it.length <= 63 } && value.matches(Regex("[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+")) && !value.startsWith(".") && ".." !in value && ".@" !in value && value.substringBefore('@').length <= 64)
         return value
     }
-    fun link(input: String): Pair<String, String> {
+    fun link(input: String, configuration: OnlineConfiguration = OnlineConfiguration.current): Pair<String, String> {
         require(input.length <= 256)
         val uri = URI(input)
-        require(uri.scheme == "https" && uri.host == "pittech.app" && uri.port == -1 && uri.rawUserInfo == null && uri.rawPath == "/auth" && uri.rawQuery == null)
+        require(uri.scheme == "https" && uri.rawAuthority == configuration.publicHost && uri.port == -1 && uri.rawUserInfo == null && uri.rawPath == "/auth" && uri.rawQuery == null)
         val fields = uri.rawFragment?.split('&') ?: error("Invalid link")
         require(fields.size == 2 && fields[0].startsWith("challenge=") && fields[1].startsWith("token="))
         val id = fields[0].removePrefix("challenge="); val token = fields[1].removePrefix("token=")

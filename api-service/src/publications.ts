@@ -1,3 +1,4 @@
+import { onlineEnvironment, type OnlineEnvironment } from './online-environment.ts';
 import { SOURCE_REVIEW_REQUIRED_SQL,BLOCKED_PUBLIC_ASSET_SQL } from './publication-policy.ts';
 import { lockAccount } from './lifecycle-contract.ts';
 import { PUBLICATION_TERMS_VERSION,type PublicationAcknowledgment } from './publication-terms.ts';
@@ -23,11 +24,11 @@ type ItemRow={id:string;author_id:string|null;current_revision_id:string;parent_
 type RevisionRow={id:string;item_id:string;revision_no:number;object_id:string;identity_mode:string;payload:PublicationPayload};
 export type PublicationLimits={storageBytes:number;dailyBytes:number;dailyWrites:number};
 export class Publications {
-  private pool:Pool; private storage:Storage; private limits:PublicationLimits;private reviewRequired:boolean;private hashHandle?:((handle:string)=>string); clock:()=>number;
-  constructor(pool:Pool,storage:Storage,limits:PublicationLimits,clock=Date.now,reviewRequired=false,hashHandle?:((handle:string)=>string)) {
+  private online:OnlineEnvironment; private pool:Pool; private storage:Storage; private limits:PublicationLimits;private reviewRequired:boolean;private hashHandle?:((handle:string)=>string); clock:()=>number;
+  constructor(pool:Pool,storage:Storage,limits:PublicationLimits,clock=Date.now,reviewRequired=false,hashHandle?:((handle:string)=>string),online:OnlineEnvironment=onlineEnvironment()) {
     if(Object.values(limits).some(n=>!Number.isSafeInteger(n)||n<1)) throw new Error('Publication budgets required');
     if(reviewRequired&&!hashHandle)throw new Error('Publication moderation configuration required');
-    this.hashHandle=hashHandle;this.pool=pool;this.storage=storage;this.limits=limits;this.clock=clock;this.reviewRequired=reviewRequired;
+    this.online=online;this.hashHandle=hashHandle;this.pool=pool;this.storage=storage;this.limits=limits;this.clock=clock;this.reviewRequired=reviewRequired;
   }
   private async tx<T>(body:(client:PoolClient)=>Promise<T>):Promise<T> {
     const client=await this.pool.connect();
@@ -159,7 +160,7 @@ export class Publications {
       await c.query('INSERT INTO publications.publisher_aliases(item_id) VALUES($1) ON CONFLICT(item_id) DO NOTHING',[id]);
       if(this.reviewRequired)await c.query('INSERT INTO moderation.reviews(item_id,revision_id,reason,created_at) VALUES($1,$2,$3,$4)',[id,revisionId,item?'changed_content':'new_content',this.clock()]);
       await c.query('UPDATE publications.objects SET state=\'active\' WHERE id=$1',[object.id]);
-      const result={id,revisionId,revision,url:`https://pittech.app/c/${id}`,...(this.reviewRequired?{status}:{})};await this.record(c,user,operation,hash,result);await c.query('INSERT INTO publications.acknowledgments VALUES($1,$2,$3,$4,$5)',[user,operation,revisionId,PUBLICATION_TERMS_VERSION,this.clock()]);return result;
+      const result={id,revisionId,revision,url:`${this.online.publicOrigin}/c/${id}`,...(this.reviewRequired?{status}:{})};await this.record(c,user,operation,hash,result);await c.query('INSERT INTO publications.acknowledgments VALUES($1,$2,$3,$4,$5)',[user,operation,revisionId,PUBLICATION_TERMS_VERSION,this.clock()]);return result;
     });
   }
   /** Explicit public fork. Ordinary local Save never calls this endpoint. Stable measured attempt IDs are retained. */
@@ -197,7 +198,7 @@ export class Publications {
   private async credit(c:PoolClient,item:ItemRow,revision:RevisionRow){
     if(revision.identity_mode==='anonymous'||!item.author_id)return {displayName:'a PitTech cook'};
     const profile=(await c.query('SELECT p.handle,p.display_name,p.is_public FROM publications.profiles p WHERE p.user_id=$1 AND (NOT $2::boolean OR EXISTS(SELECT 1 FROM moderation.approved_profiles a WHERE a.user_id=p.user_id AND a.review_id=p.review_id))',[item.author_id,this.reviewRequired])).rows[0];
-    return {displayName:profile?.display_name||'a PitTech cook',...(profile?.is_public&&profile.handle?{profileUrl:`https://pittech.app/p/${profile.handle}`}:{} )};
+    return {displayName:profile?.display_name||'a PitTech cook',...(profile?.is_public&&profile.handle?{profileUrl:`${this.online.publicOrigin}/p/${profile.handle}`}:{} )};
   }
   private async safeSource(c:PoolClient,id:string,revisionId:string,blocked:string[]=[]){
     let item:ItemRow;try{item=await this.active(c,id,blocked);}catch(error){if(error instanceof ApiError&&error.status===404)return {itemId:id,revisionId,removed:true};throw error;}
@@ -213,7 +214,7 @@ export class Publications {
     for(const recipe of payload.recipes)if(recipe.source)recipe.source=await this.safeSource(c,recipe.source.itemId,recipe.source.revisionId,blocked);
     const alias=(await c.query('SELECT alias FROM publications.publisher_aliases WHERE item_id=$1',[id])).rows[0]?.alias;
     return {id,publisherAlias:alias,revisionId:revision.id,revision:revision.revision_no,payload,credit:await this.credit(c,item,revision),
-      media:payload.recipes.flatMap(r=>r.assets).map(a=>({id:a.id,url:`https://api.pittech.app/v1/recipes/${id}/assets/${a.id}`,sha256:a.sha256,mimeType:a.mimeType})),
+      media:payload.recipes.flatMap(r=>r.assets).map(a=>({id:a.id,url:`${this.online.apiOrigin}/v1/recipes/${id}/assets/${a.id}`,sha256:a.sha256,mimeType:a.mimeType})),
       likes:Number((await c.query('SELECT count(*) AS n FROM publications.likes WHERE item_id=$1',[id])).rows[0].n),
       forks:Number((await c.query('SELECT count(*) AS n FROM publications.items WHERE parent_id=$1 AND status=\'active\'',[id])).rows[0].n)};
   });}
@@ -260,7 +261,7 @@ export class Publications {
     if(!/^[a-z0-9_]{3,24}$/.test(handle)||cursor&&!uuid(cursor))throw missing();
     const p=(await this.pool.query('SELECT p.user_id,p.display_name FROM publications.profiles p JOIN publications.publisher_controls c ON c.user_id=p.user_id WHERE p.handle=$1 AND p.is_public=true AND NOT(c.deleting OR c.suspended) AND NOT(p.user_id=ANY($2::uuid[])) AND (NOT $3::boolean OR EXISTS(SELECT 1 FROM moderation.approved_profiles a WHERE a.user_id=p.user_id AND a.review_id=p.review_id))',[handle,blocked,this.reviewRequired])).rows[0];if(!p)throw missing();
     const ids=(await this.pool.query('SELECT i.id FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id WHERE i.author_id=$1 AND i.status=\'active\' AND r.identity_mode=\'named\' AND ($2::uuid IS NULL OR i.id>$2) ORDER BY i.id LIMIT 21',[p.user_id,cursor??null])).rows;
-    const visible=[];for(const row of ids.slice(0,20)){try{await this.get(row.id,blocked);visible.push({id:row.id,url:`https://pittech.app/c/${row.id}`});}catch(error){if(!(error instanceof ApiError)||error.status!==404)throw error;}}return {handle,displayName:p.display_name,items:visible,nextCursor:ids.length>20?ids[19].id:null};
+    const visible=[];for(const row of ids.slice(0,20)){try{await this.get(row.id,blocked);visible.push({id:row.id,url:`${this.online.publicOrigin}/c/${row.id}`});}catch(error){if(!(error instanceof ApiError)||error.status!==404)throw error;}}return {handle,displayName:p.display_name,items:visible,nextCursor:ids.length>20?ids[19].id:null};
   }
   async myProfile(user:string){
     const row=(await this.pool.query('SELECT p.handle,p.display_name,p.is_public,q.state FROM publications.profiles p LEFT JOIN moderation.profile_reviews q ON q.id=p.review_id WHERE p.user_id=$1',[user])).rows[0];

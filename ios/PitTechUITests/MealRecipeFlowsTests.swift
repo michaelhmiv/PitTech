@@ -2,7 +2,7 @@ import XCTest
 
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
-    private func reveal(_ element: XCUIElement, app: XCUIApplication) {
+    private func reveal(_ element: XCUIElement, app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         for attempt in 0..<18 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
@@ -78,7 +78,12 @@ final class MealRecipeFlowsTests: XCTestCase {
                 if element.exists && element.frame.minY < top + 8 { scroll.swipeDown() } else { scroll.swipeUp() }
             } else { app.swipeUp() }
         }
-        XCTAssertTrue(element.exists && element.isHittable)
+        if !element.exists || !element.isHittable {
+            capture("Unreachable requested action")
+            print("Requested element: \(element)")
+            print(app.debugDescription)
+        }
+        XCTAssertTrue(element.exists && element.isHittable, "The requested action must be reachable.", file: file, line: line)
         let log = app.buttons["meal-log"]
         if app.scrollViews["cook-content"].exists, log.exists, log.isHittable,
            let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable }) {
@@ -298,11 +303,29 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.terminate()
         }
     }
+    private func selectTab(_ name: String, app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let tab = app.tabBars.buttons[name]
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "The requested tab must exist.", file: file, line: line)
+        // A tap during a Form update can be swallowed. Confirm navigation before
+        // looking for actions on another tab, without reselecting an existing path.
+        for _ in 0..<3 {
+            if tab.isSelected { return }
+            tab.tap()
+            let selected = XCTNSPredicateExpectation(
+                predicate: NSPredicate { value, _ in (value as? XCUIElement)?.isSelected == true },
+                object: tab
+            )
+            if XCTWaiter.wait(for: [selected], timeout: 3) == .completed { return }
+        }
+        capture("Requested tab did not become selected")
+        print(app.debugDescription)
+        XCTAssertTrue(tab.isSelected, "The requested tab must become selected.", file: file, line: line)
+    }
     func testAnonymousReportRecoveryAndPublisherBlockAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication()
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--community-controls-ui-test"] + (large ? ["--screenshot-large-text"] : [])
-            app.launch(); app.tabBars.buttons["Discover"].tap()
+            app.launch(); selectTab("Discover", app: app)
             let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discover-open-")).firstMatch
             XCTAssertTrue(source.waitForExistence(timeout: 10)); reveal(source, app: app); source.tap()
             let report = app.buttons["public-report"]; reveal(report, app: app); report.tap()
@@ -312,7 +335,7 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(saved.waitForExistence(timeout: 10)); reveal(saved, app: app)
             capture(large ? "Community report saved large text" : "Community report saved")
             app.navigationBars["Report publication"].buttons["Cancel"].tap()
-            app.tabBars.buttons["More"].tap(); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app)
+            selectTab("More", app: app); let manage = app.buttons["more-community-controls"]; reveal(manage, app: app)
             let retry = app.buttons["community-retry"]
             // Under CI load the More-list tap can be swallowed while the list settles:
             // retry until the Community Controls screen actually lands.
@@ -324,12 +347,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             let status = app.buttons["Check report status"].firstMatch; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app); status.tap()
             let reviewing = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Reviewing")).firstMatch; XCTAssertTrue(reviewing.waitForExistence(timeout: 10)); reveal(reviewing, app: app)
             capture(large ? "Community report status large text" : "Community report status")
-            app.tabBars.buttons["Discover"].tap(); let block = app.buttons["public-block"]; reveal(block, app: app); block.tap()
+            selectTab("Discover", app: app); let block = app.buttons["public-block"]; reveal(block, app: app); block.tap()
             let search = app.buttons["discover-search"]; reveal(search, app: app); search.tap()
             XCTAssertTrue(app.staticTexts["discover-empty"].waitForExistence(timeout: 10))
             capture(large ? "Publisher blocked large text" : "Publisher blocked")
-            app.tabBars.buttons["More"].tap(); let unblock = app.buttons["Unblock publisher"].firstMatch; reveal(unblock, app: app); unblock.tap()
-            app.tabBars.buttons["Discover"].tap(); reveal(search, app: app); search.tap(); XCTAssertTrue(source.waitForExistence(timeout: 10))
+            selectTab("More", app: app); let unblock = app.buttons["Unblock publisher"].firstMatch; reveal(unblock, app: app); unblock.tap()
+            selectTab("Discover", app: app); reveal(search, app: app); search.tap(); XCTAssertTrue(source.waitForExistence(timeout: 10))
             app.terminate()
         }
     }

@@ -5,6 +5,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=node:node api-service/src ./src
 COPY --chown=node:node api-service/web ./web
 COPY --chown=node:node api-service/migrations ./migrations
+COPY --chown=node:node api-service/operations ./operations
 COPY --chown=node:node contracts /srv/contracts
 ENV NODE_ENV=production
 USER node

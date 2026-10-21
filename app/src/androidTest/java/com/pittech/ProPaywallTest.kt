@@ -93,7 +93,7 @@ class ProPaywallTest {
     private fun manager(billing: FakeBilling = FakeBilling(), api: FakeAPI = FakeAPI(), token: String? = "A".repeat(43), accountsEnabled: Boolean = true): SubscriptionManager {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scopes.add(scope)
-        val manager = SubscriptionManager(billing, scope, api, { token }, accountsEnabled, MemorySubscriptionCacheStore())
+        val manager = SubscriptionManager(billing, scope, api, { token }, accountsEnabled, MemorySubscriptionCacheStore(), ownerId = { token?.let { "stub-account" } })
         runBlocking { manager.loadProduct(); manager.refresh() }
         return manager
     }

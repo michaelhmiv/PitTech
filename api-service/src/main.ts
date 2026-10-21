@@ -23,7 +23,7 @@ try {
   }, 60000); timer.unref();
   const oidcTimer = runtime.subscriptions ? setInterval(async () => {
     try { await runtime.refreshOidcKeys?.(); } catch { console.error('billing_oidc_deferred'); }
-  }, 3600000) : undefined; oidcTimer?.unref();
+  }, 300000) : undefined; oidcTimer?.unref();
   let mailing = false;
   const authTimer = runtime.auth ? setInterval(async () => {
     if (mailing) return; mailing = true;

@@ -1,0 +1,38 @@
+{
+  "version": "online-environments-v1",
+  "profiles": [
+    {
+      "environment": "production",
+      "apiOrigin": "https://api.pittech.app",
+      "publicHost": "pittech.app",
+      "publicOrigin": "https://pittech.app",
+      "linkScheme": "pittech",
+      "scopedName": "saved-retry-v1",
+      "sandbox": false
+    },
+    {
+      "environment": "staging",
+      "apiOrigin": "https://api-staging.pittech.app",
+      "publicHost": "staging.pittech.app",
+      "publicOrigin": "https://staging.pittech.app",
+      "linkScheme": "pittech-staging",
+      "scopedName": "saved-retry-v1-staging",
+      "sandbox": true
+    }
+  ],
+  "invalidEnvironments": [
+    "",
+    "test",
+    "Production",
+    "production/",
+    "https://attacker.invalid"
+  ],
+  "invalidApiTemplates": [
+    "http://HOST/v1/me",
+    "https://HOST.evil.invalid/v1/me",
+    "https://user@HOST/v1/me",
+    "https://HOST:443/v1/me",
+    "https://HOST/v1/me#fragment",
+    "https://HOST%2eevil.invalid/v1/me"
+  ]
+}

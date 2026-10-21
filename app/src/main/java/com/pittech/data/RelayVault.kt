@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -28,8 +30,8 @@ internal data class RelayOwnedShare(val operation: String, val document: String,
 
 /** Device-only owner capabilities and immutable retry files never enter library exports or cloud backup. */
 internal class RelayVault(context: Context) {
-    private val directory = File(context.noBackupFilesDir, "relay-v1").apply { check(exists() || mkdirs()) }
-    private val alias = "pittech-relay-owner-v1"
+    private val directory = File(context.noBackupFilesDir, OnlineConfiguration.current.scopedName("relay-v1")).apply { check(exists() || mkdirs()) }
+    private val alias = OnlineConfiguration.current.scopedName("pittech-relay-owner-v1")
     private fun recordFile(operation: String) = File(directory, operation + ".owner")
     fun pack(share: RelayOwnedShare) = File(directory, share.operation + ".pittech")
     @Synchronized fun load(document: String): RelayOwnedShare? = all().filter { it.document == document }.maxByOrNull { it.createdAt }

@@ -12,6 +12,7 @@ import {
 } from './subscriptions-google.ts';
 import type { AppleStoreApi } from './subscriptions-apple.ts';
 import type { PlayDeveloperApi } from './subscriptions-google.ts';
+import type { GoogleOidcKeys } from './google-oidc-keys.ts';
 
 export type EntitlementState = 'none' | 'pending' | 'active' | 'grace' | 'retry' | 'paused' | 'expired' | 'cancelled' | 'refunded' | 'revoked';
 export type StoreName = 'apple' | 'google';
@@ -229,7 +230,7 @@ export class PostgresBillingStore implements BillingStore {
 
 export type SubscriptionDeps = {
   apple: { config: AppleConfig; trust: AppleTrust; api?: AppleStoreApi };
-  google: { config: GoogleConfig; api?: PlayDeveloperApi; oidcKeys: Map<string, string>; oidcAudience: string };
+  google: { config: GoogleConfig; api?: PlayDeveloperApi; oidcKeys: GoogleOidcKeys; oidcAudience: string; oidcEmail: string };
 };
 export type VerifyInput =
   | { store: 'apple'; signedTransaction: unknown; signedRenewalInfo?: unknown; claimedEnvironment?: unknown }
@@ -316,7 +317,7 @@ export class Subscriptions {
     if (typeof input.purchaseToken !== 'string' || !input.purchaseToken || input.purchaseToken.length > 4096) throw invalidProof();
     const body = await api.subscription(input.purchaseToken, this.deps.google.config.packageName);
     const verification = verifyGoogleSubscription(body, input.purchaseToken, this.deps.google.config);
-    if (!verification.acknowledged) { await api.acknowledge(input.purchaseToken, this.deps.google.config.packageName); verification.acknowledged = true; }
+    if (!verification.acknowledged) { await api.acknowledge(input.purchaseToken, this.deps.google.config.packageName, this.deps.google.config.productId); verification.acknowledged = true; }
     const linked = (body as Record<string, unknown>).linkedPurchaseToken;
     if (typeof linked === 'string' && linked && linked !== input.purchaseToken) {
       const prior = await this.store.transaction('google', verification.environment, digest(linked));
@@ -418,7 +419,7 @@ export class Subscriptions {
     if (!api) throw new ApiError(503, 'store_unavailable');
     const body = await api.subscription(holder.storeReference, this.deps.google.config.packageName);
     const verification = verifyGoogleSubscription(body, holder.storeReference, this.deps.google.config);
-    if (!verification.acknowledged) { await api.acknowledge(holder.storeReference, this.deps.google.config.packageName); verification.acknowledged = true; }
+    if (!verification.acknowledged) { await api.acknowledge(holder.storeReference, this.deps.google.config.packageName, this.deps.google.config.productId); verification.acknowledged = true; }
     await this.store.updateTransaction('google', holder.environment, holder.transactionKey, { latestTransaction: verification.orderId, expiresAt: verification.expiresAt, autoRenew: verification.autoRenew, cancelledMarker: verification.subscriptionState === 'SUBSCRIPTION_STATE_CANCELED', evidenceRef: verification.evidenceRef });
     let state = deriveGoogleState(verification.subscriptionState, verification.autoRenew, verification.expiresAt, this.clock());
     if (hint.notificationType === 12 && state !== 'active' && state !== 'grace') state = 'revoked';
@@ -430,7 +431,7 @@ export class Subscriptions {
    * acknowledgment once this resolves. */
   async rtdnPush(body: unknown, authorization: string | undefined): Promise<{ outcome: 'applied' | 'deduped' | 'recorded'; note: string }> {
     const now = this.clock();
-    const intent = verifyRtdnPush(body, authorization, this.deps.google.oidcKeys, this.deps.google.oidcAudience, this.deps.google.config, now);
+    const intent = verifyRtdnPush(body, authorization, this.deps.google.oidcKeys, this.deps.google.oidcAudience, this.deps.google.config, now, this.deps.google.oidcEmail);
     const key = `google:${intent.messageId}`;
     if (await this.store.eventSeen(key)) return { outcome: 'deduped', note: 'replay' };
     if (intent.kind === 'test') {

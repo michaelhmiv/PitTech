@@ -4,7 +4,9 @@ BEGIN;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pittech_relay_runtime') THEN
-    CREATE ROLE pittech_relay_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    BEGIN
+      CREATE ROLE pittech_relay_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pittech_relay_runtime'
       AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)) THEN

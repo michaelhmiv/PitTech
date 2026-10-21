@@ -82,6 +82,7 @@ import Foundation
             store: StubStore(productId: stubProduct.productId),
             api: StubAPI(state: state),
             sessionProvider: { signedIn ? String(repeating: "A", count: 43) : nil },
+            ownerIdProvider: { signedIn ? "stub-account" : nil },
             accountsEnabled: true,
             onEntitlement: { [consent] in consent.updateEntitlement($0) }
         )

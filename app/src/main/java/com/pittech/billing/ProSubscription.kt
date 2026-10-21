@@ -17,6 +17,16 @@ internal object ProProductConfiguration {
     val isConfigured: Boolean get() = productId.isNotEmpty()
 }
 
+/** The read context selects a separate server record; it cannot grant Pro.
+ * Purchase verification always derives the environment from store evidence. */
+internal enum class SubscriptionEnvironment(val wireValue: String) {
+    PRODUCTION("production"), SANDBOX("sandbox");
+    val entitlementPath: String get() = if (this == SANDBOX) "/v1/me/entitlement?environment=sandbox" else "/v1/me/entitlement"
+    companion object {
+        fun from(value: String): SubscriptionEnvironment = entries.single { it.wireValue == value }
+    }
+}
+
 /** Paywall placement map. The slice-15 free-feature inventory is the
  * do-not-touch list: these entries only add paid views or loading states and
  * never remove or paywall an existing free tool. */
@@ -190,6 +200,7 @@ internal data class SubscriptionCache(
 
     companion object {
         fun parse(o: JSONObject): SubscriptionCache {
+            SubscriptionEnvironment.from(o.getString("environment"))
             fun instantOrNull(key: String): Long? =
                 if (o.isNull(key)) null else Instant.parse(o.getString(key)).toEpochMilli()
             return SubscriptionCache(

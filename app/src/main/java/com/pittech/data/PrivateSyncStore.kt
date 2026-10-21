@@ -1,5 +1,7 @@
 package com.pittech.data
 
+import com.pittech.online.OnlineConfiguration
+
 import android.content.Context
 import android.util.AtomicFile
 import org.json.JSONArray
@@ -129,7 +131,7 @@ internal class PrivateSyncMemoryStore : PrivateSyncStorage {
 }
 
 internal class PrivateSyncStore(val directory: File) : PrivateSyncStorage {
-    constructor(context: Context) : this(File(context.noBackupFilesDir, "private-sync-v1"))
+    constructor(context: Context) : this(File(context.noBackupFilesDir, OnlineConfiguration.current.scopedName("private-sync-v1")))
     companion object {
         private val lock = Any()
         private const val STATE_LIMIT = 72 * 1024 * 1024

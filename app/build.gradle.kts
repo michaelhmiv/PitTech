@@ -10,6 +10,21 @@ val pittechLiveAds = providers.gradleProperty("pittechLiveAds").orNull?.toBoolea
 // Owner-gated: the monthly PitTech Pro product ID. Empty until the store
 // product exists; the paywall treats empty as not-configured.
 val pittechProProductId = providers.gradleProperty("pittechProProductId").orNull ?: ""
+// Defaults preserve the disabled online rollout. Staging is confined to Dev/Debug installs.
+val pittechOnlineEnvironment = providers.gradleProperty("pittechOnlineEnvironment").orNull ?: "production"
+require(pittechOnlineEnvironment in setOf("production", "staging")) { "Unsupported online environment." }
+val pittechOnlineEnabled = providers.gradleProperty("pittechOnlineEnabled").orNull?.let {
+    requireNotNull(it.toBooleanStrictOrNull()) { "pittechOnlineEnabled must be true or false." }
+} ?: false
+require(pittechProProductId.matches(Regex("[A-Za-z0-9._-]{0,200}"))) { "Invalid monthly product ID." }
+val pittechStoreSandboxBuild = providers.gradleProperty("pittechStoreSandboxBuild").orNull?.let {
+    requireNotNull(it.toBooleanStrictOrNull()) { "pittechStoreSandboxBuild must be true or false." }
+} ?: false
+require(!pittechStoreSandboxBuild || pittechOnlineEnvironment == "staging" && !pittechLiveAds) {
+    "Store sandbox builds require staging and test ads."
+}
+val pittechPublicHost = if (pittechOnlineEnvironment == "staging") "staging.pittech.app" else "pittech.app"
+val pittechLinkScheme = if (pittechOnlineEnvironment == "staging") "pittech-staging" else "pittech"
 val admobAppId = "ca-app-pub-2708638041809482~5194145527"
 val testNativeAdUnitId = "ca-app-pub-3940256099942544/2247696110"
 val liveNativeAdUnitId = "ca-app-pub-2708638041809482/6602595967"
@@ -32,6 +47,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PITTECH_NATIVE_AD_UNIT_ID", "\"$nativeAdUnitId\"")
         buildConfigField("String", "PITTECH_PRO_PRODUCT_ID", "\"$pittechProProductId\"")
+        buildConfigField("String", "PITTECH_ONLINE_ENVIRONMENT", "\"${pittechOnlineEnvironment}\"")
+        buildConfigField("boolean", "PITTECH_ONLINE_ENABLED", pittechOnlineEnabled.toString())
+        manifestPlaceholders["pittechPublicHost"] = pittechPublicHost
+        manifestPlaceholders["pittechLinkScheme"] = pittechLinkScheme
         buildConfigField("boolean", "CONTROLLER_TESTING_ENABLED", "false")
         buildConfigField("boolean", "TELEMETRY_BETA_ENABLED", "true")
     }
@@ -134,4 +153,9 @@ tasks.register("recordPublicRuntimeDependencies") {
         output.writeText(configurations.getByName("releaseRuntimeClasspath").resolvedConfiguration.resolvedArtifacts
             .map { it.moduleVersion.id.toString() }.distinct().sorted().joinToString("\n", postfix = "\n"))
     }
+}
+
+// Using the registered Play package against staging requires a deliberate sandbox build.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst { check(pittechOnlineEnvironment != "staging" || pittechStoreSandboxBuild) { "Staging requires Dev/Debug or an explicit store sandbox build." } }
 }

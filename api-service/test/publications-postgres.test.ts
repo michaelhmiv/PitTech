@@ -1,3 +1,5 @@
+import { onlineEnvironment } from '../src/online-environment.ts';
+import { linkConfig } from '../src/web.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -155,6 +157,27 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       assert.equal((await fetch(origin+'/v1/recipes/'+forked.id)).status,200);assert.equal((await fetch(origin+'/v1/recipes/'+posted.id)).status,404);
       assert.ok(!JSON.stringify(logs).includes('independent'));assert.ok(!JSON.stringify(logs).includes(bob));assert.ok(!JSON.stringify(logs).includes(forked.id));
     }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+
+    // A separate owner and final-only records keep staging assertions out of the existing pagination/budget cases.
+    const stagedUser=randomUUID();await admin.query('INSERT INTO auth.users VALUES($1,$2,$3)',[stagedUser,'private-staging@example.com',now]);
+    const staging=new Publications(pool,storage,limits,()=>now,false,undefined,onlineEnvironment('staging'));
+    await staging.updateProfile(stagedUser,randomUUID(),{handle:'staging_cook',displayName:'Staging Cook',isPublic:true});
+    const stagedPayload=structuredClone(photoPayload);stagedPayload.identityMode='named';
+    const stagedImage=await prepare(stagedPayload,new Map([[assetPath,photo]]));
+    const staged=await staging.publish(stagedUser,randomUUID(),stagedImage.validated,stagedImage.file,undefined,undefined,undefined,{version:PUBLICATION_TERMS_VERSION});
+    assert.equal(staged.url,`https://staging.pittech.app/c/${staged.id}`);
+    const stagedDetail=await staging.get(staged.id);assert.equal(stagedDetail.media.length,1);
+    assert.equal(stagedDetail.media[0].url,`https://api-staging.pittech.app/v1/recipes/${staged.id}/assets/${assetId}`);
+    assert.equal(stagedDetail.credit.profileUrl,'https://staging.pittech.app/p/staging_cook');
+    assert.equal((await staging.profile('staging_cook')).items[0].url,staged.url);
+    const stagedServer=makeServer(relay,{ipKey:'x'.repeat(32),uploadsEnabled:false,publications:staging,links:linkConfig({ONLINE_ENVIRONMENT:'staging'})});
+    stagedServer.listen(0,'127.0.0.1');await once(stagedServer,'listening');
+    try{
+      const origin=`http://127.0.0.1:${(stagedServer.address() as {port:number}).port}`;
+      const response=await fetch(origin+'/c/'+staged.id);assert.equal(response.status,200);
+      const html=await response.text();assert.ok(html.includes('pittech-staging://recipe/'+staged.id));assert.ok(html.includes('https://api-staging.pittech.app/v1/recipes/'));
+      assert.ok(!html.includes('href="pittech://'));assert.match(response.headers.get('content-security-policy')!,/img-src https:\/\/api-staging\.pittech\.app/);
+    }finally{stagedServer.closeAllConnections();await new Promise<void>(resolve=>stagedServer.close(()=>resolve()));}
   }finally{
     // Close idle and in-flight clients before dropping the isolated test database.
     // FORCE can otherwise emit uncaught pg Pool errors while Node's test runner

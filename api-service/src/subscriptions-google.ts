@@ -1,6 +1,7 @@
 import { createPublicKey, createSign, createVerify, X509Certificate } from 'node:crypto';
 import { ApiError, digest } from './core.ts';
 import { STORE_VERIFICATION_VERSION, invalidProof, type StoreEnvironment } from './subscriptions-apple.ts';
+import type { GoogleOidcKeys } from './google-oidc-keys.ts';
 
 export type GoogleConfig = { packageName: string; productId: string };
 export type GoogleVerification = {
@@ -41,17 +42,18 @@ export class PlayDeveloperApi {
   async subscription(purchaseToken: string, packageName: string): Promise<unknown> {
     if (typeof purchaseToken !== 'string' || !purchaseToken || purchaseToken.length > 4096) throw invalidProof();
     const token = await this.accessToken();
-    const response = await this.fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/${encodeURIComponent(purchaseToken)}`, { method: 'GET', token });
+    const response = await this.fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`, { method: 'GET', token });
     if (response.status === 404) throw new ApiError(422, 'unknown_store_purchase');
     if (response.status !== 200 || !response.body || typeof response.body !== 'object') throw new ApiError(503, 'store_unavailable');
     return response.body;
   }
   /** Play acknowledgment within its required lifecycle: called during verification
    * whenever the store reports a pending acknowledgement, and retried on reconcile. */
-  async acknowledge(purchaseToken: string, packageName: string): Promise<void> {
+  async acknowledge(purchaseToken: string, packageName: string, productId: string): Promise<void> {
+    if (typeof purchaseToken !== 'string' || !purchaseToken || purchaseToken.length > 4096 || !packageName || !productId) throw invalidProof();
     const token = await this.accessToken();
-    const response = await this.fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/${encodeURIComponent(purchaseToken)}:acknowledge`, { method: 'POST', token, body: '{}', contentType: 'application/json' });
-    if (response.status !== 200 && response.status !== 404) throw new ApiError(503, 'store_unavailable');
+    const response = await this.fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptions/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}:acknowledge`, { method: 'POST', token, body: '{}', contentType: 'application/json' });
+    if (response.status !== 200) throw new ApiError(503, 'store_unavailable');
   }
 }
 
@@ -88,16 +90,16 @@ const b64std = (value: string): Buffer => {
 };
 /** Verify the Pub/Sub push OIDC bearer against Google signing keys. Production
  * provisions the keys over TLS from Google's certificates; tests pin generated keys. */
-export function verifyOidcBearer(token: unknown, keys: Map<string, string>, audience: string, now: number): Record<string, unknown> {
+export function verifyOidcBearer(token: unknown, keys: GoogleOidcKeys, audience: string, now: number, expectedEmail: string): Record<string, unknown> {
   if (typeof token !== 'string') throw new ApiError(401, 'notification_rejected');
   const parts = token.split('.'); if (parts.length !== 3) throw new ApiError(401, 'notification_rejected');
   try {
     const header = JSON.parse(b64u(parts[0]).toString('utf8')) as Record<string, unknown>;
     const claims = JSON.parse(b64u(parts[1]).toString('utf8')) as Record<string, unknown>;
     if (!header || !claims || typeof header !== 'object' || typeof claims !== 'object') throw new Error();
-    if (header.alg !== 'RS256' && header.alg !== 'ES256') throw new Error();
+    if (header.alg !== 'RS256') throw new Error();
     if (typeof header.kid !== 'string' || !keys.has(header.kid)) throw new Error();
-    const verifier = createVerify(header.alg === 'RS256' ? 'RSA-SHA256' : 'sha256');
+    const verifier = createVerify('RSA-SHA256');
     verifier.update(parts[0] + '.' + parts[1]); verifier.end();
     // Google publishes X.509 certificates; pinned test keys are bare public keys.
     const keyObject = (() => {
@@ -110,10 +112,11 @@ export function verifyOidcBearer(token: unknown, keys: Map<string, string>, audi
         return cert.publicKey;
       }
     })();
-    const ok = header.alg === 'RS256' ? verifier.verify(keyObject, b64u(parts[2])) : verifier.verify({ key: keyObject, dsaEncoding: 'ieee-p1363' }, b64u(parts[2]));
+    const ok = verifier.verify(keyObject, b64u(parts[2]));
     if (!ok) throw new Error();
     if (claims.iss !== 'https://accounts.google.com' && claims.iss !== 'accounts.google.com') throw new Error();
     if (claims.aud !== audience) throw new Error();
+    if (!expectedEmail || claims.email !== expectedEmail || claims.email_verified !== true) throw new Error();
     if (!Number.isSafeInteger(claims.exp) || (claims.exp as number) * 1000 <= now || !Number.isSafeInteger(claims.iat) || (claims.iat as number) * 1000 > now + 300000) throw new Error();
     return claims;
   } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(401, 'notification_rejected'); }
@@ -126,9 +129,9 @@ export type RtdnIntent =
  * intent. The caller deduplicates by messageId, answers 200 as the Play
  * acknowledgment, and then reconciles against the Play API — the notification
  * is a hint, the store is the truth. */
-export function verifyRtdnPush(body: unknown, authorization: string | undefined, keys: Map<string, string>, audience: string, config: GoogleConfig, now: number): RtdnIntent {
+export function verifyRtdnPush(body: unknown, authorization: string | undefined, keys: GoogleOidcKeys, audience: string, config: GoogleConfig, now: number, expectedEmail: string): RtdnIntent {
   const bearer = /^Bearer (.+)$/.exec(authorization ?? '')?.[1];
-  verifyOidcBearer(bearer, keys, audience, now);
+  verifyOidcBearer(bearer, keys, audience, now, expectedEmail);
   const root = body as Record<string, unknown>;
   const message = root?.message as Record<string, unknown> | undefined;
   if (!root || typeof root !== 'object' || !message || typeof message !== 'object') throw new ApiError(401, 'notification_rejected');
@@ -137,8 +140,8 @@ export function verifyRtdnPush(body: unknown, authorization: string | undefined,
   let notification: Record<string, unknown>;
   try { notification = JSON.parse(b64std(message.data).toString('utf8')) as Record<string, unknown>; if (!notification || typeof notification !== 'object') throw new Error(); }
   catch { throw new ApiError(401, 'notification_rejected'); }
-  if (notification.testNotification !== undefined) return { kind: 'test', messageId: message.messageId };
   if (notification.packageName !== config.packageName) throw new ApiError(401, 'notification_rejected');
+  if (notification.testNotification !== undefined) return { kind: 'test', messageId: message.messageId };
   const sub = notification.subscriptionNotification as Record<string, unknown> | undefined;
   if (!sub || typeof sub !== 'object' || sub.subscriptionId !== config.productId || typeof sub.purchaseToken !== 'string' || !sub.purchaseToken || sub.purchaseToken.length > 4096 || !Number.isSafeInteger(sub.notificationType)) throw new ApiError(401, 'notification_rejected');
   const eventAt = Number(notification.eventTimeMillis);
