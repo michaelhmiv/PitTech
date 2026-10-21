@@ -64,17 +64,17 @@ async function googleInventory() {
   }
   throw Object.assign(new Error(), { stage: 'google_subscriptions', code: 'PAGINATION_LIMIT' });
 }
-async function appleList(path, token) {
+async function appleList(path, token, stage = 'apple_catalog') {
   let next = new URL(path, 'https://api.appstoreconnect.apple.com').href;
   const data = [];
   for (let page = 0; page < 10; page++) {
-    const body = await getJson(next, token, 'apple_catalog');
-    if (!Array.isArray(body.data)) throw Object.assign(new Error(), { stage: 'apple_catalog', code: 'INVALID_COLLECTION' });
+    const body = await getJson(next, token, stage);
+    if (!Array.isArray(body.data)) throw Object.assign(new Error(), { stage, code: 'INVALID_COLLECTION' });
     data.push(...body.data);
     next = body.links?.next;
     if (!next) return data;
   }
-  throw Object.assign(new Error(), { stage: 'apple_catalog', code: 'PAGINATION_LIMIT' });
+  throw Object.assign(new Error(), { stage, code: 'PAGINATION_LIMIT' });
 }
 const signInWithAppleIdentifiers = ['com.pittech', 'com.pittech.staging'];
 function parseAppleIdAuth(capabilities) {
@@ -89,10 +89,10 @@ function parseAppleIdAuth(capabilities) {
 async function appleSignInWithApple(token) {
   const entries = [];
   for (const identifier of signInWithAppleIdentifiers) {
-    const records = await appleList('/v1/bundleIds?filter[identifier]=' + encodeURIComponent(identifier) + '&limit=10', token);
-    if (records.length > 1) throw Object.assign(new Error(), { stage: 'apple_app', code: 'AMBIGUOUS_BUNDLE_ID' });
+    const records = await appleList('/v1/bundleIds?filter[identifier]=' + encodeURIComponent(identifier), token, 'apple_siwa');
+    if (records.length > 1) throw Object.assign(new Error(), { stage: 'apple_siwa', code: 'AMBIGUOUS_BUNDLE_ID' });
     if (!records.length) { entries.push({ identifier, found: false }); continue; }
-    const capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities?limit=200', token);
+    const capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities?limit=200', token, 'apple_siwa');
     entries.push({
       identifier, found: true, bundleId: records[0].id, name: records[0].attributes?.name ?? null, platform: records[0].attributes?.platform ?? null,
       capabilityTypes: capabilities.map(item => item?.attributes?.capabilityType).filter(type => typeof type === 'string'),
