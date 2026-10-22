@@ -28,6 +28,15 @@ jobs:
 
       - name: Run the deterministic paywall review capture
         timeout-minutes: 30
+        # This dispatch-only workflow's contract is the screenshot, not the
+        # class result: ProPaywallUITests stays gated by ios-build's ui-3
+        # shard. A sibling test's flake must not destroy an otherwise valid
+        # capture (run 39733769205: 7/8 passed, the capture test green, the
+        # artifact lost to an unrelated 5s alert-wait flake). The step may
+        # therefore fail without failing the job; the verify step below is
+        # the gate — it requires the result bundle and the capture test's
+        # own "passed" line, and prints any sibling failures as warnings.
+        continue-on-error: true
         run: |
           set -euo pipefail
           device_id=$(xcrun simctl list devices available --json | python3 -c '
@@ -51,6 +60,28 @@ jobs:
           # selects the screenshot by its exact attachment name and refuses
           # ambiguity, so running the whole class cannot pick a wrong image.
           xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/paywall-capture.xcresult -only-testing:PitTechUITests/ProPaywallUITests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/paywall-capture.log
+
+      - name: Verify the capture test itself passed
+        run: |
+          set -euo pipefail
+          if [ ! -d build/paywall-capture.xcresult ]; then
+            echo "No result bundle: the capture run did not complete." >&2
+            exit 1
+          fi
+          if ! grep -F "ProPaywallUITests testPaywallReviewScreenshotCapture]' passed" build/paywall-capture.log > /dev/null; then
+            echo "The capture test did not pass; refusing to export a screenshot." >&2
+            exit 1
+          fi
+          echo "Capture test passed."
+          xcrun xcresulttool get test-results summary --path build/paywall-capture.xcresult > build/paywall-capture-summary.json 2>/dev/null || true
+          python3 - <<'PY' || true
+          import json, pathlib
+          summary_path = pathlib.Path("build/paywall-capture-summary.json")
+          if summary_path.exists():
+              failures = json.loads(summary_path.read_text()).get("testFailures", [])
+              for failure in failures:
+                  print(f"::warning::Sibling test failed in the capture run (ios-build still gates it): {failure.get('testName', failure)}")
+          PY
 
       - name: Export the named review screenshot
         run: |
