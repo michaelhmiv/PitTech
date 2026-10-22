@@ -319,25 +319,89 @@ grep -q 'isForeground=true' "$output_dir/telemetry-process-before-services.txt"
 old_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug | tr -d '\r')"
 [[ "$old_telemetry_pid" =~ ^[0-9]+$ ]]
 timeout 10 adb shell run-as com.pittech.debug kill -9 "$old_telemetry_pid"
+# Staged restart evidence: system restart latency is unbounded, but the 15s
+# sampling cadence is not - the receipt window starts once the service is
+# confirmed up, so every stage shares one wall-clock deadline and exits early.
+restart_start=$SECONDS
+restart_deadline=$((restart_start + 300))
 new_telemetry_pid=""
-for _ in $(seq 1 90); do
+restored_receipt=""
+last_receipt_seen=""
+pid_wait_secs=0
+service_wait_secs=0
+receipt_wait_secs=0
+capture_telemetry_restart_failure() {
+  local failed_stage="$1"
+  set +e
+  timeout 10 adb shell ps -A 2>/dev/null | grep 'com.pittech.debug' > "$output_dir/telemetry-process-after-ps.txt" 2>&1 || true
+  timeout 10 adb shell pidof com.pittech.debug > "$output_dir/telemetry-process-after-pid.txt" 2>&1 || true
+  timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-after-services.txt" 2>&1 || true
+  last_receipt_seen="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  {
+    printf 'Failed stage: %s\n' "$failed_stage"
+    printf 'Previous PID: %s\n' "$old_telemetry_pid"
+    printf 'Restored PID: %s\n' "${new_telemetry_pid:-<none>}"
+    printf 'Previous receipt: %s\n' "$previous_receipt"
+    printf 'Last receipt seen: %s\n' "${last_receipt_seen:-<none>}"
+    printf 'PID wait secs: %s\n' "$pid_wait_secs"
+    printf 'Service wait secs: %s\n' "$service_wait_secs"
+    printf 'Receipt wait secs: %s\n' "$receipt_wait_secs"
+    printf 'Total elapsed secs: %s\n' "$((SECONDS - restart_start))"
+  } > "$output_dir/telemetry-process-restart.txt"
+  echo "Telemetry restart evidence failed at stage '${failed_stage}': previous PID ${old_telemetry_pid}, restored PID '${new_telemetry_pid:-<none>}', previous receipt ${previous_receipt}, last receipt '${last_receipt_seen:-<none>}'." >&2
+  exit 1
+}
+pid_stage_start=$SECONDS
+while (( SECONDS < restart_deadline )); do
   new_telemetry_pid="$(timeout 10 adb shell pidof com.pittech.debug 2>/dev/null | tr -d '\r' || true)"
   if [[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]; then break; fi
   sleep 1
 done
-[[ "$new_telemetry_pid" =~ ^[0-9]+$ && "$new_telemetry_pid" != "$old_telemetry_pid" ]]
-restored_receipt=""
-for _ in $(seq 1 90); do
+pid_wait_secs=$((SECONDS - pid_stage_start))
+if [[ ! "$new_telemetry_pid" =~ ^[0-9]+$ ]] || [[ "$new_telemetry_pid" == "$old_telemetry_pid" ]]; then
+  capture_telemetry_restart_failure "new-pid"
+fi
+service_stage_start=$SECONDS
+service_ready=false
+while (( SECONDS < restart_deadline )); do
+  services_dump="$(timeout 10 adb shell dumpsys activity services com.pittech.debug 2>/dev/null || true)"
+  if grep -q 'CookRecordingService' <<<"$services_dump" && grep -q 'isForeground=true' <<<"$services_dump"; then
+    service_ready=true
+    break
+  fi
+  sleep 1
+done
+service_wait_secs=$((SECONDS - service_stage_start))
+if [[ "$service_ready" != true ]]; then
+  capture_telemetry_restart_failure "foreground-service"
+fi
+receipt_stage_start=$SECONDS
+while (( SECONDS < restart_deadline )); do
   restored_receipt="$(timeout 10 adb shell run-as com.pittech.debug cat no_backup/telemetry-process-ci.receipt 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$restored_receipt" =~ ^[0-9]+$ ]]; then
+    last_receipt_seen="$restored_receipt"
+  fi
   if [[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]; then break; fi
   sleep 1
 done
-[[ "$restored_receipt" =~ ^[0-9]+$ && "$restored_receipt" -gt "$previous_receipt" ]]
+receipt_wait_secs=$((SECONDS - receipt_stage_start))
+if [[ ! "$restored_receipt" =~ ^[0-9]+$ ]] || [[ "$restored_receipt" -le "$previous_receipt" ]]; then
+  capture_telemetry_restart_failure "receipt"
+fi
 # The fixture receipt is the persisted Room watermark, not an uncommitted frame.
 timeout 20 adb shell dumpsys activity services com.pittech.debug > "$output_dir/telemetry-process-services.txt"
 grep -q 'isForeground=true' "$output_dir/telemetry-process-services.txt"
-printf 'Previous PID: %s\nRestored PID: %s\nPrevious receipt: %s\n' "$old_telemetry_pid" "$new_telemetry_pid" "$previous_receipt" > "$output_dir/telemetry-process-restart.txt"
-printf 'Restored receipt: %s\n' "$restored_receipt" >> "$output_dir/telemetry-process-restart.txt"
+{
+  printf 'Previous PID: %s\n' "$old_telemetry_pid"
+  printf 'Restored PID: %s\n' "$new_telemetry_pid"
+  printf 'Previous receipt: %s\n' "$previous_receipt"
+  printf 'Restored receipt: %s\n' "$restored_receipt"
+  printf 'Last receipt seen: %s\n' "$last_receipt_seen"
+  printf 'PID wait secs: %s\n' "$pid_wait_secs"
+  printf 'Service wait secs: %s\n' "$service_wait_secs"
+  printf 'Receipt wait secs: %s\n' "$receipt_wait_secs"
+  printf 'Total elapsed secs: %s\n' "$((SECONDS - restart_start))"
+} > "$output_dir/telemetry-process-restart.txt"
 timeout 20 adb shell dumpsys activity activities > "$output_dir/telemetry-process-activities.txt"
 if grep -E 'mResumedActivity.*com.pittech.debug' "$output_dir/telemetry-process-activities.txt"; then
   echo "Telemetry recovery unexpectedly required a visible activity." >&2
