@@ -6,11 +6,15 @@ on:
     paths:
       - "ios/**"
       - ".github/workflows/ios-build.yml"
+      - "scripts/ios-test-shards.json"
+      - "scripts/check-ios-test-shards.py"
   pull_request:
     branches: [main, feature/cook-experience-recovery, test/telemetry-provider-integration]
     paths:
       - "ios/**"
       - ".github/workflows/ios-build.yml"
+      - "scripts/ios-test-shards.json"
+      - "scripts/check-ios-test-shards.py"
   workflow_dispatch:
     inputs:
       build_mode:
@@ -589,3 +593,119 @@ jobs:
           path: build/PitTech.xcarchive
           if-no-files-found: error
           retention-days: 30
+
+  # Sharded iOS test suite (issue #134, adopted 2026-10-21 after prototype
+  # run 39701802389 ran 272/272 tests green in a 63-minute wall vs the
+  # ~145-minute serial job). The jobs below run the SAME suite as the serial
+  # simulator-build job, parallelized across runners — exactly one simulator
+  # per runner, honoring the one-simulator-per-host constraint. They are
+  # advisory while the serial job remains the gate: the serial test step is
+  # retired only after this sharded suite posts two consecutive all-green
+  # full runs. The shard map (scripts/ios-test-shards.json) is guarded: a
+  # test class or method that is added, renamed, or removed without a map
+  # update fails shard-guard instead of silently skipping coverage.
+  shard-guard:
+    name: Verify iOS shard map completeness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v6
+      - name: Check the shard map against the test sources
+        run: python3 scripts/check-ios-test-shards.py
+
+  unit-tests:
+    name: iOS unit tests (sharded suite)
+    needs: shard-guard
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v6
+      - name: Confirm Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
+      - name: Run unit tests on one Simulator
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
+          xcrun simctl shutdown all || true
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/unit-tests.xcresult -only-testing:PitTechTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/unit-tests.log
+      - name: Summarize test results
+        if: always()
+        run: |
+          xcrun xcresulttool get test-results summary --path build/unit-tests.xcresult > build/unit-tests-summary.json 2>/dev/null || true
+          grep -E "Executed [0-9]+ test" build/unit-tests.log | tail -3 > build/unit-tests-counts.txt || true
+      - name: Upload unit test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unit-tests-${{ github.run_number }}
+          path: |
+            build/unit-tests.log
+            build/unit-tests-summary.json
+            build/unit-tests-counts.txt
+          if-no-files-found: ignore
+
+  ui-shards:
+    name: iOS UI shard ${{ matrix.shard }} (sharded suite)
+    needs: shard-guard
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [flows-a, flows-b, ui-2, ui-3]
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v6
+      - name: Confirm Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
+      - name: Run this shard's UI tests on one Simulator
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
+          xcrun simctl shutdown all || true
+          only_testing=$(jq -r --arg s "$SHARD" '.uiTarget as $t | .uiShards[$s][] | "-only-testing:" + $t + "/" + .' scripts/ios-test-shards.json | tr '\n' ' ')
+          echo "Shard $SHARD runs: $only_testing"
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath "build/${SHARD}.xcresult" $only_testing CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee "build/${SHARD}.log"
+      - name: Summarize test results
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          xcrun xcresulttool get test-results summary --path "build/${SHARD}.xcresult" > "build/${SHARD}-summary.json" 2>/dev/null || true
+          grep -E "Executed [0-9]+ test" "build/${SHARD}.log" | tail -3 > "build/${SHARD}-counts.txt" || true
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-${{ matrix.shard }}-${{ github.run_number }}
+          path: |
+            build/${{ matrix.shard }}.log
+            build/${{ matrix.shard }}-summary.json
+            build/${{ matrix.shard }}-counts.txt
+          if-no-files-found: ignore
