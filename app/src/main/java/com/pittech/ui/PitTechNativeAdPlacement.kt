@@ -16,9 +16,11 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -47,6 +49,8 @@ import com.pittech.BuildConfig
 import com.pittech.ads.AdEntitlement
 import com.pittech.ads.shouldAttemptAdRequest
 
+private val CookListNativeAdSlotHeight = 408.dp
+
 @Composable
 internal fun PitTechNativeAdPlacement(
     adsEnabled: Boolean,
@@ -56,12 +60,14 @@ internal fun PitTechNativeAdPlacement(
     val context = LocalContext.current
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val adState = remember { mutableStateOf<NativeAd?>(null) }
+    val loadFailed = remember { mutableStateOf(false) }
     val adUnitId = BuildConfig.PITTECH_NATIVE_AD_UNIT_ID
 
     DisposableEffect(adsEnabled, adUnitId, entitlement, previouslyEntitled) {
         var disposed = false
         var loadedAd: NativeAd? = null
         adState.value = null
+        loadFailed.value = false
 
         if (adsEnabled && shouldAttemptAdRequest(entitlement, previouslyEntitled)) {
             val request = NativeAdRequest.Builder(
@@ -85,7 +91,10 @@ internal fun PitTechNativeAdPlacement(
 
                     override fun onAdFailedToLoad(adError: LoadAdError) {
                         mainHandler.post {
-                            if (!disposed) adState.value = null
+                            if (!disposed) {
+                                adState.value = null
+                                loadFailed.value = true
+                            }
                         }
                     }
                 },
@@ -96,10 +105,43 @@ internal fun PitTechNativeAdPlacement(
             disposed = true
             loadedAd?.destroy()
             adState.value = null
+            loadFailed.value = false
         }
     }
 
-    val ad = adState.value ?: return
+    val ad = adState.value
+    if (ad == null) {
+        if (loadFailed.value) return
+        Card(
+            modifier = Modifier.fillMaxWidth().height(CookListNativeAdSlotHeight).testTag("cook-list-native-ad-placeholder"),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    "Ad",
+                    modifier = Modifier
+                        .defaultMinSize(minWidth = 20.dp, minHeight = 18.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+            }
+        }
+        return
+    }
     val adStyle = PitTechNativeAdStyle(
         headlineColor = MaterialTheme.colorScheme.onSurface.toArgb(),
         secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb(),
@@ -107,7 +149,7 @@ internal fun PitTechNativeAdPlacement(
         actionTextColor = MaterialTheme.colorScheme.onPrimary.toArgb(),
     )
     Card(
-        modifier = Modifier.fillMaxWidth().testTag("cook-list-native-ad"),
+        modifier = Modifier.fillMaxWidth().height(CookListNativeAdSlotHeight).testTag("cook-list-native-ad"),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {

@@ -7,6 +7,7 @@ import UserMessagingPlatform
 @Observable
 final class NativeAdLoader: NSObject, NativeAdLoaderDelegate, AdLoaderDelegate {
     private(set) var ad: NativeAd?
+    private(set) var loadFailed = false
     private var loader: AdLoader?
 
     func load(entitlement: AdEntitlementState = .unknown, previouslyEntitled: Bool = false, monitor: AdRequestMonitor = .shared) {
@@ -15,6 +16,7 @@ final class NativeAdLoader: NSObject, NativeAdLoaderDelegate, AdLoaderDelegate {
               !unitID.isEmpty else { return }
         guard monitor.shouldAttempt(entitlement: entitlement, previouslyEntitled: previouslyEntitled) else { return }
 
+        loadFailed = false
         let loader = AdLoader(adUnitID: unitID, rootViewController: nil, adTypes: [.native], options: nil)
         loader.delegate = self
         self.loader = loader
@@ -23,11 +25,13 @@ final class NativeAdLoader: NSObject, NativeAdLoaderDelegate, AdLoaderDelegate {
 
     func adLoader(_ adLoader: AdLoader, didReceive nativeAd: NativeAd) {
         nativeAd.delegate = self
+        loadFailed = false
         ad = nativeAd
     }
 
     func adLoader(_ adLoader: AdLoader, didFailToReceiveAdWithError error: Error) {
         ad = nil
+        loadFailed = true
     }
 }
 
@@ -44,6 +48,17 @@ struct NativeAdCard: View {
                     .frame(height: 126)
                     .padding(14)
                     .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            } else if !loader.loadFailed {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .frame(height: 126)
+                    .padding(14)
+                    .overlay(alignment: .topLeading) {
+                        Text("Ad")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(22)
+                    }
             }
         }
         .task(id: consent.isAdsSDKReady) {

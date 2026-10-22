@@ -102,12 +102,12 @@ struct CookListView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 20)
                         } else {
-                            if store.activeCooks.isEmpty && store.completedCooks.count >= 4 && adsConsent.adsServingAllowed {
-                                NativeAdCard()
-                            }
-                            ForEach(store.completedCooks) { cook in
+                            ForEach(Array(store.completedCooks.enumerated()), id: \.element.id) { index, cook in
                                 NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
                                     .buttonStyle(.plain)
+                                if adsConsent.adsServingAllowed && index == min(2, store.completedCooks.count) - 1 {
+                                    NativeAdCard()
+                                }
                             }
                         }
                     }
