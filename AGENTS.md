@@ -61,7 +61,15 @@ GitHub issues; this file holds the durable rules of the road.
    dense-document persistence and workbook tests.
    Keep its expected test counts aligned with the explicit class selectors.
    iOS runs the complete unit/UI suite on one simulator worker. Multiple hosted
-   simulators caused runner-launch and UI-query failures. Writer fixtures run
+   simulators caused runner-launch and UI-query failures. Issue #134 adds a
+   sharded suite inside `ios-build.yml` (guard + unit job + UI shards split by
+   measured duration, `MealRecipeFlowsTests` split by method) that parallelizes
+   across runners with exactly one simulator each; it runs advisory alongside
+   the serial job, which stays the gate until the sharded suite posts two
+   consecutive all-green full runs. The shard map
+   (`scripts/ios-test-shards.json`, guarded by
+   `scripts/check-ios-test-shards.py`) must be updated in the same change as
+   any added, renamed, or removed XCTestCase class or split-class method. Writer fixtures run
    again after UI teardown so container resets cannot remove their CI exports.
    iOS retains compact test-result JSON separately from full screenshots and
    xcresult diagnostics so failures can be inspected without downloading video.
