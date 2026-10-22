@@ -39,6 +39,13 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
+          # build/ must exist before the tee below opens its log file. Every
+          # failing capture run (39717728789, 39725475198, 39741006894) shows
+          # "tee: build/paywall-capture.log: No such file or directory":
+          # tee died instantly, and pipefail turned xcodebuild's success
+          # into a step exit 1. The ios-build jobs all mkdir first; this
+          # workflow never did.
+          mkdir -p build
           device_id=$(xcrun simctl list devices available --json | python3 -c '
           import json, sys
           devices = [device for group in json.load(sys.stdin)["devices"].values() for device in group if device.get("isAvailable") and device["name"].startswith("iPhone")]
@@ -51,14 +58,13 @@ jobs:
           ')
           echo "Capturing on iPhone Simulator $device_id."
           xcrun simctl shutdown all || true
-          # Class-level filter, deliberately: the method-level form
-          # (-only-testing:.../testPaywallReviewScreenshotCapture) passes the
-          # test and prints "** TEST SUCCEEDED **", then xcodebuild exits 1 on
-          # the scheme's second (fully filtered-out) testable — reproduced in
-          # runs 39717728789 and 39725475198. Class-level filters are the
-          # shape every ios-build shard runs green. The export step below
-          # selects the screenshot by its exact attachment name and refuses
-          # ambiguity, so running the whole class cannot pick a wrong image.
+          # Class-level filter: an earlier diagnosis blamed the method-level
+          # form for the post-success exit 1; that was wrong — the tee/mkdir
+          # defect above was the cause in every run. The class filter stays
+          # anyway: it costs a few minutes, exercises the paywall's whole
+          # class in the capture environment, and the export step selects
+          # the screenshot by its exact attachment name and refuses
+          # ambiguity, so it cannot pick a wrong image.
           xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/paywall-capture.xcresult -only-testing:PitTechUITests/ProPaywallUITests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/paywall-capture.log
 
       - name: Verify the capture test itself passed
@@ -66,6 +72,10 @@ jobs:
           set -euo pipefail
           if [ ! -d build/paywall-capture.xcresult ]; then
             echo "No result bundle: the capture run did not complete." >&2
+            exit 1
+          fi
+          if [ ! -f build/paywall-capture.log ]; then
+            echo "paywall-capture.log is missing: the capture step's tee failed (infrastructure error, not a test result)." >&2
             exit 1
           fi
           if ! grep -F "ProPaywallUITests testPaywallReviewScreenshotCapture]' passed" build/paywall-capture.log > /dev/null; then
