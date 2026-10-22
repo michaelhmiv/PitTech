@@ -110,6 +110,16 @@ async function appleSignInWithApple(token) {
   }
   return entries;
 }
+async function appleOne(path, token, stage = 'apple_completeness') {
+  try {
+    const body = await getJson(new URL(path, 'https://api.appstoreconnect.apple.com').href, token, stage);
+    return body.data ?? null;
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
+}
+async function soft(read) { try { return await read(); } catch (error) { return failure(error, 'apple_completeness'); } }
 async function appleInventory() {
   const now = Math.floor(Date.now() / 1000);
   const token = jwt({ alg: 'ES256', kid: requireEnv('ASC_KEY_ID'), typ: 'JWT' }, { iss: requireEnv('ASC_ISSUER_ID'), iat: now, exp: now + 900, aud: 'appstoreconnect-v1' }, requireEnv('ASC_PRIVATE_KEY'), true);
@@ -119,10 +129,38 @@ async function appleInventory() {
   const groups = [];
   for (const group of await appleList('/v1/apps/' + encodeURIComponent(app.id) + '/subscriptionGroups?limit=200', token)) {
     const subscriptions = await appleList('/v1/subscriptionGroups/' + encodeURIComponent(group.id) + '/subscriptions?limit=200', token);
-    groups.push({ id: group.id, referenceName: group.attributes?.referenceName, subscriptions: subscriptions.map(item => ({
-      id: item.id, productId: item.attributes?.productId, name: item.attributes?.name,
-      subscriptionPeriod: item.attributes?.subscriptionPeriod, state: item.attributes?.state
-    })) });
+    // Completeness diagnostics: the subscription state alone (e.g.
+    // MISSING_METADATA) does not say WHICH requirement is unmet, so read each
+    // candidate surface directly. Every read is fail-soft: a rejected read is
+    // reported as data, never fatal to the inventory.
+    const versions = await soft(async () => {
+      const list = await appleList('/v1/subscriptionGroups/' + encodeURIComponent(group.id) + '/versions', token);
+      const detailed = [];
+      for (const version of list) {
+        const localizations = await soft(async () => (await appleList('/v1/subscriptionGroupVersions/' + encodeURIComponent(version.id) + '/localizations', token)).map(item => ({ locale: item.attributes?.locale, name: item.attributes?.name })));
+        detailed.push({ id: version.id, localizations });
+      }
+      return detailed;
+    });
+    const detailedSubscriptions = [];
+    for (const item of subscriptions) {
+      const base = '/v1/subscriptions/' + encodeURIComponent(item.id);
+      const completeness = {
+        localizations: await soft(async () => (await appleList(base + '/subscriptionLocalizations', token)).map(loc => ({ locale: loc.attributes?.locale, name: loc.attributes?.name, hasDescription: typeof loc.attributes?.description === 'string' && loc.attributes.description.length > 0 }))),
+        prices: await soft(async () => (await appleList(base + '/prices', token)).length),
+        planAvailabilities: await soft(async () => (await appleList(base + '/planAvailabilities', token)).map(plan => ({ planType: plan.attributes?.planType }))),
+        reviewScreenshot: await soft(async () => {
+          const shot = await appleOne(base + '/appStoreReviewScreenshot', token);
+          if (!shot) return { present: false };
+          return { present: true, id: shot.id, uploaded: shot.attributes?.uploaded ?? null, assetDeliveryState: shot.attributes?.assetDeliveryState?.state ?? null, assetDeliveryErrors: shot.attributes?.assetDeliveryState?.errors ?? null };
+        })
+      };
+      detailedSubscriptions.push({
+        id: item.id, productId: item.attributes?.productId, name: item.attributes?.name,
+        subscriptionPeriod: item.attributes?.subscriptionPeriod, state: item.attributes?.state, completeness
+      });
+    }
+    groups.push({ id: group.id, referenceName: group.attributes?.referenceName, versions, subscriptions: detailedSubscriptions });
   }
   return { ok: true, bundleId: 'com.pittech', appId: app.id, complete: true, groups, signInWithApple: await appleSignInWithApple(token) };
 }
