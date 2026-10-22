@@ -34,6 +34,8 @@ final class ProPaywallUITests: XCTestCase {
         XCTAssertFalse(app.scrollViews["pro-paywall"].waitForExistence(timeout: 2))
     }
 
+    private func capture(_ name: String) { let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment) }
+
     private func assertNoProSurface(app: XCUIApplication) {
         for id in ["pro-paywall", "pro-loading", "pro-placeholder", "pro-analysis", "pro-curves", "pro-customization", "pro-more-hub", "pro-recap-scope", "pro-recap-preview", "pro-expired-fallback"] {
             XCTAssertFalse(app.scrollViews[id].exists, "no Pro surface may appear here: \(id)")
@@ -165,6 +167,25 @@ final class ProPaywallUITests: XCTestCase {
             closePaywall(app: app)
             app.terminate()
         }
+    }
+
+    /// Store tooling: the deterministic App Store review capture of the Pro
+    /// paywall with the $3/month offer. Default text size only, fixed entry
+    /// point; the online-store-paywall-capture lane retains this attachment
+    /// as the subscription's review screenshot.
+    func testPaywallReviewScreenshotCapture() {
+        let app = launch(extra: ["--pro-not-entitled"])
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(app.staticTexts["Finished cooks"].waitForExistence(timeout: 10))
+        openPaywall(from: "pro-entry-analysis", app: app)
+        let price = app.staticTexts["pro-price"]
+        XCTAssertTrue(price.waitForExistence(timeout: 10))
+        XCTAssertTrue(price.label.contains("$3.00"), "the review capture must show the $3/month offer")
+        let subscribe = app.buttons["pro-subscribe"]
+        reveal(subscribe, app: app)
+        XCTAssertTrue(subscribe.exists)
+        capture("Native Pro paywall review screenshot")
+        app.terminate()
     }
 
     func testLiveAndFinishNeverPresentThePaywallAtBothTextSizes() {

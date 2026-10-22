@@ -1,0 +1,86 @@
+name: Online store paywall review capture
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paywall-capture:
+    name: Capture the Pro paywall review screenshot
+    if: github.repository == 'michaelhmiv/PitTech'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v6
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/PitTech.xcodeproj -scheme PitTech
+
+      - name: Run the deterministic paywall review capture
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          device_id=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = [device for group in json.load(sys.stdin)["devices"].values() for device in group if device.get("isAvailable") and device["name"].startswith("iPhone")]
+          if not devices:
+              raise SystemExit("No available iPhone Simulator was found.")
+          def rank(device):
+              name = device["name"]
+              return ("Pro Max" in name, "Pro" in name, name)
+          print(sorted(devices, key=rank, reverse=True)[0]["udid"])
+          ')
+          echo "Capturing on iPhone Simulator $device_id."
+          xcrun simctl shutdown all || true
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/paywall-capture.xcresult -only-testing:PitTechUITests/ProPaywallUITests/testPaywallReviewScreenshotCapture CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/paywall-capture.log
+
+      - name: Export the named review screenshot
+        run: |
+          set -euo pipefail
+          mkdir -p build/paywall-attachments build/paywall-review-screenshot
+          xcrun xcresulttool export attachments --path build/paywall-capture.xcresult --output-path build/paywall-attachments
+          python3 - <<'PY'
+          import json, pathlib, shutil, struct
+          export = pathlib.Path("build/paywall-attachments")
+          manifest = export / "manifest.json"
+          candidate = None
+          if manifest.exists():
+              for case in json.loads(manifest.read_text()):
+                  for attachment in case.get("attachments", []):
+                      if attachment.get("suggestedHumanReadableName", "").startswith("Native Pro paywall review screenshot"):
+                          candidate = export / attachment["exportedFileName"]
+          if candidate is None:
+              pngs = sorted(export.rglob("*.png"))
+              if len(pngs) == 1:
+                  candidate = pngs[0]
+          if candidate is None or not candidate.is_file():
+              raise SystemExit("The paywall review attachment was not found; refusing to guess among exports.")
+          data = candidate.read_bytes()
+          if len(data) < 26 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+              raise SystemExit("The paywall review attachment is not a PNG.")
+          width, height = struct.unpack(">II", data[16:24])
+          destination = pathlib.Path("build/paywall-review-screenshot/pittech-pro-paywall-review.png")
+          shutil.copy2(candidate, destination)
+          print(json.dumps({"reviewScreenshot": destination.name, "bytes": len(data), "width": width, "height": height}))
+          PY
+
+      - name: Expose the capture to visual review
+        run: python3 scripts/emit-ui-review-images.py build/paywall-review-screenshot
+
+      - name: Retain the paywall review screenshot
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-paywall-review-screenshot
+          path: build/paywall-review-screenshot/pittech-pro-paywall-review.png
+          if-no-files-found: error
+          retention-days: 30

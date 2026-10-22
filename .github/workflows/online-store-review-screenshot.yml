@@ -1,0 +1,54 @@
+name: Upload subscription review screenshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      capture_run_id:
+        description: Completed online-store-paywall-capture run ID whose pittech-paywall-review-screenshot artifact provides the review image.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pittech-monthly-store-configuration
+  cancel-in-progress: false
+
+jobs:
+  review-screenshot:
+    name: Ensure the subscription review screenshot
+    if: github.repository == 'michaelhmiv/PitTech'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download the paywall capture artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${{ inputs.capture_run_id }}" =~ ^[0-9]+$ ]]; then
+            echo "::error::capture_run_id must be a completed workflow run ID."
+            exit 1
+          fi
+          mkdir -p review-input
+          gh run download "${{ inputs.capture_run_id }}" --repo "$GITHUB_REPOSITORY" --name pittech-paywall-review-screenshot --dir review-input
+          ls -l review-input
+      - name: Upload the review screenshot when missing
+        env:
+          REVIEW_SCREENSHOT_CONFIRM: upload-subscription-review-screenshot
+          REVIEW_SCREENSHOT_FILE: review-input/pittech-pro-paywall-review.png
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: node .github/scripts/online-store-review-screenshot.mjs
+      - name: Retain the sanitized screenshot report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: pittech-review-screenshot-upload
+          path: store-readiness/review-screenshot.json
+          if-no-files-found: error
+          retention-days: 30

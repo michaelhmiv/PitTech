@@ -64,17 +64,51 @@ async function googleInventory() {
   }
   throw Object.assign(new Error(), { stage: 'google_subscriptions', code: 'PAGINATION_LIMIT' });
 }
-async function appleList(path, token) {
+async function appleList(path, token, stage = 'apple_catalog') {
   let next = new URL(path, 'https://api.appstoreconnect.apple.com').href;
   const data = [];
   for (let page = 0; page < 10; page++) {
-    const body = await getJson(next, token, 'apple_catalog');
-    if (!Array.isArray(body.data)) throw Object.assign(new Error(), { stage: 'apple_catalog', code: 'INVALID_COLLECTION' });
+    const body = await getJson(next, token, stage);
+    if (!Array.isArray(body.data)) throw Object.assign(new Error(), { stage, code: 'INVALID_COLLECTION' });
     data.push(...body.data);
     next = body.links?.next;
     if (!next) return data;
   }
-  throw Object.assign(new Error(), { stage: 'apple_catalog', code: 'PAGINATION_LIMIT' });
+  throw Object.assign(new Error(), { stage, code: 'PAGINATION_LIMIT' });
+}
+const signInWithAppleIdentifiers = ['com.pittech', 'com.pittech.staging'];
+function parseAppleIdAuth(capabilities) {
+  const matches = (capabilities ?? []).filter(item => item?.attributes?.capabilityType === 'APPLE_ID_AUTH');
+  if (!matches.length) return { present: false, enabled: false, capabilityId: null, enabledSource: 'absent' };
+  const attributes = matches[0].attributes ?? {};
+  if (typeof attributes.enabled === 'boolean') return { present: true, enabled: attributes.enabled, capabilityId: matches[0].id ?? null, enabledSource: 'attribute' };
+  // Repo-observed bundleIdCapability shapes expose capabilityType only; a
+  // listed APPLE_ID_AUTH capability reads as enabled unless the API says otherwise.
+  return { present: true, enabled: true, capabilityId: matches[0].id ?? null, enabledSource: 'presence' };
+}
+async function appleSignInWithApple(token) {
+  // A read-only inventory reports per-call outcomes instead of failing the
+  // whole Apple section on the first rejected call: a rejected read is data
+  // (stage + status + code), and the remaining identifiers still report.
+  const entries = [];
+  for (const identifier of signInWithAppleIdentifiers) {
+    let records;
+    try {
+      records = await appleList('/v1/bundleIds?filter[identifier]=' + encodeURIComponent(identifier), token, 'apple_siwa');
+    } catch (error) { entries.push({ identifier, found: null, lookup: failure(error, 'apple_siwa') }); continue; }
+    if (records.length > 1) { entries.push({ identifier, found: null, lookup: { ok: false, stage: 'apple_siwa', code: 'AMBIGUOUS_BUNDLE_ID' } }); continue; }
+    if (!records.length) { entries.push({ identifier, found: false }); continue; }
+    let capabilities;
+    try {
+      capabilities = await appleList('/v1/bundleIds/' + encodeURIComponent(records[0].id) + '/bundleIdCapabilities', token, 'apple_siwa');
+    } catch (error) { entries.push({ identifier, found: true, bundleId: records[0].id, capabilitiesRead: failure(error, 'apple_siwa') }); continue; }
+    entries.push({
+      identifier, found: true, bundleId: records[0].id, name: records[0].attributes?.name ?? null, platform: records[0].attributes?.platform ?? null,
+      capabilityTypes: capabilities.map(item => item?.attributes?.capabilityType).filter(type => typeof type === 'string'),
+      appleIdAuth: parseAppleIdAuth(capabilities)
+    });
+  }
+  return entries;
 }
 async function appleInventory() {
   const now = Math.floor(Date.now() / 1000);
@@ -90,7 +124,7 @@ async function appleInventory() {
       subscriptionPeriod: item.attributes?.subscriptionPeriod, state: item.attributes?.state
     })) });
   }
-  return { ok: true, bundleId: 'com.pittech', appId: app.id, complete: true, groups };
+  return { ok: true, bundleId: 'com.pittech', appId: app.id, complete: true, groups, signInWithApple: await appleSignInWithApple(token) };
 }
 try { report.google = await googleInventory(); } catch (error) { report.google = failure(error, 'google'); }
 try { report.apple = await appleInventory(); } catch (error) { report.apple = failure(error, 'apple'); }
