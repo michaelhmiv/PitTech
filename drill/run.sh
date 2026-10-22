@@ -33,6 +33,13 @@ case "${DRILL_MODE:-}" in
     psql "$ADMIN_URL" -c "DROP DATABASE drill_restore"
     echo "DRILL_DONE"
     ;;
+  probe)
+    # Prints SET/EMPTY booleans only -- never values.
+    for name in DATABASE_URL DRILL_REF_A DRILL_REF_B DRILL_REF_C DRILL_REF_D DRILL_REF_E; do
+      eval "val=\${$name:-}"
+      if [ -n "$val" ]; then echo "PROBE $name=SET"; else echo "PROBE $name=EMPTY"; fi
+    done
+    ;;
   *)
     echo "DRILL_ERROR: DRILL_MODE must be 'dump' or 'restore'" >&2
     exit 1
