@@ -19,7 +19,7 @@ try {
   let sweeping = false;
   const timer = setInterval(async () => {
     if (sweeping) return; sweeping = true;
-    try { await runtime.relay.sweep(); if(runtime.publications)await runtime.publications.sweep(); if(runtime.deletion)await runtime.deletion.sweepDeletion(); if(runtime.subscriptions)await runtime.subscriptions.reconcileStale(86400000,20); await pruneUploads(tempRoot); if (runtime.relay.storage instanceof FileStorage) await runtime.relay.storage.prune(Date.now()); }
+    try { await runtime.relay.sweep(); if(runtime.publications)await runtime.publications.sweep(); if(runtime.deletion)await runtime.deletion.sweepDeletion(); if(runtime.subscriptions)await runtime.subscriptions.reconcileStale(86400000,20); if(runtime.sync)await runtime.sync.snapshots.sweepAbandonedUploads(); await pruneUploads(tempRoot); if (runtime.relay.storage instanceof FileStorage) await runtime.relay.storage.prune(Date.now()); }
     catch { console.error('relay_cleanup_deferred'); } finally { sweeping = false; }
   }, 60000); timer.unref();
   const oidcTimer = runtime.subscriptions || runtime.refreshProviderKeys ? setInterval(async () => {
