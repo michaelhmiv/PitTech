@@ -35,10 +35,17 @@ case "${DRILL_MODE:-}" in
     ;;
   probe)
     # Prints SET/EMPTY booleans only -- never values.
-    for name in DATABASE_URL DRILL_REF_A DRILL_REF_B DRILL_REF_C DRILL_REF_D DRILL_REF_E; do
+    for name in DATABASE_URL DRILL_REF_A DRILL_REF_B DRILL_REF_C DRILL_REF_D DRILL_REF_E DRILL_REF_F; do
       eval "val=\${$name:-}"
       if [ -n "$val" ]; then echo "PROBE $name=SET"; else echo "PROBE $name=EMPTY"; fi
     done
+    # If a password + private domain rendered, try listing database names
+    # (names only; credentials are used in-container, never printed).
+    pw="${DRILL_REF_B:-${DRILL_REF_F:-}}"
+    if [ -n "$pw" ] && [ -n "${DRILL_REF_D:-}" ]; then
+      probe_url="postgresql://postgres:${pw}@${DRILL_REF_D}:5432/postgres"
+      psql "$probe_url" -At -c "SELECT 'DBNAME ' || datname FROM pg_database WHERE datistemplate=false ORDER BY 1" || echo "PROBE DBLIST=FAILED"
+    fi
     ;;
   *)
     echo "DRILL_ERROR: DRILL_MODE must be 'dump' or 'restore'" >&2
