@@ -5,7 +5,7 @@
 set -eu
 
 DUMP_FILE=/data/pittech-staging-drill.sql
-LIST_TABLES="SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1"
+LIST_TABLES="SELECT table_schema, table_name FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2"
 
 print_counts() {
   # $1 = connection URL, $2 = label prefix
