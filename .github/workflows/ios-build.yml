@@ -146,18 +146,10 @@ jobs:
       - name: Verify local Simulator ad-hoc signing
         run: |
           # Xcode embeds Simulator entitlements in a Mach-O section, not the
-          # device signature's entitlement blob. The real Keychain tests below
-          # verify access, device-only accessibility, replacement and deletion.
+          # device signature's entitlement blob. The real Keychain tests in
+          # the sharded unit job verify access, device-only accessibility,
+          # replacement and deletion.
           codesign --verify --verbose build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
-
-      - name: Run online regressions before the complete native suite
-        id: focused-native-tests
-        timeout-minutes: 30
-        run: |
-          set -euo pipefail
-          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
-          xcrun simctl shutdown all || true
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/ios-focused.xcresult -only-testing:PitTechTests/OnlineConfigurationTests -only-testing:PitTechTests/SubscriptionEntitlementTests -only-testing:PitTechTests/ProPaywallTests -only-testing:PitTechUITests/MealRecipeFlowsTests/testAnonymousReportRecoveryAndPublisherBlockAtBothTextSizes CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/focused-tests.log
 
       - name: Build and inspect unsigned public Simulator configuration
         run: |
@@ -165,30 +157,20 @@ jobs:
           python3 scripts/verify-ios-public-telemetry.py build/ios-public/Build/Products/Release-iphonesimulator/PitTech.app
           find build/ios-public/SourcePackages -name Package.resolved -o -name LICENSE -o -name LICENSE.txt > build/ios-public-dependency-evidence.txt
 
-      - name: Run native compatibility tests
-        id: native-tests
-        timeout-minutes: 240
-        run: |
-          set -euo pipefail
-          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
-          # Hosted runners cannot reliably operate multiple UI simulators at once.
-          # Keep the complete unit/UI suite on one worker, including all screenshots.
-          xcrun simctl shutdown all || true
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/native-tests.log
-
       - name: Collect fresh native writer exports
         id: portable-fixtures
-        if: always() && !cancelled() && steps.native-tests.outcome != 'skipped'
-        timeout-minutes: 15
+        if: always() && !cancelled()
+        timeout-minutes: 30
         run: |
           set -euo pipefail
-          # UI tests reset app containers. Produce the public writer fixtures again
-          # after UI teardown so fixture collection never depends on suite order.
+          # The sharded UI jobs reset app containers on their own runners.
+          # Produce the public writer fixtures in this job so fixture
+          # collection never depends on suite order or another job's state.
           xcrun simctl shutdown all || true
           device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for group in json.load(sys.stdin)["devices"].values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
           fixture_started_at=$(python3 -c 'import time; print(time.time())')
           echo "$fixture_started_at" > build/native-fixture-start
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/native-writers.xcresult -only-testing:PitTechTests/RecipeCompositionTests -only-testing:PitTechTests/PublicDiscoveryTests -only-testing:PitTechTests/OwnedPublicationTests -only-testing:PitTechTests/PublicationAcceptanceTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test-without-building 2>&1 | tee build/native-writer-tests.log
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/native-writers.xcresult -only-testing:PitTechTests/RecipeCompositionTests -only-testing:PitTechTests/PublicDiscoveryTests -only-testing:PitTechTests/OwnedPublicationTests -only-testing:PitTechTests/PublicationAcceptanceTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/native-writer-tests.log
           python3 - "$fixture_started_at" <<'PYFIXTURE'
           import pathlib, shutil, sys
           # Xcode may run tests on a clone and shut it down. Read the fixture from its
@@ -204,55 +186,12 @@ jobs:
           PYFIXTURE
           xcrun simctl shutdown all || true
 
-      - name: Export native UI screenshots and retain test diagnostics
-        if: always()
-        run: |
-          result_bundle=build/ios-tests.xcresult
-          if [[ ! -f "$result_bundle/Info.plist" ]]; then result_bundle=build/ios-focused.xcresult; fi
-          if [[ -f "$result_bundle/Info.plist" ]]; then
-            mkdir -p build/native-ui-evidence
-            xcrun xcresulttool get test-results summary --path "$result_bundle" > build/native-test-summary.json
-            python3 -c 'import json; print("Current native test summary:"); print(json.dumps(json.load(open("build/native-test-summary.json")), indent=2)[:60000])'
-            xcrun xcresulttool get test-results tests --path "$result_bundle" > build/native-test-cases.json
-            xcrun xcresulttool export attachments --path "$result_bundle" --output-path build/native-ui-evidence
-            # Upload a closed archive, never a live Staging directory that Xcode
-            # can rename while upload-artifact enumerates it after a timeout.
-            ditto -c -k --keepParent "$result_bundle" build/native-tests.xcresult.zip
-          else
-            echo "The result bundle did not finalize; retaining the test log and fresh writer exports."
-          fi
-
-      - name: Upload compact native test results
+      - name: Upload native writer test log
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: pittech-native-test-summary-${{ github.run_number }}
-          path: |
-            build/native-test-summary.json
-            build/native-test-cases.json
-            build/native-tests.log
-            build/focused-tests.log
-            build/native-writer-tests.log
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload native UI and compatibility evidence
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: pittech-native-test-evidence-${{ github.run_number }}
-          path: |
-            build/native-tests.log
-            build/native-ui-evidence/**
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload full native result bundle separately
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: pittech-native-result-bundle-${{ github.run_number }}
-          path: build/native-tests.xcresult.zip
+          path: build/native-writer-tests.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -327,7 +266,7 @@ jobs:
 
       - name: Emit visual review snapshots
         if: always()
-        run: python3 scripts/emit-ui-review-images.py build/app-store-screenshots build/native-ui-evidence
+        run: python3 scripts/emit-ui-review-images.py build/app-store-screenshots
 
       - name: Upload Simulator app
         uses: actions/upload-artifact@v6
@@ -336,7 +275,6 @@ jobs:
           path: |
             build/ios-simulator/Build/Products/Debug-iphonesimulator/PitTech.app
             build/app-store-screenshots/*.png
-            build/ios-tests.xcresult
             build/ios-public/Build/Products/Release-iphonesimulator/PitTech.app
             build/ios-public-dependency-evidence.txt
           if-no-files-found: error

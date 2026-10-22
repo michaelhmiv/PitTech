@@ -60,17 +60,21 @@ GitHub issues; this file holds the durable rules of the road.
    sharing ownership, Cook Pack exchange, guides, native share-card pixels,
    dense-document persistence and workbook tests.
    Keep its expected test counts aligned with the explicit class selectors.
-   iOS runs the complete unit/UI suite on one simulator worker. Multiple hosted
-   simulators caused runner-launch and UI-query failures. Issue #134 adds a
-   sharded suite inside `ios-build.yml` (guard + unit job + UI shards split by
-   measured duration, `MealRecipeFlowsTests` split by method) that parallelizes
-   across runners with exactly one simulator each; it runs advisory alongside
-   the serial job, which stays the gate until the sharded suite posts two
-   consecutive all-green full runs. The shard map
+   The sharded suite inside `ios-build.yml` is the iOS test gate (issue #134):
+   guard + unit job + UI shards split by measured duration,
+   `MealRecipeFlowsTests` split by method, parallelizing across runners.
+   Hosted runners cannot reliably operate multiple simulators on one host —
+   multiple hosted simulators caused runner-launch and UI-query failures — so
+   every job runs exactly one simulator per host. The serial test steps in
+   the `simulator-build` job were retired after the sharded suite posted two
+   consecutive all-green full runs; that job now does the Simulator build,
+   the public-configuration inspection, the writer-fixture export, and the
+   App Store screenshots. The shard map
    (`scripts/ios-test-shards.json`, guarded by
    `scripts/check-ios-test-shards.py`) must be updated in the same change as
-   any added, renamed, or removed XCTestCase class or split-class method. Writer fixtures run
-   again after UI teardown so container resets cannot remove their CI exports.
+   any added, renamed, or removed XCTestCase class or split-class method.
+   Writer fixtures are produced in the `simulator-build` job so container
+   resets in the sharded UI jobs cannot remove their CI exports.
    iOS retains compact test-result JSON separately from full screenshots and
    xcresult diagnostics so failures can be inspected without downloading video.
 2. **iOS signing is fully CI-side.** The `app-store-ipa` workflow mints its
