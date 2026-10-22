@@ -2,29 +2,47 @@ import { onlineEnvironment, type OnlineEnvironment } from './online-environment.
 import { normalizeCode } from './core.ts';
 import type { Pack } from './repository.ts';
 
-export type LinkConfig = { appleAppIds: string[]; androidCertificates: string[]; appleStoreUrl?: string; androidPackageName?: string; online?: OnlineEnvironment };
+export type LinkConfig = { appleAppIds: string[]; androidCertificates: string[]; appleStoreUrl?: string; androidPackageName?: string; androidPackageName2?: string; androidCertificates2?: string[]; online?: OnlineEnvironment };
+const validPackageName = (value: string) => value.length <= 255 && /^[A-Za-z0-9]+([.-][A-Za-z0-9]+)*$/.test(value);
 export function linkConfig(env: NodeJS.ProcessEnv): LinkConfig {
   const online = onlineEnvironment(env.ONLINE_ENVIRONMENT);
   const androidPackageName = env.ANDROID_APP_LINK_PACKAGE ?? (online.environment === 'staging' ? 'com.pittech.dev' : 'com.pittech');
   const allowedPackages = online.environment === 'staging' ? ['com.pittech.dev', 'com.pittech.debug', 'com.pittech'] : ['com.pittech'];
-  if (!allowedPackages.includes(androidPackageName)) throw new Error('Invalid Android app association package');
+  if (!validPackageName(androidPackageName) || !allowedPackages.includes(androidPackageName)) throw new Error('Invalid Android app association package');
   const appleAppIds = (env.APPLE_APP_IDS ?? '').split(',').map(x => x.trim()).filter(Boolean);
   const androidCertificates = (env.ANDROID_APP_LINK_CERTIFICATES ?? '').split(',').map(x => x.trim()).filter(Boolean);
+  const androidPackageName2 = env.ANDROID_APP_LINK_PACKAGE_2;
+  const androidCertificates2 = (env.ANDROID_APP_LINK_CERTIFICATES_2 ?? '').split(',').map(x => x.trim()).filter(Boolean);
   if (appleAppIds.some(x => !/^[A-Z0-9]{10}\.com\.pittech(?:\.[a-z]+)?$/.test(x)) ||
-      androidCertificates.some(x => !/^(?:[A-F\d]{2}:){31}[A-F\d]{2}$/.test(x))) throw new Error('Invalid app association configuration');
+      androidCertificates.some(x => !/^(?:[A-F\d]{2}:){31}[A-F\d]{2}$/.test(x)) ||
+      androidCertificates2.some(x => !/^(?:[A-F\d]{2}:){31}[A-F\d]{2}$/.test(x))) throw new Error('Invalid app association configuration');
+  const hasPackage2 = androidPackageName2 !== undefined && androidPackageName2 !== '';
+  const hasCertificates2 = env.ANDROID_APP_LINK_CERTIFICATES_2 !== undefined && env.ANDROID_APP_LINK_CERTIFICATES_2 !== '';
+  if (hasPackage2 !== hasCertificates2 || (hasPackage2 && !androidCertificates2.length)) throw new Error('Invalid app association configuration');
+  if (hasPackage2 && (!validPackageName(androidPackageName2!) || !allowedPackages.includes(androidPackageName2!))) throw new Error('Invalid Android app association package');
   if (appleAppIds.some(id => online.environment === 'production' ? !/^[A-Z0-9]{10}\.com\.pittech$/.test(id) : !/^[A-Z0-9]{10}\.com\.pittech(?:\.staging)?$/.test(id))) throw new Error('App association environment mismatch');
   const appleStoreUrl = env.APPLE_APP_STORE_URL;
   if (appleStoreUrl && !/^https:\/\/apps\.apple\.com\/[a-z]{2}\/app\/(?:[a-z\d-]+\/)?id\d+$/.test(appleStoreUrl)) throw new Error('Invalid store URL');
-  return { appleAppIds, androidCertificates, appleStoreUrl, androidPackageName, online };
+  if (!hasPackage2) return { appleAppIds, androidCertificates, appleStoreUrl, androidPackageName, online };
+  return { appleAppIds, androidCertificates, appleStoreUrl, androidPackageName, androidPackageName2, androidCertificates2, online };
 }
 export function association(path: string, config: LinkConfig) {
   if (path === '/.well-known/apple-app-site-association') return config.appleAppIds.length ? {
     applinks: { details: [{ appIDs: config.appleAppIds, components: [{ '/': '/s/*' }, { '/': '/auth' }, { '/': '/c/*' }, { '/': '/p/*' }] }] },
   } : undefined;
-  if (path === '/.well-known/assetlinks.json') return config.androidCertificates.length ? [{
-    relation: ['delegate_permission/common.handle_all_urls'],
-    target: { namespace: 'android_app', package_name: config.androidPackageName ?? 'com.pittech', sha256_cert_fingerprints: config.androidCertificates },
-  }] : undefined;
+  if (path === '/.well-known/assetlinks.json') {
+    const entries: { relation: string[]; target: { namespace: string; package_name: string; sha256_cert_fingerprints: string[] } }[] = [];
+    if (config.androidCertificates.length) entries.push({
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: { namespace: 'android_app', package_name: config.androidPackageName ?? 'com.pittech', sha256_cert_fingerprints: config.androidCertificates },
+    });
+    const certificates2 = config.androidCertificates2 ?? [];
+    if (certificates2.length) entries.push({
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: { namespace: 'android_app', package_name: config.androidPackageName2 ?? 'com.pittech', sha256_cert_fingerprints: certificates2 },
+    });
+    return entries.length ? entries : undefined;
+  }
   return undefined;
 }
 const escape = (value: string) => value.replace(/[&<>"']/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[x]!);

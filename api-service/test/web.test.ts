@@ -16,6 +16,26 @@ test('association configuration requires genuine certificate shapes and exact ap
   assert.equal(association('/.well-known/assetlinks.json', linkConfig({})), undefined);
   for (const env of [{ APPLE_APP_IDS: '*.com.pittech' }, { ANDROID_APP_LINK_CERTIFICATES: 'upload-certificate-placeholder' }, { APPLE_APP_STORE_URL: 'https://attacker.invalid' }]) assert.throws(() => linkConfig(env));
 });
+test('assetlinks serves one entry per configured Android pair and rejects partial second pairs', () => {
+  const first = Array(32).fill('AB').join(':'), second = Array(32).fill('CD').join(':');
+  const single = association('/.well-known/assetlinks.json', linkConfig({ ANDROID_APP_LINK_CERTIFICATES: first }));
+  const expected = [{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: 'com.pittech', sha256_cert_fingerprints: [first] } }];
+  assert.deepEqual(single, expected);
+  assert.equal(JSON.stringify(single), JSON.stringify(expected));
+  const dual = association('/.well-known/assetlinks.json', linkConfig({ ANDROID_APP_LINK_CERTIFICATES: first, ANDROID_APP_LINK_PACKAGE_2: 'com.pittech', ANDROID_APP_LINK_CERTIFICATES_2: second }));
+  assert.ok(Array.isArray(dual));
+  assert.equal(dual.length, 2);
+  assert.deepEqual(dual[0].target, { namespace: 'android_app', package_name: 'com.pittech', sha256_cert_fingerprints: [first] });
+  assert.deepEqual(dual[1].target, { namespace: 'android_app', package_name: 'com.pittech', sha256_cert_fingerprints: [second] });
+  for (const env of [
+    { ANDROID_APP_LINK_PACKAGE_2: 'com.pittech' },
+    { ANDROID_APP_LINK_CERTIFICATES_2: second },
+    { ANDROID_APP_LINK_PACKAGE_2: 'com.pittech', ANDROID_APP_LINK_CERTIFICATES_2: ',' },
+    { ANDROID_APP_LINK_PACKAGE_2: 'not a package!', ANDROID_APP_LINK_CERTIFICATES_2: second },
+    { ANDROID_APP_LINK_PACKAGE_2: 'com.evil.app', ANDROID_APP_LINK_CERTIFICATES_2: second },
+    { ANDROID_APP_LINK_PACKAGE_2: 'com.pittech', ANDROID_APP_LINK_CERTIFICATES_2: 'upload-certificate-placeholder' },
+  ]) assert.throws(() => linkConfig(env));
+});
 test('web sharing never downloads an object, renews a code, reveals owner metadata or logs bearer codes', async t => {
   const repository = new MemoryRepository(), logs: unknown[] = []; let downloads = 0, now = Date.now();
   const relay = new Relay(repository, { put: async () => {}, get: async () => { downloads++; return Buffer.alloc(0); }, delete: async () => {} }, budgets, () => now);

@@ -28,6 +28,13 @@ test('staging association files select the intended test app and reject arbitrar
   assert.deepEqual(apple.applinks.details[0].appIDs, ['ABCDEFGHIJ.com.pittech.staging']);
   const storeTest = linkConfig({ ONLINE_ENVIRONMENT: 'staging', ANDROID_APP_LINK_PACKAGE: 'com.pittech', ANDROID_APP_LINK_CERTIFICATES: certificates });
   assert.equal(storeTest.androidPackageName, 'com.pittech');
+  const dual = association('/.well-known/assetlinks.json', linkConfig({ ONLINE_ENVIRONMENT: 'staging', ANDROID_APP_LINK_CERTIFICATES: certificates, ANDROID_APP_LINK_PACKAGE_2: 'com.pittech', ANDROID_APP_LINK_CERTIFICATES_2: Array(32).fill('CD').join(':') }));
+  assert.ok(Array.isArray(dual));
+  assert.equal(dual.length, 2);
+  assert.equal(dual[0].target.package_name, 'com.pittech.dev');
+  assert.deepEqual(dual[0].target.sha256_cert_fingerprints, [certificates]);
+  assert.equal(dual[1].target.package_name, 'com.pittech');
+  assert.throws(() => linkConfig({ ONLINE_ENVIRONMENT: 'staging', ANDROID_APP_LINK_PACKAGE_2: 'com.pittech' }));
   assert.throws(() => linkConfig({ ONLINE_ENVIRONMENT: 'production', APPLE_APP_IDS: 'ABCDEFGHIJ.com.pittech.staging' }));
   assert.throws(() => linkConfig({ ANDROID_APP_LINK_PACKAGE: 'com.pittech.dev' }));
   assert.throws(() => linkConfig({ ONLINE_ENVIRONMENT: 'staging', ANDROID_APP_LINK_PACKAGE: 'attacker.app' }));
