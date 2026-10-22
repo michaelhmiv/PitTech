@@ -8,13 +8,15 @@ const appleRoot = 'https://api.appstoreconnect.apple.com';
 const reviewImageName = 'pittech-pro-paywall-review.png';
 
 // ASC endpoint construction: one function per resource, so a live-API path
-// correction is a one-line change. Only subscriptionPath is confirmed against
-// repo-observed calls; the review-screenshot resources below are the
-// orchestrator's iteration surface once this runs against the live API.
+// correction is a one-line change. The review-screenshot resource is
+// subscriptionAppStoreReviewScreenshots (relationship: appStoreReviewScreenshot)
+// — confirmed against a public, tested ASC client implementation after the
+// first live run 404'd on the originally guessed subscriptionReviewScreenshots
+// path (run 39757909836, stage apple_reserve_review_screenshot, NOT_FOUND).
 const subscriptionPath = id => '/v1/subscriptions/' + encodeURIComponent(id);
-const reviewScreenshotPath = id => subscriptionPath(id) + '/reviewScreenshot';
-const reviewScreenshotsCreatePath = () => '/v1/subscriptionReviewScreenshots';
-const reviewScreenshotResourcePath = id => '/v1/subscriptionReviewScreenshots/' + encodeURIComponent(id);
+const reviewScreenshotPath = id => subscriptionPath(id) + '/appStoreReviewScreenshot';
+const reviewScreenshotsCreatePath = () => '/v1/subscriptionAppStoreReviewScreenshots';
+const reviewScreenshotResourcePath = id => '/v1/subscriptionAppStoreReviewScreenshots/' + encodeURIComponent(id);
 report.attemptedPaths = {
   subscription: subscriptionPath(subscriptionId),
   reviewScreenshot: reviewScreenshotPath(subscriptionId),
@@ -75,10 +77,10 @@ function validatePng(bytes) {
   return { ok: true, bytes: bytes.length };
 }
 function reviewScreenshotCreateBody(fileName, fileSize) {
-  return { data: { type: 'subscriptionReviewScreenshots', attributes: { fileName, fileSize }, relationships: { subscription: { data: { type: 'subscriptions', id: subscriptionId } } } } };
+  return { data: { type: 'subscriptionAppStoreReviewScreenshots', attributes: { fileName, fileSize }, relationships: { subscription: { data: { type: 'subscriptions', id: subscriptionId } } } } };
 }
 function reviewScreenshotCommitBody(id, checksum) {
-  return { data: { type: 'subscriptionReviewScreenshots', id, attributes: { uploaded: true, sourceFileChecksum: checksum } } };
+  return { data: { type: 'subscriptionAppStoreReviewScreenshots', id, attributes: { uploaded: true, sourceFileChecksum: checksum } } };
 }
 function uploadSlice(bytes, operation) {
   const offset = Number(operation?.offset ?? 0), length = Number(operation?.length ?? bytes.length);
