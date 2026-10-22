@@ -369,6 +369,31 @@ test('real Postgres encrypted snapshots: exact retries, compare-and-swap, quotas
         for (const [key, val] of saved) { if (val === undefined) delete process.env[key]; else process.env[key] = val; }
       }
     });
+    await t.test('global abandoned-upload driver sweeps expired leases across users under a per-tick bound', async () => {
+      const api = create();
+      for (let i = 0; i < 5; i++) { if (!await api.sweepAbandonedUploads(100)) break; }
+      const abandoned = async (user: string, leaseUntil: number) => {
+        await admin.query('INSERT INTO private_sync.accounts(user_id,updated_at) VALUES($1,$2)', [user, now]);
+        const id = randomUUID();
+        await admin.query("INSERT INTO private_sync.objects(id,user_id,key,kind,sha256,plain_bytes,reserved_bytes,state,lease_id,lease_until,created_at) VALUES($1,$2,$3,'snapshot',$4,$5,$5+77,'reserved',$6,$7,$8)", [id, user, `private-sync/${id}.pittech`, 'a'.repeat(64), 100, randomUUID(), leaseUntil, now]);
+        return id;
+      };
+      const count = async (user: string) => Number((await admin.query('SELECT count(*) AS n FROM private_sync.objects WHERE user_id=$1', [user])).rows[0].n);
+      const expired = [await freshOwner(), await freshOwner(), await freshOwner()];
+      for (const user of expired) await abandoned(user, now);
+      const live = await freshOwner(); await abandoned(live, now + 300000);
+      const headed = await freshOwner(), headValue = snapshot('Synthetic retained head'); await api.put(headed, headValue);
+      const reservedHead = await freshOwner(); const reservedHeadId = await abandoned(reservedHead, now);
+      await admin.query('UPDATE private_sync.accounts SET head_id=$2,version=1 WHERE user_id=$1', [reservedHead, reservedHeadId]);
+      const ordered = [...expired].sort();
+      assert.equal(await api.sweepAbandonedUploads(2), 2);
+      assert.equal(await count(ordered[0]), 0); assert.equal(await count(ordered[1]), 0); assert.equal(await count(ordered[2]), 1);
+      assert.equal(await count(live), 1); assert.equal(await count(headed), 1); assert.equal(await count(reservedHead), 1);
+      assert.equal(await api.sweepAbandonedUploads(), 1);
+      assert.equal(await count(ordered[2]), 0);
+      assert.equal(await count(live), 1); assert.equal(await count(headed), 1); assert.equal(await count(reservedHead), 1);
+      assert.deepEqual(await api.read(headed), { version: 1, envelope: headValue });
+    });
   } finally {
     await Promise.all([admin.end(), pool.end(), life.end(), authPool.end()]); await control.query(`DROP DATABASE ${database}`); await control.end(); await rm(root, { recursive: true, force: true });
   }

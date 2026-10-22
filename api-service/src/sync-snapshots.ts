@@ -197,4 +197,12 @@ export class PrivateSnapshots {
     }
     return removed;
   }
+  /** Bounded global driver for abandoned uploads; each user's sweep stays owner-scoped. */
+  async sweepAbandonedUploads(maxUsers = 20): Promise<number> {
+    const now = this.clock();
+    const rows = (await this.pool.query<{ user_id: string }>(`SELECT DISTINCT o.user_id AS user_id FROM private_sync.objects o WHERE o.state IN('reserved','deleting') AND o.lease_until<=$1 AND NOT EXISTS(SELECT 1 FROM private_sync.accounts a WHERE a.head_id=o.id) ORDER BY user_id LIMIT $2`, [now, maxUsers])).rows;
+    let removed = 0;
+    for (const row of rows) removed += await this.sweep(row.user_id);
+    return removed;
+  }
 }
