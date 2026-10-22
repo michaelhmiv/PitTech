@@ -6,12 +6,23 @@ import {
   buildGitHubIssue,
   normalizeSubmission,
 } from "./lib.mjs";
+import { createGitHubAppAuth, postGitHubIssue, resolveAuthMode } from "./github-app.mjs";
 
 const port = Number(process.env.PORT || 3000);
-const token = process.env.GITHUB_TOKEN || "";
+const patToken = process.env.GITHUB_TOKEN || "";
+const appId = process.env.GITHUB_APP_ID || "";
+const appPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY || "";
+const appInstallationId = process.env.GITHUB_APP_INSTALLATION_ID || "";
 const repository = process.env.GITHUB_REPOSITORY || "michaelhmiv/PitTech";
 const [owner, repo] = repository.split("/");
 if (!owner || !repo) throw new Error("GITHUB_REPOSITORY must use owner/name format.");
+
+const githubAuthMode = resolveAuthMode({ appId, privateKey: appPrivateKey, patToken });
+const githubConfigured = githubAuthMode !== "none";
+const appAuth =
+  githubAuthMode === "app"
+    ? createGitHubAppAuth({ appId, privateKey: appPrivateKey, installationId: appInstallationId, owner, repo })
+    : null;
 
 const perIpLimiter = new SlidingWindowLimiter({ limit: 5, windowMs: 60 * 60 * 1000 });
 const globalLimiter = new SlidingWindowLimiter({ limit: 100, windowMs: 60 * 60 * 1000 });
@@ -22,7 +33,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     return json(res, 200, {
       status: "ok",
-      githubConfigured: Boolean(token),
+      githubConfigured,
+      githubAuthMode,
       repository,
     });
   }
@@ -41,7 +53,7 @@ const server = http.createServer(async (req, res) => {
     return json(res, 429, { error: "rate_limited", requestId });
   }
 
-  if (!token) {
+  if (!githubConfigured) {
     return json(res, 503, { error: "feedback_relay_not_configured", requestId });
   }
 
@@ -49,7 +61,15 @@ const server = http.createServer(async (req, res) => {
     const raw = await readBody(req, 64 * 1024);
     const submission = normalizeSubmission(JSON.parse(raw));
     const issue = buildGitHubIssue(submission);
-    const created = await createIssue(issue, requestId);
+    const created = await postGitHubIssue({
+      mode: githubAuthMode,
+      patToken,
+      appAuth,
+      owner,
+      repo,
+      issue,
+      requestId,
+    });
 
     console.log(JSON.stringify({
       event: "feedback_issue_created",
@@ -83,42 +103,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(JSON.stringify({ event: "feedback_relay_started", port, repository, githubConfigured: Boolean(token) }));
+  console.log(JSON.stringify({ event: "feedback_relay_started", port, repository, githubConfigured, githubAuthMode }));
 });
-
-async function createIssue(issue, requestId) {
-  const url = `https://api.github.com/repos/${owner}/${repo}/issues`;
-  let response = await githubPost(url, issue, requestId);
-
-  // A removed/renamed repository label should never break user feedback.
-  if (response.status === 422 && Array.isArray(issue.labels) && issue.labels.length > 0) {
-    response = await githubPost(url, { title: issue.title, body: issue.body }, requestId);
-  }
-
-  if (!response.ok) {
-    const body = await response.text();
-    const error = new Error(`GitHub returned HTTP ${response.status}: ${body.slice(0, 500)}`);
-    error.status = response.status;
-    throw error;
-  }
-  return response.json();
-}
-
-function githubPost(url, body, requestId) {
-  return fetch(url, {
-    method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "PitTech-Feedback-Relay",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "X-PitTech-Request-Id": requestId,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-}
 
 function clientIp(req) {
   const railway = req.headers["x-real-ip"];
