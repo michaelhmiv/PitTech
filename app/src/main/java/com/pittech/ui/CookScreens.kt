@@ -83,6 +83,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.BuildConfig
 import com.pittech.CooksViewModel
 import com.pittech.ads.AdEntitlement
+import com.pittech.ads.cookListNativeAdInsertIndex
 import com.pittech.ads.shouldShowCookListNativeAd
 import com.pittech.R
 import com.pittech.data.CameraPhotoFiles
@@ -417,25 +418,22 @@ private fun CooksHome(
         )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
-        if (showCookListAd && activeCooks.isNotEmpty()) PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
 
         TextButton(onClick = { showPlanning = !showPlanning }, modifier = Modifier.testTag("home-planning-toggle")) { Text(if (showPlanning) "Hide planning" else "Planning and playbooks") }
         if (showPlanning) playbooks()
 
         if (finishedCooks.isNotEmpty()) {
             SectionHeading("Completed meals")
-            if (showCookListAd && activeCooks.isEmpty()) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
-            }
-            finishedCooks.forEach { cook ->
+            val adInsertIndex = if (showCookListAd) cookListNativeAdInsertIndex(finishedCooks.size) else null
+            finishedCooks.forEachIndexed { index, cook ->
                 CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) })
+                if (adInsertIndex != null && index == adInsertIndex - 1) {
+                    PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
+                }
             }
         }
 
         if (cooks.isEmpty()) {
-            if (showCookListAd) {
-                PitTechNativeAdPlacement(adsEnabled = adsEnabled, entitlement = entitlement, previouslyEntitled = previouslyEntitled)
-            }
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
