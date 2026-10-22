@@ -42,7 +42,15 @@ jobs:
           ')
           echo "Capturing on iPhone Simulator $device_id."
           xcrun simctl shutdown all || true
-          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/paywall-capture.xcresult -only-testing:PitTechUITests/ProPaywallUITests/testPaywallReviewScreenshotCapture CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/paywall-capture.log
+          # Class-level filter, deliberately: the method-level form
+          # (-only-testing:.../testPaywallReviewScreenshotCapture) passes the
+          # test and prints "** TEST SUCCEEDED **", then xcodebuild exits 1 on
+          # the scheme's second (fully filtered-out) testable — reproduced in
+          # runs 39717728789 and 39725475198. Class-level filters are the
+          # shape every ios-build shard runs green. The export step below
+          # selects the screenshot by its exact attachment name and refuses
+          # ambiguity, so running the whole class cannot pick a wrong image.
+          xcodebuild -project ios/PitTech.xcodeproj -scheme PitTech -configuration Debug -destination "platform=iOS Simulator,id=$device_id" -parallel-testing-enabled NO -derivedDataPath build/ios-simulator -resultBundlePath build/paywall-capture.xcresult -only-testing:PitTechUITests/ProPaywallUITests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=R42LWFBXBH ENTITLEMENTS_REQUIRED=YES test 2>&1 | tee build/paywall-capture.log
 
       - name: Export the named review screenshot
         run: |
