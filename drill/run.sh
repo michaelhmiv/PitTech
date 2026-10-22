@@ -24,10 +24,8 @@ case "${DRILL_MODE:-}" in
   restore)
     ADMIN_URL="${DATABASE_URL%/*}/postgres"
     RESTORE_URL="${DATABASE_URL%/*}/drill_restore"
-    exists=$(psql "$ADMIN_URL" -At -c "SELECT 1 FROM pg_database WHERE datname='drill_restore'")
-    if [ "$exists" != "1" ]; then
-      psql "$ADMIN_URL" -c "CREATE DATABASE drill_restore"
-    fi
+    psql "$ADMIN_URL" -c "DROP DATABASE IF EXISTS drill_restore"
+    psql "$ADMIN_URL" -c "CREATE DATABASE drill_restore"
     psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -f "$DUMP_FILE"
     print_counts "$RESTORE_URL" "RESTORED_COUNT"
     psql "$ADMIN_URL" -c "DROP DATABASE drill_restore"
