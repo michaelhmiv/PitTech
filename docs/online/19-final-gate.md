@@ -49,7 +49,7 @@ these routes. Flipping any of them requires an owner redeploy with secrets.
 | Community aggregation | `COMMUNITY_AGGREGATION_ENABLED` (config.ts:130; `main.ts:33-37`) | off | Aggregation scheduler + aggregate API | Fail closed: no timer exists when off. Client shows honest insufficient/unavailable states. |
 | Relay upload incident switch | `RELAY_UPLOADS_ENABLED` (config.ts:132; `http.ts:168`) | off | `POST /packs` (503 `uploads_paused` when off) | Gates the already-visible share-by-code upload path; the client surfaces the error. Normal incident operations. |
 | Deployment knobs (not capability switches) | `NODE_ENV`, `OBJECT_STORAGE`, `S3_*`, `PORT`, `TRUSTED_PROXY_CIDRS`, `PRO_APPLE_TRUST_MODE`, `MIGRATION_DATABASE_URL`, secrets, storage/rate budgets | n/a | Storage backend, proxies, ports, trust roots, budgets | Selected at deploy; cannot add or remove client capabilities. |
-| Android feedback relay | `PORT`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY` (`feedback-service/server.mjs:10-12`) | n/a | Relay target only | No feature switches in the service; no client wake path. |
+| Android feedback relay | `PORT`, `GITHUB_REPOSITORY`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, optional `GITHUB_APP_INSTALLATION_ID` (auto-discovered when unset) (`feedback-service/server.mjs:11-20`, `feedback-service/github-app.mjs`); `GITHUB_TOKEN` PAT only as transitional fallback | n/a | Relay target + auth only | No feature switches in the service; no client wake path. |
 
 ### (c) Dormant in-binary layers — MUST be named in App Review notes
 
