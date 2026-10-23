@@ -4,6 +4,11 @@ import { stable } from './pack.ts';
 import { MCP_SCOPES, hasScope, type McpGrants, type McpPrincipal, type McpScope } from './mcp-grants.ts';
 import type { SyncEnvelope } from './sync-envelope.ts';
 import type { SyncRecord } from './sync-merge.ts';
+import { projectPrivateArchive } from './sync-projection.ts';
+import {
+  buildPortableArchive, buildShareCard, contentHashOf, importDisposition, scopeArchiveRows,
+  type ExportScope, type McpPortabilityStore, type PortableRow,
+} from './mcp-portability.ts';
 
 /**
  * The MCP command layer's read side (issue #114, M2): the only door
@@ -202,14 +207,19 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
-  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined; private journal: McpOperationJournal | undefined;
+  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined; private journal: McpOperationJournal | undefined; private portability: McpPortabilityStore | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource; journal?: McpOperationJournal } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource; journal?: McpOperationJournal; portability?: McpPortabilityStore } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
     this.photos = options.photos; this.benchmarks = options.benchmarks; this.community = options.community; this.journal = options.journal;
+    this.portability = options.portability;
     this.clock = options.clock ?? Date.now;
+  }
+  private requirePortability(): McpPortabilityStore {
+    if (!this.portability) throw new ToolFailure('Import/export is not available on this server.');
+    return this.portability;
   }
   private requirePhotos(): McpPhotoStore {
     if (!this.photos) throw new ToolFailure('Photo storage is not available on this server.');
@@ -327,6 +337,20 @@ export class PrivateLibraryService {
         inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, additionalProperties: false },
         scopes: ['library:read'],
         handler: async (principal, args) => this.listReminderRules(principal, args),
+      },
+      {
+        name: 'list_sharing_drafts', title: 'List sharing drafts',
+        description: 'Lists the user’s private sharing drafts (prepared Cook Pack / share-card documents). Drafts are private; publishing happens only in the app.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string', description: 'Optional: only drafts whose document names this meal as its source cook.' } }, additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.listSharingDrafts(principal, args),
+      },
+      {
+        name: 'get_sharing_draft', title: 'Get a sharing draft',
+        description: 'Reads one private sharing draft in full.',
+        inputSchema: { type: 'object', properties: { draftId: { type: 'string' } }, required: ['draftId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.getSharingDraft(principal, args),
       },
       {
         name: 'list_photos', title: 'List photos',
@@ -564,6 +588,41 @@ export class PrivateLibraryService {
           scopes: ['media:write'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removePhoto(principal, args),
         },
+        {
+          name: 'create_sharing_draft', title: 'Create a sharing draft',
+          description: 'Creates a private sharing draft (a prepared Cook Pack / share-card document). Drafts are private until the user publishes from the app — this never publishes anything. The document is validated against the sharing contract on save.',
+          inputSchema: { type: 'object', properties: { title: { type: 'string' }, document: { type: 'object' } , ...WRITE_ARGS }, required: ['title', 'document'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.createSharingDraft(principal, args),
+        },
+        {
+          name: 'update_sharing_draft', title: 'Update a sharing draft',
+          description: 'Replaces a private sharing draft’s document (and optionally its title).',
+          inputSchema: { type: 'object', properties: { draftId: { type: 'string' }, title: { type: 'string' }, document: { type: 'object' }, ...WRITE_ARGS }, required: ['draftId', 'document'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.updateSharingDraft(principal, args),
+        },
+        {
+          name: 'delete_sharing_draft', title: 'Delete a sharing draft',
+          description: 'Deletes one private sharing draft.',
+          inputSchema: { type: 'object', properties: { draftId: { type: 'string' }, ...WRITE_ARGS }, required: ['draftId'], additionalProperties: false },
+          scopes: ['library:delete'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteSharingDraft(principal, args),
+        },
+        {
+          name: 'preview_import', title: 'Preview an archive import',
+          description: 'Validates a PitTech portable archive (format 10 JSON, as produced by the apps’ backup export or create_export) and reports exactly what applying it would do — new, unchanged, changed and blocked records — without changing anything. Returns a previewId and contentHash that apply_import requires; previews expire in 15 minutes and fail if the library moves first.',
+          inputSchema: { type: 'object', properties: { archive: { type: 'object' }, assetMappings: { type: 'object', description: 'Optional map of photo record id → asset id for archive photos whose bytes this connection uploaded first.' } }, required: ['archive'], additionalProperties: false },
+          scopes: ['imports:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.previewImport(principal, args),
+        },
+        {
+          name: 'apply_import', title: 'Apply a previewed import',
+          description: 'Applies a previewed archive import atomically. Requires the previewId, the contentHash from the preview, and expectedSnapshotVersion equal to the preview’s base version — a stale preview fails instead of writing. Records whose content is immutable (readings, recipe revisions) or whose identity was deleted before are never overwritten or resurrected; the preview lists them as blocked.',
+          inputSchema: { type: 'object', properties: { previewId: { type: 'string' }, contentHash: { type: 'string' }, recordIds: { type: 'array', items: { type: 'string' }, description: 'Optional subset of "recordType:recordId" entries from the preview; defaults to everything applicable.' }, ...WRITE_ARGS }, required: ['previewId', 'contentHash', 'expectedSnapshotVersion'], additionalProperties: false },
+          scopes: ['imports:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.applyImport(principal, args),
+        },
         ...(this.community ? [{
           name: 'save_community_recipe', title: 'Save a community recipe',
           description: 'Saves a private copy of a public community recipe into the user\'s library, pinned to the exact public revision with its credit kept. The public item is untouched.',
@@ -655,6 +714,29 @@ export class PrivateLibraryService {
         scopes: ['community:read'] as const,
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.communityBenchmarks(principal, args),
       }] as ToolDefinition[] : []),
+      ...(this.portability ? ([
+      {
+        name: 'create_export', title: 'Create a private export',
+        description: 'Builds a PitTech portable archive (format 10 — the same file the apps’ backup produces) from the synced library: the whole library, one meal with its full history, or one recipe with its revisions. The result is a private, expiring download owned by this account — never a public link. Photo records are included; with includePhotos the result also carries a verified manifest of the photo assets, whose bytes stay retrievable through get_photo.',
+        inputSchema: { type: 'object', properties: { scope: { type: 'object', properties: { type: { type: 'string', enum: ['library', 'meal', 'recipe'] }, mealId: { type: 'string' }, recipeId: { type: 'string' } }, required: ['type'], additionalProperties: false }, includePhotos: { type: 'boolean' } }, additionalProperties: false },
+        scopes: ['exports:read'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.createExport(principal, args),
+      },
+      {
+        name: 'get_export_status', title: 'Export status',
+        description: 'Reports an export or rendered card created earlier: its kind, scope, counts, expiry and private download path.',
+        inputSchema: { type: 'object', properties: { exportId: { type: 'string' } }, required: ['exportId'], additionalProperties: false },
+        scopes: ['exports:read'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.exportStatus(principal, args),
+      },
+      {
+        name: 'render_private_share_card', title: 'Render a private share card',
+        description: 'Prepares a share card (the share-card v1 document the apps render) from one meal’s real data — dishes, temperature curves, milestones and stats. The card is stored as a private, expiring result and also returned here. It is not published; relay stays empty until the user shares from the app.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['exports:read'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.renderShareCard(principal, args),
+      },
+      ] as ToolDefinition[]) : []),
       {
         name: 'get_sync_status', title: 'Sync status',
         description: 'Reports the state of the user\'s synced library on the server: whether anything has synced yet, the snapshot version and time, and how many records of each kind it holds. Never claims live phone state — the phone may have newer unsynced changes.',
@@ -2210,6 +2292,258 @@ export class PrivateLibraryService {
         'Reads come from the last synced snapshot; the phone may hold newer changes that have not synced yet.',
       ],
     };
+  }
+
+  // ---- Portability: sharing drafts, import/export, share cards ----
+
+  async listSharingDrafts(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const data = await this.loadLibrary(principal);
+    let rows = this.records(data, 'companionRecords').filter(r => r.kind === 'sharing_draft');
+    if (typeof args.mealId === 'string') rows = rows.filter(r => (r.payload as Payload)?.sourceCookId === args.mealId);
+    return {
+      snapshotVersion: data.version, total: rows.length,
+      drafts: rows.map(r => ({
+        draftId: r.id, title: r.title,
+        sourceCookId: (r.payload as Payload)?.sourceCookId ?? null,
+        identityMode: (r.payload as Payload)?.identityMode ?? null,
+        updatedAt: iso(r.updated),
+      })),
+    };
+  }
+
+  async getSharingDraft(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['draftId']);
+    const data = await this.loadLibrary(principal);
+    const row = this.record(data, 'companionRecords', args.draftId, 'Sharing draft');
+    if (row.kind !== 'sharing_draft') throw new ToolFailure('That document is not a sharing draft.');
+    return { snapshotVersion: data.version, draft: { draftId: row.id, title: row.title, document: row.payload, createdAt: iso(row.created), updatedAt: iso(row.updated) } };
+  }
+
+  async createSharingDraft(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['title', 'document', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const title = this.optString(args, 'title');
+    if (!title?.trim()) throw new ToolFailure('title is required.');
+    if (typeof args.document !== 'object' || args.document === null || Array.isArray(args.document)) throw new ToolFailure('document must be the sharing document object.');
+    if ((args.document as Payload).version !== 1) throw new ToolFailure('document.version must be 1 (the sharing document contract version).');
+    return this.mutateAs('create_sharing_draft', principal, args, work => {
+      const now = this.clock();
+      const draftId = this.idFor(args, 'sharing-draft');
+      work.insert('companionRecords', { id: draftId, kind: 'sharing_draft', title: title.trim(), cookId: null, payload: args.document as Payload, created: now, updated: now });
+      return { draftId };
+    }, args => ({ draftId: this.idFor(args, 'sharing-draft') }));
+  }
+
+  async updateSharingDraft(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['draftId', 'title', 'document', 'idempotencyKey', 'expectedSnapshotVersion']);
+    if (typeof args.document !== 'object' || args.document === null || Array.isArray(args.document)) throw new ToolFailure('document must be the sharing document object.');
+    return this.mutateAs('update_sharing_draft', principal, args, work => {
+      const row = work.live('companionRecords', args.draftId, 'Sharing draft');
+      if (row.kind !== 'sharing_draft') throw new ToolFailure('That document is not a sharing draft.');
+      const title = this.optString(args, 'title');
+      work.update('companionRecords', row, { payload: args.document as Payload, updated: this.clock(), ...(title?.trim() ? { title: title.trim() } : {}) });
+      return { draftId: row.id };
+    });
+  }
+
+  async deleteSharingDraft(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['draftId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutateAs('delete_sharing_draft', principal, args, work => {
+      const row = work.live('companionRecords', args.draftId, 'Sharing draft');
+      if (row.kind !== 'sharing_draft') throw new ToolFailure('That document is not a sharing draft.');
+      work.tombstone('companionRecords', row);
+      return { draftId: row.id };
+    });
+  }
+
+  async previewImport(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['archive', 'assetMappings']);
+    if (!this.canWrite) throw new ToolFailure('Writes are not enabled on this server yet, so imports cannot be prepared.');
+    const store = this.requirePortability();
+    const archive = args.archive;
+    if (typeof archive !== 'object' || archive === null || Array.isArray(archive)) throw new ToolFailure('archive must be a PitTech portable archive object.');
+    const version = (archive as Payload).schemaVersion;
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1 || version > 10) throw new ToolFailure('archive.schemaVersion must be a supported portable archive version (1–10).');
+    // Resolve photo assets: explicit mappings win; an assetId embedded
+    // in the archive row itself is honored too. Every mapping must
+    // verify against the account's private photo storage — an archive
+    // that references bytes this account does not hold cannot import
+    // those photos, and the preview says so per record.
+    const mappings = new Map<string, string>();
+    if (args.assetMappings !== undefined) {
+      if (typeof args.assetMappings !== 'object' || args.assetMappings === null || Array.isArray(args.assetMappings)) throw new ToolFailure('assetMappings must be an object of photo record id → asset id.');
+      for (const [recordId, assetId] of Object.entries(args.assetMappings as Record<string, unknown>)) {
+        if (typeof assetId !== 'string' || !assetId) throw new ToolFailure('assetMappings values must be asset id strings.');
+        mappings.set(recordId, assetId);
+      }
+    }
+    const ASSET_TYPES = ['photos', 'recipeAssets', 'companionPhotos'] as const;
+    const cleaned = structuredClone(archive) as Record<string, unknown>;
+    const blocked: { key: string; reason: string }[] = [];
+    for (const type of ASSET_TYPES) {
+      const rows = cleaned[type];
+      if (!Array.isArray(rows)) continue;
+      const kept: unknown[] = [];
+      for (const raw of rows) {
+        const row = raw as Payload;
+        const recordId = typeof row.id === 'string' ? row.id : '';
+        const assetId = mappings.get(recordId) ?? (typeof row.assetId === 'string' ? row.assetId : undefined);
+        if (!assetId) { blocked.push({ key: `${type}:${recordId}`, reason: 'photo bytes are not available to this connection — upload the photo first, then preview again with assetMappings' }); continue; }
+        let verified = false;
+        if (this.photos) { try { await this.photos.read(principal.userId, assetId); verified = true; } catch { verified = false; } }
+        if (!verified) { blocked.push({ key: `${type}:${recordId}`, reason: 'the referenced photo asset is not in this account’s synced photo storage' }); continue; }
+        mappings.set(recordId, assetId);
+        kept.push(raw);
+      }
+      cleaned[type] = kept;
+    }
+    const assets: Record<string, string> = {};
+    for (const [recordId, assetId] of mappings) for (const type of ASSET_TYPES) assets[`${type}|${recordId}`] = assetId;
+    let rows: PortableRow[];
+    try { rows = projectPrivateArchive(cleaned, assets); }
+    catch { throw new ToolFailure('The archive does not match the PitTech portable format (a record failed validation). Nothing was changed.'); }
+    const { version: baseVersion, envelope } = await this.snapshots.read(principal.userId);
+    const current = new Map<string, SyncRecord>();
+    for (const record of envelope?.records ?? []) current.set(record.recordType + '|' + record.recordId, record);
+    const byDisposition: Record<string, number> = {};
+    const byType: Record<string, number> = {};
+    for (const row of rows) {
+      const disposition = importDisposition(row, current.get(row.recordType + '|' + row.recordId));
+      byDisposition[disposition] = (byDisposition[disposition] ?? 0) + 1;
+      byType[row.recordType] = (byType[row.recordType] ?? 0) + 1;
+      if (disposition === 'conflict') blocked.push({ key: `${row.recordType}:${row.recordId}`, reason: 'immutable record whose content differs from the library — imports never rewrite readings or recipe revisions' });
+      if (disposition === 'restore_blocked') blocked.push({ key: `${row.recordType}:${row.recordId}`, reason: 'this record was deleted from the library before — a deleted identity cannot be restored; the apps re-import it under a new identity' });
+    }
+    const now = this.clock();
+    const preview = {
+      id: randomUUID(), userId: principal.userId, grantId: principal.grantId,
+      contentHash: contentHashOf(archive), baseVersion, rows,
+      summary: { totalRows: rows.length, byType, byDisposition },
+      createdAt: now, expiresAt: now + 15 * 60_000, consumedAt: null,
+    };
+    await store.createPreview(preview);
+    return {
+      previewId: preview.id, contentHash: preview.contentHash, baseSnapshotVersion: baseVersion,
+      expiresAt: new Date(preview.expiresAt).toISOString(),
+      totalRows: rows.length, byType, byDisposition,
+      blocked: blocked.slice(0, 50), blockedTotal: blocked.length,
+      note: 'Applying needs this previewId, the contentHash, and expectedSnapshotVersion set to baseSnapshotVersion. If the library changes first, the preview goes stale and must be redone.',
+    };
+  }
+
+  async applyImport(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['previewId', 'contentHash', 'recordIds', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const store = this.requirePortability();
+    const previewId = this.optString(args, 'previewId');
+    if (!previewId) throw new ToolFailure('previewId is required.');
+    const preview = await store.previewFor(principal.userId, previewId);
+    if (!preview) throw new ToolFailure('That import preview does not exist for this account.');
+    if (preview.consumedAt !== null) throw new ToolFailure('That preview was already applied. Preview again to import more.');
+    if (preview.expiresAt <= this.clock()) throw new ToolFailure('That preview has expired. Preview the archive again.');
+    if (args.contentHash !== preview.contentHash) throw new ToolFailure('contentHash does not match the preview — the confirmation must bind to the exact archive that was previewed.');
+    if (args.expectedSnapshotVersion !== preview.baseVersion) throw new ToolFailure(`expectedSnapshotVersion must be the preview’s base version (${preview.baseVersion}); the preview is stale if the library has moved.`);
+    const { version: currentVersion } = await this.snapshots.read(principal.userId);
+    if (currentVersion !== preview.baseVersion) throw new ToolFailure('The library changed since the preview, so the preview is stale. Preview the archive again against the current library.');
+    let selected = preview.rows;
+    if (args.recordIds !== undefined) {
+      if (!Array.isArray(args.recordIds) || args.recordIds.some(x => typeof x !== 'string')) throw new ToolFailure('recordIds must be an array of "recordType:recordId" strings.');
+      const wanted = new Set(args.recordIds as string[]);
+      selected = preview.rows.filter(r => wanted.has(r.recordType + ':' + r.recordId));
+      if (!selected.length) throw new ToolFailure('None of the requested records are in this preview.');
+    }
+    if (!await store.consumePreview(principal.userId, preview.id, this.clock())) throw new ToolFailure('That preview was already applied. Preview again to import more.');
+    return this.mutateAs('apply_import', principal, args, work => {
+      let applied = 0; let skippedIdentical = 0;
+      for (const row of selected) {
+        const current = work.currentRow(row.recordType, row.recordId);
+        const disposition = importDisposition(row, current);
+        if (disposition === 'identical') { skippedIdentical++; continue; }
+        if (disposition === 'conflict' || disposition === 'restore_blocked') {
+          throw new ToolFailure(`Import stopped at ${row.recordType}:${row.recordId} — ${disposition === 'conflict' ? 'immutable content differs from the library' : 'a deleted identity cannot be restored'}. Nothing was applied.`);
+        }
+        if (disposition === 'new') work.insert(row.recordType, row.payload, row.recordId, row.assetIds);
+        else work.restoreExact(row.recordType, row.recordId, { recordType: row.recordType, recordId: row.recordId, deleted: false, payload: row.payload, assetIds: row.assetIds, version: current!.version });
+        applied++;
+      }
+      return { previewId: preview.id, applied, skippedIdentical };
+    }, () => ({ previewId: preview.id }));
+  }
+
+  async createExport(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['scope', 'includePhotos']);
+    const store = this.requirePortability();
+    const scopeArg = (typeof args.scope === 'object' && args.scope !== null ? args.scope : {}) as Payload;
+    const scopeType = typeof scopeArg.type === 'string' ? scopeArg.type : 'library';
+    if (!['library', 'meal', 'recipe'].includes(scopeType)) throw new ToolFailure('scope.type must be "library", "meal" or "recipe".');
+    const scope: ExportScope = scopeType === 'meal' ? { type: 'meal', mealId: String(scopeArg.mealId ?? '') }
+      : scopeType === 'recipe' ? { type: 'recipe', recipeId: String(scopeArg.recipeId ?? '') } : { type: 'library' };
+    const { envelope } = await this.snapshots.read(principal.userId);
+    const all = envelope?.records ?? [];
+    if (scope.type === 'meal' && !all.some(r => r.recordType === 'cooks' && r.recordId === scope.mealId && !r.deleted)) throw new ToolFailure('No meal with that id exists in the synced library.');
+    if (scope.type === 'recipe' && !all.some(r => r.recordType === 'recipes' && r.recordId === scope.recipeId && !r.deleted)) throw new ToolFailure('No recipe with that id exists in the synced library.');
+    const rows = scopeArchiveRows(all, scope);
+    const archive = buildPortableArchive(rows);
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const [key, value] of Object.entries(archive)) { if (Array.isArray(value) && value.length) { counts[key] = value.length; total += value.length; } }
+    let payload: Record<string, unknown> = { archive };
+    if (args.includePhotos === true) {
+      const assetIds = [...new Set(rows.filter(r => ['photos', 'recipeAssets', 'companionPhotos'].includes(r.recordType))
+        .map(r => (r.payload as Payload)?.assetId).filter((x): x is string => typeof x === 'string'))].slice(0, 200);
+      const manifest: Record<string, unknown>[] = [];
+      for (const assetId of assetIds) {
+        if (!this.photos) { manifest.push({ assetId, error: 'photo storage unavailable' }); continue; }
+        try { const read = await this.photos.read(principal.userId, assetId); manifest.push({ assetId, mimeType: read.mimeType, sha256: read.sha256, bytes: read.bytes.length }); }
+        catch { manifest.push({ assetId, error: 'asset unavailable' }); }
+      }
+      payload = { archive, photoAssets: manifest };
+    }
+    const now = this.clock();
+    const record = { id: randomUUID(), userId: principal.userId, kind: 'archive' as const, scope: scope as unknown as Record<string, unknown>, payload, counts, createdAt: now, expiresAt: now + 24 * 3600_000 };
+    await store.createExport(record);
+    return {
+      exportId: record.id, status: 'ready', scope, counts, totalRecords: total,
+      downloadPath: `/v1/me/mcp/exports/${record.id}`,
+      expiresAt: new Date(record.expiresAt).toISOString(),
+      note: 'The download is private: it needs the account session or this connection’s token, and it expires. It is not a public link.',
+    };
+  }
+
+  async exportStatus(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['exportId']);
+    const store = this.requirePortability();
+    const record = await store.exportFor(principal.userId, String(args.exportId ?? ''));
+    if (!record) throw new ToolFailure('No export or card with that id exists for this account.');
+    const expired = record.expiresAt <= this.clock();
+    return {
+      exportId: record.id, kind: record.kind, scope: record.scope, counts: record.counts,
+      status: expired ? 'expired' : 'ready',
+      createdAt: new Date(record.createdAt).toISOString(), expiresAt: new Date(record.expiresAt).toISOString(),
+      downloadPath: expired ? null : `/v1/me/mcp/exports/${record.id}`,
+    };
+  }
+
+  async renderShareCard(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const store = this.requirePortability();
+    const data = await this.loadLibrary(principal);
+    const meal = this.record(data, 'cooks', args.mealId, 'Meal');
+    const dishes = this.records(data, 'dishes').filter(d => d.cookId === meal.id);
+    const readings = this.records(data, 'readings').filter(r => r.cookId === meal.id);
+    const events = this.records(data, 'events').filter(r => r.cookId === meal.id);
+    const results = this.records(data, 'results').filter(r => r.cookId === meal.id);
+    const photoCount = this.records(data, 'photos').filter(r => r.cookId === meal.id).length;
+    let card: Record<string, unknown>;
+    try { card = buildShareCard({ meal, dishes, readings, events, results, photoCount }); }
+    catch (failure) { throw new ToolFailure(failure instanceof Error ? failure.message : 'The card could not be prepared.'); }
+    const now = this.clock();
+    const record = {
+      id: randomUUID(), userId: principal.userId, kind: 'share_card' as const,
+      scope: { type: 'meal', mealId: meal.id }, payload: { card, mealId: meal.id },
+      counts: { dishes: dishes.length, readings: readings.length }, createdAt: now, expiresAt: now + 24 * 3600_000,
+    };
+    await store.createExport(record);
+    return { cardId: record.id, card, downloadPath: `/v1/me/mcp/exports/${record.id}`, expiresAt: new Date(record.expiresAt).toISOString() };
   }
 
   async syncStatus(principal: McpPrincipal) {

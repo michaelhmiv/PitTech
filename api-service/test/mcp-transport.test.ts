@@ -98,7 +98,7 @@ test('tools: list shows the M2 catalog; status tools answer from the snapshot', 
   const s: Setup = await setup(t);
   const list = await s.rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
   const tools = (list.body as { result: { tools: { name: string }[] } }).result.tools;
-  assert.deepEqual(tools.map(x => x.name), ['get_connection_status', 'get_capabilities', 'list_meals', 'get_meal', 'list_notes', 'get_note', 'list_companions', 'get_companion', 'list_reminder_rules', 'list_photos', 'get_photo', 'search_recipes', 'get_recipe', 'list_recipe_revisions', 'get_temperature_history', 'get_cook_summary', 'compare_cooks', 'get_personal_insights', 'build_private_recap', 'get_sync_status']);
+  assert.deepEqual(tools.map(x => x.name), ['get_connection_status', 'get_capabilities', 'list_meals', 'get_meal', 'list_notes', 'get_note', 'list_companions', 'get_companion', 'list_reminder_rules', 'list_sharing_drafts', 'get_sharing_draft', 'list_photos', 'get_photo', 'search_recipes', 'get_recipe', 'list_recipe_revisions', 'get_temperature_history', 'get_cook_summary', 'compare_cooks', 'get_personal_insights', 'build_private_recap', 'get_sync_status']);
   const call = async (name: string) => s.rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: {} } });
   const conn = await call('get_connection_status');
   const connResult = (conn.body as { result: { structuredContent: { connection: { nickname: string; via: string } } } }).result;
