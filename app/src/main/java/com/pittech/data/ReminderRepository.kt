@@ -11,6 +11,7 @@ fun SensorReadingEntity.channelIdentity() = listOf(cookId, probeId ?: probeName,
 class ReminderRepository(private val db: PitTechDatabase) {
     private val dao = db.reminderDao()
     fun observeRules() = dao.observeRules()
+    suspend fun rule(id: String): ReminderRule? = dao.rule(id)
     fun observeOccurrences() = dao.observeOccurrences()
     suspend fun cancelDisplayed(context: Context, id: String) { dao.rule(id)?.let { com.pittech.UnifiedReminderNotifications.cancel(context, it) } }
     suspend fun save(cookId: String, dishId: String?, title: String, trigger: ReminderTrigger,
