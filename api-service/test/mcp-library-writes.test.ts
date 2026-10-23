@@ -266,3 +266,30 @@ test('registry surface: duplicate meal setup, save dish as recipe, duplicate rec
   const restored = await s.call('restore_recipe', { recipeId });
   assert.equal(restored.isError, false);
 });
+
+test('composition: compose_meal mixes recipe + plain dishes with source links; add_recipe_to_meal appends', async () => {
+  const s: Setup = await setup();
+  const recipe = await s.call('create_recipe', {
+    name: 'House rub ribs',
+    dish: { name: 'Spare ribs', foodType: 'pork', ingredients: [{ name: 'House rub', amountText: '3', amountUnit: 'tbsp' }] },
+    targets: [{ type: 'internal', value: 203, unit: '°F' }],
+  });
+  const recipeId = (recipe.structuredContent as unknown as { recipeId: string }).recipeId;
+  const composed = await s.call('compose_meal', { title: 'Saturday', dishes: [{ recipeId }, { name: 'Beans', foodType: 'side' }] });
+  assert.equal(composed.isError, false, composed.content?.[0]?.text);
+  const mealId = (composed.structuredContent as unknown as { mealId: string }).mealId;
+  const meal = await s.call('get_meal', { mealId });
+  const dishes = (meal.structuredContent as unknown as { dishes: { name: string; ingredients: { name: string }[]; targets: unknown[] }[] }).dishes;
+  assert.equal(dishes.length, 2);
+  const ribDish = dishes.find(d => d.name === 'Spare ribs')!;
+  assert.equal(ribDish.ingredients[0].name, 'House rub');
+  assert.equal(ribDish.targets.length, 1);
+  const stored = s.snapshots.envelope!.records;
+  const link = stored.find(r => r.recordType === 'dishRecipeSources');
+  assert.ok(link, 'source link written');
+  assert.equal((link!.payload as { recipeId: string }).recipeId, recipeId);
+  const added = await s.call('add_recipe_to_meal', { mealId, recipeId });
+  assert.equal(added.isError, false, added.content?.[0]?.text);
+  const after = await s.call('get_meal', { mealId });
+  assert.equal((after.structuredContent as unknown as { dishes: unknown[] }).dishes.length, 3);
+});

@@ -377,6 +377,20 @@ export class PrivateLibraryService {
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.saveDishAsRecipe(principal, args),
         },
         {
+          name: 'compose_meal', title: 'Compose a meal',
+          description: 'Creates a meal from a mix of saved recipes and plain dish descriptions. Recipe dishes bring their ingredients, targets and a source link to the exact revision used. Nothing is scaled or silently saved as new recipes.',
+          inputSchema: { type: 'object', properties: { title: { type: 'string' }, smokerName: { type: 'string' }, dishes: { type: 'array', items: { type: 'object' } }, ...WRITE_ARGS }, required: ['dishes'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.composeMeal(principal, args),
+        },
+        {
+          name: 'add_recipe_to_meal', title: 'Add a recipe to a meal',
+          description: 'Adds one dish from a saved recipe to an existing (not completed) meal, with its ingredients, targets and source link.',
+          inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, recipeId: { type: 'string' }, name: { type: 'string' }, ...WRITE_ARGS }, required: ['mealId', 'recipeId'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.addRecipeToMeal(principal, args),
+        },
+        {
           name: 'delete_recipe', title: 'Delete a recipe',
           description: 'Deletes a recipe and all of its revisions.',
           inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
@@ -1456,6 +1470,121 @@ export class PrivateLibraryService {
     }
     if (summary.noteCount) lines.push(`Notes: ${summary.noteCount}. Photos: ${summary.photoCount}. Readings: ${summary.readingCount}.`);
     return { snapshotVersion: summary.snapshotVersion, algorithm: PrivateLibraryService.INSIGHTS_VERSION, mealId: (args.mealId as string), recap: lines.join('\n') };
+  }
+
+
+  /** The dish blueprint a recipe's current revision describes: dish
+   * fields, ingredients and targets, exactly as saved. */
+  private recipeBlueprint(work: WorkingLibrary, recipe: Payload): { dish: Record<string, unknown>; ingredients: Record<string, unknown>[]; targets: Record<string, unknown>[]; revisionId: string } {
+    const revisions = work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id);
+    const current = revisions.find(r => r.id === recipe.currentRevisionId) ?? revisions.reduce((a, b) => ((num(b.revisionNumber) ?? 0) > (num(a.revisionNumber) ?? 0) ? b : a), revisions[0]);
+    if (!current) throw new ToolFailure(`Recipe "${str(recipe.name) ?? ''}" has no revision to cook from.`);
+    let snapshot: Record<string, unknown>;
+    try { snapshot = JSON.parse(str(current.snapshotJson) ?? '{}') as Record<string, unknown>; }
+    catch { throw new ToolFailure(`Recipe "${str(recipe.name) ?? ''}" could not be read.`); }
+    const draft = (typeof snapshot.draft === 'object' && snapshot.draft !== null ? snapshot.draft : {}) as Record<string, unknown>;
+    const dish = (Array.isArray(draft.dishes) ? draft.dishes[0] ?? {} : {}) as Record<string, unknown>;
+    return {
+      revisionId: str(current.id)!,
+      dish: {
+        name: str(dish.name) ?? str(recipe.name) ?? 'Dish', foodType: str(dish.foodType) ?? 'other',
+        cut: str(dish.cut) ?? '', weightText: str(dish.weight) ?? '', weightUnit: str(dish.weightUnit) ?? 'lb',
+        placement: str(dish.placement) ?? '', gradeOrSource: str(dish.grade) ?? '', prepNotes: str(dish.prep) ?? '',
+        thicknessNotes: str(dish.thickness) ?? '',
+      },
+      ingredients: (Array.isArray(dish.ingredients) ? dish.ingredients : []).map(raw => {
+        const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        return { name: str(item.name) ?? '', stage: str(item.stage) ?? 'seasoning', brand: str(item.brand) ?? '', amountText: str(item.amount) ?? '', amountUnit: str(item.unit) ?? 'tbsp' };
+      }).filter(item => item.name.trim()),
+      targets: (Array.isArray(snapshot.targets) ? snapshot.targets : []).map(raw => {
+        const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        return { targetType: str(item.type) ?? 'internal', value: num(item.value) ?? 0, unit: str(item.unit) ?? '°F', explanation: str(item.explanation) ?? '' };
+      }),
+    };
+  }
+
+  /** Inserts one dish (plus ingredients, targets and the recipe source
+   * link when it came from a recipe) into a meal being built. */
+  private insertComposedDish(work: WorkingLibrary, mealId: string, args: Record<string, unknown>, salt: string,
+    spec: { name: string; foodType: string; cut?: string; weightValue?: number; weightUnit?: string; placement?: string; gradeOrSource?: string; prepNotes?: string; thicknessNotes?: string },
+    extras?: { ingredients: { name: string; amountText?: string; amountUnit?: string; brand?: string; stage?: string }[]; targets: { targetType: string; value: number; unit?: string; explanation?: string }[]; recipeId?: string; revisionId?: string }): string {
+    const now = this.clock();
+    const dishId = this.idFor(args, 'dish:' + salt);
+    work.insert('dishes', {
+      id: dishId, cookId: mealId,
+      name: spec.name, foodType: spec.foodType, cut: spec.cut ?? '',
+      weightValue: spec.weightValue ?? null, weightUnit: spec.weightUnit ?? 'lb',
+      startingCondition: null, boneIn: null, placement: spec.placement ?? '',
+      gradeOrSource: spec.gradeOrSource ?? '', thicknessNotes: spec.thicknessNotes ?? '',
+      prepNotes: spec.prepNotes ?? '', createdAtUtcMillis: now, updatedAtUtcMillis: now,
+    });
+    for (const [index, ingredient] of (extras?.ingredients ?? []).entries()) {
+      work.insert('ingredients', {
+        id: this.idFor(args, 'ing:' + salt + ':' + index), cookId: mealId, dishId,
+        name: ingredient.name, stage: ingredient.stage ?? 'seasoning', brand: ingredient.brand ?? '',
+        amountText: ingredient.amountText ?? '', amountUnit: ingredient.amountUnit ?? 'tbsp', amountValue: null,
+        appliedAtUtcMillis: null, notes: null, createdAtUtcMillis: now,
+      });
+    }
+    for (const [index, target] of (extras?.targets ?? []).entries()) {
+      work.insert('targets', {
+        id: this.idFor(args, 'target:' + salt + ':' + index), cookId: mealId, dishId,
+        targetType: target.targetType, value: target.value, unit: target.unit ?? '°F', scope: 'dish',
+        explanation: target.explanation ?? '', sourceReference: extras?.recipeId ? 'recipe:' + extras.recipeId : null,
+        createdAtUtcMillis: now,
+      });
+    }
+    if (extras?.recipeId && extras?.revisionId) {
+      work.insert('dishRecipeSources', { dishId, recipeId: extras.recipeId, recipeRevisionId: extras.revisionId, appliedAtUtcMillis: now }, dishId + ':' + extras.recipeId);
+    }
+    return dishId;
+  }
+
+  async composeMeal(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['title', 'smokerName', 'dishes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    if (!Array.isArray(args.dishes) || !args.dishes.length || args.dishes.length > 20) throw new ToolFailure('dishes must be an array of 1 to 20 entries, each naming a recipeId or a name + foodType.');
+    return this.mutate(principal, args, work => {
+      const now = this.clock();
+      const mealId = this.idFor(args, 'meal');
+      const title = this.optString(args, 'title') ?? 'Composed cook';
+      work.insert('cooks', {
+        id: mealId, title, smokerName: this.optString(args, 'smokerName') ?? null,
+        smokerId: null, status: 'active', startedAtUtcMillis: now, endedAtUtcMillis: null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now, timeZoneId: 'UTC',
+      });
+      work.insert('lifecycles', { cookId: mealId, state: 'legacy_preserved', weatherJson: null, snapshotJson: null, legacyRating: null, legacyOutcome: null, legacyVisibility: null, legacySpotType: null, savedRecipeId: null, updatedAtUtcMillis: now }, mealId, []);
+      const dishIds: string[] = [];
+      (args.dishes as Record<string, unknown>[]).forEach((entry, index) => {
+        const spec = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+        if (typeof spec.recipeId === 'string') {
+          const recipe = work.live('recipes', spec.recipeId, 'Recipe');
+          const blueprint = this.recipeBlueprint(work, recipe);
+          dishIds.push(this.insertComposedDish(work, mealId, args, String(index),
+            { name: this.optString(spec, 'name') ?? String(blueprint.dish.name), foodType: String(blueprint.dish.foodType), cut: String(blueprint.dish.cut ?? ''), weightUnit: String(blueprint.dish.weightUnit ?? 'lb'), placement: String(blueprint.dish.placement ?? ''), gradeOrSource: String(blueprint.dish.gradeOrSource ?? ''), prepNotes: String(blueprint.dish.prepNotes ?? ''), thicknessNotes: String(blueprint.dish.thicknessNotes ?? '') },
+            { ingredients: blueprint.ingredients as never[], targets: blueprint.targets as never[], recipeId: str(recipe.id)!, revisionId: blueprint.revisionId }));
+        } else {
+          const name = this.optString(spec, 'name'); const foodType = this.optString(spec, 'foodType');
+          if (!name?.trim() || !foodType) throw new ToolFailure('Each dish needs a recipeId, or a name and foodType.');
+          dishIds.push(this.insertComposedDish(work, mealId, args, String(index), { name, foodType }));
+        }
+      });
+      return { mealId, dishIds, status: 'active' };
+    }, args => ({ mealId: this.idFor(args, 'meal') }));
+  }
+
+  async addRecipeToMeal(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'recipeId', 'name', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      if (meal.status === 'completed') throw new ToolFailure('That meal is completed; its dishes are final. Duplicate its setup for a new cook instead.');
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      const blueprint = this.recipeBlueprint(work, recipe);
+      const salt = 'add:' + str(recipe.id);
+      const dishId = this.insertComposedDish(work, str(meal.id)!, args, salt,
+        { name: this.optString(args, 'name') ?? String(blueprint.dish.name), foodType: String(blueprint.dish.foodType), cut: String(blueprint.dish.cut ?? ''), weightUnit: String(blueprint.dish.weightUnit ?? 'lb'), placement: String(blueprint.dish.placement ?? ''), gradeOrSource: String(blueprint.dish.gradeOrSource ?? ''), prepNotes: String(blueprint.dish.prepNotes ?? ''), thicknessNotes: String(blueprint.dish.thicknessNotes ?? '') },
+        { ingredients: blueprint.ingredients as never[], targets: blueprint.targets as never[], recipeId: str(recipe.id)!, revisionId: blueprint.revisionId });
+      return { mealId: meal.id, dishId, recipeId: recipe.id };
+    });
   }
 
   async connectionStatus(principal: McpPrincipal) {

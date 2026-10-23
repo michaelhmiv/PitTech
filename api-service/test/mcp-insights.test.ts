@@ -4,7 +4,8 @@ import { AuthSecrets, credential } from '../src/auth-credentials.ts';
 import { McpGrants, type McpGrantRecord, type McpGrantStore, type McpPrincipal } from '../src/mcp-grants.ts';
 import { PrivateLibraryService, type SnapshotReader } from '../src/mcp-library.ts';
 import { McpServer } from '../src/mcp-server.ts';
-import type { SyncEnvelope, SyncRecord } from '../src/sync-envelope.ts';
+import type { SyncEnvelope } from '../src/sync-envelope.ts';
+import type { SyncRecord } from '../src/sync-merge.ts';
 
 const NOW = 1_800_000_000_000; const T0 = 1_799_000_000_000;
 class MemoryGrantStore implements McpGrantStore {
