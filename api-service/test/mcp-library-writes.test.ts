@@ -53,10 +53,20 @@ class FakeSnapshots implements SnapshotReadWriter {
   }
 }
 
+class FakeJournal {
+  entries = new Map<string, { mutationId: string; tool: string; before: never; after: never; afterVersion: number; undoneAt: number | null; undoneBy: string | null }>();
+  async record(entry: { userId: string; mutationId: string; tool: string; before: never; after: never; afterVersion: number; createdAt: number }) {
+    this.entries.set(entry.mutationId, { mutationId: entry.mutationId, tool: entry.tool, before: entry.before, after: entry.after, afterVersion: entry.afterVersion, undoneAt: null, undoneBy: null });
+  }
+  async find(_userId: string, mutationId: string) { return this.entries.get(mutationId); }
+  async markUndone(_userId: string, mutationId: string, undoneBy: string, at: number) { const e = this.entries.get(mutationId); if (e) { e.undoneAt = at; e.undoneBy = undoneBy; } }
+}
+
 async function setup(writesEnabled = true) {
   const grants = new McpGrants(new MemoryGrantStore(), new AuthSecrets(credential(), credential()), { state: async () => 'active' }, () => NOW);
   const snapshots = new FakeSnapshots();
-  const library = new PrivateLibraryService(grants, snapshots, { writer: snapshots, writesEnabled, clock: () => NOW });
+  const journal = new FakeJournal();
+  const library = new PrivateLibraryService(grants, snapshots, { writer: snapshots, writesEnabled, clock: () => NOW, journal });
   const server = new McpServer(library);
   const principal: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'library:delete'] };
   const call = async (name: string, args: Record<string, unknown> = {}, as: McpPrincipal = principal) => {
@@ -67,7 +77,7 @@ async function setup(writesEnabled = true) {
     const response = await server.handle(as, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
     return (response as { result: { tools: { name: string }[] } }).result.tools.map(x => x.name);
   };
-  return { grants, snapshots, library, server, principal, call, list };
+  return { grants, snapshots, library, server, principal, call, list, journal };
 }
 type Setup = Awaited<ReturnType<typeof setup>>;
 const KEY = '123e4567-e89b-42d3-a456-426614174000';
@@ -320,4 +330,40 @@ test('companions + reminder rules: upsert/list/delete with per-kind scope enforc
   assert.equal((rules.structuredContent as unknown as { total: number }).total, 1);
   const del = await s.call('delete_companion', { companionId }, planner);
   assert.equal(del.isError, false);
+});
+
+test('undo: reverses a create exactly, refuses after drift, and the undo itself can be undone (redo)', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Undo me' });
+  const mealId = (created.structuredContent as unknown as { mealId: string }).mealId;
+  const createMutation = [...s.journal.entries.keys()][0];
+  // Drift: a later edit builds on the create → undo must refuse.
+  const driftEdit = await s.call('update_meal', { mealId, smokerName: 'Changed' });
+  assert.equal(driftEdit.isError, false, driftEdit.content?.[0]?.text);
+  const refused = await s.call('undo_private_operation', { mutationId: createMutation });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /no longer safe/);
+  // Undo the update first (its own journal entry), then the create is safe.
+  const mutations = [...s.journal.entries.keys()];
+  const updateMutation = mutations[mutations.length - 1];
+  const undoUpdate = await s.call('undo_private_operation', { mutationId: updateMutation });
+  assert.equal(undoUpdate.isError, false, undoUpdate.content?.[0]?.text);
+  const undoCreate = await s.call('undo_private_operation', { mutationId: createMutation });
+  assert.equal(undoCreate.isError, false, undoCreate.content?.[0]?.text);
+  const gone = await s.call('get_meal', { mealId });
+  assert.equal(gone.isError, true);
+  // Redo: undo the undo-of-create using ITS receipt mutation id.
+  const undoCreateReceipt = (undoCreate.structuredContent as unknown as { receipt: { mutationId: string } }).receipt.mutationId;
+  const redo = await s.call('undo_private_operation', { mutationId: undoCreateReceipt });
+  assert.equal(redo.isError, false, redo.content?.[0]?.text);
+  // The meal returns as a copy under a fresh identity (sync never
+  // resurrects a tombstoned id); the result reports the mapping.
+  const copies = (redo.structuredContent as unknown as { restoredAsCopies: { from: string; to: string }[] }).restoredAsCopies;
+  const newMealId = copies.find(c => c.from === mealId)!.to;
+  assert.notEqual(newMealId, mealId);
+  const stillGone = await s.call('get_meal', { mealId });
+  assert.equal(stillGone.isError, true);
+  const back = await s.call('get_meal', { mealId: newMealId });
+  assert.equal(back.isError, false);
+  assert.equal((back.structuredContent as unknown as { meal: { title: string } }).meal.title, 'Undo me');
 });

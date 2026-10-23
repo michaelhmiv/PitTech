@@ -17,6 +17,7 @@ END $$;
 GRANT USAGE ON SCHEMA auth TO pittech_auth_runtime;
 GRANT SELECT, INSERT, UPDATE ON auth.users TO pittech_auth_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.challenges, auth.provider_challenges, auth.rate_buckets, auth.sessions, auth.session_tokens, auth.mcp_grants TO pittech_auth_runtime;
+GRANT SELECT, INSERT, UPDATE ON auth.mcp_operation_journal TO pittech_auth_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.mcp_oauth_codes, auth.mcp_oauth_pending, auth.mcp_oauth_retired_hashes TO pittech_auth_runtime;
 GRANT SELECT, INSERT, UPDATE ON auth.provider_identities TO pittech_auth_runtime;
 GRANT SELECT, INSERT ON auth.apple_notification_receipts TO pittech_auth_runtime;

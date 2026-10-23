@@ -324,3 +324,29 @@ export class McpGrants {
 export function hasScope(principal: McpPrincipal, scope: McpScope): boolean {
   return principal.scopes.includes(scope);
 }
+
+/** Postgres store for the MCP operation journal (undo support). */
+export class PostgresMcpOperationJournal {
+  private pool: Pool;
+  constructor(pool: Pool) { this.pool = pool; }
+  async record(entry: { userId: string; mutationId: string; tool: string; before: unknown; after: unknown; afterVersion: number; createdAt: number }): Promise<void> {
+    await this.pool.query(
+      'INSERT INTO auth.mcp_operation_journal(user_id, mutation_id, tool, before_image, after_image, after_version, created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (user_id, mutation_id) DO NOTHING',
+      [entry.userId, entry.mutationId, entry.tool, JSON.stringify(entry.before), JSON.stringify(entry.after), entry.afterVersion, entry.createdAt]);
+  }
+  async find(userId: string, mutationId: string) {
+    const row = (await this.pool.query('SELECT tool, before_image, after_image, after_version, undone_at, undone_by FROM auth.mcp_operation_journal WHERE user_id=$1 AND mutation_id=$2', [userId, mutationId])).rows[0] as
+      { tool: string; before_image: { key: string; record: never }[]; after_image: { key: string; record: never }[]; after_version: string; undone_at: string | null; undone_by: string | null } | undefined;
+    if (!row) return undefined;
+    return {
+      mutationId, tool: row.tool,
+      before: row.before_image, after: row.after_image,
+      afterVersion: Number(row.after_version),
+      undoneAt: row.undone_at === null ? null : Number(row.undone_at),
+      undoneBy: row.undone_by,
+    };
+  }
+  async markUndone(userId: string, mutationId: string, undoneBy: string, at: number): Promise<void> {
+    await this.pool.query('UPDATE auth.mcp_operation_journal SET undone_at=$3, undone_by=$4 WHERE user_id=$1 AND mutation_id=$2 AND undone_at IS NULL', [userId, mutationId, at, undoneBy]);
+  }
+}
