@@ -286,6 +286,20 @@ export class PrivateLibraryService {
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteNote(principal, args),
       },
       {
+        name: 'add_manual_reading', title: 'Add a manual temperature',
+        description: 'Records a temperature the user measured by hand — stored as a manual reading, never presented as a sensor sample. Pass readingId of an existing manual reading to correct it (recorded samples are immutable and cannot be corrected or removed). Optionally links the reading to a note.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, dishId: { type: 'string' }, noteId: { type: 'string' }, probeName: { type: 'string' }, measurementType: { type: 'string', description: 'What was measured, e.g. "food" or "pit".' }, value: { type: 'number' }, unit: { type: 'string' }, measuredAtUtcMillis: { type: 'number' }, timeZoneId: { type: 'string' }, readingId: { type: 'string', description: 'Set only to correct an existing manual reading.' }, ...WRITE_ARGS }, required: ['mealId', 'probeName', 'measurementType', 'value', 'unit'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.addManualReading(principal, args),
+      },
+      {
+        name: 'remove_manual_reading', title: 'Remove a manual temperature',
+        description: 'Removes a manual temperature reading and its note links. Recorded sensor samples are immutable and can never be removed.',
+        inputSchema: { type: 'object', properties: { readingId: { type: 'string' }, ...WRITE_ARGS }, required: ['readingId'], additionalProperties: false },
+        scopes: ['library:delete'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removeManualReading(principal, args),
+      },
+      {
         name: 'undo_private_operation', title: 'Undo an MCP operation',
         description: 'Reverses one earlier MCP write, identified by the mutationId in its receipt. Safe by construction: it only proceeds when every record that operation touched is still exactly as it left them — later edits make it refuse rather than clobber. Records the operation deleted return as copies under new ids (sync never resurrects a deleted identity) and the result reports the new ids. The undo is itself a recorded operation, so it can be undone.',
         inputSchema: { type: 'object', properties: { mutationId: { type: 'string' }, ...WRITE_ARGS }, required: ['mutationId'], additionalProperties: false },
@@ -409,6 +423,20 @@ export class PrivateLibraryService {
         inputSchema: { type: 'object', properties: { dishId: { type: 'string' }, ...WRITE_ARGS }, required: ['dishId'], additionalProperties: false },
         scopes: ['library:delete'],
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removeDish(principal, args),
+      },
+      {
+        name: 'save_results', title: 'Save meal results',
+        description: 'Records the outcome of a meal (or one dish): rating (1–5), cook-again, final temperature, rest time and result notes — the same result records the apps write. Fields you pass replace the saved values, pass null to clear one, and omitted fields stay as they are.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, dishId: { type: 'string' }, rating: { type: ['number', 'null'] }, cookAgain: { type: ['boolean', 'null'] }, finalTemperature: { type: ['number', 'null'] }, temperatureUnit: { type: 'string' }, restMinutes: { type: ['number', 'null'] }, notes: { type: ['string', 'null'] }, ...WRITE_ARGS }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.saveResults(principal, args),
+      },
+      {
+        name: 'save_lessons', title: 'Save lessons learned',
+        description: 'Saves the "keep doing" / "change next time" lessons for a meal or one dish. Pass a field to set it, an empty string or null to clear it; omitted fields stay as they are.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, dishId: { type: 'string' }, keepDoing: { type: ['string', 'null'] }, changeNextTime: { type: ['string', 'null'] }, ...WRITE_ARGS }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.saveLessons(principal, args),
       },
         {
           name: 'create_recipe', title: 'Create a recipe',
@@ -1068,6 +1096,180 @@ export class PrivateLibraryService {
       for (const link of work.liveRecords('logReadingLinks').filter(r => r.eventId === noteId)) { work.tombstone('logReadingLinks', link); tombstoned++; }
       work.tombstone('events', note); tombstoned++;
       return { noteId, tombstonedRecords: tombstoned };
+    });
+  }
+
+  /** The phone's own deterministic manual-probe identity: a Java
+   * nameUUIDFromBytes (MD5, version 3) over
+   * `${cookId}:manual:${dishId}:${measurementType}:${probeName}`, with
+   * a null dishId rendered as the literal string "null" — exactly what
+   * CookNoteRepository computes, so a probe the MCP names is the same
+   * probe the phone would create for the same name. */
+  private manualProbeId(cookId: string, dishId: string | null, measurementType: string, probeName: string): string {
+    const bytes = createHash('md5').update(`${cookId}:manual:${dishId ?? 'null'}:${measurementType}:${probeName}`).digest();
+    bytes[6] = (bytes[6] & 0x0f) | 0x30; bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.toString('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  }
+
+  private linkReading(work: WorkingLibrary, readingId: string, mealId: string, noteId: unknown) {
+    const note = work.live('events', noteId, 'Note');
+    if (note.cookId !== mealId) throw new ToolFailure('That note belongs to a different meal.');
+    const existing = work.currentRow('logReadingLinks', readingId);
+    if (existing && !existing.deleted) {
+      if ((existing.payload as Payload).eventId !== noteId) work.update('logReadingLinks', existing.payload as Payload, { eventId: noteId });
+      return;
+    }
+    if (existing?.deleted) throw new ToolFailure('That reading was unlinked by a deletion and cannot be linked again.');
+    work.insert('logReadingLinks', { readingId, eventId: noteId });
+  }
+
+  async addManualReading(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'dishId', 'noteId', 'probeName', 'measurementType', 'value', 'unit', 'measuredAtUtcMillis', 'timeZoneId', 'readingId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const probeName = this.optString(args, 'probeName');
+    if (!probeName?.trim()) throw new ToolFailure('probeName is required — name the thermometer or spot check, e.g. "Thermapen".');
+    const measurementType = this.optString(args, 'measurementType');
+    if (!measurementType?.trim()) throw new ToolFailure('measurementType is required (e.g. "food" or "pit").');
+    const value = this.optNumber(args, 'value');
+    if (value === undefined) throw new ToolFailure('value is required.');
+    const unit = this.optString(args, 'unit');
+    if (!unit?.trim()) throw new ToolFailure('unit is required (e.g. "°F").');
+    return this.mutateAs('add_manual_reading', principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      let dishId: string | null = null;
+      if (args.dishId !== undefined && args.dishId !== null) {
+        const dish = work.live('dishes', args.dishId, 'Dish');
+        if (dish.cookId !== meal.id) throw new ToolFailure('That dish belongs to a different meal.');
+        dishId = str(dish.id)!;
+      }
+      const now = this.clock();
+      const measured = this.optNumber(args, 'measuredAtUtcMillis') ?? now;
+      const probeId = this.manualProbeId(str(meal.id)!, dishId, measurementType.trim(), probeName.trim());
+      const probeRow = work.currentRow('probes', probeId);
+      if (probeRow && !probeRow.deleted) {
+        if ((probeRow.payload as Payload).cookId !== meal.id) throw new ToolFailure('That probe name already belongs to a different meal.');
+      } else if (!probeRow) {
+        work.insert('probes', { id: probeId, cookId: meal.id, name: probeName.trim(), measurementType: measurementType.trim(), source: 'manual', deviceId: null, createdAtUtcMillis: now });
+      }
+      const existingId = this.optString(args, 'readingId');
+      if (existingId) {
+        const old = work.live('readings', existingId, 'Reading');
+        if (old.source !== 'manual') throw new ToolFailure('Only manual readings can be corrected; recorded samples are immutable.');
+        if (old.cookId !== meal.id) throw new ToolFailure('That reading belongs to a different meal.');
+        work.update('readings', old, {
+          dishId, probeId, probeName: probeName.trim(), measurementType: measurementType.trim(),
+          value, unit: unit.trim(), measuredAtUtcMillis: measured,
+          timeZoneId: this.optString(args, 'timeZoneId') ?? old.timeZoneId ?? 'UTC',
+        });
+        if (args.noteId !== undefined && args.noteId !== null) this.linkReading(work, existingId, str(meal.id)!, args.noteId);
+        return { mealId: meal.id, readingId: existingId, corrected: true };
+      }
+      const readingId = this.idFor(args, 'reading');
+      work.insert('readings', {
+        id: readingId, cookId: meal.id, dishId, probeId, probeName: probeName.trim(), measurementType: measurementType.trim(),
+        value, unit: unit.trim(), measuredAtUtcMillis: measured, recordedAtUtcMillis: now,
+        timeZoneId: this.optString(args, 'timeZoneId') ?? 'UTC',
+        source: 'manual', sourceDeviceId: null, qualityStatus: 'valid', timestampBasis: 'measurement', samplingIntervalMillis: 0,
+      });
+      if (args.noteId !== undefined && args.noteId !== null) this.linkReading(work, readingId, str(meal.id)!, args.noteId);
+      return { mealId: meal.id, readingId };
+    }, args => ({ readingId: this.idFor(args, 'reading') }));
+  }
+
+  async removeManualReading(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['readingId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutateAs('remove_manual_reading', principal, args, work => {
+      const reading = work.live('readings', args.readingId, 'Reading');
+      if (reading.source !== 'manual') throw new ToolFailure('Only manual readings can be removed; recorded samples are immutable.');
+      let removedLinks = 0;
+      for (const link of work.liveRecords('logReadingLinks').filter(r => r.readingId === reading.id)) { work.tombstone('logReadingLinks', link); removedLinks++; }
+      work.tombstone('readings', reading);
+      return { readingId: reading.id, removedLinks };
+    });
+  }
+
+  /** Writes one deterministic result row exactly as the apps do:
+   * id `${cookId}:${dishId ?? 'cook'}:${suffix}`. A clear tombstones
+   * the row; a set inserts or updates it in place. */
+  private setResult(work: WorkingLibrary, meal: Payload, dishId: string | null, resultType: string, suffix: string,
+    values: { numericValue?: number | null; textValue?: string | null; unit?: string | null }, now: number, clear: boolean) {
+    const id = `${meal.id}:${dishId ?? 'cook'}:${suffix}`;
+    const existing = work.currentRow('results', id);
+    if (clear) { if (existing && !existing.deleted) work.tombstone('results', existing.payload as Payload); return; }
+    const payload: Payload = {
+      id, cookId: meal.id, dishId, resultType,
+      numericValue: values.numericValue ?? null, textValue: values.textValue ?? null, unit: values.unit ?? null,
+      notes: null, recordedAtUtcMillis: now,
+    };
+    if (existing && !existing.deleted) work.update('results', existing.payload as Payload, payload);
+    else if (existing?.deleted) throw new ToolFailure('That result was deleted before and cannot be recreated under the same identity.');
+    else work.insert('results', payload);
+  }
+
+  private resultScope(work: WorkingLibrary, args: Record<string, unknown>): { meal: Payload; dishId: string | null } {
+    const meal = work.live('cooks', args.mealId, 'Meal');
+    if (args.dishId === undefined || args.dishId === null) return { meal, dishId: null };
+    const dish = work.live('dishes', args.dishId, 'Dish');
+    if (dish.cookId !== meal.id) throw new ToolFailure('That dish belongs to a different meal.');
+    return { meal, dishId: str(dish.id)! };
+  }
+
+  async saveResults(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'dishId', 'rating', 'cookAgain', 'finalTemperature', 'temperatureUnit', 'restMinutes', 'notes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutateAs('save_results', principal, args, work => {
+      const { meal, dishId } = this.resultScope(work, args);
+      const now = this.clock();
+      const saved: string[] = [];
+      if ('rating' in args) {
+        const v = args.rating === null ? null : this.optNumber(args, 'rating');
+        if (v !== null && (v! < 1 || v! > 5)) throw new ToolFailure('rating must be between 1 and 5.');
+        this.setResult(work, meal, dishId, 'overall_rating', 'overall_rating', { numericValue: v, unit: v === null ? null : 'stars' }, now, v === null);
+        saved.push('rating');
+      }
+      if ('cookAgain' in args) {
+        if (args.cookAgain !== null && typeof args.cookAgain !== 'boolean') throw new ToolFailure('cookAgain must be true, false or null.');
+        const v = args.cookAgain === null ? null : (args.cookAgain ? 1 : 0);
+        this.setResult(work, meal, dishId, 'cook_again', 'cook_again', { numericValue: v }, now, v === null);
+        saved.push('cookAgain');
+      }
+      if ('finalTemperature' in args) {
+        const v = args.finalTemperature === null ? null : this.optNumber(args, 'finalTemperature');
+        if (v !== null && v! <= 0) throw new ToolFailure('finalTemperature must be a positive number.');
+        this.setResult(work, meal, dishId, 'final_temperature', 'final_temperature', { numericValue: v, unit: v === null ? null : (this.optString(args, 'temperatureUnit') ?? '°F') }, now, v === null);
+        saved.push('finalTemperature');
+      }
+      if ('restMinutes' in args) {
+        const v = args.restMinutes === null ? null : this.optNumber(args, 'restMinutes');
+        if (v !== null && v! <= 0) throw new ToolFailure('restMinutes must be a positive number.');
+        this.setResult(work, meal, dishId, 'rest_minutes', 'rest_minutes', { numericValue: v, unit: v === null ? null : 'min' }, now, v === null);
+        saved.push('restMinutes');
+      }
+      if ('notes' in args) {
+        const v = args.notes === null ? null : this.optString(args, 'notes');
+        const text = v?.trim() ? v.trim() : null;
+        this.setResult(work, meal, dishId, 'result_notes', 'notes', { textValue: text }, now, text === null);
+        saved.push('notes');
+      }
+      if (!saved.length) throw new ToolFailure('Nothing to save: provide at least one of rating, cookAgain, finalTemperature, restMinutes, notes.');
+      return { mealId: meal.id, dishId, saved };
+    });
+  }
+
+  async saveLessons(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'dishId', 'keepDoing', 'changeNextTime', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutateAs('save_lessons', principal, args, work => {
+      const { meal, dishId } = this.resultScope(work, args);
+      const now = this.clock();
+      const saved: string[] = [];
+      for (const [field, type] of [['keepDoing', 'keep_doing'], ['changeNextTime', 'change_next_time']] as const) {
+        if (!(field in args)) continue;
+        const v = args[field] === null ? null : this.optString(args, field);
+        const text = v?.trim() ? v.trim() : null;
+        this.setResult(work, meal, dishId, type, type, { textValue: text }, now, text === null);
+        saved.push(field);
+      }
+      if (!saved.length) throw new ToolFailure('Nothing to save: provide keepDoing and/or changeNextTime.');
+      return { mealId: meal.id, dishId, saved };
     });
   }
 
