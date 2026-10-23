@@ -51,3 +51,16 @@ jobs:
 
       - name: Build relay container
         run: docker build -t pittech-feedback-relay feedback-service
+
+      - name: Validate relay container boots and serves health
+        run: |
+          docker run -d --name pittech-feedback-relay -e PORT=3000 -p 3101:3000 pittech-feedback-relay
+          trap 'docker logs pittech-feedback-relay; docker rm -f pittech-feedback-relay' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3101/health > /tmp/container-health.json; then
+              break
+            fi
+            sleep 0.5
+          done
+          grep -q '"status":"ok"' /tmp/container-health.json
+          grep -q '"githubAuthMode":"none"' /tmp/container-health.json
