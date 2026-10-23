@@ -139,7 +139,7 @@ class McpDeviceActionsTest {
                         .put("params", JSONObject().put("label", "Rest").put("durationMinutes", 15)),
                 )))
                 path.endsWith("/receipt") -> JSONObject().put("resolved", true)
-                else -> fail("unexpected path $path"); JSONObject()
+                else -> { fail("unexpected path $path"); JSONObject() }
             }
         }
         val memory = Memory(AccountState(session = session))
