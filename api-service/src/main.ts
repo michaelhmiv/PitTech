@@ -10,6 +10,7 @@ try {
   if (runtime.publications) await runtime.pool.query('SELECT 1 FROM publications.items LIMIT 1');
   if(runtime.lifecyclePool){await runtime.lifecyclePool.query('SELECT 1 FROM moderation.deletions LIMIT 1');await runtime.lifecyclePool.query('SELECT 1 FROM private_sync.accounts LIMIT 1');}
   if(runtime.syncPool)await runtime.syncPool.query('SELECT 1 FROM private_sync.accounts LIMIT 1');
+  if(runtime.mcp){await runtime.pool.query('SELECT 1 FROM auth.mcp_grants LIMIT 1');}
   if(runtime.subscriptions){await runtime.pool.query('SELECT 1 FROM billing.entitlements LIMIT 1');try{await runtime.refreshOidcKeys?.();}catch{console.error('billing_oidc_deferred');}}
   if(runtime.refreshProviderKeys){try{await runtime.refreshProviderKeys();}catch{console.error('provider_oidc_deferred');}}
   if(runtime.communityAggregates)await runtime.pool.query('SELECT 1 FROM community_aggregation.job_runs LIMIT 1');
