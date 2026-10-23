@@ -20,7 +20,9 @@
       "android": {
         "status": "implemented",
         "symbols": [
-          "PrivateSyncLibrary.kt"
+          "PrivateSyncLibrary.kt",
+          "McpConnections.kt",
+          "AccountScreen.kt"
         ]
       },
       "ios": {
