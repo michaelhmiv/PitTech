@@ -81,6 +81,13 @@ export class PrivateSnapshots {
    * committed version and when it was committed (epoch ms), or version 0
    * when the account has never synced. Read-only status surfaces (MCP
    * connection context) use this; it never exposes library content. */
+  /** The durable receipt for a previously committed mutation id, if
+   * any. Lets idempotent callers (the MCP command layer) answer a
+   * retry from the receipt alone, without rebuilding the change. */
+  async receiptFor(user: string, mutationId: string): Promise<SyncSnapshotReceipt | undefined> {
+    const row = (await this.pool.query("SELECT response FROM private_sync.operations WHERE user_id=$1 AND operation_id=$2 AND state='committed'", [user, mutationId])).rows[0] as { response: SyncSnapshotReceipt | null } | undefined;
+    return row?.response ?? undefined;
+  }
   async status(user: string): Promise<{ version: number; updatedAt: number | null }> {
     const row = (await this.pool.query('SELECT version,updated_at FROM private_sync.accounts WHERE user_id=$1', [user])).rows[0] as { version: string; updated_at: string } | undefined;
     if (!row) return { version: 0, updatedAt: null };

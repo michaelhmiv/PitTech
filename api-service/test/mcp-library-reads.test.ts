@@ -29,9 +29,9 @@ function libraryEnvelope() {
   return {
     contractVersion: 1, baseVersion: 7, mutationId: 'm', clientId: 'phone',
     records: [
-      rec('cooks', { id: 'cook-1', title: 'Saturday brisket', status: 'complete', startedAtUtcMillis: T0, endedAtUtcMillis: T0 + 3600000, startedTimeZoneId: 'America/New_York', smokerName: 'Offset', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }),
-      rec('cooks', { id: 'cook-2', title: 'Weeknight ribs', status: 'cooking', startedAtUtcMillis: T0 + 86400000, endedAtUtcMillis: null, startedTimeZoneId: 'America/New_York', smokerName: 'Pellet', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }),
-      rec('cooks', { id: 'cook-gone', title: 'Deleted cook', status: 'complete', startedAtUtcMillis: T0, startedTimeZoneId: 'UTC', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }, true),
+      rec('cooks', { id: 'cook-1', title: 'Saturday brisket', status: 'completed', startedAtUtcMillis: T0, endedAtUtcMillis: T0 + 3600000, startedTimeZoneId: 'America/New_York', smokerName: 'Offset', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }),
+      rec('cooks', { id: 'cook-2', title: 'Weeknight ribs', status: 'active', startedAtUtcMillis: T0 + 86400000, endedAtUtcMillis: null, startedTimeZoneId: 'America/New_York', smokerName: 'Pellet', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }),
+      rec('cooks', { id: 'cook-gone', title: 'Deleted cook', status: 'completed', startedAtUtcMillis: T0, startedTimeZoneId: 'UTC', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }, true),
       rec('dishes', { id: 'dish-1', cookId: 'cook-1', name: 'Brisket flat', foodType: 'beef', createdAtUtcMillis: T0, updatedAtUtcMillis: T0 }),
       rec('ingredients', { id: 'ing-1', cookId: 'cook-1', dishId: 'dish-1', stage: 'prep', name: 'SPG rub', createdAtUtcMillis: T0 }),
       rec('targets', { id: 'tgt-1', cookId: 'cook-1', dishId: 'dish-1', targetType: 'internal', value: 203, unit: 'F', scope: 'dish', createdAtUtcMillis: T0 }),
@@ -73,7 +73,7 @@ test('list_meals: newest first, deleted excluded, dish counts, status filter, pa
   assert.equal(content.meals[1].dishCount, 1);
   assert.equal(content.total, 2);
   assert.equal(content.snapshotVersion, 7);
-  const cooking = await s.call('list_meals', { status: 'cooking' });
+  const cooking = await s.call('list_meals', { status: 'active' });
   assert.deepEqual((cooking.structuredContent as unknown as { meals: { id: string }[] }).meals.map(m => m.id), ['cook-2']);
   const first = await s.call('list_meals', { limit: 1 });
   const firstContent = first.structuredContent as unknown as { nextCursor: string | null };
