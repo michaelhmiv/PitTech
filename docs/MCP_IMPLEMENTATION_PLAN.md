@@ -116,9 +116,12 @@ no slice may borrow evidence from another.
 
 ## Sequencing against issue #123
 
-M0–M7 may be built and merged behind disabled flags without waiting for the
-online rollout. Public MCP access waits for #123's controlled activation:
-live accounts/sync/deletion, a release-ready projection, verified store
-entitlement evidence, and operational storage/keys/cleanup. Per the owner's
-instruction (2026-10-22), this M0 work is prepared on a branch and does not
-merge to `main` until the owner gives the go-ahead.
+M0–M7 are built and merged behind disabled flags. #123's controlled
+activation completed on staging on 2026-10-22 (all seven online flags on,
+live-verified), so the accounts/sync/entitlement prerequisite for MCP is
+satisfied on staging. Still required before *public* MCP access: the
+release-ready projection (it still declares `releaseReady: false`), the
+#123 physical-device walkthrough and test delivery, production
+reconciliation, and the M8 release proof in issue #114 §10/§11. The owner
+lifted the MCP merge hold on 2026-10-22 after #123 merged (PR #147,
+main `8c91090`).

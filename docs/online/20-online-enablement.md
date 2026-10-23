@@ -1,6 +1,13 @@
 # Online enablement and full-feature test delivery
 
-Status: active rollout plan, October 20, 2026. Source baseline: main `743b6a5ab0f0b7c952355b26b891d02063e4a732`. This extends issue #89's implemented slices; it does not rebuild their domain features. Michael has requested online features to become usable and an explicitly dispatched Firebase build for hands-on testing. MCP #114 is fully planned and paused while this work is completed.
+Status: **server-side rollout complete October 22, 2026** — the isolated
+staging stack is fully activated and live-verified (all seven flags;
+email sign-in, entitlement/reconcile and RTDN processing proven against
+the real services; see STATUS.md). The remaining leg of this plan is
+the physical-device walkthrough and the Firebase/Play test delivery
+that follows it; both wait on an iOS 17+ test device (the project's iOS
+floor is 17.0). The text below is the plan as written October 20, 2026.
+Source baseline: main `743b6a5ab0f0b7c952355b26b891d02063e4a732`. This extends issue #89's implemented slices; it does not rebuild their domain features. Michael has requested online features to become usable and an explicitly dispatched Firebase build for hands-on testing. MCP #114 is fully planned and paused while this work is completed.
 
 ## Outcome and authorization
 
