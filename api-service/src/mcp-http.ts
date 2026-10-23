@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ApiError } from './core.ts';
 import type { Authentication } from './auth.ts';
 import type { McpGrants } from './mcp-grants.ts';
+import type { McpOAuth } from './mcp-oauth.ts';
 
 /**
  * Grant-management routes (issue #114, M1b). These are the owner's own
@@ -16,12 +17,14 @@ import type { McpGrants } from './mcp-grants.ts';
 
 export type McpGrantRoute =
   | '/v1/me/mcp/grants'            // POST create · GET list · DELETE disconnect-all
-  | '/v1/me/mcp/grants/:id';       // DELETE revoke one
+  | '/v1/me/mcp/grants/:id'        // DELETE revoke one
+  | '/v1/me/mcp/oauth/approve';    // POST approve a browser-shown user code
 
 export function mcpGrantRoute(url: string, method: string): McpGrantRoute | undefined {
   const path = url.split('?', 1)[0];
   if (path === '/v1/me/mcp/grants' && ['POST', 'GET', 'DELETE'].includes(method)) return '/v1/me/mcp/grants';
   if (/^\/v1\/me\/mcp\/grants\/[0-9a-fA-F-]{36}$/.test(path) && method === 'DELETE') return '/v1/me/mcp/grants/:id';
+  if (path === '/v1/me/mcp/oauth/approve' && method === 'POST') return '/v1/me/mcp/oauth/approve';
 }
 
 async function body(req: IncomingMessage, limit: number) {
@@ -58,7 +61,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const MCP_DEFAULT_GRANT_DAYS = 90;
 
 export async function handleMcpGrants(req: IncomingMessage, res: ServerResponse, route: McpGrantRoute,
-  auth: Authentication | undefined, grants: McpGrants, capacity: { claim(): boolean; release(): void }) {
+  auth: Authentication | undefined, grants: McpGrants, capacity: { claim(): boolean; release(): void },
+  oauth?: McpOAuth) {
   const json = (status: number, value: unknown) => { if (res.destroyed) throw new ApiError(400, 'request_interrupted'); res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
   res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('Vary', 'Authorization'); res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (!capacity.claim()) throw new ApiError(503, 'mcp_busy');
@@ -67,6 +71,14 @@ export async function handleMcpGrants(req: IncomingMessage, res: ServerResponse,
     const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '')?.[1];
     if (!auth || !token) throw new ApiError(401, 'authentication_required');
     const user = await auth.user(token);
+    if (route === '/v1/me/mcp/oauth/approve') {
+      if (!oauth) throw new ApiError(404, 'mcp_grant_not_found');
+      const value = fields(await object(req, 8192), 'userCode');
+      if (typeof value.userCode !== 'string') throw new ApiError(422, 'invalid_mcp_request');
+      // Unknown, expired and already-approved codes are one answer.
+      if (!await oauth.approve(user.id, value.userCode)) throw new ApiError(404, 'mcp_grant_not_found');
+      json(200, { approved: true }); return;
+    }
     if (route === '/v1/me/mcp/grants' && req.method === 'GET') { json(200, { grants: await grants.list(user.id) }); return; }
     if (route === '/v1/me/mcp/grants' && req.method === 'DELETE') { json(200, { revoked: await grants.revokeAll(user.id) }); return; }
     if (route === '/v1/me/mcp/grants' && req.method === 'POST') {

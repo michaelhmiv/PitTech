@@ -28,7 +28,9 @@
       "ios": {
         "status": "implemented",
         "symbols": [
-          "NativePrivateSyncLibrary.swift"
+          "NativePrivateSyncLibrary.swift",
+          "McpConnections.swift",
+          "AccountView.swift"
         ]
       },
       "mcp": {
