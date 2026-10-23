@@ -84,3 +84,38 @@ test('benchmarks tool exists only when a source is wired, and serves figures', a
   assert.equal(result.isError, false);
   assert.equal((result.structuredContent!.figures as unknown[]).length, 1);
 });
+
+test('community: search/get pass through; save pins a private copy with credit, no public side effects', async () => {
+  const grants = new McpGrants(new MemoryGrantStore(), new AuthSecrets(credential(), credential()), { state: async () => 'active' }, () => NOW);
+  const writer = {
+    version: 0, envelope: null as SyncEnvelope | null,
+    async read() { return { version: this.version, envelope: this.envelope ? structuredClone(this.envelope) : null }; },
+    async status() { return { version: this.version, updatedAt: null }; },
+    async receiptFor() { return undefined; },
+    async put(_user: string, value: unknown) {
+      const next = value as SyncEnvelope; this.envelope = next; this.version = next.baseVersion + 1;
+      return { version: this.version, mutationId: next.mutationId, sha256: 'x' };
+    },
+  };
+  const community = {
+    discover: async () => ({ items: [{ id: 'item-1' }], nextCursor: null }),
+    get: async () => ({
+      revisionId: 'rev-public-1', credit: { displayName: 'Smokey Joe' },
+      payload: { recipes: [{ version: 1, name: 'Public ribs', description: '', tags: [], draft: { title: 'Public ribs', smoker: '', setpoint: '', unit: '°F', notes: '', fuel: '', wood: '', dishes: [{ name: 'Ribs', foodType: 'pork', cut: '', weight: '', weightUnit: 'lb', startingCondition: null, boneIn: null, placement: '', grade: '', thickness: '', prep: '', ingredients: [] }] }, instructions: [], observations: [], targets: [], resultNotes: '', rating: null, smokingAnchorUtcMillis: null, preferredPitTemperatureF: null, servings: '', cookAgain: null, publicSource: null }] },
+    }),
+  };
+  const service = new PrivateLibraryService(grants, writer, { writer: writer as never, writesEnabled: true, clock: () => NOW, community });
+  const server = new McpServer(service);
+  const writerPrincipal: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'community:read'] };
+  const callAs = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await server.handle(writerPrincipal, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+    return (response as { result: { isError: boolean; structuredContent?: Record<string, any>; content: { text: string }[] } }).result;
+  };
+  const found = await callAs('search_community_recipes', { query: 'ribs' });
+  assert.equal(found.isError, false);
+  const saved = await callAs('save_community_recipe', { itemId: 'item-1' });
+  assert.equal(saved.isError, false, saved.content?.[0]?.text);
+  const revision = writer.envelope!.records.find(r => r.recordType === 'recipeRevisions')!;
+  const snapshot = JSON.parse((revision.payload as { snapshotJson: string }).snapshotJson) as { publicSource: { itemId: string; revisionId: string; displayName: string } };
+  assert.deepEqual(snapshot.publicSource, { itemId: 'item-1', revisionId: 'rev-public-1', displayName: 'Smokey Joe', removed: false, relativeTiming: true });
+});

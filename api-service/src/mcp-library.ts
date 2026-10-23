@@ -23,6 +23,10 @@ export interface SnapshotReader {
  * compare-and-swap on the envelope's baseVersion with a durable,
  * idempotent receipt per mutationId — exactly the guarantees the MCP
  * command spine is built on. */
+export interface McpCommunitySource {
+  discover(input: { sort?: string; food?: string; query?: string; cursor?: string }): Promise<unknown>;
+  get(id: string): Promise<{ revisionId: string; payload: { recipes?: Record<string, unknown>[] }; credit?: unknown }>;
+}
 export interface McpBenchmarkSource {
   latestFigures(bucket?: string, metric?: string): Promise<{ run: unknown; figures: readonly unknown[] }>;
 }
@@ -148,13 +152,13 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
-  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined;
+  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
-    this.photos = options.photos; this.benchmarks = options.benchmarks;
+    this.photos = options.photos; this.benchmarks = options.benchmarks; this.community = options.community;
     this.clock = options.clock ?? Date.now;
   }
   private requirePhotos(): McpPhotoStore {
@@ -475,6 +479,13 @@ export class PrivateLibraryService {
           scopes: ['media:write'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removePhoto(principal, args),
         },
+        ...(this.community ? [{
+          name: 'save_community_recipe', title: 'Save a community recipe',
+          description: 'Saves a private copy of a public community recipe into the user\'s library, pinned to the exact public revision with its credit kept. The public item is untouched.',
+          inputSchema: { type: 'object', properties: { itemId: { type: 'string' }, name: { type: 'string' }, ...WRITE_ARGS }, required: ['itemId'], additionalProperties: false },
+          scopes: ['library:write'] as const,
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.saveCommunityRecipe(principal, args),
+        }] as ToolDefinition[] : []),
         {
           name: 'upsert_companion', title: 'Create or update a companion document',
           description: 'Creates or updates a companion document (plan, playbook, checklist, equipment, preset and similar kinds). The payload is the document for its kind; the library validates its shape on save. Planning kinds need the planning access; checklist/equipment/preset kinds need library write.',
@@ -504,6 +515,19 @@ export class PrivateLibraryService {
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteReminderRule(principal, args),
         },
       ] as ToolDefinition[]) : []),
+      ...(this.community ? [{
+        name: 'search_community_recipes', title: 'Search community recipes',
+        description: 'Searches public community recipes (read-only). Saving one keeps a private copy; nothing here can publish, like or comment.',
+        inputSchema: { type: 'object', properties: { query: { type: 'string' }, food: { type: 'string' }, sort: { type: 'string' }, cursor: { type: 'string' } }, additionalProperties: false },
+        scopes: ['community:read'] as const,
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.searchCommunity(principal, args),
+      }, {
+        name: 'get_community_recipe', title: 'Get a community recipe',
+        description: 'Reads one public community recipe in full, with its credit.',
+        inputSchema: { type: 'object', properties: { itemId: { type: 'string' } }, required: ['itemId'], additionalProperties: false },
+        scopes: ['community:read'] as const,
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.getCommunityRecipe(principal, args),
+      }] as ToolDefinition[] : []),
       {
         name: 'get_temperature_history', title: 'Temperature history',
         description: 'Temperature readings for a meal. Default mode is reduced: 15-minute interval statistics (min/max/average/samples) per dish and probe type. Use mode raw for individual readings (paged by limit).',
@@ -1751,6 +1775,72 @@ export class PrivateLibraryService {
       work.tombstone('reminderRules', row);
       return { ruleId: row.id };
     });
+  }
+
+
+  private communitySource(): McpCommunitySource {
+    if (!this.community) throw new ToolFailure('Community recipes are not available on this server.');
+    return this.community;
+  }
+  private async communityOp<T>(run: () => Promise<T>): Promise<T> {
+    try { return await run(); }
+    catch (failure) {
+      if (failure instanceof ApiError && failure.status === 404) throw new ToolFailure('That community recipe could not be found (it may have been removed or unpublished).');
+      if (failure instanceof ApiError) throw new ToolFailure(`Community lookup failed (${failure.code}). Try again shortly.`);
+      throw failure;
+    }
+  }
+
+  async searchCommunity(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['query', 'food', 'sort', 'cursor']);
+    const result = await this.communityOp(() => this.communitySource().discover({
+      query: this.optString(args, 'query'), food: this.optString(args, 'food'),
+      sort: this.optString(args, 'sort'), cursor: this.optString(args, 'cursor'),
+    }));
+    return { community: result, note: 'Community recipes are read-only here: saving one keeps a private copy pinned to this exact public revision, with its credit. Nothing can be published, liked or commented on through MCP.' };
+  }
+
+  async getCommunityRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['itemId']);
+    const itemId = this.optString(args, 'itemId');
+    if (!itemId) throw new ToolFailure('itemId is required.');
+    const detail = await this.communityOp(() => this.communitySource().get(itemId));
+    return { item: detail };
+  }
+
+  async saveCommunityRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['itemId', 'name', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const itemId = this.optString(args, 'itemId');
+    if (!itemId) throw new ToolFailure('itemId is required.');
+    const detail = await this.communityOp(() => this.communitySource().get(itemId));
+    const source = (detail.payload?.recipes ?? [])[0];
+    if (!source) throw new ToolFailure('That community item has no recipe to save.');
+    // The public recipe document is a codec snapshot; normalize it
+    // through the same builder as private recipes and pin the source.
+    const snapshot = this.recipeSnapshot({ name: this.optString(args, 'name') ?? str(source.name) }, source);
+    const credit = (detail.credit ?? {}) as Record<string, unknown>;
+    snapshot.publicSource = {
+      itemId, revisionId: detail.revisionId,
+      displayName: str(credit.displayName) ?? str(credit.handle) ?? 'PitTech cook',
+      removed: false, relativeTiming: true,
+    };
+    return this.mutate(principal, args, work => {
+      const now = this.clock();
+      const recipeId = this.idFor(args, 'recipe');
+      const revisionId = this.idFor(args, 'revision:1');
+      work.insert('recipes', {
+        id: recipeId, name: snapshot.name, description: snapshot.description,
+        tagsJson: JSON.stringify(snapshot.tags), currentRevisionId: revisionId,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now, archivedAtUtcMillis: null, favorite: false,
+      });
+      work.insert('recipeRevisions', {
+        id: revisionId, recipeId, parentRevisionId: null, revisionNumber: 1,
+        snapshotSchemaVersion: 1, snapshotJson: JSON.stringify(snapshot),
+        createdAtUtcMillis: now, changeNotes: 'Saved from the community by your AI assistant',
+        sourceCookId: null, sourceDishId: null,
+      });
+      return { recipeId, revisionId, savedFrom: { itemId, revisionId: detail.revisionId } };
+    }, args => ({ recipeId: this.idFor(args, 'recipe'), revisionId: this.idFor(args, 'revision:1') }));
   }
 
   async connectionStatus(principal: McpPrincipal) {
