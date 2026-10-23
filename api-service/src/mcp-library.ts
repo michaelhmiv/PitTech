@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ApiError } from './core.ts';
+import { stable } from './pack.ts';
 import { MCP_SCOPES, hasScope, type McpGrants, type McpPrincipal, type McpScope } from './mcp-grants.ts';
 import type { SyncEnvelope } from './sync-envelope.ts';
 import type { SyncRecord } from './sync-merge.ts';
@@ -23,6 +24,11 @@ export interface SnapshotReader {
  * compare-and-swap on the envelope's baseVersion with a durable,
  * idempotent receipt per mutationId — exactly the guarantees the MCP
  * command spine is built on. */
+export interface McpOperationJournal {
+  record(entry: { userId: string; mutationId: string; tool: string; before: unknown; after: unknown; afterVersion: number; createdAt: number }): Promise<void>;
+  find(userId: string, mutationId: string): Promise<{ mutationId: string; tool: string; before: { key: string; record: SyncRecord | null }[]; after: { key: string; record: SyncRecord | null }[]; afterVersion: number; undoneAt: number | null; undoneBy: string | null } | undefined>;
+  markUndone(userId: string, mutationId: string, undoneBy: string, at: number): Promise<void>;
+}
 export interface McpCommunitySource {
   discover(input: { sort?: string; food?: string; query?: string; cursor?: string }): Promise<unknown>;
   get(id: string): Promise<{ revisionId: string; payload: { recipes?: Record<string, unknown>[] }; credit?: unknown }>;
@@ -113,12 +119,29 @@ const NO_ARGS_SCHEMA = { type: 'object', properties: {}, additionalProperties: f
 const KEY_FIELDS: Record<string, string> = { lifecycles: 'cookId', logReadingLinks: 'readingId', dishRecipeSources: 'dishId' };
 class WorkingLibrary {
   private rows: SyncRecord[]; private clock: () => number; private stamp: number;
+  /** Before-images of every touched record (null = did not exist), for
+   * the undo journal. Captured at first touch, never overwritten. */
+  private before = new Map<string, SyncRecord | null>();
   constructor(envelope: SyncEnvelope | null, clock: () => number) {
     this.rows = structuredClone(envelope?.records ?? []);
     this.clock = clock;
     this.stamp = this.rows.reduce((max, r) => Math.max(max, r.version.counter), 0) + 1;
   }
   records(): SyncRecord[] { return this.rows; }
+  private captureBefore(type: string, recordId: string) {
+    const key = type + '|' + recordId;
+    if (this.before.has(key)) return;
+    const row = this.find(type, recordId);
+    this.before.set(key, row ? structuredClone(row) : null);
+  }
+  journalImages(): { before: { key: string; record: SyncRecord | null }[]; after: { key: string; record: SyncRecord | null }[] } {
+    const after = [...this.before.keys()].map(key => {
+      const cut = key.indexOf('|'); const type = key.slice(0, cut); const recordId = key.slice(cut + 1);
+      const row = this.find(type, recordId);
+      return { key, record: row ? structuredClone(row) : null };
+    });
+    return { before: [...this.before.entries()].map(([key, record]) => ({ key, record })), after };
+  }
   private keyOf(type: string, payload: Payload): string { return String(payload[KEY_FIELDS[type] ?? 'id']); }
   private find(type: string, id: string): SyncRecord | undefined { return this.rows.find(r => r.recordType === type && r.recordId === id); }
   live(type: string, id: unknown, label: string): Payload {
@@ -131,17 +154,44 @@ class WorkingLibrary {
   liveRecords(type: string): Payload[] { return this.rows.filter(r => r.recordType === type && !r.deleted).map(r => r.payload as Payload); }
   insert(type: string, payload: Payload, recordIdOverride?: string, assetIds: string[] = []) {
     const recordId = recordIdOverride ?? this.keyOf(type, payload);
+    this.captureBefore(type, recordId);
     this.rows.push({ recordType: type as SyncRecord['recordType'], recordId, deleted: false, payload, assetIds, version: { counter: this.stamp, clientId: MCP_WRITER_CLIENT_ID } });
   }
   update(type: string, payload: Payload, patch: Record<string, unknown>) {
     const id = this.keyOf(type, payload);
+    this.captureBefore(type, id);
     const row = this.find(type, id);
     if (!row || row.deleted) throw new ToolFailure('The record being updated no longer exists.');
     row.payload = { ...(row.payload as Payload), ...patch };
     row.version = { counter: this.stamp, clientId: MCP_WRITER_CLIENT_ID };
   }
+  /** Undo support: force one row to an exact target state (a stored
+   * before-image), or remove it entirely when the before-image is
+   * 'did not exist'. The row is re-stamped like any other change. */
+  restoreExact(type: string, recordId: string, target: SyncRecord | null) {
+    this.captureBefore(type, recordId);
+    const index = this.rows.findIndex(r => r.recordType === type && r.recordId === recordId);
+    if (target === null) {
+      // 'Did not exist' before the operation: the record must leave as
+      // an explicit tombstone (sync requires it — records never just
+      // vanish, or other devices could never learn of the removal).
+      if (index >= 0) {
+        const row = this.rows[index];
+        row.deleted = true; row.payload = null; row.assetIds = [];
+        row.version = { counter: this.stamp, clientId: MCP_WRITER_CLIENT_ID };
+      }
+      return;
+    }
+    const restored: SyncRecord = { ...structuredClone(target), version: { counter: this.stamp, clientId: MCP_WRITER_CLIENT_ID } };
+    if (index >= 0) this.rows[index] = restored; else this.rows.push(restored);
+  }
+  currentRow(type: string, recordId: string): SyncRecord | undefined {
+    const row = this.find(type, recordId);
+    return row ? structuredClone(row) : undefined;
+  }
   tombstone(type: string, payload: Payload) {
     const id = this.keyOf(type, payload);
+    this.captureBefore(type, id);
     const row = this.find(type, id);
     if (!row || row.deleted) return;
     row.deleted = true; row.payload = null; row.assetIds = [];
@@ -152,13 +202,13 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
-  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined;
+  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined; private journal: McpOperationJournal | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource; journal?: McpOperationJournal } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
-    this.photos = options.photos; this.benchmarks = options.benchmarks; this.community = options.community;
+    this.photos = options.photos; this.benchmarks = options.benchmarks; this.community = options.community; this.journal = options.journal;
     this.clock = options.clock ?? Date.now;
   }
   private requirePhotos(): McpPhotoStore {
@@ -234,6 +284,13 @@ export class PrivateLibraryService {
         inputSchema: { type: 'object', properties: { noteId: { type: 'string' }, ...WRITE_ARGS }, required: ['noteId'], additionalProperties: false },
         scopes: ['library:delete'],
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteNote(principal, args),
+      },
+      {
+        name: 'undo_private_operation', title: 'Undo an MCP operation',
+        description: 'Reverses one earlier MCP write, identified by the mutationId in its receipt. Safe by construction: it only proceeds when every record that operation touched is still exactly as it left them — later edits make it refuse rather than clobber. Records the operation deleted return as copies under new ids (sync never resurrects a deleted identity) and the result reports the new ids. The undo is itself a recorded operation, so it can be undone.',
+        inputSchema: { type: 'object', properties: { mutationId: { type: 'string' }, ...WRITE_ARGS }, required: ['mutationId'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.undoOperation(principal, args),
       },
       ] as ToolDefinition[]) : []),
       {
@@ -734,6 +791,12 @@ export class PrivateLibraryService {
    * expectedSnapshotVersion argument, checked before any work. */
   private async mutate(principal: McpPrincipal, args: Record<string, unknown>,
     apply: (work: WorkingLibrary) => Record<string, unknown>,
+    replaySummary?: (args: Record<string, unknown>) => Record<string, unknown>,
+    tool = 'unknown'): Promise<Record<string, unknown>> {
+    return this.mutateAs(tool, principal, args, apply, replaySummary);
+  }
+  private async mutateAs(tool: string, principal: McpPrincipal, args: Record<string, unknown>,
+    apply: (work: WorkingLibrary) => Record<string, unknown>,
     replaySummary?: (args: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!this.canWrite || !this.writer) throw new ToolFailure('Writes are not enabled on this server yet. Reads are unaffected.');
     // Receipt-first: a keyed retry is answered from the durable receipt
@@ -757,6 +820,15 @@ export class PrivateLibraryService {
     };
     try {
       const receipt = await this.writer.put(principal.userId, next);
+      // Journal the before/after images for undo. Best-effort: a
+      // journal failure never fails a committed write; that operation
+      // simply has no undo available.
+      if (this.journal) {
+        try {
+          const images = work.journalImages();
+          await this.journal.record({ userId: principal.userId, mutationId: receipt.mutationId, tool, before: images.before, after: images.after, afterVersion: receipt.version, createdAt: this.clock() });
+        } catch { /* undo is best-effort */ }
+      }
       return { ...summary, receipt: { snapshotVersion: receipt.version, mutationId: receipt.mutationId } };
     } catch (failure) {
       if (failure instanceof ApiError && failure.code === 'sync_version_changed') throw new ToolFailure('The library changed while this write was being prepared (another device or connection synced). Re-read the current state and try again.');
@@ -800,7 +872,7 @@ export class PrivateLibraryService {
     if (!title?.trim()) throw new ToolFailure('title is required.');
     const dishesArg = args.dishes === undefined ? [] : args.dishes;
     if (!Array.isArray(dishesArg) || dishesArg.length > 20) throw new ToolFailure('dishes must be an array of at most 20 dishes.');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('create_meal', principal, args, work => {
       const now = this.clock();
       const mealId = this.idFor(args, 'meal');
       work.insert('cooks', {
@@ -843,7 +915,7 @@ export class PrivateLibraryService {
 
   async updateMeal(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['mealId', 'title', 'smokerName', 'notes', 'fuelType', 'woodOrPelletBlend', 'weatherNotes', 'windNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('update_meal', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       const patch: Record<string, unknown> = {};
       for (const field of ['title', 'smokerName', 'notes', 'fuelType', 'woodOrPelletBlend', 'weatherNotes', 'windNotes'] as const) {
@@ -860,7 +932,7 @@ export class PrivateLibraryService {
     this.requireFields(args, ['mealId', 'toStatus', 'idempotencyKey', 'expectedSnapshotVersion']);
     const to = this.optString(args, 'toStatus');
     if (!to || !(COOK_STATUSES as readonly string[]).includes(to)) throw new ToolFailure(`toStatus must be one of: ${COOK_STATUSES.join(', ')}.`);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('transition_meal', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       const from = str(meal.status) ?? '';
       const allowed = COOK_TRANSITIONS[from] ?? [];
@@ -874,7 +946,7 @@ export class PrivateLibraryService {
 
   async deleteMeal(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['mealId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('delete_meal', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       const mealId = str(meal.id)!;
       let tombstoned = 0;
@@ -897,7 +969,7 @@ export class PrivateLibraryService {
     this.requireFields(args, ['mealId', 'name', 'foodType', 'cut', 'weightValue', 'weightUnit', 'pieceCount', 'startingCondition', 'boneIn', 'placement', 'prepNotes', 'gradeOrSource', 'thicknessNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
     const name = this.optString(args, 'name'); const foodType = this.optString(args, 'foodType');
     if (!name?.trim() || !foodType?.trim()) throw new ToolFailure('name and foodType are required.');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('add_dish', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       const now = this.clock(); const dishId = this.idFor(args, 'dish');
       work.insert('dishes', {
@@ -916,7 +988,7 @@ export class PrivateLibraryService {
 
   async updateDish(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['dishId', 'name', 'foodType', 'cut', 'weightValue', 'weightUnit', 'pieceCount', 'startingCondition', 'boneIn', 'placement', 'prepNotes', 'gradeOrSource', 'thicknessNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('update_dish', principal, args, work => {
       const dish = work.live('dishes', args.dishId, 'Dish');
       const patch: Record<string, unknown> = {};
       for (const field of ['name', 'foodType', 'cut', 'weightUnit', 'startingCondition', 'placement', 'prepNotes', 'gradeOrSource', 'thicknessNotes'] as const) {
@@ -932,7 +1004,7 @@ export class PrivateLibraryService {
 
   async removeDish(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['dishId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('remove_dish', principal, args, work => {
       const dish = work.live('dishes', args.dishId, 'Dish');
       const dishId = str(dish.id)!;
       let tombstoned = 0;
@@ -949,7 +1021,7 @@ export class PrivateLibraryService {
     this.requireFields(args, ['mealId', 'title', 'details', 'eventType', 'dishId', 'occurredAtUtcMillis', 'timeZoneId', 'idempotencyKey', 'expectedSnapshotVersion']);
     const title = this.optString(args, 'title');
     if (!title?.trim()) throw new ToolFailure('title is required.');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('create_note', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       let dishId: string | null = null;
       if (args.dishId !== undefined && args.dishId !== null) {
@@ -976,7 +1048,7 @@ export class PrivateLibraryService {
 
   async updateNote(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['noteId', 'title', 'details', 'eventType', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('update_note', principal, args, work => {
       const note = work.live('events', args.noteId, 'Note');
       const patch: Record<string, unknown> = {};
       for (const field of ['title', 'details', 'eventType'] as const) if (field in args) patch[field] = this.optString(args, field) ?? null;
@@ -989,7 +1061,7 @@ export class PrivateLibraryService {
 
   async deleteNote(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['noteId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('delete_note', principal, args, work => {
       const note = work.live('events', args.noteId, 'Note');
       const noteId = str(note.id)!;
       let tombstoned = 0;
@@ -1081,7 +1153,7 @@ export class PrivateLibraryService {
   async createRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['name', 'description', 'tags', 'dish', 'instructions', 'targets', 'servings', 'preferredPitTemperatureF', 'resultNotes', 'changeNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
     const snapshot = this.recipeSnapshot(args);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('create_recipe', principal, args, work => {
       const now = this.clock();
       const recipeId = this.idFor(args, 'recipe');
       const revisionId = this.idFor(args, 'revision:1');
@@ -1103,7 +1175,7 @@ export class PrivateLibraryService {
 
   async updateRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['recipeId', 'name', 'description', 'tags', 'dish', 'instructions', 'targets', 'servings', 'preferredPitTemperatureF', 'resultNotes', 'changeNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('update_recipe', principal, args, work => {
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
       const revisions = work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id);
       if (!revisions.length) throw new ToolFailure('That recipe has no revisions to build on.');
@@ -1133,7 +1205,7 @@ export class PrivateLibraryService {
   async restoreRecipe(principal: McpPrincipal, args: Record<string, unknown>) { return this.setArchived(principal, args, false); }
   private async setArchived(principal: McpPrincipal, args: Record<string, unknown>, archived: boolean) {
     this.requireFields(args, ['recipeId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs(archived ? 'archive_recipe' : 'restore_recipe', principal, args, work => {
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
       work.update('recipes', recipe, { archivedAtUtcMillis: archived ? this.clock() : null, updatedAtUtcMillis: this.clock() });
       return { recipeId: recipe.id, archived };
@@ -1143,7 +1215,7 @@ export class PrivateLibraryService {
   async setRecipeFavorite(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['recipeId', 'favorite', 'idempotencyKey', 'expectedSnapshotVersion']);
     if (typeof args.favorite !== 'boolean') throw new ToolFailure('favorite (true or false) is required.');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('set_recipe_favorite', principal, args, work => {
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
       work.update('recipes', recipe, { favorite: args.favorite, updatedAtUtcMillis: this.clock() });
       return { recipeId: recipe.id, favorite: args.favorite };
@@ -1152,7 +1224,7 @@ export class PrivateLibraryService {
 
   async duplicateRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['recipeId', 'name', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('duplicate_recipe', principal, args, work => {
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
       const revisions = work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id)
         .sort((a, b) => (num(a.revisionNumber) ?? 0) - (num(b.revisionNumber) ?? 0));
@@ -1181,7 +1253,7 @@ export class PrivateLibraryService {
 
   async saveDishAsRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['dishId', 'name', 'changeNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('save_dish_as_recipe', principal, args, work => {
       const dish = work.live('dishes', args.dishId, 'Dish');
       const ingredients = work.liveRecords('ingredients').filter(r => r.dishId === dish.id)
         .map(row => ({ name: str(row.name) ?? '', stage: str(row.stage) ?? 'seasoning', brand: str(row.brand) ?? '', amountText: str(row.amountText) ?? '', amountUnit: str(row.amountUnit) ?? 'tbsp' }));
@@ -1217,7 +1289,7 @@ export class PrivateLibraryService {
 
   async duplicateMealSetup(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['mealId', 'title', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('duplicate_meal_setup', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       const now = this.clock();
       const mealId = this.idFor(args, 'meal');
@@ -1253,7 +1325,7 @@ export class PrivateLibraryService {
 
   async deleteRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['recipeId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('delete_recipe', principal, args, work => {
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
       let tombstoned = 0;
       for (const revision of work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id)) { work.tombstone('recipeRevisions', revision); tombstoned++; }
@@ -1363,7 +1435,7 @@ export class PrivateLibraryService {
     // Verify the asset is committed and learn its real mime type before
     // the library points at it.
     const stored = await this.photoOp(() => this.photoStore().read(principal.userId, assetId));
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('attach_photo', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       let dishId: string | null = null;
       if (args.dishId !== undefined && args.dishId !== null) {
@@ -1386,7 +1458,7 @@ export class PrivateLibraryService {
 
   async updatePhoto(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['photoId', 'caption', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('update_photo', principal, args, work => {
       const photo = work.live('photos', args.photoId, 'Photo');
       if (!('caption' in args)) throw new ToolFailure('Nothing to update: provide a caption.');
       work.update('photos', photo, { caption: this.optString(args, 'caption') ?? null });
@@ -1396,7 +1468,7 @@ export class PrivateLibraryService {
 
   async removePhoto(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['photoId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('remove_photo', principal, args, work => {
       const photo = work.live('photos', args.photoId, 'Photo');
       const assetId = str(photo.assetId);
       work.tombstone('photos', photo);
@@ -1617,7 +1689,7 @@ export class PrivateLibraryService {
   async composeMeal(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['title', 'smokerName', 'dishes', 'idempotencyKey', 'expectedSnapshotVersion']);
     if (!Array.isArray(args.dishes) || !args.dishes.length || args.dishes.length > 20) throw new ToolFailure('dishes must be an array of 1 to 20 entries, each naming a recipeId or a name + foodType.');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('compose_meal', principal, args, work => {
       const now = this.clock();
       const mealId = this.idFor(args, 'meal');
       const title = this.optString(args, 'title') ?? 'Composed cook';
@@ -1648,7 +1720,7 @@ export class PrivateLibraryService {
 
   async addRecipeToMeal(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['mealId', 'recipeId', 'name', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('add_recipe_to_meal', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       if (meal.status === 'completed') throw new ToolFailure('That meal is completed; its dishes are final. Duplicate its setup for a new cook instead.');
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
@@ -1701,7 +1773,7 @@ export class PrivateLibraryService {
     const needed = this.companionScope(kind);
     if (!hasScope(principal, needed)) throw new ToolFailure(`This connection does not include the access for ${kind} documents (${needed}). Ask the user to reconnect with that access enabled.`);
     if (typeof args.payload !== 'object' || args.payload === null || Array.isArray(args.payload)) throw new ToolFailure('payload must be the companion document object for its kind.');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('upsert_companion', principal, args, work => {
       const now = this.clock();
       const title = this.optString(args, 'title');
       const mealId = typeof args.mealId === 'string' ? args.mealId : null;
@@ -1720,7 +1792,7 @@ export class PrivateLibraryService {
 
   async deleteCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['companionId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('delete_companion', principal, args, work => {
       const row = work.live('companionRecords', args.companionId, 'Companion document');
       const needed = PrivateLibraryService.PLANNING_KINDS.has(String(row.kind)) ? 'planning:write' : 'library:delete';
       if (!hasScope(principal, needed)) throw new ToolFailure(`This connection does not include the access to delete ${String(row.kind)} documents (${needed}).`);
@@ -1748,7 +1820,7 @@ export class PrivateLibraryService {
     if (!kind || !title?.trim()) throw new ToolFailure('kind and title are required.');
     if (typeof args.triggerConfig !== 'object' || args.triggerConfig === null || Array.isArray(args.triggerConfig)) throw new ToolFailure('triggerConfig must be an object.');
     if ((args.triggerConfig as Record<string, unknown>).type !== kind) throw new ToolFailure('triggerConfig.type must match kind (the library enforces this too).');
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('upsert_reminder_rule', principal, args, work => {
       const meal = work.live('cooks', args.mealId, 'Meal');
       const now = this.clock();
       const triggerConfig = JSON.stringify(args.triggerConfig);
@@ -1770,7 +1842,7 @@ export class PrivateLibraryService {
 
   async deleteReminderRule(principal: McpPrincipal, args: Record<string, unknown>) {
     this.requireFields(args, ['ruleId', 'idempotencyKey', 'expectedSnapshotVersion']);
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('delete_reminder_rule', principal, args, work => {
       const row = work.live('reminderRules', args.ruleId, 'Reminder rule');
       work.tombstone('reminderRules', row);
       return { ruleId: row.id };
@@ -1824,7 +1896,7 @@ export class PrivateLibraryService {
       displayName: str(credit.displayName) ?? str(credit.handle) ?? 'PitTech cook',
       removed: false, relativeTiming: true,
     };
-    return this.mutate(principal, args, work => {
+    return this.mutateAs('save_community_recipe', principal, args, work => {
       const now = this.clock();
       const recipeId = this.idFor(args, 'recipe');
       const revisionId = this.idFor(args, 'revision:1');
@@ -1841,6 +1913,65 @@ export class PrivateLibraryService {
       });
       return { recipeId, revisionId, savedFrom: { itemId, revisionId: detail.revisionId } };
     }, args => ({ recipeId: this.idFor(args, 'recipe'), revisionId: this.idFor(args, 'revision:1') }));
+  }
+
+
+  async undoOperation(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mutationId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    if (!this.journal) throw new ToolFailure('Undo is not available on this server.');
+    const mutationId = this.optString(args, 'mutationId');
+    if (!mutationId || !/^[0-9a-fA-F-]{36}$/.test(mutationId)) throw new ToolFailure('mutationId (from the original call\'s receipt) is required.');
+    const entry = await this.journal.find(principal.userId, mutationId);
+    if (!entry) throw new ToolFailure('No recorded operation with that id for this account. Undo covers operations this server journaled; older or unjournaled changes cannot be undone here.');
+    if (entry.undoneAt !== null) throw new ToolFailure('That operation was already undone.');
+    const result = await this.mutateAs('undo_private_operation', principal, args, work => {
+      const drift: string[] = [];
+      for (const { key, record } of entry.after) {
+        const cut = key.indexOf('|'); const type = key.slice(0, cut); const recordId = key.slice(cut + 1);
+        const current = work.currentRow(type, recordId);
+        const same = (current === undefined && record === null) ||
+          (current !== undefined && record !== null && stable(current.payload) === stable(record.payload) && current.deleted === record.deleted && stable(current.assetIds) === stable(record.assetIds));
+        if (!same) drift.push(key);
+      }
+      if (drift.length) throw new ToolFailure(`Undo is no longer safe: ${drift.length} record(s) changed since that operation (${drift.slice(0, 3).join(', ')}${drift.length > 3 ? '…' : ''}). Nothing was changed.`);
+      // Sync forbids resurrecting a tombstoned identity
+      // (sync_restore_requires_new_identity): records the operation
+      // deleted come back as copies under fresh identities, with
+      // references between restored records remapped.
+      const copies = new Map<string, string>();
+      const splitKey = (key: string) => { const cut = key.indexOf('|'); return { type: key.slice(0, cut), recordId: key.slice(cut + 1) }; };
+      for (const { key, record } of entry.before) {
+        if (!record || record.deleted) continue;
+        const { type, recordId } = splitKey(key);
+        const current = work.currentRow(type, recordId);
+        if (current?.deleted) copies.set(key, this.idFor({ idempotencyKey: args.idempotencyKey ?? mutationId }, 'undo-copy:' + key));
+      }
+      const remap = (value: unknown): unknown => {
+        if (typeof value === 'string') {
+          for (const [oldKey, newId] of copies) { if (value === splitKey(oldKey).recordId) return newId; }
+        }
+        return value;
+      };
+      const restoredAsCopies: { from: string; to: string }[] = [];
+      for (const { key, record } of entry.before) {
+        const { type, recordId } = splitKey(key);
+        if (record === null) { work.restoreExact(type, recordId, null); continue; }
+        if (record.deleted) continue; // was already deleted before; still is
+        const newId = copies.get(key);
+        if (!newId) { work.restoreExact(type, recordId, record); continue; }
+        const payload: Payload = {};
+        for (const [field, value] of Object.entries(record.payload as Payload)) payload[field] = remap(value);
+        const keyField = type === 'lifecycles' ? 'cookId' : type === 'logReadingLinks' ? 'readingId' : type === 'dishRecipeSources' ? 'dishId' : 'id';
+        payload[keyField] = newId;
+        const override = type === 'dishRecipeSources' ? `${String(payload.dishId)}:${String(payload.recipeId)}` : undefined;
+        work.insert(type, payload, override, [...record.assetIds]);
+        restoredAsCopies.push({ from: recordId, to: newId });
+      }
+      return { undoneMutationId: mutationId, undoneTool: entry.tool, restoredRecords: entry.before.length, restoredAsCopies };
+    });
+    const undoReceipt = (result as { receipt: { mutationId: string } }).receipt;
+    try { await this.journal.markUndone(principal.userId, mutationId, undoReceipt.mutationId, this.clock()); } catch { /* the undo itself is committed; the marker is bookkeeping */ }
+    return result;
   }
 
   async connectionStatus(principal: McpPrincipal) {
