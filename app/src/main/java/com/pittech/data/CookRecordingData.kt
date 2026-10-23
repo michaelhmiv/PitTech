@@ -77,6 +77,9 @@ interface CookRecordingDao {
     @Query("SELECT * FROM cook_recordings WHERE status = 'recording' LIMIT 1")
     suspend fun getActiveRecording(): CookRecordingEntity?
 
+    @Query("SELECT * FROM cook_recordings WHERE status = 'paused' LIMIT 1")
+    suspend fun getPausedRecording(): CookRecordingEntity?
+
     @Query("SELECT * FROM cook_recordings")
     suspend fun getAllRecordings(): List<CookRecordingEntity>
 
