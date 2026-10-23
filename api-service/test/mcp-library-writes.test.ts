@@ -293,3 +293,31 @@ test('composition: compose_meal mixes recipe + plain dishes with source links; a
   const after = await s.call('get_meal', { mealId });
   assert.equal((after.structuredContent as unknown as { dishes: unknown[] }).dishes.length, 3);
 });
+
+test('companions + reminder rules: upsert/list/delete with per-kind scope enforcement', async () => {
+  const s: Setup = await setup();
+  const meal = await s.call('create_meal', { title: 'Planned cook' });
+  const mealId = (meal.structuredContent as unknown as { mealId: string }).mealId;
+  const plan = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: { draft: { dishes: [] }, dishIds: [] } });
+  // setup() principal lacks planning:write → the per-kind gate must refuse.
+  assert.equal(plan.isError, true);
+  assert.match(plan.content[0].text, /planning:write/);
+  const planner: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'planning:write'] };
+  const plan2 = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: { draft: { dishes: [] }, dishIds: [] } }, planner);
+  assert.equal(plan2.isError, false, plan2.content?.[0]?.text);
+  const companionId = (plan2.structuredContent as unknown as { companionId: string }).companionId;
+  const checklist = await s.call('upsert_companion', { kind: 'checklist', title: 'Prep', mealId, payload: { items: [] } });
+  assert.equal(checklist.isError, false, checklist.content?.[0]?.text);
+  const listed = await s.call('list_companions', { mealId });
+  assert.equal((listed.structuredContent as unknown as { total: number }).total, 2);
+  const badKind = await s.call('upsert_companion', { kind: 'recordings', title: 'X', payload: {} }, planner);
+  assert.equal(badKind.isError, true);
+  const rule = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'Probe alert', triggerConfig: { type: 'temperature', threshold: 203 } }, planner);
+  assert.equal(rule.isError, false, rule.content?.[0]?.text);
+  const mismatch = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'X', triggerConfig: { type: 'timer' } }, planner);
+  assert.equal(mismatch.isError, true);
+  const rules = await s.call('list_reminder_rules', { mealId });
+  assert.equal((rules.structuredContent as unknown as { total: number }).total, 1);
+  const del = await s.call('delete_companion', { companionId }, planner);
+  assert.equal(del.isError, false);
+});

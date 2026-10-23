@@ -66,6 +66,7 @@ interface LibraryData {
 const iso = (millis: unknown): string | null => typeof millis === 'number' && Number.isFinite(millis) ? new Date(millis).toISOString() : null;
 const str = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+const safeJson = (value: string): unknown => { try { return JSON.parse(value); } catch { return value; } };
 function page<T>(items: T[], args: Record<string, unknown>): { items: T[]; nextCursor: string | null; total: number } {
   const limitRaw = args.limit === undefined ? 20 : args.limit;
   if (typeof limitRaw !== 'number' || !Number.isSafeInteger(limitRaw) || limitRaw < 1 || limitRaw > 50) throw new ToolFailure('limit must be an integer between 1 and 50.');
@@ -231,6 +232,27 @@ export class PrivateLibraryService {
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteNote(principal, args),
       },
       ] as ToolDefinition[]) : []),
+      {
+        name: 'list_companions', title: 'List companion documents',
+        description: 'Lists companion documents (plans, playbooks, checklists, equipment and more), optionally filtered by kind or meal.',
+        inputSchema: { type: 'object', properties: { kind: { type: 'string' }, mealId: { type: 'string' } }, additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.listCompanions(principal, args),
+      },
+      {
+        name: 'get_companion', title: 'Get a companion document',
+        description: 'Reads one companion document in full.',
+        inputSchema: { type: 'object', properties: { companionId: { type: 'string' } }, required: ['companionId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.getCompanion(principal, args),
+      },
+      {
+        name: 'list_reminder_rules', title: 'List reminder rules',
+        description: 'Lists reminder rules (optionally for one meal) with their trigger configuration. Rules sync to the devices; activation on a device is the user\'s there, never a synced flag.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.listReminderRules(principal, args),
+      },
       {
         name: 'list_photos', title: 'List photos',
         description: 'Lists the photos in the library (optionally for one meal) with captions and timestamps. Use get_photo to actually see an image.',
@@ -452,6 +474,34 @@ export class PrivateLibraryService {
           inputSchema: { type: 'object', properties: { photoId: { type: 'string' }, ...WRITE_ARGS }, required: ['photoId'], additionalProperties: false },
           scopes: ['media:write'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removePhoto(principal, args),
+        },
+        {
+          name: 'upsert_companion', title: 'Create or update a companion document',
+          description: 'Creates or updates a companion document (plan, playbook, checklist, equipment, preset and similar kinds). The payload is the document for its kind; the library validates its shape on save. Planning kinds need the planning access; checklist/equipment/preset kinds need library write.',
+          inputSchema: { type: 'object', properties: { companionId: { type: 'string' }, kind: { type: 'string' }, title: { type: 'string' }, mealId: { type: 'string' }, payload: { type: 'object' }, ...WRITE_ARGS }, required: ['kind', 'payload'], additionalProperties: false },
+          scopes: ['library:write', 'planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.upsertCompanion(principal, args),
+        },
+        {
+          name: 'delete_companion', title: 'Delete a companion document',
+          description: 'Deletes one companion document.',
+          inputSchema: { type: 'object', properties: { companionId: { type: 'string' }, ...WRITE_ARGS }, required: ['companionId'], additionalProperties: false },
+          scopes: ['library:delete', 'planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteCompanion(principal, args),
+        },
+        {
+          name: 'upsert_reminder_rule', title: 'Create or update a reminder rule',
+          description: 'Creates or updates a reminder rule for a meal. triggerConfig.type must match kind. The rule syncs to the user\'s devices; turning it on there is always the user\'s action.',
+          inputSchema: { type: 'object', properties: { ruleId: { type: 'string' }, mealId: { type: 'string' }, dishId: { type: 'string' }, kind: { type: 'string' }, title: { type: 'string' }, triggerConfig: { type: 'object' }, ...WRITE_ARGS }, required: ['mealId', 'kind', 'title', 'triggerConfig'], additionalProperties: false },
+          scopes: ['planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.upsertReminderRule(principal, args),
+        },
+        {
+          name: 'delete_reminder_rule', title: 'Delete a reminder rule',
+          description: 'Deletes one reminder rule.',
+          inputSchema: { type: 'object', properties: { ruleId: { type: 'string' }, ...WRITE_ARGS }, required: ['ruleId'], additionalProperties: false },
+          scopes: ['planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteReminderRule(principal, args),
         },
       ] as ToolDefinition[]) : []),
       {
@@ -1584,6 +1634,122 @@ export class PrivateLibraryService {
         { name: this.optString(args, 'name') ?? String(blueprint.dish.name), foodType: String(blueprint.dish.foodType), cut: String(blueprint.dish.cut ?? ''), weightUnit: String(blueprint.dish.weightUnit ?? 'lb'), placement: String(blueprint.dish.placement ?? ''), gradeOrSource: String(blueprint.dish.gradeOrSource ?? ''), prepNotes: String(blueprint.dish.prepNotes ?? ''), thicknessNotes: String(blueprint.dish.thicknessNotes ?? '') },
         { ingredients: blueprint.ingredients as never[], targets: blueprint.targets as never[], recipeId: str(recipe.id)!, revisionId: blueprint.revisionId });
       return { mealId: meal.id, dishId, recipeId: recipe.id };
+    });
+  }
+
+
+  /** Companion documents (plans, playbooks, checklists, equipment…)
+   * and reminder rules: typed-envelope access over companionRecords /
+   * reminderRules. The projection validator remains the authority on
+   * every document's shape — a malformed document is rejected by the
+   * library's own rules on commit, never silently stored. */
+  private static readonly PLANNING_KINDS = new Set(['plan', 'playbook', 'serve_plan', 'reference', 'pinned_guide', 'guide_presentation', 'alert', 'trigger']);
+  private static readonly LIBRARY_KINDS = new Set(['checklist', 'prep_combo', 'equipment', 'fuel', 'presets']);
+  private companionScope(kind: string): 'planning:write' | 'library:write' {
+    if (PrivateLibraryService.PLANNING_KINDS.has(kind)) return 'planning:write';
+    if (PrivateLibraryService.LIBRARY_KINDS.has(kind)) return 'library:write';
+    throw new ToolFailure(`Companion kind "${kind}" is not available through MCP. Available kinds: ${[...PrivateLibraryService.PLANNING_KINDS, ...PrivateLibraryService.LIBRARY_KINDS].join(', ')}.`);
+  }
+
+  async listCompanions(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['kind', 'mealId']);
+    const data = await this.loadLibrary(principal);
+    let rows = this.records(data, 'companionRecords');
+    if (typeof args.kind === 'string') rows = rows.filter(r => r.kind === args.kind);
+    if (typeof args.mealId === 'string') rows = rows.filter(r => r.cookId === args.mealId);
+    return {
+      snapshotVersion: data.version, total: rows.length,
+      companions: rows.map(r => ({ companionId: r.id, kind: r.kind, title: r.title, mealId: r.cookId ?? null, updatedAt: iso(r.updated), payload: r.payload })),
+    };
+  }
+
+  async getCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['companionId']);
+    const data = await this.loadLibrary(principal);
+    const row = this.record(data, 'companionRecords', args.companionId, 'Companion document');
+    return { snapshotVersion: data.version, companion: { companionId: row.id, kind: row.kind, title: row.title, mealId: row.cookId ?? null, createdAt: iso(row.created), updatedAt: iso(row.updated), payload: row.payload } };
+  }
+
+  async upsertCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['companionId', 'kind', 'title', 'mealId', 'payload', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const kind = this.optString(args, 'kind');
+    if (!kind) throw new ToolFailure('kind is required.');
+    const needed = this.companionScope(kind);
+    if (!hasScope(principal, needed)) throw new ToolFailure(`This connection does not include the access for ${kind} documents (${needed}). Ask the user to reconnect with that access enabled.`);
+    if (typeof args.payload !== 'object' || args.payload === null || Array.isArray(args.payload)) throw new ToolFailure('payload must be the companion document object for its kind.');
+    return this.mutate(principal, args, work => {
+      const now = this.clock();
+      const title = this.optString(args, 'title');
+      const mealId = typeof args.mealId === 'string' ? args.mealId : null;
+      if (typeof args.companionId === 'string') {
+        const existing = work.live('companionRecords', args.companionId, 'Companion document');
+        if (existing.kind !== kind) throw new ToolFailure('That document has a different kind; create a new document instead of changing its kind.');
+        work.update('companionRecords', existing, { title: title ?? existing.title, cookId: mealId, payload: args.payload, updated: now });
+        return { companionId: existing.id, kind, created: false };
+      }
+      if (!title?.trim()) throw new ToolFailure('title is required for a new companion document.');
+      const companionId = this.idFor(args, 'companion');
+      work.insert('companionRecords', { id: companionId, kind, title: title.trim(), cookId: mealId, payload: args.payload, created: now, updated: now });
+      return { companionId, kind, created: true };
+    }, args => (typeof args.companionId === 'string' ? { companionId: args.companionId } : { companionId: this.idFor(args, 'companion') }));
+  }
+
+  async deleteCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['companionId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const row = work.live('companionRecords', args.companionId, 'Companion document');
+      const needed = PrivateLibraryService.PLANNING_KINDS.has(String(row.kind)) ? 'planning:write' : 'library:delete';
+      if (!hasScope(principal, needed)) throw new ToolFailure(`This connection does not include the access to delete ${String(row.kind)} documents (${needed}).`);
+      work.tombstone('companionRecords', row);
+      return { companionId: row.id, kind: row.kind };
+    });
+  }
+
+  async listReminderRules(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const data = await this.loadLibrary(principal);
+    let rows = this.records(data, 'reminderRules');
+    if (typeof args.mealId === 'string') rows = rows.filter(r => r.cookId === args.mealId);
+    return {
+      snapshotVersion: data.version, total: rows.length,
+      rules: rows.map(r => ({ ruleId: r.id, kind: r.kind, title: r.title, mealId: r.cookId, dishId: r.dishId ?? null, triggerConfig: typeof r.triggerConfig === 'string' ? safeJson(r.triggerConfig) : r.triggerConfig, updatedAt: iso(r.updatedAtUtcMillis) })),
+      note: 'Rules sync to the devices; whether a rule is active on a device is decided there, never by a synced flag.',
+    };
+  }
+
+  async upsertReminderRule(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['ruleId', 'mealId', 'dishId', 'kind', 'title', 'triggerConfig', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const kind = this.optString(args, 'kind');
+    const title = this.optString(args, 'title');
+    if (!kind || !title?.trim()) throw new ToolFailure('kind and title are required.');
+    if (typeof args.triggerConfig !== 'object' || args.triggerConfig === null || Array.isArray(args.triggerConfig)) throw new ToolFailure('triggerConfig must be an object.');
+    if ((args.triggerConfig as Record<string, unknown>).type !== kind) throw new ToolFailure('triggerConfig.type must match kind (the library enforces this too).');
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      const now = this.clock();
+      const triggerConfig = JSON.stringify(args.triggerConfig);
+      if (typeof args.ruleId === 'string') {
+        const existing = work.live('reminderRules', args.ruleId, 'Reminder rule');
+        work.update('reminderRules', existing, { kind, title: title.trim(), triggerConfig, updatedAtUtcMillis: now });
+        return { ruleId: existing.id, created: false };
+      }
+      const ruleId = this.idFor(args, 'rule');
+      work.insert('reminderRules', {
+        id: ruleId, cookId: meal.id, dishId: typeof args.dishId === 'string' ? args.dishId : null,
+        kind, title: title.trim(), triggerConfig, schemaVersion: 1,
+        sourceMilestoneId: null, sourceRecipeRevisionId: null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now,
+      });
+      return { ruleId, created: true };
+    }, args => (typeof args.ruleId === 'string' ? { ruleId: args.ruleId } : { ruleId: this.idFor(args, 'rule') }));
+  }
+
+  async deleteReminderRule(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['ruleId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const row = work.live('reminderRules', args.ruleId, 'Reminder rule');
+      work.tombstone('reminderRules', row);
+      return { ruleId: row.id };
     });
   }
 

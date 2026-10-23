@@ -45,7 +45,7 @@ export class McpServer {
   constructor(library: PrivateLibraryService) { this.library = library; }
 
   private visibleTools(principal: McpPrincipal): ToolDefinition[] {
-    return this.library.tools().filter(tool => tool.scopes.every(scope => hasScope(principal, scope)));
+    return this.library.tools().filter(tool => tool.scopes.some(scope => hasScope(principal, scope)));
   }
 
   /** Handles one JSON-RPC message. Returns null for notifications
@@ -83,7 +83,11 @@ export class McpServer {
           const args = isRecord(params.arguments) ? params.arguments : {};
           const tool = this.library.tools().find(candidate => candidate.name === name);
           if (!tool) return isNotification ? null : rpcResult(id, toolFailure(`Unknown tool: ${name || '(missing name)'}`));
-          if (!tool.scopes.every(scope => hasScope(principal, scope))) {
+          // Scope rule: a tool listing several scopes needs ANY of them to be
+          // visible/callable; handlers that multiplex families (e.g.
+          // upsert_companion across planning and library kinds) enforce
+          // the specific scope for the requested operation themselves.
+          if (!tool.scopes.some(scope => hasScope(principal, scope))) {
             return isNotification ? null : rpcResult(id, toolFailure(`This connection does not include the access ${tool.name} needs (${tool.scopes.join(', ')}). Ask the user to reconnect with that access enabled, from PitTech → Connect your AI.`));
           }
           try {
