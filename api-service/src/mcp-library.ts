@@ -189,6 +189,29 @@ export class PrivateLibraryService {
         scopes: ['library:read'],
         handler: async (principal, args) => this.getNote(principal, args),
       },
+      ...(this.canWrite ? ([
+      {
+        name: 'create_note', title: 'Add a cook note',
+        description: 'Adds a note to a meal\'s log. Notes are stamped as written by this connection (source: mcp). occurredAtUtcMillis defaults to now.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, title: { type: 'string' }, details: { type: 'string' }, eventType: { type: 'string', description: 'Defaults to "note".' }, dishId: { type: 'string' }, occurredAtUtcMillis: { type: 'number' }, timeZoneId: { type: 'string' }, ...WRITE_ARGS }, required: ['mealId', 'title'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.createNote(principal, args),
+      },
+      {
+        name: 'update_note', title: 'Update a note',
+        description: 'Changes a log note\'s title, details or type.',
+        inputSchema: { type: 'object', properties: { noteId: { type: 'string' }, title: { type: 'string' }, details: { type: 'string' }, eventType: { type: 'string' }, ...WRITE_ARGS }, required: ['noteId'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.updateNote(principal, args),
+      },
+      {
+        name: 'delete_note', title: 'Delete a note',
+        description: 'Deletes one log note (and its reading links, if any).',
+        inputSchema: { type: 'object', properties: { noteId: { type: 'string' }, ...WRITE_ARGS }, required: ['noteId'], additionalProperties: false },
+        scopes: ['library:delete'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteNote(principal, args),
+      },
+      ] as ToolDefinition[]) : []),
       {
         name: 'search_recipes', title: 'Search recipes',
         description: 'Searches the user\'s recipe library by name, description and tags. Empty query lists recipes, most recently updated first. Archived recipes are excluded unless includeArchived is true.',
@@ -636,6 +659,61 @@ export class PrivateLibraryService {
       }
       work.tombstone('dishes', dish); tombstoned++;
       return { dishId, tombstonedRecords: tombstoned };
+    });
+  }
+
+
+  async createNote(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'title', 'details', 'eventType', 'dishId', 'occurredAtUtcMillis', 'timeZoneId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const title = this.optString(args, 'title');
+    if (!title?.trim()) throw new ToolFailure('title is required.');
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      let dishId: string | null = null;
+      if (args.dishId !== undefined && args.dishId !== null) {
+        const dish = work.live('dishes', args.dishId, 'Dish');
+        if (dish.cookId !== meal.id) throw new ToolFailure('That dish belongs to a different meal.');
+        dishId = str(dish.id)!;
+      }
+      const now = this.clock();
+      const occurred = this.optNumber(args, 'occurredAtUtcMillis') ?? now;
+      const noteId = this.idFor(args, 'note');
+      work.insert('events', {
+        id: noteId, cookId: meal.id, dishId,
+        eventType: this.optString(args, 'eventType') ?? 'note',
+        title: title.trim(), details: this.optString(args, 'details') ?? null,
+        occurredAtUtcMillis: occurred, recordedAtUtcMillis: now,
+        timeZoneId: this.optString(args, 'timeZoneId') ?? 'UTC',
+        source: 'mcp', sourceDeviceId: null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now,
+        temperatureContextJson: null, noteMetadataJson: null,
+      });
+      return { mealId: meal.id, noteId };
+    }, args => ({ noteId: this.idFor(args, 'note') }));
+  }
+
+  async updateNote(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['noteId', 'title', 'details', 'eventType', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const note = work.live('events', args.noteId, 'Note');
+      const patch: Record<string, unknown> = {};
+      for (const field of ['title', 'details', 'eventType'] as const) if (field in args) patch[field] = this.optString(args, field) ?? null;
+      if (typeof patch.title === 'string' && !patch.title.trim()) throw new ToolFailure('title cannot be empty.');
+      if (!Object.keys(patch).length) throw new ToolFailure('Nothing to update: provide at least one field.');
+      work.update('events', note, { ...patch, updatedAtUtcMillis: this.clock() });
+      return { noteId: note.id };
+    });
+  }
+
+  async deleteNote(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['noteId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const note = work.live('events', args.noteId, 'Note');
+      const noteId = str(note.id)!;
+      let tombstoned = 0;
+      for (const link of work.liveRecords('logReadingLinks').filter(r => r.eventId === noteId)) { work.tombstone('logReadingLinks', link); tombstoned++; }
+      work.tombstone('events', note); tombstoned++;
+      return { noteId, tombstonedRecords: tombstoned };
     });
   }
 
