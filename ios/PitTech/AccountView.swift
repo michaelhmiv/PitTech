@@ -5,6 +5,7 @@ struct NativeAccountView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePrivateSyncCoordinator.self) private var sync
     @Environment(NativeMcpConnections.self) private var mcp
+    @Environment(NativeMcpDeviceActions.self) private var deviceActions
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var email = ""
@@ -54,6 +55,7 @@ struct NativeAccountView: View {
                     Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
                 }
                 McpConnectionsSection(mcp: mcp, creating: $creatingConnection)
+                McpDeviceActionsSection(device: deviceActions)
             } else { signInContent }
             Section("Private sync") {
                 Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(.footnote)
@@ -284,5 +286,45 @@ private struct NativeLocalJournalReviewView: View {
             }
         }.navigationTitle("Remove local journal").navigationBarTitleDisplayMode(.inline).scrollDismissesKeyboard(.interactively)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
+    }
+}
+
+private struct McpDeviceActionsSection: View {
+    let device: NativeMcpDeviceActions
+    @State private var confirmingUnregister = false
+    var body: some View {
+        Section("Device actions") {
+            Text("An assistant can ask this iPhone to do small things in the app — never to control a grill. Requests wait here until you open PitTech; nothing runs in the background and nothing counts as done until this phone reports it. Choose which kinds of requests this phone accepts.").font(.footnote)
+            if !device.available {
+                Text("Device actions aren't available yet.").accessibilityIdentifier("mcp-device-unavailable")
+            } else {
+                ForEach(mcpDeviceClasses, id: \.self) { cls in
+                    Toggle(mcpDeviceClassLabel(cls), isOn: Binding(
+                        get: { device.classes.contains(cls) },
+                        set: { device.setClass(cls, $0) }
+                    )).accessibilityIdentifier("mcp-device-class-\(cls)")
+                }
+                Button("Check for requests") { Task { await device.checkNow() } }
+                    .disabled(device.busy)
+                    .accessibilityIdentifier("mcp-device-check")
+                if let summary = device.lastCheckSummary {
+                    Text(summary).font(.footnote).accessibilityIdentifier("mcp-device-last-check")
+                }
+                if device.registered {
+                    Button("Stop taking requests", role: .destructive) { confirmingUnregister = true }
+                        .disabled(device.busy)
+                        .accessibilityIdentifier("mcp-device-unregister")
+                }
+                if device.busy { ProgressView() }
+                if let message = device.message { Text(message).accessibilityIdentifier("mcp-device-message") }
+            }
+        }
+        .task { await device.refresh() }
+        .confirmationDialog("Stop taking requests?", isPresented: $confirmingUnregister) {
+            Button("Stop", role: .destructive) { Task { await device.unregister() } }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This phone stops accepting assistant requests, and any waiting requests for it are canceled. You can turn a class back on any time.")
+        }
     }
 }
