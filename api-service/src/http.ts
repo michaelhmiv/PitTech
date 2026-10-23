@@ -25,12 +25,14 @@ import type { Subscriptions } from './subscriptions.ts';
 import { communityRoute, handleCommunity } from './community-http.ts';
 import { mcpGrantRoute, handleMcpGrants } from './mcp-http.ts';
 import { mcpOAuthRoute, handleMcpOAuth } from './mcp-oauth-http.ts';
+import { mcpTransportRoute, handleMcpTransport } from './mcp-transport-http.ts';
+import type { McpServer } from './mcp-server.ts';
 import type { McpOAuth } from './mcp-oauth.ts';
 import type { McpGrants } from './mcp-grants.ts';
 import type { CommunityAggregates } from './community-aggregation.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; mcp?: McpGrants; oauth?: McpOAuth; oauthIssuer?: string; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; communityAggregates?: CommunityAggregates; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; mcp?: McpGrants; oauth?: McpOAuth; oauthIssuer?: string; mcpServer?: McpServer; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; communityAggregates?: CommunityAggregates; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -130,6 +132,13 @@ export function makeServer(relay: Relay, options: Options) {
         const bucket=Math.floor(relay.clock()/3600000),key='billing:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'billing:'+bucket);
         if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
         await handleBilling(req,res,billingRouteMatch,options.auth,options.subscriptions,{claim:()=>{if(billing>=4)return false;billing++;return true;},release:()=>{billing--;}});return;
+      }
+      const mcpTransportMatch=mcpTransportRoute(req.url??'',method);
+      if(mcpTransportMatch&&options.mcp&&options.mcpServer){
+        route=mcpTransportMatch;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const bucket=Math.floor(relay.clock()/3600000),key='mcp:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'mcp:'+bucket);
+        if(!await relay.repository.rate(key,240,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handleMcpTransport(req,res,options.mcp,options.mcpServer,options.oauthIssuer);return;
       }
       const oauthRouteMatch=mcpOAuthRoute(req.url??'',method);
       if(oauthRouteMatch&&options.oauth&&options.oauthIssuer){

@@ -23,6 +23,8 @@ import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
 import { McpGrants, PostgresMcpGrantStore, SubscriptionsEntitlementLookup } from './mcp-grants.ts';
 import { McpOAuth, PostgresMcpOAuthStore, type McpOAuthClient } from './mcp-oauth.ts';
+import { PrivateLibraryService } from './mcp-library.ts';
+import { McpServer } from './mcp-server.ts';
 import { APPLE_KEYS_ENDPOINT, GOOGLE_CERTS_ENDPOINT, GoogleOidcKeyCache } from './google-oidc-keys.ts';
 import type { ProviderServices } from './auth-providers.ts';
 
@@ -182,8 +184,9 @@ export function createRuntime() {
   }
   if (oauthClients.length && !mcp) throw new Error('MCP OAuth clients require MCP_ENABLED');
   const oauth=mcp&&oauthClients.length?new McpOAuth(new PostgresMcpOAuthStore(pool),mcp,authSecrets!,oauthClients,Date.now):undefined;
+  const mcpServer=mcp&&sync?new McpServer(new PrivateLibraryService(mcp,sync.snapshots)):undefined;
   const communityAggregationEnabled=process.env.COMMUNITY_AGGREGATION_ENABLED==='true';
   const communityAggregates=communityAggregationEnabled?new CommunityAggregates(new PostgresCommunityStore(pool),Date.now):undefined;
-  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, mcp, oauth, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, mcp, oauth, oauthIssuer: process.env.AUTH_PUBLIC_ORIGIN, mcpWritesEnabled, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, mcp, oauth, mcpServer, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, mcp, oauth, mcpServer, oauthIssuer: process.env.AUTH_PUBLIC_ORIGIN, mcpWritesEnabled, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }
