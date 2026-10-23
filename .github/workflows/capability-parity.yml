@@ -1,0 +1,30 @@
+name: Capability parity
+
+# Issue #114 section 3.1: this check reports on EVERY pull request.
+# Deliberately no `paths:` filter — the online-services workflow's path
+# filters omit ordinary Kotlin/Swift/UI changes, which is exactly where
+# Android/iOS/MCP drift starts.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capability-parity:
+    name: Capability parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.3
+      - name: Validate capability registry and generated parity doc
+        run: node scripts/mcp-parity.mjs --check
+      - name: Prove deliberate drift is caught (negative fixtures)
+        run: node scripts/mcp-parity.mjs --self-test
