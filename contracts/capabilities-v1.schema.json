@@ -1,0 +1,270 @@
+{
+  "$defs": {
+    "capability": {
+      "additionalProperties": false,
+      "properties": {
+        "android": {
+          "$ref": "#/$defs/platformBinding"
+        },
+        "classification": {
+          "$ref": "#/$defs/classification"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "exceptionReason": {
+          "description": "Required in spirit for handoff_only / limitation / prohibited rows: the concrete OS, physical, or security reason. Reviewed explicitly; cannot be a placeholder for a shipped feature (issue #114 \u00a73.1.3).",
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "description": "Field-level inventory (M0): every field of every covered record type and object definition kind appears exactly once across the registry, on its owning capability. access: editable = user/AI may set it through typed tools; identity = set at creation, immutable (includes kind discriminators); system = server/native-assigned (timestamps, revision numbers, detected mime type, derived pointers); association = references another record; content = carried opaquely and edited only through typed operations, never as a raw field (snapshots, JSON context, archive/history mirrors); not_exposed = belongs to a prohibited capability and must never surface through MCP.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "name",
+              "access"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "A projection record type (e.g. cooks) or definition kind (e.g. checklist)."
+              },
+              "name": {
+                "type": "string"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "editable",
+                  "identity",
+                  "system",
+                  "association",
+                  "content",
+                  "not_exposed"
+                ]
+              }
+            }
+          }
+        },
+        "fixtures": {
+          "description": "Fixture ids proving behavior (round-trip, conflict, negative). Presence of a tool name is not a fixture.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Stable dotted id, e.g. meals.lifecycle",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9_]+)+$",
+          "type": "string"
+        },
+        "ios": {
+          "$ref": "#/$defs/platformBinding"
+        },
+        "mcp": {
+          "$ref": "#/$defs/mcpBinding"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "recordTypes": {
+          "description": "Projection record types touched, from contracts/private-sync-projection-v1.json (21 types at main fc422ca), or a companion definition kind.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "description": "Scope families from issue #114 \u00a75. No public-write, billing, credential-management, admin, or hardware-control scope exists by design \u2014 adding one to this enum is itself a reviewed breaking change.",
+          "items": {
+            "enum": [
+              "library:read",
+              "library:write",
+              "library:delete",
+              "media:read",
+              "media:write",
+              "planning:write",
+              "device_actions:request",
+              "exports:read",
+              "imports:write",
+              "community:read"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "definitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Companion/document definition kinds from contracts/private-sync-projection-v1.json covered by this capability."
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "classification",
+        "scopes",
+        "recordTypes",
+        "coverage",
+        "android",
+        "ios",
+        "mcp",
+        "fixtures"
+      ],
+      "type": "object"
+    },
+    "classification": {
+      "enum": [
+        "direct_private_operation",
+        "device_execution_or_handoff",
+        "physical_or_os_limitation",
+        "prohibited_public_or_security",
+        "upstream_not_shipped"
+      ],
+      "type": "string"
+    },
+    "coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "_note": {
+          "description": "Coverage is per-operation-kind on purpose (issue #114 \u00a73.1): a read-only mapping does not satisfy a writable private feature.",
+          "type": "string"
+        },
+        "activation": {
+          "type": "boolean"
+        },
+        "delete": {
+          "type": "boolean"
+        },
+        "media": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "write": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "read",
+        "write",
+        "delete",
+        "media",
+        "activation"
+      ],
+      "type": "object"
+    },
+    "mcpBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "handler": {
+          "description": "Registered PrivateLibraryService handler symbol. Required when status=implemented.",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "implemented",
+            "planned_disabled",
+            "handoff_only",
+            "prohibited",
+            "not_applicable"
+          ],
+          "type": "string"
+        },
+        "tools": {
+          "description": "Tool names from issue #114 \u00a73, e.g. create_meal. Empty when status is prohibited/not_applicable, with the reason carried in notes.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "platformBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "implemented",
+            "planned",
+            "handoff_only",
+            "not_applicable"
+          ],
+          "type": "string"
+        },
+        "symbols": {
+          "description": "Real source symbols, e.g. com.pittech.data.CookRepository.createCook or CookStore.createMeal. CI checks these exist; a binding with no symbol is a stub, not coverage.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://pittech.app/contracts/capabilities-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "items": {
+        "$ref": "#/$defs/capability"
+      },
+      "type": "array"
+    },
+    "generatedViews": {
+      "description": "Files generated from this registry; CI fails if they are stale. Draft list: docs/MCP_PARITY.md, MCP tool input/output schemas, MCP tool descriptors.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "registryVersion": {
+      "const": 1,
+      "type": "integer"
+    },
+    "deferredDefinitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Projection definition kinds with no capability surface, each with a concrete reason. The parity check fails if a projection kind is neither covered nor deferred here."
+    }
+  },
+  "required": [
+    "registryVersion",
+    "capabilities"
+  ],
+  "title": "PitTech capability registry v1",
+  "type": "object"
+}
