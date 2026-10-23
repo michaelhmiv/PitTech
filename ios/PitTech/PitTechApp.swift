@@ -14,6 +14,7 @@ struct PitTechApp: App {
     @State private var account = NativeAccountCoordinator(cleanup: NativeAccountLocalCleanup.run)
     #endif
     @State private var mcp: NativeMcpConnections
+    @State private var deviceActions: NativeMcpDeviceActions
     @State private var sync: NativePrivateSyncCoordinator
     @State private var pro: ProSubscriptionCoordinator
     @State private var benchmarks: CommunityBenchmarksLoader
@@ -24,6 +25,7 @@ struct PitTechApp: App {
         _benchmarks = State(initialValue: CommunityBenchmarksLoader.forApp(account: account, pro: _pro.wrappedValue))
         _customization = State(initialValue: ProCustomizationStore.forApp(store: _store.wrappedValue))
         _mcp = State(initialValue: NativeMcpConnections(account: account))
+        _deviceActions = State(initialValue: NativeMcpDeviceActions(account: account, store: _store.wrappedValue))
         _sync = State(initialValue: NativePrivateSyncCoordinator.forApp(store: _store.wrappedValue, account: account))
     }
 
@@ -42,6 +44,7 @@ struct PitTechApp: App {
                 .environment(communityControls)
                 .environment(account)
                 .environment(mcp)
+                .environment(deviceActions)
                 .environment(sync)
                 .environment(pro)
                 .environment(benchmarks)

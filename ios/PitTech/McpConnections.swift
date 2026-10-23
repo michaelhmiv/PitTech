@@ -12,7 +12,11 @@ struct NativeMcpClient: NativeMcpAPI {
     var configuration: URLSessionConfiguration?
     func call(_ method: String, _ path: String, body: [String: Any]? = nil, access: String? = nil) async throws -> Data {
         let allowed = path == "/v1/me/mcp/grants" || path == "/v1/me/mcp/oauth/approve" ||
-            path.range(of: "^/v1/me/mcp/grants/[0-9a-fA-F-]{36}$", options: .regularExpression) != nil
+            path == "/v1/me/mcp/devices" || path == "/v1/me/mcp/device-commands" ||
+            path.range(of: "^/v1/me/mcp/grants/[0-9a-fA-F-]{36}$", options: .regularExpression) != nil ||
+            path.range(of: "^/v1/me/mcp/devices/[0-9a-fA-F-]{36}$", options: .regularExpression) != nil ||
+            path.range(of: "^/v1/me/mcp/devices/[0-9a-fA-F-]{36}/claim$", options: .regularExpression) != nil ||
+            path.range(of: "^/v1/me/mcp/devices/[0-9a-fA-F-]{36}/receipt$", options: .regularExpression) != nil
         guard ["GET", "POST", "DELETE"].contains(method), allowed else { throw NativeAccountError.invalid }
         var request = URLRequest(url: URL(string: "\(NativeOnlineConfiguration.current.apiOrigin)" + path)!)
         request.httpMethod = method
