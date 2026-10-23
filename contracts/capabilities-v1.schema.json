@@ -17,25 +17,37 @@
           "type": "string"
         },
         "fields": {
+          "type": "array",
+          "description": "Field-level inventory (M0): every field of every covered record type and object definition kind appears exactly once across the registry, on its owning capability. access: editable = user/AI may set it through typed tools; identity = set at creation, immutable (includes kind discriminators); system = server/native-assigned (timestamps, revision numbers, detected mime type, derived pointers); association = references another record; content = carried opaquely and edited only through typed operations, never as a raw field (snapshots, JSON context, archive/history mirrors); not_exposed = belongs to a prohibited capability and must never surface through MCP.",
           "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "name",
+              "access"
+            ],
             "properties": {
-              "editable": {
-                "type": "boolean"
+              "source": {
+                "type": "string",
+                "description": "A projection record type (e.g. cooks) or definition kind (e.g. checklist)."
               },
               "name": {
                 "type": "string"
               },
-              "nullableMeans": {
-                "description": "Where null vs missing vs zero differ (e.g. ingredients), state it here; golden fixtures must cover it.",
-                "type": "string"
+              "access": {
+                "type": "string",
+                "enum": [
+                  "editable",
+                  "identity",
+                  "system",
+                  "association",
+                  "content",
+                  "not_exposed"
+                ]
               }
-            },
-            "required": [
-              "name"
-            ],
-            "type": "object"
-          },
-          "type": "array"
+            }
+          }
         },
         "fixtures": {
           "description": "Fixture ids proving behavior (round-trip, conflict, negative). Presence of a tool name is not a fixture.",
