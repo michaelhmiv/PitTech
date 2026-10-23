@@ -4,6 +4,7 @@ import AuthenticationServices
 struct NativeAccountView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePrivateSyncCoordinator.self) private var sync
+    @Environment(NativeMcpConnections.self) private var mcp
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var email = ""
@@ -12,6 +13,7 @@ struct NativeAccountView: View {
     @State private var reviewingDeletion = false
     @State private var reviewingSync = false
     @State private var reviewingJournal = false
+    @State private var creatingConnection = false
     private enum Field: Hashable { case email, code }
     @FocusState private var focused: Field?
     var body: some View {
@@ -51,6 +53,7 @@ struct NativeAccountView: View {
                     Button("Sign out", role: .destructive) { confirmingSignOut = true }.disabled(account.busy)
                     Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
                 }
+                McpConnectionsSection(mcp: mcp, creating: $creatingConnection)
             } else { signInContent }
             Section("Private sync") {
                 Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(.footnote)
@@ -80,6 +83,7 @@ struct NativeAccountView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $reviewingDeletion) { NavigationStack { NativeDeletionReviewView { reviewingDeletion = false; Task { await account.requestDeletion() } } } }
+        .sheet(isPresented: $creatingConnection) { NavigationStack { McpCreateView(mcp: mcp) { creatingConnection = false } } }
         .sheet(isPresented: $reviewingSync) { NavigationStack { NativeSyncConflictReviewView() } }
         .sheet(isPresented: $reviewingJournal) { NavigationStack { NativeLocalJournalReviewView { reviewingJournal = false; account.removeLocalJournal() } } }
         .confirmationDialog("Sign out on this device?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
@@ -108,6 +112,86 @@ struct NativeAccountView: View {
         }
     }
 }
+
+private struct McpConnectionsSection: View {
+    let mcp: NativeMcpConnections
+    @Binding var creating: Bool
+    @State private var code = ""
+    @State private var confirmingRevoke: String?
+    @State private var confirmingRevokeAll = false
+    var body: some View {
+        Section("Connect your AI") {
+            Text("Let an AI assistant like ChatGPT or Muse help with your own meals, recipes and logs. Connections use your PitTech Pro and can be disconnected here any time. An assistant can never publish, control a grill, or change your account or billing.").font(.footnote)
+            if !mcp.available {
+                Text("AI connections aren't available yet.").accessibilityIdentifier("mcp-unavailable")
+            } else {
+                ForEach(mcp.grants) { grant in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(grant.nickname).font(.headline)
+                        Text("\(grant.clientId != nil ? "Connected app" : "Personal access token") · \(grant.status(now: Int64(Date().timeIntervalSince1970 * 1000)))").font(.footnote)
+                        Text(grant.scopes.map(McpScopeCatalog.label).joined(separator: ", ")).font(.footnote)
+                        if let used = grant.lastUsedAt { Text("Last used \(Date(timeIntervalSince1970: Double(used) / 1000), format: .dateTime)").font(.footnote) }
+                        if grant.active { Button("Disconnect", role: .destructive) { confirmingRevoke = grant.id }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-\(grant.id)") }
+                    }.accessibilityIdentifier("mcp-grant-\(grant.id)")
+                }
+                if mcp.grants.allSatisfy({ !$0.active }) { Text("No AI connections yet.").font(.footnote) }
+                Button("New connection") { creating = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-new")
+                if mcp.grants.filter(\.active).count > 1 { Button("Disconnect all", role: .destructive) { confirmingRevokeAll = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-all") }
+                Text("Approve a connection").font(.headline)
+                Text("If an assistant shows you a code in your browser, enter it here to finish connecting.").font(.footnote)
+                TextField("Connection code", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled().accessibilityIdentifier("mcp-approve-code")
+                Button("Approve") { let entered = code; code = ""; Task { await mcp.approve(userCode: entered) } }.disabled(mcp.busy || code.isEmpty).accessibilityIdentifier("mcp-approve")
+                if let token = mcp.createdToken {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your connection token for \(mcp.createdNickname ?? "the new connection")").font(.headline)
+                        Text("Copy it into the assistant now. It is shown only once and is not saved on this device.").font(.footnote)
+                        Text(token).textSelection(.enabled).accessibilityIdentifier("mcp-token-value")
+                        Button("Copy token") { UIPasteboard.general.string = token }.accessibilityIdentifier("mcp-copy-token")
+                        Button("Done") { mcp.dismissCreatedToken() }.accessibilityIdentifier("mcp-token-done")
+                    }.accessibilityIdentifier("mcp-created-token")
+                }
+                if mcp.busy { ProgressView("Working…") }
+                if let message = mcp.message { Text(message).accessibilityIdentifier("mcp-message") }
+            }
+        }
+        .onAppear { Task { await mcp.refresh() } }
+        .confirmationDialog("Disconnect this connection?", isPresented: Binding(get: { confirmingRevoke != nil }, set: { if !$0 { confirmingRevoke = nil } }), titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) { if let id = confirmingRevoke { confirmingRevoke = nil; Task { await mcp.revoke(id) } } }.accessibilityIdentifier("mcp-confirm-revoke")
+        } message: { Text("The assistant using it loses access immediately. Your library is unchanged.") }
+        .confirmationDialog("Disconnect all connections?", isPresented: $confirmingRevokeAll, titleVisibility: .visible) {
+            Button("Disconnect all", role: .destructive) { confirmingRevokeAll = false; Task { await mcp.revokeAll() } }.accessibilityIdentifier("mcp-confirm-revoke-all")
+        } message: { Text("Every assistant using a connection loses access immediately. Your library is unchanged.") }
+    }
+}
+private struct McpCreateView: View {
+    let mcp: NativeMcpConnections
+    let done: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var nickname = "ChatGPT"
+    @State private var selected: Set<String> = McpScopeCatalog.defaultSelected
+    @State private var days = 90
+    var body: some View {
+        Form {
+            Section { TextField("Name this connection", text: $nickname).accessibilityIdentifier("mcp-nickname") }
+            Section("What it can do") {
+                ForEach(McpScopeCatalog.all) { entry in
+                    Toggle(isOn: Binding(get: { selected.contains(entry.id) }, set: { selected = $0 ? selected.union([entry.id]) : selected.subtracting([entry.id]) })) {
+                        VStack(alignment: .leading) { Text(entry.label); Text(entry.detail).font(.footnote) }
+                    }.accessibilityIdentifier("mcp-scope-\(entry.id)")
+                }
+            }
+            Section("Disconnect automatically after") {
+                Picker("Expiry", selection: $days) { Text("30 days").tag(30); Text("90 days").tag(90); Text("365 days").tag(365) }.pickerStyle(.segmented).accessibilityIdentifier("mcp-days")
+                Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.").font(.footnote)
+            }
+            Section {
+                Button("Create connection") { let name = nickname, scopes = selected, expiry = days; done(); Task { await mcp.create(nickname: name, scopes: scopes, expiresInDays: expiry) } }.disabled(nickname.isEmpty || selected.isEmpty).accessibilityIdentifier("mcp-create-submit")
+            }
+        }.navigationTitle("New AI connection").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+    }
+}
+
 /// Apple's provided Sign in with Apple button. The tap runs the coordinator's
 /// proof-bound flow (challenge first, sheet second), so the sheet itself is
 /// presented programmatically rather than through SignInWithAppleButton.
@@ -160,6 +244,7 @@ private struct NativeDeletionReviewView: View {
 }
 struct NativeSyncConflictReviewView: View {
     @Environment(NativePrivateSyncCoordinator.self) private var sync
+    @Environment(NativeMcpConnections.self) private var mcp
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         Form {
