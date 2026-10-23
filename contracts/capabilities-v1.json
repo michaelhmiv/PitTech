@@ -1,0 +1,799 @@
+{
+  "registryVersion": 1,
+  "capabilities": [
+    {
+      "id": "connection.context",
+      "title": "Connection, library and sync context",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read"
+      ],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": true,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "PrivateSyncLibrary.kt"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "NativePrivateSyncLibrary.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "get_connection_status",
+          "get_capabilities",
+          "get_sync_status"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Distinguish no synced library from an empty one; report the server snapshot time, never a claim of live phone state."
+    },
+    {
+      "id": "meals.dishes",
+      "title": "Meals and dishes",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write",
+        "library:delete"
+      ],
+      "recordTypes": [
+        "cooks",
+        "dishes",
+        "lifecycles"
+      ],
+      "definitions": [
+        "tags"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "list_meals",
+          "get_meal",
+          "create_meal",
+          "update_meal",
+          "transition_meal",
+          "duplicate_meal_setup",
+          "delete_meal",
+          "add_dish",
+          "update_dish",
+          "remove_dish"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Creating preparation is not Food on. Finish does not require results or saving a recipe. Duplicate setup creates fresh identities without replaying actual history."
+    },
+    {
+      "id": "meals.log",
+      "title": "Unified log, notes and manual temperatures",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write",
+        "library:delete"
+      ],
+      "recordTypes": [
+        "events",
+        "readings",
+        "logReadingLinks",
+        "probes"
+      ],
+      "definitions": [
+        "note"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteRepository",
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "list_notes",
+          "get_note",
+          "create_note",
+          "update_note",
+          "delete_note",
+          "undo_private_operation"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Manual readings never masquerade as sensor samples; same-ID manual corrections preserve provenance and note links (landed in #122). Automatic samples stay immutable."
+    },
+    {
+      "id": "meals.ingredients_targets_results",
+      "title": "Ingredients, targets and results",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "ingredients",
+        "targets",
+        "targetHistory",
+        "results"
+      ],
+      "definitions": [],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Typed ingredient/target add-update-remove tools plus save_results / save_lessons are finalized in the M0 field inventory. Preserve missing-versus-zero and food-safety versus tenderness targets."
+    },
+    {
+      "id": "recipes.library",
+      "title": "Saved recipes and immutable revisions",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write",
+        "library:delete"
+      ],
+      "recordTypes": [
+        "recipes",
+        "recipeRevisions",
+        "recipeAssets",
+        "dishRecipeSources"
+      ],
+      "definitions": [
+        "recipe"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "search_recipes",
+          "get_recipe",
+          "list_recipe_revisions",
+          "create_recipe",
+          "update_recipe",
+          "save_dish_as_recipe",
+          "duplicate_recipe",
+          "archive_recipe",
+          "restore_recipe",
+          "set_recipe_favorite"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Update creates a new revision with an expected parent; it never rewrites the source meal, old revisions, or an active attempt. Equal-ordinal branches are legal (Room 11); revision UUIDs identify branches."
+    },
+    {
+      "id": "recipes.composition",
+      "title": "Meal composition, presets and collections",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "mealPresets"
+      ],
+      "definitions": [
+        "presets",
+        "recipe_attempt"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeRepository",
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeStore.swift",
+          "RecipeMeals.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "compose_meal",
+          "add_recipe_to_meal"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Typed preset/collection operations are finalized in the M0 field inventory. Never scale temperatures/times; never silently save every dish as a recipe."
+    },
+    {
+      "id": "media.photos",
+      "title": "Photos and gallery",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "media:read",
+        "media:write"
+      ],
+      "recordTypes": [
+        "photos",
+        "recipeAssets",
+        "companionPhotos"
+      ],
+      "definitions": [],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteRepository",
+          "RecipeRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "list_photos",
+          "get_photo",
+          "begin_photo_upload",
+          "upload_photo_chunk",
+          "get_photo_upload_status",
+          "complete_photo_upload",
+          "attach_photo",
+          "update_photo",
+          "remove_photo",
+          "cancel_photo_upload"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Reuse the landed private-photo contract (chunked, hashed, bounded decode). A photo shared by several records is physically removed only when no surviving record needs it."
+    },
+    {
+      "id": "preparation.checklists",
+      "title": "Preparation, combos and checklists",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "checklist",
+        "prep_combo"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookPreparationRepository",
+          "CookCompanionRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookPrepChecklist.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Typed combo/checklist operations are finalized in the M0 field inventory. Checking a task does not record a physical cooking action."
+    },
+    {
+      "id": "planning.playbooks_guides",
+      "title": "Playbooks, serve plans, guides and references",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "planning:write",
+        "library:read"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "playbook",
+        "plan",
+        "serve_plan",
+        "reference",
+        "pinned_guide",
+        "guide_presentation"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "ServePlanRepository",
+          "RecipeGuideRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeGuide.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Typed playbook/plan/serve-goal and guide operations are finalized in the M0 field inventory. Show-guide is presentation, not activation."
+    },
+    {
+      "id": "reminders.rules",
+      "title": "Reminder rules and alert definitions",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "planning:write",
+        "library:read"
+      ],
+      "recordTypes": [
+        "reminderRules"
+      ],
+      "definitions": [
+        "alert",
+        "trigger"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": true
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "ReminderRepository",
+          "CookAlertRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "UnifiedReminders.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Rule definitions sync; occurrences are device-owned. Activation requests route through device.actions, never through a synced enabled flag."
+    },
+    {
+      "id": "device.actions",
+      "title": "Explicit phone actions (reminders, timers, app collection)",
+      "classification": "device_execution_or_handoff",
+      "scopes": [
+        "device_actions:request"
+      ],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": true
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "ActivityTimerRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "UnifiedReminders.swift"
+        ]
+      },
+      "mcp": {
+        "status": "handoff_only",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Sync-excluded by design: activityTimers, reminderOccurrences, probeAssignments, recordings, preferences. Commands use a closed action enum, a target device, expiry and claim/apply receipts; states are saved / queued_for_device / applied / needs_attention / expired / canceled / failed. Tool names are registered in M6 when the command path lands."
+    },
+    {
+      "id": "equipment.journal",
+      "title": "Equipment, fuel and maintenance journal",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "equipment",
+        "fuel"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookCompanionRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control \u2014 see prohibited.hardware_control."
+    },
+    {
+      "id": "insights.personal",
+      "title": "Charts, telemetry reads and personal insights",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read"
+      ],
+      "recordTypes": [
+        "readings",
+        "results"
+      ],
+      "definitions": [
+        "temperature"
+      ],
+      "coverage": {
+        "read": true,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookChartMath.swift",
+          "InsightsCalculations.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "get_temperature_history",
+          "get_cook_summary",
+          "compare_cooks",
+          "get_personal_insights",
+          "get_community_benchmarks",
+          "build_private_recap"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Raw paged and reduced data are different modes; include algorithm/input version and sample counts. Benchmarks read public-only inputs. M7 ports the merged native calculation engines to a TS adapter pinned to the same fixtures."
+    },
+    {
+      "id": "portability.private",
+      "title": "Private drafts, import/export and share cards",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "exports:read",
+        "imports:write",
+        "library:read"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "sharing_document",
+        "share_card",
+        "cook_history",
+        "history_cook",
+        "history_dish",
+        "history_ingredient",
+        "history_event",
+        "history_reading",
+        "history_target",
+        "history_result",
+        "history_probe",
+        "history_photo",
+        "history_link",
+        "history_lifecycle",
+        "history_target_history"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "SharingRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookPack.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "preview_import",
+          "apply_import",
+          "create_export",
+          "get_export_status",
+          "render_private_share_card"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Exports stay private and authenticated; never call publication or relay-upload APIs. History kinds are the Cook Pack / archive mirrors of the same records."
+    },
+    {
+      "id": "community.lookup",
+      "title": "Community lookup and private save",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "community:read",
+        "library:write"
+      ],
+      "recordTypes": [],
+      "definitions": [
+        "cook_story"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "SharingRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookPack.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "search_community_recipes",
+          "get_community_recipe",
+          "save_community_recipe"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Public reads use the public-only path and live visibility/block/takedown rules. Private save pins exact source revision + credit and creates no public fork, like, or attempt contribution."
+    },
+    {
+      "id": "prohibited.public_contribution",
+      "title": "Public publishing and social writes",
+      "classification": "prohibited_public_or_security",
+      "scopes": [],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "ios": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "mcp": {
+        "status": "prohibited",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "No MCP tool or credential authority to publish, revise/unpublish, like, fork publicly, contribute attempts, change a public profile, or moderate. Publishing stays a deliberate in-app action. Android/iOS symbols intentionally empty: the prohibition is the binding."
+    },
+    {
+      "id": "prohibited.hardware_control",
+      "title": "Grill and device hardware control",
+      "classification": "prohibited_public_or_security",
+      "scopes": [],
+      "recordTypes": [
+        "devices"
+      ],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "ios": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "mcp": {
+        "status": "prohibited",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Never ignite, shut down, set temperature, or change fan/auger/Wi-Fi/firmware/configuration. Editing a recorded target or equipment profile is a journal write (equipment.journal), not a command to a grill."
+    },
+    {
+      "id": "prohibited.account_security",
+      "title": "Account, billing and credential operations",
+      "classification": "prohibited_public_or_security",
+      "scopes": [],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "ios": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "mcp": {
+        "status": "prohibited",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Sign-in, grant management, billing, privacy consent, account deletion and credential pairing stay in trusted first-party UI. Readable connection status lives in connection.context."
+    }
+  ],
+  "deferredDefinitions": [
+    {
+      "kind": "unsupported",
+      "reason": "Sentinel kind in the projection contract for unsupported authored documents, which stop the projection. It is not a user capability."
+    }
+  ],
+  "generatedViews": [
+    "docs/MCP_PARITY.md"
+  ]
+}
