@@ -5,7 +5,9 @@
 // contract (Android / iOS / MCP) mechanically:
 //   1. contracts/capabilities-v1.json is well-formed (shape, closed scope
 //      enum, coverage flags) and consistent with its schema's rules.
-//   2. Every record type and companion definition kind in
+//   2. Every field of every record type / object definition kind is
+//      inventoried exactly once with an MCP access classification.
+//   3. Every record type and companion definition kind in
 //      contracts/private-sync-projection-v1.json is covered by at least one
 //      capability, or explicitly deferred with a reason. Adding a new private
 //      record type / definition kind to the sync contract therefore FAILS
@@ -44,6 +46,7 @@ const CLASSIFICATIONS = new Set([
 ]);
 const MCP_STATUSES = new Set(['implemented', 'planned_disabled', 'handoff_only', 'prohibited', 'not_applicable']);
 const PLATFORM_STATUSES = new Set(['implemented', 'planned', 'handoff_only', 'not_applicable']);
+const FIELD_ACCESS = new Set(['editable', 'identity', 'system', 'association', 'content', 'not_exposed']);
 const TOOL_DENYLIST = [
   /publish/i, /unpublish/i, /\blike/i, /post_/i, /ignite/i, /shut_?down/i,
   /set_?temperature/i, /grant/i, /billing/i, /delete_?account/i, /password/i,
@@ -127,6 +130,38 @@ export function validate(registry, projection, sources) {
     for (const d of c.definitions ?? []) coveredDefs.add(d);
   }
 
+  // Field-level inventory: every field of every covered record type and
+  // object definition kind is inventoried exactly once, on one capability.
+  const fieldSeen = new Map();
+  const sourceFields = new Map();
+  for (const [rt, spec] of Object.entries(projection.recordTypes ?? {})) {
+    sourceFields.set(rt, new Set(Object.keys(spec.payload?.fields ?? {})));
+  }
+  for (const [kind, spec] of Object.entries(projection.definitions ?? {})) {
+    if (spec && typeof spec === 'object' && spec.fields) sourceFields.set(kind, new Set(Object.keys(spec.fields)));
+  }
+  for (const c of caps ?? []) {
+    const prohibited = c.classification === 'prohibited_public_or_security';
+    for (const f of c.fields ?? []) {
+      const at = `capability ${c.id ?? '<missing id>'} field ${f.source}.${f.name}`;
+      if (!FIELD_ACCESS.has(f.access)) fail(`${at}: unknown access "${f.access}"`);
+      if (!sourceFields.has(f.source)) { fail(`${at}: unknown source "${f.source}"`); continue; }
+      if (!sourceFields.get(f.source).has(f.name)) fail(`${at}: field does not exist in the projection contract`);
+      const key = `${f.source}.${f.name}`;
+      if (fieldSeen.has(key)) fail(`${at}: inventoried more than once (also on ${fieldSeen.get(key)})`);
+      fieldSeen.set(key, c.id);
+      if (prohibited && f.access !== 'not_exposed') fail(`${at}: prohibited capability field must be not_exposed`);
+      if (!prohibited && f.access === 'not_exposed') fail(`${at}: not_exposed is reserved for prohibited capabilities`);
+    }
+  }
+  for (const [source, fields] of sourceFields) {
+    for (const name of fields) {
+      if (!fieldSeen.has(`${source}.${name}`)) {
+        fail(`projection field "${source}.${name}" has no field-inventory entry — declare its MCP access in contracts/capabilities-v1.json`);
+      }
+    }
+  }
+
   // Projection coverage: the automatic "remember MCP" tripwire.
   for (const rt of Object.keys(projection.recordTypes ?? {})) {
     if (!coveredRecords.has(rt)) fail(`projection record type "${rt}" is not covered by any capability — declare its MCP disposition in contracts/capabilities-v1.json`);
@@ -178,6 +213,23 @@ export function renderParityDoc(registry) {
   for (const c of [...registry.capabilities].sort((a, b) => a.id.localeCompare(b.id))) {
     lines.push(`- **${c.id}** — ${c.notes}`);
   }
+  lines.push('## Field inventory');
+  lines.push('');
+  lines.push('Access: `editable` settable through typed tools · `identity` set at creation, immutable ·');
+  lines.push('`system` server/native-assigned · `association` references another record · `content` carried');
+  lines.push('opaquely, edited only through typed operations · `not_exposed` prohibited, never surfaced.');
+  lines.push('');
+  for (const c of [...registry.capabilities].sort((a, b) => a.id.localeCompare(b.id))) {
+    const bySource = new Map();
+    for (const f of c.fields ?? []) {
+      if (!bySource.has(f.source)) bySource.set(f.source, []);
+      bySource.get(f.source).push(`${f.name} (${f.access})`);
+    }
+    for (const [source, fields] of [...bySource.entries()].sort()) {
+      lines.push(`- **${c.id}** · \`${source}\`: ${fields.join(', ')}`);
+    }
+  }
+  lines.push('');
   if ((registry.deferredDefinitions ?? []).length) {
     lines.push('');
     lines.push('## Deferred projection kinds (no capability surface)');
@@ -227,6 +279,10 @@ function runSelfTest() {
   expectFail('fake platform symbol fails', r4);
   const p5 = clone(projection); p5.recordTypes.brand_new_private_thing = { key: 'id', payload: { type: 'object', fields: {}, required: [] } };
   expectFail('new projection record type without a disposition fails', registry, p5);
+  const r6 = clone(registry); const cap6 = r6.capabilities.find((c) => (c.fields ?? []).length > 0); cap6.fields = cap6.fields.slice(1);
+  expectFail('dropping a field-inventory entry fails', r6);
+  const r7 = clone(registry); const cap7 = r7.capabilities.find((c) => c.id === 'prohibited.hardware_control'); cap7.fields[0].access = 'editable';
+  expectFail('prohibited field classified editable fails', r7);
   const stale = renderParityDoc(registry) + '\nhand edit\n';
   cases.push(['stale generated doc detected', stale !== renderParityDoc(registry), 'comparison is exact']);
   let failed = 0;
