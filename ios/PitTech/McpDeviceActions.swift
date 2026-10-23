@@ -126,7 +126,7 @@ struct DeviceActionDispatcher {
                 try await ports.reminderChange(ruleId, "snooze"); await ports.reminderReconcile(rule.cookId)
                 // The app's snooze is its standard 10 minutes; the
                 // receipt says what actually happened, not what was asked.
-                return DeviceActionReceipt(outcome: "applied", result: ["snoozedMinutes": 10, "requestedMinutes": requested])
+                return DeviceActionReceipt(outcome: "applied", result: ["snoozedMinutes": 10, "requestedMinutes": Int(requested)])
             case "reminder.acknowledge":
                 guard let ruleId = string("ruleId"), let rule = await ports.reminderRule(ruleId) else { return notOnPhone("That reminder") }
                 if rule.status != "completed" { try await ports.reminderChange(ruleId, "complete"); await ports.reminderReconcile(rule.cookId) }
@@ -178,7 +178,7 @@ struct DeviceActionDispatcher {
                     return DeviceActionReceipt(outcome: "failed", detail: "The request was missing its interval.")
                 }
                 try await ports.setCollectionCadence(cookId, seconds)
-                return DeviceActionReceipt(outcome: "applied", result: ["intervalSeconds": seconds])
+                return DeviceActionReceipt(outcome: "applied", result: ["intervalSeconds": Int(seconds)])
             case "probe.assign":
                 guard let dishId = string("dishId"), let probeId = string("probeId") else {
                     return DeviceActionReceipt(outcome: "failed", detail: "The request was missing its probe or dish.")
