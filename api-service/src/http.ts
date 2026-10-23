@@ -24,11 +24,15 @@ import { billingRoute, handleBilling } from './subscriptions-http.ts';
 import type { Subscriptions } from './subscriptions.ts';
 import { communityRoute, handleCommunity } from './community-http.ts';
 import { mcpGrantRoute, handleMcpGrants } from './mcp-http.ts';
+import { mcpOAuthRoute, handleMcpOAuth } from './mcp-oauth-http.ts';
+import { mcpTransportRoute, handleMcpTransport } from './mcp-transport-http.ts';
+import type { McpServer } from './mcp-server.ts';
+import type { McpOAuth } from './mcp-oauth.ts';
 import type { McpGrants } from './mcp-grants.ts';
 import type { CommunityAggregates } from './community-aggregation.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; mcp?: McpGrants; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; communityAggregates?: CommunityAggregates; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; mcp?: McpGrants; oauth?: McpOAuth; oauthIssuer?: string; mcpServer?: McpServer; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; communityAggregates?: CommunityAggregates; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -129,12 +133,26 @@ export function makeServer(relay: Relay, options: Options) {
         if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
         await handleBilling(req,res,billingRouteMatch,options.auth,options.subscriptions,{claim:()=>{if(billing>=4)return false;billing++;return true;},release:()=>{billing--;}});return;
       }
+      const mcpTransportMatch=mcpTransportRoute(req.url??'',method);
+      if(mcpTransportMatch&&options.mcp&&options.mcpServer){
+        route=mcpTransportMatch;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const bucket=Math.floor(relay.clock()/3600000),key='mcp:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'mcp:'+bucket);
+        if(!await relay.repository.rate(key,240,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handleMcpTransport(req,res,options.mcp,options.mcpServer,options.oauthIssuer);return;
+      }
+      const oauthRouteMatch=mcpOAuthRoute(req.url??'',method);
+      if(oauthRouteMatch&&options.oauth&&options.oauthIssuer){
+        route='/oauth/'+oauthRouteMatch;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const bucket=Math.floor(relay.clock()/3600000),key='mcp-oauth:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'mcp-oauth:'+bucket);
+        if(!await relay.repository.rate(key,120,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handleMcpOAuth(req,res,oauthRouteMatch,options.oauth,options.oauthIssuer,randomBytes(16).toString('hex'));return;
+      }
       const mcpRouteMatch=mcpGrantRoute(req.url??'',method);
       if(mcpRouteMatch&&options.mcp){
         route=mcpRouteMatch;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
         const bucket=Math.floor(relay.clock()/3600000),key='mcp-grants:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'mcp-grants:'+bucket);
         if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
-        await handleMcpGrants(req,res,mcpRouteMatch,options.auth,options.mcp,{claim:()=>{if(mcpOps>=4)return false;mcpOps++;return true;},release:()=>{mcpOps--;}});return;
+        await handleMcpGrants(req,res,mcpRouteMatch,options.auth,options.mcp,{claim:()=>{if(mcpOps>=4)return false;mcpOps++;return true;},release:()=>{mcpOps--;}},options.oauth);return;
       }
       const communityRouteMatch=communityRoute(req.url??'',method);
       if(communityRouteMatch&&options.subscriptions&&options.communityAggregates){
@@ -229,6 +247,8 @@ export function makeServer(relay: Relay, options: Options) {
           pro_required: 'Community benchmarks need PitTech Pro. Your personal analysis is unchanged.',
           mcp_grant_not_found: 'That AI connection is already disconnected.',
           invalid_mcp_request: 'That connection could not be saved. Check its name, access and expiry, then try again.',
+          invalid_oauth_request: 'That sign-in request could not be read. Start the connection again.',
+          form_required: 'That sign-in request used the wrong format. Start the connection again.',
           mcp_busy: 'Connection changes are busy. Try again shortly; existing connections are unaffected.',
           unknown_community_run: 'This aggregate run is unavailable. Try the latest figures instead.',
           invalid_community_filter: 'This benchmark filter is not supported. Choose a listed bucket or metric.',
