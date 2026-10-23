@@ -6,7 +6,15 @@ Briefly describe the benefit to someone using PitTech. Avoid implementation-only
 
 - [ ] Android
 - [ ] iOS
+- [ ] MCP (issue #114)
 - [ ] Documentation / release tooling only
+
+## Capability impact (Android / iOS / MCP parity — issue #114 §3.1)
+
+Every PR declares its capability impact. Check one and complete it:
+
+- [ ] **No capability surface change** — concrete reason: <!-- required; "internal only" is not a reason -->
+- [ ] **Capability added or changed** — `contracts/capabilities-v1.json` updated in this PR (bindings for every affected interface, generated `docs/MCP_PARITY.md` regenerated), and the `Capability parity` check passes. A private feature enabled in either app without its MCP disposition declared fails that check by design.
 
 ## User-facing release note
 

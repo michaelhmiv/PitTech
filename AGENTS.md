@@ -46,7 +46,8 @@ GitHub issues; this file holds the durable rules of the road.
    and does not build locally. A change is not verified until the relevant
    workflow proves it. If a change lacks the test/CI coverage that would make
    it trustworthy, add it — Actions time is free on this repo.
-   Workflow map: `ios-build.yml` (simulator build/test/screenshots, plus the
+   Workflow map: `capability-parity.yml` (issue #114 three-interface parity
+   gate — every PR, no path filter), `ios-build.yml` (simulator build/test/screenshots, plus the
    manual App Store IPA mode), `android-build.yml` (unit + emulator tests —
    API 36 is the gate; the API 37 job is advisory), `play-bundle.yml` and
    `play-closed-testing.yml` (Google Play), `firebase-dev-distribution.yml`
@@ -131,8 +132,25 @@ mirror, publishing is a deliberate per-recipe act).
 
 ## Parity commitment (owner directive — do not drift)
 
-The owner requires iOS/Android parity going forward:
+The owner requires iOS/Android parity going forward, and — for issue #114 —
+full parity across **Android, iOS and MCP** as three maintained interfaces
+to the same product:
 
+- All three interfaces are in every private feature's definition of done.
+  Sequencing work (one interface leads) is fine; parking another interface
+  as "later" is not. Sequenced work may merge behind disabled flags; a
+  feature may not ship enabled in the apps with MCP left as a follow-up.
+- The machine-readable registry is `contracts/capabilities-v1.json`
+  (schema `contracts/capabilities-v1.schema.json`); `docs/MCP_PARITY.md`
+  is generated from it by `scripts/mcp-parity.mjs` — never edit it by hand.
+  Every PR declares its capability impact in the PR template. The
+  `Capability parity` workflow runs on every PR with no path filter and
+  fails when the private-sync projection gains a record type or definition
+  kind with no declared MCP disposition, when a platform binding names a
+  source symbol that does not exist, when a prohibited capability
+  (public/social writes, hardware control, account/billing/credentials)
+  exposes an MCP tool, or when the generated doc is stale. See
+  `docs/MCP_IMPLEMENTATION_PLAN.md`.
 - Both clients are in every feature's definition of done. Sequencing work
   (one platform leads) is fine; parking the other platform as "later" is not.
 - Maintain a feature parity matrix (in the repo) as implementation proceeds:
@@ -194,7 +212,10 @@ ON and live-verified (email sign-in, subscriptions incl. RTDN
 processing, public discovery, sync, lifecycle, aggregation, relay
 uploads). The remaining #123 leg is the physical-device walkthrough and
 test delivery (see `docs/online/STATUS.md`). MCP #114 is fully planned;
-its prerequisite — the live online stack — is now satisfied. The companion emulator selector now
+its prerequisite — the live online stack — is now satisfied. M0
+(capability registry, generated parity matrix, parity CI) lands with
+PR #146; MCP implementation slices M1+ follow `docs/MCP_IMPLEMENTATION_PLAN.md`
+behind flags that default off. The companion emulator selector now
 requires 73 tests, including persistent subscription-cache account isolation
 and Google provider sign-in/attach.
 Native online configuration selects production or staging with fixed first-party
