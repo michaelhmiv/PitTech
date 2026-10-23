@@ -1,0 +1,3126 @@
+{
+  "registryVersion": 1,
+  "capabilities": [
+    {
+      "id": "connection.context",
+      "title": "Connection, library and sync context",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read"
+      ],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": true,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "PrivateSyncLibrary.kt"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "NativePrivateSyncLibrary.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "get_connection_status",
+          "get_capabilities",
+          "get_sync_status"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Distinguish no synced library from an empty one; report the server snapshot time, never a claim of live phone state.",
+      "fields": []
+    },
+    {
+      "id": "meals.dishes",
+      "title": "Meals and dishes",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write",
+        "library:delete"
+      ],
+      "recordTypes": [
+        "cooks",
+        "dishes",
+        "lifecycles"
+      ],
+      "definitions": [
+        "tags"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "list_meals",
+          "get_meal",
+          "create_meal",
+          "update_meal",
+          "transition_meal",
+          "duplicate_meal_setup",
+          "delete_meal",
+          "add_dish",
+          "update_dish",
+          "remove_dish"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Creating preparation is not Food on. Finish does not require results or saving a recipe. Duplicate setup creates fresh identities without replaying actual history.",
+      "fields": [
+        {
+          "source": "cooks",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "cooks",
+          "name": "endedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "fuelType",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "cooks",
+          "name": "initialSetpointUnit",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "initialSetpointValue",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "notes",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "outdoorTemperatureUnit",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "outdoorTemperatureValue",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "smokerName",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "startedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "startedTimeZoneId",
+          "access": "association"
+        },
+        {
+          "source": "cooks",
+          "name": "status",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "title",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "cooks",
+          "name": "weatherNotes",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "windNotes",
+          "access": "editable"
+        },
+        {
+          "source": "cooks",
+          "name": "woodOrPelletBlend",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "boneIn",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "dishes",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "dishes",
+          "name": "cut",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "foodType",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "gradeOrSource",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "dishes",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "pieceCount",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "placement",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "prepNotes",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "startingCondition",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "thicknessNotes",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "dishes",
+          "name": "weightUnit",
+          "access": "editable"
+        },
+        {
+          "source": "dishes",
+          "name": "weightValue",
+          "access": "editable"
+        },
+        {
+          "source": "lifecycles",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "lifecycles",
+          "name": "timingMode",
+          "access": "editable"
+        }
+      ]
+    },
+    {
+      "id": "meals.log",
+      "title": "Unified log, notes and manual temperatures",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write",
+        "library:delete"
+      ],
+      "recordTypes": [
+        "events",
+        "readings",
+        "logReadingLinks",
+        "probes"
+      ],
+      "definitions": [
+        "note"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteRepository",
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "list_notes",
+          "get_note",
+          "create_note",
+          "update_note",
+          "delete_note",
+          "undo_private_operation"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Manual readings never masquerade as sensor samples; same-ID manual corrections preserve provenance and note links (landed in #122). Automatic samples stay immutable.",
+      "fields": [
+        {
+          "source": "events",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "events",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "events",
+          "name": "details",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "events",
+          "name": "eventType",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "events",
+          "name": "noteMetadataJson",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "occurredAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "recordedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "source",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "sourceDeviceId",
+          "access": "association"
+        },
+        {
+          "source": "events",
+          "name": "temperatureContextJson",
+          "access": "content"
+        },
+        {
+          "source": "events",
+          "name": "timeZoneId",
+          "access": "association"
+        },
+        {
+          "source": "events",
+          "name": "title",
+          "access": "editable"
+        },
+        {
+          "source": "events",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "logReadingLinks",
+          "name": "eventId",
+          "access": "association"
+        },
+        {
+          "source": "logReadingLinks",
+          "name": "readingId",
+          "access": "association"
+        },
+        {
+          "source": "note",
+          "name": "action",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "category",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "dishIds",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "durationMillis",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "endedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "ingredients",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "method",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "startedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "note",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "probes",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "probes",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "probes",
+          "name": "deviceId",
+          "access": "association"
+        },
+        {
+          "source": "probes",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "probes",
+          "name": "measurementType",
+          "access": "editable"
+        },
+        {
+          "source": "probes",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "probes",
+          "name": "source",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "readings",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "readings",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "readings",
+          "name": "measuredAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "measurementType",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "probeId",
+          "access": "association"
+        },
+        {
+          "source": "readings",
+          "name": "probeName",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "qualityStatus",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "recordedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "samplingIntervalMillis",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "source",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "sourceDeviceId",
+          "access": "association"
+        },
+        {
+          "source": "readings",
+          "name": "timeZoneId",
+          "access": "association"
+        },
+        {
+          "source": "readings",
+          "name": "timestampBasis",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "unit",
+          "access": "editable"
+        },
+        {
+          "source": "readings",
+          "name": "value",
+          "access": "editable"
+        }
+      ]
+    },
+    {
+      "id": "meals.ingredients_targets_results",
+      "title": "Ingredients, targets and results",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "ingredients",
+        "targets",
+        "targetHistory",
+        "results"
+      ],
+      "definitions": [],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Typed ingredient/target add-update-remove tools plus save_results / save_lessons are finalized in the M0 field inventory. Preserve missing-versus-zero and food-safety versus tenderness targets.",
+      "fields": [
+        {
+          "source": "ingredients",
+          "name": "amountText",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "amountUnit",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "amountValue",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "appliedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "brand",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "ingredients",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "ingredients",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "ingredients",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "ingredients",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "notes",
+          "access": "editable"
+        },
+        {
+          "source": "ingredients",
+          "name": "stage",
+          "access": "editable"
+        },
+        {
+          "source": "results",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "results",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "results",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "results",
+          "name": "notes",
+          "access": "editable"
+        },
+        {
+          "source": "results",
+          "name": "numericValue",
+          "access": "editable"
+        },
+        {
+          "source": "results",
+          "name": "recordedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "results",
+          "name": "resultType",
+          "access": "editable"
+        },
+        {
+          "source": "results",
+          "name": "textValue",
+          "access": "editable"
+        },
+        {
+          "source": "results",
+          "name": "unit",
+          "access": "editable"
+        },
+        {
+          "source": "targetHistory",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "targetHistory",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "targetHistory",
+          "name": "effectiveAt",
+          "access": "editable"
+        },
+        {
+          "source": "targetHistory",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "targetHistory",
+          "name": "targetType",
+          "access": "editable"
+        },
+        {
+          "source": "targetHistory",
+          "name": "unit",
+          "access": "editable"
+        },
+        {
+          "source": "targetHistory",
+          "name": "value",
+          "access": "editable"
+        },
+        {
+          "source": "targets",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "targets",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "targets",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "targets",
+          "name": "explanation",
+          "access": "editable"
+        },
+        {
+          "source": "targets",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "targets",
+          "name": "scope",
+          "access": "editable"
+        },
+        {
+          "source": "targets",
+          "name": "sourceReference",
+          "access": "editable"
+        },
+        {
+          "source": "targets",
+          "name": "targetType",
+          "access": "editable"
+        },
+        {
+          "source": "targets",
+          "name": "unit",
+          "access": "editable"
+        },
+        {
+          "source": "targets",
+          "name": "value",
+          "access": "editable"
+        }
+      ]
+    },
+    {
+      "id": "recipes.library",
+      "title": "Saved recipes and immutable revisions",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write",
+        "library:delete"
+      ],
+      "recordTypes": [
+        "recipes",
+        "recipeRevisions",
+        "recipeAssets",
+        "dishRecipeSources"
+      ],
+      "definitions": [
+        "recipe"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "search_recipes",
+          "get_recipe",
+          "list_recipe_revisions",
+          "create_recipe",
+          "update_recipe",
+          "save_dish_as_recipe",
+          "duplicate_recipe",
+          "archive_recipe",
+          "restore_recipe",
+          "set_recipe_favorite",
+          "delete_recipe"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Update creates a new revision with an expected parent; it never rewrites the source meal, old revisions, or an active attempt. Equal-ordinal branches are legal (Room 11); revision UUIDs identify branches.",
+      "fields": [
+        {
+          "source": "dishRecipeSources",
+          "name": "appliedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "dishRecipeSources",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "dishRecipeSources",
+          "name": "recipeId",
+          "access": "association"
+        },
+        {
+          "source": "dishRecipeSources",
+          "name": "recipeRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "recipe",
+          "name": "cookAgain",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "description",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "draft",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "instructions",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "observations",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "preferredPitTemperatureF",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "publicSource",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "rating",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "resultNotes",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "servings",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "smokingAnchorUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "tags",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "targets",
+          "access": "editable"
+        },
+        {
+          "source": "recipe",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "assetId",
+          "access": "association"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "caption",
+          "access": "editable"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "mimeType",
+          "access": "system"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "recipeRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "recipeAssets",
+          "name": "sourcePhotoId",
+          "access": "association"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "changeNotes",
+          "access": "editable"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "parentRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "recipeId",
+          "access": "association"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "revisionNumber",
+          "access": "system"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "snapshotJson",
+          "access": "content"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "snapshotSchemaVersion",
+          "access": "system"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "sourceCookId",
+          "access": "association"
+        },
+        {
+          "source": "recipeRevisions",
+          "name": "sourceDishId",
+          "access": "association"
+        },
+        {
+          "source": "recipes",
+          "name": "archivedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "recipes",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "recipes",
+          "name": "currentRevisionId",
+          "access": "system"
+        },
+        {
+          "source": "recipes",
+          "name": "description",
+          "access": "editable"
+        },
+        {
+          "source": "recipes",
+          "name": "favorite",
+          "access": "editable"
+        },
+        {
+          "source": "recipes",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "recipes",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "recipes",
+          "name": "tagsJson",
+          "access": "editable"
+        },
+        {
+          "source": "recipes",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        }
+      ]
+    },
+    {
+      "id": "recipes.composition",
+      "title": "Meal composition, presets and collections",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "mealPresets"
+      ],
+      "definitions": [
+        "presets",
+        "recipe_attempt"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeRepository",
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeStore.swift",
+          "RecipeMeals.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "compose_meal",
+          "add_recipe_to_meal"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Typed preset/collection operations are finalized in the M0 field inventory. Never scale temperatures/times; never silently save every dish as a recipe.",
+      "fields": [
+        {
+          "source": "mealPresets",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "mealPresets",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "mealPresets",
+          "name": "itemsJson",
+          "access": "editable"
+        },
+        {
+          "source": "mealPresets",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "mealPresets",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "recipe_attempt",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "recipe_attempt",
+          "name": "guide",
+          "access": "editable"
+        },
+        {
+          "source": "recipe_attempt",
+          "name": "revisionId",
+          "access": "association"
+        },
+        {
+          "source": "recipe_attempt",
+          "name": "snapshot",
+          "access": "editable"
+        },
+        {
+          "source": "recipe_attempt",
+          "name": "version",
+          "access": "system"
+        }
+      ]
+    },
+    {
+      "id": "media.photos",
+      "title": "Photos and gallery",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "media:read",
+        "media:write"
+      ],
+      "recordTypes": [
+        "photos",
+        "recipeAssets",
+        "companionPhotos"
+      ],
+      "definitions": [],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteRepository",
+          "RecipeRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookNoteStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "list_photos",
+          "get_photo",
+          "begin_photo_upload",
+          "upload_photo_chunk",
+          "get_photo_upload_status",
+          "complete_photo_upload",
+          "attach_photo",
+          "update_photo",
+          "remove_photo",
+          "cancel_photo_upload"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Reuse the landed private-photo contract (chunked, hashed, bounded decode). A photo shared by several records is physically removed only when no surviving record needs it.",
+      "fields": [
+        {
+          "source": "companionPhotos",
+          "name": "action",
+          "access": "editable"
+        },
+        {
+          "source": "companionPhotos",
+          "name": "assetId",
+          "access": "association"
+        },
+        {
+          "source": "companionPhotos",
+          "name": "caption",
+          "access": "editable"
+        },
+        {
+          "source": "companionPhotos",
+          "name": "dishIndex",
+          "access": "editable"
+        },
+        {
+          "source": "companionPhotos",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "companionPhotos",
+          "name": "mimeType",
+          "access": "system"
+        },
+        {
+          "source": "companionPhotos",
+          "name": "recordId",
+          "access": "association"
+        },
+        {
+          "source": "photos",
+          "name": "addedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "photos",
+          "name": "assetId",
+          "access": "association"
+        },
+        {
+          "source": "photos",
+          "name": "caption",
+          "access": "editable"
+        },
+        {
+          "source": "photos",
+          "name": "capturedAtUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "photos",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "photos",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "photos",
+          "name": "eventId",
+          "access": "association"
+        },
+        {
+          "source": "photos",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "photos",
+          "name": "mimeType",
+          "access": "system"
+        },
+        {
+          "source": "photos",
+          "name": "temperatureContextJson",
+          "access": "content"
+        }
+      ]
+    },
+    {
+      "id": "preparation.checklists",
+      "title": "Preparation, combos and checklists",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "checklist",
+        "prep_combo"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookPreparationRepository",
+          "CookCompanionRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookPrepChecklist.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Typed combo/checklist operations are finalized in the M0 field inventory. Checking a task does not record a physical cooking action.",
+      "fields": [
+        {
+          "source": "checklist",
+          "name": "items",
+          "access": "editable"
+        },
+        {
+          "source": "checklist",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "companionRecords",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "companionRecords",
+          "name": "created",
+          "access": "editable"
+        },
+        {
+          "source": "companionRecords",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "companionRecords",
+          "name": "kind",
+          "access": "identity"
+        },
+        {
+          "source": "companionRecords",
+          "name": "payload",
+          "access": "content"
+        },
+        {
+          "source": "companionRecords",
+          "name": "title",
+          "access": "editable"
+        },
+        {
+          "source": "companionRecords",
+          "name": "updated",
+          "access": "editable"
+        },
+        {
+          "source": "prep_combo",
+          "name": "items",
+          "access": "editable"
+        },
+        {
+          "source": "prep_combo",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "prep_combo",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "prep_combo",
+          "name": "yield",
+          "access": "editable"
+        },
+        {
+          "source": "prep_combo",
+          "name": "yieldUnit",
+          "access": "editable"
+        }
+      ]
+    },
+    {
+      "id": "planning.playbooks_guides",
+      "title": "Playbooks, serve plans, guides and references",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "planning:write",
+        "library:read"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "playbook",
+        "plan",
+        "serve_plan",
+        "reference",
+        "pinned_guide",
+        "guide_presentation"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "ServePlanRepository",
+          "RecipeGuideRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "RecipeGuide.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Typed playbook/plan/serve-goal and guide operations are finalized in the M0 field inventory. Show-guide is presentation, not activation.",
+      "fields": [
+        {
+          "source": "guide_presentation",
+          "name": "channels",
+          "access": "editable"
+        },
+        {
+          "source": "guide_presentation",
+          "name": "dishIds",
+          "access": "editable"
+        },
+        {
+          "source": "guide_presentation",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "guide_presentation",
+          "name": "visible",
+          "access": "editable"
+        },
+        {
+          "source": "pinned_guide",
+          "name": "revisionId",
+          "access": "association"
+        },
+        {
+          "source": "pinned_guide",
+          "name": "snapshot",
+          "access": "editable"
+        },
+        {
+          "source": "pinned_guide",
+          "name": "story",
+          "access": "editable"
+        },
+        {
+          "source": "pinned_guide",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "plan",
+          "name": "changeNextTime",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "dishIds",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "draft",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "keepDoing",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "playbookId",
+          "access": "association"
+        },
+        {
+          "source": "plan",
+          "name": "previousRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "plan",
+          "name": "progress",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "revision",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "sourceCookId",
+          "access": "association"
+        },
+        {
+          "source": "plan",
+          "name": "steps",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "targets",
+          "access": "editable"
+        },
+        {
+          "source": "plan",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "playbook",
+          "name": "changeNextTime",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "draft",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "keepDoing",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "previousRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "playbook",
+          "name": "revision",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "sourceCookId",
+          "access": "association"
+        },
+        {
+          "source": "playbook",
+          "name": "steps",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "targets",
+          "access": "editable"
+        },
+        {
+          "source": "playbook",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "reference",
+          "name": "anchor",
+          "access": "editable"
+        },
+        {
+          "source": "reference",
+          "name": "currentProbe",
+          "access": "editable"
+        },
+        {
+          "source": "reference",
+          "name": "currentSeriesId",
+          "access": "association"
+        },
+        {
+          "source": "reference",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "reference",
+          "name": "sourceCookId",
+          "access": "association"
+        },
+        {
+          "source": "reference",
+          "name": "sourceDishId",
+          "access": "association"
+        },
+        {
+          "source": "reference",
+          "name": "sourceProbe",
+          "access": "editable"
+        },
+        {
+          "source": "reference",
+          "name": "sourceSeriesId",
+          "access": "association"
+        },
+        {
+          "source": "reference",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "serve_plan",
+          "name": "book",
+          "access": "editable"
+        },
+        {
+          "source": "serve_plan",
+          "name": "buffer",
+          "access": "editable"
+        },
+        {
+          "source": "serve_plan",
+          "name": "schedules",
+          "access": "editable"
+        },
+        {
+          "source": "serve_plan",
+          "name": "serveAt",
+          "access": "editable"
+        },
+        {
+          "source": "serve_plan",
+          "name": "startedCookId",
+          "access": "association"
+        },
+        {
+          "source": "serve_plan",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "serve_plan",
+          "name": "zoneId",
+          "access": "association"
+        }
+      ]
+    },
+    {
+      "id": "reminders.rules",
+      "title": "Reminder rules and alert definitions",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "planning:write",
+        "library:read"
+      ],
+      "recordTypes": [
+        "reminderRules"
+      ],
+      "definitions": [
+        "alert",
+        "trigger"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": true
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "ReminderRepository",
+          "CookAlertRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "UnifiedReminders.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Rule definitions sync; occurrences are device-owned. Activation requests route through device.actions, never through a synced enabled flag.",
+      "fields": [
+        {
+          "source": "alert",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "alert",
+          "name": "dwell",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "highF",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "alert",
+          "name": "lowF",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "missing",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "probeName",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "recoveryF",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "repeat",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "stage",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "targetF",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "type",
+          "access": "editable"
+        },
+        {
+          "source": "alert",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "reminderRules",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "reminderRules",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "reminderRules",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "reminderRules",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "reminderRules",
+          "name": "kind",
+          "access": "editable"
+        },
+        {
+          "source": "reminderRules",
+          "name": "schemaVersion",
+          "access": "system"
+        },
+        {
+          "source": "reminderRules",
+          "name": "sourceMilestoneId",
+          "access": "association"
+        },
+        {
+          "source": "reminderRules",
+          "name": "sourceRecipeRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "reminderRules",
+          "name": "title",
+          "access": "editable"
+        },
+        {
+          "source": "reminderRules",
+          "name": "triggerConfig",
+          "access": "editable"
+        },
+        {
+          "source": "reminderRules",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        }
+      ]
+    },
+    {
+      "id": "device.actions",
+      "title": "Explicit phone actions (reminders, timers, app collection)",
+      "classification": "device_execution_or_handoff",
+      "scopes": [
+        "device_actions:request"
+      ],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": true
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "ActivityTimerRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "UnifiedReminders.swift"
+        ]
+      },
+      "mcp": {
+        "status": "handoff_only",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Sync-excluded by design: activityTimers, reminderOccurrences, probeAssignments, recordings, preferences. Commands use a closed action enum, a target device, expiry and claim/apply receipts; states are saved / queued_for_device / applied / needs_attention / expired / canceled / failed. Tool names are registered in M6 when the command path lands.",
+      "fields": []
+    },
+    {
+      "id": "equipment.journal",
+      "title": "Equipment, fuel and maintenance journal",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read",
+        "library:write"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "equipment",
+        "fuel"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookCompanionRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookStore.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control \u2014 see prohibited.hardware_control.",
+      "fields": [
+        {
+          "source": "equipment",
+          "name": "blend",
+          "access": "editable"
+        },
+        {
+          "source": "equipment",
+          "name": "fuel",
+          "access": "editable"
+        },
+        {
+          "source": "equipment",
+          "name": "intervalHours",
+          "access": "editable"
+        },
+        {
+          "source": "equipment",
+          "name": "maintainedAt",
+          "access": "editable"
+        },
+        {
+          "source": "equipment",
+          "name": "maintainedHours",
+          "access": "editable"
+        },
+        {
+          "source": "equipment",
+          "name": "name",
+          "access": "editable"
+        },
+        {
+          "source": "equipment",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "fuel",
+          "name": "at",
+          "access": "editable"
+        },
+        {
+          "source": "fuel",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "fuel",
+          "name": "equipment",
+          "access": "editable"
+        },
+        {
+          "source": "fuel",
+          "name": "kg",
+          "access": "editable"
+        },
+        {
+          "source": "fuel",
+          "name": "type",
+          "access": "editable"
+        },
+        {
+          "source": "fuel",
+          "name": "version",
+          "access": "system"
+        }
+      ]
+    },
+    {
+      "id": "insights.personal",
+      "title": "Charts, telemetry reads and personal insights",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "library:read"
+      ],
+      "recordTypes": [
+        "readings",
+        "results"
+      ],
+      "definitions": [
+        "temperature"
+      ],
+      "coverage": {
+        "read": true,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "CookRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookChartMath.swift",
+          "InsightsCalculations.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "get_temperature_history",
+          "get_cook_summary",
+          "compare_cooks",
+          "get_personal_insights",
+          "get_community_benchmarks",
+          "build_private_recap"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Raw paged and reduced data are different modes; include algorithm/input version and sample counts. Benchmarks read public-only inputs. M7 ports the merged native calculation engines to a TS adapter pinned to the same fixtures.",
+      "fields": []
+    },
+    {
+      "id": "portability.private",
+      "title": "Private drafts, import/export and share cards",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "exports:read",
+        "imports:write",
+        "library:read"
+      ],
+      "recordTypes": [
+        "companionRecords"
+      ],
+      "definitions": [
+        "sharing_document",
+        "share_card",
+        "cook_history",
+        "history_cook",
+        "history_dish",
+        "history_ingredient",
+        "history_event",
+        "history_reading",
+        "history_target",
+        "history_result",
+        "history_probe",
+        "history_photo",
+        "history_link",
+        "history_lifecycle",
+        "history_target_history"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "media": true,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "SharingRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookPack.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "preview_import",
+          "apply_import",
+          "create_export",
+          "get_export_status",
+          "render_private_share_card"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Exports stay private and authenticated; never call publication or relay-upload APIs. History kinds are the Cook Pack / archive mirrors of the same records.",
+      "fields": [
+        {
+          "source": "cook_history",
+          "name": "cooks",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "dishes",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "events",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "ingredients",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "lifecycles",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "logReadingLinks",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "photos",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "preferences",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "probes",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "readings",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "results",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "schemaVersion",
+          "access": "system"
+        },
+        {
+          "source": "cook_history",
+          "name": "targetHistory",
+          "access": "content"
+        },
+        {
+          "source": "cook_history",
+          "name": "targets",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_cook",
+          "name": "endedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "fuelType",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_cook",
+          "name": "initialSetpointUnit",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "initialSetpointValue",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "outdoorTemperatureUnit",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "outdoorTemperatureValue",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "startedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "startedTimeZoneId",
+          "access": "association"
+        },
+        {
+          "source": "history_cook",
+          "name": "status",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "title",
+          "access": "content"
+        },
+        {
+          "source": "history_cook",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_cook",
+          "name": "woodOrPelletBlend",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "boneIn",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_dish",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_dish",
+          "name": "cut",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "foodType",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "gradeOrSource",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_dish",
+          "name": "name",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "pieceCount",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "placement",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "prepNotes",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "startingCondition",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "thicknessNotes",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_dish",
+          "name": "weightUnit",
+          "access": "content"
+        },
+        {
+          "source": "history_dish",
+          "name": "weightValue",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_event",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_event",
+          "name": "details",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_event",
+          "name": "eventType",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_event",
+          "name": "noteMetadataJson",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "occurredAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "recordedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "source",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "temperatureContextJson",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "timeZoneId",
+          "access": "association"
+        },
+        {
+          "source": "history_event",
+          "name": "title",
+          "access": "content"
+        },
+        {
+          "source": "history_event",
+          "name": "updatedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "amountText",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "amountUnit",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "amountValue",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "appliedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "brand",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "name",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "notes",
+          "access": "content"
+        },
+        {
+          "source": "history_ingredient",
+          "name": "stage",
+          "access": "content"
+        },
+        {
+          "source": "history_lifecycle",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_lifecycle",
+          "name": "timingMode",
+          "access": "content"
+        },
+        {
+          "source": "history_link",
+          "name": "eventId",
+          "access": "association"
+        },
+        {
+          "source": "history_link",
+          "name": "readingId",
+          "access": "association"
+        },
+        {
+          "source": "history_photo",
+          "name": "addedAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_photo",
+          "name": "archivePath",
+          "access": "content"
+        },
+        {
+          "source": "history_photo",
+          "name": "caption",
+          "access": "content"
+        },
+        {
+          "source": "history_photo",
+          "name": "capturedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_photo",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_photo",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_photo",
+          "name": "eventId",
+          "access": "association"
+        },
+        {
+          "source": "history_photo",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_photo",
+          "name": "mimeType",
+          "access": "system"
+        },
+        {
+          "source": "history_photo",
+          "name": "originalFileName",
+          "access": "content"
+        },
+        {
+          "source": "history_photo",
+          "name": "temperatureContextJson",
+          "access": "content"
+        },
+        {
+          "source": "history_probe",
+          "name": "assignedDishId",
+          "access": "association"
+        },
+        {
+          "source": "history_probe",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_probe",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_probe",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_probe",
+          "name": "measurementType",
+          "access": "content"
+        },
+        {
+          "source": "history_probe",
+          "name": "name",
+          "access": "content"
+        },
+        {
+          "source": "history_probe",
+          "name": "source",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_reading",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_reading",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_reading",
+          "name": "measuredAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "measurementType",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "probeId",
+          "access": "association"
+        },
+        {
+          "source": "history_reading",
+          "name": "probeName",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "qualityStatus",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "recordedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "samplingIntervalMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "source",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "timeZoneId",
+          "access": "association"
+        },
+        {
+          "source": "history_reading",
+          "name": "timestampBasis",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "unit",
+          "access": "content"
+        },
+        {
+          "source": "history_reading",
+          "name": "value",
+          "access": "content"
+        },
+        {
+          "source": "history_result",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_result",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_result",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_result",
+          "name": "notes",
+          "access": "content"
+        },
+        {
+          "source": "history_result",
+          "name": "numericValue",
+          "access": "content"
+        },
+        {
+          "source": "history_result",
+          "name": "recordedAtUtcMillis",
+          "access": "content"
+        },
+        {
+          "source": "history_result",
+          "name": "resultType",
+          "access": "content"
+        },
+        {
+          "source": "history_result",
+          "name": "textValue",
+          "access": "content"
+        },
+        {
+          "source": "history_result",
+          "name": "unit",
+          "access": "content"
+        },
+        {
+          "source": "history_target",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_target",
+          "name": "createdAtUtcMillis",
+          "access": "system"
+        },
+        {
+          "source": "history_target",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_target",
+          "name": "explanation",
+          "access": "content"
+        },
+        {
+          "source": "history_target",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_target",
+          "name": "scope",
+          "access": "content"
+        },
+        {
+          "source": "history_target",
+          "name": "targetType",
+          "access": "content"
+        },
+        {
+          "source": "history_target",
+          "name": "unit",
+          "access": "content"
+        },
+        {
+          "source": "history_target",
+          "name": "value",
+          "access": "content"
+        },
+        {
+          "source": "history_target_history",
+          "name": "cookId",
+          "access": "association"
+        },
+        {
+          "source": "history_target_history",
+          "name": "dishId",
+          "access": "association"
+        },
+        {
+          "source": "history_target_history",
+          "name": "effectiveAt",
+          "access": "content"
+        },
+        {
+          "source": "history_target_history",
+          "name": "id",
+          "access": "identity"
+        },
+        {
+          "source": "history_target_history",
+          "name": "targetType",
+          "access": "content"
+        },
+        {
+          "source": "history_target_history",
+          "name": "unit",
+          "access": "content"
+        },
+        {
+          "source": "history_target_history",
+          "name": "value",
+          "access": "content"
+        },
+        {
+          "source": "share_card",
+          "name": "cropX",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "cropY",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "hero",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "includeVerdict",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "note",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "theme",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "unit",
+          "access": "editable"
+        },
+        {
+          "source": "share_card",
+          "name": "version",
+          "access": "system"
+        },
+        {
+          "source": "share_card",
+          "name": "zoom",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
+          "name": "card",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
+          "name": "collectionId",
+          "access": "association"
+        },
+        {
+          "source": "sharing_document",
+          "name": "entries",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
+          "name": "heroPhotoId",
+          "access": "association"
+        },
+        {
+          "source": "sharing_document",
+          "name": "identityMode",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
+          "name": "parentRevisionId",
+          "access": "association"
+        },
+        {
+          "source": "sharing_document",
+          "name": "sourceCookId",
+          "access": "association"
+        },
+        {
+          "source": "sharing_document",
+          "name": "sourceHistory",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
+          "name": "title",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
+          "name": "version",
+          "access": "system"
+        }
+      ]
+    },
+    {
+      "id": "community.lookup",
+      "title": "Community lookup and private save",
+      "classification": "direct_private_operation",
+      "scopes": [
+        "community:read",
+        "library:write"
+      ],
+      "recordTypes": [],
+      "definitions": [
+        "cook_story"
+      ],
+      "coverage": {
+        "read": true,
+        "write": true,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "implemented",
+        "symbols": [
+          "SharingRepository"
+        ]
+      },
+      "ios": {
+        "status": "implemented",
+        "symbols": [
+          "CookPack.swift"
+        ]
+      },
+      "mcp": {
+        "status": "planned_disabled",
+        "tools": [
+          "search_community_recipes",
+          "get_community_recipe",
+          "save_community_recipe"
+        ]
+      },
+      "fixtures": [],
+      "notes": "Public reads use the public-only path and live visibility/block/takedown rules. Private save pins exact source revision + credit and creates no public fork, like, or attempt contribution.",
+      "fields": [
+        {
+          "source": "cook_story",
+          "name": "anchorUtcMillis",
+          "access": "editable"
+        },
+        {
+          "source": "cook_story",
+          "name": "attemptId",
+          "access": "association"
+        },
+        {
+          "source": "cook_story",
+          "name": "connectionGaps",
+          "access": "editable"
+        },
+        {
+          "source": "cook_story",
+          "name": "observations",
+          "access": "editable"
+        },
+        {
+          "source": "cook_story",
+          "name": "readings",
+          "access": "editable"
+        },
+        {
+          "source": "cook_story",
+          "name": "results",
+          "access": "editable"
+        },
+        {
+          "source": "cook_story",
+          "name": "version",
+          "access": "system"
+        }
+      ]
+    },
+    {
+      "id": "prohibited.public_contribution",
+      "title": "Public publishing and social writes",
+      "classification": "prohibited_public_or_security",
+      "scopes": [],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "ios": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "mcp": {
+        "status": "prohibited",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "No MCP tool or credential authority to publish, revise/unpublish, like, fork publicly, contribute attempts, change a public profile, or moderate. Publishing stays a deliberate in-app action. Android/iOS symbols intentionally empty: the prohibition is the binding.",
+      "fields": []
+    },
+    {
+      "id": "prohibited.hardware_control",
+      "title": "Grill and device hardware control",
+      "classification": "prohibited_public_or_security",
+      "scopes": [],
+      "recordTypes": [
+        "devices"
+      ],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "ios": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "mcp": {
+        "status": "prohibited",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Never ignite, shut down, set temperature, or change fan/auger/Wi-Fi/firmware/configuration. Editing a recorded target or equipment profile is a journal write (equipment.journal), not a command to a grill.",
+      "fields": [
+        {
+          "source": "devices",
+          "name": "brand",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "cookId",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "createdAtUtcMillis",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "deviceName",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "firmwareVersion",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "id",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "model",
+          "access": "not_exposed"
+        },
+        {
+          "source": "devices",
+          "name": "role",
+          "access": "not_exposed"
+        }
+      ]
+    },
+    {
+      "id": "prohibited.account_security",
+      "title": "Account, billing and credential operations",
+      "classification": "prohibited_public_or_security",
+      "scopes": [],
+      "recordTypes": [],
+      "definitions": [],
+      "coverage": {
+        "read": false,
+        "write": false,
+        "delete": false,
+        "media": false,
+        "activation": false
+      },
+      "android": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "ios": {
+        "status": "not_applicable",
+        "symbols": []
+      },
+      "mcp": {
+        "status": "prohibited",
+        "tools": []
+      },
+      "fixtures": [],
+      "notes": "Sign-in, grant management, billing, privacy consent, account deletion and credential pairing stay in trusted first-party UI. Readable connection status lives in connection.context.",
+      "fields": []
+    }
+  ],
+  "deferredDefinitions": [
+    {
+      "kind": "unsupported",
+      "reason": "Sentinel kind in the projection contract for unsupported authored documents, which stop the projection. It is not a user capability."
+    }
+  ],
+  "generatedViews": [
+    "docs/MCP_PARITY.md"
+  ]
+}
