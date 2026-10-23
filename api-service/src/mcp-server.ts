@@ -1,5 +1,5 @@
 import { hasScope, type McpPrincipal } from './mcp-grants.ts';
-import type { PrivateLibraryService, ToolDefinition } from './mcp-library.ts';
+import { ToolFailure, type PrivateLibraryService, type ToolDefinition } from './mcp-library.ts';
 
 /**
  * MCP protocol core (issue #114, M2): JSON-RPC dispatch for the
@@ -81,8 +81,13 @@ export class McpServer {
           if (!tool.scopes.every(scope => hasScope(principal, scope))) {
             return isNotification ? null : rpcResult(id, toolFailure(`This connection does not include the access ${tool.name} needs (${tool.scopes.join(', ')}). Ask the user to reconnect with that access enabled, from PitTech → Connect your AI.`));
           }
-          const value = await tool.handler(principal, args);
-          return isNotification ? null : rpcResult(id, toolResult(value));
+          try {
+            const value = await tool.handler(principal, args);
+            return isNotification ? null : rpcResult(id, toolResult(value));
+          } catch (failure) {
+            if (failure instanceof ToolFailure) return isNotification ? null : rpcResult(id, toolFailure(failure.message));
+            throw failure;
+          }
         }
         default:
           return isNotification ? null : rpcError(id, -32601, `Method not found: ${message.method}`);
