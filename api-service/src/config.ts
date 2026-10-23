@@ -22,6 +22,9 @@ import { PrivatePhotos } from './sync-photos.ts';
 import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
 import { McpGrants, PostgresMcpGrantStore, SubscriptionsEntitlementLookup } from './mcp-grants.ts';
+import { McpOAuth, PostgresMcpOAuthStore, type McpOAuthClient } from './mcp-oauth.ts';
+import { PrivateLibraryService } from './mcp-library.ts';
+import { McpServer } from './mcp-server.ts';
 import { APPLE_KEYS_ENDPOINT, GOOGLE_CERTS_ENDPOINT, GoogleOidcKeyCache } from './google-oidc-keys.ts';
 import type { ProviderServices } from './auth-providers.ts';
 
@@ -168,8 +171,23 @@ export function createRuntime() {
   if(mcpEnabled&&(!auth||!subscriptions||!sync))throw new Error('MCP requires accounts, subscriptions and private sync');
   const mcpWritesEnabled=mcpEnabled&&process.env.MCP_WRITES_ENABLED==='true';
   const mcp=mcpEnabled?new McpGrants(new PostgresMcpGrantStore(pool),authSecrets!,new SubscriptionsEntitlementLookup(subscriptions!),Date.now):undefined;
+  // OAuth clients are deployment configuration only: no dynamic client
+  // registration exists, and a malformed registry fails the boot rather
+  // than authorizing an unintended client. No clients configured → the
+  // OAuth surface stays unmounted and PAT remains the connection path.
+  let oauthClients: McpOAuthClient[] = [];
+  if (process.env.MCP_OAUTH_CLIENTS) {
+    const parsed: unknown = JSON.parse(process.env.MCP_OAUTH_CLIENTS);
+    if (!Array.isArray(parsed) || parsed.some(c => !c || typeof c !== 'object' || typeof (c as { id?: unknown }).id !== 'string' || typeof (c as { name?: unknown }).name !== 'string' || !Array.isArray((c as { redirectUris?: unknown }).redirectUris) || ((c as { redirectUris: unknown[] }).redirectUris).some(u => typeof u !== 'string' || !u.startsWith('https://')))) throw new Error('Invalid MCP_OAUTH_CLIENTS');
+    oauthClients = parsed as McpOAuthClient[];
+    if (new Set(oauthClients.map(c => c.id)).size !== oauthClients.length) throw new Error('Invalid MCP_OAUTH_CLIENTS');
+  }
+  if (oauthClients.length && !mcp) throw new Error('MCP OAuth clients require MCP_ENABLED');
+  const oauth=mcp&&oauthClients.length?new McpOAuth(new PostgresMcpOAuthStore(pool),mcp,authSecrets!,oauthClients,Date.now):undefined;
   const communityAggregationEnabled=process.env.COMMUNITY_AGGREGATION_ENABLED==='true';
   const communityAggregates=communityAggregationEnabled?new CommunityAggregates(new PostgresCommunityStore(pool),Date.now):undefined;
-  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, mcp, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, mcp, mcpWritesEnabled, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  const mcpBenchmarks=communityAggregates?{latestFigures:async(bucket?:string,metric?:string)=>{const runs=await communityAggregates.store.list();const run=runs.length?runs[runs.length-1]:null;if(!run)return{run:null,figures:[]};const figures=(await communityAggregates.store.figures(run.runId))??[];return{run,figures:figures.filter(f=>(!bucket||f.bucket===bucket)&&(!metric||f.metricId===metric))};}}:undefined;
+  const mcpServer=mcp&&sync?new McpServer(new PrivateLibraryService(mcp,sync.snapshots,{writer:sync.snapshots,writesEnabled:mcpWritesEnabled,benchmarks:mcpBenchmarks,photos:{begin:(user,input)=>sync.photos.begin(user,input),statusOf:(user,asset)=>sync.photos.statusOf(user,asset),putPart:(user,asset,index,bytes)=>sync.photos.putPart(user,asset,index,bytes),finish:(user,asset)=>sync.photos.finish(user,asset),read:(user,asset)=>sync.photos.read(user,asset),abandon:(user,asset)=>sync.photos.abandon(user,asset,sync.snapshots)}})):undefined;
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, mcp, oauth, mcpServer, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, mcp, oauth, mcpServer, oauthIssuer: process.env.AUTH_PUBLIC_ORIGIN, mcpWritesEnabled, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }
