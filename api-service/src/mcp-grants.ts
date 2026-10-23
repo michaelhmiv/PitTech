@@ -42,10 +42,16 @@ export interface McpGrantRecord {
   expiresAt: number;
   revokedAt: number | null;
   lastUsedAt: number | null;
+  /** Registered OAuth client that created the grant, or null for a
+   * personal access token created in first-party UI. */
+  clientId: string | null;
+  /** Rotation family (the founding grant's id) for OAuth grants; null
+   * for PATs, which never rotate. */
+  familyId: string | null;
 }
 
 /** Grant metadata safe to show the owner: never the hash, never a token. */
-export type McpGrantSummary = Omit<McpGrantRecord, 'tokenHash' | 'userId'>;
+export type McpGrantSummary = Omit<McpGrantRecord, 'tokenHash' | 'userId' | 'familyId'>;
 
 export interface McpPrincipal {
   grantId: string;
@@ -61,12 +67,22 @@ export interface McpGrantStore {
   revoke(id: string, userId: string, at: number): Promise<boolean>;
   revokeAll(userId: string, at: number): Promise<number>;
   touchLastUsed(id: string, at: number): Promise<void>;
+  /** Compare-and-swap the stored token hash: succeeds only while the
+   * stored hash is still `expectedHash` (rotation race safety). */
+  rotateTokenHash(id: string, expectedHash: string, newHash: string): Promise<boolean>;
+  /** Revokes every live grant in a rotation family. */
+  revokeFamily(familyId: string, at: number): Promise<number>;
+  /** Remembers a rotated-out token hash so its replay can be detected. */
+  retireHash(tokenHash: string, familyId: string, at: number): Promise<void>;
+  /** The family a retired hash belonged to, if it was ever rotated out. */
+  retiredFamily(tokenHash: string): Promise<string | undefined>;
 }
 
 interface GrantRow {
   id: string; user_id: string; nickname: string; token_hash: string;
   scopes: string[]; created_at: string; expires_at: string;
   revoked_at: string | null; last_used_at: string | null;
+  client_id: string | null; family_id: string | null;
 }
 const toRecord = (row: GrantRow): McpGrantRecord => ({
   id: row.id, userId: row.user_id, nickname: row.nickname, tokenHash: row.token_hash,
@@ -74,6 +90,7 @@ const toRecord = (row: GrantRow): McpGrantRecord => ({
   createdAt: Number(row.created_at), expiresAt: Number(row.expires_at),
   revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
   lastUsedAt: row.last_used_at === null ? null : Number(row.last_used_at),
+  clientId: row.client_id ?? null, familyId: row.family_id ?? null,
 });
 
 export class PostgresMcpGrantStore implements McpGrantStore {
@@ -81,8 +98,8 @@ export class PostgresMcpGrantStore implements McpGrantStore {
   constructor(pool: Pool) { this.pool = pool; }
   async insert(grant: McpGrantRecord) {
     await this.pool.query(
-      'INSERT INTO auth.mcp_grants(id,user_id,nickname,token_hash,scopes,created_at,expires_at,revoked_at,last_used_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-      [grant.id, grant.userId, grant.nickname, grant.tokenHash, grant.scopes, grant.createdAt, grant.expiresAt, grant.revokedAt, grant.lastUsedAt]);
+      'INSERT INTO auth.mcp_grants(id,user_id,nickname,token_hash,scopes,created_at,expires_at,revoked_at,last_used_at,client_id,family_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+      [grant.id, grant.userId, grant.nickname, grant.tokenHash, grant.scopes, grant.createdAt, grant.expiresAt, grant.revokedAt, grant.lastUsedAt, grant.clientId, grant.familyId]);
   }
   async byId(id: string) {
     const row = (await this.pool.query('SELECT * FROM auth.mcp_grants WHERE id=$1', [id])).rows[0] as GrantRow | undefined;
@@ -108,6 +125,25 @@ export class PostgresMcpGrantStore implements McpGrantStore {
   }
   async touchLastUsed(id: string, at: number) {
     await this.pool.query('UPDATE auth.mcp_grants SET last_used_at=$2 WHERE id=$1', [id, at]);
+  }
+  async rotateTokenHash(id: string, expectedHash: string, newHash: string) {
+    const result = await this.pool.query(
+      'UPDATE auth.mcp_grants SET token_hash=$3 WHERE id=$1 AND token_hash=$2 AND revoked_at IS NULL', [id, expectedHash, newHash]);
+    return (result.rowCount ?? 0) > 0;
+  }
+  async revokeFamily(familyId: string, at: number) {
+    const result = await this.pool.query(
+      'UPDATE auth.mcp_grants SET revoked_at=$2 WHERE family_id=$1 AND revoked_at IS NULL', [familyId, at]);
+    return result.rowCount ?? 0;
+  }
+  async retireHash(tokenHash: string, familyId: string, at: number) {
+    await this.pool.query(
+      'INSERT INTO auth.mcp_oauth_retired_hashes(token_hash,family_id,retired_at) VALUES($1,$2,$3) ON CONFLICT (token_hash) DO NOTHING',
+      [tokenHash, familyId, at]);
+  }
+  async retiredFamily(tokenHash: string) {
+    const row = (await this.pool.query('SELECT family_id FROM auth.mcp_oauth_retired_hashes WHERE token_hash=$1', [tokenHash])).rows[0] as { family_id: string } | undefined;
+    return row?.family_id;
   }
 }
 
@@ -141,6 +177,7 @@ const summary = (grant: McpGrantRecord): McpGrantSummary => ({
   id: grant.id, nickname: grant.nickname, scopes: [...grant.scopes],
   createdAt: grant.createdAt, expiresAt: grant.expiresAt,
   revokedAt: grant.revokedAt, lastUsedAt: grant.lastUsedAt,
+  clientId: grant.clientId,
 });
 
 export class McpGrants {
@@ -155,24 +192,94 @@ export class McpGrants {
    * strict: scopes must be a non-empty duplicate-free subset of MCP_SCOPES
    * (no public-write, billing, credential or hardware scope exists in the
    * set at all), nickname 1..80 chars after trimming, TTL within the cap. */
-  async create(userId: string, nickname: string, scopes: readonly string[], ttlMs: number):
-    Promise<{ grant: McpGrantSummary; token: string }> {
+  private validateGrantInput(nickname: string, scopes: readonly string[], ttlMs: number): { name: string; unique: McpScope[] } {
     const name = nickname.trim();
     if (!name || name.length > 80) throw new Error('Invalid grant nickname');
     if (!scopes.length || scopes.length > MCP_SCOPES.length) throw new Error('Invalid grant scopes');
     const unique = [...new Set(scopes)];
     if (unique.length !== scopes.length || unique.some(s => !SCOPE_SET.has(s))) throw new Error('Invalid grant scopes');
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || ttlMs > MCP_MAX_GRANT_TTL_MS) throw new Error('Invalid grant expiry');
+    return { name, unique: unique as McpScope[] };
+  }
+
+  async create(userId: string, nickname: string, scopes: readonly string[], ttlMs: number):
+    Promise<{ grant: McpGrantSummary; token: string }> {
+    const { name, unique } = this.validateGrantInput(nickname, scopes, ttlMs);
     const createdAt = this.now();
     const token = MCP_TOKEN_PREFIX + randomBytes(32).toString('base64url');
     const grant: McpGrantRecord = {
       id: randomUUID(), userId, nickname: name,
       tokenHash: this.secrets.hash('mcp-token', token),
-      scopes: unique as McpScope[], createdAt, expiresAt: createdAt + ttlMs,
-      revokedAt: null, lastUsedAt: null,
+      scopes: unique, createdAt, expiresAt: createdAt + ttlMs,
+      revokedAt: null, lastUsedAt: null, clientId: null, familyId: null,
     };
     await this.store.insert(grant);
     return { grant: summary(grant), token };
+  }
+
+  /** Creates the grant an OAuth approval stands behind. No usable token
+   * exists yet: the stored hash belongs to a random secret that is never
+   * revealed; the first real token is minted by rotating it at code
+   * exchange. The grant founds its own rotation family. */
+  async createOAuthGrant(userId: string, nickname: string, scopes: readonly string[], ttlMs: number, clientId: string):
+    Promise<McpGrantSummary> {
+    const { name, unique } = this.validateGrantInput(nickname, scopes, ttlMs);
+    const createdAt = this.now();
+    const id = randomUUID();
+    const placeholder = MCP_TOKEN_PREFIX + randomBytes(32).toString('base64url');
+    const grant: McpGrantRecord = {
+      id, userId, nickname: name,
+      tokenHash: this.secrets.hash('mcp-token', placeholder),
+      scopes: unique, createdAt, expiresAt: createdAt + ttlMs,
+      revokedAt: null, lastUsedAt: null, clientId, familyId: id,
+    };
+    await this.store.insert(grant);
+    return summary(grant);
+  }
+
+  /** Loads a grant by id regardless of state (OAuth internals). */
+  async byId(grantId: string): Promise<McpGrantRecord | undefined> {
+    return this.store.byId(grantId);
+  }
+
+  /** Rotates an OAuth grant's token: the presented token must be the
+   * grant's current token. The old hash is retired (its later replay is
+   * detectable) and a fresh token is returned. Any mismatch — unknown
+   * grant, revoked, expired, PAT (no family), wrong token — is the same
+   * undefined. */
+  async rotateToken(grantId: string, presentedToken: string): Promise<string | undefined> {
+    if (typeof presentedToken !== 'string' || !TOKEN_PATTERN.test(presentedToken)) return undefined;
+    const grant = await this.store.byId(grantId);
+    if (!grant || grant.familyId === null || grant.revokedAt !== null || grant.expiresAt <= this.now()) return undefined;
+    const presentedHash = this.secrets.hash('mcp-token', presentedToken);
+    if (presentedHash !== grant.tokenHash) return undefined;
+    const token = MCP_TOKEN_PREFIX + randomBytes(32).toString('base64url');
+    const rotated = await this.store.rotateTokenHash(grantId, presentedHash, this.secrets.hash('mcp-token', token));
+    if (!rotated) return undefined;
+    await this.store.retireHash(presentedHash, grant.familyId, this.now());
+    await this.store.touchLastUsed(grantId, this.now());
+    return token;
+  }
+
+  /** Issues the first token for an OAuth grant at code exchange: same
+   * rotation machinery, with the unrevealed placeholder as the old hash. */
+  async issueFirstToken(grantId: string): Promise<string | undefined> {
+    const grant = await this.store.byId(grantId);
+    if (!grant || grant.familyId === null || grant.revokedAt !== null || grant.expiresAt <= this.now()) return undefined;
+    const token = MCP_TOKEN_PREFIX + randomBytes(32).toString('base64url');
+    const rotated = await this.store.rotateTokenHash(grantId, grant.tokenHash, this.secrets.hash('mcp-token', token));
+    return rotated ? token : undefined;
+  }
+
+  /** Detects replay of a rotated-out token: returns its family so the
+   * caller can revoke the whole family (treat as token theft). */
+  async retiredFamilyFor(token: string): Promise<string | undefined> {
+    if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) return undefined;
+    return this.store.retiredFamily(this.secrets.hash('mcp-token', token));
+  }
+
+  async revokeFamily(familyId: string): Promise<number> {
+    return this.store.revokeFamily(familyId, this.now());
   }
 
   async list(userId: string): Promise<McpGrantSummary[]> {
