@@ -228,11 +228,41 @@ test('recipes: create writes a codec-shaped snapshot; update adds an immutable r
   assert.equal((snap2.draft as { dishes: unknown[] }).dishes.length, 1, 'dish inherited on partial update');
   assert.equal((snap2.instructions as unknown[]).length, 3);
   // Archive hides from default search; delete removes for real.
-  const archived = await s.call('set_recipe_archived', { recipeId, archived: true });
+  const archived = await s.call('archive_recipe', { recipeId });
   assert.equal(archived.isError, false);
   const searched = await s.call('search_recipes', { query: 'Weekend' });
   assert.equal((searched.structuredContent as unknown as { total: number }).total, 0);
   const deleted = await s.call('delete_recipe', { recipeId });
   assert.equal(deleted.isError, false);
   assert.equal((await s.call('get_recipe', { recipeId })).isError, true);
+});
+
+test('registry surface: duplicate meal setup, save dish as recipe, duplicate recipe, favorite', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Sunday pork', dishes: [{ name: 'Butt', foodType: 'pork' }] });
+  const mealId = (created.structuredContent as unknown as { mealId: string; dishIds: string[] }).mealId;
+  const dishId = (created.structuredContent as unknown as { dishIds: string[] }).dishIds[0];
+  const dup = await s.call('duplicate_meal_setup', { mealId });
+  assert.equal(dup.isError, false, dup.content?.[0]?.text);
+  const dupMealId = (dup.structuredContent as unknown as { mealId: string }).mealId;
+  assert.notEqual(dupMealId, mealId);
+  const dupMeal = await s.call('get_meal', { mealId: dupMealId });
+  assert.equal((dupMeal.structuredContent as unknown as { dishes: unknown[] }).dishes.length, 1);
+  const saved = await s.call('save_dish_as_recipe', { dishId });
+  assert.equal(saved.isError, false, saved.content?.[0]?.text);
+  const recipeId = (saved.structuredContent as unknown as { recipeId: string }).recipeId;
+  const recipe = await s.call('get_recipe', { recipeId });
+  assert.equal(recipe.isError, false);
+  const snap = (recipe.structuredContent as unknown as { currentRevision: { snapshot: { draft: { dishes: { name: string }[] } } } }).currentRevision.snapshot;
+  assert.equal(snap.draft.dishes[0].name, 'Butt');
+  const fav = await s.call('set_recipe_favorite', { recipeId, favorite: true });
+  assert.equal(fav.isError, false);
+  const copy = await s.call('duplicate_recipe', { recipeId });
+  assert.equal(copy.isError, false, copy.content?.[0]?.text);
+  const copyId = (copy.structuredContent as unknown as { recipeId: string }).recipeId;
+  assert.notEqual(copyId, recipeId);
+  const copyRevs = await s.call('list_recipe_revisions', { recipeId: copyId });
+  assert.equal((copyRevs.structuredContent as unknown as { revisions: unknown[] }).revisions.length, 1);
+  const restored = await s.call('restore_recipe', { recipeId });
+  assert.equal(restored.isError, false);
 });

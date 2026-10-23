@@ -311,6 +311,13 @@ export class PrivateLibraryService {
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteMeal(principal, args),
       },
       {
+        name: 'duplicate_meal_setup', title: 'Duplicate a meal setup',
+        description: 'Starts a new meal from an existing meal\'s setup (smoker, dishes, ingredients, targets) with fresh identities. History, readings, results and photos are NOT copied.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, title: { type: 'string' }, ...WRITE_ARGS }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:write'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.duplicateMealSetup(principal, args),
+      },
+      {
         name: 'remove_dish', title: 'Remove a dish',
         description: 'Removes one dish from its meal, along with its ingredients, targets and results.',
         inputSchema: { type: 'object', properties: { dishId: { type: 'string' }, ...WRITE_ARGS }, required: ['dishId'], additionalProperties: false },
@@ -332,11 +339,39 @@ export class PrivateLibraryService {
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.updateRecipe(principal, args),
         },
         {
-          name: 'set_recipe_archived', title: 'Archive or restore a recipe',
-          description: 'Archives a recipe (hidden from everyday lists) or restores it. Never deletes anything.',
-          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, archived: { type: 'boolean' }, ...WRITE_ARGS }, required: ['recipeId', 'archived'], additionalProperties: false },
+          name: 'archive_recipe', title: 'Archive a recipe',
+          description: 'Archives a recipe (hidden from everyday lists). Nothing is deleted; restore_recipe brings it back.',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
           scopes: ['library:write'],
-          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.setRecipeArchived(principal, args),
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.archiveRecipe(principal, args),
+        },
+        {
+          name: 'restore_recipe', title: 'Restore a recipe',
+          description: 'Brings an archived recipe back to the everyday lists.',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.restoreRecipe(principal, args),
+        },
+        {
+          name: 'set_recipe_favorite', title: 'Favorite or unfavorite a recipe',
+          description: 'Marks a recipe as a favorite (or clears the mark).',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, favorite: { type: 'boolean' }, ...WRITE_ARGS }, required: ['recipeId', 'favorite'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.setRecipeFavorite(principal, args),
+        },
+        {
+          name: 'duplicate_recipe', title: 'Duplicate a recipe',
+          description: 'Copies a recipe with its full revision history under fresh identities, so a variant can evolve without touching the original.',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, name: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.duplicateRecipe(principal, args),
+        },
+        {
+          name: 'save_dish_as_recipe', title: 'Save a dish as a recipe',
+          description: 'Saves one dish from a cook as a standalone recipe (its ingredients and targets become the recipe), linked back to its source dish.',
+          inputSchema: { type: 'object', properties: { dishId: { type: 'string' }, name: { type: 'string' }, changeNotes: { type: 'string' }, ...WRITE_ARGS }, required: ['dishId'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.saveDishAsRecipe(principal, args),
         },
         {
           name: 'delete_recipe', title: 'Delete a recipe',
@@ -961,14 +996,126 @@ export class PrivateLibraryService {
     });
   }
 
-  async setRecipeArchived(principal: McpPrincipal, args: Record<string, unknown>) {
-    this.requireFields(args, ['recipeId', 'archived', 'idempotencyKey', 'expectedSnapshotVersion']);
-    if (typeof args.archived !== 'boolean') throw new ToolFailure('archived (true or false) is required.');
+  async archiveRecipe(principal: McpPrincipal, args: Record<string, unknown>) { return this.setArchived(principal, args, true); }
+  async restoreRecipe(principal: McpPrincipal, args: Record<string, unknown>) { return this.setArchived(principal, args, false); }
+  private async setArchived(principal: McpPrincipal, args: Record<string, unknown>, archived: boolean) {
+    this.requireFields(args, ['recipeId', 'idempotencyKey', 'expectedSnapshotVersion']);
     return this.mutate(principal, args, work => {
       const recipe = work.live('recipes', args.recipeId, 'Recipe');
-      work.update('recipes', recipe, { archivedAtUtcMillis: args.archived ? this.clock() : null, updatedAtUtcMillis: this.clock() });
-      return { recipeId: recipe.id, archived: args.archived };
+      work.update('recipes', recipe, { archivedAtUtcMillis: archived ? this.clock() : null, updatedAtUtcMillis: this.clock() });
+      return { recipeId: recipe.id, archived };
     });
+  }
+
+  async setRecipeFavorite(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['recipeId', 'favorite', 'idempotencyKey', 'expectedSnapshotVersion']);
+    if (typeof args.favorite !== 'boolean') throw new ToolFailure('favorite (true or false) is required.');
+    return this.mutate(principal, args, work => {
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      work.update('recipes', recipe, { favorite: args.favorite, updatedAtUtcMillis: this.clock() });
+      return { recipeId: recipe.id, favorite: args.favorite };
+    });
+  }
+
+  async duplicateRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['recipeId', 'name', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      const revisions = work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id)
+        .sort((a, b) => (num(a.revisionNumber) ?? 0) - (num(b.revisionNumber) ?? 0));
+      const now = this.clock();
+      const recipeId = this.idFor(args, 'recipe');
+      const idMap = new Map<string, string>();
+      for (const revision of revisions) idMap.set(str(revision.id)!, this.idFor(args, 'revision-copy:' + revision.id));
+      for (const revision of revisions) {
+        work.insert('recipeRevisions', {
+          ...revision,
+          id: idMap.get(str(revision.id)!)!,
+          recipeId,
+          parentRevisionId: revision.parentRevisionId ? idMap.get(str(revision.parentRevisionId)!) ?? null : null,
+          createdAtUtcMillis: now,
+        });
+      }
+      const currentCopy = recipe.currentRevisionId ? idMap.get(str(recipe.currentRevisionId)!) ?? null : null;
+      const name = this.optString(args, 'name') ?? ((str(recipe.name) ?? 'Recipe') + ' (copy)');
+      work.insert('recipes', {
+        ...recipe, id: recipeId, name, currentRevisionId: currentCopy,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now, archivedAtUtcMillis: null,
+      });
+      return { recipeId, copiedRevisions: revisions.length, sourceRecipeId: recipe.id };
+    }, args => ({ recipeId: this.idFor(args, 'recipe') }));
+  }
+
+  async saveDishAsRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['dishId', 'name', 'changeNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const dish = work.live('dishes', args.dishId, 'Dish');
+      const ingredients = work.liveRecords('ingredients').filter(r => r.dishId === dish.id)
+        .map(row => ({ name: str(row.name) ?? '', stage: str(row.stage) ?? 'seasoning', brand: str(row.brand) ?? '', amountText: str(row.amountText) ?? '', amountUnit: str(row.amountUnit) ?? 'tbsp' }));
+      const targets = work.liveRecords('targets').filter(r => r.dishId === dish.id)
+        .map(row => ({ type: str(row.targetType) ?? 'internal', value: num(row.value) ?? 0, unit: str(row.unit) ?? '°F', explanation: str(row.explanation) ?? '' }));
+      const name = this.optString(args, 'name') ?? str(dish.name) ?? 'Saved dish';
+      const snapshot = this.recipeSnapshot({
+        name, dish: {
+          name: str(dish.name) ?? name, foodType: str(dish.foodType) ?? 'other', cut: str(dish.cut) ?? '',
+          weightText: dish.weightValue !== undefined && dish.weightValue !== null ? String(dish.weightValue) : '', weightUnit: str(dish.weightUnit) ?? 'lb',
+          placement: str(dish.placement) ?? '', gradeOrSource: str(dish.gradeOrSource) ?? '', prepNotes: str(dish.prepNotes) ?? '',
+          ingredients,
+        }, targets,
+      });
+      const now = this.clock();
+      const recipeId = this.idFor(args, 'recipe');
+      const revisionId = this.idFor(args, 'revision:1');
+      work.insert('recipes', {
+        id: recipeId, name, description: snapshot.description, tagsJson: JSON.stringify(snapshot.tags),
+        currentRevisionId: revisionId, createdAtUtcMillis: now, updatedAtUtcMillis: now,
+        archivedAtUtcMillis: null, favorite: false,
+      });
+      work.insert('recipeRevisions', {
+        id: revisionId, recipeId, parentRevisionId: null, revisionNumber: 1,
+        snapshotSchemaVersion: 1, snapshotJson: JSON.stringify(snapshot),
+        createdAtUtcMillis: now, changeNotes: this.optString(args, 'changeNotes') ?? 'Saved from a dish by your AI assistant',
+        sourceCookId: str(dish.cookId) ?? null, sourceDishId: str(dish.id) ?? null,
+      });
+      work.insert('dishRecipeSources', { dishId: dish.id, recipeId, recipeRevisionId: revisionId, appliedAtUtcMillis: now }, dish.id + ':' + recipeId);
+      return { recipeId, revisionId, dishId: dish.id };
+    }, args => ({ recipeId: this.idFor(args, 'recipe'), revisionId: this.idFor(args, 'revision:1') }));
+  }
+
+  async duplicateMealSetup(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'title', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      const now = this.clock();
+      const mealId = this.idFor(args, 'meal');
+      work.insert('cooks', {
+        ...meal, id: mealId,
+        title: this.optString(args, 'title') ?? str(meal.title) ?? 'Cook',
+        status: 'active', startedAtUtcMillis: now, endedAtUtcMillis: null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now,
+      });
+      work.insert('lifecycles', {
+        cookId: mealId, state: 'in_progress', weatherJson: null, snapshotJson: null,
+        legacyRating: null, legacyOutcome: null, legacyVisibility: null, legacySpotType: null,
+        savedRecipeId: null, updatedAtUtcMillis: now,
+      }, mealId, []);
+      const dishes = work.liveRecords('dishes').filter(r => r.cookId === meal.id);
+      const dishIds: string[] = [];
+      dishes.forEach((dish, index) => {
+        const dishId = this.idFor(args, 'dish:' + index); dishIds.push(dishId);
+        work.insert('dishes', { ...dish, id: dishId, cookId: mealId, createdAtUtcMillis: now, updatedAtUtcMillis: now });
+        for (const ingredient of work.liveRecords('ingredients').filter(r => r.dishId === dish.id)) {
+          work.insert('ingredients', { ...ingredient, id: this.idFor(args, 'ing:' + ingredient.id), cookId: mealId, dishId, createdAtUtcMillis: now });
+        }
+        for (const target of work.liveRecords('targets').filter(r => r.dishId === dish.id)) {
+          work.insert('targets', { ...target, id: this.idFor(args, 'target:' + target.id), cookId: mealId, dishId, createdAtUtcMillis: now });
+        }
+      });
+      for (const target of work.liveRecords('targets').filter(r => r.cookId === meal.id && (r.dishId === null || r.dishId === undefined))) {
+        work.insert('targets', { ...target, id: this.idFor(args, 'target:' + target.id), cookId: mealId, createdAtUtcMillis: now });
+      }
+      return { mealId, dishIds, sourceMealId: meal.id, note: 'Setup copied with fresh identities; no history, readings, results or photos were replayed.' };
+    }, args => ({ mealId: this.idFor(args, 'meal') }));
   }
 
   async deleteRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
