@@ -53,10 +53,20 @@ class FakeSnapshots implements SnapshotReadWriter {
   }
 }
 
+class FakeJournal {
+  entries = new Map<string, { mutationId: string; tool: string; before: never; after: never; afterVersion: number; undoneAt: number | null; undoneBy: string | null }>();
+  async record(entry: { userId: string; mutationId: string; tool: string; before: never; after: never; afterVersion: number; createdAt: number }) {
+    this.entries.set(entry.mutationId, { mutationId: entry.mutationId, tool: entry.tool, before: entry.before, after: entry.after, afterVersion: entry.afterVersion, undoneAt: null, undoneBy: null });
+  }
+  async find(_userId: string, mutationId: string) { return this.entries.get(mutationId); }
+  async markUndone(_userId: string, mutationId: string, undoneBy: string, at: number) { const e = this.entries.get(mutationId); if (e) { e.undoneAt = at; e.undoneBy = undoneBy; } }
+}
+
 async function setup(writesEnabled = true) {
   const grants = new McpGrants(new MemoryGrantStore(), new AuthSecrets(credential(), credential()), { state: async () => 'active' }, () => NOW);
   const snapshots = new FakeSnapshots();
-  const library = new PrivateLibraryService(grants, snapshots, { writer: snapshots, writesEnabled, clock: () => NOW });
+  const journal = new FakeJournal();
+  const library = new PrivateLibraryService(grants, snapshots, { writer: snapshots, writesEnabled, clock: () => NOW, journal });
   const server = new McpServer(library);
   const principal: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'library:delete'] };
   const call = async (name: string, args: Record<string, unknown> = {}, as: McpPrincipal = principal) => {
@@ -67,7 +77,7 @@ async function setup(writesEnabled = true) {
     const response = await server.handle(as, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
     return (response as { result: { tools: { name: string }[] } }).result.tools.map(x => x.name);
   };
-  return { grants, snapshots, library, server, principal, call, list };
+  return { grants, snapshots, library, server, principal, call, list, journal };
 }
 type Setup = Awaited<ReturnType<typeof setup>>;
 const KEY = '123e4567-e89b-42d3-a456-426614174000';
@@ -228,11 +238,132 @@ test('recipes: create writes a codec-shaped snapshot; update adds an immutable r
   assert.equal((snap2.draft as { dishes: unknown[] }).dishes.length, 1, 'dish inherited on partial update');
   assert.equal((snap2.instructions as unknown[]).length, 3);
   // Archive hides from default search; delete removes for real.
-  const archived = await s.call('set_recipe_archived', { recipeId, archived: true });
+  const archived = await s.call('archive_recipe', { recipeId });
   assert.equal(archived.isError, false);
   const searched = await s.call('search_recipes', { query: 'Weekend' });
   assert.equal((searched.structuredContent as unknown as { total: number }).total, 0);
   const deleted = await s.call('delete_recipe', { recipeId });
   assert.equal(deleted.isError, false);
   assert.equal((await s.call('get_recipe', { recipeId })).isError, true);
+});
+
+test('registry surface: duplicate meal setup, save dish as recipe, duplicate recipe, favorite', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Sunday pork', dishes: [{ name: 'Butt', foodType: 'pork' }] });
+  const mealId = (created.structuredContent as unknown as { mealId: string; dishIds: string[] }).mealId;
+  const dishId = (created.structuredContent as unknown as { dishIds: string[] }).dishIds[0];
+  const dup = await s.call('duplicate_meal_setup', { mealId });
+  assert.equal(dup.isError, false, dup.content?.[0]?.text);
+  const dupMealId = (dup.structuredContent as unknown as { mealId: string }).mealId;
+  assert.notEqual(dupMealId, mealId);
+  const dupMeal = await s.call('get_meal', { mealId: dupMealId });
+  assert.equal((dupMeal.structuredContent as unknown as { dishes: unknown[] }).dishes.length, 1);
+  const saved = await s.call('save_dish_as_recipe', { dishId });
+  assert.equal(saved.isError, false, saved.content?.[0]?.text);
+  const recipeId = (saved.structuredContent as unknown as { recipeId: string }).recipeId;
+  const recipe = await s.call('get_recipe', { recipeId });
+  assert.equal(recipe.isError, false);
+  const snap = (recipe.structuredContent as unknown as { currentRevision: { snapshot: { draft: { dishes: { name: string }[] } } } }).currentRevision.snapshot;
+  assert.equal(snap.draft.dishes[0].name, 'Butt');
+  const fav = await s.call('set_recipe_favorite', { recipeId, favorite: true });
+  assert.equal(fav.isError, false);
+  const copy = await s.call('duplicate_recipe', { recipeId });
+  assert.equal(copy.isError, false, copy.content?.[0]?.text);
+  const copyId = (copy.structuredContent as unknown as { recipeId: string }).recipeId;
+  assert.notEqual(copyId, recipeId);
+  const copyRevs = await s.call('list_recipe_revisions', { recipeId: copyId });
+  assert.equal((copyRevs.structuredContent as unknown as { revisions: unknown[] }).revisions.length, 1);
+  const restored = await s.call('restore_recipe', { recipeId });
+  assert.equal(restored.isError, false);
+});
+
+test('composition: compose_meal mixes recipe + plain dishes with source links; add_recipe_to_meal appends', async () => {
+  const s: Setup = await setup();
+  const recipe = await s.call('create_recipe', {
+    name: 'House rub ribs',
+    dish: { name: 'Spare ribs', foodType: 'pork', ingredients: [{ name: 'House rub', amountText: '3', amountUnit: 'tbsp' }] },
+    targets: [{ type: 'internal', value: 203, unit: '°F' }],
+  });
+  const recipeId = (recipe.structuredContent as unknown as { recipeId: string }).recipeId;
+  const composed = await s.call('compose_meal', { title: 'Saturday', dishes: [{ recipeId }, { name: 'Beans', foodType: 'side' }] });
+  assert.equal(composed.isError, false, composed.content?.[0]?.text);
+  const mealId = (composed.structuredContent as unknown as { mealId: string }).mealId;
+  const meal = await s.call('get_meal', { mealId });
+  const dishes = (meal.structuredContent as unknown as { dishes: { name: string; ingredients: { name: string }[]; targets: unknown[] }[] }).dishes;
+  assert.equal(dishes.length, 2);
+  const ribDish = dishes.find(d => d.name === 'Spare ribs')!;
+  assert.equal(ribDish.ingredients[0].name, 'House rub');
+  assert.equal(ribDish.targets.length, 1);
+  const stored = s.snapshots.envelope!.records;
+  const link = stored.find(r => r.recordType === 'dishRecipeSources');
+  assert.ok(link, 'source link written');
+  assert.equal((link!.payload as { recipeId: string }).recipeId, recipeId);
+  const added = await s.call('add_recipe_to_meal', { mealId, recipeId });
+  assert.equal(added.isError, false, added.content?.[0]?.text);
+  const after = await s.call('get_meal', { mealId });
+  assert.equal((after.structuredContent as unknown as { dishes: unknown[] }).dishes.length, 3);
+});
+
+test('companions + reminder rules: upsert/list/delete with per-kind scope enforcement', async () => {
+  const s: Setup = await setup();
+  const meal = await s.call('create_meal', { title: 'Planned cook' });
+  const mealId = (meal.structuredContent as unknown as { mealId: string }).mealId;
+  const plan = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: { draft: { dishes: [] }, dishIds: [] } });
+  // setup() principal lacks planning:write → the per-kind gate must refuse.
+  assert.equal(plan.isError, true);
+  assert.match(plan.content[0].text, /planning:write/);
+  const planner: McpPrincipal = { grantId: 'g', userId: 'user-1', scopes: ['library:read', 'library:write', 'planning:write'] };
+  const plan2 = await s.call('upsert_companion', { kind: 'plan', title: 'Saturday plan', mealId, payload: { draft: { dishes: [] }, dishIds: [] } }, planner);
+  assert.equal(plan2.isError, false, plan2.content?.[0]?.text);
+  const companionId = (plan2.structuredContent as unknown as { companionId: string }).companionId;
+  const checklist = await s.call('upsert_companion', { kind: 'checklist', title: 'Prep', mealId, payload: { items: [] } });
+  assert.equal(checklist.isError, false, checklist.content?.[0]?.text);
+  const listed = await s.call('list_companions', { mealId });
+  assert.equal((listed.structuredContent as unknown as { total: number }).total, 2);
+  const badKind = await s.call('upsert_companion', { kind: 'recordings', title: 'X', payload: {} }, planner);
+  assert.equal(badKind.isError, true);
+  const rule = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'Probe alert', triggerConfig: { type: 'temperature', threshold: 203 } }, planner);
+  assert.equal(rule.isError, false, rule.content?.[0]?.text);
+  const mismatch = await s.call('upsert_reminder_rule', { mealId, kind: 'temperature', title: 'X', triggerConfig: { type: 'timer' } }, planner);
+  assert.equal(mismatch.isError, true);
+  const rules = await s.call('list_reminder_rules', { mealId });
+  assert.equal((rules.structuredContent as unknown as { total: number }).total, 1);
+  const del = await s.call('delete_companion', { companionId }, planner);
+  assert.equal(del.isError, false);
+});
+
+test('undo: reverses a create exactly, refuses after drift, and the undo itself can be undone (redo)', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Undo me' });
+  const mealId = (created.structuredContent as unknown as { mealId: string }).mealId;
+  const createMutation = [...s.journal.entries.keys()][0];
+  // Drift: a later edit builds on the create → undo must refuse.
+  const driftEdit = await s.call('update_meal', { mealId, smokerName: 'Changed' });
+  assert.equal(driftEdit.isError, false, driftEdit.content?.[0]?.text);
+  const refused = await s.call('undo_private_operation', { mutationId: createMutation });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /no longer safe/);
+  // Undo the update first (its own journal entry), then the create is safe.
+  const mutations = [...s.journal.entries.keys()];
+  const updateMutation = mutations[mutations.length - 1];
+  const undoUpdate = await s.call('undo_private_operation', { mutationId: updateMutation });
+  assert.equal(undoUpdate.isError, false, undoUpdate.content?.[0]?.text);
+  const undoCreate = await s.call('undo_private_operation', { mutationId: createMutation });
+  assert.equal(undoCreate.isError, false, undoCreate.content?.[0]?.text);
+  const gone = await s.call('get_meal', { mealId });
+  assert.equal(gone.isError, true);
+  // Redo: undo the undo-of-create using ITS receipt mutation id.
+  const undoCreateReceipt = (undoCreate.structuredContent as unknown as { receipt: { mutationId: string } }).receipt.mutationId;
+  const redo = await s.call('undo_private_operation', { mutationId: undoCreateReceipt });
+  assert.equal(redo.isError, false, redo.content?.[0]?.text);
+  // The meal returns as a copy under a fresh identity (sync never
+  // resurrects a tombstoned id); the result reports the mapping.
+  const copies = (redo.structuredContent as unknown as { restoredAsCopies: { from: string; to: string }[] }).restoredAsCopies;
+  const newMealId = copies.find(c => c.from === mealId)!.to;
+  assert.notEqual(newMealId, mealId);
+  const stillGone = await s.call('get_meal', { mealId });
+  assert.equal(stillGone.isError, true);
+  const back = await s.call('get_meal', { mealId: newMealId });
+  assert.equal(back.isError, false);
+  assert.equal((back.structuredContent as unknown as { meal: { title: string } }).meal.title, 'Undo me');
 });
