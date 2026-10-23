@@ -9,6 +9,10 @@ import {
   buildPortableArchive, buildShareCard, contentHashOf, importDisposition, scopeArchiveRows,
   type ExportScope, type McpPortabilityStore, type PortableRow,
 } from './mcp-portability.ts';
+import {
+  actionClassOf, actionMealId, validateDeviceAction, DEVICE_ACTION_STATES,
+  type McpDeviceStore, type McpDeviceCommandRecord,
+} from './mcp-device.ts';
 
 /**
  * The MCP command layer's read side (issue #114, M2): the only door
@@ -207,15 +211,19 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
-  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined; private journal: McpOperationJournal | undefined; private portability: McpPortabilityStore | undefined;
+  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined; private community: McpCommunitySource | undefined; private journal: McpOperationJournal | undefined; private portability: McpPortabilityStore | undefined; private device: McpDeviceStore | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource; journal?: McpOperationJournal; portability?: McpPortabilityStore } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource; community?: McpCommunitySource; journal?: McpOperationJournal; portability?: McpPortabilityStore; device?: McpDeviceStore } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
     this.photos = options.photos; this.benchmarks = options.benchmarks; this.community = options.community; this.journal = options.journal;
-    this.portability = options.portability;
+    this.portability = options.portability; this.device = options.device;
     this.clock = options.clock ?? Date.now;
+  }
+  private requireDevice(): McpDeviceStore {
+    if (!this.device) throw new ToolFailure('Device actions are not available on this server.');
+    return this.device;
   }
   private requirePortability(): McpPortabilityStore {
     if (!this.portability) throw new ToolFailure('Import/export is not available on this server.');
@@ -714,6 +722,45 @@ export class PrivateLibraryService {
         scopes: ['community:read'] as const,
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.communityBenchmarks(principal, args),
       }] as ToolDefinition[] : []),
+      ...(this.device ? ([
+      {
+        name: 'list_my_devices', title: 'List my devices',
+        description: 'Lists the phones/tablets the user has registered for remote app actions, the action classes each one accepts, when each was last seen, and how many requests are waiting for it.',
+        inputSchema: { ...NO_ARGS_SCHEMA },
+        scopes: ['device_actions:request'],
+        handler: async (principal: McpPrincipal) => this.listMyDevices(principal),
+      },
+      {
+        name: 'get_device_action', title: 'Get a device action request',
+        description: 'Reports one device action request with its truthful state: saved, queued_for_device, applied, needs_attention, expired, canceled or failed. "Applied" only ever comes from the device’s own receipt — it is never assumed.',
+        inputSchema: { type: 'object', properties: { commandId: { type: 'string' } }, required: ['commandId'], additionalProperties: false },
+        scopes: ['device_actions:request'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.getDeviceAction(principal, args),
+      },
+      {
+        name: 'list_device_actions', title: 'List device action requests',
+        description: 'Lists recent device action requests, optionally filtered by state.',
+        inputSchema: { type: 'object', properties: { state: { type: 'string', enum: [...DEVICE_ACTION_STATES] } }, additionalProperties: false },
+        scopes: ['device_actions:request'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.listDeviceActions(principal, args),
+      },
+      ] as ToolDefinition[]) : []),
+      ...(this.device && this.canWrite ? ([
+      {
+        name: 'request_device_action', title: 'Request a phone action',
+        description: 'Asks the user’s phone to do one app action from a closed list: activate/cancel/snooze/acknowledge a reminder rule, start/stop an activity timer, apply a playbook to a meal, pause/resume or change temperature collection, assign/unassign a probe, or change display/unit preferences. Nothing is claimed as done until the phone itself reports it — check get_device_action for the receipt. Requests expire (default 15 minutes) and can never touch grill hardware.',
+        inputSchema: { type: 'object', properties: { deviceId: { type: 'string', description: 'Target device from list_my_devices. Omit to save the request without a target.' }, action: { type: 'string' }, params: { type: 'object' }, expiresInMinutes: { type: 'integer', minimum: 1, maximum: 1440 } }, required: ['action'], additionalProperties: false },
+        scopes: ['device_actions:request'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.requestDeviceAction(principal, args),
+      },
+      {
+        name: 'cancel_device_action', title: 'Cancel a device action request',
+        description: 'Cancels a request that has not been applied yet.',
+        inputSchema: { type: 'object', properties: { commandId: { type: 'string' } }, required: ['commandId'], additionalProperties: false },
+        scopes: ['device_actions:request'],
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.cancelDeviceAction(principal, args),
+      },
+      ] as ToolDefinition[]) : []),
       ...(this.portability ? ([
       {
         name: 'create_export', title: 'Create a private export',
@@ -2292,6 +2339,121 @@ export class PrivateLibraryService {
         'Reads come from the last synced snapshot; the phone may hold newer changes that have not synced yet.',
       ],
     };
+  }
+
+  // ---- Device execution (§7): registered devices, queued commands ----
+
+  private deviceActionView(command: McpDeviceCommandRecord) {
+    return {
+      commandId: command.id, action: command.action, params: command.params, state: command.state,
+      deviceId: command.deviceId, createdAt: iso(command.createdAt), expiresAt: iso(command.expiresAt),
+      claimedAt: iso(command.claimedAt), resolvedAt: iso(command.resolvedAt), receipt: command.receipt,
+    };
+  }
+
+  async listMyDevices(principal: McpPrincipal) {
+    const store = this.requireDevice();
+    await store.expireStale(principal.userId, this.clock());
+    const devices = await store.listDevices(principal.userId);
+    const queued = await store.listCommands(principal.userId, 'queued_for_device');
+    const saved = await store.listCommands(principal.userId, 'saved');
+    return {
+      devices: devices.map(d => ({
+        deviceId: d.deviceId, name: d.name, platform: d.platform, actionClasses: d.actionClasses,
+        lastSeenAt: iso(d.lastSeenAt),
+        waitingRequests: queued.filter(c => c.deviceId === d.deviceId).length,
+      })),
+      untargetedRequests: saved.length,
+      note: devices.length ? undefined : 'No device is registered yet. The user registers a phone in PitTech under Connect your AI → Device actions; until then requests are saved untargeted and the phone never sees them.',
+    };
+  }
+
+  async requestDeviceAction(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['deviceId', 'action', 'params', 'expiresInMinutes']);
+    const store = this.requireDevice();
+    let validated: { action: string; params: Record<string, unknown> };
+    try { validated = validateDeviceAction(args.action, args.params ?? {}); }
+    catch (failure) { throw new ToolFailure(failure instanceof Error ? failure.message : 'Invalid device action.'); }
+    const { action, params } = validated;
+    // Library-bound checks: the rule/meal must exist in the synced
+    // library, and a finished meal can never be revived by a request.
+    // Unbound actions (a plain timer, collection, preferences) do not
+    // need the library at all — a user who has not synced yet can
+    // still queue one for their phone.
+    const mealIdBound = actionMealId(action, params);
+    const needsLibrary = typeof params.ruleId === 'string' || mealIdBound !== undefined || action === 'guidance.apply_playbook';
+    const data = needsLibrary ? await this.loadLibrary(principal) : null;
+    if (data && typeof params.ruleId === 'string') {
+      const rule = this.records(data, 'reminderRules').find(r => r.id === params.ruleId);
+      if (!rule) throw new ToolFailure('No reminder rule with that id exists in the synced library.');
+      const meal = this.records(data, 'cooks').find(c => c.id === rule.cookId);
+      if (meal?.status === 'completed') throw new ToolFailure('That reminder belongs to a finished meal; requests cannot revive it.');
+    }
+    const mealId = mealIdBound;
+    if (data && mealId) {
+      const meal = this.records(data, 'cooks').find(c => c.id === mealId);
+      if (!meal) throw new ToolFailure('No meal with that id exists in the synced library.');
+      if (meal.status === 'completed') throw new ToolFailure('That meal is finished; requests cannot revive it.');
+    }
+    if (data && action === 'guidance.apply_playbook') {
+      const playbook = this.records(data, 'companionRecords').find(r => r.id === params.playbookId && r.kind === 'playbook');
+      if (!playbook) throw new ToolFailure('No playbook with that id exists in the synced library.');
+    }
+    const now = this.clock();
+    await store.expireStale(principal.userId, now);
+    let deviceId: string | null = null;
+    if (args.deviceId !== undefined && args.deviceId !== null) {
+      if (typeof args.deviceId !== 'string') throw new ToolFailure('deviceId must be a string.');
+      const device = await store.deviceFor(principal.userId, args.deviceId);
+      if (!device) throw new ToolFailure('No registered device with that id. Use list_my_devices to see the registered phones.');
+      const cls = actionClassOf(action);
+      if (!device.actionClasses.includes(cls)) throw new ToolFailure(`That device has not opted into "${cls}" actions. The user can enable the class in PitTech under Connect your AI → Device actions.`);
+      deviceId = device.deviceId;
+    }
+    const expiresInMinutes = args.expiresInMinutes === undefined ? 15 : args.expiresInMinutes;
+    if (typeof expiresInMinutes !== 'number' || !Number.isSafeInteger(expiresInMinutes) || expiresInMinutes < 1 || expiresInMinutes > 1440) throw new ToolFailure('expiresInMinutes must be an integer between 1 and 1440.');
+    const command: McpDeviceCommandRecord = {
+      id: randomUUID(), userId: principal.userId, deviceId, grantId: principal.grantId,
+      action, params, state: deviceId ? 'queued_for_device' : 'saved',
+      createdAt: now, expiresAt: now + expiresInMinutes * 60_000,
+      claimedAt: null, claimedBy: null, resolvedAt: null, receipt: null,
+    };
+    await store.createCommand(command);
+    return {
+      ...this.deviceActionView(command),
+      handoff: deviceId === null,
+      note: deviceId === null
+        ? 'Saved without a target device — nothing will happen until the user registers a phone and this is re-requested for it. No phone can be woken or reached while offline; the request waits in the queue until it expires.'
+        : 'Queued for the device. It counts as done only when the phone posts its receipt — poll get_device_action. The phone must open PitTech (or sync) to pick it up; an offline phone cannot be woken.',
+    };
+  }
+
+  async getDeviceAction(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['commandId']);
+    const store = this.requireDevice();
+    await store.expireStale(principal.userId, this.clock());
+    const command = await store.commandFor(principal.userId, String(args.commandId ?? ''));
+    if (!command) throw new ToolFailure('No device action request with that id exists for this account.');
+    return this.deviceActionView(command);
+  }
+
+  async listDeviceActions(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['state']);
+    const store = this.requireDevice();
+    await store.expireStale(principal.userId, this.clock());
+    const state = this.optString(args, 'state');
+    if (state !== undefined && !DEVICE_ACTION_STATES.includes(state as never)) throw new ToolFailure(`state must be one of: ${DEVICE_ACTION_STATES.join(', ')}.`);
+    const commands = await store.listCommands(principal.userId, state);
+    return { total: commands.length, requests: commands.slice(0, 50).map(c => this.deviceActionView(c)) };
+  }
+
+  async cancelDeviceAction(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['commandId']);
+    const store = this.requireDevice();
+    const canceled = await store.cancelCommand(principal.userId, String(args.commandId ?? ''), this.clock());
+    if (!canceled) throw new ToolFailure('That request cannot be canceled — it was already applied, resolved, expired, or does not exist.');
+    const command = await store.commandFor(principal.userId, String(args.commandId));
+    return command ? this.deviceActionView(command) : { commandId: args.commandId, state: 'canceled' };
   }
 
   // ---- Portability: sharing drafts, import/export, share cards ----
