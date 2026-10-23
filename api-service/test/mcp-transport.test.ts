@@ -98,7 +98,7 @@ test('tools: list shows the M2 catalog; status tools answer from the snapshot', 
   const s: Setup = await setup(t);
   const list = await s.rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
   const tools = (list.body as { result: { tools: { name: string }[] } }).result.tools;
-  assert.deepEqual(tools.map(x => x.name), ['get_connection_status', 'get_capabilities', 'list_meals', 'get_meal', 'list_notes', 'get_note', 'search_recipes', 'get_recipe', 'list_recipe_revisions', 'get_sync_status']);
+  assert.deepEqual(tools.map(x => x.name), ['get_connection_status', 'get_capabilities', 'list_meals', 'get_meal', 'list_notes', 'get_note', 'list_photos', 'get_photo', 'search_recipes', 'get_recipe', 'list_recipe_revisions', 'get_sync_status']);
   const call = async (name: string) => s.rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: {} } });
   const conn = await call('get_connection_status');
   const connResult = (conn.body as { result: { structuredContent: { connection: { nickname: string; via: string } } } }).result;
@@ -125,11 +125,11 @@ test('tools: an account that never synced reads as no library, not an empty one'
   assert.match(content.note, /Nothing has synced/);
 });
 
-test('tools: a grant without library:read sees no tools and cannot call them', async t => {
+test('tools: a media-only grant sees exactly the photo reads; library tools stay denied', async t => {
   const s: Setup = await setup(t);
   const { token: mediaOnly } = await s.grants.create('user-2', 'Photos only', ['media:read'], 86400000);
   const list = await s.rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, mediaOnly);
-  assert.deepEqual((list.body as { result: { tools: unknown[] } }).result.tools, []);
+  assert.deepEqual((list.body as { result: { tools: { name: string }[] } }).result.tools.map(x => x.name), ['list_photos', 'get_photo']);
   const call = await s.rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_sync_status', arguments: {} } }, mediaOnly);
   const result = (call.body as { result: { isError: boolean; content: { text: string }[] } }).result;
   assert.equal(result.isError, true);
