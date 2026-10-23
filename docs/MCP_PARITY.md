@@ -32,7 +32,7 @@ matrix is a claim that MCP is implemented or released.
 | prohibited.hardware_control — Grill and device hardware control | prohibited_public_or_security | — | devices | — | prohibited |
 | prohibited.public_contribution — Public publishing and social writes | prohibited_public_or_security | — | — | — | prohibited |
 | recipes.composition — Meal composition, presets and collections | direct_private_operation | library:read, library:write | mealPresets, presets, recipe_attempt | compose_meal, add_recipe_to_meal | planned_disabled |
-| recipes.library — Saved recipes and immutable revisions | direct_private_operation | library:read, library:write, library:delete | recipes, recipeRevisions, recipeAssets, dishRecipeSources, recipe | search_recipes, get_recipe, list_recipe_revisions, create_recipe, update_recipe, save_dish_as_recipe, duplicate_recipe, archive_recipe, restore_recipe, set_recipe_favorite | planned_disabled |
+| recipes.library — Saved recipes and immutable revisions | direct_private_operation | library:read, library:write, library:delete | recipes, recipeRevisions, recipeAssets, dishRecipeSources, recipe | search_recipes, get_recipe, list_recipe_revisions, create_recipe, update_recipe, save_dish_as_recipe, duplicate_recipe, archive_recipe, restore_recipe, set_recipe_favorite, delete_recipe | planned_disabled |
 | reminders.rules — Reminder rules and alert definitions | direct_private_operation | planning:write, library:read | reminderRules, alert, trigger | — | planned_disabled |
 
 ## Notes per capability
