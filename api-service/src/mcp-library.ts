@@ -54,6 +54,7 @@ interface LibraryData {
 }
 const iso = (millis: unknown): string | null => typeof millis === 'number' && Number.isFinite(millis) ? new Date(millis).toISOString() : null;
 const str = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
+const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 function page<T>(items: T[], args: Record<string, unknown>): { items: T[]; nextCursor: string | null; total: number } {
   const limitRaw = args.limit === undefined ? 20 : args.limit;
   if (typeof limitRaw !== 'number' || !Number.isSafeInteger(limitRaw) || limitRaw < 1 || limitRaw > 50) throw new ToolFailure('limit must be an integer between 1 and 50.');
@@ -287,6 +288,34 @@ export class PrivateLibraryService {
         scopes: ['library:delete'],
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removeDish(principal, args),
       },
+        {
+          name: 'create_recipe', title: 'Create a recipe',
+          description: 'Creates a saved recipe with its first revision. Content lives in the revision snapshot, exactly as the app writes it: dish (with ingredients), instructions and targets.',
+          inputSchema: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, dish: { type: 'object' }, instructions: { type: 'array', items: { type: 'object' } }, targets: { type: 'array', items: { type: 'object' } }, servings: { type: 'string' }, preferredPitTemperatureF: { type: 'number' }, resultNotes: { type: 'string' }, changeNotes: { type: 'string' }, ...WRITE_ARGS }, required: ['name'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.createRecipe(principal, args),
+        },
+        {
+          name: 'update_recipe', title: 'Update a recipe',
+          description: 'Saves a NEW revision of a recipe — revisions are immutable, history is never rewritten. Parts you omit keep their current values; observations recorded from real cooks are always preserved.',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, dish: { type: 'object' }, instructions: { type: 'array', items: { type: 'object' } }, targets: { type: 'array', items: { type: 'object' } }, servings: { type: 'string' }, preferredPitTemperatureF: { type: 'number' }, resultNotes: { type: 'string' }, changeNotes: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.updateRecipe(principal, args),
+        },
+        {
+          name: 'set_recipe_archived', title: 'Archive or restore a recipe',
+          description: 'Archives a recipe (hidden from everyday lists) or restores it. Never deletes anything.',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, archived: { type: 'boolean' }, ...WRITE_ARGS }, required: ['recipeId', 'archived'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.setRecipeArchived(principal, args),
+        },
+        {
+          name: 'delete_recipe', title: 'Delete a recipe',
+          description: 'Deletes a recipe and all of its revisions.',
+          inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
+          scopes: ['library:delete'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteRecipe(principal, args),
+        },
       ] as ToolDefinition[]) : []),
       {
         name: 'get_sync_status', title: 'Sync status',
@@ -714,6 +743,158 @@ export class PrivateLibraryService {
       for (const link of work.liveRecords('logReadingLinks').filter(r => r.eventId === noteId)) { work.tombstone('logReadingLinks', link); tombstoned++; }
       work.tombstone('events', note); tombstoned++;
       return { noteId, tombstonedRecords: tombstoned };
+    });
+  }
+
+
+  /** Builds a codec-exact recipe snapshot document (the app's
+   * RecipeSnapshotCodec shape) from model-friendly parts. On update,
+   * parts the caller omits inherit the current snapshot's values —
+   * content is never silently dropped by a partial edit. */
+  private recipeSnapshot(args: Record<string, unknown>, base?: Record<string, unknown>): Record<string, unknown> {
+    const name = this.optString(args, 'name') ?? str(base?.name);
+    if (!name?.trim()) throw new ToolFailure('name is required.');
+    const baseDraft = (typeof base?.draft === 'object' && base?.draft !== null ? base.draft : {}) as Record<string, unknown>;
+    const baseDish = (Array.isArray(baseDraft.dishes) ? baseDraft.dishes[0] ?? {} : {}) as Record<string, unknown>;
+    const dishArg = (typeof args.dish === 'object' && args.dish !== null ? args.dish : undefined) as Record<string, unknown> | undefined;
+    const dishName = dishArg ? this.optString(dishArg, 'name') ?? name : str(baseDish.name) ?? name;
+    const ingredients = dishArg?.ingredients !== undefined ? dishArg.ingredients : baseDish.ingredients;
+    if (ingredients !== undefined && !Array.isArray(ingredients)) throw new ToolFailure('dish.ingredients must be an array.');
+    const dish = {
+      name: dishName,
+      foodType: dishArg ? this.optString(dishArg, 'foodType') ?? 'other' : str(baseDish.foodType) ?? 'other',
+      cut: dishArg ? this.optString(dishArg, 'cut') ?? '' : str(baseDish.cut) ?? '',
+      weight: dishArg ? this.optString(dishArg, 'weightText') ?? '' : str(baseDish.weight) ?? '',
+      weightUnit: dishArg ? this.optString(dishArg, 'weightUnit') ?? 'lb' : str(baseDish.weightUnit) ?? 'lb',
+      startingCondition: dishArg ? (this.optString(dishArg, 'startingCondition') ?? null) : (baseDish.startingCondition ?? null),
+      boneIn: dishArg ? (typeof dishArg.boneIn === 'boolean' ? dishArg.boneIn : null) : (baseDish.boneIn ?? null),
+      placement: dishArg ? this.optString(dishArg, 'placement') ?? '' : str(baseDish.placement) ?? '',
+      grade: dishArg ? this.optString(dishArg, 'gradeOrSource') ?? '' : str(baseDish.grade) ?? '',
+      thickness: dishArg ? this.optString(dishArg, 'thicknessNotes') ?? '' : str(baseDish.thickness) ?? '',
+      prep: dishArg ? this.optString(dishArg, 'prepNotes') ?? '' : str(baseDish.prep) ?? '',
+      ingredients: (Array.isArray(ingredients) ? ingredients : []).map((raw, index) => {
+        const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        const iname = this.optString(item, 'name');
+        if (!iname?.trim()) throw new ToolFailure(`dish.ingredients[${index}].name is required.`);
+        return { name: iname, stage: this.optString(item, 'stage') ?? 'seasoning', brand: this.optString(item, 'brand') ?? '', amount: this.optString(item, 'amountText') ?? '', unit: this.optString(item, 'amountUnit') ?? 'tbsp' };
+      }),
+    };
+    const instructionsArg = args.instructions !== undefined ? args.instructions : base?.instructions;
+    if (instructionsArg !== undefined && !Array.isArray(instructionsArg)) throw new ToolFailure('instructions must be an array.');
+    let instructionSeq = 0;
+    const instructions = (Array.isArray(instructionsArg) ? instructionsArg : []).map(raw => {
+      const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+      const title = this.optString(item, 'title');
+      if (!title?.trim()) throw new ToolFailure('Every instruction needs a title.');
+      instructionSeq++;
+      return {
+        id: str(item.id) ?? this.idFor(args, 'step:' + instructionSeq + ':' + title),
+        title, details: this.optString(item, 'details') ?? '',
+        method: this.optString(item, 'method') ?? null,
+        offsetMillis: typeof item.offsetMillis === 'number' ? item.offsetMillis : null,
+        durationMillis: typeof item.durationMinutes === 'number' ? Math.round(item.durationMinutes * 60000) : (typeof item.durationMillis === 'number' ? item.durationMillis : null),
+        sourceEventId: str(item.sourceEventId) ?? null,
+        action: this.optString(item, 'action') ?? null,
+      };
+    });
+    const targetsArg = args.targets !== undefined ? args.targets : base?.targets;
+    if (targetsArg !== undefined && !Array.isArray(targetsArg)) throw new ToolFailure('targets must be an array.');
+    const targets = (Array.isArray(targetsArg) ? targetsArg : []).map(raw => {
+      const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+      const type = this.optString(item, 'type');
+      if (!type) throw new ToolFailure('Every target needs a type.');
+      return { dish: 0, type, value: typeof item.value === 'number' ? item.value : 0, unit: this.optString(item, 'unit') ?? '°F', explanation: this.optString(item, 'explanation') ?? '' };
+    });
+    const tags = args.tags !== undefined ? args.tags : base?.tags;
+    if (tags !== undefined && (!Array.isArray(tags) || tags.some(x => typeof x !== 'string'))) throw new ToolFailure('tags must be an array of strings.');
+    return {
+      version: 1, name,
+      description: this.optString(args, 'description') ?? str(base?.description) ?? '',
+      tags: Array.isArray(tags) ? tags : [],
+      draft: { title: name, smoker: '', setpoint: '', unit: '°F', notes: '', fuel: '', wood: '', dishes: [dish] },
+      instructions,
+      observations: Array.isArray(base?.observations) ? base!.observations : [],
+      targets,
+      resultNotes: this.optString(args, 'resultNotes') ?? str(base?.resultNotes) ?? '',
+      rating: typeof args.rating === 'number' ? args.rating : (typeof base?.rating === 'number' ? base.rating : null),
+      smokingAnchorUtcMillis: typeof base?.smokingAnchorUtcMillis === 'number' ? base.smokingAnchorUtcMillis : null,
+      preferredPitTemperatureF: typeof args.preferredPitTemperatureF === 'number' ? args.preferredPitTemperatureF : (typeof base?.preferredPitTemperatureF === 'number' ? base.preferredPitTemperatureF : null),
+      servings: this.optString(args, 'servings') ?? str(base?.servings) ?? '',
+      cookAgain: typeof base?.cookAgain === 'boolean' ? base.cookAgain : null,
+      publicSource: (typeof base?.publicSource === 'object' && base?.publicSource !== null ? base.publicSource : null),
+    };
+  }
+
+  async createRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['name', 'description', 'tags', 'dish', 'instructions', 'targets', 'servings', 'preferredPitTemperatureF', 'resultNotes', 'changeNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const snapshot = this.recipeSnapshot(args);
+    return this.mutate(principal, args, work => {
+      const now = this.clock();
+      const recipeId = this.idFor(args, 'recipe');
+      const revisionId = this.idFor(args, 'revision:1');
+      work.insert('recipes', {
+        id: recipeId, name: snapshot.name, description: snapshot.description,
+        tagsJson: JSON.stringify(snapshot.tags), currentRevisionId: revisionId,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now,
+        archivedAtUtcMillis: null, favorite: false,
+      });
+      work.insert('recipeRevisions', {
+        id: revisionId, recipeId, parentRevisionId: null, revisionNumber: 1,
+        snapshotSchemaVersion: 1, snapshotJson: JSON.stringify(snapshot),
+        createdAtUtcMillis: now, changeNotes: this.optString(args, 'changeNotes') ?? 'Created by your AI assistant',
+        sourceCookId: null, sourceDishId: null,
+      });
+      return { recipeId, revisionId, revisionNumber: 1 };
+    }, args => ({ recipeId: this.idFor(args, 'recipe'), revisionId: this.idFor(args, 'revision:1'), revisionNumber: 1 }));
+  }
+
+  async updateRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['recipeId', 'name', 'description', 'tags', 'dish', 'instructions', 'targets', 'servings', 'preferredPitTemperatureF', 'resultNotes', 'changeNotes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      const revisions = work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id);
+      if (!revisions.length) throw new ToolFailure('That recipe has no revisions to build on.');
+      const current = revisions.find(r => r.id === recipe.currentRevisionId) ?? revisions.reduce((a, b) => ((num(b.revisionNumber) ?? 0) > (num(a.revisionNumber) ?? 0) ? b : a));
+      let base: Record<string, unknown>;
+      try { base = JSON.parse(str(current.snapshotJson) ?? '{}') as Record<string, unknown>; }
+      catch { throw new ToolFailure('The current revision could not be read.'); }
+      const snapshot = this.recipeSnapshot(args, base);
+      const now = this.clock();
+      const number = Math.max(...revisions.map(r => num(r.revisionNumber) ?? 0)) + 1;
+      const revisionId = this.idFor(args, 'revision:' + number);
+      work.insert('recipeRevisions', {
+        id: revisionId, recipeId: recipe.id, parentRevisionId: current.id, revisionNumber: number,
+        snapshotSchemaVersion: 1, snapshotJson: JSON.stringify(snapshot),
+        createdAtUtcMillis: now, changeNotes: this.optString(args, 'changeNotes') ?? 'Updated by your AI assistant',
+        sourceCookId: null, sourceDishId: null,
+      });
+      work.update('recipes', recipe, {
+        name: snapshot.name, description: snapshot.description, tagsJson: JSON.stringify(snapshot.tags),
+        currentRevisionId: revisionId, updatedAtUtcMillis: now,
+      });
+      return { recipeId: recipe.id, revisionId, revisionNumber: number };
+    });
+  }
+
+  async setRecipeArchived(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['recipeId', 'archived', 'idempotencyKey', 'expectedSnapshotVersion']);
+    if (typeof args.archived !== 'boolean') throw new ToolFailure('archived (true or false) is required.');
+    return this.mutate(principal, args, work => {
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      work.update('recipes', recipe, { archivedAtUtcMillis: args.archived ? this.clock() : null, updatedAtUtcMillis: this.clock() });
+      return { recipeId: recipe.id, archived: args.archived };
+    });
+  }
+
+  async deleteRecipe(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['recipeId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      let tombstoned = 0;
+      for (const revision of work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id)) { work.tombstone('recipeRevisions', revision); tombstoned++; }
+      for (const source of work.liveRecords('dishRecipeSources').filter(r => r.recipeId === recipe.id)) { work.tombstone('dishRecipeSources', source); tombstoned++; }
+      work.tombstone('recipes', recipe); tombstoned++;
+      return { recipeId: recipe.id, tombstonedRecords: tombstoned };
     });
   }
 
