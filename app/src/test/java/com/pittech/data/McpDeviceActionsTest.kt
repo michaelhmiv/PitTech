@@ -42,7 +42,7 @@ class McpDeviceActionsTest {
         override suspend fun reminderReconcile(cookId: String) { }
         override fun notificationsEnabled() = notifications
         override suspend fun candidateCookIds() = candidates
-        override suspend fun cookStatus(cookId: String) = statuses[cookId]
+        override suspend fun cookStatus(cookId: String): String? = statuses[cookId]
         override suspend fun startTimer(cookId: String, title: String, durationMillis: Long): String { startedTimer = Triple(cookId, title, durationMillis); return "timer-9" }
         override suspend fun stopTimer(timerId: String) = knownTimer
         override suspend fun activeRecordingCookId() = recordingCook

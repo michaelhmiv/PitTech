@@ -81,7 +81,7 @@ internal interface DeviceActionPorts {
     suspend fun reminderReconcile(cookId: String)
     fun notificationsEnabled(): Boolean
     suspend fun candidateCookIds(): List<String>
-    suspend fun cookStatus(cookId: String): CookStatus?
+    suspend fun cookStatus(cookId: String): String?
     suspend fun startTimer(cookId: String, title: String, durationMillis: Long): String
     suspend fun stopTimer(timerId: String): Boolean
     suspend fun activeRecordingCookId(): String?
@@ -209,7 +209,7 @@ internal class NativeDeviceActionPorts(private val context: Context, private val
                 context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
     override suspend fun candidateCookIds(): List<String> =
         db.cookDao().getAllCooks().filter { it.status == CookStatus.ACTIVE || it.status == CookStatus.PAUSED }.map { it.id }
-    override suspend fun cookStatus(cookId: String): CookStatus? = db.cookDao().getCook(cookId)?.status
+    override suspend fun cookStatus(cookId: String): String? = db.cookDao().getCook(cookId)?.status
     override suspend fun startTimer(cookId: String, title: String, durationMillis: Long): String =
         timers.start(cookId, null, title, null, durationMillis).id
     override suspend fun stopTimer(timerId: String): Boolean {
