@@ -1,3 +1,45 @@
+## October 22 staging activation — COMPLETE
+
+Controlled activation of the isolated staging stack ran end to end on
+October 22, 2026 (New York). The API runs main `01ca9e64` with **all seven
+online flags on**: auth (+ Apple/Google providers), account lifecycle,
+private sync, subscriptions, public API, community aggregation and relay
+uploads. Each step landed as one variable change plus one deployment and
+was verified live before the next began; the ordered runbook is preserved
+in the rollout record. Rollback is the reverse sequence to the previously
+verified fail-closed state.
+
+Live evidence, not just green CI:
+
+- **Email sign-in (B6):** real challenge → Resend delivery from
+  `signin@auth-staging.pittech.app` → verify → account created →
+  `/v1/me` 200 → refresh rotation (old access 401) → logout 204 →
+  post-logout access and refresh both 401.
+- **Subscriptions:** entitlement read 200 with the honest unverified
+  state; reconcile 200 in both production and sandbox environments; a
+  Play Console RTDN test notification was delivered by Pub/Sub and the
+  endpoint answered 200 (OIDC identity verified). Store keys (ASC API
+  key "PitTech Server", App Manager; a new JSON key on the existing Play
+  publisher identity) are installed; their first full exercise is the
+  device purchase lifecycle, which remains open below.
+- **Limits/logging under real traffic:** oversized auth body → 413;
+  log surfaces carry only fixed-vocabulary route/status lines.
+- **Backup/restore drill (E1) PASSED:** logical dump of all 48 tables
+  restored into a scratch database with identical per-table counts.
+  Railway volume backups are Pro-only on this Hobby workspace, so the
+  logical procedure in doc 22 is the staging mechanism.
+- Remaining acceptance dispositions: the community job-runs read is
+  Pro-gated and its first proof rides the device purchase; challenge
+  pruning is time-deferred by design; the physical-device walkthrough
+  (TestFlight install, SIWA + Google sign-in on hardware, cross-device
+  sync with real photos, Apple sandbox + Play license-tester purchase
+  lifecycle) is the one open leg and requires an iOS 17+ device.
+
+MCP #114 stays planned; its sequencing prerequisite (the live online
+stack) is now satisfied. See [STAGING.md](STAGING.md),
+[20-online-enablement.md](20-online-enablement.md) and
+[22-operations-runbooks.md](22-operations-runbooks.md).
+
 ## October 21 online rollout checkpoint
 
 PR #124 merged at `9a97216` (2026-10-21 02:08 UTC). Its candidate `9ee2e2d`

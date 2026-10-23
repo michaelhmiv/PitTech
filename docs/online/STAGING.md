@@ -1,9 +1,25 @@
 # Isolated Railway staging
 
-Updated October 20, 2026, evening in New York. The isolated foundation,
-private runtime/storage probe and staging API deployments have completed
-successfully. Online features remain off while mail, stores and complete
-account/community/sync/deletion acceptance are unfinished.
+Updated October 22, 2026, evening in New York. **The stack is fully
+activated**: the API runs main `01ca9e64` with all seven online flags on
+(auth + providers, lifecycle, private sync, subscriptions, public API,
+community aggregation, relay uploads), verified step by step against the
+live service — see the activation section in [STATUS.md](STATUS.md) and
+the operational procedures in
+[22-operations-runbooks.md](22-operations-runbooks.md). The resource
+table below is the foundation-era record; deployment IDs there predate
+the activation deploys.
+
+Mail facts (superseding the foundation-era notes): `pittech.app` was
+purchased through Railway Domains, so **Railway manages its DNS** (the
+registrar of record is Railway's partner). The four Resend records for
+`auth-staging.pittech.app` were added through the Railway API on
+2026-10-22; the domain is Verified in Resend, a domain-scoped sending
+key is installed, and real sign-in delivery is proven. Staging budgets
+as activated: relay storage 1 GiB (daily upload 128 MiB / 10), public
+storage 512 MiB under a 2 GiB combined object cap (public daily 64 MiB /
+100 writes), private sync per the `PRIVATE_SYNC_LIMIT_*` values on the
+service (owner 128 MiB / global 512 MiB / daily 128 MiB).
 
 | Resource | Observed configuration |
 |---|---|

@@ -187,10 +187,14 @@ Online enablement is tracked in issue #123 and `docs/online/20-online-enablement
 On October 20 the owner authorized completing the online rollout and distributing
 the tested build through Firebase. Missing runtime/store inputs and verification
 remain real prerequisites; older “awaiting authorization” notes do not require
-another permission request. MCP #114 is fully planned and paused for this rollout. The isolated staging
-foundation and private runtime/storage probe have passed; the API is deployed at
-backend-tested 9ee2e2d (see `docs/online/STAGING.md`). Online feature flags stay
-off until full operational acceptance. The companion emulator selector now
+another permission request. The isolated staging
+foundation passed, and on October 22, 2026 the staging API (main
+`01ca9e64`) completed controlled activation: all seven online flags are
+ON and live-verified (email sign-in, subscriptions incl. RTDN
+processing, public discovery, sync, lifecycle, aggregation, relay
+uploads). The remaining #123 leg is the physical-device walkthrough and
+test delivery (see `docs/online/STATUS.md`). MCP #114 is fully planned;
+its prerequisite — the live online stack — is now satisfied. The companion emulator selector now
 requires 73 tests, including persistent subscription-cache account isolation
 and Google provider sign-in/attach.
 Native online configuration selects production or staging with fixed first-party
@@ -208,12 +212,17 @@ exact-main CI is established through the connected GitHub integration, never
 assumed from a workflow-token merge. The retained CI-only operations under
 `.github/scripts/online-*` (public signer evidence, read-only store inventory,
 idempotent Apple draft completion) are dispatch-only on main. Apple's monthly
-product is a draft (state MISSING_METADATA). Play: the `pittech.pro.monthly`
+product: the ASC API reports `MISSING_METADATA`, but the App Store Connect UI
+shows the subscription and its group as "Prepare for Submission" with every
+section complete (screenshot uploaded, $3 US price) — the UI is authoritative;
+the parked state is correct because a first subscription submits with a new
+app version. Play: the `pittech.pro.monthly`
 draft exists — created 2026-10-21 after the CI publisher identity received
 "Manage store presence" (base plan `monthly`, state DRAFT, US $3). Staging
-mail is still blocked: pittech.app was purchased through Railway Domains, so
-Railway manages its DNS, and the four Resend staging records go in through
-the Railway API once it recovers from the 2026-10-21 platform incident.
+mail is DONE (2026-10-22): pittech.app was purchased through Railway Domains, so
+Railway manages its DNS; the four Resend staging records were added through
+the Railway API, the domain verified, a sending key installed, and real
+sign-in delivery proven during activation.
 See docs/online/20-online-enablement.md.
 
 If your change alters the repo layout, the workflows and what they prove,
