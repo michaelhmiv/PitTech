@@ -91,7 +91,9 @@
           "delete_meal",
           "add_dish",
           "update_dish",
-          "remove_dish"
+          "remove_dish",
+          "save_results",
+          "save_lessons"
         ]
       },
       "fixtures": [],
@@ -325,7 +327,9 @@
           "create_note",
           "update_note",
           "delete_note",
-          "undo_private_operation"
+          "undo_private_operation",
+          "add_manual_reading",
+          "remove_manual_reading"
         ]
       },
       "fixtures": [],
@@ -1922,10 +1926,16 @@
       },
       "mcp": {
         "status": "handoff_only",
-        "tools": []
+        "tools": [
+          "list_my_devices",
+          "request_device_action",
+          "get_device_action",
+          "list_device_actions",
+          "cancel_device_action"
+        ]
       },
       "fixtures": [],
-      "notes": "Sync-excluded by design: activityTimers, reminderOccurrences, probeAssignments, recordings, preferences. Commands use a closed action enum, a target device, expiry and claim/apply receipts; states are saved / queued_for_device / applied / needs_attention / expired / canceled / failed. Tool names are registered in M6 when the command path lands.",
+      "notes": "Sync-excluded by design: activityTimers, reminderOccurrences, probeAssignments, recordings, preferences. Commands use a closed action enum, a target device, expiry and claim/apply receipts; states are saved / queued_for_device / applied / needs_attention / expired / canceled / failed. Devices register and opt into action classes in the first-party apps; the server never claims an action was applied without a device receipt.",
       "fields": []
     },
     {
@@ -1967,7 +1977,7 @@
         "tools": []
       },
       "fixtures": [],
-      "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control \u2014 see prohibited.hardware_control.",
+      "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control — see prohibited.hardware_control.",
       "fields": [
         {
           "source": "equipment",
@@ -2136,6 +2146,11 @@
       "mcp": {
         "status": "planned_disabled",
         "tools": [
+          "list_sharing_drafts",
+          "get_sharing_draft",
+          "create_sharing_draft",
+          "update_sharing_draft",
+          "delete_sharing_draft",
           "preview_import",
           "apply_import",
           "create_export",
