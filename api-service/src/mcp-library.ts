@@ -23,6 +23,9 @@ export interface SnapshotReader {
  * compare-and-swap on the envelope's baseVersion with a durable,
  * idempotent receipt per mutationId — exactly the guarantees the MCP
  * command spine is built on. */
+export interface McpBenchmarkSource {
+  latestFigures(bucket?: string, metric?: string): Promise<{ run: unknown; figures: readonly unknown[] }>;
+}
 export interface McpPhotoStore {
   begin(user: string, input: unknown): Promise<unknown>;
   statusOf(user: string, asset: string): Promise<unknown>;
@@ -144,13 +147,13 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
-  private photos: McpPhotoStore | undefined;
+  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
-    this.photos = options.photos;
+    this.photos = options.photos; this.benchmarks = options.benchmarks;
     this.clock = options.clock ?? Date.now;
   }
   private requirePhotos(): McpPhotoStore {
@@ -437,6 +440,48 @@ export class PrivateLibraryService {
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removePhoto(principal, args),
         },
       ] as ToolDefinition[]) : []),
+      {
+        name: 'get_temperature_history', title: 'Temperature history',
+        description: 'Temperature readings for a meal. Default mode is reduced: 15-minute interval statistics (min/max/average/samples) per dish and probe type. Use mode raw for individual readings (paged by limit).',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, dishId: { type: 'string' }, measurementType: { type: 'string' }, mode: { type: 'string', enum: ['reduced', 'raw'] }, limit: { type: 'number' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.temperatureHistory(principal, args),
+      },
+      {
+        name: 'get_cook_summary', title: 'Cook summary',
+        description: 'A computed summary of one meal: duration, per-dish peak temperatures, results, note/photo/reading counts.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.cookSummary(principal, args),
+      },
+      {
+        name: 'compare_cooks', title: 'Compare cooks',
+        description: 'Side-by-side summaries of 2 to 4 meals.',
+        inputSchema: { type: 'object', properties: { mealIds: { type: 'array', items: { type: 'string' } } }, required: ['mealIds'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.compareCooks(principal, args),
+      },
+      {
+        name: 'get_personal_insights', title: 'Personal insights',
+        description: 'Aggregates across the whole library: totals, average completed-cook duration, most-cooked food types, top-rated dishes, meals by month. Sample counts are always included.',
+        inputSchema: { ...NO_ARGS_SCHEMA },
+        scopes: ['library:read'],
+        handler: async principal => this.personalInsights(principal, {}),
+      },
+      {
+        name: 'build_private_recap', title: 'Build a private recap',
+        description: 'Builds a private, shareable-text recap of one meal from its summary. It stays in this conversation unless the user shares it.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.buildRecap(principal, args),
+      },
+      ...(this.benchmarks ? [{
+        name: 'get_community_benchmarks', title: 'Community benchmarks',
+        description: 'Anonymous community aggregates (cook durations, temperatures and outcomes by category) from the latest published figures. Optional bucket and metric filters.',
+        inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, metric: { type: 'string' } }, additionalProperties: false },
+        scopes: ['community:read'] as const,
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.communityBenchmarks(principal, args),
+      }] as ToolDefinition[] : []),
       {
         name: 'get_sync_status', title: 'Sync status',
         description: 'Reports the state of the user\'s synced library on the server: whether anything has synced yet, the snapshot version and time, and how many records of each kind it holds. Never claims live phone state — the phone may have newer unsynced changes.',
@@ -1269,6 +1314,148 @@ export class PrivateLibraryService {
       work.tombstone('photos', photo);
       return { photoId: photo.id, assetId: assetId ?? null };
     });
+  }
+
+
+  private static readonly INSIGHTS_VERSION = 'mcp-insights-v1';
+  private dishName(data: LibraryData, dishId: unknown): string | null {
+    if (typeof dishId !== 'string') return null;
+    const dish = data.byType.get('dishes')?.get(dishId);
+    return dish ? str(dish.name) ?? null : null;
+  }
+
+  async temperatureHistory(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'dishId', 'measurementType', 'mode', 'limit']);
+    const data = await this.loadLibrary(principal);
+    const meal = this.record(data, 'cooks', args.mealId, 'Meal');
+    let readings = this.records(data, 'readings').filter(r => r.cookId === meal.id);
+    if (typeof args.dishId === 'string') readings = readings.filter(r => r.dishId === args.dishId);
+    if (typeof args.measurementType === 'string') readings = readings.filter(r => r.measurementType === args.measurementType);
+    readings.sort((a, b) => (num(a.measuredAtUtcMillis) ?? 0) - (num(b.measuredAtUtcMillis) ?? 0));
+    const mode = this.optString(args, 'mode') ?? 'reduced';
+    if (mode === 'raw') {
+      const limit = Math.min(Math.max(Math.trunc(this.optNumber(args, 'limit') ?? 100), 1), 500);
+      const page = readings.slice(0, limit);
+      return {
+        snapshotVersion: data.version, mealId: meal.id, mode, algorithm: PrivateLibraryService.INSIGHTS_VERSION,
+        totalReadings: readings.length, returned: page.length,
+        readings: page.map(r => ({ at: iso(r.measuredAtUtcMillis), dishId: r.dishId ?? null, dish: this.dishName(data, r.dishId), probe: r.probeName ?? null, type: r.measurementType, value: r.value, unit: r.unit, quality: r.qualityStatus ?? null })),
+      };
+    }
+    if (mode !== 'reduced') throw new ToolFailure("mode must be 'reduced' or 'raw'.");
+    // Reduced: 15-minute interval statistics per (dish, type, unit), the
+    // same interval the community curves use.
+    const interval = 900000;
+    const groups = new Map<string, { dishId: unknown; type: unknown; unit: unknown; start: number; values: number[] }>();
+    for (const r of readings) {
+      const at = num(r.measuredAtUtcMillis); const value = num(r.value);
+      if (at === undefined || value === undefined) continue;
+      const start = Math.floor(at / interval) * interval;
+      const key = `${String(r.dishId)}|${String(r.measurementType)}|${String(r.unit)}|${start}`;
+      const group = groups.get(key) ?? { dishId: r.dishId, type: r.measurementType, unit: r.unit, start, values: [] };
+      group.values.push(value); groups.set(key, group);
+    }
+    const series = [...groups.values()].sort((a, b) => a.start - b.start).map(g => ({
+      dishId: g.dishId ?? null, dish: this.dishName(data, g.dishId), type: g.type, unit: g.unit,
+      intervalStart: iso(g.start), samples: g.values.length,
+      min: Math.min(...g.values), max: Math.max(...g.values),
+      avg: Math.round((g.values.reduce((a, b) => a + b, 0) / g.values.length) * 10) / 10,
+    }));
+    return { snapshotVersion: data.version, mealId: meal.id, mode, algorithm: PrivateLibraryService.INSIGHTS_VERSION, totalReadings: readings.length, intervals: series };
+  }
+
+  async cookSummary(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const data = await this.loadLibrary(principal);
+    const meal = this.record(data, 'cooks', args.mealId, 'Meal');
+    const dishes = this.records(data, 'dishes').filter(d => d.cookId === meal.id);
+    const readings = this.records(data, 'readings').filter(r => r.cookId === meal.id);
+    const results = this.records(data, 'results').filter(r => r.cookId === meal.id);
+    const summarizeDish = (dish: Payload) => {
+      const own = readings.filter(r => r.dishId === dish.id && typeof r.value === 'number');
+      const byType = new Map<string, number[]>();
+      for (const r of own) { const list = byType.get(String(r.measurementType)) ?? []; list.push(num(r.value)!); byType.set(String(r.measurementType), list); }
+      return {
+        dishId: dish.id, name: dish.name, foodType: dish.foodType,
+        peakByType: Object.fromEntries([...byType.entries()].map(([type, values]) => [type, Math.max(...values)])),
+        readingCount: own.length,
+        results: results.filter(r => r.dishId === dish.id).map(r => ({ type: r.resultType, value: r.numericValue ?? r.textValue ?? null, unit: r.unit ?? null, notes: r.notes ?? null })),
+      };
+    };
+    const started = num(meal.startedAtUtcMillis); const ended = num(meal.endedAtUtcMillis);
+    return {
+      snapshotVersion: data.version, algorithm: PrivateLibraryService.INSIGHTS_VERSION,
+      meal: {
+        mealId: meal.id, title: meal.title, status: meal.status, smokerName: meal.smokerName ?? null,
+        startedAt: iso(meal.startedAtUtcMillis), endedAt: iso(meal.endedAtUtcMillis),
+        durationMinutes: started !== undefined && ended !== undefined ? Math.round((ended - started) / 60000) : null,
+      },
+      dishes: dishes.map(summarizeDish),
+      cookLevelResults: results.filter(r => !r.dishId).map(r => ({ type: r.resultType, value: r.numericValue ?? r.textValue ?? null, unit: r.unit ?? null, notes: r.notes ?? null })),
+      noteCount: this.records(data, 'events').filter(e => e.cookId === meal.id).length,
+      photoCount: this.records(data, 'photos').filter(p => p.cookId === meal.id).length,
+      readingCount: readings.length,
+    };
+  }
+
+  async compareCooks(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealIds']);
+    if (!Array.isArray(args.mealIds) || args.mealIds.length < 2 || args.mealIds.length > 4 || args.mealIds.some(x => typeof x !== 'string')) {
+      throw new ToolFailure('mealIds must be an array of 2 to 4 meal ids.');
+    }
+    const summaries = [];
+    for (const mealId of args.mealIds as string[]) {
+      summaries.push(await this.cookSummary(principal, { mealId }));
+    }
+    return { algorithm: PrivateLibraryService.INSIGHTS_VERSION, cooks: summaries };
+  }
+
+  async personalInsights(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, []);
+    const data = await this.loadLibrary(principal);
+    const meals = this.records(data, 'cooks');
+    const dishes = this.records(data, 'dishes');
+    const results = this.records(data, 'results');
+    const completed = meals.filter(m => m.status === 'completed');
+    const durations = completed.map(m => { const s = num(m.startedAtUtcMillis); const e = num(m.endedAtUtcMillis); return s !== undefined && e !== undefined && e > s ? (e - s) / 3600000 : undefined; }).filter((x): x is number => x !== undefined);
+    const foodCounts = new Map<string, number>();
+    for (const dish of dishes) foodCounts.set(String(dish.foodType ?? 'other'), (foodCounts.get(String(dish.foodType ?? 'other')) ?? 0) + 1);
+    const ratings = results.filter(r => typeof r.numericValue === 'number' && /rating|score/i.test(String(r.resultType ?? '')))
+      .map(r => ({ dishId: r.dishId ?? null, dish: this.dishName(data, r.dishId), value: num(r.numericValue)! })).sort((a, b) => b.value - a.value);
+    const byMonth = new Map<string, number>();
+    for (const meal of meals) { const at = num(meal.startedAtUtcMillis); if (at === undefined) continue; const key = new Date(at).toISOString().slice(0, 7); byMonth.set(key, (byMonth.get(key) ?? 0) + 1); }
+    return {
+      snapshotVersion: data.version, algorithm: PrivateLibraryService.INSIGHTS_VERSION,
+      totals: { meals: meals.length, completedMeals: completed.length, dishes: dishes.length, photos: this.records(data, 'photos').length, notes: this.records(data, 'events').length, readings: this.records(data, 'readings').length },
+      averageCompletedCookHours: durations.length ? Math.round((durations.reduce((a, b) => a + b, 0) / durations.length) * 10) / 10 : null,
+      dishesByFoodType: Object.fromEntries([...foodCounts.entries()].sort((a, b) => b[1] - a[1])),
+      topRated: ratings.slice(0, 5),
+      mealsByMonth: Object.fromEntries([...byMonth.entries()].sort()),
+      sampleCounts: { meals: meals.length, durations: durations.length, ratings: ratings.length },
+    };
+  }
+
+  async communityBenchmarks(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['bucket', 'metric']);
+    if (!this.benchmarks) throw new ToolFailure('Community benchmarks are not available on this server.');
+    const { run, figures } = await this.benchmarks.latestFigures(this.optString(args, 'bucket'), this.optString(args, 'metric'));
+    return { run, figures: figures.slice(0, 100), note: 'Anonymous community aggregates only (minimum group sizes enforced by the aggregation job); no individual cooks are exposed.' };
+  }
+
+  async buildRecap(principal: McpPrincipal, args: Record<string, unknown>) {
+    const summary = await this.cookSummary(principal, args);
+    const meal = summary.meal as { title?: string; status?: string; durationMinutes?: number | null };
+    const lines = [
+      `# ${meal.title ?? 'Cook'}`,
+      `Status: ${meal.status ?? 'unknown'}${meal.durationMinutes ? ` · ${meal.durationMinutes} minutes` : ''}`,
+    ];
+    for (const dish of summary.dishes as { name?: string; foodType?: string; peakByType?: Record<string, number>; results?: { type?: string; value?: unknown }[] }[]) {
+      const peaks = Object.entries(dish.peakByType ?? {}).map(([type, value]) => `${type} peaked at ${value}`).join('; ');
+      lines.push(`- ${dish.name ?? 'Dish'} (${dish.foodType ?? 'food'})${peaks ? ` — ${peaks}` : ''}`);
+      for (const result of dish.results ?? []) lines.push(`  - ${result.type}: ${String(result.value ?? '')}`);
+    }
+    if (summary.noteCount) lines.push(`Notes: ${summary.noteCount}. Photos: ${summary.photoCount}. Readings: ${summary.readingCount}.`);
+    return { snapshotVersion: summary.snapshotVersion, algorithm: PrivateLibraryService.INSIGHTS_VERSION, mealId: (args.mealId as string), recap: lines.join('\n') };
   }
 
   async connectionStatus(principal: McpPrincipal) {
