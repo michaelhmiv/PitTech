@@ -22,6 +22,10 @@ provider diagnostics. The existing trusted-ingress policy and a durable
 The native client generates 32 random bytes as canonical unpadded base64url
 before requesting a challenge. `proofChallenge` hashes the **UTF-8 verifier
 string**, identically on both platforms. The verifier stays on that device.
+The verifier's format is part of the contract: verify rejects any verifier
+that is not itself a 32-byte base64url credential *before* attempt counting,
+so a challenge bound to a malformed verifier can never be exchanged — the
+client must generate the verifier exactly as specified above.
 An email opened on another device supplies the six-digit code for entry into
 the requesting app. Both alternatives share one consumption state, expire in
 15 minutes, and allow at most five code attempts. Resend is limited to once per
