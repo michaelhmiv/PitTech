@@ -77,6 +77,15 @@ export class PrivateSnapshots {
     return { version, object };
   }
   private context(user: string, row: ObjectRow) { return { userId: user, objectId: row.id, kind: 'snapshot' as const, sha256: row.sha256 }; }
+  /** Snapshot head metadata without decrypting the envelope: the current
+   * committed version and when it was committed (epoch ms), or version 0
+   * when the account has never synced. Read-only status surfaces (MCP
+   * connection context) use this; it never exposes library content. */
+  async status(user: string): Promise<{ version: number; updatedAt: number | null }> {
+    const row = (await this.pool.query('SELECT version,updated_at FROM private_sync.accounts WHERE user_id=$1', [user])).rows[0] as { version: string; updated_at: string } | undefined;
+    if (!row) return { version: 0, updatedAt: null };
+    return { version: Number(row.version), updatedAt: Number(row.updated_at) };
+  }
   async read(user: string): Promise<{ version: number; envelope: SyncEnvelope | null }> {
     const head = await this.tx(async c => { await this.owner(c, user); return this.head(c, user); });
     let envelope: SyncEnvelope | null = null;
