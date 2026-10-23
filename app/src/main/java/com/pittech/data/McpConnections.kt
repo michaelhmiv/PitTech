@@ -38,7 +38,11 @@ internal class McpClient(client: OkHttpClient = OkHttpClient()) : McpAPI {
     override suspend fun call(method: String, path: String, body: JSONObject?, access: String?): JSONObject {
         require(method in setOf("GET", "POST", "DELETE"))
         require(path == "/v1/me/mcp/grants" || path == "/v1/me/mcp/oauth/approve" ||
-            Regex("^/v1/me/mcp/grants/[0-9a-fA-F-]{36}$").matches(path)) { "Unlisted MCP path" }
+            path == "/v1/me/mcp/devices" || path == "/v1/me/mcp/device-commands" ||
+            Regex("^/v1/me/mcp/grants/[0-9a-fA-F-]{36}$").matches(path) ||
+            Regex("^/v1/me/mcp/devices/[0-9a-fA-F-]{36}$").matches(path) ||
+            Regex("^/v1/me/mcp/devices/[0-9a-fA-F-]{36}/claim$").matches(path) ||
+            Regex("^/v1/me/mcp/devices/[0-9a-fA-F-]{36}/receipt$").matches(path)) { "Unlisted MCP path" }
         val request = Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path")
             .header("Accept", "application/json").header("Cache-Control", "no-store")
         when (method) {
