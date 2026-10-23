@@ -137,5 +137,5 @@ test('tools/list now carries the full read catalog', async () => {
   const s = await setup();
   const response = await s.server.handle(s.principal, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
   const names = (response as { result: { tools: { name: string }[] } }).result.tools.map(t => t.name);
-  assert.deepEqual(names, ['get_connection_status', 'get_capabilities', 'list_meals', 'get_meal', 'list_notes', 'get_note', 'list_companions', 'get_companion', 'list_reminder_rules', 'search_recipes', 'get_recipe', 'list_recipe_revisions', 'get_temperature_history', 'get_cook_summary', 'compare_cooks', 'get_personal_insights', 'build_private_recap', 'get_sync_status']);
+  assert.deepEqual(names, ['get_connection_status', 'get_capabilities', 'list_meals', 'get_meal', 'list_notes', 'get_note', 'list_companions', 'get_companion', 'list_reminder_rules', 'list_sharing_drafts', 'get_sharing_draft', 'search_recipes', 'get_recipe', 'list_recipe_revisions', 'get_temperature_history', 'get_cook_summary', 'compare_cooks', 'get_personal_insights', 'build_private_recap', 'get_sync_status']);
 });

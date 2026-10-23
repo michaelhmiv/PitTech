@@ -14,6 +14,11 @@ import type { McpServer } from './mcp-server.ts';
  * to connect.
  */
 
+/** Bounded request body for one JSON-RPC call. Sized for archive
+ * import payloads (preview_import carries a whole portable archive);
+ * still a hard cap — larger libraries move photos by asset id, not
+ * inline. */
+const MCP_MAX_BODY_BYTES = 10 * 1024 * 1024;
 export function mcpTransportRoute(url: string, method: string): '/mcp' | 'resource-metadata' | undefined {
   const path = url.split('?', 1)[0];
   if (path === '/mcp') return '/mcp'; // any method: the handler 405s non-POST per stateless-mode rules
@@ -50,9 +55,9 @@ export async function handleMcpTransport(req: IncomingMessage, res: ServerRespon
   }
   if (req.headers['content-type'] !== 'application/json' || ![undefined, 'identity'].includes(req.headers['content-encoding'])) throw new ApiError(415, 'json_required');
   const declared = req.headers['content-length'];
-  if (declared !== undefined && (!/^[0-9]+$/.test(declared) || Number(declared) > 262144)) throw new ApiError(413, 'request_too_large');
+  if (declared !== undefined && (!/^[0-9]+$/.test(declared) || Number(declared) > MCP_MAX_BODY_BYTES)) throw new ApiError(413, 'request_too_large');
   const chunks: Buffer[] = []; let size = 0;
-  for await (const chunk of req) { size += chunk.length; if (size > 262144) throw new ApiError(413, 'request_too_large'); chunks.push(Buffer.from(chunk)); }
+  for await (const chunk of req) { size += chunk.length; if (size > MCP_MAX_BODY_BYTES) throw new ApiError(413, 'request_too_large'); chunks.push(Buffer.from(chunk)); }
   if (!req.complete) throw new ApiError(400, 'upload_interrupted');
   let message: unknown;
   try { message = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))); }

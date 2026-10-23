@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ApiError } from './core.ts';
 import type { Authentication } from './auth.ts';
-import type { McpGrants } from './mcp-grants.ts';
+import { hasScope, type McpGrants } from './mcp-grants.ts';
 import type { McpOAuth } from './mcp-oauth.ts';
+import type { McpPortabilityStore } from './mcp-portability.ts';
 
 /**
  * Grant-management routes (issue #114, M1b). These are the owner's own
@@ -59,6 +60,40 @@ function asRequestError(failure: unknown): unknown {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const MCP_DEFAULT_GRANT_DAYS = 90;
+
+/** Private export download (issue #114, M5): the artifacts create_export
+ * and render_private_share_card produce. Authenticated either by the
+ * owner's native session or by an MCP connection token holding
+ * exports:read — never a public or permanent bearer link. Unknown and
+ * other-account ids are one indistinguishable 404; expired is 410. */
+export function mcpExportRoute(url: string, method: string): '/v1/me/mcp/exports/:id' | undefined {
+  const path = url.split('?', 1)[0];
+  if (method === 'GET' && /^\/v1\/me\/mcp\/exports\/[0-9a-fA-F-]{36}$/.test(path)) return '/v1/me/mcp/exports/:id';
+}
+
+export async function handleMcpExportDownload(req: IncomingMessage, res: ServerResponse,
+  auth: Authentication | undefined, grants: McpGrants, portability: McpPortabilityStore) {
+  const json = (status: number, value: unknown) => { if (res.destroyed) throw new ApiError(400, 'request_interrupted'); res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
+  res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('Vary', 'Authorization'); res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  if (req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length'] ?? 0) !== 0) throw new ApiError(400, 'unexpected_body');
+  const id = (req.url ?? '').split('?', 1)[0].split('/').pop()!;
+  let userId: string | undefined;
+  const sessionToken = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '')?.[1];
+  if (auth && sessionToken) {
+    try { userId = (await auth.user(sessionToken)).id; } catch { userId = undefined; }
+  }
+  if (!userId) {
+    const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+    const principal = bearer ? await grants.authenticate(bearer) : undefined;
+    if (principal && hasScope(principal, 'exports:read')) userId = principal.userId;
+  }
+  if (!userId) throw new ApiError(401, 'authentication_required');
+  const record = await portability.exportFor(userId, id);
+  if (!record) throw new ApiError(404, 'mcp_export_not_found');
+  if (record.expiresAt <= Date.now()) throw new ApiError(410, 'mcp_export_expired');
+  const payload = record.payload as { archive?: unknown; card?: unknown };
+  json(200, record.kind === 'share_card' ? payload.card : payload.archive);
+}
 
 export async function handleMcpGrants(req: IncomingMessage, res: ServerResponse, route: McpGrantRoute,
   auth: Authentication | undefined, grants: McpGrants, capacity: { claim(): boolean; release(): void },
