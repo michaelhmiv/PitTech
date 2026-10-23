@@ -42,12 +42,12 @@ import com.pittech.data.ActivityGoogleSignInHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null) {
+@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null) {
     val showing by account.showing.collectAsStateWithLifecycle()
     if(!showing)return
-    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
+    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync, mcp, device)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
 }
-@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null) {
+@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null) {
     val state by account.presentation.collectAsStateWithLifecycle()
     var confirm by remember{mutableStateOf(false)}
     var reviewingDeletion by remember{mutableStateOf(false)}
@@ -75,6 +75,8 @@ import kotlinx.coroutines.launch
             if(state.googleLinked)Text("Google sign-in is linked.",Modifier.testTag("account-auth-google"))
             else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
             Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
+            mcp?.let{McpConnectionsSection(it)}
+            device?.let{McpDeviceActionsSection(it)}
             TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
             TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
         }else AccountSignIn(account,state)
@@ -88,6 +90,110 @@ import kotlinx.coroutines.launch
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Sign out on this device?")},text={Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.")},confirmButton={TextButton(onClick={confirm=false;account.signOut()},modifier=Modifier.testTag("account-confirm-signout")){Text("Sign out")}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
     if(reviewingDeletion)AccountDeletionConfirmation(onCancel={reviewingDeletion=false},onConfirm={reviewingDeletion=false;account.requestDeletion()})
     if(reviewingJournal)LocalJournalRemovalConfirmation(onCancel={reviewingJournal=false},onConfirm={reviewingJournal=false;account.removeLocalJournal()})
+}
+
+@Composable private fun McpConnectionsSection(mcp: com.pittech.data.McpConnectionsManager) {
+    val state by mcp.presentation.collectAsStateWithLifecycle()
+    var creating by remember{mutableStateOf(false)}
+    var confirmRevoke by remember{mutableStateOf<String?>(null)}
+    var confirmRevokeAll by remember{mutableStateOf(false)}
+    var code by remember{mutableStateOf("")}
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    LaunchedEffect(Unit){mcp.refresh()}
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        Text("Connect your AI",style=MaterialTheme.typography.titleMedium)
+        Text("Let an AI assistant like ChatGPT or Muse help with your own meals, recipes and logs. Connections use your PitTech Pro and can be disconnected here any time. An assistant can never publish, control a grill, or change your account or billing.",style=MaterialTheme.typography.bodySmall)
+        if(!state.available)Text("AI connections aren't available yet.",Modifier.testTag("mcp-unavailable"))
+        else{
+            state.grants.forEach{grant->
+                Column(Modifier.testTag("mcp-grant-${grant.id}"),verticalArrangement=Arrangement.spacedBy(2.dp)){
+                    Text(grant.nickname,style=MaterialTheme.typography.titleSmall)
+                    Text((grant.clientId?.let{"Connected app"} ?: "Personal access token")+" - "+grant.status(System.currentTimeMillis()),style=MaterialTheme.typography.bodySmall)
+                    Text(grant.scopes.joinToString(", "){com.pittech.data.McpScopeCatalog.label(it)},style=MaterialTheme.typography.bodySmall)
+                    grant.lastUsedAt?.let{Text("Last used ${java.time.Instant.ofEpochMilli(it)}",style=MaterialTheme.typography.bodySmall)}
+                    if(grant.active)TextButton(onClick={confirmRevoke=grant.id},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-${grant.id}")){Text("Disconnect")}
+                }
+            }
+            if(state.grants.none{it.active})Text("No AI connections yet.",style=MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                Button(onClick={creating=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-new")){Text("New connection")}
+                if(state.grants.count{it.active}>1)TextButton(onClick={confirmRevokeAll=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-all")){Text("Disconnect all")}
+            }
+            Text("Approve a connection",style=MaterialTheme.typography.titleSmall)
+            Text("If an assistant shows you a code in your browser, enter it here to finish connecting.",style=MaterialTheme.typography.bodySmall)
+            OutlinedTextField(code,{code=it},label={Text("Connection code")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-approve-code"))
+            Button(onClick={mcp.approve(code);code=""},enabled=!state.busy && code.isNotBlank(),modifier=Modifier.heightIn(min=48.dp).testTag("mcp-approve")){Text("Approve")}
+            state.createdToken?.let{token->
+                Column(Modifier.testTag("mcp-created-token"),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Text("Your connection token for ${state.createdNickname ?: "the new connection"}",style=MaterialTheme.typography.titleSmall)
+                    Text("Copy it into the assistant now. It is shown only once and is not saved on this device.",style=MaterialTheme.typography.bodySmall)
+                    Text(token,Modifier.testTag("mcp-token-value"))
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        Button(onClick={clipboard.setText(androidx.compose.ui.text.AnnotatedString(token))},modifier=Modifier.testTag("mcp-copy-token")){Text("Copy token")}
+                        TextButton(onClick={mcp.dismissCreatedToken()},modifier=Modifier.testTag("mcp-token-done")){Text("Done")}
+                    }
+                }
+            }
+            if(state.busy)CircularProgressIndicator()
+            state.message?.let{Text(it,Modifier.testTag("mcp-message"))}
+        }
+    }
+    if(creating)McpCreateDialog(mcp=mcp,onClose={creating=false})
+    confirmRevoke?.let{id->AlertDialog(onDismissRequest={confirmRevoke=null},title={Text("Disconnect this connection?")},text={Text("The assistant using it loses access immediately. Your library is unchanged.")},confirmButton={TextButton(onClick={confirmRevoke=null;mcp.revoke(id)},modifier=Modifier.testTag("mcp-confirm-revoke")){Text("Disconnect")}},dismissButton={TextButton(onClick={confirmRevoke=null}){Text("Cancel")}})}
+    if(confirmRevokeAll)AlertDialog(onDismissRequest={confirmRevokeAll=false},title={Text("Disconnect all connections?")},text={Text("Every assistant using a connection loses access immediately. Your library is unchanged.")},confirmButton={TextButton(onClick={confirmRevokeAll=false;mcp.revokeAll()},modifier=Modifier.testTag("mcp-confirm-revoke-all")){Text("Disconnect all")}},dismissButton={TextButton(onClick={confirmRevokeAll=false}){Text("Cancel")}})
+}
+@Composable private fun McpDeviceActionsSection(device: com.pittech.data.McpDeviceActionsManager) {
+    val state by device.presentation.collectAsStateWithLifecycle()
+    var confirmingUnregister by remember{mutableStateOf(false)}
+    LaunchedEffect(Unit){device.refresh()}
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        Text("Device actions",style=MaterialTheme.typography.titleMedium)
+        Text("An assistant can ask this phone to do small things in the app — never to control a grill. Requests wait here until you open PitTech; nothing runs in the background and nothing counts as done until this phone reports it. Choose which kinds of requests this phone accepts.",style=MaterialTheme.typography.bodySmall)
+        if(!state.available)Text("Device actions aren't available yet.",Modifier.testTag("mcp-device-unavailable"))
+        else{
+            com.pittech.data.MCP_DEVICE_CLASSES.forEach{cls->
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Checkbox(state.classes.contains(cls),{ value -> device.setClass(cls,value) },enabled=!state.busy,modifier=Modifier.testTag("mcp-device-class-$cls"))
+                    Text(com.pittech.data.mcpDeviceClassLabel(cls),Modifier.weight(1f))
+                }
+            }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                Button(onClick={device.checkNow()},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-device-check")){Text("Check for requests")}
+                if(state.registered)TextButton(onClick={confirmingUnregister=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-device-unregister")){Text("Stop taking requests")}
+            }
+            state.lastCheckSummary?.let{Text(it,Modifier.testTag("mcp-device-last-check"),style=MaterialTheme.typography.bodySmall)}
+            if(state.busy)CircularProgressIndicator()
+            state.message?.let{Text(it,Modifier.testTag("mcp-device-message"))}
+        }
+    }
+    if(confirmingUnregister)AlertDialog(onDismissRequest={confirmingUnregister=false},title={Text("Stop taking requests?")},text={Text("This phone stops accepting assistant requests, and any waiting requests for it are canceled. You can turn a class back on any time.")},confirmButton={TextButton(onClick={confirmingUnregister=false;device.unregister()},modifier=Modifier.testTag("mcp-device-confirm-unregister")){Text("Stop")}},dismissButton={TextButton(onClick={confirmingUnregister=false}){Text("Cancel")}})
+}
+@Composable private fun McpCreateDialog(mcp: com.pittech.data.McpConnectionsManager, onClose: () -> Unit) {
+    var nickname by remember{mutableStateOf("ChatGPT")}
+    var selected by remember{mutableStateOf(com.pittech.data.McpScopeCatalog.defaultSelected)}
+    var days by remember{mutableStateOf(90)}
+    AlertDialog(onDismissRequest=onClose,title={Text("New AI connection")},text={
+        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
+            OutlinedTextField(nickname,{nickname=it},label={Text("Name this connection")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-nickname"))
+            Text("What it can do",style=MaterialTheme.typography.titleSmall)
+            com.pittech.data.McpScopeCatalog.all.forEach{entry->
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Checkbox(selected.contains(entry.id),{checked->selected=if(checked)selected+entry.id else selected-entry.id},modifier=Modifier.testTag("mcp-scope-${entry.id}"))
+                    Column{Text(entry.label);Text(entry.detail,style=MaterialTheme.typography.bodySmall)}
+                }
+            }
+            Text("Disconnect automatically after",style=MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                listOf(30,90,365).forEach{option->
+                    Row(verticalAlignment=Alignment.CenterVertically){
+                        androidx.compose.material3.RadioButton(days==option,{days=option},modifier=Modifier.testTag("mcp-days-$option"))
+                        Text("$option days")
+                    }
+                }
+            }
+            Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.",style=MaterialTheme.typography.bodySmall)
+        }
+    },confirmButton={TextButton(onClick={mcp.create(nickname,selected,days);onClose()},enabled=nickname.isNotBlank() && selected.isNotEmpty(),modifier=Modifier.testTag("mcp-create-submit")){Text("Create connection")}},dismissButton={TextButton(onClick=onClose){Text("Cancel")}})
 }
 @Composable private fun SyncSection(sync: com.pittech.data.PrivateSyncCoordinator, signedIn: Boolean) {
     val state by sync.presentation.collectAsStateWithLifecycle()
