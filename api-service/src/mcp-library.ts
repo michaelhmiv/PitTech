@@ -23,6 +23,9 @@ export interface SnapshotReader {
  * compare-and-swap on the envelope's baseVersion with a durable,
  * idempotent receipt per mutationId — exactly the guarantees the MCP
  * command spine is built on. */
+export interface McpBenchmarkSource {
+  latestFigures(bucket?: string, metric?: string): Promise<{ run: unknown; figures: readonly unknown[] }>;
+}
 export interface McpPhotoStore {
   begin(user: string, input: unknown): Promise<unknown>;
   statusOf(user: string, asset: string): Promise<unknown>;
@@ -63,6 +66,7 @@ interface LibraryData {
 const iso = (millis: unknown): string | null => typeof millis === 'number' && Number.isFinite(millis) ? new Date(millis).toISOString() : null;
 const str = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+const safeJson = (value: string): unknown => { try { return JSON.parse(value); } catch { return value; } };
 function page<T>(items: T[], args: Record<string, unknown>): { items: T[]; nextCursor: string | null; total: number } {
   const limitRaw = args.limit === undefined ? 20 : args.limit;
   if (typeof limitRaw !== 'number' || !Number.isSafeInteger(limitRaw) || limitRaw < 1 || limitRaw > 50) throw new ToolFailure('limit must be an integer between 1 and 50.');
@@ -144,13 +148,13 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
-  private photos: McpPhotoStore | undefined;
+  private photos: McpPhotoStore | undefined; private benchmarks: McpBenchmarkSource | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore; benchmarks?: McpBenchmarkSource } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
-    this.photos = options.photos;
+    this.photos = options.photos; this.benchmarks = options.benchmarks;
     this.clock = options.clock ?? Date.now;
   }
   private requirePhotos(): McpPhotoStore {
@@ -228,6 +232,27 @@ export class PrivateLibraryService {
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteNote(principal, args),
       },
       ] as ToolDefinition[]) : []),
+      {
+        name: 'list_companions', title: 'List companion documents',
+        description: 'Lists companion documents (plans, playbooks, checklists, equipment and more), optionally filtered by kind or meal.',
+        inputSchema: { type: 'object', properties: { kind: { type: 'string' }, mealId: { type: 'string' } }, additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.listCompanions(principal, args),
+      },
+      {
+        name: 'get_companion', title: 'Get a companion document',
+        description: 'Reads one companion document in full.',
+        inputSchema: { type: 'object', properties: { companionId: { type: 'string' } }, required: ['companionId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.getCompanion(principal, args),
+      },
+      {
+        name: 'list_reminder_rules', title: 'List reminder rules',
+        description: 'Lists reminder rules (optionally for one meal) with their trigger configuration. Rules sync to the devices; activation on a device is the user\'s there, never a synced flag.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.listReminderRules(principal, args),
+      },
       {
         name: 'list_photos', title: 'List photos',
         description: 'Lists the photos in the library (optionally for one meal) with captions and timestamps. Use get_photo to actually see an image.',
@@ -374,6 +399,20 @@ export class PrivateLibraryService {
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.saveDishAsRecipe(principal, args),
         },
         {
+          name: 'compose_meal', title: 'Compose a meal',
+          description: 'Creates a meal from a mix of saved recipes and plain dish descriptions. Recipe dishes bring their ingredients, targets and a source link to the exact revision used. Nothing is scaled or silently saved as new recipes.',
+          inputSchema: { type: 'object', properties: { title: { type: 'string' }, smokerName: { type: 'string' }, dishes: { type: 'array', items: { type: 'object' } }, ...WRITE_ARGS }, required: ['dishes'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.composeMeal(principal, args),
+        },
+        {
+          name: 'add_recipe_to_meal', title: 'Add a recipe to a meal',
+          description: 'Adds one dish from a saved recipe to an existing (not completed) meal, with its ingredients, targets and source link.',
+          inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, recipeId: { type: 'string' }, name: { type: 'string' }, ...WRITE_ARGS }, required: ['mealId', 'recipeId'], additionalProperties: false },
+          scopes: ['library:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.addRecipeToMeal(principal, args),
+        },
+        {
           name: 'delete_recipe', title: 'Delete a recipe',
           description: 'Deletes a recipe and all of its revisions.',
           inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
@@ -436,7 +475,77 @@ export class PrivateLibraryService {
           scopes: ['media:write'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removePhoto(principal, args),
         },
+        {
+          name: 'upsert_companion', title: 'Create or update a companion document',
+          description: 'Creates or updates a companion document (plan, playbook, checklist, equipment, preset and similar kinds). The payload is the document for its kind; the library validates its shape on save. Planning kinds need the planning access; checklist/equipment/preset kinds need library write.',
+          inputSchema: { type: 'object', properties: { companionId: { type: 'string' }, kind: { type: 'string' }, title: { type: 'string' }, mealId: { type: 'string' }, payload: { type: 'object' }, ...WRITE_ARGS }, required: ['kind', 'payload'], additionalProperties: false },
+          scopes: ['library:write', 'planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.upsertCompanion(principal, args),
+        },
+        {
+          name: 'delete_companion', title: 'Delete a companion document',
+          description: 'Deletes one companion document.',
+          inputSchema: { type: 'object', properties: { companionId: { type: 'string' }, ...WRITE_ARGS }, required: ['companionId'], additionalProperties: false },
+          scopes: ['library:delete', 'planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteCompanion(principal, args),
+        },
+        {
+          name: 'upsert_reminder_rule', title: 'Create or update a reminder rule',
+          description: 'Creates or updates a reminder rule for a meal. triggerConfig.type must match kind. The rule syncs to the user\'s devices; turning it on there is always the user\'s action.',
+          inputSchema: { type: 'object', properties: { ruleId: { type: 'string' }, mealId: { type: 'string' }, dishId: { type: 'string' }, kind: { type: 'string' }, title: { type: 'string' }, triggerConfig: { type: 'object' }, ...WRITE_ARGS }, required: ['mealId', 'kind', 'title', 'triggerConfig'], additionalProperties: false },
+          scopes: ['planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.upsertReminderRule(principal, args),
+        },
+        {
+          name: 'delete_reminder_rule', title: 'Delete a reminder rule',
+          description: 'Deletes one reminder rule.',
+          inputSchema: { type: 'object', properties: { ruleId: { type: 'string' }, ...WRITE_ARGS }, required: ['ruleId'], additionalProperties: false },
+          scopes: ['planning:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteReminderRule(principal, args),
+        },
       ] as ToolDefinition[]) : []),
+      {
+        name: 'get_temperature_history', title: 'Temperature history',
+        description: 'Temperature readings for a meal. Default mode is reduced: 15-minute interval statistics (min/max/average/samples) per dish and probe type. Use mode raw for individual readings (paged by limit).',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' }, dishId: { type: 'string' }, measurementType: { type: 'string' }, mode: { type: 'string', enum: ['reduced', 'raw'] }, limit: { type: 'number' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.temperatureHistory(principal, args),
+      },
+      {
+        name: 'get_cook_summary', title: 'Cook summary',
+        description: 'A computed summary of one meal: duration, per-dish peak temperatures, results, note/photo/reading counts.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.cookSummary(principal, args),
+      },
+      {
+        name: 'compare_cooks', title: 'Compare cooks',
+        description: 'Side-by-side summaries of 2 to 4 meals.',
+        inputSchema: { type: 'object', properties: { mealIds: { type: 'array', items: { type: 'string' } } }, required: ['mealIds'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.compareCooks(principal, args),
+      },
+      {
+        name: 'get_personal_insights', title: 'Personal insights',
+        description: 'Aggregates across the whole library: totals, average completed-cook duration, most-cooked food types, top-rated dishes, meals by month. Sample counts are always included.',
+        inputSchema: { ...NO_ARGS_SCHEMA },
+        scopes: ['library:read'],
+        handler: async principal => this.personalInsights(principal, {}),
+      },
+      {
+        name: 'build_private_recap', title: 'Build a private recap',
+        description: 'Builds a private, shareable-text recap of one meal from its summary. It stays in this conversation unless the user shares it.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, required: ['mealId'], additionalProperties: false },
+        scopes: ['library:read'],
+        handler: async (principal, args) => this.buildRecap(principal, args),
+      },
+      ...(this.benchmarks ? [{
+        name: 'get_community_benchmarks', title: 'Community benchmarks',
+        description: 'Anonymous community aggregates (cook durations, temperatures and outcomes by category) from the latest published figures. Optional bucket and metric filters.',
+        inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, metric: { type: 'string' } }, additionalProperties: false },
+        scopes: ['community:read'] as const,
+        handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.communityBenchmarks(principal, args),
+      }] as ToolDefinition[] : []),
       {
         name: 'get_sync_status', title: 'Sync status',
         description: 'Reports the state of the user\'s synced library on the server: whether anything has synced yet, the snapshot version and time, and how many records of each kind it holds. Never claims live phone state — the phone may have newer unsynced changes.',
@@ -1268,6 +1377,379 @@ export class PrivateLibraryService {
       const assetId = str(photo.assetId);
       work.tombstone('photos', photo);
       return { photoId: photo.id, assetId: assetId ?? null };
+    });
+  }
+
+
+  private static readonly INSIGHTS_VERSION = 'mcp-insights-v1';
+  private dishName(data: LibraryData, dishId: unknown): string | null {
+    if (typeof dishId !== 'string') return null;
+    const dish = data.byType.get('dishes')?.get(dishId);
+    return dish ? str(dish.name) ?? null : null;
+  }
+
+  async temperatureHistory(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'dishId', 'measurementType', 'mode', 'limit']);
+    const data = await this.loadLibrary(principal);
+    const meal = this.record(data, 'cooks', args.mealId, 'Meal');
+    let readings = this.records(data, 'readings').filter(r => r.cookId === meal.id);
+    if (typeof args.dishId === 'string') readings = readings.filter(r => r.dishId === args.dishId);
+    if (typeof args.measurementType === 'string') readings = readings.filter(r => r.measurementType === args.measurementType);
+    readings.sort((a, b) => (num(a.measuredAtUtcMillis) ?? 0) - (num(b.measuredAtUtcMillis) ?? 0));
+    const mode = this.optString(args, 'mode') ?? 'reduced';
+    if (mode === 'raw') {
+      const limit = Math.min(Math.max(Math.trunc(this.optNumber(args, 'limit') ?? 100), 1), 500);
+      const page = readings.slice(0, limit);
+      return {
+        snapshotVersion: data.version, mealId: meal.id, mode, algorithm: PrivateLibraryService.INSIGHTS_VERSION,
+        totalReadings: readings.length, returned: page.length,
+        readings: page.map(r => ({ at: iso(r.measuredAtUtcMillis), dishId: r.dishId ?? null, dish: this.dishName(data, r.dishId), probe: r.probeName ?? null, type: r.measurementType, value: r.value, unit: r.unit, quality: r.qualityStatus ?? null })),
+      };
+    }
+    if (mode !== 'reduced') throw new ToolFailure("mode must be 'reduced' or 'raw'.");
+    // Reduced: 15-minute interval statistics per (dish, type, unit), the
+    // same interval the community curves use.
+    const interval = 900000;
+    const groups = new Map<string, { dishId: unknown; type: unknown; unit: unknown; start: number; values: number[] }>();
+    for (const r of readings) {
+      const at = num(r.measuredAtUtcMillis); const value = num(r.value);
+      if (at === undefined || value === undefined) continue;
+      const start = Math.floor(at / interval) * interval;
+      const key = `${String(r.dishId)}|${String(r.measurementType)}|${String(r.unit)}|${start}`;
+      const group = groups.get(key) ?? { dishId: r.dishId, type: r.measurementType, unit: r.unit, start, values: [] };
+      group.values.push(value); groups.set(key, group);
+    }
+    const series = [...groups.values()].sort((a, b) => a.start - b.start).map(g => ({
+      dishId: g.dishId ?? null, dish: this.dishName(data, g.dishId), type: g.type, unit: g.unit,
+      intervalStart: iso(g.start), samples: g.values.length,
+      min: Math.min(...g.values), max: Math.max(...g.values),
+      avg: Math.round((g.values.reduce((a, b) => a + b, 0) / g.values.length) * 10) / 10,
+    }));
+    return { snapshotVersion: data.version, mealId: meal.id, mode, algorithm: PrivateLibraryService.INSIGHTS_VERSION, totalReadings: readings.length, intervals: series };
+  }
+
+  async cookSummary(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const data = await this.loadLibrary(principal);
+    const meal = this.record(data, 'cooks', args.mealId, 'Meal');
+    const dishes = this.records(data, 'dishes').filter(d => d.cookId === meal.id);
+    const readings = this.records(data, 'readings').filter(r => r.cookId === meal.id);
+    const results = this.records(data, 'results').filter(r => r.cookId === meal.id);
+    const summarizeDish = (dish: Payload) => {
+      const own = readings.filter(r => r.dishId === dish.id && typeof r.value === 'number');
+      const byType = new Map<string, number[]>();
+      for (const r of own) { const list = byType.get(String(r.measurementType)) ?? []; list.push(num(r.value)!); byType.set(String(r.measurementType), list); }
+      return {
+        dishId: dish.id, name: dish.name, foodType: dish.foodType,
+        peakByType: Object.fromEntries([...byType.entries()].map(([type, values]) => [type, Math.max(...values)])),
+        readingCount: own.length,
+        results: results.filter(r => r.dishId === dish.id).map(r => ({ type: r.resultType, value: r.numericValue ?? r.textValue ?? null, unit: r.unit ?? null, notes: r.notes ?? null })),
+      };
+    };
+    const started = num(meal.startedAtUtcMillis); const ended = num(meal.endedAtUtcMillis);
+    return {
+      snapshotVersion: data.version, algorithm: PrivateLibraryService.INSIGHTS_VERSION,
+      meal: {
+        mealId: meal.id, title: meal.title, status: meal.status, smokerName: meal.smokerName ?? null,
+        startedAt: iso(meal.startedAtUtcMillis), endedAt: iso(meal.endedAtUtcMillis),
+        durationMinutes: started !== undefined && ended !== undefined ? Math.round((ended - started) / 60000) : null,
+      },
+      dishes: dishes.map(summarizeDish),
+      cookLevelResults: results.filter(r => !r.dishId).map(r => ({ type: r.resultType, value: r.numericValue ?? r.textValue ?? null, unit: r.unit ?? null, notes: r.notes ?? null })),
+      noteCount: this.records(data, 'events').filter(e => e.cookId === meal.id).length,
+      photoCount: this.records(data, 'photos').filter(p => p.cookId === meal.id).length,
+      readingCount: readings.length,
+    };
+  }
+
+  async compareCooks(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealIds']);
+    if (!Array.isArray(args.mealIds) || args.mealIds.length < 2 || args.mealIds.length > 4 || args.mealIds.some(x => typeof x !== 'string')) {
+      throw new ToolFailure('mealIds must be an array of 2 to 4 meal ids.');
+    }
+    const summaries = [];
+    for (const mealId of args.mealIds as string[]) {
+      summaries.push(await this.cookSummary(principal, { mealId }));
+    }
+    return { algorithm: PrivateLibraryService.INSIGHTS_VERSION, cooks: summaries };
+  }
+
+  async personalInsights(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, []);
+    const data = await this.loadLibrary(principal);
+    const meals = this.records(data, 'cooks');
+    const dishes = this.records(data, 'dishes');
+    const results = this.records(data, 'results');
+    const completed = meals.filter(m => m.status === 'completed');
+    const durations = completed.map(m => { const s = num(m.startedAtUtcMillis); const e = num(m.endedAtUtcMillis); return s !== undefined && e !== undefined && e > s ? (e - s) / 3600000 : undefined; }).filter((x): x is number => x !== undefined);
+    const foodCounts = new Map<string, number>();
+    for (const dish of dishes) foodCounts.set(String(dish.foodType ?? 'other'), (foodCounts.get(String(dish.foodType ?? 'other')) ?? 0) + 1);
+    const ratings = results.filter(r => typeof r.numericValue === 'number' && /rating|score/i.test(String(r.resultType ?? '')))
+      .map(r => ({ dishId: r.dishId ?? null, dish: this.dishName(data, r.dishId), value: num(r.numericValue)! })).sort((a, b) => b.value - a.value);
+    const byMonth = new Map<string, number>();
+    for (const meal of meals) { const at = num(meal.startedAtUtcMillis); if (at === undefined) continue; const key = new Date(at).toISOString().slice(0, 7); byMonth.set(key, (byMonth.get(key) ?? 0) + 1); }
+    return {
+      snapshotVersion: data.version, algorithm: PrivateLibraryService.INSIGHTS_VERSION,
+      totals: { meals: meals.length, completedMeals: completed.length, dishes: dishes.length, photos: this.records(data, 'photos').length, notes: this.records(data, 'events').length, readings: this.records(data, 'readings').length },
+      averageCompletedCookHours: durations.length ? Math.round((durations.reduce((a, b) => a + b, 0) / durations.length) * 10) / 10 : null,
+      dishesByFoodType: Object.fromEntries([...foodCounts.entries()].sort((a, b) => b[1] - a[1])),
+      topRated: ratings.slice(0, 5),
+      mealsByMonth: Object.fromEntries([...byMonth.entries()].sort()),
+      sampleCounts: { meals: meals.length, durations: durations.length, ratings: ratings.length },
+    };
+  }
+
+  async communityBenchmarks(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['bucket', 'metric']);
+    if (!this.benchmarks) throw new ToolFailure('Community benchmarks are not available on this server.');
+    const { run, figures } = await this.benchmarks.latestFigures(this.optString(args, 'bucket'), this.optString(args, 'metric'));
+    return { run, figures: figures.slice(0, 100), note: 'Anonymous community aggregates only (minimum group sizes enforced by the aggregation job); no individual cooks are exposed.' };
+  }
+
+  async buildRecap(principal: McpPrincipal, args: Record<string, unknown>) {
+    const summary = await this.cookSummary(principal, args);
+    const meal = summary.meal as { title?: string; status?: string; durationMinutes?: number | null };
+    const lines = [
+      `# ${meal.title ?? 'Cook'}`,
+      `Status: ${meal.status ?? 'unknown'}${meal.durationMinutes ? ` · ${meal.durationMinutes} minutes` : ''}`,
+    ];
+    for (const dish of summary.dishes as { name?: string; foodType?: string; peakByType?: Record<string, number>; results?: { type?: string; value?: unknown }[] }[]) {
+      const peaks = Object.entries(dish.peakByType ?? {}).map(([type, value]) => `${type} peaked at ${value}`).join('; ');
+      lines.push(`- ${dish.name ?? 'Dish'} (${dish.foodType ?? 'food'})${peaks ? ` — ${peaks}` : ''}`);
+      for (const result of dish.results ?? []) lines.push(`  - ${result.type}: ${String(result.value ?? '')}`);
+    }
+    if (summary.noteCount) lines.push(`Notes: ${summary.noteCount}. Photos: ${summary.photoCount}. Readings: ${summary.readingCount}.`);
+    return { snapshotVersion: summary.snapshotVersion, algorithm: PrivateLibraryService.INSIGHTS_VERSION, mealId: (args.mealId as string), recap: lines.join('\n') };
+  }
+
+
+  /** The dish blueprint a recipe's current revision describes: dish
+   * fields, ingredients and targets, exactly as saved. */
+  private recipeBlueprint(work: WorkingLibrary, recipe: Payload): { dish: Record<string, unknown>; ingredients: Record<string, unknown>[]; targets: Record<string, unknown>[]; revisionId: string } {
+    const revisions = work.liveRecords('recipeRevisions').filter(r => r.recipeId === recipe.id);
+    const current = revisions.find(r => r.id === recipe.currentRevisionId) ?? revisions.reduce((a, b) => ((num(b.revisionNumber) ?? 0) > (num(a.revisionNumber) ?? 0) ? b : a), revisions[0]);
+    if (!current) throw new ToolFailure(`Recipe "${str(recipe.name) ?? ''}" has no revision to cook from.`);
+    let snapshot: Record<string, unknown>;
+    try { snapshot = JSON.parse(str(current.snapshotJson) ?? '{}') as Record<string, unknown>; }
+    catch { throw new ToolFailure(`Recipe "${str(recipe.name) ?? ''}" could not be read.`); }
+    const draft = (typeof snapshot.draft === 'object' && snapshot.draft !== null ? snapshot.draft : {}) as Record<string, unknown>;
+    const dish = (Array.isArray(draft.dishes) ? draft.dishes[0] ?? {} : {}) as Record<string, unknown>;
+    return {
+      revisionId: str(current.id)!,
+      dish: {
+        name: str(dish.name) ?? str(recipe.name) ?? 'Dish', foodType: str(dish.foodType) ?? 'other',
+        cut: str(dish.cut) ?? '', weightText: str(dish.weight) ?? '', weightUnit: str(dish.weightUnit) ?? 'lb',
+        placement: str(dish.placement) ?? '', gradeOrSource: str(dish.grade) ?? '', prepNotes: str(dish.prep) ?? '',
+        thicknessNotes: str(dish.thickness) ?? '',
+      },
+      ingredients: (Array.isArray(dish.ingredients) ? dish.ingredients : []).map(raw => {
+        const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        return { name: str(item.name) ?? '', stage: str(item.stage) ?? 'seasoning', brand: str(item.brand) ?? '', amountText: str(item.amount) ?? '', amountUnit: str(item.unit) ?? 'tbsp' };
+      }).filter(item => item.name.trim()),
+      targets: (Array.isArray(snapshot.targets) ? snapshot.targets : []).map(raw => {
+        const item = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+        return { targetType: str(item.type) ?? 'internal', value: num(item.value) ?? 0, unit: str(item.unit) ?? '°F', explanation: str(item.explanation) ?? '' };
+      }),
+    };
+  }
+
+  /** Inserts one dish (plus ingredients, targets and the recipe source
+   * link when it came from a recipe) into a meal being built. */
+  private insertComposedDish(work: WorkingLibrary, mealId: string, args: Record<string, unknown>, salt: string,
+    spec: { name: string; foodType: string; cut?: string; weightValue?: number; weightUnit?: string; placement?: string; gradeOrSource?: string; prepNotes?: string; thicknessNotes?: string },
+    extras?: { ingredients: { name: string; amountText?: string; amountUnit?: string; brand?: string; stage?: string }[]; targets: { targetType: string; value: number; unit?: string; explanation?: string }[]; recipeId?: string; revisionId?: string }): string {
+    const now = this.clock();
+    const dishId = this.idFor(args, 'dish:' + salt);
+    work.insert('dishes', {
+      id: dishId, cookId: mealId,
+      name: spec.name, foodType: spec.foodType, cut: spec.cut ?? '',
+      weightValue: spec.weightValue ?? null, weightUnit: spec.weightUnit ?? 'lb',
+      startingCondition: null, boneIn: null, placement: spec.placement ?? '',
+      gradeOrSource: spec.gradeOrSource ?? '', thicknessNotes: spec.thicknessNotes ?? '',
+      prepNotes: spec.prepNotes ?? '', createdAtUtcMillis: now, updatedAtUtcMillis: now,
+    });
+    for (const [index, ingredient] of (extras?.ingredients ?? []).entries()) {
+      work.insert('ingredients', {
+        id: this.idFor(args, 'ing:' + salt + ':' + index), cookId: mealId, dishId,
+        name: ingredient.name, stage: ingredient.stage ?? 'seasoning', brand: ingredient.brand ?? '',
+        amountText: ingredient.amountText ?? '', amountUnit: ingredient.amountUnit ?? 'tbsp', amountValue: null,
+        appliedAtUtcMillis: null, notes: null, createdAtUtcMillis: now,
+      });
+    }
+    for (const [index, target] of (extras?.targets ?? []).entries()) {
+      work.insert('targets', {
+        id: this.idFor(args, 'target:' + salt + ':' + index), cookId: mealId, dishId,
+        targetType: target.targetType, value: target.value, unit: target.unit ?? '°F', scope: 'dish',
+        explanation: target.explanation ?? '', sourceReference: extras?.recipeId ? 'recipe:' + extras.recipeId : null,
+        createdAtUtcMillis: now,
+      });
+    }
+    if (extras?.recipeId && extras?.revisionId) {
+      work.insert('dishRecipeSources', { dishId, recipeId: extras.recipeId, recipeRevisionId: extras.revisionId, appliedAtUtcMillis: now }, dishId + ':' + extras.recipeId);
+    }
+    return dishId;
+  }
+
+  async composeMeal(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['title', 'smokerName', 'dishes', 'idempotencyKey', 'expectedSnapshotVersion']);
+    if (!Array.isArray(args.dishes) || !args.dishes.length || args.dishes.length > 20) throw new ToolFailure('dishes must be an array of 1 to 20 entries, each naming a recipeId or a name + foodType.');
+    return this.mutate(principal, args, work => {
+      const now = this.clock();
+      const mealId = this.idFor(args, 'meal');
+      const title = this.optString(args, 'title') ?? 'Composed cook';
+      work.insert('cooks', {
+        id: mealId, title, smokerName: this.optString(args, 'smokerName') ?? null,
+        smokerId: null, status: 'active', startedAtUtcMillis: now, endedAtUtcMillis: null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now, timeZoneId: 'UTC',
+      });
+      work.insert('lifecycles', { cookId: mealId, state: 'legacy_preserved', weatherJson: null, snapshotJson: null, legacyRating: null, legacyOutcome: null, legacyVisibility: null, legacySpotType: null, savedRecipeId: null, updatedAtUtcMillis: now }, mealId, []);
+      const dishIds: string[] = [];
+      (args.dishes as Record<string, unknown>[]).forEach((entry, index) => {
+        const spec = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+        if (typeof spec.recipeId === 'string') {
+          const recipe = work.live('recipes', spec.recipeId, 'Recipe');
+          const blueprint = this.recipeBlueprint(work, recipe);
+          dishIds.push(this.insertComposedDish(work, mealId, args, String(index),
+            { name: this.optString(spec, 'name') ?? String(blueprint.dish.name), foodType: String(blueprint.dish.foodType), cut: String(blueprint.dish.cut ?? ''), weightUnit: String(blueprint.dish.weightUnit ?? 'lb'), placement: String(blueprint.dish.placement ?? ''), gradeOrSource: String(blueprint.dish.gradeOrSource ?? ''), prepNotes: String(blueprint.dish.prepNotes ?? ''), thicknessNotes: String(blueprint.dish.thicknessNotes ?? '') },
+            { ingredients: blueprint.ingredients as never[], targets: blueprint.targets as never[], recipeId: str(recipe.id)!, revisionId: blueprint.revisionId }));
+        } else {
+          const name = this.optString(spec, 'name'); const foodType = this.optString(spec, 'foodType');
+          if (!name?.trim() || !foodType) throw new ToolFailure('Each dish needs a recipeId, or a name and foodType.');
+          dishIds.push(this.insertComposedDish(work, mealId, args, String(index), { name, foodType }));
+        }
+      });
+      return { mealId, dishIds, status: 'active' };
+    }, args => ({ mealId: this.idFor(args, 'meal') }));
+  }
+
+  async addRecipeToMeal(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId', 'recipeId', 'name', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      if (meal.status === 'completed') throw new ToolFailure('That meal is completed; its dishes are final. Duplicate its setup for a new cook instead.');
+      const recipe = work.live('recipes', args.recipeId, 'Recipe');
+      const blueprint = this.recipeBlueprint(work, recipe);
+      const salt = 'add:' + str(recipe.id);
+      const dishId = this.insertComposedDish(work, str(meal.id)!, args, salt,
+        { name: this.optString(args, 'name') ?? String(blueprint.dish.name), foodType: String(blueprint.dish.foodType), cut: String(blueprint.dish.cut ?? ''), weightUnit: String(blueprint.dish.weightUnit ?? 'lb'), placement: String(blueprint.dish.placement ?? ''), gradeOrSource: String(blueprint.dish.gradeOrSource ?? ''), prepNotes: String(blueprint.dish.prepNotes ?? ''), thicknessNotes: String(blueprint.dish.thicknessNotes ?? '') },
+        { ingredients: blueprint.ingredients as never[], targets: blueprint.targets as never[], recipeId: str(recipe.id)!, revisionId: blueprint.revisionId });
+      return { mealId: meal.id, dishId, recipeId: recipe.id };
+    });
+  }
+
+
+  /** Companion documents (plans, playbooks, checklists, equipment…)
+   * and reminder rules: typed-envelope access over companionRecords /
+   * reminderRules. The projection validator remains the authority on
+   * every document's shape — a malformed document is rejected by the
+   * library's own rules on commit, never silently stored. */
+  private static readonly PLANNING_KINDS = new Set(['plan', 'playbook', 'serve_plan', 'reference', 'pinned_guide', 'guide_presentation', 'alert', 'trigger']);
+  private static readonly LIBRARY_KINDS = new Set(['checklist', 'prep_combo', 'equipment', 'fuel', 'presets']);
+  private companionScope(kind: string): 'planning:write' | 'library:write' {
+    if (PrivateLibraryService.PLANNING_KINDS.has(kind)) return 'planning:write';
+    if (PrivateLibraryService.LIBRARY_KINDS.has(kind)) return 'library:write';
+    throw new ToolFailure(`Companion kind "${kind}" is not available through MCP. Available kinds: ${[...PrivateLibraryService.PLANNING_KINDS, ...PrivateLibraryService.LIBRARY_KINDS].join(', ')}.`);
+  }
+
+  async listCompanions(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['kind', 'mealId']);
+    const data = await this.loadLibrary(principal);
+    let rows = this.records(data, 'companionRecords');
+    if (typeof args.kind === 'string') rows = rows.filter(r => r.kind === args.kind);
+    if (typeof args.mealId === 'string') rows = rows.filter(r => r.cookId === args.mealId);
+    return {
+      snapshotVersion: data.version, total: rows.length,
+      companions: rows.map(r => ({ companionId: r.id, kind: r.kind, title: r.title, mealId: r.cookId ?? null, updatedAt: iso(r.updated), payload: r.payload })),
+    };
+  }
+
+  async getCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['companionId']);
+    const data = await this.loadLibrary(principal);
+    const row = this.record(data, 'companionRecords', args.companionId, 'Companion document');
+    return { snapshotVersion: data.version, companion: { companionId: row.id, kind: row.kind, title: row.title, mealId: row.cookId ?? null, createdAt: iso(row.created), updatedAt: iso(row.updated), payload: row.payload } };
+  }
+
+  async upsertCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['companionId', 'kind', 'title', 'mealId', 'payload', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const kind = this.optString(args, 'kind');
+    if (!kind) throw new ToolFailure('kind is required.');
+    const needed = this.companionScope(kind);
+    if (!hasScope(principal, needed)) throw new ToolFailure(`This connection does not include the access for ${kind} documents (${needed}). Ask the user to reconnect with that access enabled.`);
+    if (typeof args.payload !== 'object' || args.payload === null || Array.isArray(args.payload)) throw new ToolFailure('payload must be the companion document object for its kind.');
+    return this.mutate(principal, args, work => {
+      const now = this.clock();
+      const title = this.optString(args, 'title');
+      const mealId = typeof args.mealId === 'string' ? args.mealId : null;
+      if (typeof args.companionId === 'string') {
+        const existing = work.live('companionRecords', args.companionId, 'Companion document');
+        if (existing.kind !== kind) throw new ToolFailure('That document has a different kind; create a new document instead of changing its kind.');
+        work.update('companionRecords', existing, { title: title ?? existing.title, cookId: mealId, payload: args.payload, updated: now });
+        return { companionId: existing.id, kind, created: false };
+      }
+      if (!title?.trim()) throw new ToolFailure('title is required for a new companion document.');
+      const companionId = this.idFor(args, 'companion');
+      work.insert('companionRecords', { id: companionId, kind, title: title.trim(), cookId: mealId, payload: args.payload, created: now, updated: now });
+      return { companionId, kind, created: true };
+    }, args => (typeof args.companionId === 'string' ? { companionId: args.companionId } : { companionId: this.idFor(args, 'companion') }));
+  }
+
+  async deleteCompanion(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['companionId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const row = work.live('companionRecords', args.companionId, 'Companion document');
+      const needed = PrivateLibraryService.PLANNING_KINDS.has(String(row.kind)) ? 'planning:write' : 'library:delete';
+      if (!hasScope(principal, needed)) throw new ToolFailure(`This connection does not include the access to delete ${String(row.kind)} documents (${needed}).`);
+      work.tombstone('companionRecords', row);
+      return { companionId: row.id, kind: row.kind };
+    });
+  }
+
+  async listReminderRules(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const data = await this.loadLibrary(principal);
+    let rows = this.records(data, 'reminderRules');
+    if (typeof args.mealId === 'string') rows = rows.filter(r => r.cookId === args.mealId);
+    return {
+      snapshotVersion: data.version, total: rows.length,
+      rules: rows.map(r => ({ ruleId: r.id, kind: r.kind, title: r.title, mealId: r.cookId, dishId: r.dishId ?? null, triggerConfig: typeof r.triggerConfig === 'string' ? safeJson(r.triggerConfig) : r.triggerConfig, updatedAt: iso(r.updatedAtUtcMillis) })),
+      note: 'Rules sync to the devices; whether a rule is active on a device is decided there, never by a synced flag.',
+    };
+  }
+
+  async upsertReminderRule(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['ruleId', 'mealId', 'dishId', 'kind', 'title', 'triggerConfig', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const kind = this.optString(args, 'kind');
+    const title = this.optString(args, 'title');
+    if (!kind || !title?.trim()) throw new ToolFailure('kind and title are required.');
+    if (typeof args.triggerConfig !== 'object' || args.triggerConfig === null || Array.isArray(args.triggerConfig)) throw new ToolFailure('triggerConfig must be an object.');
+    if ((args.triggerConfig as Record<string, unknown>).type !== kind) throw new ToolFailure('triggerConfig.type must match kind (the library enforces this too).');
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      const now = this.clock();
+      const triggerConfig = JSON.stringify(args.triggerConfig);
+      if (typeof args.ruleId === 'string') {
+        const existing = work.live('reminderRules', args.ruleId, 'Reminder rule');
+        work.update('reminderRules', existing, { kind, title: title.trim(), triggerConfig, updatedAtUtcMillis: now });
+        return { ruleId: existing.id, created: false };
+      }
+      const ruleId = this.idFor(args, 'rule');
+      work.insert('reminderRules', {
+        id: ruleId, cookId: meal.id, dishId: typeof args.dishId === 'string' ? args.dishId : null,
+        kind, title: title.trim(), triggerConfig, schemaVersion: 1,
+        sourceMilestoneId: null, sourceRecipeRevisionId: null,
+        createdAtUtcMillis: now, updatedAtUtcMillis: now,
+      });
+      return { ruleId, created: true };
+    }, args => (typeof args.ruleId === 'string' ? { ruleId: args.ruleId } : { ruleId: this.idFor(args, 'rule') }));
+  }
+
+  async deleteReminderRule(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['ruleId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const row = work.live('reminderRules', args.ruleId, 'Reminder rule');
+      work.tombstone('reminderRules', row);
+      return { ruleId: row.id };
     });
   }
 
