@@ -85,8 +85,11 @@ not phone-applied; results carry freshness and sync status honestly.
 
 - **M0 — Capability contract and enforced parity** *(this work)*: registry,
   schema, generator, parity CI, this plan, protocol/auth ADR, PR-template and
-  AGENTS rules. Field-level inventory (every editable field per capability)
-  completes M0 before M3/M4 handlers are written against it.
+  AGENTS rules, plus the field-level inventory: all 459 projection fields
+  (21 record types + object definition kinds) are inventoried in the
+  registry with an MCP access classification (editable / identity / system /
+  association / content / not_exposed), enforced complete by the same
+  checker. M3/M4 handlers are written against this inventory.
 - **M1 — Connect your AI, grants and Pro**: OAuth (discovery + PKCE + consent)
   for the target clients plus the hashed personal-token pilot path, narrow
   MCP principal/scopes, revocation/disconnect-all, both native connection

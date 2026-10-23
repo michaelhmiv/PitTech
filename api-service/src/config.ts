@@ -21,6 +21,7 @@ import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
 import { PrivatePhotos } from './sync-photos.ts';
 import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
+import { McpGrants, PostgresMcpGrantStore, SubscriptionsEntitlementLookup } from './mcp-grants.ts';
 import { APPLE_KEYS_ENDPOINT, GOOGLE_CERTS_ENDPOINT, GoogleOidcKeyCache } from './google-oidc-keys.ts';
 import type { ProviderServices } from './auth-providers.ts';
 
@@ -159,8 +160,16 @@ export function createRuntime() {
   // Community aggregation stays off unless explicitly enabled. When on, the job
   // persists via the isolated aggregation tables through the allowlisted
   // projection only (least-privilege runtime role in production).
+  // MCP (issue #114, M1) rides the verified account stack: enabling it
+  // requires accounts, subscriptions (the Pro entitlement it checks on every
+  // call) and private sync (the library it will serve). The grants service
+  // is constructed only when enabled; writes stay a separate, later gate.
+  const mcpEnabled=process.env.MCP_ENABLED==='true';
+  if(mcpEnabled&&(!auth||!subscriptions||!sync))throw new Error('MCP requires accounts, subscriptions and private sync');
+  const mcpWritesEnabled=mcpEnabled&&process.env.MCP_WRITES_ENABLED==='true';
+  const mcp=mcpEnabled?new McpGrants(new PostgresMcpGrantStore(pool),authSecrets!,new SubscriptionsEntitlementLookup(subscriptions!),Date.now):undefined;
   const communityAggregationEnabled=process.env.COMMUNITY_AGGREGATION_ENABLED==='true';
   const communityAggregates=communityAggregationEnabled?new CommunityAggregates(new PostgresCommunityStore(pool),Date.now):undefined;
-  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
+  return { pool, lifecyclePool, syncPool, relay, port, auth, publications, community, deletion, sync, subscriptions, mcp, refreshOidcKeys, refreshProviderKeys, communityAggregates, close:async()=>{await Promise.all([pool.end(),lifecyclePool?.end(),syncPool?.end()]);}, options: { ipKey, auth, publications, community, deletion, sync, subscriptions, mcp, mcpWritesEnabled, communityAggregates, links: linkConfig(process.env), uploadsEnabled: process.env.RELAY_UPLOADS_ENABLED === 'true',
     trustedProxies: (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map(s => s.trim()).filter(Boolean) } };
 }

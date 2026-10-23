@@ -11,7 +11,7 @@ DO $$ BEGIN
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO pittech_lifecycle_runtime',current_database());
 END $$;
 GRANT USAGE ON SCHEMA auth,publications,moderation TO pittech_lifecycle_runtime;
-GRANT SELECT,DELETE ON auth.users,auth.challenges,auth.provider_challenges TO pittech_lifecycle_runtime;
+GRANT SELECT,DELETE ON auth.users,auth.challenges,auth.provider_challenges,auth.mcp_grants TO pittech_lifecycle_runtime;
 GRANT SELECT,UPDATE,DELETE ON auth.sessions,auth.session_tokens TO pittech_lifecycle_runtime;
 GRANT SELECT,INSERT,UPDATE,DELETE ON auth.account_lifecycle TO pittech_lifecycle_runtime;
 GRANT SELECT,UPDATE,DELETE ON publications.items,publications.revisions,publications.objects,publications.profiles TO pittech_lifecycle_runtime;
