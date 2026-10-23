@@ -4,8 +4,12 @@ final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         // 24 attempts: the signed-in Account form grew with the Connect-your-AI
-        // and Device actions sections, so its sync rows now sit deeper than the
-        // old 18-attempt / halfway-flip search could reach at large text.
+        // and Device actions sections, so its rows now sit deeper than the old
+        // 18-attempt / halfway-flip search could reach at large text. A missing
+        // (virtualized) row gives no direction hint, so the Form branch below
+        // sweeps deterministically: to the top first, then down the form.
+        var formPhase = 0 // 0 = seek top, 1 = sweep down, 2 = sweep back up
+        var formFingerprint: CGFloat?
         for attempt in 0..<24 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
@@ -16,7 +20,21 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let top = navigation.frame.maxY + 12, bottom = app.windows.firstMatch.frame.maxY - 24
                 if element.waitForExistence(timeout: 1), element.isHittable,
                    element.frame.minY >= top, element.frame.maxY <= bottom { return }
-                let down = element.exists && element.frame.minY < top || !element.exists && attempt >= 15
+                let down: Bool
+                if element.exists {
+                    down = element.frame.minY < top
+                } else {
+                    // Fingerprint the visible rows: when a drag stops moving
+                    // them, that end of the form is reached and the sweep
+                    // changes phase instead of guessing by attempt count.
+                    let cells = app.cells.allElementsBoundByIndex.filter { $0.isHittable && $0.frame.minY.isFinite && $0.frame.height > 0 }
+                    let fingerprint = cells.map { $0.frame.minY }.reduce(0, +)
+                    let moved = formFingerprint.map { $0 != fingerprint } ?? true
+                    formFingerprint = fingerprint
+                    if formPhase == 0, attempt > 0, !moved { formPhase = 1 }
+                    else if formPhase == 1, !moved { formPhase = 2 }
+                    down = formPhase != 1
+                }
                 let origin = navigation.coordinate(withNormalizedOffset: .zero)
                 let start = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 32 : navigation.frame.height + 400))
                 let end = origin.withOffset(CGVector(dx: 20, dy: down ? navigation.frame.height + 400 : navigation.frame.height + 32))
