@@ -858,7 +858,8 @@
           "duplicate_recipe",
           "archive_recipe",
           "restore_recipe",
-          "set_recipe_favorite"
+          "set_recipe_favorite",
+          "delete_recipe"
         ]
       },
       "fixtures": [],
