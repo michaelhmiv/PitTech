@@ -21,6 +21,11 @@ class MemoryGrantStore implements McpGrantStore {
   async revoke(id: string, userId: string, at: number) { const g = this.rows.get(id); if (!g || g.userId !== userId || g.revokedAt !== null) return false; g.revokedAt = at; return true; }
   async revokeAll(userId: string, at: number) { let n = 0; for (const g of this.rows.values()) if (g.userId === userId && g.revokedAt === null) { g.revokedAt = at; n++; } return n; }
   async touchLastUsed(id: string, at: number) { const g = this.rows.get(id); if (g) g.lastUsedAt = at; }
+  async rotateTokenHash(id: string, expectedHash: string, newHash: string) { const g = this.rows.get(id); if (!g || g.tokenHash !== expectedHash || g.revokedAt !== null) return false; g.tokenHash = newHash; return true; }
+  async revokeFamily(familyId: string, at: number) { let n = 0; for (const g of this.rows.values()) if (g.familyId === familyId && g.revokedAt === null) { g.revokedAt = at; n++; } return n; }
+  retired = new Map<string, string>();
+  async retireHash(tokenHash: string, familyId: string) { this.retired.set(tokenHash, familyId); }
+  async retiredFamily(tokenHash: string) { return this.retired.get(tokenHash); }
 }
 
 async function setup(t: { after: (fn: () => void) => void }) {
