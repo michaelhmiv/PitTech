@@ -193,3 +193,46 @@ test('notes: create stamps source mcp, update edits, delete tombstones links too
   assert.equal(deleted.isError, false);
   assert.equal((await s.call('get_note', { noteId })).isError, true);
 });
+
+test('recipes: create writes a codec-shaped snapshot; update adds an immutable revision; archive + delete behave', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_recipe', {
+    name: 'Weekend ribs', tags: ['pork'],
+    dish: { name: 'Spare ribs', foodType: 'pork', ingredients: [{ name: 'Yellow mustard', amountText: '2', amountUnit: 'tbsp' }] },
+    instructions: [{ title: 'Season', details: 'Mustard binder' }, { title: 'Smoke', durationMinutes: 300 }],
+    targets: [{ type: 'internal', value: 203, unit: '°F' }],
+    idempotencyKey: KEY,
+  });
+  assert.equal(created.isError, false, created.content?.[0]?.text);
+  const { recipeId, revisionId } = created.structuredContent as unknown as { recipeId: string; revisionId: string };
+  const fetched = await s.call('get_recipe', { recipeId });
+  const snap = (fetched.structuredContent as unknown as { currentRevision: { snapshot: Record<string, unknown> } }).currentRevision.snapshot;
+  assert.equal(snap.version, 1);
+  const draft = snap.draft as { dishes: { name: string; ingredients: { name: string; amount: string }[] }[] };
+  assert.equal(draft.dishes[0].name, 'Spare ribs');
+  assert.equal(draft.dishes[0].ingredients[0].amount, '2');
+  const instructions = snap.instructions as { title: string; durationMillis: number | null }[];
+  assert.equal(instructions[1].durationMillis, 300 * 60000);
+  // Update: new revision, old one untouched, omitted content inherited.
+  const updated = await s.call('update_recipe', { recipeId, instructions: [{ title: 'Season' }, { title: 'Smoke', durationMinutes: 300 }, { title: 'Rest', durationMinutes: 30 }], changeNotes: 'added rest' });
+  assert.equal(updated.isError, false, updated.content?.[0]?.text);
+  const upd = updated.structuredContent as unknown as { revisionId: string; revisionNumber: number };
+  assert.equal(upd.revisionNumber, 2);
+  assert.notEqual(upd.revisionId, revisionId);
+  const revisions = await s.call('list_recipe_revisions', { recipeId });
+  const revs = (revisions.structuredContent as unknown as { revisions: { id: string; isCurrent: boolean }[] }).revisions;
+  assert.equal(revs.length, 2);
+  assert.equal(revs.find(r => r.isCurrent)?.id, upd.revisionId);
+  const after = await s.call('get_recipe', { recipeId });
+  const snap2 = (after.structuredContent as unknown as { currentRevision: { snapshot: Record<string, unknown> } }).currentRevision.snapshot;
+  assert.equal((snap2.draft as { dishes: unknown[] }).dishes.length, 1, 'dish inherited on partial update');
+  assert.equal((snap2.instructions as unknown[]).length, 3);
+  // Archive hides from default search; delete removes for real.
+  const archived = await s.call('set_recipe_archived', { recipeId, archived: true });
+  assert.equal(archived.isError, false);
+  const searched = await s.call('search_recipes', { query: 'Weekend' });
+  assert.equal((searched.structuredContent as unknown as { total: number }).total, 0);
+  const deleted = await s.call('delete_recipe', { recipeId });
+  assert.equal(deleted.isError, false);
+  assert.equal((await s.call('get_recipe', { recipeId })).isError, true);
+});
