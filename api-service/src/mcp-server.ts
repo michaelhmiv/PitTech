@@ -29,6 +29,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * JSON for clients that prefer it. Tool-level failures are results with
  * isError, per spec — not protocol errors. */
 function toolResult(value: unknown) {
+  // A handler may return rich content blocks directly (e.g. an image
+  // for get_photo): { content: [...], structuredContent?: {...} }.
+  if (isRecord(value) && Array.isArray(value.content)) {
+    return { content: value.content, structuredContent: isRecord(value.structuredContent) ? value.structuredContent : undefined, isError: false };
+  }
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }], structuredContent: isRecord(value) ? value : { value }, isError: false };
 }
 function toolFailure(message: string) {

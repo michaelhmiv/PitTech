@@ -23,6 +23,14 @@ export interface SnapshotReader {
  * compare-and-swap on the envelope's baseVersion with a durable,
  * idempotent receipt per mutationId — exactly the guarantees the MCP
  * command spine is built on. */
+export interface McpPhotoStore {
+  begin(user: string, input: unknown): Promise<unknown>;
+  statusOf(user: string, asset: string): Promise<unknown>;
+  putPart(user: string, asset: string, index: number, bytes: Buffer): Promise<unknown>;
+  finish(user: string, asset: string): Promise<unknown>;
+  read(user: string, asset: string): Promise<{ bytes: Buffer; mimeType: string; sha256: string }>;
+  abandon(user: string, asset: string): Promise<unknown>;
+}
 export interface SnapshotReadWriter extends SnapshotReader {
   put(user: string, value: unknown): Promise<{ version: number; mutationId: string; sha256: string }>;
   receiptFor(user: string, mutationId: string): Promise<{ version: number; mutationId: string; sha256: string } | undefined>;
@@ -113,9 +121,9 @@ class WorkingLibrary {
   }
   wasLive(type: string, id: string): boolean { const row = this.find(type, id); return !!row && !row.deleted; }
   liveRecords(type: string): Payload[] { return this.rows.filter(r => r.recordType === type && !r.deleted).map(r => r.payload as Payload); }
-  insert(type: string, payload: Payload, recordIdOverride?: string) {
+  insert(type: string, payload: Payload, recordIdOverride?: string, assetIds: string[] = []) {
     const recordId = recordIdOverride ?? this.keyOf(type, payload);
-    this.rows.push({ recordType: type as SyncRecord['recordType'], recordId, deleted: false, payload, assetIds: [], version: { counter: this.stamp, clientId: MCP_WRITER_CLIENT_ID } });
+    this.rows.push({ recordType: type as SyncRecord['recordType'], recordId, deleted: false, payload, assetIds, version: { counter: this.stamp, clientId: MCP_WRITER_CLIENT_ID } });
   }
   update(type: string, payload: Payload, patch: Record<string, unknown>) {
     const id = this.keyOf(type, payload);
@@ -136,12 +144,19 @@ class WorkingLibrary {
 export class PrivateLibraryService {
   private grants: McpGrants; private snapshots: SnapshotReader;
   private writer: SnapshotReadWriter | undefined; private writesEnabled: boolean;
+  private photos: McpPhotoStore | undefined;
   private clock: () => number;
   constructor(grants: McpGrants, snapshots: SnapshotReader,
-    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number } = {}) {
+    options: { writer?: SnapshotReadWriter; writesEnabled?: boolean; clock?: () => number; photos?: McpPhotoStore } = {}) {
     this.grants = grants; this.snapshots = snapshots;
     this.writer = options.writer; this.writesEnabled = options.writesEnabled === true;
+    this.photos = options.photos;
     this.clock = options.clock ?? Date.now;
+  }
+  private requirePhotos(): McpPhotoStore {
+    if (!this.photos) throw new ToolFailure('Photo storage is not available on this server.');
+    if (!this.canWrite) throw new ToolFailure('Writes are not enabled on this server yet. Reads are unaffected.');
+    return this.photos;
   }
   private get canWrite(): boolean { return this.writer !== undefined && this.writesEnabled; }
 
@@ -213,6 +228,20 @@ export class PrivateLibraryService {
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteNote(principal, args),
       },
       ] as ToolDefinition[]) : []),
+      {
+        name: 'list_photos', title: 'List photos',
+        description: 'Lists the photos in the library (optionally for one meal) with captions and timestamps. Use get_photo to actually see an image.',
+        inputSchema: { type: 'object', properties: { mealId: { type: 'string' } }, additionalProperties: false },
+        scopes: ['media:read'],
+        handler: async (principal, args) => this.listPhotos(principal, args),
+      },
+      {
+        name: 'get_photo', title: 'View a photo',
+        description: 'Returns the actual image for a library photo so you can look at it.',
+        inputSchema: { type: 'object', properties: { photoId: { type: 'string' } }, required: ['photoId'], additionalProperties: false },
+        scopes: ['media:read'],
+        handler: async (principal, args) => this.getPhoto(principal, args),
+      },
       {
         name: 'search_recipes', title: 'Search recipes',
         description: 'Searches the user\'s recipe library by name, description and tags. Empty query lists recipes, most recently updated first. Archived recipes are excluded unless includeArchived is true.',
@@ -315,6 +344,62 @@ export class PrivateLibraryService {
           inputSchema: { type: 'object', properties: { recipeId: { type: 'string' }, ...WRITE_ARGS }, required: ['recipeId'], additionalProperties: false },
           scopes: ['library:delete'],
           handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.deleteRecipe(principal, args),
+        },
+        {
+          name: 'begin_photo_upload', title: 'Begin a photo upload',
+          description: 'Starts a chunked photo upload (1 MiB chunks). Declare the total bytes, mimeType (jpeg/png/webp) and the sha256 of the whole image; you get an assetId to upload chunks against.',
+          inputSchema: { type: 'object', properties: { bytes: { type: 'number' }, mimeType: { type: 'string' }, sha256: { type: 'string' }, assetId: { type: 'string' } }, required: ['bytes', 'mimeType', 'sha256'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.beginPhotoUpload(principal, args),
+        },
+        {
+          name: 'upload_photo_chunk', title: 'Upload a photo chunk',
+          description: 'Uploads one chunk (base64, up to 1 MiB decoded) of an in-progress photo upload.',
+          inputSchema: { type: 'object', properties: { assetId: { type: 'string' }, index: { type: 'number' }, dataBase64: { type: 'string' } }, required: ['assetId', 'index', 'dataBase64'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.uploadPhotoChunk(principal, args),
+        },
+        {
+          name: 'get_photo_upload_status', title: 'Photo upload status',
+          description: 'Shows which chunks of an upload have arrived and whether it is complete.',
+          inputSchema: { type: 'object', properties: { assetId: { type: 'string' } }, required: ['assetId'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.photoUploadStatus(principal, args),
+        },
+        {
+          name: 'complete_photo_upload', title: 'Complete a photo upload',
+          description: 'Finishes an upload: the server verifies the image (hash, format, dimensions) and stores it. Attach it to a meal afterwards with attach_photo.',
+          inputSchema: { type: 'object', properties: { assetId: { type: 'string' } }, required: ['assetId'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.completePhotoUpload(principal, args),
+        },
+        {
+          name: 'cancel_photo_upload', title: 'Cancel a photo upload',
+          description: 'Abandons an in-progress (or unattached) upload and discards its chunks.',
+          inputSchema: { type: 'object', properties: { assetId: { type: 'string' } }, required: ['assetId'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.cancelPhotoUpload(principal, args),
+        },
+        {
+          name: 'attach_photo', title: 'Attach a photo to a meal',
+          description: 'Adds a completed upload to a meal (optionally one of its dishes) with an optional caption, so it appears in the library and on the phones.',
+          inputSchema: { type: 'object', properties: { assetId: { type: 'string' }, mealId: { type: 'string' }, dishId: { type: 'string' }, caption: { type: 'string' }, capturedAtUtcMillis: { type: 'number' }, ...WRITE_ARGS }, required: ['assetId', 'mealId'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.attachPhoto(principal, args),
+        },
+        {
+          name: 'update_photo', title: 'Update a photo',
+          description: 'Changes a photo\'s caption.',
+          inputSchema: { type: 'object', properties: { photoId: { type: 'string' }, caption: { type: 'string' }, ...WRITE_ARGS }, required: ['photoId'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.updatePhoto(principal, args),
+        },
+        {
+          name: 'remove_photo', title: 'Remove a photo',
+          description: 'Removes a photo from the library. The meal and its other content are unchanged.',
+          inputSchema: { type: 'object', properties: { photoId: { type: 'string' }, ...WRITE_ARGS }, required: ['photoId'], additionalProperties: false },
+          scopes: ['media:write'],
+          handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.removePhoto(principal, args),
         },
       ] as ToolDefinition[]) : []),
       {
@@ -895,6 +980,147 @@ export class PrivateLibraryService {
       for (const source of work.liveRecords('dishRecipeSources').filter(r => r.recipeId === recipe.id)) { work.tombstone('dishRecipeSources', source); tombstoned++; }
       work.tombstone('recipes', recipe); tombstoned++;
       return { recipeId: recipe.id, tombstonedRecords: tombstoned };
+    });
+  }
+
+
+  private photoStore(): McpPhotoStore {
+    if (!this.photos) throw new ToolFailure('Photo storage is not available on this server.');
+    return this.photos;
+  }
+  private async photoOp<T>(run: () => Promise<T>): Promise<T> {
+    try { return await run(); }
+    catch (failure) {
+      if (failure instanceof ApiError) throw new ToolFailure(`The photo store rejected that (${failure.code}). Check the upload state with get_photo_upload_status and try again.`);
+      throw failure;
+    }
+  }
+  private photoSummary(photo: Payload) {
+    return {
+      photoId: photo.id, assetId: photo.assetId, mealId: photo.cookId,
+      dishId: photo.dishId ?? null, eventId: photo.eventId ?? null,
+      caption: photo.caption ?? null, capturedAt: iso(photo.capturedAtUtcMillis), mimeType: photo.mimeType,
+    };
+  }
+
+  async listPhotos(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['mealId']);
+    const data = await this.loadLibrary(principal);
+    let photos = this.records(data, 'photos');
+    if (typeof args.mealId === 'string') photos = photos.filter(photo => photo.cookId === args.mealId);
+    return { snapshotVersion: data.version, total: photos.length, photos: photos.map(photo => this.photoSummary(photo)) };
+  }
+
+  async getPhoto(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['photoId']);
+    const data = await this.loadLibrary(principal);
+    const photo = this.record(data, 'photos', args.photoId, 'Photo');
+    const assetId = str(photo.assetId);
+    if (!assetId) throw new ToolFailure('That photo has no stored image.');
+    const stored = await this.photoOp(() => this.photoStore().read(principal.userId, assetId));
+    return {
+      content: [{ type: 'image', data: stored.bytes.toString('base64'), mimeType: stored.mimeType }],
+      structuredContent: { snapshotVersion: data.version, ...this.photoSummary(photo), bytes: stored.bytes.length, sha256: stored.sha256 },
+    };
+  }
+
+  async beginPhotoUpload(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['bytes', 'mimeType', 'sha256', 'assetId']);
+    const bytes = this.optNumber(args, 'bytes');
+    const mimeType = this.optString(args, 'mimeType');
+    const sha256 = this.optString(args, 'sha256');
+    if (!bytes || !Number.isSafeInteger(bytes) || bytes <= 0) throw new ToolFailure('bytes (the total image size) is required.');
+    if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) throw new ToolFailure('mimeType must be image/jpeg, image/png or image/webp.');
+    if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) throw new ToolFailure('sha256 (lowercase hex of the whole image) is required.');
+    const assetId = this.optString(args, 'assetId') ?? randomUUID();
+    if (!/^[0-9a-fA-F-]{36}$/.test(assetId)) throw new ToolFailure('assetId must be a UUID when provided.');
+    const status = await this.photoOp(() => this.requirePhotos().begin(principal.userId, { assetId, bytes, mimeType, sha256 }));
+    return { assetId, upload: status };
+  }
+
+  async uploadPhotoChunk(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['assetId', 'index', 'dataBase64']);
+    const assetId = this.optString(args, 'assetId');
+    const index = this.optNumber(args, 'index');
+    const dataBase64 = this.optString(args, 'dataBase64');
+    if (!assetId || !/^[0-9a-fA-F-]{36}$/.test(assetId)) throw new ToolFailure('assetId must be a UUID.');
+    if (index === undefined || !Number.isSafeInteger(index) || index < 0) throw new ToolFailure('index (0-based chunk number) is required.');
+    if (!dataBase64) throw new ToolFailure('dataBase64 is required.');
+    const bytes = Buffer.from(dataBase64, 'base64');
+    if (!bytes.length || bytes.length > 1024 ** 2) throw new ToolFailure('Each chunk must decode to between 1 byte and 1 MiB.');
+    const status = await this.photoOp(() => this.requirePhotos().putPart(principal.userId, assetId, index, bytes));
+    return { assetId, upload: status };
+  }
+
+  async photoUploadStatus(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['assetId']);
+    const assetId = this.optString(args, 'assetId');
+    if (!assetId) throw new ToolFailure('assetId is required.');
+    const status = await this.photoOp(() => this.photoStore().statusOf(principal.userId, assetId));
+    return { assetId, upload: status };
+  }
+
+  async completePhotoUpload(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['assetId']);
+    const assetId = this.optString(args, 'assetId');
+    if (!assetId) throw new ToolFailure('assetId is required.');
+    const status = await this.photoOp(() => this.requirePhotos().finish(principal.userId, assetId));
+    return { assetId, upload: status, next: 'The image is stored. Attach it to a meal with attach_photo so it appears in the library.' };
+  }
+
+  async cancelPhotoUpload(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['assetId']);
+    const assetId = this.optString(args, 'assetId');
+    if (!assetId) throw new ToolFailure('assetId is required.');
+    await this.photoOp(() => this.requirePhotos().abandon(principal.userId, assetId));
+    return { assetId, cancelled: true };
+  }
+
+  async attachPhoto(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['assetId', 'mealId', 'dishId', 'caption', 'capturedAtUtcMillis', 'idempotencyKey', 'expectedSnapshotVersion']);
+    const assetId = this.optString(args, 'assetId');
+    if (!assetId) throw new ToolFailure('assetId is required.');
+    // Verify the asset is committed and learn its real mime type before
+    // the library points at it.
+    const stored = await this.photoOp(() => this.photoStore().read(principal.userId, assetId));
+    return this.mutate(principal, args, work => {
+      const meal = work.live('cooks', args.mealId, 'Meal');
+      let dishId: string | null = null;
+      if (args.dishId !== undefined && args.dishId !== null) {
+        const dish = work.live('dishes', args.dishId, 'Dish');
+        if (dish.cookId !== meal.id) throw new ToolFailure('That dish belongs to a different meal.');
+        dishId = str(dish.id)!;
+      }
+      if (work.liveRecords('photos').some(photo => photo.assetId === assetId)) throw new ToolFailure('That image is already attached to the library.');
+      const now = this.clock();
+      const photoId = this.idFor(args, 'photo');
+      work.insert('photos', {
+        id: photoId, assetId, cookId: meal.id, dishId, eventId: null,
+        caption: this.optString(args, 'caption') ?? null,
+        capturedAtUtcMillis: this.optNumber(args, 'capturedAtUtcMillis') ?? now,
+        addedAtUtcMillis: now, mimeType: stored.mimeType, temperatureContextJson: null,
+      }, undefined, [assetId]);
+      return { photoId, assetId, mealId: meal.id };
+    }, args => ({ photoId: this.idFor(args, 'photo'), assetId }));
+  }
+
+  async updatePhoto(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['photoId', 'caption', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const photo = work.live('photos', args.photoId, 'Photo');
+      if (!('caption' in args)) throw new ToolFailure('Nothing to update: provide a caption.');
+      work.update('photos', photo, { caption: this.optString(args, 'caption') ?? null });
+      return { photoId: photo.id };
+    });
+  }
+
+  async removePhoto(principal: McpPrincipal, args: Record<string, unknown>) {
+    this.requireFields(args, ['photoId', 'idempotencyKey', 'expectedSnapshotVersion']);
+    return this.mutate(principal, args, work => {
+      const photo = work.live('photos', args.photoId, 'Photo');
+      const assetId = str(photo.assetId);
+      work.tombstone('photos', photo);
+      return { photoId: photo.id, assetId: assetId ?? null };
     });
   }
 
