@@ -42,12 +42,12 @@ import com.pittech.data.ActivityGoogleSignInHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null) {
+@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null) {
     val showing by account.showing.collectAsStateWithLifecycle()
     if(!showing)return
-    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync, mcp)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
+    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync, mcp, device)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
 }
-@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null) {
+@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null) {
     val state by account.presentation.collectAsStateWithLifecycle()
     var confirm by remember{mutableStateOf(false)}
     var reviewingDeletion by remember{mutableStateOf(false)}
@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
             else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
             Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
             mcp?.let{McpConnectionsSection(it)}
+            device?.let{McpDeviceActionsSection(it)}
             TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
             TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
         }else AccountSignIn(account,state)
@@ -140,6 +141,32 @@ import kotlinx.coroutines.launch
     if(creating)McpCreateDialog(mcp=mcp,onClose={creating=false})
     confirmRevoke?.let{id->AlertDialog(onDismissRequest={confirmRevoke=null},title={Text("Disconnect this connection?")},text={Text("The assistant using it loses access immediately. Your library is unchanged.")},confirmButton={TextButton(onClick={confirmRevoke=null;mcp.revoke(id)},modifier=Modifier.testTag("mcp-confirm-revoke")){Text("Disconnect")}},dismissButton={TextButton(onClick={confirmRevoke=null}){Text("Cancel")}})}
     if(confirmRevokeAll)AlertDialog(onDismissRequest={confirmRevokeAll=false},title={Text("Disconnect all connections?")},text={Text("Every assistant using a connection loses access immediately. Your library is unchanged.")},confirmButton={TextButton(onClick={confirmRevokeAll=false;mcp.revokeAll()},modifier=Modifier.testTag("mcp-confirm-revoke-all")){Text("Disconnect all")}},dismissButton={TextButton(onClick={confirmRevokeAll=false}){Text("Cancel")}})
+}
+@Composable private fun McpDeviceActionsSection(device: com.pittech.data.McpDeviceActionsManager) {
+    val state by device.presentation.collectAsStateWithLifecycle()
+    var confirmingUnregister by remember{mutableStateOf(false)}
+    LaunchedEffect(Unit){device.refresh()}
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        Text("Device actions",style=MaterialTheme.typography.titleMedium)
+        Text("An assistant can ask this phone to do small things in the app — never to control a grill. Requests wait here until you open PitTech; nothing runs in the background and nothing counts as done until this phone reports it. Choose which kinds of requests this phone accepts.",style=MaterialTheme.typography.bodySmall)
+        if(!state.available)Text("Device actions aren't available yet.",Modifier.testTag("mcp-device-unavailable"))
+        else{
+            com.pittech.data.MCP_DEVICE_CLASSES.forEach{cls->
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Checkbox(state.classes.contains(cls),{ value -> device.setClass(cls,value) },enabled=!state.busy,modifier=Modifier.testTag("mcp-device-class-$cls"))
+                    Text(com.pittech.data.mcpDeviceClassLabel(cls),Modifier.weight(1f))
+                }
+            }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                Button(onClick={device.checkNow()},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-device-check")){Text("Check for requests")}
+                if(state.registered)TextButton(onClick={confirmingUnregister=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-device-unregister")){Text("Stop taking requests")}
+            }
+            state.lastCheckSummary?.let{Text(it,Modifier.testTag("mcp-device-last-check"),style=MaterialTheme.typography.bodySmall)}
+            if(state.busy)CircularProgressIndicator()
+            state.message?.let{Text(it,Modifier.testTag("mcp-device-message"))}
+        }
+    }
+    if(confirmingUnregister)AlertDialog(onDismissRequest={confirmingUnregister=false},title={Text("Stop taking requests?")},text={Text("This phone stops accepting assistant requests, and any waiting requests for it are canceled. You can turn a class back on any time.")},confirmButton={TextButton(onClick={confirmingUnregister=false;device.unregister()},modifier=Modifier.testTag("mcp-device-confirm-unregister")){Text("Stop")}},dismissButton={TextButton(onClick={confirmingUnregister=false}){Text("Cancel")}})
 }
 @Composable private fun McpCreateDialog(mcp: com.pittech.data.McpConnectionsManager, onClose: () -> Unit) {
     var nickname by remember{mutableStateOf("ChatGPT")}

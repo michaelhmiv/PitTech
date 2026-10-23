@@ -148,7 +148,7 @@ internal fun PitTechApp(
     var myCookbook by rememberSaveable { mutableStateOf(false) }
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
-    AccountDialog(viewModel.account, viewModel.sync, viewModel.mcpConnections)
+    AccountDialog(viewModel.account, viewModel.sync, viewModel.mcpConnections, viewModel.mcpDeviceActions)
     ProGateDialog(
         viewModel.subscription,
         previouslyEntitled,
