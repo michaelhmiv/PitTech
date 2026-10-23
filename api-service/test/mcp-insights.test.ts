@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { AuthSecrets, credential } from '../src/auth-credentials.ts';
 import { McpGrants, type McpGrantRecord, type McpGrantStore, type McpPrincipal } from '../src/mcp-grants.ts';
 import { PrivateLibraryService, type SnapshotReader } from '../src/mcp-library.ts';
+// Insights tools (M7): temperature history, summaries, comparisons,
+// personal insights, recap and community benchmarks.
 import { McpServer } from '../src/mcp-server.ts';
 import type { SyncEnvelope } from '../src/sync-envelope.ts';
 import type { SyncRecord } from '../src/sync-merge.ts';
