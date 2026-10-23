@@ -25,6 +25,8 @@ import type { Subscriptions } from './subscriptions.ts';
 import { communityRoute, handleCommunity } from './community-http.ts';
 import { mcpGrantRoute, handleMcpGrants, mcpExportRoute, handleMcpExportDownload } from './mcp-http.ts';
 import type { McpPortabilityStore } from './mcp-portability.ts';
+import type { McpDeviceStore } from './mcp-device.ts';
+import { mcpDeviceRoute, handleMcpDevices } from './mcp-device-http.ts';
 import { mcpOAuthRoute, handleMcpOAuth } from './mcp-oauth-http.ts';
 import { mcpTransportRoute, handleMcpTransport } from './mcp-transport-http.ts';
 import type { McpServer } from './mcp-server.ts';
@@ -33,7 +35,7 @@ import type { McpGrants } from './mcp-grants.ts';
 import type { CommunityAggregates } from './community-aggregation.ts';
 
 type Options = { ipKey: string; trustedProxies?: string[]; uploadsEnabled: boolean; tempRoot?: string;
-  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; mcp?: McpGrants; oauth?: McpOAuth; portability?: McpPortabilityStore; oauthIssuer?: string; mcpServer?: McpServer; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; communityAggregates?: CommunityAggregates; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
+  links?: LinkConfig; auth?: Authentication; sync?: PrivateSyncServices; subscriptions?: Subscriptions; mcp?: McpGrants; oauth?: McpOAuth; portability?: McpPortabilityStore; device?: McpDeviceStore; oauthIssuer?: string; mcpServer?: McpServer; publications?: Publications; deletion?:AccountDeletion; community?:CommunityLifecycle; communityAggregates?: CommunityAggregates; log?: (value: { requestId: string; method: string; route: string; status: number }) => void };
 export const tempRoot = join(tmpdir(), 'pittech-api-uploads');
 export async function pruneUploads(root: string, now = Date.now()) {
   for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && /^upload-[\w-]+$/.test(entry.name)) {
@@ -161,6 +163,13 @@ export function makeServer(relay: Relay, options: Options) {
         const bucket=Math.floor(relay.clock()/3600000),key='mcp-exports:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'mcp-exports:'+bucket);
         if(!await relay.repository.rate(key,60,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
         await handleMcpExportDownload(req,res,options.auth,options.mcp,options.portability);return;
+      }
+      const mcpDeviceMatch=mcpDeviceRoute(req.url??'',method);
+      if(mcpDeviceMatch&&options.mcp&&options.device){
+        route=mcpDeviceMatch;if(active>=2)throw new ApiError(503,'temporarily_unavailable');active++;counted=true;
+        const bucket=Math.floor(relay.clock()/3600000),key='mcp-devices:'+rateIdentity(options.ipKey,proxyaddr(req,trust),'mcp-devices:'+bucket);
+        if(!await relay.repository.rate(key,240,(bucket+1)*3600000))throw new ApiError(429,'rate_limited');
+        await handleMcpDevices(req,res,mcpDeviceMatch,options.auth,options.device,{claim:()=>{if(mcpOps>=4)return false;mcpOps++;return true;},release:()=>{mcpOps--;}});return;
       }
       const communityRouteMatch=communityRoute(req.url??'',method);
       if(communityRouteMatch&&options.subscriptions&&options.communityAggregates){
