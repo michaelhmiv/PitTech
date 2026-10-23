@@ -367,3 +367,104 @@ test('undo: reverses a create exactly, refuses after drift, and the undo itself 
   assert.equal(back.isError, false);
   assert.equal((back.structuredContent as unknown as { meal: { title: string } }).meal.title, 'Undo me');
 });
+
+test('save_results writes the native deterministic result rows; partial saves keep the rest; null clears', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Results brisket', dishes: [{ name: 'Flat', foodType: 'beef' }] });
+  const { mealId, dishIds } = created.structuredContent as unknown as { mealId: string; dishIds: string[] };
+  const saved = await s.call('save_results', { mealId, rating: 4.5, cookAgain: true, finalTemperature: 203, restMinutes: 45, notes: 'Great bark' });
+  assert.equal(saved.isError, false, saved.content?.[0]?.text);
+  const rows = () => s.snapshots.envelope!.records.filter(r => r.recordType === 'results');
+  const byType = (t: string) => rows().find(r => (r.payload as { resultType: string })?.resultType === t);
+  assert.equal((byType('overall_rating')!.payload as { numericValue: number }).numericValue, 4.5);
+  assert.equal(byType('overall_rating')!.recordId, `${mealId}:cook:overall_rating`);
+  assert.equal((byType('cook_again')!.payload as { numericValue: number }).numericValue, 1);
+  assert.equal((byType('final_temperature')!.payload as { unit: string }).unit, '°F');
+  assert.equal((byType('rest_minutes')!.payload as { numericValue: number }).numericValue, 45);
+  assert.equal(byType('result_notes')!.recordId, `${mealId}:cook:notes`);
+  // Partial save: rating only — the other rows keep their values and stamps advance legally.
+  const again = await s.call('save_results', { mealId, rating: 5 });
+  assert.equal(again.isError, false, again.content?.[0]?.text);
+  assert.equal((byType('final_temperature')!.payload as { numericValue: number }).numericValue, 203);
+  // Dish-scoped verdict lands under the dish scope key.
+  const dishSave = await s.call('save_results', { mealId, dishId: dishIds[0], rating: 3 });
+  assert.equal(dishSave.isError, false, dishSave.content?.[0]?.text);
+  assert.ok(rows().some(r => r.recordId === `${mealId}:${dishIds[0]}:overall_rating`));
+  // Null clears exactly one row (tombstone), the rest survive.
+  const cleared = await s.call('save_results', { mealId, rating: null });
+  assert.equal(cleared.isError, false, cleared.content?.[0]?.text);
+  assert.equal(rows().find(r => r.recordId === `${mealId}:cook:overall_rating` && !r.deleted), undefined);
+  assert.ok(byType('overall_rating'), 'the dish rating survives the cook-level clear');
+  assert.ok(rows().some(r => r.recordId === `${mealId}:cook:overall_rating` && r.deleted));
+  // Out-of-range rating and an empty save are refused.
+  assert.equal((await s.call('save_results', { mealId, rating: 6 })).isError, true);
+  assert.equal((await s.call('save_results', { mealId })).isError, true);
+});
+
+test('save_lessons sets and clears keep_doing / change_next_time', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Lessons cook' });
+  const { mealId } = created.structuredContent as unknown as { mealId: string };
+  const saved = await s.call('save_lessons', { mealId, keepDoing: 'Same rub', changeNextTime: 'Wrap earlier' });
+  assert.equal(saved.isError, false, saved.content?.[0]?.text);
+  const rows = s.snapshots.envelope!.records.filter(r => r.recordType === 'results' && !r.deleted);
+  assert.deepEqual(rows.map(r => (r.payload as { resultType: string }).resultType).sort(), ['change_next_time', 'keep_doing']);
+  const cleared = await s.call('save_lessons', { mealId, keepDoing: '' });
+  assert.equal(cleared.isError, false, cleared.content?.[0]?.text);
+  const live = s.snapshots.envelope!.records.filter(r => r.recordType === 'results' && !r.deleted);
+  assert.deepEqual(live.map(r => (r.payload as { resultType: string }).resultType), ['change_next_time']);
+});
+
+test('manual readings: deterministic probe identity, note link, correction keeps provenance, removal is manual-only', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Manual temps' });
+  const { mealId } = created.structuredContent as unknown as { mealId: string };
+  const note = await s.call('create_note', { mealId, title: 'Checked the flat' });
+  const { noteId } = note.structuredContent as unknown as { noteId: string };
+  const added = await s.call('add_manual_reading', { mealId, noteId, probeName: 'Thermapen', measurementType: 'food', value: 198.5, unit: '°F' });
+  assert.equal(added.isError, false, added.content?.[0]?.text);
+  const { readingId } = added.structuredContent as unknown as { readingId: string };
+  const records = s.snapshots.envelope!.records;
+  const reading = records.find(r => r.recordType === 'readings' && r.recordId === readingId)!;
+  const rp = reading.payload as { source: string; qualityStatus: string; samplingIntervalMillis: number; probeId: string; timestampBasis: string };
+  assert.equal(rp.source, 'manual');
+  assert.equal(rp.qualityStatus, 'valid');
+  assert.equal(rp.samplingIntervalMillis, 0);
+  assert.equal(rp.timestampBasis, 'measurement');
+  // The probe id is the phone's own name-UUID: md5(`${cook}:manual:null:food:Thermapen`), version 3.
+  const { createHash } = await import('node:crypto');
+  const bytes = createHash('md5').update(`${mealId}:manual:null:food:Thermapen`).digest();
+  bytes[6] = (bytes[6] & 0x0f) | 0x30; bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  const expectedProbe = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  assert.equal(rp.probeId, expectedProbe);
+  assert.ok(records.some(r => r.recordType === 'probes' && r.recordId === expectedProbe));
+  assert.ok(records.some(r => r.recordType === 'logReadingLinks' && r.recordId === readingId && (r.payload as { eventId: string }).eventId === noteId));
+  // Correction: same id, new value, recordedAt preserved.
+  const recordedAt = (reading.payload as { recordedAtUtcMillis: number }).recordedAtUtcMillis;
+  const fixed = await s.call('add_manual_reading', { mealId, readingId, probeName: 'Thermapen', measurementType: 'food', value: 201, unit: '°F' });
+  assert.equal(fixed.isError, false, fixed.content?.[0]?.text);
+  const after = s.snapshots.envelope!.records.find(r => r.recordType === 'readings' && r.recordId === readingId)!;
+  assert.equal((after.payload as { value: number }).value, 201);
+  assert.equal((after.payload as { recordedAtUtcMillis: number }).recordedAtUtcMillis, recordedAt);
+  // Removal tombstones the reading and its link.
+  const removed = await s.call('remove_manual_reading', { readingId });
+  assert.equal(removed.isError, false, removed.content?.[0]?.text);
+  const gone = s.snapshots.envelope!.records.filter(r => (r.recordType === 'readings' || r.recordType === 'logReadingLinks') && r.recordId === readingId);
+  assert.ok(gone.every(r => r.deleted));
+});
+
+test('recorded sensor samples refuse manual correction and removal', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Sensor cook' });
+  const { mealId } = created.structuredContent as unknown as { mealId: string };
+  // Seed a recorded reading straight into the snapshot (a phone sync would bring it).
+  const base = s.snapshots.envelope!;
+  const seeded: SyncEnvelope = { ...base, clientId: '123e4567-e89b-42d3-a456-426614174099', baseVersion: s.snapshots.version, mutationId: '223e4567-e89b-42d3-a456-426614174000', records: [...base.records, { recordType: 'readings', recordId: 'sensor-1', deleted: false, assetIds: [], version: { counter: 99, clientId: '123e4567-e89b-42d3-a456-426614174099' }, payload: { id: 'sensor-1', cookId: mealId, dishId: null, probeId: 'probe-9', probeName: 'Pit probe', measurementType: 'pit', value: 250, unit: '°F', measuredAtUtcMillis: NOW, recordedAtUtcMillis: NOW, timeZoneId: 'UTC', source: 'recorded', sourceDeviceId: 'dev-1', qualityStatus: 'valid', timestampBasis: 'measurement', samplingIntervalMillis: 15000 } }] };
+  await s.snapshots.put('user-1', seeded);
+  const fix = await s.call('add_manual_reading', { mealId, readingId: 'sensor-1', probeName: 'Pit probe', measurementType: 'pit', value: 251, unit: '°F' });
+  assert.equal(fix.isError, true);
+  assert.match(fix.content[0].text, /recorded samples are immutable/);
+  const remove = await s.call('remove_manual_reading', { readingId: 'sensor-1' });
+  assert.equal(remove.isError, true);
+});
