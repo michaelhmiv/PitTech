@@ -76,6 +76,25 @@ internal class CookRecordingRepository(private val database: PitTechDatabase) {
         event(cookId, "probe_assigned", "${probe.name} → $name", movedAt, dishId, recordedAt = now)
     }
 
+    /** Ends the probe's current dish assignment, if any (device actions, issue #114 §7). */
+    suspend fun unassignProbe(probeId: String, now: Long = System.currentTimeMillis()): Boolean {
+        val current = recordings.currentAssignment(probeId) ?: return false
+        assignProbe(probeId, current.cookId, null, now)
+        return true
+    }
+
+    suspend fun pausedRecording(): CookRecordingEntity? = recordings.getPausedRecording()
+
+    /** Mirrors pause(): flips a paused recording back to recording and
+     * stamps the resume so the gap accounting in ingest() stays honest. */
+    suspend fun resume(cookId: String, now: Long = System.currentTimeMillis()) = database.withTransaction {
+        val recording = recordings.getRecording(cookId) ?: return@withTransaction
+        if (recording.status != CookRecordingEntity.PAUSED) return@withTransaction
+        recordings.saveRecording(recording.copy(status = CookRecordingEntity.RECORDING, message = "Temperature recording resumed.",
+            resumedAtUtcMillis = now, gapStartedAtUtcMillis = null))
+        event(cookId, "recording_resumed", "Temperature recording resumed", now)
+    }
+
     suspend fun pause(cookId: String, message: String = "Temperature recording paused.", now: Long = System.currentTimeMillis()) = database.withTransaction {
         val recording = recordings.getRecording(cookId) ?: return@withTransaction
         if (recording.status != CookRecordingEntity.RECORDING) return@withTransaction
