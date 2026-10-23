@@ -1366,15 +1366,10 @@
       },
       "mcp": {
         "status": "planned_disabled",
-        "tools": [
-          "list_companions",
-          "get_companion",
-          "upsert_companion",
-          "delete_companion"
-        ]
+        "tools": []
       },
       "fixtures": [],
-      "notes": "Typed combo/checklist operations are finalized in the M0 field inventory. Checking a task does not record a physical cooking action.",
+      "notes": "Typed combo/checklist operations are finalized in the M0 field inventory. Checking a task does not record a physical cooking action. Served by the shared companion tools declared under planning.playbooks_guides (kind-scoped: this capability's kinds ride the same tools).",
       "fields": [
         {
           "source": "checklist",
@@ -1976,15 +1971,10 @@
       },
       "mcp": {
         "status": "planned_disabled",
-        "tools": [
-          "list_companions",
-          "get_companion",
-          "upsert_companion",
-          "delete_companion"
-        ]
+        "tools": []
       },
       "fixtures": [],
-      "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control \u2014 see prohibited.hardware_control.",
+      "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control \u2014 see prohibited.hardware_control. Served by the shared companion tools declared under planning.playbooks_guides (kind-scoped: this capability's kinds ride the same tools).",
       "fields": [
         {
           "source": "equipment",
