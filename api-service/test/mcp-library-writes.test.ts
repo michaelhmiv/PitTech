@@ -171,3 +171,25 @@ test('a write against a never-synced library can create the first meal', async (
   assert.equal(created.isError, false);
   assert.equal(s.snapshots.version, 1);
 });
+
+test('notes: create stamps source mcp, update edits, delete tombstones links too', async () => {
+  const s: Setup = await setup();
+  const created = await s.call('create_meal', { title: 'Note cook' });
+  const mealId = (created.structuredContent as unknown as { mealId: string }).mealId;
+  const note = await s.call('create_note', { mealId, title: 'Wrapped', details: 'Butcher paper', idempotencyKey: KEY });
+  assert.equal(note.isError, false, note.content?.[0]?.text);
+  const noteId = (note.structuredContent as unknown as { noteId: string }).noteId;
+  const stored = s.snapshots.envelope!.records.find(r => r.recordType === 'events')!;
+  assert.equal((stored.payload as { source: string }).source, 'mcp');
+  const listed = await s.call('list_notes', { mealId });
+  assert.deepEqual((listed.structuredContent as unknown as { notes: { id: string }[] }).notes.map(n => n.id), [noteId]);
+  const updated = await s.call('update_note', { noteId, title: 'Wrapped at 165' });
+  assert.equal(updated.isError, false);
+  const fetched = await s.call('get_note', { noteId });
+  assert.equal((fetched.structuredContent as unknown as { note: { title: string } }).note.title, 'Wrapped at 165');
+  const wrongDish = await s.call('create_note', { mealId, title: 'X', dishId: 'no-such-dish' });
+  assert.equal(wrongDish.isError, true);
+  const deleted = await s.call('delete_note', { noteId });
+  assert.equal(deleted.isError, false);
+  assert.equal((await s.call('get_note', { noteId })).isError, true);
+});
