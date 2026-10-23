@@ -1366,7 +1366,12 @@
       },
       "mcp": {
         "status": "planned_disabled",
-        "tools": []
+        "tools": [
+          "list_companions",
+          "get_companion",
+          "upsert_companion",
+          "delete_companion"
+        ]
       },
       "fixtures": [],
       "notes": "Typed combo/checklist operations are finalized in the M0 field inventory. Checking a task does not record a physical cooking action.",
@@ -1484,7 +1489,12 @@
       },
       "mcp": {
         "status": "planned_disabled",
-        "tools": []
+        "tools": [
+          "list_companions",
+          "get_companion",
+          "upsert_companion",
+          "delete_companion"
+        ]
       },
       "fixtures": [],
       "notes": "Typed playbook/plan/serve-goal and guide operations are finalized in the M0 field inventory. Show-guide is presentation, not activation.",
@@ -1763,7 +1773,11 @@
       },
       "mcp": {
         "status": "planned_disabled",
-        "tools": []
+        "tools": [
+          "list_reminder_rules",
+          "upsert_reminder_rule",
+          "delete_reminder_rule"
+        ]
       },
       "fixtures": [],
       "notes": "Rule definitions sync; occurrences are device-owned. Activation requests route through device.actions, never through a synced enabled flag.",
@@ -1962,7 +1976,12 @@
       },
       "mcp": {
         "status": "planned_disabled",
-        "tools": []
+        "tools": [
+          "list_companions",
+          "get_companion",
+          "upsert_companion",
+          "delete_companion"
+        ]
       },
       "fixtures": [],
       "notes": "Journal records only. Cooking hours union overlapping intervals. Never manufacturer credentials, configuration, or grill control \u2014 see prohibited.hardware_control.",
