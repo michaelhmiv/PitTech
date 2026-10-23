@@ -202,8 +202,15 @@ export function validateDeviceAction(action: unknown, params: unknown): { action
       onlyKeys(p, ['playbookId', 'mealId']); return { action, params: { playbookId: reqString(p, 'playbookId'), mealId: reqString(p, 'mealId') } };
     case 'collection.pause': case 'collection.resume':
       onlyKeys(p, []); return { action, params: {} };
-    case 'collection.set_cadence':
-      onlyKeys(p, ['intervalMinutes']); return { action, params: { intervalMinutes: reqInt(p, 'intervalMinutes', 1, 240) } };
+    case 'collection.set_cadence': {
+      // The products' real cadence set (GrillSamplingPolicy): a
+      // requested cadence the apps cannot honor is refused here
+      // rather than silently rounded on the device.
+      onlyKeys(p, ['intervalSeconds']);
+      const seconds = p.intervalSeconds;
+      if (typeof seconds !== 'number' || ![15, 30, 60, 120, 300].includes(seconds)) throw new Error('intervalSeconds must be one of 15, 30, 60, 120 or 300.');
+      return { action, params: { intervalSeconds: seconds } };
+    }
     case 'probe.assign':
       onlyKeys(p, ['probeId', 'dishId']); return { action, params: { probeId: reqString(p, 'probeId'), dishId: reqString(p, 'dishId') } };
     case 'probe.unassign':

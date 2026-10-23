@@ -163,6 +163,9 @@ test('the action enum is closed and per-action schemas are enforced', () => {
   assert.throws(() => validateDeviceAction('preferences.update', {}), /at least one/);
   assert.throws(() => validateDeviceAction('preferences.update', { themeMode: 'neon' }), /themeMode must be/);
   assert.deepEqual(validateDeviceAction('collection.pause', {}), { action: 'collection.pause', params: {} });
+  assert.deepEqual(validateDeviceAction('collection.set_cadence', { intervalSeconds: 120 }), { action: 'collection.set_cadence', params: { intervalSeconds: 120 } });
+  assert.throws(() => validateDeviceAction('collection.set_cadence', { intervalSeconds: 90 }), /one of 15, 30, 60, 120 or 300/);
+  assert.throws(() => validateDeviceAction('collection.set_cadence', { intervalMinutes: 2 }), /Unknown parameter/);
   assert.equal(actionClassOf('reminder.snooze'), 'reminder');
 });
 
