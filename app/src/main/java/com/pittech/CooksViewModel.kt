@@ -66,6 +66,12 @@ class CooksViewModel(
         // The open detail would otherwise stick on "Opening cook…" for a deleted row.
         closeCook()
     })
+    internal val mcpConnections = com.pittech.data.McpConnectionsManager(account, viewModelScope)
+    internal val mcpDeviceActions = com.pittech.data.McpDeviceActionsManager(
+        account, viewModelScope,
+        com.pittech.data.McpDeviceStore(context),
+        com.pittech.data.DeviceActionDispatcher(com.pittech.data.NativeDeviceActionPorts(context, app.database)),
+    )
     internal val subscription = com.pittech.billing.SubscriptionManager(
         com.pittech.billing.PlayProBillingClient(context,com.pittech.billing.ProProductConfiguration.productId),
         viewModelScope,
