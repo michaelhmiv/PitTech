@@ -58,6 +58,8 @@ class ReminderIntegrationTest {
             assertNotNull(dismissed?.completedAtUtcMillis)
             assertEquals(eventsBefore, db.cookDao().getTimelineEventsForCook(cookId).size)
             // PL-01: the direct dish-action record used by the food card.
+            // (Phase order is enforced: food must be on before it can be wrapped.)
+            cooks.notes.save(CookNoteDraft(cookId = cookId, dishId = dishId, category = "action", action = "food_on", title = "Food on", occurredAt = System.currentTimeMillis() - 3_600_000))
             val result = cooks.notes.save(CookNoteDraft(cookId = cookId, dishId = dishId, category = "action", action = "wrap", title = "Wrap"))
             assertEquals("wrap", PlaybookCodec.action(result.event.eventType, result.event.noteMetadataJson))
         } finally { db.close() }
