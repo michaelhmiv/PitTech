@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -72,7 +73,7 @@ class WelcomeFlowTest {
             composeRule.onNodeWithText("Recipes, playbooks & reminders").assertIsDisplayed()
             composeRule.onNodeWithText("Share & Discover").assertIsDisplayed()
 
-            composeRule.onNodeWithTag("welcome-start-cooking").performClick()
+            composeRule.onNodeWithTag("welcome-start-cooking").performScrollTo().performClick()
             awaitNoWelcome()
             composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
             assertTrue(WelcomePreferences.hasSeen(preferences()))
@@ -90,7 +91,7 @@ class WelcomeFlowTest {
         resetFirstRun()
         launchApp().use {
             awaitWelcome()
-            composeRule.onNodeWithTag("welcome-connect-thermometer").performClick()
+            composeRule.onNodeWithTag("welcome-connect-thermometer").performScrollTo().performClick()
             awaitNoWelcome()
             assertTrue(WelcomePreferences.hasSeen(preferences()))
             composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
@@ -106,7 +107,7 @@ class WelcomeFlowTest {
         resetFirstRun()
         launchApp().use {
             awaitWelcome()
-            composeRule.onNodeWithTag("welcome-restore-backup").performClick()
+            composeRule.onNodeWithTag("welcome-restore-backup").performScrollTo().performClick()
             // The system document picker opens over the app; the flag is already set.
             Thread.sleep(1_000)
             assertTrue(WelcomePreferences.hasSeen(preferences()))
@@ -139,7 +140,7 @@ class WelcomeFlowTest {
         // Next clean launch: the still-unseen welcome shows.
         launchApp().use {
             awaitWelcome()
-            composeRule.onNodeWithTag("welcome-start-cooking").performClick()
+            composeRule.onNodeWithTag("welcome-start-cooking").performScrollTo().performClick()
             awaitNoWelcome()
             assertTrue(WelcomePreferences.hasSeen(preferences()))
         }
