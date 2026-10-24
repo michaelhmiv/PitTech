@@ -72,19 +72,51 @@ struct CookListView: View {
     @Environment(CookStore.self) private var store
     @Environment(AdsConsentManager.self) private var adsConsent
     @State private var showingStart = false
+    @State private var showingRestore = false
     @State private var mealPath: [String] = []
+
+    private var isLibraryEmpty: Bool { store.activeCooks.isEmpty && store.completedCooks.isEmpty }
 
     var body: some View {
         NavigationStack(path: $mealPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    // DD-1 lockup (#172): a small header mark only — never a hero.
+                    HStack(spacing: 10) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(PitTechStyle.accent)
+                            .frame(width: 40, height: 40)
+                            .background(PitTechStyle.accentFill, in: RoundedRectangle(cornerRadius: 11))
+                            .accessibilityIdentifier("meals-lockup")
+                        Text("PitTech").font(.headline)
+                    }
+                    .frame(height: 40)
                     SectionTitle(title: "Meals", subtitle: "Keep each meal in one place.")
-                    if !store.activeCooks.isEmpty {
+                    if isLibraryEmpty {
+                        // First-run empty Meals (PL-13 parity with Android):
+                        // lockup → headline → promise → Start meal → Restore.
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("ACTIVE").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                            ForEach(store.activeCooks) { cook in
-                                NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
-                                    .buttonStyle(.plain)
+                            Text("Your cook log is ready").font(.title2.weight(.bold))
+                            Text("Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.")
+                            Text("Your cook records stay on this phone. No account is needed.")
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityIdentifier("meals-empty-card")
+                    }
+                    if let lead = store.activeCooks.first {
+                        NavigationLink(value: lead.id) { LiveZoneCard(cook: lead) }
+                            .buttonStyle(.plain)
+                        if store.activeCooks.count > 1 {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("ALSO COOKING").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                                ForEach(store.activeCooks.dropFirst()) { cook in
+                                    NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
+                                        .buttonStyle(.plain)
+                                }
                             }
                         }
                     }
@@ -95,18 +127,27 @@ struct CookListView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                        if store.completedCooks.isEmpty {
-                            ContentUnavailableView("No finished cooks yet", systemImage: "book.closed", description: Text("Your cook history will show up here when you finish a cook."))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
-                        } else {
-                            ForEach(Array(store.completedCooks.enumerated()), id: \.element.id) { index, cook in
-                                NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
-                                    .buttonStyle(.plain)
-                                if adsConsent.adsServingAllowed && index == min(2, store.completedCooks.count) - 1 {
-                                    NativeAdCard()
+                    if isLibraryEmpty {
+                        Button { showingRestore = true } label: {
+                            Text("Restore from backup")
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("empty-restore-backup")
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            if store.completedCooks.isEmpty {
+                                ContentUnavailableView("No finished cooks yet", systemImage: "book.closed", description: Text("Your cook history will show up here when you finish a cook."))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 20)
+                            } else {
+                                ForEach(Array(store.completedCooks.enumerated()), id: \.element.id) { index, cook in
+                                    NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
+                                        .buttonStyle(.plain)
+                                    if adsConsent.adsServingAllowed && index == min(2, store.completedCooks.count) - 1 {
+                                        NativeAdCard()
+                                    }
                                 }
                             }
                         }
@@ -117,7 +158,69 @@ struct CookListView: View {
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
             .sheet(isPresented: $showingStart) { StartCookSheet(onStarted: { mealPath.append($0) }) }
+            .fileImporter(isPresented: $showingRestore, allowedContentTypes: [.zip, .pittechCookPack], allowsMultipleSelection: false) { result in
+                if let url = try? result.get().first {
+                    Task { await store.receiveArchive(at: url) }
+                }
+            }
         }
+    }
+}
+
+/// The Night Service Live Zone on Meals (#172): a high-contrast poster card for
+/// the lead active cook — latest pit temperature (or elapsed) at poster size,
+/// food temperature, elapsed and setpoint in plain view. Nothing (ads
+/// included) ever renders inside or above it.
+struct LiveZoneCard: View {
+    @Environment(CookStore.self) private var store
+    let cook: CookRecord
+
+    private var readings: [TemperatureSample] { store.readings(for: cook.id) }
+    private var latestPit: TemperatureSample? {
+        readings.filter { ["pit", "pit_ambient", "ambient_temperature"].contains($0.measurementType) }.max { $0.measuredAt < $1.measuredAt }
+    }
+    private var latestFood: TemperatureSample? {
+        readings.filter { $0.measurementType == "food_probe" }.max { $0.measuredAt < $1.measuredAt }
+    }
+    private func elapsed(at date: Date) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince1970) - Int(cook.startedAtUtcMillis / 1000))
+        return String(format: "%d:%02d", seconds / 3600, (seconds % 3600) / 60)
+    }
+    private func tempText(_ sample: TemperatureSample) -> String {
+        let value = sample.value
+        return "\(value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value))\(sample.unit)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(cook.status == "paused" ? "PAUSED · \(cook.title.uppercased())" : "LIVE COOK · \(cook.title.uppercased())")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                if let pit = latestPit {
+                    Text(tempText(pit))
+                        .font(.system(size: 52, weight: .bold))
+                } else {
+                    Text(elapsed(at: context.date))
+                        .font(.system(size: 52, weight: .bold))
+                }
+            }
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text([
+                    latestFood.map { "Food \(tempText($0))" },
+                    "Elapsed \(elapsed(at: context.date))",
+                    cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
+                    cook.smokerName,
+                ].compactMap { $0 }.joined(separator: " · "))
+                .font(.subheadline)
+                .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color(red: 0.949, green: 0.933, blue: 0.890), in: RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(Color(red: 0.063, green: 0.078, blue: 0.059))
+        .accessibilityIdentifier("meals-live-zone")
     }
 }
 
@@ -298,9 +401,13 @@ struct SettingsView: View {
                     }
                 }
                 Section("Appearance") {
-                    Picker("Appearance", selection: Binding(get: { store.library.preferences?["themeMode"]?.stringValue ?? "SYSTEM" }, set: { store.setPreference("themeMode", value: $0) })) {
-                        Text("System").tag("SYSTEM"); Text("Light").tag("LIGHT"); Text("Dark").tag("DARK")
-                    }
+                    // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is
+                    // the only appearance — stated honestly, not a dead picker.
+                    LabeledContent("Appearance", value: "Night Service (dark)")
+                        .accessibilityIdentifier("appearance-night-service")
+                    Text("PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Your data") {
                     Label("Cook data stays on this device unless you export or share it.", systemImage: "iphone.and.arrow.forward")
