@@ -55,6 +55,20 @@ class ReminderRepository(private val db: PitTechDatabase) {
         }
         com.pittech.UnifiedReminderNotifications.cancel(context, rule)
     }
+    /**
+     * PL-01 (issue #172): the physical action this rule announced when it
+     * fired, resolved from its source recipe snapshot milestone. Null when
+     * the rule announced no action — callers must ask, never preselect.
+     */
+    suspend fun announcedAction(rule: ReminderRule): String? {
+        val trigger = runCatching { ReminderTriggerCodec.decode(rule.triggerConfig) }.getOrNull() ?: return null
+        val milestoneAction = rule.sourceMilestoneId?.let { milestone ->
+            rule.sourceRecipeRevisionId?.let { db.recipeDao().revision(it) }
+                ?.let { runCatching { RecipeSnapshotCodec.decode(it.snapshotJson) }.getOrNull() }
+                ?.observations?.firstOrNull { it.sourceEventId == milestone }?.action
+        }
+        return ReminderVocabulary.announcedAction(trigger, milestoneAction)
+    }
     suspend fun confirmAction(context: Context, id: String, action: String, cooks: CookRepository): String = db.withTransaction {
         val rule = dao.rule(id) ?: error("Reminder unavailable.")
         require(action in CookPhases.phaseActions)
@@ -120,7 +134,7 @@ class ReminderRepository(private val db: PitTechDatabase) {
                 wake = if (notification == null) result.dueAt?.takeIf { it > now } else null
             }
             val receipt = notification
-            if (receipt != null && com.pittech.UnifiedReminderNotifications.show(context, currentRule, receipt)) {
+            if (receipt != null && com.pittech.UnifiedReminderNotifications.show(context, currentRule, receipt, announcedAction(currentRule))) {
                 db.withTransaction {
                     val persisted = dao.rule(currentRule.id) ?: return@withTransaction
                     dao.putOccurrence(receipt.copy(status = "delivered", deliveredAtUtcMillis = System.currentTimeMillis()))

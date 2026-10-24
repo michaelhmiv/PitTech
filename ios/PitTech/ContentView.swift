@@ -69,7 +69,12 @@ struct ContentView: View {
         .background(PitTechStyle.canvas)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {
             if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
-            if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
+            if payload["open"] as? Bool == true {
+                store.notificationCookId = payload["cookId"] as? String
+                // PL-02: occurrence ids are "<ruleId>:<sequence>" — route the
+                // tap to that rule's check-in.
+                if let occurrence = payload["occurrenceId"] as? String, let cut = occurrence.lastIndex(of: ":") { store.notificationReminderRuleId = String(occurrence[..<cut]) }
+            }
         } }
         .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) }.environment(telemetry) } }
         .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {

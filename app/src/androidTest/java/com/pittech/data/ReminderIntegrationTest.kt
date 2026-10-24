@@ -32,6 +32,38 @@ class ReminderIntegrationTest {
             reminders.change(context, id, "remove")
         } finally { db.close() }
     }
+    @Test fun announcedActionResolvesMilestoneAndLegacyDismissRecordsNothing(): Unit = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val cooks = CookRepository(db, PhotoStorage(context)); val cookId = cooks.startCook(NewCookDraft("Meal", dishes = listOf(DishDraft("Brisket", "Beef"))))
+            val dishId = db.cookDao().getDishesForCook(cookId).single().id
+            val anchor = 1_000_000L
+            val snapshot = RecipeSnapshot("Brisket", DishDraft("Brisket", "Beef"), smokingAnchorUtcMillis = anchor,
+                observations = listOf(RecipeObservation("original-wrap", anchor + 10_800_000, "UTC", "Wrapped", "", "wrap", 10_800_000, null)))
+            db.recipeDao().insertRecipe(SavedRecipe("recipe-1", "Brisket", "", "[]", "revision-1", anchor, anchor))
+            db.recipeDao().insertRevision(RecipeRevision("revision-1", "recipe-1", null, 1, null, null, 1, RecipeSnapshotCodec.encode(snapshot), anchor, ""))
+            val reminders = ReminderRepository(db)
+            // PL-01: a milestone rule announces its milestone's action; other
+            // rules announce nothing, so nothing can be blanket-preselected.
+            val historical = reminders.save(cookId, dishId, "Last time: Wrapped", ReminderTrigger.Historical("food_on", 10_800_000), sourceRevision = "revision-1", sourceMilestone = "original-wrap")
+            assertEquals("wrap", reminders.announcedAction(db.reminderDao().rule(historical)!!))
+            val plain = reminders.save(cookId, dishId, "Check", ReminderTrigger.Duration(System.currentTimeMillis(), 600_000))
+            assertNull(reminders.announcedAction(db.reminderDao().rule(plain)!!))
+            // PL-02: dismissing a legacy timer completes it, records nothing.
+            val legacy = cooks.createCookReminder(cookId, "Check the brisket", System.currentTimeMillis() + 600_000)
+            val eventsBefore = db.cookDao().getTimelineEventsForCook(cookId).size
+            val dismissed = cooks.dismissCookReminder(legacy.id)
+            assertEquals(CookReminderEntity.STATUS_COMPLETED, dismissed?.status)
+            assertNotNull(dismissed?.completedAtUtcMillis)
+            assertEquals(eventsBefore, db.cookDao().getTimelineEventsForCook(cookId).size)
+            // PL-01: the direct dish-action record used by the food card.
+            // (Phase order is enforced: food must be on before it can be wrapped.)
+            cooks.notes.save(CookNoteDraft(cookId = cookId, dishId = dishId, category = "action", action = "food_on", title = "Food on", occurredAt = System.currentTimeMillis() - 3_600_000))
+            val result = cooks.notes.save(CookNoteDraft(cookId = cookId, dishId = dishId, category = "action", action = "wrap", title = "Wrap"))
+            assertEquals("wrap", PlaybookCodec.action(result.event.eventType, result.event.noteMetadataJson))
+        } finally { db.close() }
+    }
     @Test fun rulesAndReceiptsSurviveReopenRestoreInactiveAndRecordOneExplicitAction(): Unit = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "reminders-${UUID.randomUUID()}.db"

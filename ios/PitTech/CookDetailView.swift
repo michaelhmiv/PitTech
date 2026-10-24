@@ -17,6 +17,7 @@ struct CookDetailView: View {
     @State private var completionChoices = false
     @State private var showingDevices = false
     @State private var showingReminders = false
+    @State private var reminderCheckInRuleId: String?
     @ScaledMetric(relativeTo: .caption) private var quickBarHeight: CGFloat = 52
     @State private var sharingDraftId: String?
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
@@ -61,7 +62,17 @@ struct CookDetailView: View {
                     Button { showingDevices = true } label: { Label("Devices", systemImage: "thermometer") }.accessibilityIdentifier("meal-devices")
                 } }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
-                .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId) }
+                .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId) }
+                .task {
+                    // PL-02: a reminder notification tap opens that reminder's
+                    // check-in (the Reminders surface, scrolled to its Due
+                    // check-in section), not just the cook.
+                    if let ruleId = store.notificationReminderRuleId, store.reminderRule(ruleId)?["cookId"]?.stringValue == cookId {
+                        reminderCheckInRuleId = ruleId
+                        showingReminders = true
+                        store.notificationReminderRuleId = nil
+                    }
+                }
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
                 .sheet(isPresented: Binding(get: { sharingDraftId != nil }, set: { if !$0 { sharingDraftId = nil } })) {
                     if let sharingDraftId { NavigationStack { SharingDraftView(id: sharingDraftId) }.modifier(ScreenshotTextSize()) }

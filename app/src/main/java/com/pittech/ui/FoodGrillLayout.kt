@@ -27,7 +27,7 @@ import java.util.Locale
 
 @Composable
 internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displayUnit: String,
-    onSelect: (String?) -> Unit, onLog: (String, String, String?) -> Unit,
+    onSelect: (String?) -> Unit, onLog: (String, String, String?) -> Unit, onRecordAction: (DishEntity, String) -> Unit = { dish, action -> onLog(dish.id, "action", action) },
     onAdd: () -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, reminders: List<ReminderRule> = emptyList(), occurrences: List<ReminderOccurrence> = emptyList(), selectedTools: @Composable (DishEntity) -> Unit = {}) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.pittech.PitTechApplication
@@ -113,7 +113,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                     }
                     if (selectedFood == dish.id) {
                         FoodActions(dish, if (legacy && phase?.phase == "prep") "unknown" else phase?.phase ?: "prep", data.cook.status != CookStatus.COMPLETED,
-                            onLog, onEdit, onIngredients, onProbe, data.probes.any { it.measurementType == "food_probe" })
+                            onLog, onRecordAction, onEdit, onIngredients, onProbe, data.probes.any { it.measurementType == "food_probe" })
                         selectedTools(dish)
                     }
                 }
@@ -124,7 +124,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable private fun FoodActions(dish: DishEntity, phase: String, active: Boolean,
-    onLog: (String, String, String?) -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, hasProbes: Boolean) {
+    onLog: (String, String, String?) -> Unit, onRecordAction: (DishEntity, String) -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, hasProbes: Boolean) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("general" to "Note", "photo" to "Photo", "temperature" to "Temp").forEach { (category, label) ->
@@ -144,7 +144,11 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 actions.forEach { action ->
-                    TextButton(onClick = { onLog(dish.id, "action", action) }, modifier = Modifier.testTag("food-action-" + action + "-" + dish.id)) {
+                    // PL-01 (issue #172): a phase action records in one tap —
+                    // Wrap included. It no longer merely opens a composer
+                    // that records nothing until a second Save; a note or
+                    // photo can be added to the recorded entry afterwards.
+                    TextButton(onClick = { onRecordAction(dish, action) }, modifier = Modifier.testTag("food-action-" + action + "-" + dish.id)) {
                         Text(PlaybookCodec.actions[action] ?: action)
                     }
                 }

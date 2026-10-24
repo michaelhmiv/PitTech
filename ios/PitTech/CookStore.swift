@@ -14,6 +14,9 @@ final class CookStore {
     var deletedNote: DeletedNativeNote?
     var reminderMessage: String?
     var notificationCookId: String?
+    /// PL-02 (issue #172): the specific rule a tapped reminder notification
+    /// was about, so its check-in — not just the cook — opens.
+    var notificationReminderRuleId: String?
     var publicCookDestination: String?
     var archiveIntake: NativeArchiveIntake?
     var archiveMessage: String?
