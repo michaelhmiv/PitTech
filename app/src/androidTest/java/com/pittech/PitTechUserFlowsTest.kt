@@ -170,13 +170,15 @@ class PitTechUserFlowsTest {
         }
         composeRule.onNodeWithTag("cook-tab-live").assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-add").assertIsDisplayed()
-        composeRule.onNodeWithText("Brisket").performScrollTo().assertIsDisplayed()
-        saveScreenshot("cook-saved")
-
         val application = targetContext.applicationContext as PitTechApplication
         val savedCook = runBlocking(Dispatchers.IO) {
             application.database.cookDao().observeCooks().first().single()
         }
+        // Slice 2 (#172 PL-04): a bare "Brisket" text match is ambiguous on
+        // the re-ranked Live tab (the dish-name field and the merged food
+        // card both match). The card's stable tag is the precise target.
+        composeRule.onNodeWithTag("food-card-" + savedCook.dishes.single().id).performScrollTo().assertIsDisplayed()
+        saveScreenshot("cook-saved")
         assertEquals("Saturday brisket", savedCook.cook.title)
         assertEquals(CookStatus.ACTIVE, savedCook.cook.status)
         assertEquals("Pit Boss Austin XL", savedCook.cook.smokerName)
@@ -474,6 +476,10 @@ class PitTechUserFlowsTest {
             assertEquals(null, saved.endedAtUtcMillis)
             assertEquals(201.0, application.database.cookDao().observeResults(saved.id).first().single { it.resultType == "final_temperature" }.numericValue!!, 0.0)
         }
+        // Slice 2 (#172 PL-04): Finish now sits near the end of the Live
+        // scroll; scroll to the last element first so the button rests
+        // clear of the viewport's bottom edge before clicking.
+        composeRule.onNodeWithText("Delete cook").performScrollTo()
         composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
         composeRule.onNodeWithTag("finish-cook-dialog").assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithTag("result-final-temperature").fetchSemanticsNodes().isEmpty())
