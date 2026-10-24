@@ -44,7 +44,6 @@ object CookGuidanceNotifications {
 
 class CookGuidanceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.getStringExtra("step") == "test-alert") { CookAlertNotifications.cancel(context, "test-alert"); return }
         val cook = intent?.getStringExtra("cook") ?: return
         val step = intent.getStringExtra("step") ?: return
         val result = goAsync()

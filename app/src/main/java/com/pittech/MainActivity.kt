@@ -168,10 +168,14 @@ class MainActivity : ComponentActivity() {
         val cookId = intent?.getStringExtra(CookReminderNotifications.EXTRA_COOK_ID) ?: return
         val reminderId = intent.getStringExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
         val ruleId = intent.getStringExtra(UnifiedReminderNotifications.EXTRA_RULE_ID)
+        // PL-03 (#172): an alert tap carries the firing rule's id end-to-end.
+        val alertId = intent.getStringExtra(CookAlertNotifications.EXTRA_ALERT_ID)
         viewModel.openCook(cookId)
         reminderId?.let(viewModel::requestReminderCheckIn)
         ruleId?.let(viewModel::requestReminderRuleCheckIn)
+        alertId?.let(viewModel::requestAlertFocus)
         intent.removeExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
         intent.removeExtra(UnifiedReminderNotifications.EXTRA_RULE_ID)
+        intent.removeExtra(CookAlertNotifications.EXTRA_ALERT_ID)
     }
 }

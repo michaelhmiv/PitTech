@@ -201,4 +201,78 @@ class TelemetryRuntimeIntegrationTest {
         } finally { runtime.close(); db.close(); folder.deleteRecursively() }
     }
 
+    @Test fun homeAssistantCodeConnectExchangesExactlyOnce(): Unit = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(app.cacheDir, "telemetry-ha-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
+        val context = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = folder
+        }
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val source = TelemetrySource("home_assistant", "sensor.probe", "Probe", channels = listOf(TelemetryChannel("temperature", "Food", TelemetryKind.FOOD)), identityScope = "https://home.example.com")
+        val adapter = object : ReadOnlyTelemetryConnector {
+            override val connectorId = "home_assistant"
+            override suspend fun discover() = listOf(source)
+            override suspend fun snapshot(deviceId: String) = emptyList<TelemetryObservation>()
+            override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = emptyFlow()
+            override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long) = emptyList<TelemetryObservation>()
+            override suspend fun disconnect() = Unit
+        }
+        val factory = object : TelemetryConnectorFactory {
+            override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = adapter
+            override suspend fun restore(context: Context, profile: TelemetryProfile) = adapter
+        }
+        val exchanges = mutableListOf<String>()
+        val runtime = TelemetryRuntime(context, db, homeAssistantExchange = { _, _, code -> exchanges += code }, factories = { factory })
+        try {
+            val profile = TelemetryProfile("ha-oauth", "home_assistant", "Home Assistant", endpoint = "https://home.example.com")
+            val saved = runtime.connectHomeAssistant(profile, "the-code")
+            // PL-06 (#172): exactly one token exchange for the whole round trip.
+            assertEquals(listOf("the-code"), exchanges)
+            assertEquals(listOf(source), saved.sources)
+            assertEquals("Connected · read-only", runtime.states.value[profile.id])
+            // PL-05: discovery is settled (and no longer in flight) afterwards.
+            assertTrue(runtime.discoverySettled.value.contains(profile.id))
+            assertFalse(runtime.discoveryInFlight.value.contains(profile.id))
+        } finally { runtime.close(); db.close(); folder.deleteRecursively() }
+    }
+
+    @Test fun assignmentDraftSurvivesUntilAttachConsumesIt(): Unit = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val folder = File(app.cacheDir, "telemetry-draft-test-" + java.util.UUID.randomUUID()).apply { mkdirs() }
+        val context = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = folder
+        }
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val source = TelemetrySource("meater", "draft-probe", "Probe", channels = listOf(TelemetryChannel("internal", "Internal", TelemetryKind.FOOD)))
+        val adapter = object : ReadOnlyTelemetryConnector {
+            override val connectorId = "meater"
+            override suspend fun discover() = listOf(source)
+            override suspend fun snapshot(deviceId: String) = emptyList<TelemetryObservation>()
+            override fun observe(deviceId: String): Flow<List<TelemetryObservation>> = emptyFlow()
+            override suspend fun history(deviceId: String, fromMillis: Long, untilMillis: Long) = emptyList<TelemetryObservation>()
+            override suspend fun disconnect() = Unit
+        }
+        val factory = object : TelemetryConnectorFactory {
+            override suspend fun connect(context: Context, profile: TelemetryProfile, user: String, secret: String) = adapter
+            override suspend fun restore(context: Context, profile: TelemetryProfile) = adapter
+        }
+        val runtime = TelemetryRuntime(context, db) { factory }
+        try {
+            val cook = CookRepository(db, PhotoStorage(context)).startCook(NewCookDraft("Draft persistence"))
+            val profile = runtime.connect(TelemetryProfile("draft-profile", "meater", "Probe"), "fixture", "dummy")
+            // PL-05 (#172): an edit written to the runtime draft is still
+            // there after the sheet's UI state is gone (the draft outlives
+            // any composition), and a successful attach consumes it.
+            runtime.updateAssignmentDraft(TelemetryAssignmentDraft(profile.id, sourceId = source.deviceId, cookId = cook, roles = mapOf("internal" to TelemetryKind.CHAMBER)))
+            assertEquals(TelemetryKind.CHAMBER, runtime.assignmentDrafts.value.getValue(profile.id).roles["internal"])
+            val draft = runtime.assignmentDrafts.value.getValue(profile.id)
+            val mapped = source.copy(channels = source.channels.map { it.copy(kind = draft.roles[it.id] ?: it.kind) })
+            runtime.attach(profile, cook, mapped, emptyMap())
+            assertFalse(runtime.assignmentDrafts.value.containsKey(profile.id))
+            assertEquals(TelemetryKind.CHAMBER, runtime.store.profiles.value.single().sources.single().channels.single().kind)
+        } finally { runtime.close(); db.close(); folder.deleteRecursively() }
+    }
+
 }

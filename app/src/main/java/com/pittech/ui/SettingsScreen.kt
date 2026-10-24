@@ -253,7 +253,8 @@ fun SettingsScreen(
             Text(if (com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) "Notifications allowed" else "Notifications are disabled", style = MaterialTheme.typography.bodyMedium)
             Text(if (com.pittech.CookGuidanceNotifications.preciseAvailable(context) && context.getSharedPreferences("pittech-preferences", 0).getBoolean("precise-cook-timers", false)) "Precise cook timers enabled" else "Cook timers may be delayed by Android", style = MaterialTheme.typography.bodyMedium)
             OutlinedButton(onClick = { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Notification settings") }
-            TextButton(onClick = { com.pittech.CookAlertNotifications.test(context) }) { Text("Send test alert") }
+            // PL-29 rider (#172): test feedback stays in-app — no real notification is posted for a test.
+            TextButton(onClick = { viewModel.showNotice("Test alert — alert feedback appears here in the app. Real alerts post a notification when they fire.") }) { Text("Send test alert") }
         }
 
         SectionCard("Your data") {

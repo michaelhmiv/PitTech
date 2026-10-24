@@ -7,13 +7,16 @@ import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
@@ -23,10 +26,12 @@ import com.pittech.domain.*
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, configuredOnly: Boolean? = null) {
+internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, configuredOnly: Boolean? = null, focusedAlertId: String? = null) {
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     val alerts = records.filter { it.kind == "alert" && it.cookId == data.cook.id }
     var expanded by remember { mutableStateOf(false) }
+    // PL-03 (#172): a notification tap opens this sheet at the firing rule.
+    LaunchedEffect(focusedAlertId) { if (focusedAlertId != null) expanded = true }
     var editing by remember { mutableStateOf<CookAlertRule?>(null) }
     val context = LocalContext.current
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -43,15 +48,22 @@ internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, con
             if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
             else context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
         }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Enable alert notifications") }
-        TextButton(onClick = { CookAlertNotifications.test(context) }) { Text("Send test alert") }
+        // PL-29 rider (#172): test feedback stays in-app — no real
+        // HIGH-importance notification is posted for a test.
+        TextButton(onClick = { viewModel.showNotice("Test alert — alert feedback appears here in the app. Real alerts post a notification when they fire.") }) { Text("Send test alert") }
         TextButton(onClick = { context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Notification settings") }
-        alerts.forEach { record ->
+        // PL-03: the rule a notification tap named renders first, highlighted.
+        val orderedAlerts = if (focusedAlertId == null) alerts else alerts.sortedByDescending { it.id == focusedAlertId }
+        orderedAlerts.forEach { record ->
             val (rule, state) = CookAlertEngine.decode(record.payload)
-            Text("${record.title} · ${if (!rule.enabled) "off" else if (state.active) "needs attention" else "watching"}", style = MaterialTheme.typography.titleSmall)
-            if (state.acknowledged && state.active) Text("Acknowledged · condition has not recovered")
-            FlowRow { TextButton(onClick = { editing = rule }) { Text("Edit") }; TextButton(onClick = { viewModel.changeCookAlert(record.id, "toggle") }) { Text(if (rule.enabled) "Disable" else "Enable") } }
-            if (state.active) FlowRow { TextButton(onClick = { viewModel.changeCookAlert(record.id, "acknowledge") }) { Text("Acknowledge") }; TextButton(onClick = { viewModel.changeCookAlert(record.id, "snooze") }) { Text("Snooze 10 min") } }
-            if (rule.type == "pit_range") TextButton(onClick = { viewModel.changeCookAlert(record.id, "lid") }) { Text("Lid open · suppress pit alarm 10 min") }
+            val focused = record.id == focusedAlertId
+            Column(if (focused) Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)).padding(10.dp).testTag("alert-focus-${record.id}") else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${record.title} · ${if (!rule.enabled) "off" else if (state.active) "needs attention" else "watching"}", style = MaterialTheme.typography.titleSmall)
+                if (state.acknowledged) Text(if (state.active) "Acknowledged · condition has not recovered" else "Acknowledged")
+                FlowRow { TextButton(onClick = { editing = rule }) { Text("Edit") }; TextButton(onClick = { viewModel.changeCookAlert(record.id, "toggle") }) { Text(if (rule.enabled) "Disable" else "Enable") } }
+                if (state.active) FlowRow { TextButton(onClick = { viewModel.changeCookAlert(record.id, "acknowledge") }) { Text("Acknowledge") }; TextButton(onClick = { viewModel.changeCookAlert(record.id, "snooze") }) { Text("Snooze 10 min") } }
+                if (rule.type == "pit_range") TextButton(onClick = { viewModel.changeCookAlert(record.id, "lid") }) { Text("Lid open · suppress pit alarm 10 min") }
+            }
         }
         if (data.cook.status != CookStatus.COMPLETED) {
             OutlinedButton(onClick = { editing = CookAlertRule(dishId = data.dishes.firstOrNull()?.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add alert") }

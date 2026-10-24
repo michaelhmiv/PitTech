@@ -92,6 +92,58 @@ final class NativeTelemetryTests: XCTestCase {
         XCTAssertNil(try request.code(URL(string: "https://pittech-privacy-production.up.railway.app.evil.example/ha/auth_callback?code=valid&state=nonce")!))
         XCTAssertFalse(request.allows(URL(string: "https://home.example.com.evil.example/auth/authorize")!))
     }
+    func testHaNavigationDecisionBlocksForeignWithoutFailingTheFlow() throws {
+        // PL-06 (#172): foreign navigation is blocked (and surfaced), never a
+        // whole-flow failure; only a mismatched callback fails the flow.
+        let request = try NativeHAAuthRequest(server: "https://home.example.com", state: "nonce")
+        XCTAssertEqual(request.navigationDecision(URL(string: NativeHASession.callback + "?code=valid&state=nonce")!), .code("valid"))
+        XCTAssertEqual(request.navigationDecision(URL(string: "https://home.example.com/auth/authorize")!), .allow)
+        XCTAssertEqual(request.navigationDecision(URL(string: "https://evil.example/phish")!), .blocked)
+        XCTAssertEqual(request.navigationDecision(URL(string: "http://home.example.com/auth/authorize")!), .blocked)
+        XCTAssertEqual(request.navigationDecision(URL(string: NativeHASession.callback + "?code=valid&state=other")!), .failed)
+    }
+    func testDevicesPresentationTextAndInitialStep() {
+        // PL-05 (#172): "No devices found" only after discovery settles.
+        XCTAssertEqual(NativeTelemetryDevicesPresentation.emptyDevicesText(discoveryInFlight: true, discoverySettled: false), "Looking for devices…")
+        XCTAssertEqual(NativeTelemetryDevicesPresentation.emptyDevicesText(discoveryInFlight: true, discoverySettled: true), "Looking for devices…")
+        XCTAssertTrue(NativeTelemetryDevicesPresentation.emptyDevicesText(discoveryInFlight: false, discoverySettled: true).hasPrefix("No devices found."))
+        XCTAssertEqual(NativeTelemetryDevicesPresentation.emptyDevicesText(discoveryInFlight: false, discoverySettled: false), "Connect this connection to discover its devices.")
+        XCTAssertEqual(NativeTelemetryDevicesPresentation.initialStep(hasProfiles: false), 1)
+        XCTAssertEqual(NativeTelemetryDevicesPresentation.initialStep(hasProfiles: true), 2)
+    }
+    @MainActor func testAssignmentDraftPersistsUntilAttachConsumesIt() async throws {
+        // PL-05 (#172): draft edits live in the runtime (not view state), so
+        // they survive the sheet being dismissed, and attach consumes them.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = CookStore(directory: folder); store.startCook(title: "Draft persistence", firstDish: "Food")
+        let cook = store.library.cooks[0].id
+        final class Fixture: NativeReadOnlyTelemetry {
+            let source = NativeTelemetrySource(provider: .meater, id: "draft-probe", label: "Probe", channels: [.init(id: "internal", name: "Internal", kind: .food)])
+            func discover() async throws -> [NativeTelemetrySource] { [source] }
+            func snapshot(_ device: String) async throws -> [NativeTelemetryObservation] { [] }
+            func disconnect() {}
+        }
+        let adapter = Fixture(), runtime = NativeTelemetryRuntime(directory: folder, adapterFactory: { _, _ in adapter })
+        runtime.foreground(true, store: store)
+        let profile = NativeTelemetryProfile(provider: .meater, endpoint: "", onLogOnly: true)
+        try await runtime.connect(profile, user: "", secret: "fixture-token")
+        let saved = runtime.profiles[0]
+        let seeded = runtime.assignmentDraft(for: saved, store: store)
+        XCTAssertEqual(seeded.sourceID, "draft-probe")
+        XCTAssertEqual(seeded.cookID, cook)
+        XCTAssertEqual(seeded.roles["internal"], .food)
+        var edited = seeded; edited.roles["internal"] = .chamber
+        runtime.updateAssignmentDraft(edited, for: saved.id)
+        // A later read (a fresh sheet presentation) returns the EDIT, not a reseed.
+        XCTAssertEqual(runtime.assignmentDraft(for: saved, store: store).roles["internal"], .chamber)
+        let draft = runtime.assignmentDraft(for: saved, store: store)
+        var mapped = adapter.source; mapped.channels = mapped.channels.map { ch in var c = ch; c.kind = draft.roles[ch.id] ?? ch.kind; return c }
+        try await runtime.attach(saved, source: mapped, cook: draft.cookID, assignments: [:], store: store)
+        XCTAssertNil(runtime.assignmentDrafts[saved.id])
+        XCTAssertEqual(runtime.profiles[0].sources[0].channels[0].kind, .chamber)
+        runtime.foreground(false, store: store)
+    }
     func testMqttGuardAndManufacturerFrameDoNotAcceptBooleanTemperatures() throws {
         XCTAssertThrowsError(try NativeFlameBossBroker("mqtt://myflameboss.com:1883"))
         XCTAssertThrowsError(try NativeFlameBossBroker("mqtts://myflameboss.com.evil.example:8883"))

@@ -9,8 +9,10 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -188,6 +190,43 @@ class ConnectedCookScreenTest {
         val dismiss = compose.onAllNodesWithContentDescription("Dismiss")
         if (dismiss.fetchSemanticsNodes().isNotEmpty()) dismiss[0].performClick()
         compose.waitUntil(5_000) { dismiss.fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test fun alertNotificationTapOpensAlertsSheetAtTheFiringRule() {
+        // PL-03 (#172): seed an active cook with one firing alert rule, then
+        // deliver the same intent the alert notification's content intent
+        // carries — cook id PLUS the firing rule's record id.
+        val rule = com.pittech.domain.CookAlertRule(type = "target", targetF = 203.0)
+        val recordId = "alert:${rule.id}"
+        val cookId = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val cook = app.cookRepository.startCook(com.pittech.domain.NewCookDraft("Alert routing"))
+            app.database.companionDao().put(com.pittech.data.CompanionRecord(
+                recordId, "alert", cook, "Brisket target",
+                com.pittech.domain.CookAlertEngine.encode(rule, com.pittech.domain.CookAlertState(active = true)),
+                System.currentTimeMillis(), System.currentTimeMillis()))
+            cook
+        }
+        compose.activityRule.scenario.onActivity { activity ->
+            activity.onNewIntent(Intent(activity, MainActivity::class.java)
+                .putExtra(com.pittech.CookReminderNotifications.EXTRA_COOK_ID, cookId)
+                .putExtra(com.pittech.CookAlertNotifications.EXTRA_ALERT_ID, recordId))
+        }
+        // The Live Zone strip shows the needs-attention count without
+        // opening anything.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-alerts-strip").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Alerts · 1 needs attention", substring = true).assertExists()
+        // The Alerts sheet opens at the firing rule, highlighted.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("alert-focus-$recordId").fetchSemanticsNodes().isNotEmpty() }
+        // Acknowledging in the sheet confirms on Live: the strip names it.
+        compose.onNodeWithText("Acknowledge").performClick()
+        compose.waitUntil(15_000) {
+            runBlocking(Dispatchers.IO) {
+                val record = app.database.companionDao().get(recordId)
+                record != null && com.pittech.domain.CookAlertEngine.decode(record.payload).second.acknowledged
+            }
+        }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Acknowledged: Brisket target", substring = true).fetchSemanticsNodes().isNotEmpty() }
     }
 
 }
