@@ -213,7 +213,10 @@ seed_welcome_seen() {
     fi
     # shared_prefs/ does not exist until the app writes a preference, which a
     # fresh install (or an old release that never wrote one) has not done.
-    printf '%s' "$existing" | timeout 20 adb shell run-as com.pittech.debug sh -c 'mkdir -p shared_prefs && cat > shared_prefs/pittech-preferences.xml' || true
+    # The nested quoting is the pattern the receipt write below uses: adb
+    # shell joins its arguments, so the inner command must arrive quoted or
+    # the redirection is parsed by the outer (non-app) shell and never lands.
+    printf '%s' "$existing" | timeout 20 adb shell run-as com.pittech.debug sh -c "'mkdir -p shared_prefs; cat > shared_prefs/pittech-preferences.xml'" || true
   done
   echo "WARNING: could not seed the welcome-seen flag; UI tests may hit the first-run welcome." >&2
 }
