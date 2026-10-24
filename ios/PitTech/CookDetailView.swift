@@ -48,7 +48,6 @@ struct CookDetailView: View {
                             if let error { Text(error).foregroundStyle(.red) }
                             if store.deletedNote != nil { Button("Undo deleted note") { do { try store.undoDeleteNote() } catch { self.error = error.localizedDescription } } }
                             if cook.isActive {
-                                Button(cook.status == "paused" ? "Resume meal" : "Pause meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }.buttonStyle(.bordered)
                                 Button("Finish meal", role: .destructive) { finishing = true }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("finish-meal")
                             }
                         }.padding(20)
@@ -115,22 +114,101 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
-                MealRecipeActions(cookId: cookId)
-                RecipeGuideMilestones(cookId: cookId, compact: true) { section = "Timeline" }
-                MealActivityTimers(cookId: cookId)
-                Text(store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing").font(.title2.bold())
+                liveZone(cook, now: context.date)
+                nextActionStrip
                 if store.timingMode(cookId) == "legacy_preserved" {
                     Text("Legacy timer · original session start retained").font(.caption)
-                    Text("Elapsed \(duration(max(0, context.date.timeIntervalSince(cook.startedAt)) * 1_000))")
                     Button("Use actual Food on timing") { foodOnTime = cook.startedAt; adopting = true }
                 }
-                if cook.isActive { CookPrepChecklist(cookId: cookId) }
                 ForEach(store.dishRecords(cookId)) { dish in MealDishCard(cookId: cookId, dish: dish, now: context.date) { category, action in open(category: category, action: action, dishId: dish.id) } }
                 if cook.isActive { Button("Log preheat started") { open(category: "action", action: "preheat_start") }; Text("Preheat can overlap prep. Cooking starts at actual Food on.").font(.caption).foregroundStyle(.secondary) }
-                if let notes = cook.notes, !notes.isEmpty { Text(notes).font(.subheadline) }
-                Text("Session created \(cook.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
-                ForEach(readings.suffix(4).reversed()) { ReadingCard(reading: $0) }
+                LivePanel(id: "guidance", title: "Guidance", summary: store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Legacy timing") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        MealRecipeActions(cookId: cookId)
+                        RecipeGuideMilestones(cookId: cookId, compact: true) { section = "Timeline" }
+                    }
+                }
+                LivePanel(id: "reminders", title: "Reminders", summary: remindersSummary) {
+                    Button("Meal reminders") { showingReminders = true }
+                }
+                if cook.isActive {
+                    LivePanel(id: "checklist", title: "Checklist") { CookPrepChecklist(cookId: cookId) }
+                }
+                LivePanel(id: "timers", title: "Timers") { MealActivityTimers(cookId: cookId) }
+                LivePanel(id: "readings", title: "Latest readings") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(readings.suffix(4).reversed()) { ReadingCard(reading: $0) }
+                    }
+                }
+                LivePanel(id: "details", title: "Cook details", summary: "Session created \(cook.startedAt.formatted(date: .abbreviated, time: .shortened))", initiallyExpanded: false) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let notes = cook.notes, !notes.isEmpty { Text(notes).font(.subheadline) }
+                        Text("Session created \(cook.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                // Pause lives on Live now (PL-04) — a visible meal action,
+                // not part of the below-switch bucket shared by all sections.
+                if cook.isActive {
+                    Button(cook.status == "paused" ? "Resume meal" : "Pause meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }.buttonStyle(.bordered).accessibilityIdentifier("pause-meal")
+                }
             }
+        }
+    }
+    /// Live Zone poster (PL-04): elapsed, pit and setpoint, the latest
+    /// temperature for every dish, and cook targets — the cook at a glance.
+    private func liveZone(_ cook: CookRecord, now: Date) -> some View {
+        let pit = readings.filter { ["pit", "pit_ambient", "ambient_temperature"].contains($0.measurementType) }.max { $0.measuredAt < $1.measuredAt }
+        let setpoint = readings.filter { $0.measurementType == "setpoint" }.max { $0.measuredAt < $1.measuredAt }
+        let targets = store.library.targets.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && $0["dishId"] == nil }
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(cook.status == "paused" ? "PAUSED" : "LIVE COOK").font(.subheadline.weight(.semibold)).foregroundStyle(PitTechStyle.supporting)
+            Text("Elapsed \(duration(max(0, now.timeIntervalSince(cook.startedAt)) * 1_000))").font(.title2.bold()).accessibilityIdentifier("live-cook-elapsed")
+            if let pit { HStack { Text("Pit").font(.headline); Spacer(); Text(tempText(pit)).font(.title3.monospacedDigit()) } }
+            if let setpoint { HStack { Text("Setpoint").font(.headline); Spacer(); Text(tempText(setpoint)).font(.title3.monospacedDigit()) } }
+            ForEach(store.dishRecords(cookId)) { dish in
+                let latest = readings.filter { $0.dishId == dish.id }.max { $0.measuredAt < $1.measuredAt }
+                HStack { Text(dish.name).font(.headline); Spacer(); Text(latest.map(tempText) ?? "No reading yet").font(.title3.monospacedDigit()) }
+            }
+            ForEach(Array(targets.enumerated()), id: \.offset) { _, target in
+                let value = target["value"]?.numberValue ?? 0
+                Text("Target · \((target["targetType"]?.stringValue ?? "").replacingOccurrences(of: "_", with: " ")): \(value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value)) \(target["unit"]?.stringValue ?? "")").font(.caption).foregroundStyle(PitTechStyle.supporting)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityIdentifier("live-zone")
+    }
+    private func tempText(_ sample: TemperatureSample) -> String {
+        sample.value.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(sample.value))\(sample.unit)" : String(format: "%.1f%@", sample.value, sample.unit)
+    }
+    /// Enabled rules for this cook whose current occurrence is still pending.
+    private var pendingReminders: [(title: String, due: Double)] {
+        let rules = store.library.reminderRules.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && $0["enabled"]?.boolValue == true }
+        return rules.compactMap { rule in
+            guard let id = rule["id"]?.stringValue, let state = store.reminderState(id),
+                  state["status"]?.stringValue == "pending", let due = state["dueAtUtcMillis"]?.numberValue else { return nil }
+            return (rule["title"]?.stringValue ?? "Reminder", due)
+        }.sorted { $0.due < $1.due }
+    }
+    private var remindersSummary: String {
+        pendingReminders.isEmpty ? "None pending" : "\(pendingReminders.count) pending · next \(RecipeReferenceTimeline.time(pendingReminders[0].due))"
+    }
+    /// Next-action strip: the earliest pending reminder, never inside a
+    /// collapsed panel (DD-2).
+    @ViewBuilder private var nextActionStrip: some View {
+        if let next = pendingReminders.first {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(next.title).font(.headline)
+                    Text("Due \(RecipeReferenceTimeline.time(next.due))").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                }
+                Spacer()
+                Button("Reminders") { showingReminders = true }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14))
         }
     }
     private var timelineContent: some View {
@@ -219,4 +297,43 @@ struct EditCookSheet: View {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) { Button("Save") { store.updateCook(cook.id, title: title, notes: notes); dismiss() } }
     } } }
+}
+
+/// One Live-tab panel (PL-04): a titled card whose header always shows the
+/// panel's live state summary, expanded or collapsed (DD-2). Open/closed
+/// state is kept per panel for the lifetime of the cook detail.
+private struct LivePanel<Content: View>: View {
+    let panelID: String
+    let title: String
+    let summary: String?
+    @State private var expanded: Bool
+    private let content: Content
+    init(id: String, title: String, summary: String? = nil, initiallyExpanded: Bool = true, @ViewBuilder content: () -> Content) {
+        self.panelID = id
+        self.title = title
+        self.summary = summary
+        self._expanded = State(initialValue: initiallyExpanded)
+        self.content = content()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { withAnimation { expanded.toggle() } } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.headline).foregroundStyle(PitTechStyle.ink)
+                        if let summary { Text(summary).font(.caption).foregroundStyle(PitTechStyle.supporting) }
+                    }
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").foregroundStyle(PitTechStyle.supporting)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("live-panel-\(panelID)")
+            if expanded { content }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+    }
 }
