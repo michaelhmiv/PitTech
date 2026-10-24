@@ -518,7 +518,9 @@ private fun LiveZoneCard(cook: CookWithDishes, nowMillis: Long, onClick: () -> U
     val ink = androidx.compose.ui.graphics.Color(0xFFF2EEE3)
     val muted = androidx.compose.ui.graphics.Color(0xFF4A5245)
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("meals-live-zone"),
+        // Same card contract as every cook card ("cook-card-<id>" opens the cook);
+        // the Live Zone is presentation, not a new destination.
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
         colors = CardDefaults.cardColors(containerColor = ink, contentColor = ground),
         shape = RoundedCornerShape(16.dp),
     ) {

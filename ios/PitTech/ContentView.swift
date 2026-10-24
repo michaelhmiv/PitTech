@@ -198,25 +198,26 @@ struct LiveZoneCard: View {
                 .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
             Text(cook.title)
                 .font(.title3.weight(.semibold))
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                if let pit = latestPit {
-                    Text(tempText(pit))
-                        .font(.system(size: 52, weight: .bold))
-                } else {
-                    Text(elapsed(at: context.date))
-                        .font(.system(size: 52, weight: .bold))
-                }
+            // Deliberately NOT ticking TimelineViews: a perpetual timer on the
+            // launch screen keeps the app from ever idling (it broke the UI-test
+            // shards and costs battery for a secondary readout). Values refresh
+            // whenever Meals re-renders on store changes; the ticking clock
+            // lives on the cook's Live screen, as before.
+            if let pit = latestPit {
+                Text(tempText(pit))
+                    .font(.system(size: 52, weight: .bold))
+            } else {
+                Text(elapsed(at: Date.now))
+                    .font(.system(size: 52, weight: .bold))
             }
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text([
-                    latestFood.map { "Food \(tempText($0))" },
-                    "Elapsed \(elapsed(at: context.date))",
-                    cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
-                    cook.smokerName,
-                ].compactMap { $0 }.joined(separator: " · "))
-                .font(.subheadline)
-                .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
-            }
+            Text([
+                latestFood.map { "Food \(tempText($0))" },
+                "Elapsed \(elapsed(at: Date.now))",
+                cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
+                cook.smokerName,
+            ].compactMap { $0 }.joined(separator: " · "))
+            .font(.subheadline)
+            .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
