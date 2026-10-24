@@ -17,7 +17,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -217,23 +216,16 @@ fun SettingsScreen(
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
         SectionCard("Appearance") {
-            Text("Theme", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PitTechThemeMode.values().forEach { mode ->
-                    FilterChip(
-                        selected = themeMode == mode,
-                        onClick = { onThemeModeChange(mode) },
-                        label = { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                        modifier = Modifier.weight(1f).testTag("theme-mode-${mode.name.lowercase()}"),
-                    )
-                }
-            }
+            // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is the
+            // only appearance. This row states that honestly instead of offering
+            // a picker that no longer changes anything.
             Text(
-                when (themeMode) {
-                    PitTechThemeMode.SYSTEM -> "PitTech follows your device appearance."
-                    PitTechThemeMode.LIGHT -> "Light appearance is selected."
-                    PitTechThemeMode.DARK -> "Dark appearance is selected."
-                },
+                "Night Service (dark)",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.testTag("appearance-night-service"),
+            )
+            Text(
+                "PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

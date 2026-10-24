@@ -81,7 +81,10 @@ struct MealDishCard: View {
 }
 extension CookStore {
     var appearance: ColorScheme? {
-        switch library.preferences?["themeMode"]?.stringValue?.uppercased() { case "LIGHT": .light; case "DARK": .dark; default: nil }
+        // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is the
+        // only appearance. The saved themeMode preference still decodes for
+        // backups/device actions, but it no longer changes the appearance.
+        .dark
     }
     func setMealPaused(_ id: String, paused: Bool) {
         guard let index = library.cooks.firstIndex(where: { $0.id == id && $0.isActive }) else { return }

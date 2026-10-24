@@ -6,6 +6,9 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ## [Unreleased]
 
+### Changed
+- Night Service arrives on Meals first (issue #172): the whole app now uses the dark Night Service appearance on every screen — there is no separate light appearance — and the Meals tab leads with your live cook as a large, easy-to-read card showing the pit temperature (or elapsed time), food temperature, and set time at a glance. The PitTech pig stays as a small mark at the top of Meals instead of a large picture, a first (empty) Meals screen now explains the cook log and offers backup restore on iPhone as well as Android, and Settings now simply states the Night Service appearance instead of offering a theme picker. Nothing you could do before has moved or gone away.
+
 ### Fixed
 - Draft Android and iOS subscription refresh/restore keeps the server-verified store environment and an account-bound offline cache. Switching accounts or receiving a late purchase response cannot reuse another account’s Pro access or purchase-management reference.
 - Android's unified-note UI test waits for the meal controls to finish loading before tapping the temperature shortcut.
