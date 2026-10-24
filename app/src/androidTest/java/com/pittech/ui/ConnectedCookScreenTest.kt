@@ -207,8 +207,11 @@ class ConnectedCookScreenTest {
                 System.currentTimeMillis(), System.currentTimeMillis()))
             cook
         }
+        // MainActivity has the standard launch mode, so a notification tap
+        // starts a fresh instance whose onCreate handles the intent —
+        // reproduce exactly that.
         compose.activityRule.scenario.onActivity { activity ->
-            activity.onNewIntent(Intent(activity, MainActivity::class.java)
+            activity.startActivity(Intent(activity, MainActivity::class.java)
                 .putExtra(com.pittech.CookReminderNotifications.EXTRA_COOK_ID, cookId)
                 .putExtra(com.pittech.CookAlertNotifications.EXTRA_ALERT_ID, recordId))
         }

@@ -44,7 +44,9 @@ class CookAlertEngineTest {
         assertEquals("Alerts · 1 needs attention", CookAlertEngine.stripSummary(listOf("Pit range" to CookAlertState(active = true))))
         assertEquals("Alerts · 2 need attention", CookAlertEngine.stripSummary(listOf(
             "Pit range" to CookAlertState(active = true), "Brisket target" to CookAlertState(active = true))))
-        assertEquals("Alerts · 1 needs attention · Acknowledged: Brisket target", CookAlertEngine.stripSummary(listOf(
+        // An acknowledged alert whose condition has not recovered still
+        // counts as needing attention; it is additionally named.
+        assertEquals("Alerts · 2 need attention · Acknowledged: Brisket target", CookAlertEngine.stripSummary(listOf(
             "Pit range" to CookAlertState(active = true), "Brisket target" to CookAlertState(active = true, acknowledged = true))))
         assertEquals("Alerts · all clear · Acknowledged: Brisket target", CookAlertEngine.stripSummary(listOf(
             "Brisket target" to CookAlertState(acknowledged = true))))
