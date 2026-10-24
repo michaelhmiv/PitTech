@@ -51,7 +51,7 @@ struct WelcomeView: View {
                 Button(action: onStartCooking) {
                     Text("Start cooking")
                         .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight = 54)
+                        .frame(maxWidth: .infinity, minHeight: 54)
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("welcome-start-cooking")

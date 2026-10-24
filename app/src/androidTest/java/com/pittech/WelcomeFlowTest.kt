@@ -7,8 +7,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.UiDevice
 import com.pittech.ui.WelcomePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -85,10 +85,9 @@ class WelcomeFlowTest {
         resetFirstRun()
         composeRule.onNodeWithTag("welcome-restore-backup").performClick()
         // The system document picker opens over the app; the flag is already set.
-        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        device.waitForWindowUpdate(null, 2_000)
+        Thread.sleep(1_000)
         assertTrue(WelcomePreferences.hasSeen(preferences()))
-        device.pressBack()
+        Espresso.pressBack()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
     }
