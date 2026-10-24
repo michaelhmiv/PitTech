@@ -200,17 +200,22 @@ timeout 120 adb install -r -t "$test_apk"
 # the existing file when one is present); WelcomeFlowTest clears the key
 # itself when it needs the real first run. Call again after any `pm clear`.
 seed_welcome_seen() {
-  local existing
-  existing="$(timeout 20 adb shell run-as com.pittech.debug cat shared_prefs/pittech-preferences.xml 2>/dev/null || true)"
-  if [[ "$existing" == *"welcome-seen-v1"* ]]; then
-    return 0
-  fi
-  if [[ "$existing" == *"</map>"* ]]; then
-    existing="${existing/<\/map>/<boolean name=\"welcome-seen-v1\" value=\"true\" \/><\/map>}"
-  else
-    existing="<?xml version='1.0' encoding='utf-8' standalone='yes' ?><map><boolean name=\"welcome-seen-v1\" value=\"true\" /></map>"
-  fi
-  printf '%s' "$existing" | timeout 20 adb shell run-as com.pittech.debug sh -c 'cat > shared_prefs/pittech-preferences.xml' || true
+  local existing attempt
+  for attempt in 1 2 3; do
+    existing="$(timeout 20 adb shell run-as com.pittech.debug cat shared_prefs/pittech-preferences.xml 2>/dev/null || true)"
+    if [[ "$existing" == *"welcome-seen-v1"* ]]; then
+      return 0
+    fi
+    if [[ "$existing" == *"</map>"* ]]; then
+      existing="${existing/<\/map>/<boolean name=\"welcome-seen-v1\" value=\"true\" \/><\/map>}"
+    else
+      existing="<?xml version='1.0' encoding='utf-8' standalone='yes' ?><map><boolean name=\"welcome-seen-v1\" value=\"true\" /></map>"
+    fi
+    # shared_prefs/ does not exist until the app writes a preference, which a
+    # fresh install (or an old release that never wrote one) has not done.
+    printf '%s' "$existing" | timeout 20 adb shell run-as com.pittech.debug sh -c 'mkdir -p shared_prefs && cat > shared_prefs/pittech-preferences.xml' || true
+  done
+  echo "WARNING: could not seed the welcome-seen flag; UI tests may hit the first-run welcome." >&2
 }
 seed_welcome_seen
 
