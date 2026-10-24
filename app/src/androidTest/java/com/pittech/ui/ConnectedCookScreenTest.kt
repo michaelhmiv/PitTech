@@ -70,7 +70,8 @@ class ConnectedCookScreenTest {
             runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().isNotEmpty() }
         }
         dismissCookNotice()
-        compose.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        // Slice 2 (#172 PL-04): the grill panel is a default-expanded Live
+        // panel now; the old "Cook tools" toggle no longer exists.
         compose.onNodeWithTag("cook-grill-live").assertExists()
         compose.onNodeWithTag("cook-reading-chamber").assertExists()
         val screenshot = File(app.filesDir, "pittech-ui-test/connected-cook-live.png").apply { parentFile?.mkdirs() }
@@ -113,7 +114,8 @@ class ConnectedCookScreenTest {
         compose.waitUntil(10_000) { runBlocking(Dispatchers.IO) { app.database.recordingDao().getActiveRecording()?.samplingMode == "on_log" } }
         assertFalse(app.recordingServiceRunning.value)
         assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllSensorReadings().isEmpty() })
-        compose.onNodeWithTag("live-more-tools-toggle").performScrollTo().performClick()
+        // Slice 2 (#172 PL-04): grill controls live in the default-expanded
+        // Grill & recording panel; no tools toggle to open first.
         val before = backend.calls.get()
         logInitialFoodOn()
         openAction("wrap")
