@@ -68,9 +68,11 @@ class WelcomeFlowTest {
             awaitWelcome()
             composeRule.onNodeWithTag("welcome-mascot").assertIsDisplayed()
             composeRule.onNodeWithText("Welcome to PitTech").assertIsDisplayed()
-            composeRule.onNodeWithText("Live cook tracking").assertIsDisplayed()
-            composeRule.onNodeWithText("Recipes, playbooks & reminders").assertIsDisplayed()
-            composeRule.onNodeWithText("Share & Discover").assertIsDisplayed()
+            // At font scale 1.5 the later rows sit below the fold of the
+            // scrollable welcome; scroll each into view before asserting.
+            composeRule.onNodeWithText("Live cook tracking").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("Recipes, playbooks & reminders").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("Share & Discover").performScrollTo().assertIsDisplayed()
 
             composeRule.onNodeWithTag("welcome-start-cooking").performScrollTo().performClick()
             awaitNoWelcome()
