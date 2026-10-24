@@ -6,6 +6,9 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ## [Unreleased]
 
+### Added
+- A short welcome the first time you open PitTech (issue #187): one screen with the PitTech pig, a sentence on what the app does, and three quick rows — live cook tracking (connect a thermometer or log temps by hand), recipes, playbooks & reminders, and Share & Discover. "Start cooking" takes you to Meals, and the screen also offers backup restore and thermometer connection up front. It shows once and never again; a pending crash report still shows first.
+
 ### Changed
 - Night Service arrives on Meals first (issue #172): the whole app now uses the dark Night Service appearance on every screen — there is no separate light appearance — and the Meals tab leads with your live cook as a large, easy-to-read card showing the pit temperature (or elapsed time), food temperature, and set time at a glance. The PitTech pig stays as a small mark at the top of Meals instead of a large picture, a first (empty) Meals screen now explains the cook log and offers backup restore on iPhone as well as Android, and Settings now simply states the Night Service appearance instead of offering a theme picker. Nothing you could do before has moved or gone away.
 

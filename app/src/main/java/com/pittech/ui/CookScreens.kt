@@ -117,6 +117,10 @@ internal fun PitTechApp(
     previouslyEntitled: Boolean = false,
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
+    // First-run welcome entries (#187): the welcome's secondaries land on the
+    // exact destinations the empty-Meals entries use.
+    startWithRestoreBackup: Boolean = false,
+    startAtDevices: Boolean = false,
 ) {
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(viewModel, lifecycleOwner) {
@@ -166,6 +170,15 @@ internal fun PitTechApp(
     var weightUnit by rememberSaveable { mutableStateOf(preferences.getString("weight-unit", "lb") ?: "lb") }
     val restoreBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.previewImport(uri)
+    }
+    LaunchedEffect(startWithRestoreBackup) {
+        if (startWithRestoreBackup) restoreBackup.launch(arrayOf("application/zip", "application/x-zip-compressed"))
+    }
+    LaunchedEffect(startAtDevices) {
+        if (startAtDevices) {
+            selectedSection = MainSection.MORE.name
+            moreDestination = "Devices"
+        }
     }
 
     LaunchedEffect(restoredPreferences) {
