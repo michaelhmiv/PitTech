@@ -31,7 +31,7 @@ struct WelcomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing = 16) {
+            VStack(alignment: .leading, spacing: 16) {
                 // Hero mascot: DD-1 sanctions hero size in exactly two
                 // places — this welcome and Settings → About.
                 Image("Mascot")

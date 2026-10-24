@@ -38,6 +38,11 @@ struct ContentView: View {
         }
     }
 
+    /// Extracted so the TabView modifier chain stays type-checkable.
+    private var archiveIntakeBinding: Binding<NativeArchiveIntake?> {
+        Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
+    }
+
     private var tabRoot: some View {
         TabView(selection: $selectedTab) {
             CookListView(restoreRequested: $mealsRestoreRequested)
@@ -77,7 +82,7 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } })) {
             if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
         }
-        .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
+        .sheet(item: archiveIntakeBinding, onDismiss: {
             if let destination = store.publicCookDestination {
                 store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
             } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
