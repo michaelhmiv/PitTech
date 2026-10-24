@@ -9,10 +9,43 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
     @State private var selectedTab = "meals"
+    // First-run welcome (#187): first launch only, never in UI tests or
+    // screenshot runs (fixture launches), identical content/order to Android.
+    @AppStorage(WelcomeGate.seenKey) private var welcomeSeen = false
+    @State private var mealsRestoreRequested = false
+    @State private var showingWelcomeConnections = false
+
+    private var showWelcome: Bool {
+        // iOS has no crash-recovery surface today, so no crash can be pending
+        // at launch here; the rule matches Android's regardless.
+        WelcomeGate.shouldShow(seen: welcomeSeen, crashPendingAtLaunch: false, suppressedForTesting: WelcomeGate.suppressedForTesting)
+    }
 
     var body: some View {
+        Group {
+            if showWelcome {
+                WelcomeView(
+                    onStartCooking: { welcomeSeen = true },
+                    onRestoreBackup: { welcomeSeen = true; mealsRestoreRequested = true },
+                    onConnectThermometer: { welcomeSeen = true; selectedTab = "more"; showingWelcomeConnections = true }
+                )
+            } else {
+                tabRoot
+            }
+        }
+        .sheet(isPresented: $showingWelcomeConnections) {
+            NavigationStack { NativeTelemetryConnectionsView(runtime: telemetry, embedded: true) }
+        }
+    }
+
+    /// Extracted so the TabView modifier chain stays type-checkable.
+    private var archiveIntakeBinding: Binding<NativeArchiveIntake?> {
+        Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
+    }
+
+    private var tabRoot: some View {
         TabView(selection: $selectedTab) {
-            CookListView()
+            CookListView(restoreRequested: $mealsRestoreRequested)
                 .tabItem { Label("Meals", systemImage: "flame") }.tag("meals")
             NavigationStack { SavedRecipesView() }.tabItem { Label("Recipes", systemImage: "book") }.tag("recipes")
             Group { if community.enabled { NativePublicDiscoveryView() } else { DiscoveryWelcomeView() } }.tabItem { Label("Discover", systemImage: "safari") }.tag("discover")
@@ -49,7 +82,7 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } })) {
             if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
         }
-        .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
+        .sheet(item: archiveIntakeBinding, onDismiss: {
             if let destination = store.publicCookDestination {
                 store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
             } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
@@ -71,6 +104,9 @@ struct ContentView: View {
 struct CookListView: View {
     @Environment(CookStore.self) private var store
     @Environment(AdsConsentManager.self) private var adsConsent
+    /// Set by the first-run welcome's "Restore from backup" (#187): opens the
+    /// same restore file importer as the empty-Meals entry below.
+    @Binding var restoreRequested: Bool
     @State private var showingStart = false
     @State private var showingRestore = false
     @State private var mealPath: [String] = []
@@ -158,6 +194,9 @@ struct CookListView: View {
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
             .sheet(isPresented: $showingStart) { StartCookSheet(onStarted: { mealPath.append($0) }) }
+            .onChange(of: restoreRequested) { _, requested in
+                if requested { showingRestore = true; restoreRequested = false }
+            }
             .fileImporter(isPresented: $showingRestore, allowedContentTypes: [.zip, .pittechCookPack], allowsMultipleSelection: false) { result in
                 if let url = try? result.get().first {
                     Task { await store.receiveArchive(at: url) }

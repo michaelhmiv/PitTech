@@ -19,9 +19,13 @@ import com.pittech.ads.AdEntitlementStore
 import com.pittech.ads.PitTechAdsConsentManager
 import com.pittech.ads.SharedPrefsAdEntitlementPrefs
 import com.pittech.ui.CrashRecoveryScreen
+import com.pittech.ui.LaunchSurface
 import com.pittech.ui.PitTechApp
 import com.pittech.ui.PitTechTheme
 import com.pittech.ui.PitTechThemeMode
+import com.pittech.ui.WelcomePreferences
+import com.pittech.ui.WelcomeScreen
+import com.pittech.ui.resolveLaunchSurface
 
 class MainActivity : ComponentActivity() {
     private val adsConsentManager by lazy { PitTechAdsConsentManager(this) }
@@ -55,6 +59,19 @@ class MainActivity : ComponentActivity() {
             var crashReport by remember {
                 mutableStateOf(CrashDiagnostics.pendingReport(this@MainActivity))
             }
+            // First-run welcome (#187): a crash pending at THIS launch keeps
+            // the welcome unseen for the whole session — it shows on the next
+            // clean launch instead of stacking behind crash recovery.
+            val crashPendingAtLaunch = remember { crashReport != null }
+            var welcomeSeen by remember(preferences) {
+                mutableStateOf(WelcomePreferences.hasSeen(preferences))
+            }
+            var welcomeRestoreBackup by remember { mutableStateOf(false) }
+            var welcomeConnectThermometer by remember { mutableStateOf(false) }
+            fun dismissWelcome() {
+                WelcomePreferences.markSeen(preferences)
+                welcomeSeen = true
+            }
             val canRequestAds by adsConsentManager.canRequestAds.collectAsStateWithLifecycle()
             val adsSdkReady by adsConsentManager.sdkReady.collectAsStateWithLifecycle()
             val entitlement by adEntitlementStore.entitlement.collectAsStateWithLifecycle()
@@ -76,21 +93,34 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                if (report != null) {
-                    CrashRecoveryScreen(
-                        report = report,
-                        onCopyReport = {
-                            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
-                                ClipData.newPlainText("PitTech diagnostic report", report.toPlainText()),
-                            )
+                when (resolveLaunchSurface(report != null, crashPendingAtLaunch, welcomeSeen)) {
+                    LaunchSurface.CRASH_RECOVERY -> {
+                        val pending = report!!
+                        CrashRecoveryScreen(
+                            report = pending,
+                            onCopyReport = {
+                                getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                                    ClipData.newPlainText("PitTech diagnostic report", pending.toPlainText()),
+                                )
+                            },
+                            onContinue = {
+                                CrashDiagnostics.acknowledgeReport(this@MainActivity, pending)
+                                crashReport = null
+                            },
+                        )
+                    }
+                    LaunchSurface.WELCOME -> WelcomeScreen(
+                        onStartCooking = { dismissWelcome() },
+                        onRestoreBackup = {
+                            dismissWelcome()
+                            welcomeRestoreBackup = true
                         },
-                        onContinue = {
-                            CrashDiagnostics.acknowledgeReport(this@MainActivity, report)
-                            crashReport = null
+                        onConnectThermometer = {
+                            dismissWelcome()
+                            welcomeConnectThermometer = true
                         },
                     )
-                } else {
-                    PitTechApp(
+                    LaunchSurface.APP -> PitTechApp(
                         viewModel = viewModel,
                         themeMode = themeMode,
                         onThemeModeChange = { newMode ->
@@ -102,6 +132,8 @@ class MainActivity : ComponentActivity() {
                         previouslyEntitled = previouslyEntitled,
                         privacyOptionsRequired = privacyOptionsRequired,
                         onShowPrivacyOptions = adsConsentManager::showPrivacyOptions,
+                        startWithRestoreBackup = welcomeRestoreBackup,
+                        startAtDevices = welcomeConnectThermometer,
                     )
                 }
             }
