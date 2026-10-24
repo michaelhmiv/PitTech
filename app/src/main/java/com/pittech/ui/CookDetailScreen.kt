@@ -826,7 +826,6 @@ private fun CookQuickActionsBar(
     }
 }
 
-@Composable
 /**
  * Panel summaries computed at the call site, where the companion-record and
  * activity-timer flows are in scope (PL-04 / DD-2: a collapsed panel header
