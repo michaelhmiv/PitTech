@@ -173,6 +173,29 @@ fun CookDetailScreen(
     val guideFlow = remember(data.cook.id) { viewModel.guide.observe(data.cook.id) }
     val guideRecords by guideFlow.collectAsStateWithLifecycle(emptyList())
     val reminderOccurrences by viewModel.reminders.observeOccurrences().collectAsStateWithLifecycle(emptyList())
+    val liveCompanionRecords by viewModel.companionRecords.collectAsStateWithLifecycle(emptyList())
+    val liveActivityTimers by remember(data.cook.id) { viewModel.activities.observe(data.cook.id) }.collectAsStateWithLifecycle(emptyList())
+    val liveSummaries = remember(data.cook.id, liveCompanionRecords, liveActivityTimers) {
+        val plan = liveCompanionRecords.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
+        val alertRecords = liveCompanionRecords.filter { it.kind == "alert" && it.cookId == data.cook.id }
+        val alertSummary = if (alertRecords.isEmpty()) "Not set up" else {
+            val enabled = alertRecords.count { com.pittech.domain.CookAlertEngine.decode(it.payload).first.enabled }
+            val attention = alertRecords.count { com.pittech.domain.CookAlertEngine.decode(it.payload).second.active }
+            "$enabled enabled" + if (attention > 0) " · $attention need attention" else ""
+        }
+        val checklistRecord = liveCompanionRecords.firstOrNull { it.kind == "checklist" && it.cookId == data.cook.id }
+        val checklistSummary = checklistRecord?.let { record ->
+            val items = com.pittech.domain.CookPreparation.decodeChecklist(record.payload)
+            "${items.count { it.done }}/${items.size} done"
+        } ?: "Not started"
+        val runningTimers = liveActivityTimers.count { it.status == "running" }
+        LivePanelSummaries(
+            guidance = plan?.let { "Playbook · ${it.title}" } ?: "No playbook",
+            alerts = alertSummary,
+            checklist = checklistSummary,
+            timers = if (runningTimers > 0) "$runningTimers running" else "None running",
+        )
+    }
     var selectedFood by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var showProbeMove by remember { mutableStateOf(false) }
     var showFinishConfirm by remember { mutableStateOf(false) }
@@ -641,9 +664,8 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    foodLayout = {
-                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
-                        UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel)
+                    dishesContent = {
+                        MealRecipeActions(data, viewModel)
                         RecipeGuideMilestones(data, guideRecords, compact = true) { selectedTab = CookTab.TIMELINE.name }
                         FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
@@ -655,17 +677,16 @@ fun CookDetailScreen(
                             TextButton(onClick = { verdictDishId = dish.id }, modifier = Modifier.testTag("dish-verdict-${dish.id}")) { Text("Results & cook again") }
                             UnifiedReminderTools(data, viewModel, dish.id); RecipeReferenceTools(data, viewModel, dish.id)
                         }) },
-                    displayUnit = preferredTemperatureUnit,
-                    configuredTools = { CookPlaybookTools(data, viewModel, configuredOnly = true); CookAlertTools(data, viewModel, configuredOnly = true) },
-                    playbookTools = {
-                        MealActivityTimers(data.cook.id, data.dishes, data.cook.status != CookStatus.COMPLETED, viewModel)
+                    guidancePanel = {
                         CookPhaseCard(data,
                             onFoodOn = { dish -> openNote("action", "food_on"); noteDraftJson = noteDraftJson?.let { com.pittech.domain.CookNoteDraft.decode(it).copy(dishId = dish).encode() } },
                             onPreheat = { openNote("action", "preheat_start") },
                             onAdopt = { viewModel.adoptFoodOnTiming(data.cook.id, it) })
-                        if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).any { it.phase == "prep" }) CookChecklistTools(data, viewModel)
-                        CookPlaybookTools(data, viewModel, configuredOnly = false) },
-                    preparationTools = { if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).none { it.phase == "prep" }) CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = false) },
+                        CookPlaybookTools(data, viewModel, configuredOnly = null) },
+                    remindersPanel = { UnifiedReminderTools(data, viewModel) },
+                    alertsPanel = { CookAlertTools(data, viewModel, configuredOnly = null) },
+                    checklistPanel = { CookChecklistTools(data, viewModel) },
+                    timersPanel = { MealActivityTimers(data.cook.id, data.dishes, data.cook.status != CookStatus.COMPLETED, viewModel) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.TELEMETRY_BETA_ENABLED) CookTelemetryPanel(data, viewModel)
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
@@ -679,6 +700,13 @@ fun CookDetailScreen(
                             { viewModel.readGrillNow(data.cook.id) },
                         )
                     },
+                    grillAvailable = com.pittech.BuildConfig.TELEMETRY_BETA_ENABLED || com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null,
+                    learningTools = { CookLearningTools(data, viewModel) },
+                    shareMealAction = {
+                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
+                    },
+                    summaries = liveSummaries,
+                    displayUnit = preferredTemperatureUnit,
                     busy = busy,
                     onTogglePause = { if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id) },
                     onAddTarget = { showTarget = true },
@@ -799,14 +827,75 @@ private fun CookQuickActionsBar(
 }
 
 @Composable
+/**
+ * Panel summaries computed at the call site, where the companion-record and
+ * activity-timer flows are in scope (PL-04 / DD-2: a collapsed panel header
+ * must still carry the panel's live state).
+ */
+internal data class LivePanelSummaries(
+    val guidance: String,
+    val alerts: String,
+    val checklist: String,
+    val timers: String,
+)
+
+/**
+ * One Live-tab panel (PL-04): a titled card whose header always shows the
+ * panel's live state summary, expanded or collapsed. Open/closed state is
+ * remembered per cook and panel.
+ */
+@Composable
+private fun LivePanel(
+    cookId: String,
+    id: String,
+    title: String,
+    summary: String?,
+    initiallyExpanded: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    var expanded by rememberSaveable(cookId, id) { mutableStateOf(initiallyExpanded) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.testTag("live-panel-$id"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    summary?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse $title" else "Expand $title",
+                )
+            }
+            if (expanded) content()
+        }
+    }
+}
+
+@Composable
 private fun LiveCookTab(
     data: CookDetailData,
-    foodLayout: @Composable () -> Unit,
-    configuredTools: @Composable () -> Unit,
-    displayUnit: String,
+    dishesContent: @Composable () -> Unit,
+    guidancePanel: @Composable () -> Unit,
+    remindersPanel: @Composable () -> Unit,
+    alertsPanel: @Composable () -> Unit,
+    checklistPanel: @Composable () -> Unit,
+    timersPanel: @Composable () -> Unit,
     grillPanel: @Composable () -> Unit,
-    playbookTools: @Composable () -> Unit,
-    preparationTools: @Composable () -> Unit,
+    grillAvailable: Boolean,
+    learningTools: @Composable () -> Unit,
+    shareMealAction: @Composable () -> Unit,
+    summaries: LivePanelSummaries,
+    displayUnit: String,
     busy: Boolean,
     onTogglePause: () -> Unit,
     onAddTarget: () -> Unit,
@@ -825,8 +914,6 @@ private fun LiveCookTab(
     onShowPhotoGallery: () -> Unit,
     onViewTimeline: () -> Unit,
 ) {
-    var showMoreTools by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var showPrep by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(data.cook.id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
     val elapsed = calculateElapsed(data).coerceAtLeast(0)
@@ -835,28 +922,51 @@ private fun LiveCookTab(
     val pending = data.reminders.filter { it.status == CookReminderEntity.STATUS_PENDING }.sortedBy { it.dueAtUtcMillis }
     val pit = data.readings.filter { it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.maxByOrNull { it.measuredAtUtcMillis }
     val setpoint = data.readings.filter { it.measurementType == "setpoint" }.maxByOrNull { it.measuredAtUtcMillis }
+    val cookTargets = data.targets.filter { it.dishId == null }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Elapsed " + formatCookDuration(elapsed), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("live-cook-elapsed"))
-        }
-        if (pit != null || setpoint != null) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                listOf("Pit" to pit, "Setpoint" to setpoint).forEach { (label, reading) ->
-                    Column(Modifier.weight(1f)) {
-                        Text(label, style = MaterialTheme.typography.labelLarge)
-                        Text(if (reading != null && FoodLivePresentation.accepted(reading))
-                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)) + " " + displayUnit
-                            else "—", style = MaterialTheme.typography.headlineSmall)
-                        reading?.let { Text((if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
-                            formatTimeOfDay(it.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // Live Zone poster (PL-04): the cook at a glance — elapsed, pit and
+        // setpoint, the latest temperature for every dish, and cook targets.
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("live-zone"),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Elapsed " + formatCookDuration(elapsed), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("live-cook-elapsed"))
+                }
+                if (pit != null || setpoint != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        listOf("Pit" to pit, "Setpoint" to setpoint).forEach { (label, reading) ->
+                            Column(Modifier.weight(1f)) {
+                                Text(label, style = MaterialTheme.typography.labelLarge)
+                                Text(if (reading != null && FoodLivePresentation.accepted(reading))
+                                    String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)) + " " + displayUnit
+                                    else "—", style = MaterialTheme.typography.headlineSmall)
+                                reading?.let { Text((if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
+                                    formatTimeOfDay(it.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                        }
                     }
+                }
+                data.dishes.forEach { dish ->
+                    val latest = data.readings.filter { it.dishId == dish.id && FoodLivePresentation.accepted(it) }.maxByOrNull { it.measuredAtUtcMillis }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(dish.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text(if (latest != null)
+                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(latest.value, latest.unit, displayUnit)) + " " + displayUnit
+                            else "No reading yet", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                cookTargets.forEach { target ->
+                    Text("Target · " + target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
-        foodLayout()
-        configuredTools()
-        onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        // Next-action strip: the pending reminders, earliest first, with
+        // their one-tap record path — never inside a collapsed panel (DD-2).
         pending.forEach { reminder ->
             Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text(reminder.title); Text(formatTimeOfDay(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall) }
@@ -864,6 +974,8 @@ private fun LiveCookTab(
                 TextButton(onClick = { onCancelReminder(reminder) }) { Text("Cancel") }
             } }
         }
+        onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        dishesContent()
         if (recent != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Recent activity", style = MaterialTheme.typography.labelLarge)
@@ -881,25 +993,44 @@ private fun LiveCookTab(
                 }
             }
         }
-        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
-            modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
-        TextButton(onClick = { showMoreTools = !showMoreTools }, modifier = Modifier.testTag("live-more-tools-toggle")) {
-            Text(if (showMoreTools) "Hide cook tools" else "Cook tools")
+        // Panels in lifecycle order (PL-04), each with a state-summary
+        // header (DD-2). The alert and playbook tools render ONCE here —
+        // the old configured-only/full split instances are unified.
+        LivePanel(data.cook.id, "guidance", "Guidance", summaries.guidance) { guidancePanel() }
+        LivePanel(data.cook.id, "reminders", "Reminders",
+            if (pending.isEmpty()) "None pending" else "${pending.size} pending · next ${formatTimeOfDay(pending.first().dueAtUtcMillis)}") { remindersPanel() }
+        LivePanel(data.cook.id, "alerts", "Alerts", summaries.alerts) { alertsPanel() }
+        LivePanel(data.cook.id, "checklist", "Checklist", summaries.checklist) { checklistPanel() }
+        LivePanel(data.cook.id, "timers", "Timers", summaries.timers) { timersPanel() }
+        if (grillAvailable) LivePanel(data.cook.id, "grill", "Grill & recording",
+            if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING) "Recording" else "Not recording") { grillPanel() }
+        LivePanel(data.cook.id, "targets", "Targets",
+            if (data.targets.isEmpty()) "No targets" else "${data.targets.size} set") {
+            data.targets.forEach { target ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onDeleteTarget(target) }) { Text("Delete") }
+                }
+            }
+            OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Add target") }
         }
-        if (showMoreTools) {
-            grillPanel()
-            playbookTools()
-            preparationTools()
-            Text("Started " + formatTimestamp(data.cook.startedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
-            data.cook.smokerName?.let { Text("Smoker: " + it) }
-            data.cook.notes?.let { Text(it) }
-            data.cook.fuelType?.let { Text("Fuel: " + it) }
-            data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: " + it) }
-            data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: " + it + " " + data.cook.outdoorTemperatureUnit.orEmpty()) }
-            data.cook.weatherNotes?.let { Text("Weather: " + it) }
-            data.cook.windNotes?.let { Text("Wind: " + it) }
-            TextButton(onClick = { showPrep = !showPrep }, modifier = Modifier.testTag("live-prep-toggle")) { Text(if (showPrep) "Hide preparation" else "Preparation details") }
-            if (showPrep) data.dishes.forEach { dish ->
+        LivePanel(data.cook.id, "results", "Results",
+            if (data.results.isEmpty()) "Not recorded yet" else "Recorded") {
+            OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("live-record-results")) {
+                Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
+            }
+            learningTools()
+        }
+        LivePanel(data.cook.id, "export", "Export & share", null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export") }
+                OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reuse setup") }
+            }
+            shareMealAction()
+        }
+        LivePanel(data.cook.id, "preparation", "Preparation details",
+            "${data.dishes.size} dish${if (data.dishes.size == 1) "" else "es"}", initiallyExpanded = false) {
+            data.dishes.forEach { dish ->
                 Text(dish.name, style = MaterialTheme.typography.titleMedium)
                 dish.startingCondition?.let { Text("Starting condition: " + it) }
                 dish.prepNotes?.let { Text(it) }
@@ -908,28 +1039,28 @@ private fun LiveCookTab(
                         (item.amountValue?.let { " · " + it + " " + item.amountUnit.orEmpty() } ?: ""))
                 }
             }
-            data.targets.forEach { target ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { onDeleteTarget(target) }) { Text("Delete") }
-                }
-            }
-            OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Add target") }
-            OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("live-record-results")) {
-                Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export") }
-                OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reuse setup") }
-            }
-            if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy) {
-                Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
-            }
-            TextButton(onClick = onDelete, enabled = !busy) { Text("Delete cook") }
         }
+        LivePanel(data.cook.id, "details", "Cook details",
+            "Started " + formatTimeOfDay(data.cook.startedAtUtcMillis), initiallyExpanded = false) {
+            Text("Started " + formatTimestamp(data.cook.startedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+            data.cook.smokerName?.let { Text("Smoker: " + it) }
+            data.cook.notes?.let { Text(it) }
+            data.cook.fuelType?.let { Text("Fuel: " + it) }
+            data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: " + it) }
+            data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: " + it + " " + data.cook.outdoorTemperatureUnit.orEmpty()) }
+            data.cook.weatherNotes?.let { Text("Weather: " + it) }
+            data.cook.windNotes?.let { Text("Wind: " + it) }
+        }
+        // Meal-level end actions stay visible — Results and Pause left the
+        // collapsed "Cook tools" bucket with this re-rank (PL-04).
+        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
+        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
+        }
+        TextButton(onClick = onDelete, enabled = !busy) { Text("Delete cook") }
     }
 }
-
 @Composable
 private fun DashboardSectionPair(
     compact: Boolean,
