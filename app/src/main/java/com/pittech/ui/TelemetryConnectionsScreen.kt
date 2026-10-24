@@ -143,7 +143,13 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                             TextButton(onClick = { scope.launch { runtime.detachSource(profile, source) } }) { Text("Detach " + source.label) }
                         }
                         if (profile.sources.isEmpty()) Text(devicesEmptyStateText(profile.id in discoveryInFlight, profile.id in discoverySettled))
-                        profile.sources.forEach { source -> OutlinedButton(onClick = { runtime.updateAssignmentDraft(draft.copy(sourceId = source.deviceId, roles = source.channels.associate { it.id to it.kind }))) }, modifier = Modifier.fillMaxWidth()) { Text(source.label + if (source.deviceId in profile.selectedDeviceIds) " · attached" else if (draft.sourceId == source.deviceId) " · selected" else "") } }
+                        profile.sources.forEach { source ->
+                            OutlinedButton(onClick = {
+                                runtime.updateAssignmentDraft(draft.copy(sourceId = source.deviceId, roles = source.channels.associate { it.id to it.kind }))
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Text(source.label + (if (source.deviceId in profile.selectedDeviceIds) " · attached" else if (draft.sourceId == source.deviceId) " · selected" else ""))
+                            }
+                        }
                         active.forEach { meal -> FilterChip(selected = draft.cookId == meal.cook.id, onClick = { runtime.updateAssignmentDraft(draft.copy(cookId = meal.cook.id, dishes = emptyMap())) }, label = { Text(meal.cook.title) }) }
                         if (active.isEmpty()) Text("Start a meal before attaching temperature probes.")
                         Button(onClick = { attachDraft(profile, advance = true) }, enabled = !busy && draft.sourceId != null && draft.cookId != null, modifier = Modifier.fillMaxWidth()) { Text("Attach to meal") }

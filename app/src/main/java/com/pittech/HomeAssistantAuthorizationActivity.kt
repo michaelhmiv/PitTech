@@ -28,7 +28,7 @@ import com.pittech.devices.HomeAssistantSession
  */
 class HomeAssistantAuthorizationActivity : ComponentActivity() {
     private lateinit var web: WebView
-    private lateinit var progress: ProgressBar
+    private lateinit var progressBar: ProgressBar
     private lateinit var notice: TextView
     private var completed = false
 
@@ -64,7 +64,7 @@ class HomeAssistantAuthorizationActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             addView(title); addView(cancel)
         }
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = true
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
@@ -80,8 +80,8 @@ class HomeAssistantAuthorizationActivity : ComponentActivity() {
             settings.allowFileAccess = false; settings.allowContentAccess = false
             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) { progress.visibility = View.VISIBLE }
-                override fun onPageFinished(view: WebView, url: String?) { progress.visibility = View.GONE }
+                override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) { progressBar.visibility = View.VISIBLE }
+                override fun onPageFinished(view: WebView, url: String?) { progressBar.visibility = View.GONE }
                 override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
                     val url = request.url.toString()
                     val code = runCatching { HomeAssistantSession.authorizationCode(url, nonce) }.getOrElse {
@@ -118,7 +118,7 @@ class HomeAssistantAuthorizationActivity : ComponentActivity() {
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(header); addView(progress); addView(notice)
+            addView(header); addView(progressBar); addView(notice)
             addView(web, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         }
         setContentView(root)
