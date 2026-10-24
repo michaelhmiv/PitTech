@@ -193,9 +193,11 @@ struct LiveZoneCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(cook.status == "paused" ? "PAUSED · \(cook.title.uppercased())" : "LIVE COOK · \(cook.title.uppercased())")
+            Text(cook.status == "paused" ? "PAUSED" : "LIVE COOK")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
+            Text(cook.title)
+                .font(.title3.weight(.semibold))
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 if let pit = latestPit {
                     Text(tempText(pit))

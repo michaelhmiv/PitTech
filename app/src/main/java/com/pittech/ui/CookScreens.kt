@@ -527,9 +527,13 @@ private fun LiveZoneCard(cook: CookWithDishes, nowMillis: Long, onClick: () -> U
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                if (cook.cook.status == CookStatus.PAUSED) "PAUSED · ${cook.cook.title.uppercase()}" else "LIVE COOK · ${cook.cook.title.uppercase()}",
+                if (cook.cook.status == CookStatus.PAUSED) "PAUSED" else "LIVE COOK",
                 style = MaterialTheme.typography.labelLarge,
                 color = muted,
+            )
+            Text(
+                cook.cook.title,
+                style = MaterialTheme.typography.titleLarge,
             )
             Text(
                 formatElapsed(nowMillis - cook.cook.startedAtUtcMillis),
