@@ -19,6 +19,8 @@ import kotlinx.coroutines.launch
 object CookReminderNotifications {
     private const val CHANNEL_ID = "cook_reminders"
     private const val ACTION_REMINDER = "com.pittech.action.COOK_REMINDER"
+    private const val ACTION_SNOOZE = "com.pittech.action.COOK_REMINDER_SNOOZE"
+    private const val ACTION_DISMISS = "com.pittech.action.COOK_REMINDER_DISMISS"
 
     fun schedule(context: Context, reminder: CookReminderEntity) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -62,8 +64,11 @@ object CookReminderNotifications {
                 },
             )
         }
+        // PL-02 (issue #172): never CLEAR_TOP — destroying the activity also
+        // destroyed whatever the cook was doing in another meal. SINGLE_TOP
+        // delivers the intent to the running activity via onNewIntent.
         val openIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_COOK_ID, reminder.cookId)
             putExtra(EXTRA_REMINDER_ID, reminder.id)
         }
@@ -71,6 +76,20 @@ object CookReminderNotifications {
             context,
             reminder.id.hashCode(),
             openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        // The same vocabulary as every other reminder prompt: Snooze 10 min
+        // and Dismiss act in place; Log it is the tap itself, which opens
+        // this reminder's check-in.
+        fun actionIntent(action: String, requestCode: Int) = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            Intent(context, CookReminderReceiver::class.java).apply {
+                this.action = action
+                data = android.net.Uri.parse("pittech://cook-reminder/${reminder.id}/$action")
+                putExtra(EXTRA_REMINDER_ID, reminder.id)
+                putExtra(EXTRA_COOK_ID, reminder.cookId)
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -81,6 +100,8 @@ object CookReminderNotifications {
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .addAction(0, com.pittech.domain.ReminderVocabulary.SNOOZE, actionIntent(ACTION_SNOOZE, reminder.id.hashCode() + 1))
+            .addAction(0, com.pittech.domain.ReminderVocabulary.DISMISS, actionIntent(ACTION_DISMISS, reminder.id.hashCode() + 2))
             .build()
         NotificationManagerCompat.from(context).notify(reminder.id.hashCode(), notification)
     }
@@ -96,9 +117,25 @@ class CookReminderReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val app = context.applicationContext as PitTechApplication
-                val reminder = app.database.cookDao().getReminder(reminderId)
-                if (reminder?.status == CookReminderEntity.STATUS_PENDING) {
-                    CookReminderNotifications.show(context, reminder)
+                when (intent?.action) {
+                    // PL-02: the notification's own Snooze 10 min / Dismiss,
+                    // with exactly the meanings the unified reminders use.
+                    "com.pittech.action.COOK_REMINDER_SNOOZE" -> {
+                        val dueAt = System.currentTimeMillis() + com.pittech.domain.ReminderVocabulary.SNOOZE_MILLIS
+                        app.cookRepository.snoozeCookReminder(reminderId, dueAt)?.let { updated ->
+                            CookReminderNotifications.cancel(context, updated.id, updated.cookId)
+                            CookReminderNotifications.schedule(context, updated)
+                        }
+                    }
+                    "com.pittech.action.COOK_REMINDER_DISMISS" -> {
+                        app.cookRepository.dismissCookReminder(reminderId)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
+                    }
+                    else -> {
+                        val reminder = app.database.cookDao().getReminder(reminderId)
+                        if (reminder?.status == CookReminderEntity.STATUS_PENDING) {
+                            CookReminderNotifications.show(context, reminder)
+                        }
+                    }
                 }
             } finally {
                 pendingResult.finish()

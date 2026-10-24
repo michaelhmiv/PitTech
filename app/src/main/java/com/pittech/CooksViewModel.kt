@@ -403,6 +403,36 @@ class CooksViewModel(
     fun requestReminderCheckIn(reminderId: String) { _pendingReminderId.value = reminderId }
     fun consumeReminderCheckIn() { _pendingReminderId.value = null }
 
+    // PL-02 (issue #172): a unified-reminder notification tap routes to THAT
+    // rule's check-in, not just the cook.
+    private val _pendingReminderRuleId = MutableStateFlow<String?>(null)
+    val pendingReminderRuleId: StateFlow<String?> = _pendingReminderRuleId.asStateFlow()
+    fun requestReminderRuleCheckIn(ruleId: String) { _pendingReminderRuleId.value = ruleId }
+    fun consumeReminderRuleCheckIn() { _pendingReminderRuleId.value = null }
+
+    /** PL-01: the action a unified rule announced, for its check-in/record default. */
+    suspend fun reminderAnnouncedAction(ruleId: String): String? =
+        app.reminderRepository.rule(ruleId)?.let { app.reminderRepository.announcedAction(it) }
+
+    /**
+     * PL-01: the food-card phase actions record immediately in one tap (the
+     * guidance Done pattern), instead of opening a composer that records
+     * nothing until a second Save. The recorded event stays editable, so a
+     * note or photo can be added to it afterwards.
+     */
+    fun recordDishActionNow(cookId: String, dishId: String?, action: String, onRecorded: (String) -> Unit) = perform {
+        snapshotForCookLog(cookId)
+        val result = repository.notes.save(
+            com.pittech.domain.CookNoteDraft(
+                cookId = cookId, dishId = dishId, category = "action", action = action,
+                title = com.pittech.domain.PlaybookCodec.actions[action].orEmpty(),
+            ),
+        )
+        // No _notice here: the caller confirms with its own snackbar, which
+        // carries the "Add note" follow-up for the recorded entry.
+        onRecorded(result.event.id)
+    }
+
     fun startCook(draft: NewCookDraft) = perform {
         if (draft.recordGrill) require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.selectedDevice != null) { "Choose a connected grill in Devices before starting automatic recording." }
         val selected = app.grillMonitor.state.value.selectedDevice
@@ -578,6 +608,14 @@ class CooksViewModel(
     fun cancelCookReminder(reminder: CookReminderEntity) = perform {
         repository.cancelCookReminder(reminder.id)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         _notice.value = "Reminder cancelled."
+    }
+
+    /** PL-02: Dismiss — the legacy check-in's third explicit option; ends the
+     * reminder with nothing recorded (and replaces the hidden 1-hour snooze). */
+    fun dismissCookReminder(reminder: CookReminderEntity) = perform {
+        repository.dismissCookReminder(reminder.id)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
+        consumeReminderCheckIn()
+        _notice.value = "Reminder dismissed."
     }
 
     fun snoozeCookReminder(reminder: CookReminderEntity, delayMillis: Long) = perform {

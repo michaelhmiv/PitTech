@@ -230,6 +230,11 @@ fun CookDetailScreen(
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val deletedEvent by viewModel.deletedEvent.collectAsStateWithLifecycle()
     val pendingReminderId by viewModel.pendingReminderId.collectAsStateWithLifecycle()
+    val pendingReminderRuleId by viewModel.pendingReminderRuleId.collectAsStateWithLifecycle()
+    var ruleCheckIn by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
+    var ruleCheckInAnnounced by remember { mutableStateOf<String?>(null) }
+    var ruleRecord by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
+    var ruleRecordAnnounced by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -320,6 +325,32 @@ fun CookDetailScreen(
             completionReminder = reminder
             showReminderCheckIn = true
         }
+    }
+
+    // PL-02: a unified-reminder notification tap opens THAT rule's check-in
+    // here — hoisted above the (collapsible) Reminders panel so the route
+    // cannot be hidden by a collapsed panel.
+    LaunchedEffect(pendingReminderRuleId, data.cook.id) {
+        val id = pendingReminderRuleId ?: return@LaunchedEffect
+        val rule = viewModel.reminders.rule(id)
+        if (rule != null && rule.cookId == data.cook.id) {
+            ruleCheckInAnnounced = viewModel.reminderAnnouncedAction(id)
+            ruleCheckIn = rule
+        }
+        viewModel.consumeReminderRuleCheckIn()
+    }
+    ruleCheckIn?.let { rule ->
+        ReminderRuleCheckInDialog(rule, ruleCheckInAnnounced, busy,
+            onLogIt = { action -> coroutineScope.launch { viewModel.confirmReminderAction(rule.id, action) }; ruleCheckIn = null },
+            onLogOther = { ruleRecordAnnounced = ruleCheckInAnnounced; ruleRecord = rule; ruleCheckIn = null },
+            onSnooze = { coroutineScope.launch { viewModel.changeReminderRule(rule.id, "snooze") }; ruleCheckIn = null },
+            onDismiss = { coroutineScope.launch { viewModel.changeReminderRule(rule.id, "complete") }; ruleCheckIn = null },
+            onClose = { ruleCheckIn = null })
+    }
+    ruleRecord?.let { rule ->
+        ReminderRecordActionDialog(rule, ruleRecordAnnounced, busy,
+            onConfirm = { action -> coroutineScope.launch { viewModel.confirmReminderAction(rule.id, action) }; ruleRecord = null },
+            onClose = { ruleRecord = null })
     }
 
     LaunchedEffect(notice, pendingPhotoRetry) {
@@ -526,8 +557,27 @@ fun CookDetailScreen(
             photoUri = reminderPhotoUri,
             photoCaption = reminderPhotoCaption,
             onPhotoCaptionChange = { reminderPhotoCaption = it },
+            // PL-02 (issue #172): scrim/Back only closes the check-in — the
+            // hidden 1-hour snooze is gone. The reminder stays pending and
+            // visible; nothing changes silently.
+            onClose = {
+                reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
+                reminderPhotoUri = null
+                reminderPhotoCaption = ""
+                showReminderCheckIn = false
+                completionReminder = null
+                viewModel.consumeReminderCheckIn()
+            },
             onDismiss = {
-                viewModel.snoozeCookReminder(checkInReminder, 60L * 60 * 1000)
+                viewModel.dismissCookReminder(checkInReminder)
+                reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
+                reminderPhotoUri = null
+                reminderPhotoCaption = ""
+                showReminderCheckIn = false
+                completionReminder = null
+            },
+            onSnooze = {
+                viewModel.snoozeCookReminder(checkInReminder, com.pittech.domain.ReminderVocabulary.SNOOZE_MILLIS)
                 reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
                 reminderPhotoUri = null
                 reminderPhotoCaption = ""
@@ -670,6 +720,26 @@ fun CookDetailScreen(
                         FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
                         onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
+                        onRecordAction = { dish, action ->
+                            // PL-01: record now; offer the note as a follow-up
+                            // on the recorded entry, never as a gate before it.
+                            selectedFood = dish.id
+                            viewModel.recordDishActionNow(data.cook.id, dish.id, action) { eventId ->
+                                coroutineScope.launch {
+                                    val result = snackbar.showSnackbar(
+                                        message = "${com.pittech.domain.PlaybookCodec.actions[action] ?: action} recorded for ${dish.name}.",
+                                        actionLabel = "Add note",
+                                        withDismissAction = true,
+                                        duration = androidx.compose.material3.SnackbarDuration.Long,
+                                    )
+                                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                        noteEditing = true
+                                        notePhotoFirst = false
+                                        noteDraftJson = viewModel.loadNote(eventId).encode()
+                                    }
+                                }
+                            }
+                        },
                         onAdd = { addDish = true }, onEdit = { editDish = it },
                         onIngredients = { ingredientDish = it },
                         onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }, reminders = reminderRules, occurrences = reminderOccurrences,
@@ -728,7 +798,7 @@ fun CookDetailScreen(
                     onDelete = { confirmDeleteCook = true },
                     onCopySetup = { viewModel.previewCookAgain(data.cook.id) },
                     onError = error,
-                    onCancelReminder = viewModel::cancelCookReminder,
+                    onCancelReminder = viewModel::dismissCookReminder,
                     onLogReminder = { reminder ->
                         completionReminder = reminder
                         showReminderCheckIn = true
@@ -970,7 +1040,7 @@ private fun LiveCookTab(
             Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text(reminder.title); Text(formatTimeOfDay(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall) }
                 TextButton(onClick = { onLogReminder(reminder) }) { Text("Log now") }
-                TextButton(onClick = { onCancelReminder(reminder) }) { Text("Cancel") }
+                TextButton(onClick = { onCancelReminder(reminder) }) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) }
             } }
         }
         onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -1965,14 +2035,17 @@ private fun ReminderCheckInDialog(
     photoUri: String?,
     photoCaption: String,
     onPhotoCaptionChange: (String) -> Unit,
+    onClose: () -> Unit,
     onDismiss: () -> Unit,
+    onSnooze: () -> Unit,
     onAddPhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
     onComplete: (String) -> Unit,
 ) {
     var note by rememberSaveable(reminder.id) { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // PL-02: closing (scrim/Back) never changes the reminder.
+        onDismissRequest = onClose,
         title = { Text("How did it go?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1998,10 +2071,13 @@ private fun ReminderCheckInDialog(
                     )
                     TextButton(onClick = onRemovePhoto) { Text("Remove photo") }
                 }
+                // The unified vocabulary, offered explicitly: Log it (confirm),
+                // Snooze 10 min, Dismiss.
+                TextButton(onClick = onSnooze, modifier = Modifier.testTag("reminder-checkin-snooze")) { Text(com.pittech.domain.ReminderVocabulary.SNOOZE) }
             }
         },
-        confirmButton = { TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text("Log check-in") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Remind me in 1 hour") } },
+        confirmButton = { TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text(com.pittech.domain.ReminderVocabulary.LOG_IT) } },
+        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) } },
     )
 }
 

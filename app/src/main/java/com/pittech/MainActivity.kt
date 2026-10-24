@@ -167,8 +167,11 @@ class MainActivity : ComponentActivity() {
     private fun handleReminderIntent(intent: android.content.Intent?) {
         val cookId = intent?.getStringExtra(CookReminderNotifications.EXTRA_COOK_ID) ?: return
         val reminderId = intent.getStringExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
+        val ruleId = intent.getStringExtra(UnifiedReminderNotifications.EXTRA_RULE_ID)
         viewModel.openCook(cookId)
         reminderId?.let(viewModel::requestReminderCheckIn)
+        ruleId?.let(viewModel::requestReminderRuleCheckIn)
         intent.removeExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
+        intent.removeExtra(UnifiedReminderNotifications.EXTRA_RULE_ID)
     }
 }

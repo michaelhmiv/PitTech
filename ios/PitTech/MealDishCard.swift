@@ -8,6 +8,15 @@ struct MealDishCard: View {
     let onLog: (String, String?) -> Void
     @State private var expanded = false
     @State private var showingVerdict = false
+    @State private var lastRecorded: String?
+    @State private var recordError: String?
+    /// PL-01 (issue #172): a phase action records in one tap — Wrap
+    /// included — instead of opening a composer that records nothing until
+    /// a second Save. A note or photo can be added to the entry afterwards.
+    private func recordDirect(_ action: String) {
+        do { _ = try store.recordDishAction(cookId: cookId, dishId: dish.id, action: action); lastRecorded = action; recordError = nil }
+        catch { recordError = error.localizedDescription }
+    }
     private var phase: NativeDishPhase? { store.timingMode(cookId) == "explicit_phases" ? store.phases(cookId, now: now).first { $0.id == dish.id } : nil }
     private var last: TimelineEntry? {
         let ids = Set(store.library.events.compactMap(\.objectValue).filter { o in
@@ -63,6 +72,14 @@ struct MealDishCard: View {
                 Button("Results & cook again") { showingVerdict = true }.accessibilityIdentifier("dish-verdict-" + dish.id)
                 MealActionRow { Button("Note") { onLog("general", nil) }; Button("Temp") { onLog("temperature", nil) }; Button("Photo") { onLog("photo", nil) } }.buttonStyle(.bordered)
                 MealRemindersLink(cookId: cookId, dishId: dish.id)
+                if let lastRecorded {
+                    HStack(spacing: 12) {
+                        Text("\(CookStore.actionLabel(lastRecorded)) recorded").font(.caption)
+                        Button("Add note") { onLog("general", nil) }
+                        Button("Add photo") { onLog("photo", nil) }
+                    }
+                }
+                if let recordError { Text(recordError).font(.caption).foregroundStyle(.red) }
                 if store.recipeSource(dish.id) != nil { NavigationLink("Previous cook") { RecipeReferenceView(cookId: cookId, dishId: dish.id) } }
                 DisclosureGroup("Preparation and actions") {
                     if let setup = store.library.dishes.first(where: { $0.objectValue?["id"]?.stringValue == dish.id })?.objectValue {
@@ -72,7 +89,7 @@ struct MealDishCard: View {
                             Text("\(ingredient["name"]?.stringValue ?? "") · \(ingredient["amountText"]?.stringValue ?? ingredient["amountValue"]?.numberValue.map { String($0) } ?? "") \(ingredient["amountUnit"]?.stringValue ?? "")").font(.caption)
                         }
                     }
-                    if store.library.cooks.contains(where: { $0.id == cookId && $0.isActive }) { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in Button(CookStore.actionLabel(action)) { onLog("action", action) } } }
+                    if store.library.cooks.contains(where: { $0.id == cookId && $0.isActive }) { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in Button(CookStore.actionLabel(action)) { recordDirect(action) } } }
                 }
             }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))

@@ -459,6 +459,19 @@ class CookRepository(
         return cancelled
     }
 
+    /**
+     * PL-02 (issue #172): Dismiss ends a legacy reminder the same way it ends
+     * a unified rule — handled, with nothing recorded on the timeline. This is
+     * distinct from cancelling a reminder that has not fired yet.
+     */
+    suspend fun dismissCookReminder(reminderId: String): CookReminderEntity? {
+        val reminder = dao.getReminder(reminderId) ?: return null
+        if (reminder.status != CookReminderEntity.STATUS_PENDING) return reminder
+        val dismissed = reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = System.currentTimeMillis())
+        dao.updateReminder(dismissed)
+        return dismissed
+    }
+
     suspend fun snoozeCookReminder(reminderId: String, dueAtUtcMillis: Long): CookReminderEntity? {
         val reminder = dao.getReminder(reminderId) ?: return null
         if (reminder.status != CookReminderEntity.STATUS_PENDING) return reminder

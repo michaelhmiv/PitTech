@@ -15,6 +15,48 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CookNoteScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    /**
+     * PL-02 (issue #172): the legacy check-in offers Log it / Snooze 10 min /
+     * Dismiss explicitly — and closing it with Back changes nothing. The
+     * hidden 1-hour snooze is gone.
+     */
+    @Test fun legacyCheckInBackChangesNothingAndSnoozeIsTenMinutes() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PitTechApplication
+        val seeded = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val id = app.cookRepository.startCook(NewCookDraft("Check-in semantics cook", dishes = listOf(DishDraft("Brisket", "beef"))))
+            val reminder = app.cookRepository.createCookReminder(id, "Check the brisket", System.currentTimeMillis() + 300_000)
+            id to reminder
+        }
+        val (cookId, reminder) = seeded
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Check-in semantics cook").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Check-in semantics cook").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-tab-live", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
+        fun openCheckIn() {
+            compose.waitUntil(15_000) { compose.onAllNodesWithText("Log now").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Log now").performScrollTo().performClick()
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("reminder-checkin-note").fetchSemanticsNodes().isNotEmpty() }
+        }
+        openCheckIn()
+        androidx.test.espresso.Espresso.pressBack()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("reminder-checkin-note").fetchSemanticsNodes().isEmpty() }
+        val afterBack = runBlocking(Dispatchers.IO) { app.database.cookDao().getReminder(reminder.id)!! }
+        assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, afterBack.status)
+        assertEquals(reminder.dueAtUtcMillis, afterBack.dueAtUtcMillis)
+        openCheckIn()
+        compose.onNodeWithTag("reminder-checkin-snooze").performClick()
+        compose.waitUntil(15_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getReminder(reminder.id)?.dueAtUtcMillis != reminder.dueAtUtcMillis } }
+        val afterSnooze = runBlocking(Dispatchers.IO) { app.database.cookDao().getReminder(reminder.id)!! }
+        assertEquals(com.pittech.data.CookReminderEntity.STATUS_PENDING, afterSnooze.status)
+        assertTrue(afterSnooze.dueAtUtcMillis > reminder.dueAtUtcMillis + 240_000)
+        assertTrue(afterSnooze.dueAtUtcMillis <= System.currentTimeMillis() + 660_000)
+        openCheckIn()
+        compose.onNodeWithTag("reminder-checkin-dismiss").performClick()
+        compose.waitUntil(15_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getReminder(reminder.id)?.status == com.pittech.data.CookReminderEntity.STATUS_COMPLETED } }
+        assertEquals(0, runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId).count { PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "check_in" } })
+    }
     @Test fun temperatureShortcutSavesDescriptionAndReadingInOneEditableNote() {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PitTechApplication
         val id = runBlocking(Dispatchers.IO) { app.database.clearAllTables(); app.cookRepository.startCook(NewCookDraft("Unified note cook", dishes = listOf(DishDraft("Brisket", "beef")))) }
