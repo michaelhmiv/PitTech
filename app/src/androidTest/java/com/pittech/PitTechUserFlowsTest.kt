@@ -107,24 +107,11 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("more-settings").performClick()
-        composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
-        composeRule.onNodeWithText("PitTech follows your device appearance.").assertIsDisplayed()
-        composeRule.onNodeWithTag("theme-mode-dark").performClick()
-        composeRule.onNodeWithTag("theme-mode-dark").assertIsSelected()
-        composeRule.onNodeWithText("Dark appearance is selected.").assertIsDisplayed()
+        // #172: appearance is fixed Night Service dark — an honest informational
+        // row, not a picker (DD-7 rejected, owner ruling 2026-10-24).
+        composeRule.onNodeWithTag("appearance-night-service").assertIsDisplayed()
+        composeRule.onNodeWithText("Night Service (dark)").assertIsDisplayed()
         saveScreenshot("settings-dark")
-        assertEquals(
-            "DARK",
-            targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE)
-                .getString(PitTechThemeMode.PREFERENCE_KEY, null),
-        )
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("nav-more").performClick()
-        composeRule.onNodeWithTag("more-settings").performClick()
-        composeRule.onNodeWithTag("theme-mode-dark").assertIsSelected()
-        composeRule.onNodeWithTag("theme-mode-system").performClick()
-        composeRule.onNodeWithTag("theme-mode-system").assertIsSelected()
 
         composeRule.onNodeWithText("Save full backup (ZIP)").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("share-full-backup").performScrollTo().assertIsDisplayed()

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -287,18 +288,25 @@ internal fun PitTechApp(
             )
         },
         bottomBar = {
-            NavigationBar {
-                MainSection.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = section == item,
-                        onClick = {
-                            if (item == MainSection.MORE && section == item) moreDestination = null
-                            selectedSection = item.name
-                        },
-                        icon = { Icon(item.icon, contentDescription = null) },
-                        label = { Text(item.title) },
-                        modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
-                    )
+            // Night Service shell (#172): the bar sits as a rounded "pill" tray
+            // on the charcoal ground, ember marking the active tab.
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            ) {
+                NavigationBar(containerColor = androidx.compose.ui.graphics.Color.Transparent) {
+                    MainSection.entries.forEach { item ->
+                        NavigationBarItem(
+                            selected = section == item,
+                            onClick = {
+                                if (item == MainSection.MORE && section == item) moreDestination = null
+                                selectedSection = item.name
+                            },
+                            icon = { Icon(item.icon, contentDescription = null) },
+                            label = { Text(item.title) },
+                            modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
+                        )
+                    }
                 }
             }
         },
@@ -388,6 +396,13 @@ private fun CooksHome(
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
     val showCookListAd = shouldShowCookListNativeAd(adsEnabled, entitlement, previouslyEntitled)
     var showPlanning by rememberSaveable { mutableStateOf(false) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -396,30 +411,87 @@ private fun CooksHome(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (cooks.isEmpty()) {
+            // First-run / empty Meals (#172, DD-1): the mascot is a small header
+            // lockup only — max 56 dp tall / 168 dp wide, never a hero.
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Image(
+                        painter = painterResource(R.drawable.pittech_smoker),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.height(56.dp).widthIn(max = 168.dp).testTag("meals-lockup"),
+                    )
+                    Text("PitTech", style = MaterialTheme.typography.titleLarge)
+                }
+                Text("Your cook log is ready", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    "Your cook records stay on this phone. No account is needed.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         if (activeCooks.isNotEmpty()) {
-            SectionHeading("Active meals")
-            activeCooks.forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
+            // Night Service Live Zone: the first active cook leads the tab as a
+            // poster readout; the rest stay one tap away below it.
+            LiveZoneCard(activeCooks.first(), nowMillis = nowMillis, onClick = { onOpenCook(activeCooks.first().cook.id) })
+            if (activeCooks.size > 1) {
+                SectionHeading("Also cooking")
+                activeCooks.drop(1).forEach { cook -> CookSummaryCard(cook, onClick = { onOpenCook(cook.cook.id) }) }
+            }
         }
 
         Button(
             onClick = onStartCook,
             modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp).testTag("start-cook"),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
         ) {
             Icon(Icons.Filled.Add, contentDescription = null)
             Spacer(Modifier.width(10.dp))
             Text("Start meal")
         }
 
-        if (cooks.isEmpty()) Text(
-            "Your cook records stay on this phone. No account is needed.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (cooks.isEmpty()) {
+            OutlinedButton(
+                onClick = onRestoreBackup,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("empty-restore-backup"),
+            ) {
+                Text("Restore from backup")
+            }
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium) }
 
-        TextButton(onClick = { showPlanning = !showPlanning }, modifier = Modifier.testTag("home-planning-toggle")) { Text(if (showPlanning) "Hide planning" else "Planning and playbooks") }
+        // Planning becomes a panel whose header carries its state (DD-2):
+        // collapsed never means invisible.
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().clickable { showPlanning = !showPlanning }.testTag("home-planning-toggle"),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Planning and playbooks", style = MaterialTheme.typography.titleMedium)
+                    if (!showPlanning) {
+                        Text(
+                            "Playbooks, serve plans and upcoming cooks",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = if (showPlanning) "Hide planning" else "Show planning")
+            }
+        }
         if (showPlanning) playbooks()
 
         if (finishedCooks.isNotEmpty()) {
@@ -432,30 +504,76 @@ private fun CooksHome(
                 }
             }
         }
+    }
+}
 
-        if (cooks.isEmpty()) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Your cook log is ready", style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        "Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    OutlinedButton(
-                        onClick = onRestoreBackup,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("empty-restore-backup"),
-                    ) {
-                        Text("Restore from backup")
-                    }
-                }
+/**
+ * The Night Service Live Zone on Meals (#172): a high-contrast poster card for
+ * the lead active cook — elapsed time at poster size, pit setpoint and dishes
+ * in plain view. Nothing (ads included) ever renders inside or above it.
+ */
+@Composable
+private fun LiveZoneCard(cook: CookWithDishes, nowMillis: Long, onClick: () -> Unit) {
+    val ground = androidx.compose.ui.graphics.Color(0xFF10140F)
+    val ink = androidx.compose.ui.graphics.Color(0xFFF2EEE3)
+    val muted = androidx.compose.ui.graphics.Color(0xFF4A5245)
+    Card(
+        // Same card contract as every cook card ("cook-card-<id>" opens the cook);
+        // the Live Zone is presentation, not a new destination.
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
+        colors = CardDefaults.cardColors(containerColor = ink, contentColor = ground),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                if (cook.cook.status == CookStatus.PAUSED) "PAUSED" else "LIVE COOK",
+                style = MaterialTheme.typography.labelLarge,
+                color = muted,
+            )
+            Text(
+                cook.cook.title,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                formatElapsed(nowMillis - cook.cook.startedAtUtcMillis),
+                style = MaterialTheme.typography.displayMedium,
+            )
+            val setpoint = cook.cook.initialSetpointValue
+            val detail = buildList {
+                if (setpoint != null) add("Pit set ${formatPosterValue(setpoint)}${cook.cook.initialSetpointUnit ?: ""}")
+                cook.cook.smokerName?.takeIf { it.isNotBlank() }?.let { add(it) }
+                if (cook.dishes.isNotEmpty()) add(cook.dishes.joinToString { dish -> dish.cut?.takeIf(String::isNotBlank) ?: dish.name })
             }
+            if (detail.isNotEmpty()) {
+                Text(detail.joinToString(" · "), style = MaterialTheme.typography.bodyLarge, color = muted)
+            }
+            Text(cookStatusLine(cook), style = MaterialTheme.typography.bodyMedium, color = muted)
         }
+    }
+}
+
+private fun formatElapsed(elapsedMillis: Long): String {
+    val totalMinutes = (elapsedMillis.coerceAtLeast(0) / 60_000).toInt()
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "%d:%02d".format(hours, minutes) else "0:%02d".format(minutes)
+}
+
+private fun formatPosterValue(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+
+private fun cookStatusLine(cook: CookWithDishes): String {
+    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+        .format(Date(cook.cook.startedAtUtcMillis))
+    return when (cook.cook.status) {
+        CookStatus.PAUSED -> "Recording and guidance paused · $time"
+        CookStatus.COMPLETED -> "Finished · $time"
+        else -> if (cook.lifecycles.firstOrNull()?.timingMode == "explicit_phases")
+            com.pittech.domain.CookPhases.summary(com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(cook.events), cook.dishes.map { it.id }, cook.cook.startedAtUtcMillis, System.currentTimeMillis())) + " · $time"
+        else "Active session · legacy timer · $time"
     }
 }
 
