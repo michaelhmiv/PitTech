@@ -11,6 +11,7 @@ import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -218,6 +219,19 @@ class ConnectedCookScreenTest {
         // The Live Zone strip shows the needs-attention count without
         // opening anything.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-alerts-strip").fetchSemanticsNodes().isNotEmpty() }
+        // Evidence for any mismatch: the record's persisted state and the
+        // strip's actual rendered text, plus a screenshot pulled by the
+        // emulator script's failure collector.
+        val dbActive = runBlocking(Dispatchers.IO) { app.database.companionDao().get(recordId)?.let { com.pittech.domain.CookAlertEngine.decode(it.payload).second.active } }
+        val stripTexts = compose.onNodeWithTag("live-alerts-strip", useUnmergedTree = true).onChildren().fetchSemanticsNodes().map { node ->
+            if (androidx.compose.ui.semantics.SemanticsProperties.Text in node.config) node.config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString { it.text } else null
+        }
+        android.util.Log.i("AlertRoutingEvidence", "dbActive=$dbActive stripTexts=$stripTexts")
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+            val file = File(app.filesDir, "pittech-ui-test/alert-routing.png").apply { parentFile?.mkdirs() }
+            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        assertEquals("Seeded alert must still be active after the route opens", true, dbActive)
         compose.onNodeWithText("Alerts · 1 needs attention", substring = true).assertExists()
         // The Alerts sheet opens at the firing rule, highlighted.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("alert-focus-$recordId").fetchSemanticsNodes().isNotEmpty() }
