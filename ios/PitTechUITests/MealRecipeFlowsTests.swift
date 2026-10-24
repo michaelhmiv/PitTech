@@ -345,7 +345,10 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(message.label.contains("Local journal removed"))
             capture(large ? "Local journal removed large text" : "Local journal removed")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
-            XCTAssertTrue(app.staticTexts["No finished cooks yet"].waitForExistence(timeout: 10))
+            // Slice 1 (#172 PL-13): a fully wiped library lands on the
+            // first-run empty Meals card; "No finished cooks yet" now only
+            // shows in the completed-meals section of a non-empty library.
+            XCTAssertTrue(app.otherElements["meals-empty-card"].waitForExistence(timeout: 10))
             app.terminate()
         }
     }
