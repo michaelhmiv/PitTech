@@ -2,12 +2,14 @@ package com.pittech
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.ui.WelcomePreferences
 import kotlinx.coroutines.Dispatchers
@@ -21,11 +23,16 @@ import org.junit.runner.RunWith
 /**
  * #187 first-run welcome: shows once on a fresh install, every exit marks it
  * seen permanently, and a pending crash report takes precedence.
+ *
+ * Each test prepares the persisted state first and then launches its own
+ * activity scenario: mutating SharedPreferences or the database under a
+ * running (or recreated) activity races the composition that already read
+ * them, so the launch always comes last.
  */
 @RunWith(AndroidJUnit4::class)
 class WelcomeFlowTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val composeRule = createEmptyComposeRule()
 
     private val targetContext: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
@@ -39,57 +46,72 @@ class WelcomeFlowTest {
         preferences().edit().remove(WelcomePreferences.PREFERENCE_KEY).commit()
         val application = targetContext.applicationContext as PitTechApplication
         runBlocking(Dispatchers.IO) { application.database.clearAllTables() }
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
+    }
+
+    private fun launchApp(): ActivityScenario<MainActivity> =
+        ActivityScenario.launch(MainActivity::class.java)
+
+    private fun awaitWelcome() {
+        composeRule.waitUntilExactlyOneExists(hasTestTag("welcome-screen"), 10_000)
+    }
+
+    private fun awaitNoWelcome() {
+        composeRule.waitUntilDoesNotExist(hasTestTag("welcome-screen"), 10_000)
     }
 
     @Test
     fun welcomeShowsOnceAndStartCookingMarksItSeen() {
         resetFirstRun()
-        composeRule.onNodeWithTag("welcome-screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("welcome-mascot").assertIsDisplayed()
-        composeRule.onNodeWithText("Welcome to PitTech").assertIsDisplayed()
-        composeRule.onNodeWithText("Live cook tracking").assertIsDisplayed()
-        composeRule.onNodeWithText("Recipes, playbooks & reminders").assertIsDisplayed()
-        composeRule.onNodeWithText("Share & Discover").assertIsDisplayed()
+        launchApp().use {
+            awaitWelcome()
+            composeRule.onNodeWithTag("welcome-mascot").assertIsDisplayed()
+            composeRule.onNodeWithText("Welcome to PitTech").assertIsDisplayed()
+            composeRule.onNodeWithText("Live cook tracking").assertIsDisplayed()
+            composeRule.onNodeWithText("Recipes, playbooks & reminders").assertIsDisplayed()
+            composeRule.onNodeWithText("Share & Discover").assertIsDisplayed()
 
-        composeRule.onNodeWithTag("welcome-start-cooking").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
-        composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
-        assertTrue(WelcomePreferences.hasSeen(preferences()))
-
+            composeRule.onNodeWithTag("welcome-start-cooking").performClick()
+            awaitNoWelcome()
+            composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
+            assertTrue(WelcomePreferences.hasSeen(preferences()))
+        }
         // Relaunch: the welcome never auto-shows again.
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
-        composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
+        launchApp().use {
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+            composeRule.onNodeWithText("Your cook log is ready").assertIsDisplayed()
+        }
     }
 
     @Test
     fun connectThermometerMarksSeenAndLandsOnDevices() {
         resetFirstRun()
-        composeRule.onNodeWithTag("welcome-connect-thermometer").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
-        assertTrue(WelcomePreferences.hasSeen(preferences()))
-        composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
-
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+        launchApp().use {
+            awaitWelcome()
+            composeRule.onNodeWithTag("welcome-connect-thermometer").performClick()
+            awaitNoWelcome()
+            assertTrue(WelcomePreferences.hasSeen(preferences()))
+            composeRule.onNodeWithTag("telemetry-connections").assertIsDisplayed()
+        }
+        launchApp().use {
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+        }
     }
 
     @Test
     fun restoreFromBackupMarksSeen() {
         resetFirstRun()
-        composeRule.onNodeWithTag("welcome-restore-backup").performClick()
-        // The system document picker opens over the app; the flag is already set.
-        Thread.sleep(1_000)
-        assertTrue(WelcomePreferences.hasSeen(preferences()))
-        Espresso.pressBack()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+        launchApp().use {
+            awaitWelcome()
+            composeRule.onNodeWithTag("welcome-restore-backup").performClick()
+            // The system document picker opens over the app; the flag is already set.
+            Thread.sleep(1_000)
+            assertTrue(WelcomePreferences.hasSeen(preferences()))
+            Espresso.pressBack()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+        }
     }
 
     @Test
@@ -100,24 +122,24 @@ class WelcomeFlowTest {
             Thread.currentThread(),
             IllegalStateException("Welcome precedence fixture"),
         )
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
-        // Crash recovery shows; the welcome does not.
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
-        composeRule.onNodeWithTag("crash-report-continue").assertIsDisplayed()
-        assertFalse(WelcomePreferences.hasSeen(preferences()))
+        launchApp().use {
+            composeRule.waitForIdle()
+            // Crash recovery shows; the welcome does not.
+            composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+            composeRule.onNodeWithTag("crash-report-continue").assertIsDisplayed()
+            assertFalse(WelcomePreferences.hasSeen(preferences()))
 
-        // Continuing recovery lands in the app — still no welcome this session.
-        composeRule.onNodeWithTag("crash-report-continue").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
-
+            // Continuing recovery lands in the app — still no welcome this session.
+            composeRule.onNodeWithTag("crash-report-continue").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
+        }
         // Next clean launch: the still-unseen welcome shows.
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("welcome-screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("welcome-start-cooking").performClick()
-        composeRule.waitForIdle()
-        assertTrue(WelcomePreferences.hasSeen(preferences()))
+        launchApp().use {
+            awaitWelcome()
+            composeRule.onNodeWithTag("welcome-start-cooking").performClick()
+            awaitNoWelcome()
+            assertTrue(WelcomePreferences.hasSeen(preferences()))
+        }
     }
 }

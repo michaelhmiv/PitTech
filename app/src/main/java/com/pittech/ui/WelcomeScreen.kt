@@ -49,7 +49,10 @@ object WelcomePreferences {
         preferences.getBoolean(PREFERENCE_KEY, false)
 
     fun markSeen(preferences: SharedPreferences) {
-        preferences.edit().putBoolean(PREFERENCE_KEY, true).apply()
+        // commit(), not apply(): the flag must be durable before the surface
+        // changes — an apply() still in flight can be lost if the process is
+        // replaced (e.g. the live-upgrade flow) right after dismissal.
+        preferences.edit().putBoolean(PREFERENCE_KEY, true).commit()
     }
 }
 
