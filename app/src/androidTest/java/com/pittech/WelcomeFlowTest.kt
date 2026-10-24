@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.ui.WelcomePreferences
@@ -111,7 +110,11 @@ class WelcomeFlowTest {
             // The system document picker opens over the app; the flag is already set.
             Thread.sleep(1_000)
             assertTrue(WelcomePreferences.hasSeen(preferences()))
-            Espresso.pressBack()
+            // Espresso.pressBack() cannot run here (no app activity is
+            // RESUMED while the picker owns the foreground); send the key
+            // straight to the foreground window instead.
+            InstrumentationRegistry.getInstrumentation()
+                .sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
             composeRule.waitForIdle()
             composeRule.onNodeWithTag("welcome-screen").assertDoesNotExist()
         }
