@@ -141,6 +141,12 @@ struct CookListView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        // The card is its own accessibility container: without
+                        // this, SwiftUI combines the text-only stack into a
+                        // single static-text element and the card identifier
+                        // never surfaces as a distinct element (the flows-a
+                        // journal-removal test waits on exactly that element).
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("meals-empty-card")
                     }
                     if let lead = store.activeCooks.first {
