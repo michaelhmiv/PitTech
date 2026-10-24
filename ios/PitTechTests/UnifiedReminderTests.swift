@@ -57,6 +57,8 @@ final class UnifiedReminderTests: XCTestCase {
         try store.saveReminderRule(cookId: cook, dishId: dish, title: "Check", config: plain, id: "plain")
         XCTAssertNil(store.announcedReminderAction(try XCTUnwrap(store.reminderRule("plain"))))
         // PL-01: the food card's one-tap record writes the action immediately.
+        // (Phase order is enforced: food must be on before it can be wrapped.)
+        try store.saveNote(CookNoteDraft(cookId: cook, dishId: dish, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: anchor))
         let eventId = try store.recordDishAction(cookId: cook, dishId: dish, action: "wrap")
         XCTAssertTrue(store.library.actions(for: cook).contains { $0.id == eventId && $0.action == "wrap" })
     }
