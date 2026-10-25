@@ -21,6 +21,7 @@ struct NativePublicationView: View {
     @State private var signingIn = false
     @State private var message: String?
     @State private var published: NativePublicationReceipt?
+    @State private var lastUserId: String?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -44,6 +45,9 @@ struct NativePublicationView: View {
                     Text(published.status == "pending_review" ? "Submitted for review" : "Published").font(.title2.bold()).accessibilityIdentifier("publication-complete")
                     if published.status == "pending_review" { Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.") }
                     else { Link("Open public recipe", destination: URL(string: published.url)!); ShareLink("Share public link", item: URL(string: published.url)!) }
+                    // J9: after publishing, the next step lands where the
+                    // thing went — My Cookbook — not back at the draft.
+                    NavigationLink("Open My cookbook") { NativeMyCookbookView() }.accessibilityIdentifier("publication-open-cookbook")
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
                     Picker("Publication", selection: $kind) { Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt") }.disabled(busy)
@@ -71,7 +75,21 @@ struct NativePublicationView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(busy).accessibilityIdentifier("publication-done") } }
             .task(id: account.stateUserId) {
                 if writer == nil { writer = NativePublicationWriter.forApp(session: account) }
-                prepared = nil; reviewed = false; published = nil
+                // PL-18: a prepared preview survives the sign-in detour.
+                // It is only discarded when the signed-in account actually
+                // changes to a different user than the one who prepared it
+                // (the confirm step separately re-checks exactly that).
+                // Signing out clears the published receipt but keeps the
+                // preview state, which stays inaccessible behind this
+                // sheet's signed-out branch until someone signs in — and a
+                // different returning user invalidates it via previewUser.
+                if let current = account.stateUserId {
+                    if let previewUser, previewUser != current { invalidate() }
+                    if let lastUserId, lastUserId != current { published = nil }
+                    lastUserId = current
+                } else {
+                    published = nil
+                }
                 do { identity = (try? store.sharingDocument(draft).identityMode) ?? "anonymous"; try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
             }
             .onChange(of: identity) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }

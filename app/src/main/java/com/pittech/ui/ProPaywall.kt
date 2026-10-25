@@ -178,11 +178,20 @@ private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlace
                     style = MaterialTheme.typography.bodySmall,
                 )
             } else {
-                Text(
-                    "PitTech Pro isn't available on this build yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.testTag("pro-product-unavailable"),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "PitTech Pro isn't available on this build yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("pro-product-unavailable"),
+                    )
+                    // PL-17: the unavailable state is not a dead end — the
+                    // user can re-check the store product and their
+                    // entitlement without leaving the gate.
+                    OutlinedButton(
+                        onClick = { scope.launch { subscription.loadProduct(); subscription.reconcile() } },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("pro-check-again"),
+                    ) { Text("Check again") }
+                }
             }
         }
         if (!state.signedIn) {

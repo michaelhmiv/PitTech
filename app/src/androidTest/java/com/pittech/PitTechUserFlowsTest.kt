@@ -268,7 +268,7 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Starting condition: Refrigerated").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("live-panel-preparation").performScrollTo().performClick()
         assertTrue(composeRule.onAllNodesWithText("Starting condition: Refrigerated").fetchSemanticsNodes().isEmpty())
-        composeRule.onNodeWithText("Export").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Export data files").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Add target").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Brisket resting").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("All photos (2)").performScrollTo().assertIsDisplayed().performClick()

@@ -147,10 +147,19 @@ struct ProPaywallView: View {
                             .font(.caption)
                             .foregroundStyle(PitTechStyle.supporting)
                     } else {
-                        Text("PitTech Pro isn't available on this build yet.")
-                            .font(.subheadline)
-                            .foregroundStyle(PitTechStyle.supporting)
-                            .accessibilityIdentifier("pro-product-unavailable")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("PitTech Pro isn't available on this build yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(PitTechStyle.supporting)
+                                .accessibilityIdentifier("pro-product-unavailable")
+                            // PL-17: the unavailable state is not a dead
+                            // end — the user can re-check the store product
+                            // and their entitlement without leaving the gate.
+                            Button("Check again") { Task { await pro.loadProduct(); await pro.reconcile() } }
+                                .buttonStyle(.bordered)
+                                .frame(minHeight: 44)
+                                .accessibilityIdentifier("pro-check-again")
+                        }
                     }
 
                     if !pro.signedIn {

@@ -18,6 +18,19 @@ final class CookStore {
     /// was about, so its check-in — not just the cook — opens.
     var notificationReminderRuleId: String?
     var publicCookDestination: String?
+    /// PL-19 (issue #172): the public item whose recipes were just saved,
+    /// so its Discover detail can offer "Open in Recipes" as the primary.
+    var lastSavedPublicItemId: String?
+    /// PL-19: a "Cook this" save lands on the Start Cook review, not in a
+    /// live cook. The pending start is promoted to `publicRecipeStart` when
+    /// the archive sheet finishes dismissing (the two sheets never stack).
+    var pendingPublicRecipeStart: PublicRecipeStart?
+    var publicRecipeStart: PublicRecipeStart?
+    /// The cook a confirmed recipe start created, opened once the review
+    /// sheet has finished dismissing.
+    var pendingStartedCookId: String?
+    /// Incremented to ask the shell to show the Recipes tab (PL-19).
+    var recipesTabRequest = 0
     var archiveIntake: NativeArchiveIntake?
     var archiveMessage: String?
     var archiveCompletionMessage: String?

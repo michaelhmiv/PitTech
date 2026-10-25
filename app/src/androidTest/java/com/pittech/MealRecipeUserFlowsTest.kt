@@ -235,5 +235,10 @@ class MealRecipeUserFlowsTest {
         assertTrue(runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().isEmpty() })
         assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().isEmpty() })
         assertTrue(runBlocking(Dispatchers.IO) { app.database.recordingDao().getAllRecordings().isEmpty() })
+        // PL-19: adding history leaves the save dialog open with the recipe
+        // selection intact — the recipes can still be saved afterwards.
+        waitFor("pack-history-added")
+        compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().size == 2 } }
     }
 }

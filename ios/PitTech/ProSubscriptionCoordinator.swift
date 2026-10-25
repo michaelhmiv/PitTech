@@ -133,6 +133,15 @@ enum ProProductState: Equatable, Sendable {
     }
 
     func closePaywall() {
+        // PL-17: closing the paywall with a purchase still pending arms the
+        // one-time re-offer for the feature that was being bought. A sign-in
+        // detour in flight is not a user close: the detour reopens the gate
+        // itself (and parks via beginSignInDetour, not this path), so it
+        // must not arm the re-offer.
+        if let entry = presentedEntry, signInResumeEntry == nil,
+           purchaseState == .pendingStore || cache?.state == "pending" || pendingPurchaseOutstanding {
+            pendingReofferEntry = entry
+        }
         presentedEntry = nil
         if case .failed = purchaseState { purchaseState = .idle }
         notice = nil
@@ -144,6 +153,18 @@ enum ProProductState: Equatable, Sendable {
     /// `beginSignInDetour` and consumed by `resumeSignInDetour`.
     private(set) var signInResumeEntry: ProPlacement?
     private(set) var signInDetourPending = false
+
+    /// PL-17: a store-pending purchase that later verifies re-offers the
+    /// feature it was bought from, once. Armed when the paywall closes while
+    /// a purchase is pending; consumed when the entitlement lands. In-memory
+    /// only: if the process dies first, opening the feature while entitled
+    /// simply works in place, so nothing is lost.
+    private var pendingReofferEntry: ProPlacement?
+    /// Set while a store purchase is outstanding in the store's pending
+    /// state; cleared when an entitled cache lands. The verification path
+    /// passes through a verifying purchase state and may replace the cached
+    /// record first, so the pending fact is kept separately.
+    private var pendingPurchaseOutstanding = false
 
     /// The paywall's Sign in action: park the destination and close the
     /// gate so the account sheet can take its place.
@@ -200,6 +221,8 @@ enum ProProductState: Equatable, Sendable {
             currentOwner = nil
             readEnvironment = initialEnvironment
             lastTransaction = nil
+            pendingReofferEntry = nil
+            pendingPurchaseOutstanding = false
             cache = nil
             cacheRevision += 1
             signedIn = false
@@ -214,6 +237,8 @@ enum ProProductState: Equatable, Sendable {
             currentOwner = owner
             readEnvironment = initialEnvironment
             lastTransaction = nil
+            pendingReofferEntry = nil
+            pendingPurchaseOutstanding = false
             cache = nil
             cacheRevision += 1
             purchaseState = .idle
@@ -293,6 +318,19 @@ enum ProProductState: Equatable, Sendable {
         precondition(ownerId == currentOwner)
         readEnvironment = SubscriptionEnvironment(rawValue: cache.environment) ?? initialEnvironment
         cacheRevision += 1
+        // PL-17: the entitlement landing after a pending purchase re-offers
+        // the feature once. Any entitled cache consumes the armed entry, so
+        // a later unrelated refresh can never re-offer it a second time.
+        if cache.state == "pending" { pendingPurchaseOutstanding = true }
+        if cache.entitlement(now: now()) == .entitled {
+            let armed = pendingReofferEntry
+            pendingReofferEntry = nil
+            let wasOutstanding = pendingPurchaseOutstanding
+            pendingPurchaseOutstanding = false
+            if wasOutstanding, let armed, presentedEntry == nil, signInResumeEntry == nil {
+                presentedEntry = armed
+            }
+        }
         self.cache = cache
         cacheStore.save(cache, ownerId: ownerId)
         onEntitlement(cache.entitlement(now: now()))
@@ -343,6 +381,7 @@ enum ProProductState: Equatable, Sendable {
             purchaseState = .idle
             notice = "Purchase cancelled. Nothing was charged."
         case .pending:
+            pendingPurchaseOutstanding = true
             purchaseState = .pendingStore
             notice = "Your purchase is pending with the App Store. Pro unlocks after the store confirms it; nothing is charged by PitTech."
         case .purchased(let transaction):

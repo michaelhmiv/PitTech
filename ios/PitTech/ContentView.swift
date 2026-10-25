@@ -43,6 +43,10 @@ struct ContentView: View {
         Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
     }
 
+    private var publicRecipeStartBinding: Binding<PublicRecipeStart?> {
+        Binding(get: { store.publicRecipeStart }, set: { store.publicRecipeStart = $0 })
+    }
+
     private var tabRoot: some View {
         TabView(selection: $selectedTab) {
             CookListView(restoreRequested: $mealsRestoreRequested)
@@ -54,6 +58,7 @@ struct ContentView: View {
             MoreView(runtime: telemetry).tabItem { Label("More", systemImage: "ellipsis") }.tag("more")
         }
         .onChange(of: community.linkSequence) { _, _ in selectedTab = "discover" }
+        .onChange(of: store.recipesTabRequest) { _, _ in selectedTab = "recipes" }
         .environment(telemetry)
         .tint(PitTechStyle.accent)
         .task {
@@ -97,10 +102,19 @@ struct ContentView: View {
             if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
         }
         .sheet(item: archiveIntakeBinding, onDismiss: {
-            if let destination = store.publicCookDestination {
+            if let start = store.pendingPublicRecipeStart {
+                // PL-19: a "Cook this" save promotes to the Start Cook
+                // review sheet instead of opening a live cook directly.
+                store.pendingPublicRecipeStart = nil; store.publicRecipeStart = start; store.archiveCompletionMessage = nil
+            } else if let destination = store.publicCookDestination {
                 store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
             } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
         }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
+        .sheet(item: publicRecipeStartBinding, onDismiss: {
+            if let id = store.pendingStartedCookId {
+                store.pendingStartedCookId = nil; store.notificationCookId = id
+            }
+        }) { start in PublicRecipeStartSheet(start: start).modifier(ScreenshotTextSize()) }
         .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
             Button("OK", role: .cancel) { store.archiveMessage = nil }
         } message: { Text(store.archiveMessage ?? "") }
@@ -362,6 +376,59 @@ struct StartCookSheet: View {
                         store.startCook(title: title, firstDish: firstDish, alreadyCooking: alreadyCooking, foodOn: foodOn)
                         if store.saveError == nil { if let id = store.activeCooks.first?.id { onStarted(id) }; dismiss() }
                     }.accessibilityIdentifier("start-meal-save")
+                }
+            }
+        }
+    }
+}
+
+/// PL-19: the Start Cook review for recipes saved from a public Cook Pack.
+/// Mirrors Android's Start Cook review: the source is stated, the meal can
+/// be renamed, and nothing is cooking until "Start cooking" is tapped.
+struct PublicRecipeStartSheet: View {
+    let start: PublicRecipeStart
+    @Environment(CookStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var error: String?
+
+    init(start: PublicRecipeStart) {
+        self.start = start
+        _title = State(initialValue: start.title)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Source") {
+                    Text("From a shared Cook Pack · the recipes are saved in your Recipes")
+                    Text("Nothing is cooking yet — review the setup, then start when you're ready.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Meal") {
+                    TextField("Meal name", text: $title).accessibilityIdentifier("public-recipe-start-title")
+                    ForEach(start.revisionIds, id: \.self) { revision in
+                        if let snapshot = try? store.recipeSnapshot(revision) {
+                            Label(snapshot.name, systemImage: "book.closed")
+                        }
+                    }
+                }
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Review meal setup")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Start cooking") {
+                        do {
+                            let id = try store.startRecipeMeal(title: title, revisionIds: start.revisionIds)
+                            store.pendingStartedCookId = id
+                            dismiss()
+                        } catch { self.error = error.localizedDescription }
+                    }.accessibilityIdentifier("public-recipe-start-confirm")
                 }
             }
         }

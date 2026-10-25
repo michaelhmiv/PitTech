@@ -518,13 +518,13 @@ fun CookDetailScreen(
     if (showExportCook) {
         AlertDialog(
             onDismissRequest = { showExportCook = false },
-            title = { Text("Export this cook") },
-            text = { Text("Save a file somewhere you control, or share a complete ZIP with another app.") },
+            title = { Text("Export cook data") },
+            text = { Text("Data files for your own records — a workbook, a backup ZIP, or the readings as CSV. To share recipes with other cooks, use Share meal and the Cook Pack instead.") },
             confirmButton = {
                 Column {
                     TextButton(onClick = { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }) { Text("Excel workbook") }
                     TextButton(onClick = { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }) { Text("Save this cook as ZIP") }
-                    TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share this cook") }
+                    TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share backup ZIP") }
                     TextButton(onClick = { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }) { Text("Temperature readings CSV") }
                     TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
                 }
@@ -1135,7 +1135,7 @@ private fun LiveCookTab(
         }
         LivePanel(data.cook.id, "export", "Export & share", null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export") }
+                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export data files") }
                 OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reuse setup") }
             }
             shareMealAction()

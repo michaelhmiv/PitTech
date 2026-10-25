@@ -192,6 +192,7 @@ class ProPaywallTest {
             subscription.openPro(ProPlacement.ANALYSIS)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("pro-paywall").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("pro-product-unavailable").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("pro-check-again").performScrollTo().assertIsDisplayed()
             compose.onAllNodesWithTag("pro-price").assertCountEquals(0)
             compose.onAllNodesWithTag("pro-subscribe").assertCountEquals(0)
             compose.onNodeWithTag("pro-paywall-close").performClick()

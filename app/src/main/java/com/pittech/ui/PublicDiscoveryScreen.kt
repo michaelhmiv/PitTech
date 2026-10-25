@@ -17,7 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.PublicManager
 import org.json.JSONObject
 
-@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null, controls:com.pittech.data.CommunityControls?=null) {
+@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null, controls:com.pittech.data.CommunityControls?=null, onOpenRecipes: () -> Unit = {}) {
     val state by manager.state.collectAsStateWithLifecycle()
     val accountState=account?.presentation?.collectAsStateWithLifecycle()?.value
     var previousSignedIn by remember{mutableStateOf(accountState?.signedIn)}
@@ -46,7 +46,14 @@ import org.json.JSONObject
                 if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
                 if(controls!=null && account!=null)CommunityActions(detail,controls,account,manager)
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.")
-                Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
+                if(state.savedDetailId == detail.id) {
+                    // PL-19: after Save, the primary lands where the thing
+                    // went — the saved recipes in Recipes.
+                    Button(onClick=onOpenRecipes,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-open-recipes")) { Text("Open in Recipes") }
+                    OutlinedButton(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
+                } else {
+                    Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
+                }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
                 if(state.preparing) { CircularProgressIndicator();TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
@@ -77,8 +84,11 @@ import org.json.JSONObject
             OutlinedTextField(query,{query=it.take(80)},label={ Text("Search recipes") },modifier=Modifier.fillMaxWidth().testTag("discover-query"))
             OutlinedTextField(food,{food=it.take(80)},label={ Text("Food type (optional)") },modifier=Modifier.fillMaxWidth().testTag("discover-food"))
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                FilterChip(sort=="liked",{sort="liked"},{Text("Most liked")})
-                FilterChip(sort=="forked",{sort="forked"},{Text("Most forked")})
+                // PL-19: sort changes apply on tap — no separate Search tap
+                // stands between the choice and its result. (The text
+                // fields still apply with the Search button below.)
+                FilterChip(sort=="liked",{sort="liked";manager.refresh("liked",food,query)},{Text("Most liked")})
+                FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query)},{Text("Most forked")})
             }
             Button(onClick={ manager.refresh(sort,food,query) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("discover-search")) { Text("Search recipes") }
             if(state.loading)CircularProgressIndicator()

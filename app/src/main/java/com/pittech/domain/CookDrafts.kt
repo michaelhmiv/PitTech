@@ -47,6 +47,13 @@ data class NewCookDraft(
     val probe2DishIndex: Int? = null,
     val probe3DishIndex: Int? = null,
     val probe4DishIndex: Int? = null,
+    /** Saved-recipe revisions to attach when the cook starts, parallel to
+     * [dishes] (null = that dish has no saved-recipe source). Empty means
+     * no attachments. PL-19: a reviewed recipe meal keeps its sources. */
+    val recipeRevisionIds: List<String?> = emptyList(),
+    /** Where this draft came from, shown on the Start Cook review when set
+     * (for example a shared Cook Pack), so the source is never a surprise. */
+    val sourceLabel: String? = null,
 )
 
 object CookEntryValidation {

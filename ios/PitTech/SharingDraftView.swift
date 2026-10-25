@@ -71,15 +71,25 @@ struct SharingDraftView: View {
                     if preparingExport { ProgressView("Preparing Cook Pack…") }
                     Button("Card appearance & note") { cardSettings.toggle() }.frame(minHeight:44)
                     if cardSettings { ShareCardOptionsView(document:Binding(get:{ document ?? current },set:{ value in change { $0 = value } })) }
+                    // PL-18: the exits have a hierarchy — the Cook Pack file
+                    // is the primary exit, the share card and the code are
+                    // secondary, Publish sits inside its own panel, and
+                    // saving a collection is a local action, not a share.
+                    // The file button is named for what it does: it opens
+                    // the Files save picker, so it is "Save Cook Pack file".
+                    Button { prepareExport() } label: { Label("Save Cook Pack file", systemImage: "square.and.arrow.down") }
+                        .buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-export-pack")
                     Button("Preview share card") { act { try persist();cardPreview = true } }.buttonStyle(.bordered).frame(minHeight:44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-preview-card")
-                    Button { prepareExport() } label: { Label("Share Cook Pack file", systemImage: "square.and.arrow.up") }
-                        .buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-export-pack")
                     Button("Share by code") { act { try persist(); relayShare = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-relay")
                     if community.enabled && account.enabled {
-                        Button("Preview public publication") { act { try persist(); publishing = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-publish")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Publish").font(.headline)
+                            Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                            Button("Preview public publication") { act { try persist(); publishing = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-publish")
+                        }.padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                     }
                     Button("Save meal collection") { act { try persist(); _ = try store.copySharingDocument(id, asCollection: true); try store.discardSharingDraft(id); document = nil; dismiss() } }
-                        .buttonStyle(.borderedProminent).frame(minHeight: 44).disabled(!current.entries.contains { $0.included })
+                        .buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included })
                     Button("Discard draft", role: .destructive) { act { saveTask?.cancel(); try store.discardSharingDraft(id); document = nil; dismiss() } }.frame(minHeight: 44)
                 }
                 if let error { Text(error).foregroundStyle(.red) }

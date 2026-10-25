@@ -46,6 +46,8 @@ class CooksViewModel(
         val prepared = withContext(Dispatchers.IO) { file.inputStream().buffered().use(dataTransfer::previewCookPack) }
         val source = prepared.cookPack?.optJSONObject("source")
         require(source != null && source.optString("itemId") == id && source.optString("revisionId") == revision) { "This download doesn't match the recipe preview." }
+        previewPublicItemId = id
+        _importHistoryAdded.value = false
         _importPreview.value = prepared.copy(publicCookOnSave = cook)
     }
     internal var publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack)
@@ -100,6 +102,8 @@ class CooksViewModel(
     }, preview = { file ->
         val prepared = file.inputStream().buffered().use(dataTransfer::previewImport)
         require(prepared.cookPack != null) { "This download is not a supported Cook Pack." }
+        previewPublicItemId = null
+        _importHistoryAdded.value = false
         _importPreview.value = prepared
     })
     internal val guide get() = repository.guide
@@ -383,6 +387,23 @@ class CooksViewModel(
 
     private val _importPreview = MutableStateFlow<PitTechDataTransfer.ImportDraft?>(null)
     val importPreview: StateFlow<PitTechDataTransfer.ImportDraft?> = _importPreview.asStateFlow()
+
+    /** PL-19: the recorded meal in the open Cook Pack preview was added to
+     * history. The preview itself stays open — the pending recipe save
+     * choice is not dropped — so this is tracked beside the draft rather
+     * than inside it (rewriting the draft would reset the selection). */
+    private val _importHistoryAdded = MutableStateFlow(false)
+    val importHistoryAdded: StateFlow<Boolean> = _importHistoryAdded.asStateFlow()
+
+    /** The public item the open Cook Pack preview came from, so a completed
+     * save can mark that Discover detail as saved (PL-19). */
+    private var previewPublicItemId: String? = null
+
+    /** PL-18: a completed publication asks the shell to open My Cookbook —
+     * the user lands where the thing went. */
+    private val _cookbookOpenRequests = MutableStateFlow(0)
+    val cookbookOpenRequests: StateFlow<Int> = _cookbookOpenRequests.asStateFlow()
+    fun requestCookbookOpen() { _cookbookOpenRequests.value += 1 }
 
     private val _restoredPreferences = MutableStateFlow<BackupPreferences?>(null)
     val restoredPreferences: StateFlow<BackupPreferences?> = _restoredPreferences.asStateFlow()
@@ -823,6 +844,8 @@ class CooksViewModel(
     }
 
     fun previewImport(uri: Uri) = perform {
+        previewPublicItemId = null
+        _importHistoryAdded.value = false
         _importPreview.value = withContext(Dispatchers.IO) {
             val input = context.contentResolver.openInputStream(uri) ?: error("The selected backup could not be opened.")
             input.use(dataTransfer::previewImport)
@@ -845,6 +868,8 @@ class CooksViewModel(
             val pendingReminders = repository.getPendingCookReminders()
             pendingReminders.forEach { CookReminderNotifications.schedule(context, it) }
             _importPreview.value = null
+            _importHistoryAdded.value = false
+            previewPublicItemId = null
             val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
                 (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
             val reminderStatus = if (pendingReminders.isNotEmpty() && !notificationsEnabled) " Reminders are saved, but notifications are off so they may not alert." else ""
@@ -858,8 +883,18 @@ class CooksViewModel(
             val draft = source.selectCookPackRecipes(revisions)
             withContext(Dispatchers.IO) { dataTransfer.import(draft) }
             _importPreview.value = null
-            if (source.publicCookOnSave) openCook(repository.startRecipeMeal(source.snapshot.companionRecords.firstOrNull()?.title ?: "New meal", revisions.sorted()))
-            _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
+            _importHistoryAdded.value = false
+            if (source.publicCookOnSave) {
+                // PL-19: "Cook this" lands on the Start Cook review instead
+                // of teleporting into a live cook from a save dialog — the
+                // meal starts only when the user confirms the setup.
+                _setupPreview.value = repository.recipeStartDraft(source.snapshot.companionRecords.firstOrNull()?.title ?: "New meal", revisions.sorted())
+                _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Review the meal setup to start cooking."
+            } else {
+                previewPublicItemId?.let { publicDiscovery.markSaved(it) }
+                _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
+            }
+            previewPublicItemId = null
         }
     }
 
@@ -867,12 +902,19 @@ class CooksViewModel(
         val source = _importPreview.value ?: return
         perform {
             val result = withContext(Dispatchers.IO) { dataTransfer.import(source.recordedCookOnly()) }
-            _importPreview.value = null
-            _notice.value = if (result.importedCooks == 0) "This recorded meal is already in your history." else "Added the recorded meal to history."
+            // PL-19: adding the recorded meal no longer closes the save
+            // dialog — the pending recipe selection survives, so the user
+            // can still save the recipes they picked.
+            _importHistoryAdded.value = true
+            _notice.value = if (result.importedCooks == 0) "This recorded meal is already in your history. You can still save the recipes below." else "Added the recorded meal to history. You can still save the recipes below."
         }
     }
 
-    fun cancelImport() { _importPreview.value = null }
+    fun cancelImport() {
+        _importPreview.value = null
+        _importHistoryAdded.value = false
+        previewPublicItemId = null
+    }
     fun consumeRestoredPreferences() { _restoredPreferences.value = null }
 
     fun clearSavedCookSignal() { _savedCookId.value = null }

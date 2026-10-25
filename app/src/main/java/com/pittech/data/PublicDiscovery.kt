@@ -112,7 +112,7 @@ internal class PublicCache(context: Context,namespace: String = OnlineConfigurat
         for(old in files.sortedBy { it.lastModified() })if(size>32*1024*1024){val count=old.length();check(old.delete());size-=count}
     }
 }
-internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null)
+internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null,val savedDetailId: String? = null)
 internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = OnlineConfiguration.current.enabled,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()}) {
     private val _state=MutableStateFlow(PublicPresentation());val state=_state.asStateFlow()
     private val _linkSequence=MutableStateFlow(0L);val linkSequence=_linkSequence.asStateFlow()
@@ -149,6 +149,9 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         }
     }
     fun controlsChanged(){controlsGeneration++;pageJob?.cancel();profileJob?.cancel();detailJob?.cancel();downloadJob?.cancel();pageKey="";_state.value=PublicPresentation(message="Community controls changed. Refresh to browse with your current blocks.")}
+    /** PL-19: after a save from a detail, that detail's primary action
+     * becomes "Open in Recipes" — the user lands where the thing went. */
+    fun markSaved(id: String) { _state.value = _state.value.copy(savedDetailId = id) }
     fun receivePublic(input: String): Boolean {
         if(!enabled)return false
         val destination=runCatching { PublicLink.destination(input) }.getOrNull() ?: return false
