@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -89,12 +90,17 @@ internal fun FullScreenSurface(
 ) {
     Dialog(
         onDismissRequest = { if (dismissEnabled) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        // decorFitsSystemWindows = false + system-bars padding is the window
+        // treatment the retired full-screen editors (Recipe Editor) already
+        // used: the window resizes with the IME instead of the keyboard
+        // covering the pinned action row.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .systemBarsPadding()
                     .imePadding()
                     .padding(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
