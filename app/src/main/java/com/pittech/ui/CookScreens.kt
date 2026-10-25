@@ -1313,7 +1313,6 @@ internal fun DishEditorDialog(
                     }
                 }
             }
-            }
     }
 
     if (showPhotoSource) {
