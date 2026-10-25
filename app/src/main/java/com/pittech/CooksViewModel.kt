@@ -410,6 +410,16 @@ class CooksViewModel(
     fun requestReminderRuleCheckIn(ruleId: String) { _pendingReminderRuleId.value = ruleId }
     fun consumeReminderRuleCheckIn() { _pendingReminderRuleId.value = null }
 
+    // PL-03 (issue #172): a cook-alert notification tap routes to THAT rule —
+    // Cook Detail opens with the Alerts sheet up at the firing rule.
+    private val _pendingAlertId = MutableStateFlow<String?>(null)
+    val pendingAlertId: StateFlow<String?> = _pendingAlertId.asStateFlow()
+    fun requestAlertFocus(alertId: String) { _pendingAlertId.value = alertId }
+    fun consumeAlertFocus() { _pendingAlertId.value = null }
+
+    /** In-app feedback through the app's notice snackbar (PL-29 rider: test alerts land here, not in a real notification). */
+    fun showNotice(message: String) { _notice.value = message }
+
     /** PL-01: the action a unified rule announced, for its check-in/record default. */
     suspend fun reminderAnnouncedAction(ruleId: String): String? =
         app.reminderRepository.rule(ruleId)?.let { app.reminderRepository.announcedAction(it) }

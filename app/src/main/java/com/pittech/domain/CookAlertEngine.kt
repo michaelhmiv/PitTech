@@ -60,4 +60,20 @@ object CookAlertEngine {
         val nextWake = when { previous.snoozedUntil?.let { it > now } == true -> previous.snoozedUntil; active && !previous.acknowledged && previous.notifiedCount < 3 -> (previous.lastNotifiedAt ?: now) + rule.repeatMillis; else -> null }
         return AlertEvaluation(state, notify, nextWake, when (rule.type) { "missing" -> "No accepted cloud reading for ${(now - (lastReceipt ?: now)) / 60_000} min"; "offline" -> "The controller service reports the grill offline"; else -> "${sample?.fahrenheit} °F" + if (sample?.ageKnown == false) " · cloud receipt is recent; sensor age is unknown" else "" })
     }
+
+    /**
+     * PL-03 (#172): the Live Zone strip line for a cook's alert rules, pairing
+     * each rule's display title with its state. Null when the cook has no
+     * rules, so Live stays silent instead of showing an empty alerts row.
+     * Acknowledged rules are named on the strip: acknowledging from the
+     * notification or the Alerts sheet is confirmed here, on Live, without
+     * opening anything.
+     */
+    fun stripSummary(alerts: List<Pair<String, CookAlertState>>): String? {
+        if (alerts.isEmpty()) return null
+        val attention = alerts.count { it.second.active }
+        val acknowledged = alerts.filter { it.second.acknowledged }.map { it.first }
+        val base = if (attention > 0) "Alerts · $attention need${if (attention == 1) "s" else ""} attention" else "Alerts · all clear"
+        return if (acknowledged.isEmpty()) base else base + " · Acknowledged: " + acknowledged.joinToString(", ")
+    }
 }

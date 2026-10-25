@@ -36,4 +36,19 @@ class CookAlertEngineTest {
         assertFalse(CookAlertEngine.evaluate(pit, CookAlertState(suppressedUntil = 600_000), sample(100.0, 0), 0, false, "cooking", 0).notify)
         assertEquals(target, CookAlertEngine.decode(CookAlertEngine.encode(target)).first)
     }
+    @Test fun stripSummaryCountsAttentionAndNamesAcknowledgments() {
+        // PL-03 (#172): the Live Zone strip — null with no rules, a
+        // needs-attention count otherwise, acknowledgments named.
+        assertNull(CookAlertEngine.stripSummary(emptyList()))
+        assertEquals("Alerts · all clear", CookAlertEngine.stripSummary(listOf("Pit range" to CookAlertState())))
+        assertEquals("Alerts · 1 needs attention", CookAlertEngine.stripSummary(listOf("Pit range" to CookAlertState(active = true))))
+        assertEquals("Alerts · 2 need attention", CookAlertEngine.stripSummary(listOf(
+            "Pit range" to CookAlertState(active = true), "Brisket target" to CookAlertState(active = true))))
+        // An acknowledged alert whose condition has not recovered still
+        // counts as needing attention; it is additionally named.
+        assertEquals("Alerts · 2 need attention · Acknowledged: Brisket target", CookAlertEngine.stripSummary(listOf(
+            "Pit range" to CookAlertState(active = true), "Brisket target" to CookAlertState(active = true, acknowledged = true))))
+        assertEquals("Alerts · all clear · Acknowledged: Brisket target", CookAlertEngine.stripSummary(listOf(
+            "Brisket target" to CookAlertState(acknowledged = true))))
+    }
 }

@@ -43,7 +43,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-draft-before-publish publication-owner-update-preview publication-failure source-change-review pro-paywall; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final alert-routing guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-draft-before-publish publication-owner-update-preview publication-failure source-change-review pro-paywall; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -443,7 +443,7 @@ telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.CombustionAnchorStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
-if ! grep -q 'OK (23 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+if ! grep -q 'OK (25 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
   echo "Telemetry instrumentation tests did not all pass." >&2
   exit 1
 fi
@@ -484,7 +484,7 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-recording_expected_count=18
+recording_expected_count=19
 if [[ "$recording_passed_count" -ne "$recording_expected_count" ]] || ! grep -q "OK (${recording_expected_count} tests)" "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2

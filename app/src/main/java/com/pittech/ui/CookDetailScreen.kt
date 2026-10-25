@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Notifications
@@ -196,6 +197,14 @@ fun CookDetailScreen(
             timers = if (runningTimers > 0) "$runningTimers running" else "None running",
         )
     }
+    // PL-03: the alert line shown on the Live Zone strip — the needs-attention
+    // count plus named acknowledgments, readable without opening anything.
+    val alertStrip = remember(data.cook.id, liveCompanionRecords) {
+        val alertRecords = liveCompanionRecords.filter { it.kind == "alert" && it.cookId == data.cook.id }
+        com.pittech.domain.CookAlertEngine.stripSummary(alertRecords.map { record ->
+            record.title to com.pittech.domain.CookAlertEngine.decode(record.payload).second
+        })
+    }
     var selectedFood by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var showProbeMove by remember { mutableStateOf(false) }
     var showFinishConfirm by remember { mutableStateOf(false) }
@@ -231,6 +240,8 @@ fun CookDetailScreen(
     val deletedEvent by viewModel.deletedEvent.collectAsStateWithLifecycle()
     val pendingReminderId by viewModel.pendingReminderId.collectAsStateWithLifecycle()
     val pendingReminderRuleId by viewModel.pendingReminderRuleId.collectAsStateWithLifecycle()
+    val pendingAlertId by viewModel.pendingAlertId.collectAsStateWithLifecycle()
+    var alertFocusId by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var ruleCheckIn by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
     var ruleCheckInAnnounced by remember { mutableStateOf<String?>(null) }
     var ruleRecord by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
@@ -338,6 +349,15 @@ fun CookDetailScreen(
             ruleCheckIn = rule
         }
         viewModel.consumeReminderRuleCheckIn()
+    }
+
+    // PL-03: an alert notification tap opens the Alerts sheet at THAT rule —
+    // hoisted above the (collapsible) Alerts panel so the route cannot be
+    // hidden by a collapsed panel.
+    LaunchedEffect(pendingAlertId, data.cook.id) {
+        val id = pendingAlertId ?: return@LaunchedEffect
+        alertFocusId = id
+        viewModel.consumeAlertFocus()
     }
     ruleCheckIn?.let { rule ->
         ReminderRuleCheckInDialog(rule, ruleCheckInAnnounced, busy,
@@ -754,7 +774,7 @@ fun CookDetailScreen(
                             onAdopt = { viewModel.adoptFoodOnTiming(data.cook.id, it) })
                         CookPlaybookTools(data, viewModel, configuredOnly = null) },
                     remindersPanel = { UnifiedReminderTools(data, viewModel) },
-                    alertsPanel = { CookAlertTools(data, viewModel, configuredOnly = null) },
+                    alertsPanel = { CookAlertTools(data, viewModel, configuredOnly = null, focusedAlertId = alertFocusId) },
                     checklistPanel = { CookChecklistTools(data, viewModel) },
                     timersPanel = { MealActivityTimers(data.cook.id, data.dishes, data.cook.status != CookStatus.COMPLETED, viewModel) },
                     grillPanel = {
@@ -776,6 +796,8 @@ fun CookDetailScreen(
                         if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
                     },
                     summaries = liveSummaries,
+                    alertStrip = alertStrip,
+                    alertFocused = alertFocusId != null,
                     displayUnit = preferredTemperatureUnit,
                     busy = busy,
                     onTogglePause = { if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id) },
@@ -920,9 +942,13 @@ private fun LivePanel(
     title: String,
     summary: String?,
     initiallyExpanded: Boolean = true,
+    forceExpanded: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable(cookId, id) { mutableStateOf(initiallyExpanded) }
+    // PL-03: a notification route (alert tap) opens its panel even when the
+    // user last left it collapsed.
+    LaunchedEffect(forceExpanded) { if (forceExpanded) expanded = true }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -964,6 +990,8 @@ private fun LiveCookTab(
     learningTools: @Composable () -> Unit,
     shareMealAction: @Composable () -> Unit,
     summaries: LivePanelSummaries,
+    alertStrip: String?,
+    alertFocused: Boolean,
     displayUnit: String,
     busy: Boolean,
     onTogglePause: () -> Unit,
@@ -1032,6 +1060,16 @@ private fun LiveCookTab(
                 cookTargets.forEach { target ->
                     Text("Target · " + target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // PL-03: alert state on the strip — the needs-attention
+                // count and named acknowledgments, readable without opening
+                // anything. Acknowledging (notification action or Alerts
+                // sheet) is confirmed right here on Live.
+                alertStrip?.let { line ->
+                    Row(Modifier.fillMaxWidth().testTag("live-alerts-strip"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
         // Next-action strip: the pending reminders, earliest first, with
@@ -1068,7 +1106,7 @@ private fun LiveCookTab(
         LivePanel(data.cook.id, "guidance", "Guidance", summaries.guidance) { guidancePanel() }
         LivePanel(data.cook.id, "reminders", "Reminders",
             if (pending.isEmpty()) "None pending" else "${pending.size} pending · next ${formatTimeOfDay(pending.first().dueAtUtcMillis)}") { remindersPanel() }
-        LivePanel(data.cook.id, "alerts", "Alerts", summaries.alerts) { alertsPanel() }
+        LivePanel(data.cook.id, "alerts", "Alerts", summaries.alerts, forceExpanded = alertFocused) { alertsPanel() }
         LivePanel(data.cook.id, "checklist", "Checklist", summaries.checklist) { checklistPanel() }
         LivePanel(data.cook.id, "timers", "Timers", summaries.timers) { timersPanel() }
         if (grillAvailable) LivePanel(data.cook.id, "grill", "Grill & recording",

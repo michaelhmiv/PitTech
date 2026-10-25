@@ -53,6 +53,44 @@ struct NativeTelemetryProfile: Codable, Identifiable, Equatable {
     var sources: [NativeTelemetrySource] = []; var selected: [String] = []; var cookId: String?
     var monitoring = false; var onLogOnly = false; var interval = 60_000.0
 }
+/// PL-05 (#172): an in-progress attach/assign edit for one connection, held
+/// by the runtime so dismissing the Devices sheet never throws it away; a
+/// successful attach consumes it.
+struct NativeTelemetryAssignmentDraft: Equatable {
+    var sourceID = ""
+    var cookID = ""
+    var assignments: [String: String] = [:]
+    var roles: [String: NativeTelemetryKind] = [:]
+    @MainActor mutating func select(source: NativeTelemetrySource, cookID: String, store: CookStore) {
+        sourceID = source.id; self.cookID = cookID; roles = [:]; assignments = [:]
+        for channel in source.channels {
+            roles[channel.id] = channel.kind
+            let probe = NativeTelemetryIdentity.probe(cookID, source, channel.id)
+            if let row = store.library.probes.compactMap(\.objectValue).first(where: { $0["id"]?.stringValue == probe }) { assignments[channel.id] = row["assignedDishId"]?.stringValue ?? "" }
+        }
+    }
+    @MainActor static func seed(profile: NativeTelemetryProfile, store: CookStore) -> NativeTelemetryAssignmentDraft {
+        var draft = NativeTelemetryAssignmentDraft()
+        let cookID = profile.cookId.flatMap { id in store.activeCooks.contains { $0.id == id && $0.status == "active" } ? id : nil }
+            ?? store.activeCooks.first { $0.status == "active" }?.id ?? ""
+        if let source = profile.sources.first(where: { profile.selected.contains($0.id) }) ?? profile.sources.first { draft.select(source: source, cookID: cookID, store: store) }
+        else { draft.cookID = cookID }
+        return draft
+    }
+}
+
+/// PL-05 (#172): the Devices stepper's presentation rules. "No devices
+/// found" is a settled-discovery verdict; before discovery settles the
+/// sheet says it is still looking (or that a connect is needed first).
+enum NativeTelemetryDevicesPresentation {
+    static func emptyDevicesText(discoveryInFlight: Bool, discoverySettled: Bool) -> String {
+        if discoveryInFlight { return "Looking for devices…" }
+        if discoverySettled { return "No devices found. Check Bluetooth or the provider's cloud connection, then reconnect." }
+        return "Connect this connection to discover its devices."
+    }
+    static func initialStep(hasProfiles: Bool) -> Int { hasProfiles ? 2 : 1 }
+}
+
 enum NativeTelemetryError: LocalizedError {
     case authorization, configuration, network, rateLimit(Double), unavailable
     var errorDescription: String? { switch self { case .authorization: "Sign in again to reconnect this account."; case .configuration: "Check the connection settings."; case .network: "The provider is unavailable. PitTech will retry."; case .rateLimit: "The provider has asked PitTech to wait before reading again."; case .unavailable: "This connection is not yet validated on iOS." } }

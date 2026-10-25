@@ -12,9 +12,23 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Application-owned runtime; foreground service and visible UI share exactly one set of collection jobs. */
-internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val backgroundStarter: (Context) -> Unit = CookRecordingService::startTelemetry, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
+internal class TelemetryRuntime(private val context: Context, private val db: PitTechDatabase, private val clock: () -> Long = System::currentTimeMillis, private val backgroundStarter: (Context) -> Unit = CookRecordingService::startTelemetry, private val homeAssistantExchange: suspend (Context, TelemetryProfile, String) -> Unit = { exchangeContext, profile, code -> HomeAssistantSession(exchangeContext, profile).authorize(code) }, private val factories: (String) -> TelemetryConnectorFactory? = TelemetryFactories::get) {
     val store = TelemetryProfileStore(context)
     val states = MutableStateFlow<Map<String, String>>(emptyMap())
+    /**
+     * PL-05 (#172): attach/assign edits live here, not in the sheet, so they
+     * persist as drafts across dismissal (the note-composer standard) until
+     * a successful attach consumes them.
+     */
+    val assignmentDrafts = MutableStateFlow<Map<String, TelemetryAssignmentDraft>>(emptyMap())
+    /** PL-05: discovery bookkeeping so "No devices found" only renders after discovery settles. */
+    val discoveryInFlight = MutableStateFlow<Set<String>>(emptySet())
+    val discoverySettled = MutableStateFlow<Set<String>>(emptySet())
+    fun assignmentDraft(profile: TelemetryProfile, activeCookId: String?): TelemetryAssignmentDraft =
+        assignmentDrafts.value[profile.id] ?: seedAssignmentDraft(profile, activeCookId)
+            .also { seeded -> assignmentDrafts.update { it + (profile.id to seeded) } }
+    fun updateAssignmentDraft(draft: TelemetryAssignmentDraft) { assignmentDrafts.update { it + (draft.profileId to draft) } }
+    fun clearAssignmentDraft(profileId: String) { assignmentDrafts.update { it - profileId } }
     val foreground = MutableStateFlow(false)
     val serviceHosted = MutableStateFlow(false)
     private val backgroundStarting = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -81,6 +95,26 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         }
     }
     suspend fun connect(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
+        discoveryInFlight.update { it + profile.id }
+        try { return connectDiscovered(profile, user, secret) }
+        finally {
+            discoveryInFlight.update { it - profile.id }
+            discoverySettled.update { it + profile.id }
+        }
+    }
+
+    /**
+     * PL-06 (#172): the Home Assistant OAuth round trip performs exactly ONE
+     * token exchange. The authorization activity returns only the code; the
+     * exchange happens here, once, and the connect that follows restores the
+     * session from the just-saved token instead of exchanging again.
+     */
+    suspend fun connectHomeAssistant(profile: TelemetryProfile, code: String): TelemetryProfile {
+        homeAssistantExchange(context, profile, code)
+        return connect(profile, "", "")
+    }
+
+    private suspend fun connectDiscovered(profile: TelemetryProfile, user: String, secret: String): TelemetryProfile {
         val factory = factories(profile.provider) ?: error("This connector is unavailable in this build.")
         val session = if (user.isBlank() && secret.isBlank()) factory.restore(context, profile) else factory.connect(context, profile, user, secret)
         val old = store.profiles.value.firstOrNull { it.id == profile.id }
@@ -113,6 +147,7 @@ internal class TelemetryRuntime(private val context: Context, private val db: Pi
         val updated = old.copy(cookId = cookId, sources = old.sources.filterNot { it.deviceId == source.deviceId } + source,
             selectedDeviceIds = (if (old.cookId == cookId) old.selectedDeviceIds else emptySet()) + source.deviceId, monitoring = true)
         store.save(updated)
+        clearAssignmentDraft(profile.id)
         val initial = connector(updated).snapshot(source.deviceId)
         publishBatch(updated, source, initial)
         recorder.ingest(cookId, source, initial, if (updated.onLogOnly) 0L else maxOf(updated.intervalMillis, connector(updated).minimumIntervalMillis))

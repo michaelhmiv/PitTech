@@ -15,6 +15,20 @@ class TelemetryConnectionsScreenTest {
             val folder = java.io.File(compose.activity.filesDir, "pittech-ui-test").apply { mkdirs() }
             java.io.File(folder, "telemetry-connections.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         }
+        // PL-05 (#172): the Connect → Attach → Assign stepper is visible and
+        // every step renders its body.
+        compose.onNodeWithTag("telemetry-step-1").assertExists()
+        compose.onNodeWithTag("telemetry-step-2").performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Attach to meal", substring = true).fetchSemanticsNodes().isNotEmpty() ||
+                compose.onAllNodesWithText("Connect a connection first", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("telemetry-step-3").performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Apply assignments", substring = true).fetchSemanticsNodes().isNotEmpty() ||
+                compose.onAllNodesWithText("Nothing to assign yet", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("telemetry-step-1").performScrollTo().performClick()
         compose.onNodeWithTag("telemetry-add").performScrollTo().performClick()
         compose.onNodeWithText("Server URL", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("telemetry-ha-authorize").assertIsNotEnabled()
