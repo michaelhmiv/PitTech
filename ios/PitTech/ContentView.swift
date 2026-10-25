@@ -38,7 +38,7 @@ struct ContentView: View {
         }
     }
 
-    // The archive + recipe-start sheets live in ArchiveSheetsModifier:
+    // Every root sheet and alert lives in RootPresentationModifier:
     // attaching them here pushed this modifier chain past the compiler's
     // type-checking budget (which is why tabRoot is extracted at all).
 
@@ -76,45 +76,20 @@ struct ContentView: View {
                 if let occurrence = payload["occurrenceId"] as? String, let cut = occurrence.lastIndex(of: ":") { store.notificationReminderRuleId = String(occurrence[..<cut]) }
             }
         } }
-        .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) }.environment(telemetry) } }
-        .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {
-            if let file = relay.downloaded {
-                relay.downloaded = nil
-                Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
-            }
-        }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
-        .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 }), onDismiss: {
-            // Slice 8 (PL-15 / DD-10): the account sheet closing after a
-            // paywall sign-in detour — completed or cancelled — reopens
-            // the gate on the destination the user was headed to.
-            pro.resumeSignInDetour()
-        }) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
-        .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } }), onDismiss: {
-            // Slice 8 (PL-15 / DD-10): a paywall dismissed for sign-in
-            // hands straight over to the account sheet.
-            if pro.consumeSignInDetour() { account.showingAccount = true }
-        }) {
-            if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
-        }
-        .modifier(ArchiveSheetsModifier())
-        .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
-            Button("OK", role: .cancel) { store.archiveMessage = nil }
-        } message: { Text(store.archiveMessage ?? "") }
-        .alert("Couldn't save", isPresented: Binding(
-            get: { store.saveError != nil },
-            set: { if !$0 { store.clearSaveError() } }
-        )) {
-            Button("OK", role: .cancel) { store.clearSaveError() }
-        } message: {
-            Text(store.saveError ?? "Please try again.")
-        }
+        .modifier(RootPresentationModifier(telemetry: telemetry))
     }
 }
 
-/// The Cook Pack archive sheet and the PL-19 Start Cook review sheet,
-/// attached as one modifier so ContentView's own chain stays type-checkable.
-private struct ArchiveSheetsModifier: ViewModifier {
+/// Every root sheet and alert, attached as one modifier so ContentView's
+/// own modifier chain stays inside the compiler's type-checking budget
+/// (the chain was already at the edge; Slice 9's additions tipped it over
+/// twice before this extraction).
+private struct RootPresentationModifier: ViewModifier {
     @Environment(CookStore.self) private var store
+    @Environment(NativeRelayCoordinator.self) private var relay
+    @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(ProSubscriptionCoordinator.self) private var pro
+    let telemetry: NativeTelemetryRuntime
 
     private var archiveIntakeBinding: Binding<NativeArchiveIntake?> {
         Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
@@ -126,6 +101,26 @@ private struct ArchiveSheetsModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) }.environment(telemetry) } }
+            .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {
+                if let file = relay.downloaded {
+                    relay.downloaded = nil
+                    Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
+                }
+            }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
+            .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 }), onDismiss: {
+                // Slice 8 (PL-15 / DD-10): the account sheet closing after a
+                // paywall sign-in detour — completed or cancelled — reopens
+                // the gate on the destination the user was headed to.
+                pro.resumeSignInDetour()
+            }) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
+            .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } }), onDismiss: {
+                // Slice 8 (PL-15 / DD-10): a paywall dismissed for sign-in
+                // hands straight over to the account sheet.
+                if pro.consumeSignInDetour() { account.showingAccount = true }
+            }) {
+                if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
+            }
             .sheet(item: archiveIntakeBinding, onDismiss: {
                 if let start = store.pendingPublicRecipeStart {
                     // PL-19: a "Cook this" save promotes to the Start Cook
@@ -140,6 +135,17 @@ private struct ArchiveSheetsModifier: ViewModifier {
                     store.pendingStartedCookId = nil; store.notificationCookId = id
                 }
             }) { start in PublicRecipeStartSheet(start: start).modifier(ScreenshotTextSize()) }
+            .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
+                Button("OK", role: .cancel) { store.archiveMessage = nil }
+            } message: { Text(store.archiveMessage ?? "") }
+            .alert("Couldn't save", isPresented: Binding(
+                get: { store.saveError != nil },
+                set: { if !$0 { store.clearSaveError() } }
+            )) {
+                Button("OK", role: .cancel) { store.clearSaveError() }
+            } message: {
+                Text(store.saveError ?? "Please try again.")
+            }
     }
 }
 
