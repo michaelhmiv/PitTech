@@ -286,7 +286,7 @@ import android.graphics.Bitmap
 
     /** Slice 8 fixture: a signed-in account, a fake MCP API, and a real
      * SubscriptionManager over stub billing whose entitlement the test
-     * flips between unknown / free / active. */
+     * flips between the server states unknown / none / active. */
     private class Slice8Fixture(val scope: CoroutineScope) {
         @Volatile var entitlementState = "unknown"
         val storage = object : AccountStorage {
@@ -340,15 +340,16 @@ import android.graphics.Bitmap
         } finally { scope.cancel() }
     }
 
-    /** Slice 8 (PL-14): with Pro verified absent, the honest gate card
-     * replaces the create/approve controls entirely — existing
-     * connections stay listed and disconnectable, but nothing new can
-     * be created or approved until Pro is active. */
+    /** Slice 8 (PL-14): with Pro verified absent (server state "none" —
+     * the canonical not-entitled state in the entitlement mapping), the
+     * honest gate card replaces the create/approve controls entirely —
+     * existing connections stay listed and disconnectable, but nothing
+     * new can be created or approved until Pro is active. */
     @Test fun mcpSectionShowsProGateWhenNotEntitled() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val f = Slice8Fixture(scope)
         try {
-            f.entitlementState = "free"
+            f.entitlementState = "none"
             kotlinx.coroutines.runBlocking { f.subscription.refresh() }
             compose.waitUntil(10000) { f.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.NOT_ENTITLED }
             compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
@@ -388,7 +389,9 @@ import android.graphics.Bitmap
             compose.onNodeWithTag("mcp-review-code").performScrollTo().performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("Connect ChatGPT?", substring = true).assertIsDisplayed()
-            compose.onNodeWithText("See your library", substring = true).assertIsDisplayed()
+            // Scoped to the preview subtree: the created grant's row in
+            // the list above carries the same scope label.
+            compose.onNodeWithTag("mcp-approval-preview").onChildren().filterToOne(hasText("See your library", substring = true)).assertIsDisplayed()
             screenshot("mcp-approval-confirmation")
             compose.onNodeWithTag("mcp-approve").performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isEmpty() }
