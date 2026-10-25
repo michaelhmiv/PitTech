@@ -3,14 +3,18 @@ import XCTest
 final class MealRecipeFlowsTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     private func reveal(_ element: XCUIElement, app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        // 24 attempts: the signed-in Account form grew with the Connect-your-AI
+        // 40 attempts: the signed-in Account form grew with the Connect-your-AI
         // and Device actions sections, so its rows now sit deeper than the old
-        // 18-attempt / halfway-flip search could reach at large text. A missing
+        // 18-attempt / halfway-flip search could reach at large text; Slice 7
+        // (PL-10) grew it again — the sync status row gained its DD-8 detail
+        // text and a labelled busy state — and the sync-conflict flow's
+        // large-text iterations began exhausting the 24-attempt sweep before
+        // the sync section scrolled into the hittable band. A missing
         // (virtualized) row gives no direction hint, so the Form branch below
         // sweeps deterministically: to the top first, then down the form.
         var formPhase = 0 // 0 = seek top, 1 = sweep down, 2 = sweep back up
         var formFingerprint: CGFloat?
-        for attempt in 0..<24 {
+        for attempt in 0..<40 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
             let log = app.buttons["meal-log"]
