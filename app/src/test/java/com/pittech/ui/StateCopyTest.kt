@@ -21,7 +21,7 @@ class StateCopyTest {
         val row = SyncStatusCopy.row("Sync is off", null, 0, 0, signedIn = false, enabled = true)
         assertEquals("Sign in to start private sync", row.headline)
         assertTrue(row.body.startsWith("Nothing is uploaded while you are signed out"))
-        assertTrue(row.body.contains("Tap Sync now to make the first backup."))
+        assertTrue(row.body.contains("Sign in above, then tap Sync now to make the first backup."))
     }
 
     @Test fun disabledRowIsHonestAboutTheBuild() {
