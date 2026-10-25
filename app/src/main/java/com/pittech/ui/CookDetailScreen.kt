@@ -22,6 +22,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -74,6 +76,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -150,7 +153,7 @@ fun CookDetailScreen(
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     var showConnections by rememberSaveable { mutableStateOf(false) }
     var sharingDraftId by rememberSaveable { mutableStateOf<String?>(null) }
-    var verdictDishId by rememberSaveable { mutableStateOf<String?>(null) }
+    var resultsDishId by rememberSaveable { mutableStateOf<String?>(null) }
     val recordingRunning by viewModel.recordingServiceRunning.collectAsStateWithLifecycle()
     var noteDraftJson by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var noteEditing by rememberSaveable(data.cook.id) { mutableStateOf(false) }
@@ -207,7 +210,6 @@ fun CookDetailScreen(
     var showProbeMove by remember { mutableStateOf(false) }
     var showFinishConfirm by remember { mutableStateOf(false) }
     var showCompletionChoices by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var finishRequested by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
@@ -444,8 +446,14 @@ fun CookDetailScreen(
     if (showCompletionChoices) ModalBottomSheet(onDismissRequest = { showCompletionChoices = false }) {
         Column(Modifier.testTag("meal-completion-choices").heightIn(max = 620.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Meal finished", style = MaterialTheme.typography.titleLarge)
+            // PL-08 / DD-5: the sheet finish creates LEADS with the quick
+            // verdict — overall + per-dish chips, all visible — then the
+            // recipe saves, then Leave. One finish path, one results model.
+            CompletionVerdictSection(data, viewModel, busy)
+            var combinationSaved by remember(data.cook.id) { mutableStateOf<String?>(null) }
+            MealRecipeActions(data, viewModel, initiallyExpanded = true, onCombinationSaved = { name -> combinationSaved = name })
+            combinationSaved?.let { name -> Text("Meal combination “$name” saved. Find it in Recipes to repeat this meal.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("completion-combination-saved")) }
             TextButton({ selectedTab = CookTab.TIMELINE.name; showCompletionChoices = false }, modifier = Modifier.testTag("meal-view-summary")) { Text("View meal summary") }
-            MealRecipeActions(data, viewModel, initiallyExpanded = true)
             TextButton({ showCompletionChoices = false }, modifier = Modifier.testTag("leave-without-saving")) { Text("Leave without saving") }
             Spacer(Modifier.height(24.dp))
         }
@@ -491,18 +499,18 @@ fun CookDetailScreen(
         )
     }
     if (showResults) {
-        ResultsDialog(
+        CookResultsSheet(
             data = data,
             preferredUnit = preferredTemperatureUnit,
-            finishRequested = finishRequested,
+            initialDishId = resultsDishId,
             busy = busy,
             saveError = error,
-            onDismiss = { showResults = false; viewModel.clearSaveError() },
-            onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change ->
+            onDismiss = { showResults = false; resultsDishId = null; viewModel.clearSaveError() },
+            onSave = { dishId, finalTemp, unit, rest, ratings, notes, keep, change, cookAgain ->
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
-                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change) { saved ->
-                    if (saved) showResults = false
+                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, false, keep, change, cookAgain) { saved ->
+                    if (saved) { showResults = false; resultsDishId = null }
                 }
             },
         )
@@ -661,7 +669,6 @@ fun CookDetailScreen(
             } }, confirmButton = { TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
     }
     sharingDraftId?.let { id -> SharingDraftEditor(id, viewModel) { sharingDraftId = null } }
-    verdictDishId?.let { id -> data.dishes.firstOrNull { it.id == id }?.let { dish -> DishVerdictEditor(data, dish, viewModel) { verdictDishId = null } } }
     if (showConnections) ModalBottomSheet(onDismissRequest = { showConnections = false }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -755,7 +762,7 @@ fun CookDetailScreen(
                         onIngredients = { ingredientDish = it },
                         onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }, reminders = reminderRules, occurrences = reminderOccurrences,
                         selectedTools = { dish ->
-                            TextButton(onClick = { verdictDishId = dish.id }, modifier = Modifier.testTag("dish-verdict-${dish.id}")) { Text("Results & cook again") }
+                            TextButton(onClick = { resultsDishId = dish.id; viewModel.clearSaveError(); showResults = true }, modifier = Modifier.testTag("dish-verdict-${dish.id}")) { Text("Results & cook again") }
                             UnifiedReminderTools(data, viewModel, dish.id); RecipeReferenceTools(data, viewModel, dish.id)
                         }) },
                     guidancePanel = {
@@ -798,9 +805,10 @@ fun CookDetailScreen(
                     onEditDish = { editDish = it },
                     onResults = {
                         viewModel.clearSaveError()
-                        finishRequested = false
+                        resultsDishId = null
                         showResults = true
                     },
+                    onUndoFinish = { viewModel.reopenCook(data.cook.id) },
                     onExport = { showExportCook = true },
                     onFinish = {
                         focusManager.clearFocus(force = true)
@@ -993,6 +1001,7 @@ private fun LiveCookTab(
     onResults: () -> Unit,
     onExport: () -> Unit,
     onFinish: () -> Unit,
+    onUndoFinish: () -> Unit,
     onDelete: () -> Unit,
     onCopySetup: () -> Unit,
     onError: String?,
@@ -1153,6 +1162,10 @@ private fun LiveCookTab(
         // collapsed "Cook tools" bucket with this re-rank (PL-04).
         if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
             modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
+        // PL-08: Undo finish lives on the finished cook itself, not only in
+        // the moment after finishing.
+        if (data.cook.status == CookStatus.COMPLETED) OutlinedButton(onClick = onUndoFinish, enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("live-undo-finish")) { Text("Undo finish") }
         if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
         }
@@ -1225,7 +1238,11 @@ private fun TimelineTab(
     val coroutineScope = rememberCoroutineScope()
     val rows = buildTimelineLines(data, selectedFilter, newestFirst, foodFilter)
     val days = rows.groupBy { timelineDayKey(it.time) }
-    val latestIndex = rows.size + days.size + 1
+    // Header items above the day groups: guide + summary, plus the results
+    // card when the cook has saved results (PL-08).
+    val showResultsCard = data.results.any { it.resultType in RESULT_DISPLAY_TYPES }
+    val headerItems = if (showResultsCard) 3 else 2
+    val latestIndex = rows.size + days.size + headerItems - 1
     LaunchedEffect(selectedFilterName, foodFilter) {
         filterPreferences.edit().putString(data.cook.id + ":type", selectedFilterName).putString(data.cook.id + ":food", foodFilter).apply()
         onFoodFilter(foodFilter)
@@ -1240,7 +1257,7 @@ private fun TimelineTab(
     }
     LaunchedEffect(focusEventId, rows.map { it.stableKey }) {
         if (focusEventId != null) {
-            var position = 2
+            var position = headerItems
             var target: Int? = null
             days.values.forEach { group -> position++; group.forEach { row -> if (row is TimelineLine.Event && row.event.id == focusEventId) target = position; position++ } }
             target?.let { listState.scrollToItem(it); onFocusHandled() }
@@ -1336,6 +1353,9 @@ private fun TimelineTab(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp).testTag("timeline-summary"),
                         )
+                    }
+                    if (showResultsCard) {
+                        item(key = "timeline-results") { CookResultsCard(data) }
                     }
                     days.forEach { (dayKey, dayRows) ->
                         item(key = "timeline-day-$dayKey") {
@@ -1858,13 +1878,67 @@ private fun ChartsTab(data: CookDetailData, displayUnit: String, guide: AlignedG
     }
 }
 
+/** The result types the results card displays — search metadata that shares
+ * the results table (favorite, method, tags) is not a cook result. */
+private val RESULT_DISPLAY_TYPES = setOf(
+    "overall_rating", "cook_again", "final_temperature", "rest_minutes",
+    "bark", "tenderness", "juiciness", "smoke", "seasoning",
+    "result_notes", "keep_doing", "change_next_time",
+)
+
+private fun formatResultRating(value: Double): String =
+    if (value % 1.0 == 0.0) "${value.toInt()} / 5" else "$value / 5"
+
+private fun formatResultNumber(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+
+/**
+ * PL-08: saved results finally render — read-only, on the cook's summary
+ * (Timeline). This resurrects the formerly dead CookResultsCard as the one
+ * display of the one results model: the overall verdict, then one block per
+ * dish with its verdict, detail ratings, and facts. Recorded facts are shown
+ * exactly as saved; editing happens in the results editor, never here.
+ */
 @Composable
 private fun CookResultsCard(data: CookDetailData) {
+    fun rowsFor(dishId: String?) = data.results.filter { it.dishId == dishId }
+    fun numeric(rows: List<com.pittech.data.CookResultEntity>, type: String) = rows.firstOrNull { it.resultType == type }?.numericValue
+    fun text(rows: List<com.pittech.data.CookResultEntity>, type: String) = rows.firstOrNull { it.resultType == type }?.textValue?.takeIf { it.isNotBlank() }
+    @Composable
+    fun ResultFacts(rows: List<com.pittech.data.CookResultEntity>) {
+        val details = listOf("Bark" to "bark", "Tenderness" to "tenderness", "Juiciness" to "juiciness", "Smoke" to "smoke", "Seasoning" to "seasoning")
+            .mapNotNull { (label, type) -> numeric(rows, type)?.let { "$label ${formatResultRating(it)}" } }
+        if (details.isNotEmpty()) Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+        rows.firstOrNull { it.resultType == "final_temperature" }?.let { row ->
+            row.numericValue?.let { Text("Final temperature: ${formatResultNumber(it)} ${row.unit.orEmpty()}".trim(), style = MaterialTheme.typography.bodyLarge) }
+        }
+        numeric(rows, "rest_minutes")?.let { Text("Rest: ${formatResultNumber(it)} min", style = MaterialTheme.typography.bodyLarge) }
+        numeric(rows, "cook_again")?.let { Text("Cook again: ${if (it == 1.0) "Yes" else "No"}", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "result_notes")?.let { Text("Notes: $it", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "keep_doing")?.let { Text("Keep doing: $it", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "change_next_time")?.let { Text("Change next time: $it", style = MaterialTheme.typography.bodyLarge) }
+    }
     SectionCard("Cook results") {
-        data.results.forEach { result ->
-            val label = result.resultType.replace('_', ' ').replaceFirstChar { it.titlecase() }
-            val value = result.numericValue?.let { "$it ${result.unit.orEmpty()}" } ?: result.textValue.orEmpty()
-            Text("$label: $value", style = MaterialTheme.typography.bodyLarge)
+        Column(Modifier.testTag("cook-results-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val cookRows = rowsFor(null)
+            Text(
+                "Overall verdict: " + (numeric(cookRows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            )
+            ResultFacts(cookRows)
+            data.dishes.forEach { dish ->
+                val rows = rowsFor(dish.id)
+                if (rows.any { it.resultType in RESULT_DISPLAY_TYPES }) {
+                    Column(Modifier.testTag("cook-results-dish-${dish.id}"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(dish.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Verdict: " + (numeric(rows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        ResultFacts(rows)
+                    }
+                }
+            }
         }
     }
 }
@@ -2367,20 +2441,106 @@ private fun TargetDialog(
     )
 }
 
+/**
+ * One rating chip row (PL-08 / DD-5): chips 1–5, tapping the selected chip
+ * clears back to "Not recorded" — skipping a rating is a first-class state,
+ * different from a poor rating. Imported fractional ratings (e.g. 4.5) have
+ * no chip; they are named as saved until the user picks a chip or clears.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResultsDialog(
+private fun VerdictChipRow(value: Double?, onChange: (Double?) -> Unit, tagPrefix: String, enabled: Boolean) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        (1..5).forEach { n ->
+            FilterChip(
+                selected = value == n.toDouble(),
+                onClick = { onChange(if (value == n.toDouble()) null else n.toDouble()) },
+                enabled = enabled,
+                label = { Text("$n / 5") },
+                modifier = Modifier.testTag("$tagPrefix-$n"),
+            )
+        }
+    }
+    when {
+        value == null -> Text("Not recorded", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        value % 1.0 != 0.0 -> Text("Saved rating: ${formatResultRating(value)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RatingChipRow(label: String, valueText: String, onChange: (String) -> Unit, tagPrefix: String, enabled: Boolean) {
+    Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    VerdictChipRow(valueText.toDoubleOrNull(), { onChange(it?.let { n -> if (n % 1.0 == 0.0) n.toInt().toString() else n.toString() } ?: "") }, tagPrefix, enabled)
+}
+
+/**
+ * PL-08 / DD-5: the completion sheet's first section — the quick verdict.
+ * The overall verdict plus one verdict per dish (rating chips + "Cook
+ * again?"), every group visible before any other choice on the sheet.
+ * Saving writes only verdict rows through the one results model, so
+ * anything recorded elsewhere is untouched and anything skipped stays
+ * "Not recorded".
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CompletionVerdictSection(data: CookDetailData, viewModel: CooksViewModel, busy: Boolean) {
+    fun savedRating(dishId: String?) = data.results.firstOrNull { it.dishId == dishId && it.resultType == "overall_rating" }?.numericValue
+    fun savedAgain(dishId: String) = data.results.firstOrNull { it.dishId == dishId && it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 }
+    var overall by remember(data.cook.id, data.results) { mutableStateOf(savedRating(null)) }
+    var dishRatings by remember(data.cook.id, data.results) { mutableStateOf(data.dishes.associate { dish -> dish.id to savedRating(dish.id) }) }
+    var dishAgain by remember(data.cook.id, data.results) { mutableStateOf(data.dishes.associate { dish -> dish.id to savedAgain(dish.id) }) }
+    var saved by remember(data.cook.id) { mutableStateOf(false) }
+    Column(Modifier.testTag("completion-verdict"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Quick verdict", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("How did it turn out? Anything you skip stays Not recorded — results can be edited any time from the cook.", style = MaterialTheme.typography.bodyMedium)
+        Text("Overall", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        VerdictChipRow(overall, { overall = it; saved = false }, "completion-verdict-cook", !busy)
+        data.dishes.forEach { dish ->
+            Text(dish.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            VerdictChipRow(dishRatings[dish.id], { value -> dishRatings = dishRatings + (dish.id to value); saved = false }, "completion-verdict-${dish.id}", !busy)
+            Text("Cook again?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("completion-again-${dish.id}")) {
+                FilterChip(dishAgain[dish.id] == null, { dishAgain = dishAgain + (dish.id to null); saved = false }, enabled = !busy, label = { Text("Not decided") })
+                FilterChip(dishAgain[dish.id] == true, { dishAgain = dishAgain + (dish.id to true); saved = false }, enabled = !busy, label = { Text("Yes") })
+                FilterChip(dishAgain[dish.id] == false, { dishAgain = dishAgain + (dish.id to false); saved = false }, enabled = !busy, label = { Text("No") })
+            }
+        }
+        Button(
+            onClick = { viewModel.saveFinishVerdicts(data.cook.id, overall, data.dishes.associate { dish -> dish.id to (dishRatings[dish.id] to dishAgain[dish.id]) }) { ok -> if (ok) saved = true } },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("completion-verdict-save"),
+        ) { Text("Save verdict") }
+        if (saved) Text("Verdict saved", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("completion-verdict-saved"))
+    }
+}
+
+/**
+ * PL-08: THE results editor — one system for the whole cook and every dish,
+ * replacing both the old ResultsDialog and the per-dish DishVerdictEditor.
+ * Every scope edits the same fields of the same results rows, including the
+ * per-dish "cook again?" the light editor used to own. Per DD-5 the verdict
+ * and every rating chip group are visible without opening anything; only
+ * prose (notes, keep/change) sits behind a reveal. Per DD-6 this is a sheet,
+ * not a dialog. There is deliberately no finish toggle: finishing has
+ * exactly one path — the Finish button and its verdict-first completion
+ * sheet.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CookResultsSheet(
     data: CookDetailData,
     preferredUnit: String,
-    finishRequested: Boolean,
+    initialDishId: String?,
     busy: Boolean,
     saveError: String?,
     onDismiss: () -> Unit,
-    onSave: (String?, String, String, String, Map<String, String>, String, Boolean, String, String) -> Unit,
+    onSave: (String?, String, String, String, Map<String, String>, String, String, String, Boolean?) -> Unit,
 ) {
-    val dialogFocusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+    val sheetFocusManager = LocalFocusManager.current
+    val sheetKeyboardController = LocalSoftwareKeyboardController.current
     val firstDishId = data.dishes.firstOrNull()?.id ?: "whole"
-    var selectedDishId by rememberSaveable(data.cook.id) { mutableStateOf(firstDishId) }
+    var selectedDishId by rememberSaveable(data.cook.id, initialDishId) { mutableStateOf(initialDishId?.takeIf { id -> data.dishes.any { it.id == id } } ?: firstDishId) }
     val selectedDishKey = selectedDishId.takeUnless { it == "whole" }
     val existing = data.results.filter { it.dishId == selectedDishKey }
     fun savedNumber(type: String) = existing.firstOrNull { it.resultType == type }?.numericValue?.toString().orEmpty()
@@ -2393,65 +2553,63 @@ private fun ResultsDialog(
     var juiciness by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("juiciness")) }
     var smoke by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("smoke")) }
     var seasoning by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("seasoning")) }
-    var detailRatings by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(false) }
+    var cookAgain by remember(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 }) }
     var notes by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "result_notes" }?.textValue.orEmpty()) }
     var keep by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "keep_doing" }?.textValue.orEmpty()) }
     var change by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "change_next_time" }?.textValue.orEmpty()) }
     var showLearning by rememberSaveable { mutableStateOf(false) }
-    var finish by rememberSaveable(data.cook.id, finishRequested) { mutableStateOf(false) }
-    val willFinish = finishRequested || finish
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(if (finishRequested) "Finish cook" else if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", modifier = Modifier.testTag("results-dialog-title")) },
-        text = {
-            Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
-                if (willFinish) Text("Finishing ends this cook, temperature recording, and pending reminders and plan checks.", style = MaterialTheme.typography.bodyMedium)
-                (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
-                if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" }, enabled = !busy)
-                OutlinedTextField(finalTemp, { finalTemp = it; error = null }, enabled = !busy, label = { Text("Final temperature (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("result-final-temperature"))
-                SimpleDropdownField("Temperature unit", unit, listOf("°F", "°C"), { unit = it }, enabled = !busy)
-                OutlinedTextField(rest, { rest = it; error = null }, enabled = !busy, label = { Text("Rest time in minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(rating, { rating = it; error = null }, enabled = !busy, label = { Text("Overall rating (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = { detailRatings = !detailRatings }, enabled = !busy) { Text(if (detailRatings) "Hide detailed ratings" else "Rate bark, tenderness, and more") }
-                if (detailRatings) {
-                    OutlinedTextField(bark, { bark = it; error = null }, enabled = !busy, label = { Text("Bark (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(tenderness, { tenderness = it; error = null }, enabled = !busy, label = { Text("Tenderness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(juiciness, { juiciness = it; error = null }, enabled = !busy, label = { Text("Juiciness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(smoke, { smoke = it; error = null }, enabled = !busy, label = { Text("Smoke level (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(seasoning, { seasoning = it; error = null }, enabled = !busy, label = { Text("Seasoning (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.heightIn(max = 640.dp).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("results-dialog-title"))
+            Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
+            // Fields scroll between the pinned header and the pinned action
+            // row (DD-6): Save is always reachable, like the dialog's actions.
+            // The save error leads the scrolling region, as it did in the
+            // retired dialog, so it stays reachable by scroll.
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
+            if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" }, enabled = !busy)
+            RatingChipRow("Verdict", rating, { rating = it; error = null }, "result-verdict", !busy)
+            if (selectedDishKey != null) {
+                Text("Cook again?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("result-cook-again")) {
+                    FilterChip(cookAgain == null, { cookAgain = null }, enabled = !busy, label = { Text("Not decided") })
+                    FilterChip(cookAgain == true, { cookAgain = true }, enabled = !busy, label = { Text("Yes") })
+                    FilterChip(cookAgain == false, { cookAgain = false }, enabled = !busy, label = { Text("No") })
                 }
-                OutlinedTextField(notes, { notes = it }, enabled = !busy, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = { showLearning = !showLearning }, enabled = !busy) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
-                if (showLearning) {
-                    OutlinedTextField(keep, { keep = it }, enabled = !busy, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(change, { change = it }, enabled = !busy, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
-                }
-                if (!finishRequested && data.cook.status != CookStatus.COMPLETED) FilterChip(
-                    selected = finish,
-                    onClick = { finish = !finish },
-                    enabled = !busy,
-                    label = { Text(if (finish) "Finish cook when saved" else "Also finish this cook") },
-                    modifier = Modifier.testTag("results-finish-toggle"),
-                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val allRatings = listOf(rating, bark, tenderness, juiciness, smoke, seasoning)
-                val valid = CookEntryValidation.isOptionalPositiveNumberValid(finalTemp) && CookEntryValidation.isOptionalPositiveNumberValid(rest) &&
-                    allRatings.all { it.isBlank() || CookEntryValidation.optionalPositiveNumber(it)?.let { number -> number in 1.0..5.0 } == true }
-                if (!valid) error = "Use positive values; ratings must be from 1 to 5."
-                else {
-                    dialogFocusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, willFinish, keep, change)
-                }
-            }, enabled = !busy, modifier = Modifier.testTag("results-save")) { Text(if (busy) "Saving…" else if (willFinish) "Finish cook" else "Save results") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
-    )
+            OutlinedTextField(finalTemp, { finalTemp = it; error = null }, enabled = !busy, label = { Text("Final temperature (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("result-final-temperature"))
+            SimpleDropdownField("Temperature unit", unit, listOf("°F", "°C"), { unit = it }, enabled = !busy)
+            OutlinedTextField(rest, { rest = it; error = null }, enabled = !busy, label = { Text("Rest time in minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+            RatingChipRow("Bark", bark, { bark = it; error = null }, "result-bark", !busy)
+            RatingChipRow("Tenderness", tenderness, { tenderness = it; error = null }, "result-tenderness", !busy)
+            RatingChipRow("Juiciness", juiciness, { juiciness = it; error = null }, "result-juiciness", !busy)
+            RatingChipRow("Smoke", smoke, { smoke = it; error = null }, "result-smoke", !busy)
+            RatingChipRow("Seasoning", seasoning, { seasoning = it; error = null }, "result-seasoning", !busy)
+            OutlinedTextField(notes, { notes = it }, enabled = !busy, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = { showLearning = !showLearning }, enabled = !busy) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
+            if (showLearning) {
+                OutlinedTextField(keep, { keep = it }, enabled = !busy, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(change, { change = it }, enabled = !busy, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
+            }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+                Spacer(Modifier.weight(1f))
+                Button(onClick = {
+                    val valid = CookEntryValidation.isOptionalPositiveNumberValid(finalTemp) && CookEntryValidation.isOptionalPositiveNumberValid(rest)
+                    if (!valid) error = "Use positive values; ratings must be from 1 to 5."
+                    else {
+                        sheetFocusManager.clearFocus(force = true)
+                        sheetKeyboardController?.hide()
+                        onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, keep, change, cookAgain)
+                    }
+                }, enabled = !busy, modifier = Modifier.testTag("results-save")) { Text(if (busy) "Saving…" else "Save results") }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
 }
 
 private fun displayEventType(type: String): String = type.replace('_', ' ').replaceFirstChar { it.titlecase() }

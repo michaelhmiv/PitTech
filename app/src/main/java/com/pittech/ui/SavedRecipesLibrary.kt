@@ -165,7 +165,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     }, confirmButton = { TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy, modifier=Modifier.testTag("recipe-details-close")) { Text("Close") } })
 }
 
-@Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false) {
+@Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false, onCombinationSaved: ((String) -> Unit)? = null) {
     if (data.dishes.isEmpty()) return
     var editor by remember(data.cook.id) { mutableStateOf<RecipeEditorRequest?>(null) }
     var expanded by remember(data.cook.id, initiallyExpanded) { mutableStateOf(initiallyExpanded) }
@@ -200,7 +200,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     if (preset) AlertDialog(onDismissRequest = { if (!busy) preset = false }, title = { Text("Save meal combination") }, text = { OutlinedTextField(presetName, { presetName = it }, label = { Text("Name") }) },
-        confirmButton = { TextButton(onClick = { act { viewModel.saveMealPreset(data.cook.id, presetName); preset = false } }, enabled = !busy && presetName.isNotBlank()) { Text("Save") } }, dismissButton = { TextButton(onClick = { preset = false }, enabled = !busy) { Text("Cancel") } })
+        confirmButton = { TextButton(onClick = { act { viewModel.saveMealPreset(data.cook.id, presetName); preset = false; onCombinationSaved?.invoke(presetName) } }, enabled = !busy && presetName.isNotBlank()) { Text("Save") } }, dismissButton = { TextButton(onClick = { preset = false }, enabled = !busy) { Text("Cancel") } })
     editor?.let { request -> RecipeEditorDialog(request, viewModel, busy, error, onClose = { editor = null }, onSave = { edit -> act {
         if (request.attemptDishId != null) viewModel.updateRecipeAttempt(request.attemptDishId, edit.snapshot)
         else {

@@ -146,22 +146,3 @@ import kotlinx.coroutines.sync.withLock
         } })
     } }
 }
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable internal fun DishVerdictEditor(data: com.pittech.data.CookDetailData, dish: com.pittech.data.DishEntity, viewModel: CooksViewModel, onClose: () -> Unit) {
-    val rows = data.results.filter { it.dishId == dish.id }
-    var rating by remember { mutableStateOf(rows.firstOrNull { it.resultType == "overall_rating" }?.numericValue) }
-    var again by remember { mutableStateOf(rows.firstOrNull { it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 }) }
-    var notes by remember { mutableStateOf(rows.firstOrNull { it.resultType == "result_notes" }?.textValue.orEmpty()) }
-    var saving by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = { if (!saving) onClose() }, title = { Text(dish.name) }, text = {
-        Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Results are optional and can be edited later.")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { (1..5).forEach { n -> FilterChip(rating == n.toDouble(), { rating = if (rating == n.toDouble()) null else n.toDouble() }, label = { Text("$n / 5") }) } }
-            if (rating != null && rating!! % 1 != 0.0) Text("Saved rating: $rating / 5")
-            Text("Cook again?")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(again == null, { again = null }, label = { Text("Not decided") }); FilterChip(again == true, { again = true }, label = { Text("Yes") }); FilterChip(again == false, { again = false }, label = { Text("No") }) }
-            OutlinedTextField(notes, { notes = it }, label = { Text("Result notes") }, modifier = Modifier.fillMaxWidth())
-        }
-    }, confirmButton = { TextButton(onClick = { saving = true; viewModel.saveDishVerdict(data.cook.id, dish.id, rating, again, notes) { ok -> saving = false; if (ok) onClose() } }, enabled = !saving) { Text("Save") } }, dismissButton = { TextButton(onClick = onClose, enabled = !saving) { Text("Cancel") } })
-}

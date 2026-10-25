@@ -181,4 +181,54 @@ import UIKit
         }
         XCTAssertTrue(CookChartMath.reduced(rows).contains { $0.id == "302" })
     }
+    // PL-08 (issue #172): the unified results save writes every field of a
+    // scope through the one model; the quick verdict touches only verdict
+    // rows; Undo finish reverts the finish and keeps recorded results.
+    func testUnifiedResultsSaveVerdictAndReopen() async throws {
+        let directory = try folder(), store = CookStore(directory: directory)
+        store.startCook(title: "Results cook", firstDish: "Brisket")
+        let cook = try XCTUnwrap(store.activeCooks.first), dish = try XCTUnwrap(store.dishRecords(cook.id).first)
+        var whole = CookResultsValues()
+        whole.finalTemperature = 203; whole.finalTemperatureUnit = "°F"; whole.restMinutes = 45
+        whole.overallRating = 4; whole.tenderness = 5; whole.notes = "Solid smoke ring"
+        whole.keepDoing = "Keep the overnight rest"; whole.changeNextTime = "Trim harder"
+        try store.saveCookResults(cookId: cook.id, dishId: nil, values: whole)
+        var dishValues = CookResultsValues()
+        dishValues.overallRating = 5; dishValues.bark = 4; dishValues.juiciness = 4; dishValues.smoke = 3; dishValues.seasoning = 5
+        dishValues.cookAgain = true; dishValues.notes = "Best bark yet"
+        try store.saveCookResults(cookId: cook.id, dishId: dish.id, values: dishValues)
+        let savedWhole = store.cookResults(cookId: cook.id, dishId: nil)
+        XCTAssertEqual(savedWhole.overallRating, 4)
+        XCTAssertEqual(savedWhole.tenderness, 5)
+        XCTAssertEqual(savedWhole.finalTemperature, 203)
+        XCTAssertEqual(savedWhole.restMinutes, 45)
+        XCTAssertEqual(savedWhole.notes, "Solid smoke ring")
+        XCTAssertEqual(savedWhole.keepDoing, "Keep the overnight rest")
+        XCTAssertEqual(savedWhole.changeNextTime, "Trim harder")
+        let savedDish = store.cookResults(cookId: cook.id, dishId: dish.id)
+        XCTAssertEqual(savedDish.overallRating, 5)
+        XCTAssertEqual(savedDish.bark, 4)
+        XCTAssertEqual(savedDish.cookAgain, true)
+        XCTAssertTrue(store.hasAnyDisplayableResults(cookId: cook.id))
+        // The quick verdict writes only verdict rows — the dish's detail
+        // ratings and notes stay exactly as recorded.
+        try store.saveVerdict(cookId: cook.id, dishId: dish.id, rating: nil, again: nil)
+        let cleared = store.cookResults(cookId: cook.id, dishId: dish.id)
+        XCTAssertNil(cleared.overallRating)
+        XCTAssertNil(cleared.cookAgain)
+        XCTAssertEqual(cleared.bark, 4)
+        XCTAssertEqual(cleared.notes, "Best bark yet")
+        // Saved results persist across a relaunch.
+        let restored = CookStore(directory: directory)
+        XCTAssertEqual(restored.cookResults(cookId: cook.id, dishId: nil).overallRating, 4)
+        XCTAssertEqual(restored.cookResults(cookId: cook.id, dishId: dish.id).bark, 4)
+        // Finish, then Undo finish from the finished cook.
+        store.finishCook(cook.id)
+        XCTAssertEqual(store.library.cooks.first?.status, "completed")
+        XCTAssertNotNil(store.library.cooks.first?.endedAtUtcMillis)
+        store.reopenCook(cook.id)
+        XCTAssertEqual(store.library.cooks.first?.status, "active")
+        XCTAssertNil(store.library.cooks.first?.endedAtUtcMillis)
+        XCTAssertEqual(store.cookResults(cookId: cook.id, dishId: nil).overallRating, 4)
+    }
 }

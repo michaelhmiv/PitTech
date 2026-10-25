@@ -17,6 +17,7 @@ struct CookDetailView: View {
     @State private var completionChoices = false
     @State private var showingDevices = false
     @State private var showingReminders = false
+    @State private var showingResults = false
     @State private var reminderCheckInRuleId: String?
     @ScaledMetric(relativeTo: .caption) private var quickBarHeight: CGFloat = 52
     @State private var sharingDraftId: String?
@@ -51,6 +52,9 @@ struct CookDetailView: View {
                             if cook.isActive {
                                 Button("Finish meal", role: .destructive) { finishing = true }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("finish-meal")
                             }
+                            if !cook.isActive && cook.status == "completed" {
+                                Button("Undo finish") { store.reopenCook(cookId) }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("undo-finish")
+                            }
                         }.padding(20)
                     }
                     .accessibilityIdentifier("cook-content")
@@ -74,6 +78,7 @@ struct CookDetailView: View {
                     }
                 }
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
+                .sheet(isPresented: $showingResults) { CookResultsSheet(cookId: cookId) }
                 .sheet(isPresented: Binding(get: { sharingDraftId != nil }, set: { if !$0 { sharingDraftId = nil } })) {
                     if let sharingDraftId { NavigationStack { SharingDraftView(id: sharingDraftId) }.modifier(ScreenshotTextSize()) }
                 }
@@ -88,8 +93,12 @@ struct CookDetailView: View {
                     NavigationStack { ScrollView { VStack(alignment: .leading, spacing: 18) {
                         Text("Meal finished").font(.title2.weight(.semibold))
                         Text("Your recorded actions and readings are saved. Results and recipe saves are optional.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
-                        Button("View meal summary") { section = "Timeline"; completionChoices = false }
+                        // PL-08 / DD-5: the sheet finish creates LEADS with
+                        // the quick verdict, then the recipe saves, then
+                        // Leave — the same order as Android.
+                        CompletionVerdictSection(cookId: cookId)
                         MealRecipeActions(cookId: cookId)
+                        Button("View meal summary") { section = "Timeline"; completionChoices = false }
                         Button("Leave without saving") { completionChoices = false }
                     }.padding(20) }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Summary").navigationBarTitleDisplayMode(.inline) }
                 }
@@ -146,6 +155,9 @@ struct CookDetailView: View {
                     LivePanel(id: "checklist", title: "Checklist") { CookPrepChecklist(cookId: cookId) }
                 }
                 LivePanel(id: "timers", title: "Timers") { MealActivityTimers(cookId: cookId) }
+                LivePanel(id: "results", title: "Results", summary: store.hasAnyDisplayableResults(cookId: cookId) ? "Recorded" : "Not recorded yet") {
+                    Button(cook.isActive ? "Record results" : "Edit cook results") { showingResults = true }.accessibilityIdentifier("live-record-results")
+                }
                 LivePanel(id: "readings", title: "Latest readings") {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(readings.suffix(4).reversed()) { ReadingCard(reading: $0) }
@@ -226,6 +238,8 @@ struct CookDetailView: View {
         let linked = Set(store.library.logReadingLinks.compactMap { $0.objectValue?["readingId"]?.stringValue })
         return VStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Timeline", subtitle: "Complete notes, newest activity first.")
+            // PL-08: saved results render read-only on the cook's summary.
+            if store.hasAnyDisplayableResults(cookId: cookId) { CookResultsCard(cookId: cookId) }
             RecipeGuideMilestones(cookId: cookId)
             ForEach(events) { event in
                 CookNoteCard(event: event, cookId: cookId, focused: focused == event.id, onEdit: {
