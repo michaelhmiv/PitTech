@@ -155,7 +155,7 @@ struct CookDetailView: View {
                     LivePanel(id: "checklist", title: "Checklist") { CookPrepChecklist(cookId: cookId) }
                 }
                 LivePanel(id: "timers", title: "Timers") { MealActivityTimers(cookId: cookId) }
-                LivePanel(id: "results", title: "Results", summary: store.hasAnyDisplayableResults(cookId) ? "Recorded" : "Not recorded yet") {
+                LivePanel(id: "results", title: "Results", summary: store.hasAnyDisplayableResults(cookId: cookId) ? "Recorded" : "Not recorded yet") {
                     Button(cook.isActive ? "Record results" : "Edit cook results") { showingResults = true }.accessibilityIdentifier("live-record-results")
                 }
                 LivePanel(id: "readings", title: "Latest readings") {
@@ -239,7 +239,7 @@ struct CookDetailView: View {
         return VStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Timeline", subtitle: "Complete notes, newest activity first.")
             // PL-08: saved results render read-only on the cook's summary.
-            if store.hasAnyDisplayableResults(cookId) { CookResultsCard(cookId: cookId) }
+            if store.hasAnyDisplayableResults(cookId: cookId) { CookResultsCard(cookId: cookId) }
             RecipeGuideMilestones(cookId: cookId)
             ForEach(events) { event in
                 CookNoteCard(event: event, cookId: cookId, focused: focused == event.id, onEdit: {

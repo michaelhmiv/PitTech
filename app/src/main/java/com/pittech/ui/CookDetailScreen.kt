@@ -2440,7 +2440,6 @@ private fun TargetDialog(
     )
 }
 
-@Composable
 /**
  * One rating chip row (PL-08 / DD-5): chips 1–5, tapping the selected chip
  * clears back to "Not recorded" — skipping a rating is a first-class state,
