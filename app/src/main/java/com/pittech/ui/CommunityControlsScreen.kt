@@ -39,10 +39,10 @@ import org.json.JSONObject
             else Button(onClick={controls.retry(account)},enabled=!state.busy,modifier=Modifier.testTag("community-retry")){Text("Retry the saved request")}
         }
         Text("Blocked publishers on this device",style=MaterialTheme.typography.titleMedium)
-        if(state.blocks.isEmpty())Text("No publishers blocked on this device.")
+        if(state.blocks.isEmpty()){Text(EmptyStateCopy.BLOCKS_TITLE);Text(EmptyStateCopy.BLOCKS_BODY,style=MaterialTheme.typography.bodySmall)}
         state.blocks.forEach{block->Text(block.title.ifEmpty{"Blocked publisher"});TextButton(onClick={controls.block(block.alias,block.title,false,account){manager.controlsChanged()}},enabled=!state.busy && state.pending==null){Text("Unblock publisher")}}
         Text("Report receipts",style=MaterialTheme.typography.titleMedium)
-        if(state.reports.isEmpty())Text("No report receipts on this device.")
+        if(state.reports.isEmpty()){Text(EmptyStateCopy.REPORTS_TITLE);Text(EmptyStateCopy.REPORTS_BODY,style=MaterialTheme.typography.bodySmall)}
         state.reports.forEach{receipt->Text("Report "+receipt.id.take(8)+" · "+receipt.status);TextButton(onClick={controls.checkReport(receipt,account)},enabled=!state.busy){Text("Check report status")}}
         Text("Only your report status is shown. Moderator notes and account identities stay private.",style=MaterialTheme.typography.bodySmall)
         if(state.busy)CircularProgressIndicator()

@@ -23,7 +23,7 @@ import com.pittech.data.PublicPresentation
                 }
             }
         }
-        if(state.profileItems.isEmpty() && !state.profileLoading)Text("No named publications here yet.")
+        if(state.profileItems.isEmpty() && !state.profileLoading){Text(EmptyStateCopy.PROFILE_PUBLICATIONS_TITLE);Text(EmptyStateCopy.PROFILE_PUBLICATIONS_BODY,style=MaterialTheme.typography.bodySmall)}
         state.profileCursor?.let { cursor->OutlinedButton(onClick={manager.openProfile(state.profileHandle!!,cursor)},enabled=!state.profileLoading) { Text("More recipes") } }
     }
     state.message?.let { Text(it) }

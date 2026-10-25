@@ -17,6 +17,15 @@ struct NativeAccountView: View {
     @State private var creatingConnection = false
     private enum Field: Hashable { case email, code }
     @FocusState private var focused: Field?
+    /// Slice 7 (PL-10): Account's sync status row copy, derived from the
+    /// coordinator's existing presentation — presentation-layer only.
+    private var syncRowCopy: SyncStatusRowCopy {
+        SyncStatusCopy.row(status: sync.presentation.status, detail: sync.presentation.detail, lastSyncedAt: sync.presentation.lastSyncedAt, conflictCount: sync.presentation.conflicts.count, signedIn: account.signedIn, enabled: sync.enabled)
+    }
+    private var syncDetailInRow: Bool {
+        sync.presentation.conflicts.isEmpty && sync.enabled && account.signedIn &&
+            (sync.presentation.status == "Waiting for connection" || sync.presentation.status == "Retry needed" || sync.presentation.lastSyncedAt > 0)
+    }
     var body: some View {
         Form {
             Section { Text("Your cookbook works without an account. Signing in doesn't publish or upload your local records.") }
@@ -59,8 +68,20 @@ struct NativeAccountView: View {
             } else { signInContent }
             Section("Private sync") {
                 Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(.footnote)
-                Text(sync.presentation.status).accessibilityIdentifier("sync-status")
-                if let detail = sync.presentation.detail { Text(detail).font(.footnote).accessibilityIdentifier("sync-message") }
+                // Slice 7 (PL-10, DD-8): the sync status row always carries state —
+                // what happened, what is still safe, and the recovery action —
+                // instead of the coordinator's bare status string. First sync is
+                // an Account action: "Sync now" below is the same button in every
+                // state, and the row says what it will do before the first backup
+                // exists.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(syncRowCopy.headline).font(.subheadline.weight(.semibold)).accessibilityIdentifier("sync-status")
+                    Text(syncRowCopy.body).font(.footnote).accessibilityIdentifier("sync-status-detail")
+                }.accessibilityIdentifier("sync-status-row")
+                // The detail is already the row's body in the states that use it;
+                // only repeat it as the message line where the row's body is the
+                // fixed copy.
+                if !syncDetailInRow, let detail = sync.presentation.detail { Text(detail).font(.footnote).accessibilityIdentifier("sync-message") }
                 if sync.presentation.lastSyncedAt > 0 && account.signedIn && sync.enabled {
                     Toggle("Keep this library in sync while the app is open", isOn: Binding(get: { sync.presentation.automatic }, set: { sync.setAutomatic($0) })).disabled(sync.presentation.busy).accessibilityIdentifier("sync-automatic")
                     Text("Checks when you return to the app and after saved changes. Offline changes wait for a connection.").font(.footnote)
@@ -250,11 +271,17 @@ struct NativeSyncConflictReviewView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         Form {
-            Section { Text("Two devices changed the same entry. Your journal keeps the current version until you choose.") }
+            Section {
+                Text("Two devices changed the same entry. Your journal keeps the current version until you choose.")
+                // Slice 7 (PL-10): the consequence is computed from the actual
+                // pending set, never a generic warning.
+                Text(SyncStatusCopy.conflictConsequence(sync.presentation.conflicts.count)).font(.footnote).accessibilityIdentifier("sync-conflict-consequence")
+            }
             ForEach(sync.presentation.conflicts) { conflict in
                 Section(conflict.reason) {
                     Text("Yours: \(conflict.mineSummary)")
                     Text("Other device: \(conflict.theirsSummary)")
+                    Text(SyncStatusCopy.conflictItemNote).font(.footnote)
                     Button("Keep mine") { Task { await sync.resolve(conflict.id, choice: "mine") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-mine-\(conflict.id)")
                     Button("Use theirs") { Task { await sync.resolve(conflict.id, choice: "theirs") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-theirs-\(conflict.id)")
                     if conflict.canKeepBoth { Button("Keep both") { Task { await sync.resolve(conflict.id, choice: "both") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-both-\(conflict.id)") }

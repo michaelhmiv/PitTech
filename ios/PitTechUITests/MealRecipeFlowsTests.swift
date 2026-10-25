@@ -146,6 +146,10 @@ final class MealRecipeFlowsTests: XCTestCase {
                 XCTAssertTrue(yours.waitForExistence(timeout: 10))
                 let theirs = app.staticTexts["Other device: Note \"Remote title\""]; reveal(theirs, app: app)
                 XCTAssertTrue(theirs.waitForExistence(timeout: 10))
+                // Slice 7 (PL-10): the review states the concrete consequence for
+                // the actual pending set (one conflict in this fixture).
+                let consequence = app.staticTexts["sync-conflict-consequence"]; reveal(consequence, app: app)
+                XCTAssertTrue(consequence.label.contains("replaces this device's unsynced changes to 1 item"), consequence.label)
                 if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
                 let action = app.buttons[choice]; reveal(action, app: app); action.tap()
                 // The conflict resolves offline; the review list empties without an upload claim.
@@ -153,6 +157,10 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let done = app.buttons["sync-review-done"]; reveal(done, app: app); done.tap()
                 let synced = app.staticTexts["sync-status"]; reveal(synced, app: app)
                 XCTAssertEqual(synced.label, "Last synced never")
+                // Slice 7 (PL-10): with no completed sync, the status row's body
+                // carries the first-connection state instead of a bare status.
+                let detail = app.staticTexts["sync-status-detail"]; reveal(detail, app: app)
+                XCTAssertTrue(detail.label.contains("Waiting for first connection"), detail.label)
                 if choice == "Keep mine" {
                     let now = app.buttons["sync-now"]; reveal(now, app: app); now.tap()
                     XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))

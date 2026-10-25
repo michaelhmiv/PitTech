@@ -241,6 +241,21 @@ struct CookDetailView: View {
             // PL-08: saved results render read-only on the cook's summary.
             if store.hasAnyDisplayableResults(cookId: cookId) { CookResultsCard(cookId: cookId) }
             RecipeGuideMilestones(cookId: cookId)
+            // Slice 7 (PL-13, DD-8): the Timeline teaches when it is empty —
+            // one wording with Android, plus the action that creates an entry.
+            // (Android's filter variant has no iOS counterpart; iOS has no
+            // timeline filters.)
+            if events.isEmpty && readings.filter({ !linked.contains($0.id) }).isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(EmptyStateCopy.timelineTitle).font(.title3.weight(.semibold))
+                    Text(EmptyStateCopy.timelineBody).foregroundStyle(PitTechStyle.supporting)
+                    Button("Add a note") { open() }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("timeline-empty-add-note")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityIdentifier("timeline-empty")
+            }
             ForEach(events) { event in
                 CookNoteCard(event: event, cookId: cookId, focused: focused == event.id, onEdit: {
                     do { draft = try store.loadNote(event.id) } catch { self.error = error.localizedDescription }
