@@ -287,7 +287,7 @@ fun CookDetailScreen(
                         ?: error("The selected location could not be opened.")
                 }
             }.onSuccess { android.widget.Toast.makeText(context, "Photo saved.", android.widget.Toast.LENGTH_SHORT).show() }
-                .onFailure { android.widget.Toast.makeText(context, it.message ?: "Photo could not be saved.", android.widget.Toast.LENGTH_LONG).show() }
+                .onFailure { android.widget.Toast.makeText(context, ErrorCopy.failureText(it, "The photo couldn't be saved. The cook is unchanged — try again."), android.widget.Toast.LENGTH_LONG).show() }
         }
     }
     val requestReminderPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -315,7 +315,7 @@ fun CookDetailScreen(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share cook photo"))
-        }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Photo could not be shared.", android.widget.Toast.LENGTH_LONG).show() }
+        }.onFailure { android.widget.Toast.makeText(context, ErrorCopy.failureText(it, "The photo couldn't be shared. The cook is unchanged — try again."), android.widget.Toast.LENGTH_LONG).show() }
     }
 
     fun saveReminder() {
@@ -516,20 +516,20 @@ fun CookDetailScreen(
         )
     }
     if (showExportCook) {
-        AlertDialog(
-            onDismissRequest = { showExportCook = false },
-            title = { Text("Export cook data") },
-            text = { Text("Data files for your own records — a workbook, a backup ZIP, or the readings as CSV. To share recipes with other cooks, use Share meal and the Cook Pack instead.") },
-            confirmButton = {
-                Column {
-                    TextButton(onClick = { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }) { Text("Excel workbook") }
-                    TextButton(onClick = { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }) { Text("Save this cook as ZIP") }
-                    TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share backup ZIP") }
-                    TextButton(onClick = { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }) { Text("Temperature readings CSV") }
-                    TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
-                }
-            },
-        )
+        // PL-22 (DD-6): the export chooser is a sheet, not a dialog.
+        SheetSurface(
+            onDismiss = { showExportCook = false },
+            title = "Export cook data",
+        ) {
+            Text("Data files for your own records — a workbook, a backup ZIP, or the readings as CSV. To share recipes with other cooks, use Share meal and the Cook Pack instead.")
+            Column {
+                TextButton(onClick = { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }) { Text("Excel workbook") }
+                TextButton(onClick = { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }) { Text("Save this cook as ZIP") }
+                TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share backup ZIP") }
+                TextButton(onClick = { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }) { Text("Temperature readings CSV") }
+                TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
+            }
+        }
     }
     if (showPhotoSource) {
         PhotoSourceDialog(
@@ -552,12 +552,19 @@ fun CookDetailScreen(
         )
     }
     if (preparingPhoto) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("Reading grill before photo…") },
-            text = { Text("The photo will open even if a temperature reading is unavailable.") },
-            confirmButton = {},
-        )
+        // PL-23 (DD-8): a labelled wait — spinner plus its gerund label —
+        // in a non-dismissible sheet instead of a bare dialog shell.
+        SheetSurface(
+            onDismiss = {},
+            title = "Reading grill before photo…",
+            dismissEnabled = false,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator()
+                Text("Reading grill before photo…", style = MaterialTheme.typography.bodyLarge)
+            }
+            Text("The photo will open even if a temperature reading is unavailable.")
+        }
     }
     if (showReminderComposer) {
         ReminderComposerDialog(
@@ -663,14 +670,23 @@ fun CookDetailScreen(
     }
 
     viewingMarker?.let { event ->
-        AlertDialog(onDismissRequest = { viewingMarker = null }, title = { Text(event.title) },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // PL-22 (DD-6): the chart-marker viewer is contextual display — a sheet.
+        SheetSurface(
+            onDismiss = { viewingMarker = null },
+            title = event.title,
+            actions = {
+                TextButton(onClick = { viewingMarker = null }) { Text("Close") }
+                TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") }
+            },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(formatTimestamp(event.occurredAtUtcMillis))
                 event.details?.let { Text(it) }
                 val snapshot = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
                 if (snapshot.isNotBlank()) Text(snapshot)
                 data.photos.filter { it.eventId == event.id }.forEach { photo -> PhotoThumbnail(photo, Modifier.size(90.dp)) { viewingMarker = null; viewingPhoto = photo } }
-            } }, confirmButton = { TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
+            }
+        }
     }
     sharingDraftId?.let { id -> SharingDraftEditor(id, viewModel) { sharingDraftId = null } }
     if (showConnections) ModalBottomSheet(onDismissRequest = { showConnections = false }) {
@@ -684,6 +700,7 @@ fun CookDetailScreen(
     }
     Scaffold(
         topBar = {
+            Column {
             TopAppBar(
                 title = { Column { Text(data.cook.title, maxLines = 1); Text(statusLabel(data.cook.status), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-cook-status")) } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back to cooks") } },
@@ -692,6 +709,8 @@ fun CookDetailScreen(
                     IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") }
                 },
             )
+            OfflineBanner()
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
@@ -795,7 +814,7 @@ fun CookDetailScreen(
                     grillAvailable = com.pittech.BuildConfig.TELEMETRY_BETA_ENABLED || com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null,
                     learningTools = { CookLearningTools(data, viewModel) },
                     shareMealAction = {
-                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
+                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, ErrorCopy.failureText(it, "The sharing draft couldn't be created. The cook is unchanged — try again."), android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
                     },
                     summaries = liveSummaries,
                     alertStrip = alertStrip,
@@ -1968,19 +1987,16 @@ private fun PhotoGalleryDialog(
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
     onAddPhoto: () -> Unit = {},
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 640.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // PL-22 (DD-6): the photo gallery is a reading surface — a tall sheet.
+    // The title row keeps its own test tags inside the sheet.
+    SheetSurface(onDismiss = onDismiss, fillHeightFraction = 0.92f) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Photos (${photos.size})", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).testTag("photo-gallery-title"), fontWeight = FontWeight.SemiBold)
                     TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 44.dp).testTag("photo-gallery-close")) { Text("Done") }
                 }
                 Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     if (photos.isEmpty()) {
@@ -2010,7 +2026,6 @@ private fun PhotoGalleryDialog(
                     }
                 }
             }
-        }
     }
 }
 
@@ -2126,10 +2141,15 @@ private fun ReminderComposerDialog(
     onSave: () -> Unit,
 ) {
     val options = listOf(30L * 60 * 1000 to "30 min", 60L * 60 * 1000 to "1 hour", 2L * 60 * 60 * 1000 to "2 hours", 5L * 60 * 60 * 1000 to "5 hours")
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set a cook reminder") },
-        text = {
+    // PL-22 (DD-6): reminder composer is a short editor — a sheet, not a dialog.
+    SheetSurface(
+        onDismiss = onDismiss,
+        title = "Set a cook reminder",
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onSave, enabled = title.isNotBlank(), modifier = Modifier.testTag("reminder-save")) { Text("Set reminder") }
+        },
+    ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(value = title, onValueChange = onTitleChange, label = { Text("What should you check?") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("reminder-title"))
                 Text("Remind me in", style = MaterialTheme.typography.titleSmall)
@@ -2141,10 +2161,7 @@ private fun ReminderComposerDialog(
                 }
                 Text("Notifications may arrive a little after the selected time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        },
-        confirmButton = { TextButton(onClick = onSave, enabled = title.isNotBlank(), modifier = Modifier.testTag("reminder-save")) { Text("Set reminder") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
 @Composable
@@ -2161,11 +2178,16 @@ private fun ReminderCheckInDialog(
     onComplete: (String) -> Unit,
 ) {
     var note by rememberSaveable(reminder.id) { mutableStateOf("") }
-    AlertDialog(
+    // PL-22 (DD-6): a check-in is contextual capture — a sheet, not a dialog.
+    SheetSurface(
         // PL-02: closing (scrim/Back) never changes the reminder.
-        onDismissRequest = onClose,
-        title = { Text("How did it go?") },
-        text = {
+        onDismiss = onClose,
+        title = "How did it go?",
+        actions = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) }
+            TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text(com.pittech.domain.ReminderVocabulary.LOG_IT) }
+        },
+    ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(reminder.title)
                 OutlinedTextField(
@@ -2193,10 +2215,7 @@ private fun ReminderCheckInDialog(
                 // Snooze 10 min, Dismiss.
                 TextButton(onClick = onSnooze, modifier = Modifier.testTag("reminder-checkin-snooze")) { Text(com.pittech.domain.ReminderVocabulary.SNOOZE) }
             }
-        },
-        confirmButton = { TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text(com.pittech.domain.ReminderVocabulary.LOG_IT) } },
-        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) } },
-    )
+    }
 }
 
 @Composable
@@ -2212,11 +2231,16 @@ private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave
     var outdoorUnit by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.outdoorTemperatureUnit ?: "°F") }
     var weather by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.weatherNotes.orEmpty()) }
     var wind by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.windNotes.orEmpty()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit cook details") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): Cook Basics is a multi-field editor — a full screen.
+    FullScreenSurface(
+        onDismiss = onDismiss,
+        title = "Edit cook details",
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = { if (CookEntryValidation.isOptionalPositiveNumberValid(setpoint) && CookEntryValidation.isOptionalFiniteNumberValid(outdoor)) onSave(title, smoker, setpoint, unit, notes, fuel, wood, outdoor, outdoorUnit, weather, wind) }) { Text("Save details") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Cook name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(smoker, { smoker = it }, label = { Text("Smoker or grill") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(setpoint, { setpoint = it }, label = { Text("Starting setpoint") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
@@ -2231,10 +2255,7 @@ private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave
                 OutlinedTextField(weather, { weather = it }, label = { Text("Weather") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(wind, { wind = it }, label = { Text("Wind or exposure") }, modifier = Modifier.fillMaxWidth())
             }
-        },
-        confirmButton = { TextButton(onClick = { if (CookEntryValidation.isOptionalPositiveNumberValid(setpoint) && CookEntryValidation.isOptionalFiniteNumberValid(outdoor)) onSave(title, smoker, setpoint, unit, notes, fuel, wood, outdoor, outdoorUnit, weather, wind) }) { Text("Save details") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
 @Composable
@@ -2251,11 +2272,21 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
     var thicknessNotes by rememberSaveable(dish.id) { mutableStateOf(dish.thicknessNotes.orEmpty()) }
     var notes by rememberSaveable(dish.id) { mutableStateOf(dish.prepNotes.orEmpty()) }
     var moreDetails by rememberSaveable(dish.id) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit ${dish.name}") },
-        text = {
-            Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): Dish Details is a multi-field editor — a full screen.
+    FullScreenSurface(
+        onDismiss = onDismiss,
+        title = "Edit ${dish.name}",
+        actions = {
+            TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Text("Delete dish") }
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+            TextButton(onClick = {
+                if (name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(weight)) {
+                    onSave(dish.copy(name=name.trim(), foodType=foodType, cut=cut.trim().ifBlank { null }, weightValue=CookEntryValidation.optionalPositiveNumber(weight), weightUnit=weightUnit.takeIf { weight.isNotBlank() }, startingCondition=condition.takeUnless { it == "Not set" }, boneIn=boneIn, placement=placement.trim().ifBlank { null }, gradeOrSource=gradeOrSource.trim().ifBlank { null }, thicknessNotes=thicknessNotes.trim().ifBlank { null }, prepNotes=notes.trim().ifBlank { null }))
+                }
+            }) { Text("Save dish") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Dish name") }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = { moreDetails = !moreDetails }, modifier = Modifier.testTag("food-details-toggle")) { Text(if (moreDetails) "Hide food details" else "More food details") }
                 if (moreDetails) {
@@ -2276,21 +2307,7 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
                 OutlinedTextField(notes, { notes = it }, label = { Text("Preparation notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(weight)) {
-                    onSave(dish.copy(name=name.trim(), foodType=foodType, cut=cut.trim().ifBlank { null }, weightValue=CookEntryValidation.optionalPositiveNumber(weight), weightUnit=weightUnit.takeIf { weight.isNotBlank() }, startingCondition=condition.takeUnless { it == "Not set" }, boneIn=boneIn, placement=placement.trim().ifBlank { null }, gradeOrSource=gradeOrSource.trim().ifBlank { null }, thicknessNotes=thicknessNotes.trim().ifBlank { null }, prepNotes=notes.trim().ifBlank { null }))
-                }
-            }) { Text("Save dish") }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Text("Delete dish") }
-                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
-            }
-        },
-    )
+    }
 }
 
 @Composable
@@ -2432,11 +2449,20 @@ private fun TargetDialog(
     var explanation by rememberSaveable { mutableStateOf("") }
     var dishId by rememberSaveable { mutableStateOf("whole") }
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add a cook target") },
-        text = {
-            Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    // PL-22 (DD-6): the target editor is contextual capture — a sheet.
+    SheetSurface(
+        onDismiss = onDismiss,
+        title = "Add a cook target",
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = {
+                val number = CookEntryValidation.optionalPositiveNumber(value)
+                if (number == null) error = "Enter a positive temperature."
+                else onSave(dishId.takeUnless { it == "whole" }, type, number, unit, explanation.trim().ifBlank { null })
+            }) { Text("Save target") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 SimpleDropdownField("Target type", type.replace('_', ' ').replaceFirstChar { it.titlecase() }, listOf("Personal finish", "Food safety", "Serving goal"), { type = it.lowercase().replace(' ', '_') })
                 OutlinedTextField(value, { value = it; error = null }, label = { Text("Target temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
                 SimpleDropdownField("Unit", unit, listOf("°F", "°C"), { unit = it })
@@ -2444,16 +2470,7 @@ private fun TargetDialog(
                 OutlinedTextField(explanation, { explanation = it }, label = { Text("Source or reason (optional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
                 Text("PitTech stores this as your note. It does not decide whether food is safe or done.", style = MaterialTheme.typography.bodySmall)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val number = CookEntryValidation.optionalPositiveNumber(value)
-                if (number == null) error = "Enter a positive temperature."
-                else onSave(dishId.takeUnless { it == "whole" }, type, number, unit, explanation.trim().ifBlank { null })
-            }) { Text("Save target") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
 /**

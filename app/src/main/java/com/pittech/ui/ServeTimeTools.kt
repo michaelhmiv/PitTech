@@ -78,8 +78,17 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
     editingSchedule?.let { i -> DishScheduleEditor(plan.schedules[i], plan.book.draft.dishes[i], plan.book, evidence, { editingSchedule = null }) { s -> plan = plan.copy(schedules = plan.schedules.map { if (it.dishIndex == i) s else it }); editingSchedule = null } }
     val preview = runCatching { plan.copy(serveAt = ServeTimePlanner.localGoal(date, time, zone, laterOffset), zoneId = zone, bufferMinutes = buffer.toLong()).also(ServeTimePlanner::validate) }.getOrNull()
     val offsets = runCatching { ZoneId.of(zone).rules.getValidOffsets(LocalDate.parse(date).atTime(LocalTime.parse(time))).size }.getOrDefault(1)
-    AlertDialog(onDismissRequest = onClose, title = { Text("Plan serving time") }, text = {
-        Column(Modifier.heightIn(max = 490.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): the serve-time planner is a multi-field editor — full screen.
+    FullScreenSurface(onDismiss = onClose, title = "Plan serving time", actions = {
+        TextButton(onClick = onClose) { Text("Cancel") }
+        TextButton(onClick = { runCatching {
+            val saved = preview ?: throw IllegalArgumentException("Check the serving date, time zone and buffer.")
+            require(saved.schedules.none { it.evidenceNote == "Enter your duration range" }) { "Review each dish's duration range." }
+            require(ServeTimePlanner.conflicts(saved).isEmpty()) { "Resolve the overlapping pit-temperature conflict before saving." }
+            onSave(saved)
+        }.onFailure { error = ErrorCopy.failureText(it, "That plan couldn't be saved. Nothing was changed — check the serving date, time zone and durations, then try again.") } }) { Text("Save plan") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(plan.book.name, { plan = plan.copy(book = plan.book.copy(name = it, draft = plan.book.draft.copy(title = it))) }, label = { Text("Cook name") }, modifier = Modifier.fillMaxWidth())
             NotStartedBadge(Modifier.testTag("serve-plan-not-started"))
             Text("Serving date and time", style = MaterialTheme.typography.titleMedium)
@@ -103,12 +112,7 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
             Text("Saved plans do not start a cook or recording. Start when you're ready.", style = MaterialTheme.typography.bodySmall)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(onClick = { runCatching {
-        val saved = preview ?: throw IllegalArgumentException("Check the serving date, time zone and buffer.")
-        require(saved.schedules.none { it.evidenceNote == "Enter your duration range" }) { "Review each dish's duration range." }
-        require(ServeTimePlanner.conflicts(saved).isEmpty()) { "Resolve the overlapping pit-temperature conflict before saving." }
-        onSave(saved)
-    }.onFailure { error = it.message } }) { Text("Save plan") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
+    }
 }
 
 @Composable
@@ -127,8 +131,17 @@ private fun DishScheduleEditor(initial: DishSchedule, dish: DishDraft, book: Coo
     var note by remember { mutableStateOf(initial.evidenceNote) }
     var error by remember { mutableStateOf<String?>(null) }
     val matches = if (method.isNotBlank() && !method.equals(book.draft.smokerName, true)) emptyList() else ServeTimePlanner.comparable(dish, book.draft, evidence, book.steps.any { it.dishIndex == initial.dishIndex && it.action == "wrap" })
-    AlertDialog(onDismissRequest = onClose, title = { Text("${dish.name} schedule") }, text = {
-        Column(Modifier.heightIn(max = 470.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    FullScreenSurface(onDismiss = onClose, title = "${dish.name} schedule", actions = {
+        TextButton(onClick = onClose) { Text("Cancel") }
+        TextButton(onClick = { runCatching {
+            val lo = min.toDouble(); val hi = max.toDouble(); require(lo.isFinite() && hi.isFinite()) { "Enter valid cooking durations." }
+            require(pit.isBlank() || pit.toDoubleOrNull() != null) { "Enter a valid pit temperature or leave it blank." }
+            val s = initial.copy(cookMinMinutes = (lo * 60).toLong(), cookMaxMinutes = (hi * 60).toLong(), prepMinutes = prep.toLong(), preheatMinutes = preheat.toLong(), restMinutes = rest.toLong(), holdMinutes = hold.toLong(), pitF = pit.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, method = method, evidenceCount = count, evidenceNote = if (note == "Enter your duration range") "Your duration range" else note)
+            ServeTimePlanner.validate(ServePlan(book, System.currentTimeMillis(), ZoneId.systemDefault().id, schedules = book.draft.dishes.indices.map { if (it == initial.dishIndex) s else DishSchedule(it) }))
+            onSave(s)
+        }.onFailure { error = ErrorCopy.failureText(it, "Those durations couldn't be saved. The plan is unchanged — check the durations and try again.") } }) { Text("Save durations") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (matches.isNotEmpty()) {
                 Text("${matches.size} comparable recorded cooks · ${matches.minOf { it.durationMinutes }}–${matches.maxOf { it.durationMinutes }} min from Food on to Remove. Rest is separate.")
                 if (matches.size == 1) Text("One cook is a reference. Enter your own planning range.")
@@ -145,13 +158,7 @@ private fun DishScheduleEditor(initial: DishSchedule, dish: DishDraft, book: Coo
             OutlinedTextField(method, { method = it }, label = { Text("Cooking equipment (blank uses this smoker)") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(onClick = { runCatching {
-        val lo = min.toDouble(); val hi = max.toDouble(); require(lo.isFinite() && hi.isFinite()) { "Enter valid cooking durations." }
-        require(pit.isBlank() || pit.toDoubleOrNull() != null) { "Enter a valid pit temperature or leave it blank." }
-        val s = initial.copy(cookMinMinutes = (lo * 60).toLong(), cookMaxMinutes = (hi * 60).toLong(), prepMinutes = prep.toLong(), preheatMinutes = preheat.toLong(), restMinutes = rest.toLong(), holdMinutes = hold.toLong(), pitF = pit.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, method = method, evidenceCount = count, evidenceNote = if (note == "Enter your duration range") "Your duration range" else note)
-        ServeTimePlanner.validate(ServePlan(book, System.currentTimeMillis(), ZoneId.systemDefault().id, schedules = book.draft.dishes.indices.map { if (it == initial.dishIndex) s else DishSchedule(it) }))
-        onSave(s)
-    }.onFailure { error = it.message ?: "Check durations." } }) { Text("Save durations") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
+    }
 }
 
 @Composable

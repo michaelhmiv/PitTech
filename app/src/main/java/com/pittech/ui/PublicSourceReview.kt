@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
             Text("Saved source reference · "+source.revisionId.take(8))
             Button(onClick={ if(!busy) { busy=true;detail=null;selected=null;message=null;scope.launch {
                 try { val result=manager.detailForReview(source.itemId);detail=result.first;offline=result.second }
-                catch(e: Exception) { if(e is CancellationException)throw e;message=e.message ?: "The shared recipe could not be checked." } finally { busy=false }
+                catch(e: Exception) { if(e is CancellationException)throw e;message=ErrorCopy.failureText(e, "The shared recipe could not be checked. Nothing was imported — try again.") } finally { busy=false }
             } } },enabled=!busy,modifier=Modifier.testTag("source-review-check")) { Text("Check shared source") }
             detail?.let { value ->
                 Text(if(offline)"Saved browsing preview only. Connect to check the current source." else if(value.revisionId==source.revisionId)"The shared reference is unchanged." else "The shared recipe has a different reference.")
@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
                 }
             }
             Text("This review does not replace recipes, reference measurements, or an active meal. To keep a different shared version, open its source and use the separate Save preview.")
-            if(busy)CircularProgressIndicator();message?.let { Text(it) };TextButton(onClick={ showing=false },modifier=Modifier.testTag("source-review-done")) { Text("Done") }
+            if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.WORKING)};message?.let { Text(it) };TextButton(onClick={ showing=false },modifier=Modifier.testTag("source-review-done")) { Text("Done") }
         }
     }
 }

@@ -111,4 +111,75 @@ enum EmptyStateCopy {
     static let reportsBody = "Receipts for reports you send about a publication or profile will show up here."
     static let profilePublicationsTitle = "No named publications here yet."
     static let profilePublicationsBody = "Named publications from this cook will show up here."
+    // PL-25 (Slice 10): Insights / Recipes empties carry ONE wording on both
+    // platforms — these literals replace the per-platform variants.
+    static let insightsTitle = "No cooks yet"
+    static let insightsBody = "Finished cooks will show up here with their results, readings and statistics. Start a cook to begin your history."
+    static let recipesTitle = "Your cookbook starts here"
+    static let recipesBody = "Save selected dishes from a finished meal here. The original cook stays in your meal history."
+    static let recipesFilteredTitle = "No matching recipes"
+    static let recipesFilteredBody = "No recipes match these filters. Try another search or change the filters."
+}
+
+/// DD-8 error language (PL-23, Slice 10): every failure the app shows is
+/// [what happened] + [what is still safe] + [recovery action]. The Android
+/// mirror is `StateCopy.kt`; unit tests on both platforms pin the strings.
+enum ErrorCopy {
+    static let saveChangeFailed = "Couldn't save that change. Your cook log is unchanged on this device — try again."
+    static let saveNoteDraftFailed = "Couldn't save this note draft. The draft is kept on this device — try again."
+    static let saveCheckInFailed = "Couldn't save that check-in. Nothing was recorded — try again."
+    static let saveTimelineEntryFailed = "Couldn't save that timeline entry. Your cook log is unchanged on this device — try again."
+    static let accountActionFailed = "That didn't go through. Nothing changed on this device — check your email, code or link and try again."
+}
+
+/// PL-23 / PL-25 (Slice 10): every spinner carries a gerund label, and the
+/// shared jobs use these exact labels on both platforms.
+enum LoadingCopy {
+    static let syncing = "Syncing…"
+    static let connecting = "Connecting…"
+    static let saving = "Saving…"
+    static let workingWithData = "Working with your cook data…"
+    static let checkingPro = "Checking PitTech Pro status…"
+    static let loadingBenchmarks = "Loading community benchmarks…"
+    static let loadingRecipes = "Loading community recipes…"
+    static let loadingRecipe = "Loading recipe…"
+    static let creatingConnection = "Creating connection…"
+    static let loadingCookbook = "Loading your cookbook…"
+    static let loadingControls = "Loading community controls…"
+    static let loadingProfile = "Loading profile…"
+    static let preparingCookPack = "Preparing Cook Pack…"
+    static let downloadingCookPack = "Downloading Cook Pack…"
+    static let renderingShareCard = "Rendering share card…"
+    static let publishing = "Publishing…"
+    static let working = "Working…"
+}
+
+/// DD-8 offline state (PL-23, Slice 10): the app-wide banner copy plus the
+/// per-surface "changes wait" line for network surfaces. Identical on both
+/// platforms.
+enum OfflineCopy {
+    static let banner = "You're offline. Changes wait on this device until a connection returns."
+    static let changesWait = "Offline — changes wait on this device until a connection returns."
+}
+
+/// PL-25 (Slice 10): the one feedback-failure wording per outcome, shared
+/// with Android's FeedbackApi (which carried two generic variants before
+/// this slice; both now resolve to these).
+enum FeedbackCopy {
+    static let submitFailed = "Couldn't submit your feedback. What you wrote stays in the form — check your connection and try again."
+    static let submitRateLimited = "Couldn't submit your feedback — too many reports were sent recently. What you wrote stays in the form — try again later."
+    static let submitTooLong = "That report couldn't be submitted — it's too long. What you wrote stays in the form — shorten it and try again."
+    static let submitUnavailable = "Couldn't submit your feedback — the feedback service is unavailable. What you wrote stays in the form — try again later."
+}
+
+/// PL-26 (Slice 10): Settings alignment. The section order is identical on
+/// both platforms (pinned by unit tests on each side), backup/export lives
+/// in "Your data" on both, and the backup scope is stated with these exact
+/// sentences on both.
+enum SettingsCopy {
+    static let sectionOrder = [
+        "Appearance", "Units", "Cook notifications", "Your data", "Feedback", "Ads and privacy", "About",
+    ]
+    static let fullBackupScope = "A full backup (ZIP) includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences."
+    static let dataStaysLine = "Your cook records and photos stay in PitTech's private storage on this device. No account is needed, and you can use your cook log offline. Save a backup somewhere you can find it if you change phones or reinstall PitTech."
 }

@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,26 +26,26 @@ internal fun PhotoSourceDialog(
     onTakePhoto: () -> Unit,
     onChooseFromLibrary: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add a photo") },
-        text = { Text("Take a new photo or choose one from your library.") },
-        confirmButton = {
-            Column {
-                TextButton(onClick = onTakePhoto, modifier = Modifier.testTag("photo-source-camera")) {
-                    Text("Take a photo")
-                }
-                TextButton(onClick = onChooseFromLibrary, modifier = Modifier.testTag("photo-source-library")) {
-                    Text("Choose from library")
-                }
-            }
-        },
-        dismissButton = {
+    // PL-22 (DD-6): picking a photo source is contextual capture — a sheet.
+    SheetSurface(
+        onDismiss = onDismiss,
+        title = "Add a photo",
+        actions = {
             TextButton(onClick = onDismiss, modifier = Modifier.testTag("photo-source-cancel")) {
                 Text("Cancel")
             }
         },
-    )
+    ) {
+        Text("Take a new photo or choose one from your library.")
+        Column {
+            TextButton(onClick = onTakePhoto, modifier = Modifier.testTag("photo-source-camera")) {
+                Text("Take a photo")
+            }
+            TextButton(onClick = onChooseFromLibrary, modifier = Modifier.testTag("photo-source-library")) {
+                Text("Choose from library")
+            }
+        }
+    }
 }
 
 /** Opens the system camera and returns the full-sized image saved to a temporary content URI. */

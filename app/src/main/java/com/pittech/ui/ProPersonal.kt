@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -97,10 +96,11 @@ private fun ProAnalysisCard(title: String, lines: List<String>, notes: List<Stri
 internal fun ProPersonalAnalysisDialog(subscription: SubscriptionManager, entry: ProPlacement, library: ProPersonalLibrary, onRecap: () -> Unit) {
     val report = remember(library) { InsightsCalculations.compute(library.archive, library.asOfUtcMillis) }
     val snapshot = remember(report) { ProPersonalAnalysis.snapshot(report, library.titles) }
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("pro-analysis"),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -156,9 +156,7 @@ internal fun ProPersonalAnalysisDialog(subscription: SubscriptionManager, entry:
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 @Composable
@@ -171,10 +169,11 @@ internal fun ProAdvancedCurvesDialog(subscription: SubscriptionManager, entry: P
     val palette = remember(customization.paletteId, entitled) {
         ProCustomization.effectivePalette(customization.paletteId, entitled).colors
     }
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("pro-curves"),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -247,9 +246,7 @@ internal fun ProAdvancedCurvesDialog(subscription: SubscriptionManager, entry: P
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 internal fun proHex(hex: String): Color {
@@ -290,10 +287,11 @@ internal fun ProRecapDialog(subscription: SubscriptionManager, library: ProPerso
         }
     }
 
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(if (previewing) "Recap preview" else "Year in Smoke") },
-        text = {
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = if (previewing) "Recap preview" else "Year in Smoke",
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             if (!previewing) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("pro-recap-scope"),
@@ -390,7 +388,7 @@ internal fun ProRecapDialog(subscription: SubscriptionManager, library: ProPerso
                             Text("The recap image couldn't be rendered.", style = MaterialTheme.typography.titleMedium)
                             OutlinedButton(onClick = { render() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
                         } else {
-                            CircularProgressIndicator()
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.RENDERING_SHARE_CARD) }
                         }
                         Card(
                             modifier = Modifier.fillMaxWidth().testTag("pro-recap-card"),
@@ -435,9 +433,7 @@ internal fun ProRecapDialog(subscription: SubscriptionManager, library: ProPerso
                     ) { Text("Back to scope") }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 @Composable
@@ -447,10 +443,11 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
     fun refresh() {
         tick++
     }
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("pro-customization"),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -609,17 +606,16 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                 }
                 iconNotice?.let { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("pro-icon-notice")) }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 @Composable
 internal fun ProMoreHubDialog(subscription: SubscriptionManager, entry: ProPlacement, onRecap: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text("PitTech Pro") },
-        text = {
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = "PitTech Pro",
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("pro-more-hub"),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -652,7 +648,5 @@ internal fun ProMoreHubDialog(subscription: SubscriptionManager, entry: ProPlace
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }

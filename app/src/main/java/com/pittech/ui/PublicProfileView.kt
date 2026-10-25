@@ -10,7 +10,7 @@ import com.pittech.data.PublicPresentation
 
 @Composable internal fun PublicProfileContent(manager: PublicManager,state: PublicPresentation) {
     TextButton(onClick={manager.back()}) { Text("Back to Discover") }
-    if(state.profileLoading)CircularProgressIndicator()
+    if(state.profileLoading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_PROFILE)}
     state.profileName?.let { name->
         Text(name,style=MaterialTheme.typography.headlineMedium)
         Text("@${state.profileHandle}")

@@ -39,7 +39,7 @@ import org.json.JSONObject
     }
     fun run(action: suspend () -> Unit) {
         if(busy)return; busy=true; message=null
-        scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. The exact request stays saved."; try { refreshPending() } catch(_: Exception) { } } finally { busy=false } }
+        scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect. The exact request stays saved."); try { refreshPending() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) {
         // PL-18: a prepared preview survives the sign-in detour. It is
@@ -56,7 +56,7 @@ import org.json.JSONObject
         } else if(!state.signedIn) {
             published = null
         }
-        try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message }
+        try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Nothing changed on this device.") }
     }
     // Slice 8 (PL-15 / DD-10): completing sign-in returns to this sheet on
     // its own — the account dialog closes itself instead of waiting for a
@@ -123,13 +123,13 @@ import org.json.JSONObject
                         } },enabled=!busy && reviewed,modifier=Modifier.testTag("publication-confirm")) { Text(if(updating && linked!=null)"Publish this update" else "Publish this preview") }
                     }
                 }
-                if(busy)CircularProgressIndicator()
+                if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.PUBLISHING)}
                 message?.let { Text(it,Modifier.testTag("publication-message")) }
                 Spacer(Modifier.height(24.dp))
             }
         }
     }
-    if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to publication") } })
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=MaterialTheme.typography.titleLarge);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
 }
 
 @Composable internal fun PublicationContent(prepared: PreparedPublication) {
@@ -175,7 +175,7 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
     LaunchedEffect(state.signedIn) { message=null; if(state.signedIn) signingIn=false }
     fun set(liked: Boolean) { if(busy)return; busy=true; scope.launch {
         try { writer.json(if(liked)"POST" else "DELETE","/v1/recipes/$id/like"); message=if(liked)"Your like is saved." else "Your like is removed." }
-        catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=(e.message ?: "Couldn't reconnect.")+" Recover interrupted changes in My cookbook." } finally { busy=false }
+        catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect.")+" Recover interrupted changes in My cookbook." } finally { busy=false }
     } }
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
         if(state.signedIn) {
@@ -186,7 +186,7 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
         }
         message?.let { Text(it) }
     }
-    if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to recipe") } })
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=MaterialTheme.typography.titleLarge);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to recipe") }}}
 }
 
 @Composable private fun PublicationPhotoPreview(assets: List<JSONObject>, photos: Map<String,ByteArray>, hero: String) {

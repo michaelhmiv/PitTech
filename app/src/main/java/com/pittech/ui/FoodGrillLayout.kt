@@ -170,25 +170,27 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
     var movedAt by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text("Move a probe") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val probeChoices = probes.mapIndexed { index, probe -> probe.id to (probe.name + if (probes.count { it.name == probe.name } > 1) " (" + (index + 1) + ")" else "") }
-                val foods = foodChoices(data.dishes)
-                SimpleDropdownField("Probe", probeChoices.firstOrNull { it.first == probeId }?.second ?: "No probe", probeChoices.map { it.second },
-                    { name -> probeId = probeChoices.firstOrNull { it.second == name }?.first }, testTag = "probe-move-probe")
-                SimpleDropdownField("Food", foods.firstOrNull { it.first == dishId }?.second ?: "Unassigned", listOf("Unassigned") + foods.map { it.second },
-                    { name -> dishId = foods.firstOrNull { it.second == name }?.first }, testTag = "probe-move-food")
-                Text("Earlier readings stay with their food.", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { changeTime = !changeTime }, modifier = Modifier.testTag("probe-move-time-toggle")) { Text(if (changeTime) "Use the current time" else "I moved it earlier") }
-                if (changeTime) DateTimePickerField("Actual move time", movedAt, { movedAt = it }, "probe-move-time")
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        confirmButton = { TextButton(onClick = { probeId?.let { id ->
-            viewModel.assignGrillProbe(data.cook.id, id, dishId, movedAt.takeIf { changeTime }) { saved -> if (saved) onClose() }
-        } }, enabled = !busy && probeId != null, modifier = Modifier.testTag("probe-move-save")) { Text(if (busy) "Saving…" else "Move probe") } },
-        dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") } })
+    // PL-22 (DD-6): probe reassignment is contextual capture — a sheet.
+    SheetSurface(onDismiss = { if (!busy) onClose() }, title = "Move a probe", dismissEnabled = !busy,
+        actions = {
+            TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") }
+            TextButton(onClick = { probeId?.let { id ->
+                viewModel.assignGrillProbe(data.cook.id, id, dishId, movedAt.takeIf { changeTime }) { saved -> if (saved) onClose() }
+            } }, enabled = !busy && probeId != null, modifier = Modifier.testTag("probe-move-save")) { Text(if (busy) "Saving…" else "Move probe") }
+        }) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val probeChoices = probes.mapIndexed { index, probe -> probe.id to (probe.name + if (probes.count { it.name == probe.name } > 1) " (" + (index + 1) + ")" else "") }
+            val foods = foodChoices(data.dishes)
+            SimpleDropdownField("Probe", probeChoices.firstOrNull { it.first == probeId }?.second ?: "No probe", probeChoices.map { it.second },
+                { name -> probeId = probeChoices.firstOrNull { it.second == name }?.first }, testTag = "probe-move-probe")
+            SimpleDropdownField("Food", foods.firstOrNull { it.first == dishId }?.second ?: "Unassigned", listOf("Unassigned") + foods.map { it.second },
+                { name -> dishId = foods.firstOrNull { it.second == name }?.first }, testTag = "probe-move-food")
+            Text("Earlier readings stay with their food.", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { changeTime = !changeTime }, modifier = Modifier.testTag("probe-move-time-toggle")) { Text(if (changeTime) "Use the current time" else "I moved it earlier") }
+            if (changeTime) DateTimePickerField("Actual move time", movedAt, { movedAt = it }, "probe-move-time")
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }
 }
 
 private fun foodClock(at: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at))

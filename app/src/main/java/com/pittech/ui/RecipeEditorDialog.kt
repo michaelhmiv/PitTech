@@ -15,7 +15,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.pittech.CooksViewModel
 import com.pittech.domain.*
 import kotlinx.coroutines.Dispatchers
@@ -51,9 +50,12 @@ private data class TargetEdit(val type: String, val value: String, val unit: Str
         targets = targets.map { t -> PlaybookTarget(0, t.type, t.value.toDoubleOrNull() ?: Double.NaN, t.unit, t.explanation.ifBlank { null }) },
         observations = snapshot.observations.filter { it.sourceEventId in keptFacts })
     val valid = (pit.isBlank() || pit.toDoubleOrNull()?.isFinite() == true) && instructions.all { i -> (i.offset.isBlank() || minutes(i.offset) != null) && (i.duration.isBlank() || minutes(i.duration)?.let { it >= 0 } == true) } && runCatching { RecipeSnapshotCodec.validate(prepared()) }.isSuccess
-    AlertDialog(modifier = Modifier.systemBarsPadding().imePadding(), properties = DialogProperties(decorFitsSystemWindows = false),
-        onDismissRequest = { if (!busy) onClose() }, title = { Text(if (request.attemptDishId != null) "Adjust for this meal" else if (request.recipeId == null) "Save recipe" else "Edit a new version") }, text = {
-            Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // PL-22 (DD-6): the recipe editor is the app's largest editor — full screen.
+    FullScreenSurface(onDismiss = { if (!busy) onClose() }, title = if (request.attemptDishId != null) "Adjust for this meal" else if (request.recipeId == null) "Save recipe" else "Edit a new version", dismissEnabled = !busy, actions = {
+        TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") }
+        TextButton(onClick = { onSave(RecipeEdit(prepared(), keptAssets, keptPhotos, captions, addedPhotos, contextIds)) }, enabled = valid && !busy, modifier = Modifier.testTag("recipe-save")) { Text(if (request.attemptDishId != null) "Apply to this meal" else "Save recipe") }
+    }) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(snapshot.name, { value -> snapshot = snapshot.copy(name = value, dish = if (snapshot.dish.name == snapshot.name) snapshot.dish.copy(name = value) else snapshot.dish) }, label = { Text("Recipe name") }, modifier = Modifier.fillMaxWidth().testTag("recipe-name"))
                 OutlinedTextField(snapshot.description, { snapshot = snapshot.copy(description = it) }, label = { Text("Description (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-description"))
                 OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth())
@@ -111,7 +113,7 @@ private data class TargetEdit(val type: String, val value: String, val unit: Str
                 if (!valid) Text("Review the recipe name, instruction titles and numeric quantities.", color = MaterialTheme.colorScheme.error)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        }, confirmButton = { TextButton(onClick = { onSave(RecipeEdit(prepared(), keptAssets, keptPhotos, captions, addedPhotos, contextIds)) }, enabled = valid && !busy, modifier = Modifier.testTag("recipe-save")) { Text(if (request.attemptDishId != null) "Apply to this meal" else "Save recipe") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") } })
+    }
     if (showSetup) DishEditorDialog(snapshot.dish, snapshot.dish.weightUnit, { showSetup = false }, { dish -> addedPhotos = addedPhotos + dish.photoUris; snapshot = snapshot.copy(dish = dish.copy(photoUris = emptyList())); showSetup = false })
 }
 

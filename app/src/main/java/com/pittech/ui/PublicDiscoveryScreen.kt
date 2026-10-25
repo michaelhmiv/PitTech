@@ -29,10 +29,13 @@ import org.json.JSONObject
     LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery) }
     BackHandler(state.detailId != null || state.profileHandle != null) { manager.back() }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        // PL-23 (DD-8): Discover is a network surface — offline is stated,
+        // with the cached content below unchanged.
+        if(!rememberOnlineState())Text(OfflineCopy.CHANGES_WAIT,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.testTag("discover-offline"))
         if(controls!=null && account!=null)TextButton(onClick={managingControls=true}){Text("Community controls")}
         if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
-            if(state.detailLoading) CircularProgressIndicator()
+            if(state.detailLoading) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.LOADING_RECIPE) }
             state.detail?.let { detail ->
                 state.image?.let { bytes ->
                     val bitmap=remember(bytes) { BitmapFactory.decodeByteArray(bytes,0,bytes.size) }
@@ -55,7 +58,7 @@ import org.json.JSONObject
                     Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
                 }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
-                if(state.preparing) { CircularProgressIndicator();TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
+                if(state.preparing) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.DOWNLOADING_COOK_PACK) }; TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
                     Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge)
                     recipe.optJSONObject("source")?.let { source->
@@ -91,7 +94,7 @@ import org.json.JSONObject
                 FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query)},{Text("Most forked")})
             }
             Button(onClick={ manager.refresh(sort,food,query) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("discover-search")) { Text("Search recipes") }
-            if(state.loading)CircularProgressIndicator()
+            if(state.loading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_RECIPES)}
             state.message?.let { Text(it,Modifier.testTag("discover-message")) }
             if(state.items.isEmpty() && !state.loading && state.message == null)Text("No recipes here yet. Try another food or search.",Modifier.testTag("discover-empty"))
             state.items.forEach { item ->

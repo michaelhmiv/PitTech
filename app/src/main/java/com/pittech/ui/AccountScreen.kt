@@ -200,7 +200,7 @@ import kotlinx.coroutines.launch
             Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
             TextButton(onClick={reviewingJournal=true},enabled=!state.busy,modifier=Modifier.testTag("local-journal-remove")){Text("Remove local journal")}
         }
-        if(state.busy)CircularProgressIndicator()
+        if(state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text(LoadingCopy.WORKING)}
         state.message?.let{Text(it,Modifier.testTag("account-message"))}
     }
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Sign out on this device?")},text={Text("Your local cooks, recipes and photos stay on this device. Signing out doesn't delete your account.")},confirmButton={TextButton(onClick={confirm=false;account.signOut()},modifier=Modifier.testTag("account-confirm-signout")){Text("Sign out")}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
@@ -276,7 +276,7 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            if(state.busy)CircularProgressIndicator()
+            if(state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text(LoadingCopy.WORKING)}
             state.message?.let{Text(it,Modifier.testTag("mcp-message"))}
         }
     }
@@ -318,7 +318,7 @@ import kotlinx.coroutines.launch
                 if(state.registered)TextButton(onClick={confirmingUnregister=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-device-unregister")){Text("Stop taking requests")}
             }
             state.lastCheckSummary?.let{Text(it,Modifier.testTag("mcp-device-last-check"),style=MaterialTheme.typography.bodySmall)}
-            if(state.busy)CircularProgressIndicator()
+            if(state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text(LoadingCopy.WORKING)}
             state.message?.let{Text(it,Modifier.testTag("mcp-device-message"))}
         }
     }
@@ -337,8 +337,12 @@ import kotlinx.coroutines.launch
     // can eat a bare busy true→false transition.
     var submitted by remember{mutableStateOf(false)}
     LaunchedEffect(state.createdToken, state.busy){if(submitted && !state.busy && state.createdToken!=null)onClose()}
-    AlertDialog(onDismissRequest=onClose,title={Text("New AI connection")},text={
-        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
+    // PL-22 (DD-6): creating an AI connection is a multi-field form — full screen.
+    FullScreenSurface(onDismiss=onClose,title="New AI connection",actions={
+        TextButton(onClick=onClose){Text("Cancel")}
+        TextButton(onClick={submitted=true;mcp.create(nickname,selected,days)},enabled=nickname.isNotBlank() && selected.isNotEmpty() && !state.busy,modifier=Modifier.testTag("mcp-create-submit")){Text(if(submitted && state.busy)"Creating…" else "Create connection")}
+    }){
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
             OutlinedTextField(nickname,{nickname=it},label={Text("Name this connection")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-nickname"))
             Text("What it can do",style=MaterialTheme.typography.titleSmall)
             com.pittech.data.McpScopeCatalog.all.forEach{entry->
@@ -357,10 +361,10 @@ import kotlinx.coroutines.launch
                 }
             }
             Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.",style=MaterialTheme.typography.bodySmall)
-            if(submitted && state.busy)CircularProgressIndicator()
+            if(submitted && state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text(LoadingCopy.CREATING_CONNECTION)}
             if(submitted && !state.busy && state.createdToken==null)Text(state.message ?: "Couldn't create the connection. Check your connection and try again.",Modifier.testTag("mcp-create-error"),style=MaterialTheme.typography.bodySmall)
         }
-    },confirmButton={TextButton(onClick={submitted=true;mcp.create(nickname,selected,days)},enabled=nickname.isNotBlank() && selected.isNotEmpty() && !state.busy,modifier=Modifier.testTag("mcp-create-submit")){Text(if(submitted && state.busy)"Creating…" else "Create connection")}},dismissButton={TextButton(onClick=onClose){Text("Cancel")}})
+    }
 }
 @Composable private fun SyncSection(sync: com.pittech.data.PrivateSyncCoordinator, signedIn: Boolean) {
     val state by sync.presentation.collectAsStateWithLifecycle()
@@ -369,6 +373,8 @@ import kotlinx.coroutines.launch
     LaunchedEffect(signedIn){sync.refresh()}
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.",style=MaterialTheme.typography.bodySmall)
+        // PL-23 (DD-8): the per-surface offline line for the sync surface.
+        if(!rememberOnlineState())Text(OfflineCopy.CHANGES_WAIT,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.testTag("sync-offline"))
         // PL-14 (#172): signing in surfaces the first sync as its own card,
         // so turning private sync on is discoverable instead of depending on
         // knowing that "Sync now" below is also the on switch. The card is

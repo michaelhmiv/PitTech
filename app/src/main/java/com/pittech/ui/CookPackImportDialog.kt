@@ -21,8 +21,13 @@ import com.pittech.domain.RecipeSnapshotCodec
 
 @Composable internal fun CookPackImportDialog(source: PitTechDataTransfer.ImportDraft, saving: Boolean, error: String?, onCancel: () -> Unit, onSave: (Set<String>) -> Unit, onAddHistory: () -> Unit, historyAdded: Boolean = false) {
     var selected by remember(source) { mutableStateOf(source.snapshot.recipes.map { it.currentRevisionId }.toSet()) }
-    AlertDialog(onDismissRequest = { if (!saving) onCancel() }, title = { Text("Cook Pack") }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    // PL-22 (DD-6): choosing what to save from a Cook Pack is a multi-item
+    // selection — full screen.
+    FullScreenSurface(onDismiss = { if (!saving) onCancel() }, title = "Cook Pack", dismissEnabled = !saving, actions = {
+        TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") }
+        TextButton(onClick = { onSave(selected) }, enabled = selected.isNotEmpty() && !saving, modifier = Modifier.testTag("pack-save-recipes")) { Text("Save ${selected.size} ${if (selected.size == 1) "recipe" else "recipes"}" + if (source.publicCookOnSave) " & set up meal" else "") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Choose what to save", style = MaterialTheme.typography.titleMedium)
             Text("Save either dish or the whole collection. Your copies can be edited and cooked offline.")
             source.snapshot.recipes.forEach { recipe ->
@@ -61,8 +66,8 @@ import com.pittech.domain.RecipeSnapshotCodec
                 }
             }
             Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.", style = MaterialTheme.typography.bodySmall)
-            if (saving) CircularProgressIndicator(Modifier.size(24.dp))
+            if (saving) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(Modifier.size(24.dp)); Text(LoadingCopy.SAVING) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(onClick = { onSave(selected) }, enabled = selected.isNotEmpty() && !saving, modifier = Modifier.testTag("pack-save-recipes")) { Text("Save ${selected.size} ${if (selected.size == 1) "recipe" else "recipes"}" + if (source.publicCookOnSave) " & set up meal" else "") } }, dismissButton = { TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") } })
+    }
 }

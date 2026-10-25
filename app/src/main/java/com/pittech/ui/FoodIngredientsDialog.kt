@@ -34,8 +34,21 @@ import java.util.UUID
     var details by rememberSaveable(selectedId) { mutableStateOf(false) }
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(dish.name + " ingredients") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // PL-22 (DD-6): the ingredient editor is an item editor — full screen.
+    FullScreenSurface(onDismiss = { if (!busy) onClose() }, title = dish.name + " ingredients", dismissEnabled = !busy,
+        actions = {
+            TextButton(onClick = onClose, enabled = !busy) { Text("Close") }
+            TextButton(onClick = {
+                val ingredient = (selected ?: IngredientEntity(UUID.randomUUID().toString(), data.cook.id, dish.id,
+                    stage, name, createdAtUtcMillis = System.currentTimeMillis())).copy(name = name, stage = stage,
+                    brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount), amountText = amount.trim().ifBlank { null },
+                    amountUnit = unit.takeIf { amount.isNotBlank() }, notes = notes.trim().ifBlank { null },
+                    appliedAtUtcMillis = appliedAt.takeIf { includeTime })
+                viewModel.saveIngredient(ingredient) { saved -> if (saved) onClose() }
+            }, enabled = !busy && name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(amount),
+                modifier = Modifier.testTag("food-ingredient-save")) { Text("Save ingredient") }
+        }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ingredients.forEach { ingredient ->
                 TextButton(onClick = { selectedId = ingredient.id }, modifier = Modifier.testTag("ingredient-edit-" + ingredient.id)) { Text(ingredient.name) }
             }
@@ -56,15 +69,6 @@ import java.util.UUID
                 if (includeTime) DateTimePickerField("Applied at", appliedAt, { appliedAt = it }, "ingredient-applied-time")
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        } },
-        confirmButton = { TextButton(onClick = {
-            val ingredient = (selected ?: IngredientEntity(UUID.randomUUID().toString(), data.cook.id, dish.id,
-                stage, name, createdAtUtcMillis = System.currentTimeMillis())).copy(name = name, stage = stage,
-                brand = brand.trim().ifBlank { null }, amountValue = CookEntryValidation.optionalPositiveNumber(amount), amountText = amount.trim().ifBlank { null },
-                amountUnit = unit.takeIf { amount.isNotBlank() }, notes = notes.trim().ifBlank { null },
-                appliedAtUtcMillis = appliedAt.takeIf { includeTime })
-            viewModel.saveIngredient(ingredient) { saved -> if (saved) onClose() }
-        }, enabled = !busy && name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(amount),
-            modifier = Modifier.testTag("food-ingredient-save")) { Text("Save ingredient") } },
-        dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Close") } })
+        }
+    }
 }

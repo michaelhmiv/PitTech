@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct ContentView: View {
     @Environment(CookStore.self) private var store
@@ -8,6 +9,7 @@ struct ContentView: View {
     @Environment(ProSubscriptionCoordinator.self) private var pro
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
+    @State private var connectivity = ConnectivityMonitor()
     @State private var selectedTab = "meals"
     // First-run welcome (#187): first launch only, never in UI tests or
     // screenshot runs (fixture launches), identical content/order to Android.
@@ -43,6 +45,15 @@ struct ContentView: View {
     // type-checking budget (which is why tabRoot is extracted at all).
 
     private var tabRoot: some View {
+        // PL-23 (DD-8): the offline banner sits above the tabs on every
+        // tab while the device has no connection.
+        VStack(spacing: 0) {
+            if !connectivity.isOnline { OfflineBannerView() }
+            tabView
+        }
+    }
+
+    private var tabView: some View {
         TabView(selection: $selectedTab) {
             CookListView(restoreRequested: $mealsRestoreRequested)
                 .tabItem { Label("Meals", systemImage: "flame") }.tag("meals")
@@ -539,32 +550,48 @@ struct InsightsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     SectionTitle(title: "Insights", subtitle: "Patterns from the cooks you record.")
-                    HStack(spacing: 12) {
-                        MetricCard(title: "Finished cooks", value: "\(store.completedCooks.count)", symbol: "checkmark.circle")
-                        MetricCard(title: "Active now", value: "\(store.activeCooks.count)", symbol: "flame")
-                    }
-                    HStack(spacing: 12) {
-                        MetricCard(title: "Temperature readings", value: "\(store.library.readings.count)", symbol: "thermometer.medium")
-                        MetricCard(title: "Timeline notes", value: "\(store.library.events.count)", symbol: "text.bubble")
-                    }
+                    // PL-21 (DD-3): the Focus List header is a compact stat
+                    // strip — the same five figures the card grid carried,
+                    // none dropped, at a fraction of the height.
                     let durations = store.completedCooks.compactMap { cook -> Double? in
                         guard let end = cook.endedAtUtcMillis, end >= cook.startedAtUtcMillis else { return nil }
                         return Double(end - cook.startedAtUtcMillis) / 3_600_000
                     }
-                    if let average = durations.average {
-                        MetricCard(title: "Average session time", value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", symbol: "clock")
+                    HStack(alignment: .top, spacing: 16) {
+                        InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
+                        InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
+                        InsightsStat(value: "\(store.library.readings.count)", label: "Readings")
+                        InsightsStat(value: "\(store.library.events.count)", label: "Notes")
+                        if let average = durations.average {
+                            InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Avg session")
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     if !store.completedCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("RECENTLY FINISHED").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            // PL-21: recently-finished cards open the cook,
+                            // like the Meals history cards do.
                             ForEach(store.completedCooks.prefix(5)) { cook in
-                                CookCard(cook: cook, dishes: store.dishes(for: cook.id))
+                                NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
+                                    .buttonStyle(.plain)
                             }
                         }
                     } else {
-                        ContentUnavailableView("Keep logging to build insights", systemImage: "chart.xyaxis.line", description: Text("Your cook totals and average duration are calculated from records saved on this device."))
+                        // PL-25: the Insights empty is the shared StateCopy wording.
+                        ContentUnavailableView(EmptyStateCopy.insightsTitle, systemImage: "chart.xyaxis.line", description: Text(EmptyStateCopy.insightsBody))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 18)
+                    }
+                    // PL-21 design half: the iOS Insights job set (search,
+                    // filters, comparisons, statistics) is parity issue
+                    // #185 — until it lands, the gap is stated honestly
+                    // instead of the surface pretending to be complete.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Search, filters, comparisons and statistics aren't available in Insights on iOS yet.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text("Your full cook history is in Meals.")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("DEEPER ANALYSIS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
@@ -577,24 +604,21 @@ struct InsightsView: View {
             }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("Insights")
+            .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
         }
     }
 }
 
-struct MetricCard: View {
-    let title: String
+/// One figure in the Insights Focus List header strip (PL-21 / DD-3).
+private struct InsightsStat: View {
     let value: String
-    let symbol: String
+    let label: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: symbol).foregroundStyle(PitTechStyle.accent)
-            Text(value).font(.largeTitle.bold())
-            Text(title).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -605,11 +629,26 @@ struct SettingsView: View {
     @State private var showingImport = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
     @State private var archiveError: String?
+    @State private var notificationsAllowed = false
 
     var body: some View {
         Group {
             Form {
-                Section("Measurements") {
+                // PL-26 (#172): the Settings section order is the shared
+                // cross-platform order (SettingsCopy.sectionOrder):
+                // Appearance, Units, Cook notifications, Your data,
+                // Feedback, Ads and privacy, About — same contents per
+                // section on both platforms, platform mechanics aside.
+                Section("Appearance") {
+                    // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is
+                    // the only appearance — stated honestly, not a dead picker.
+                    LabeledContent("Appearance", value: "Night Service (dark)")
+                        .accessibilityIdentifier("appearance-night-service")
+                    Text("PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Units") {
                     Picker("Temperature", selection: Binding(
                         get: { store.temperatureUnit },
                         set: { store.setPreference("temperatureUnit", value: $0) }
@@ -624,48 +663,57 @@ struct SettingsView: View {
                         Text("Pounds").tag("lb")
                         Text("Kilograms").tag("kg")
                     }
-                }
-                Section("Appearance") {
-                    // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is
-                    // the only appearance — stated honestly, not a dead picker.
-                    LabeledContent("Appearance", value: "Night Service (dark)")
-                        .accessibilityIdentifier("appearance-night-service")
-                    Text("PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.")
+                    Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Section("Your data") {
-                    Label("Cook data stays on this device unless you export or share it.", systemImage: "iphone.and.arrow.forward")
+                Section("Cook notifications") {
+                    Text("Guidance reminders and monitoring alerts have separate sound settings. Turn on alerts from a cook when you want to use them.")
                         .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(notificationsAllowed ? "Notifications allowed" : "Notifications are disabled")
+                    Link("Notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                }
+                Section("Your data") {
+                    Text(SettingsCopy.dataStaysLine)
+                        .font(.subheadline)
+                    Text(SettingsCopy.fullBackupScope)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     Button("Export cook archive") {
                         do {
                             exportDocument = PitTechArchiveDocument(data: try store.exportArchive())
                             showingExport = true
                         } catch {
-                            archiveError = "PitTech couldn't create your backup. Check available storage and try again."
+                            archiveError = ErrorCopy.saveChangeFailed
                         }
                     }
                     Button("Restore cook archive") { showingImport = true }
                     NativeDataExportButtons()
-                    NavigationLink("Third-party telemetry notices") {
-                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
-                    }
-                    Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
-                    Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
                 }
-                if adsConsent.isPrivacyOptionsRequired {
-                    Section("Advertising") {
+                Section("Feedback") {
+                    Text("Tell us about a problem or suggest a feature without needing a GitHub account. Cook records and photos are never included.")
+                        .font(.subheadline)
+                    NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
+                }
+                Section("Ads and privacy") {
+                    Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
+                    if adsConsent.isPrivacyOptionsRequired {
                         Button("Privacy choices") {
                             Task { await adsConsent.presentPrivacyOptions() }
                         }
                     }
                 }
-                Section("PitTech") {
-                    NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
+                Section("About") {
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                    Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
+                    NavigationLink("Third-party telemetry notices") {
+                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
+                    }
                 }
             }
             .navigationTitle("Settings")
+            .task { notificationsAllowed = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized }
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }
             }

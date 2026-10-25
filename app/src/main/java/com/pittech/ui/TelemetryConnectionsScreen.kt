@@ -95,7 +95,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                     connecting = true; busy = true
                     try { runtime.connectHomeAssistant(p, code); add = false; pending = null; dialogError = null; step = 2 }
                     catch (cancelled: CancellationException) { throw cancelled }
-                    catch (e: Exception) { dialogError = "Home Assistant sign-in could not finish (${e.message ?: "connection failed"}). Server: ${p.endpoint}" }
+                    catch (e: Exception) { dialogError = "Home Assistant sign-in could not finish. Check the server address and try again. Server: ${p.endpoint}" }
                     finally { connecting = false; busy = false }
                 } else if (p != null) dialogError = "Home Assistant did not return an authorization code. Server: ${p.endpoint}"
             }
@@ -228,9 +228,24 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
         var bleGranted by remember { mutableStateOf(false) }
         val ble = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted -> bleGranted = granted.values.all { it } }
         fun profile() = (pending ?: TelemetryProfile(UUID.randomUUID().toString(), provider, providerNames.getValue(provider))).copy(provider = provider, endpoint = endpoint.trim(), deviceHint = device.trim())
-        AlertDialog(onDismissRequest = { if (!busy) { add = false; pending = null; secret = ""; dialogError = null } }, title = { Text("Connect · Beta") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // PL-22 (DD-6): connecting a provider is a multi-field form — full screen.
+        FullScreenSurface(onDismiss = { if (!busy) { add = false; pending = null; secret = ""; dialogError = null } }, title = "Connect · Beta", dismissEnabled = !busy, actions = {
+            TextButton(enabled = !busy, onClick = { add = false; pending = null; secret = ""; dialogError = null }) { Text("Cancel") }
+            TextButton(enabled = !busy && (provider == "combustion" || secret.isNotBlank()), onClick = {
+                val p = profile(); val u = user; val entered = secret; secret = ""; busy = true
+                scope.launch {
+                    try { runtime.connect(p, u, entered); add = false; pending = null; dialogError = null; error = null }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (e: Exception) {
+                        val message = if (e is TelemetryRequestException || e is IllegalArgumentException) e.message else "Connection failed. Check your account and network."
+                        // PL-06: HA failures stay in this sheet, server URL attached, form intact.
+                        if (provider == "home_assistant") dialogError = "$message Server: ${p.endpoint}" else error = message
+                    }
+                    finally { busy = false }
+                }
+            }) { Text(if (busy) "Connecting…" else "Connect") }
+        }) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     dialogError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     // PL-06: visible progress during the token exchange.
                     if (connecting) {
@@ -269,21 +284,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                     if (provider != "combustion" && (provider != "home_assistant" || advanced)) OutlinedTextField(secret, { secret = it.take(16_384) }, label = { Text(if (provider == "home_assistant") "Access token" else "Password (not saved)") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
                     if (provider != "combustion" && provider != "home_assistant" && provider != "flame_boss") Text("Advanced: leave the account field empty to use a provider access token.", style = MaterialTheme.typography.bodySmall)
                 }
-            },
-            confirmButton = { TextButton(enabled = !busy && (provider == "combustion" || secret.isNotBlank()), onClick = {
-                val p = profile(); val u = user; val entered = secret; secret = ""; busy = true
-                scope.launch {
-                    try { runtime.connect(p, u, entered); add = false; pending = null; dialogError = null; error = null }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (e: Exception) {
-                        val message = if (e is TelemetryRequestException || e is IllegalArgumentException) e.message else "Connection failed. Check your account and network."
-                        // PL-06: HA failures stay in this sheet, server URL attached, form intact.
-                        if (provider == "home_assistant") dialogError = "$message Server: ${p.endpoint}" else error = message
-                    }
-                    finally { busy = false }
-                }
-            }) { Text(if (busy) "Connecting…" else "Connect") } },
-            dismissButton = { TextButton(enabled = !busy, onClick = { add = false; pending = null; secret = ""; dialogError = null }) { Text("Cancel") } })
+        }
     }
 }
 

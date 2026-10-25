@@ -28,7 +28,8 @@ import org.json.JSONObject
 }
 @Composable internal fun CommunityControlsDialog(controls:CommunityControls,account:AccountManager,manager:PublicManager,onClose:()->Unit){
     val state by controls.presentation.collectAsStateWithLifecycle()
-    AlertDialog(onDismissRequest=onClose,title={Text("Community controls")},text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    // PL-22 (DD-6): community controls are a management surface — a sheet.
+    SheetSurface(onDismiss=onClose,title="Community controls",actions={TextButton(onClick=onClose){Text("Done")}}){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
         state.pending?.let{pending->
             Text(if(pending.rejected)"Rejected request" else "Saved request",style=MaterialTheme.typography.titleMedium)
             Text(if(pending.kind=="report")"Your report is saved on this device." else "Your account block change is saved on this device.")
@@ -45,16 +46,20 @@ import org.json.JSONObject
         if(state.reports.isEmpty()){Text(EmptyStateCopy.REPORTS_TITLE);Text(EmptyStateCopy.REPORTS_BODY,style=MaterialTheme.typography.bodySmall)}
         state.reports.forEach{receipt->Text("Report "+receipt.id.take(8)+" · "+receipt.status);TextButton(onClick={controls.checkReport(receipt,account)},enabled=!state.busy){Text("Check report status")}}
         Text("Only your report status is shown. Moderator notes and account identities stay private.",style=MaterialTheme.typography.bodySmall)
-        if(state.busy)CircularProgressIndicator()
+        if(state.busy)Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.WORKING)}
         state.message?.let{Text(it,Modifier.testTag("community-message"))}
-    }},confirmButton={TextButton(onClick=onClose){Text("Done")}})
+    }}
 }
 @Composable private fun CommunityReportDialog(detail:PublicDetail,publisher:Boolean,controls:CommunityControls,account:AccountManager,onClose:()->Unit,onManage:()->Unit){
     val state by controls.presentation.collectAsStateWithLifecycle()
     var reason by remember{mutableStateOf("other")};var details by remember{mutableStateOf("")};var asset by remember{mutableStateOf("")};var submitted by remember{mutableStateOf(false)}
     val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(state.pending,state.message){if(submitted && state.pending==null && state.message?.startsWith("Report received")==true)onClose()}
-    AlertDialog(onDismissRequest=onClose,title={Text(if(publisher)"Report publisher" else "Report publication")},text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    // PL-22 (DD-6): the report form is a form — a sheet.
+    SheetSurface(onDismiss=onClose,title=if(publisher)"Report publisher" else "Report publication",actions={
+        TextButton(onClick=onClose){Text("Cancel")}
+        TextButton(onClick={keyboard?.hide();submitted=true;controls.report(detail.id,asset.takeIf{it.isNotEmpty()},publisher,reason,details,account)},enabled=!state.busy && state.pending==null && details.length<=2000,modifier=Modifier.testTag("report-submit")){Text("Send report")}
+    }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
         Text(detail.title,style=MaterialTheme.typography.titleMedium)
         Text(if(publisher)"Report this publisher for review. Anonymous identity is not exposed." else "Report selected public content for review.")
         if(!publisher){val labels=listOf("Whole publication")+detail.media.indices.map{"Photo ${it+1}"};SimpleDropdownField("Content",if(asset.isEmpty())labels[0] else labels[detail.media.indexOfFirst{it.getString("id")==asset}+1],labels,{label->asset=if(label==labels[0])"" else detail.media[labels.indexOf(label)-1].getString("id")},enabled=!state.busy)}
@@ -63,5 +68,5 @@ import org.json.JSONObject
         Text("Do not include passwords or private device credentials. Your report is private to the review team.",style=MaterialTheme.typography.bodySmall)
         if(state.pending!=null){Text("Recover or review the saved request before sending another report.");TextButton(onClick=onManage){Text("Open community controls")}}
         state.message?.let{Text(it)}
-    }},confirmButton={TextButton(onClick={keyboard?.hide();submitted=true;controls.report(detail.id,asset.takeIf{it.isNotEmpty()},publisher,reason,details,account)},enabled=!state.busy && state.pending==null && details.length<=2000,modifier=Modifier.testTag("report-submit")){Text("Send report")}},dismissButton={TextButton(onClick=onClose){Text("Cancel")}})
+    }}
 }

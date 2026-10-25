@@ -308,14 +308,17 @@ internal fun PitTechApp(
     BackHandler(enabled = section == MainSection.MORE && moreDestination != null) { moreDestination = null }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (section == MainSection.MORE) moreDestination ?: section.title else section.title, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    if (section == MainSection.MORE && moreDestination != null) {
-                        IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
-                    }
-                },
-            )
+            Column {
+                TopAppBar(
+                    title = { Text(if (section == MainSection.MORE) moreDestination ?: section.title else section.title, fontWeight = FontWeight.SemiBold) },
+                    navigationIcon = {
+                        if (section == MainSection.MORE && moreDestination != null) {
+                            IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
+                        }
+                    },
+                )
+                OfflineBanner()
+            }
         },
         bottomBar = {
             // Night Service shell (#172): the bar sits as a rounded "pill" tray
@@ -1085,12 +1088,40 @@ internal fun DishEditorDialog(
         photoUris = (photoUris + uri.toString()).distinct().take(10)
     })
 
-    AlertDialog(
-        onDismissRequest = requestDismiss,
-        title = { Text("Add a dish") },
-        text = {
+    // PL-22 (DD-6): the dish editor is a multi-field editor — full screen.
+    FullScreenSurface(
+        onDismiss = requestDismiss,
+        title = "Add a dish",
+        actions = {
+            TextButton(onClick = requestDismiss) { Text("Cancel") }
+            TextButton(onClick = {
+                nameError = name.isBlank()
+                weightError = !CookEntryValidation.isOptionalPositiveNumberValid(weight)
+                val invalidAmounts = preparationItems.any { !CookEntryValidation.isOptionalPositiveNumberValid(it.amountText) }
+                if (!nameError && !weightError && !invalidAmounts) {
+                    onSave(
+                        DishDraft(
+                            name = name.trim(),
+                            foodType = foodType,
+                            cut = cut,
+                            weightText = weight,
+                            weightUnit = weightUnit,
+                            startingCondition = startingCondition,
+                            boneIn = boneIn,
+                            placement = placement,
+                            gradeOrSource = gradeOrSource,
+                            thicknessNotes = thicknessNotes,
+                            prepNotes = prepNotes,
+                            preparationItems = preparationItems.filter { it.name.isNotBlank() },
+                            photoUris = photoUris,
+                        ),
+                    )
+                }
+            }, modifier = Modifier.testTag("dish-save")) { Text("Add dish") }
+        },
+    ) {
             Column(
-                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OutlinedTextField(
@@ -1282,35 +1313,8 @@ internal fun DishEditorDialog(
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                nameError = name.isBlank()
-                weightError = !CookEntryValidation.isOptionalPositiveNumberValid(weight)
-                val invalidAmounts = preparationItems.any { !CookEntryValidation.isOptionalPositiveNumberValid(it.amountText) }
-                if (!nameError && !weightError && !invalidAmounts) {
-                    onSave(
-                        DishDraft(
-                            name = name.trim(),
-                            foodType = foodType,
-                            cut = cut,
-                            weightText = weight,
-                            weightUnit = weightUnit,
-                            startingCondition = startingCondition,
-                            boneIn = boneIn,
-                            placement = placement,
-                            gradeOrSource = gradeOrSource,
-                            thicknessNotes = thicknessNotes,
-                            prepNotes = prepNotes,
-                            preparationItems = preparationItems.filter { it.name.isNotBlank() },
-                            photoUris = photoUris,
-                        ),
-                    )
-                }
-            }, modifier = Modifier.testTag("dish-save")) { Text("Add dish") }
-        },
-        dismissButton = { TextButton(onClick = requestDismiss) { Text("Cancel") } },
-    )
+            }
+    }
 
     if (showPhotoSource) {
         PhotoSourceDialog(

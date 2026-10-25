@@ -18,7 +18,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.DishEntity
@@ -67,20 +66,29 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                 val next = draft.copy(photos = draft.photos + photos)
                 viewModel.persistNoteDraft(next)
                 onChange(next)
-            } catch (failure: Exception) { localError = failure.message ?: "The photo could not be opened." }
+            } catch (failure: Exception) { localError = ErrorCopy.failureText(failure, "The photo couldn't be opened. Your note draft is kept on this device — try again.") }
             finally { staging = false }
         }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { stage(it) }
     val camera = rememberCameraPhotoCapture(onPhotoCaptured = { stage(listOf(it)) })
     fun keepDraft() { scope.launch { viewModel.persistNoteDraft(draft); onClose() } }
-    AlertDialog(
-        modifier = Modifier.systemBarsPadding().imePadding(),
-        properties = DialogProperties(decorFitsSystemWindows = false),
-        onDismissRequest = { if (!busy && !staging) keepDraft() },
-        title = { Text(if (editing && draft.category == "temperature") "Edit temperature" else if (editing) "Edit timeline entry" else "Add to cook log") },
-        text = {
-            Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // PL-22 (DD-6): the composer is the note/temp contextual capture — a
+    // bottom sheet, not a dialog. Same draft, fields, and actions; the Save
+    // row stays pinned under the scrolling fields (results-sheet pattern).
+    SheetSurface(
+        onDismiss = { if (!busy && !staging) keepDraft() },
+        title = if (editing && draft.category == "temperature") "Edit temperature" else if (editing) "Edit timeline entry" else "Add to cook log",
+        dismissEnabled = !busy && !staging,
+        fillHeightFraction = 0.95f,
+        actions = {
+            TextButton(onClick = { viewModel.discardNoteDraft(draft.id); onClose() }, enabled = !busy && !staging) { Text("Discard") }
+            TextButton(onClick = { keepDraft() }, enabled = !busy && !staging) { Text("Keep draft") }
+            TextButton(onClick = { viewModel.saveNote(draft, editing, onSaved) }, enabled = valid && !busy && !staging,
+                modifier = Modifier.testTag(if (draft.category == "temperature") "temperature-save" else "timeline-entry-save")) { Text("Save entry") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val choices = foodChoices(dishes)
                 val scopeLabel = if (draft.dishIds.isNotEmpty()) draft.dishIds.size.toString() + " foods" else
                     choices.firstOrNull { it.first == draft.dishId }?.second ?: "Whole cook"
@@ -173,16 +181,7 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                 }
                 (localError ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("note-save-error")) }
             }
-        },
-        confirmButton = { TextButton(onClick = { viewModel.saveNote(draft, editing, onSaved) }, enabled = valid && !busy && !staging,
-            modifier = Modifier.testTag(if (draft.category == "temperature") "temperature-save" else "timeline-entry-save")) { Text("Save entry") } },
-        dismissButton = {
-            Row {
-                TextButton(onClick = { viewModel.discardNoteDraft(draft.id); onClose() }, enabled = !busy && !staging) { Text("Discard") }
-                TextButton(onClick = { keepDraft() }, enabled = !busy && !staging) { Text("Keep draft") }
-            }
-        },
-    )
+    }
     // PL-07 (issue #172): cancelling the photo source returns to the
     // composer — including on a photo-first entry, where it used to close
     // the whole composer and dump the user back on Cook Detail.

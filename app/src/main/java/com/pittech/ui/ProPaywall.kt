@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -122,29 +123,31 @@ internal fun ProEntryRow(entry: ProPlacement, onClick: (ProPlacement) -> Unit) {
 @Composable
 private fun ProLoadingDialog(subscription: SubscriptionManager, entry: ProPlacement) {
     val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    // PL-22 (DD-6): the Pro status wait is a status surface — full screen.
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(Modifier.fillMaxWidth().testTag("pro-loading"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator()
-                Text("Checking PitTech Pro status…", style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator()
+                    Text(LoadingCopy.CHECKING_PRO, style = MaterialTheme.typography.bodyLarge)
+                }
                 Text("Your cooks, exports, and free tools stay available while this loads.", style = MaterialTheme.typography.bodyMedium)
                 OutlinedButton(onClick = { scope.launch { subscription.reconcile() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Check again") }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 @Composable
 internal fun ProPaywallDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text("PitTech Pro") },
-        text = { ProPaywallContent(subscription, entry, onSignIn, activity) },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-paywall-close")) { Text("Close") } },
-    )
+    // PL-22 (DD-6): the paywall is a full offer surface — full screen.
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = "PitTech Pro",
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-paywall-close")) { Text("Close") } },
+    ) { ProPaywallContent(subscription, entry, onSignIn, activity) }
 }
 
 @Composable
@@ -270,10 +273,12 @@ private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: P
         return
     }
     val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    // PL-22 (DD-6): the expired-Pro fallback is a status surface — a sheet.
+    SheetSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(Modifier.fillMaxWidth().testTag("pro-expired-fallback"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
                 Text("PitTech Pro ended on this account.", style = MaterialTheme.typography.titleMedium)
@@ -286,8 +291,6 @@ private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: P
                 }
                 OutlinedButton(onClick = { scope.launch { subscription.reconcile() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Check again") }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 

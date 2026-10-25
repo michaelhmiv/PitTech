@@ -18,8 +18,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
@@ -81,7 +79,7 @@ internal object ShareCardFiles {
     var bytes by remember(id) { mutableStateOf<ByteArray?>(null) }; var error by remember(id) { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }; var working by remember { mutableStateOf(true) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
-        if (uri != null) bytes?.let { image -> scope.launch { runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri,"w")?.use { it.write(image) } ?: kotlin.error("This image could not be saved.") } }.onFailure { error = it.message } } }
+        if (uri != null) bytes?.let { image -> scope.launch { runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri,"w")?.use { it.write(image) } ?: kotlin.error("This image could not be saved.") } }.onFailure { error = ErrorCopy.failureText(it, "The share card couldn't be finished. Your cook is unchanged — try again.") } } }
     }
     val proState by viewModel.subscription.presentation.collectAsStateWithLifecycle()
     val entitled = proState.entitlement == AdEntitlement.ENTITLED
@@ -90,16 +88,15 @@ internal object ShareCardFiles {
     LaunchedEffect(id,retry,relay?.code,theme.id,palette.id) {
         working = true; error = null
         try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id, relay, theme.id, palette.id)) } }
-        catch (e: Exception) { error = e.message }
+        catch (e: Exception) { error = ErrorCopy.failureText(e, "The share card couldn't be finished. Your cook is unchanged — try again.") }
         finally { working = false }
     }
     val image = remember(bytes) { bytes?.let { BitmapFactory.decodeByteArray(it,0,it.size) } }
     DisposableEffect(image) { onDispose { image?.recycle() } }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth().padding(16.dp).heightIn(max = 850.dp), shape = MaterialTheme.shapes.large) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Share card", style = MaterialTheme.typography.titleLarge)
-                if (working) CircularProgressIndicator()
+    // PL-22 (DD-6): the share-card preview is a reading surface — full screen.
+    FullScreenSurface(onDismiss = onClose, title = "Share card") {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (working) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.RENDERING_SHARE_CARD) }
                 image?.let { Image(it.asImageBitmap(), contentDescription = "Exact exported card preview", modifier = Modifier.fillMaxWidth().aspectRatio(1080f/1350f).testTag("share-card-preview")) }
                 Text(if (theme.isPro) "1080 × 1350 PNG · ${theme.name} theme" else "1080 × 1350 PNG · default theme", style = MaterialTheme.typography.bodySmall)
                 if (onProThemes != null) ProEntryRow(com.pittech.billing.ProPlacement.THEMES) { onProThemes() }
@@ -111,13 +108,12 @@ internal object ShareCardFiles {
                             val uri = FileProvider.getUriForFile(context,"${context.packageName}.fileprovider",file)
                             val intent = Intent(Intent.ACTION_SEND).apply { type = "image/png"; putExtra(Intent.EXTRA_STREAM,uri); clipData = ClipData.newUri(context.contentResolver,"PitTech card",uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                             context.startActivity(Intent.createChooser(intent,"Share PitTech card"))
-                        }.onFailure { error = it.message }
+                        }.onFailure { error = ErrorCopy.failureText(it, "The share card couldn't be finished. Your cook is unchanged — try again.") }
                     } }
                 }, enabled = bytes != null && !working, modifier = Modifier.fillMaxWidth().testTag("card-share")) { Text("Share image") }
                 OutlinedButton({ export.launch("PitTech-card.png") }, enabled = bytes != null && !working, modifier = Modifier.fillMaxWidth().testTag("card-save")) { Text("Save PNG") }
                 TextButton(onPack, Modifier.fillMaxWidth()) { Text("Share Cook Pack file") }
                 TextButton(onClose, Modifier.fillMaxWidth().testTag("card-close")) { Text("Back to edit") }
             }
-        }
     }
 }
