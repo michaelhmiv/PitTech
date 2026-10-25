@@ -66,7 +66,10 @@ data class CookNoteDraft(
         require(temperatures.map { it.id }.distinct().size == temperatures.size && photos.map { it.id }.distinct().size == photos.size)
         temperatures.forEach {
             require(it.valueText.toDoubleOrNull()?.isFinite() == true && it.probeName.isNotBlank()) { "Enter a valid temperature and measurement name." }
-            require(it.unit in setOf("°F", "°C") && it.measurementType in setOf("food", "food_probe", "pit", "pit_ambient"))
+            // "setpoint"/"other" are the legacy types the retired standalone
+            // Temperature Entry dialog offered; a manual reading carrying one
+            // must stay editable now that the composer is the only editor.
+            require(it.unit in setOf("°F", "°C") && it.measurementType in setOf("food", "food_probe", "pit", "pit_ambient", "setpoint", "other"))
         }
     }
     fun encode(): String = JSONObject().put("version", 1).put("id", id).put("cookId", cookId)

@@ -100,17 +100,29 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                     fun change(next: NoteTemperature) { onChange(draft.copy(temperatures = draft.temperatures.map { if (it.id == t.id) next else it })) }
                     OutlinedTextField(t.valueText, { change(t.copy(valueText = it)) }, label = { Text("Temperature (" + t.unit + ")") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-value" else "temperature-value-" + t.id))
-                    if (showDetails) {
-                        OutlinedTextField(t.probeName, { change(t.copy(probeName = it)) }, label = { Text("Probe or location") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-probe" else "temperature-probe-" + t.id))
-                        SimpleDropdownField("Measurement", if (t.measurementType.startsWith("pit")) "Pit" else "Food", listOf("Food", "Pit"), { label ->
-                            change(t.copy(measurementType = if (label == "Pit") "pit" else "food", dishId = if (label == "Pit") null else draft.dishId))
-                        })
-                        SimpleDropdownField("Unit", t.unit, listOf("°F", "°C"), { change(t.copy(unit = it)) })
-                        SimpleDropdownField("Temperature for", choices.firstOrNull { it.first == t.dishId }?.second ?: "Whole cook",
-                            listOf("Whole cook") + choices.map { it.second }, { label -> change(t.copy(dishId = choices.firstOrNull { it.second == label }?.first)) })
-                        DateTimePickerField("Measured at", t.measuredAt, { change(t.copy(measuredAt = it)) }, "temperature-time-" + t.id)
-                    }
+                    // PL-07 (issue #172): probe / measurement / unit /
+                    // measured-at live on the temperature row itself, not
+                    // behind "More details" — a quick temp must not silently
+                    // record the wrong probe, type, unit or time.
+                    OutlinedTextField(t.probeName, { change(t.copy(probeName = it)) }, label = { Text("Probe or location") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-probe" else "temperature-probe-" + t.id))
+                    // Legacy readings from the retired Temperature Entry
+                    // dialog can carry "setpoint"/"other"; keep that type
+                    // selectable so editing never silently rewrites it.
+                    val legacyMeasurement = when (t.measurementType) { "setpoint" -> "Setpoint"; "other" -> "Other"; else -> null }
+                    SimpleDropdownField("Measurement", legacyMeasurement ?: if (t.measurementType.startsWith("pit")) "Pit" else "Food",
+                        listOf("Food", "Pit") + listOfNotNull(legacyMeasurement), { label ->
+                        when (label) {
+                            "Pit" -> change(t.copy(measurementType = "pit", dishId = null))
+                            "Food" -> change(t.copy(measurementType = "food", dishId = draft.dishId))
+                            "Setpoint" -> change(t.copy(measurementType = "setpoint"))
+                            else -> change(t.copy(measurementType = "other"))
+                        }
+                    })
+                    SimpleDropdownField("Unit", t.unit, listOf("°F", "°C"), { change(t.copy(unit = it)) })
+                    SimpleDropdownField("Temperature for", choices.firstOrNull { it.first == t.dishId }?.second ?: "Whole cook",
+                        listOf("Whole cook") + choices.map { it.second }, { label -> change(t.copy(dishId = choices.firstOrNull { it.second == label }?.first)) })
+                    DateTimePickerField("Measured at", t.measuredAt, { change(t.copy(measuredAt = it)) }, "temperature-time-" + t.id)
                     TextButton(onClick = { onChange(draft.copy(temperatures = draft.temperatures.filterNot { it.id == t.id })) }) { Text("Remove temperature") }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -171,7 +183,10 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
             }
         },
     )
-    if (showPhotoSource) PhotoSourceDialog(onDismiss = { showPhotoSource = false; if (photoFirst && draft.photos.isEmpty()) onClose() },
+    // PL-07 (issue #172): cancelling the photo source returns to the
+    // composer — including on a photo-first entry, where it used to close
+    // the whole composer and dump the user back on Cook Detail.
+    if (showPhotoSource) PhotoSourceDialog(onDismiss = { showPhotoSource = false },
         onTakePhoto = { scope.launch { viewModel.persistNoteDraft(draft); showPhotoSource = false; camera() } }, onChooseFromLibrary = { scope.launch { viewModel.persistNoteDraft(draft); showPhotoSource = false; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } })
 }
 

@@ -166,9 +166,7 @@ fun CookDetailScreen(
     var dishToDelete by remember { mutableStateOf<DishEntity?>(null) }
     var editEvent by remember { mutableStateOf<TimelineEventEntity?>(null) }
     var showNewEvent by remember { mutableStateOf(false) }
-    var showTemperature by remember { mutableStateOf(false) }
     var showTarget by remember { mutableStateOf(false) }
-    var editReading by remember { mutableStateOf<SensorReadingEntity?>(null) }
     var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     val reminderRules by viewModel.reminders.observeRules().collectAsStateWithLifecycle(emptyList())
     val guideFlow = remember(data.cook.id) { viewModel.guide.observe(data.cook.id) }
@@ -460,33 +458,26 @@ fun CookDetailScreen(
             title = action?.let { com.pittech.domain.PlaybookCodec.actions[it] }.orEmpty(),
             temperatures = if (category == "temperature") listOf(com.pittech.domain.NoteTemperature(unit = preferredTemperatureUnit, dishId = dishId)) else emptyList()).encode()
     }
+    // PL-07 (issue #172): the standalone Temperature Entry dialog is retired.
+    // Editing a standalone manual reading opens the same note composer as
+    // every other temperature job, carrying the reading's own identity; on
+    // save the composer adopts the reading into the note it creates, so a
+    // manual temp is edited the same way everywhere.
+    fun openReadingEdit(reading: SensorReadingEntity) {
+        noteEditing = true
+        notePhotoFirst = false
+        noteDraftJson = com.pittech.domain.CookNoteDraft(cookId = data.cook.id, dishId = reading.dishId, category = "temperature",
+            occurredAt = reading.measuredAtUtcMillis,
+            temperatures = listOf(com.pittech.domain.NoteTemperature(id = reading.id, probeName = reading.probeName,
+                measurementType = reading.measurementType, valueText = reading.value.toString(), unit = reading.unit,
+                measuredAt = reading.measuredAtUtcMillis, dishId = reading.dishId, probeId = reading.probeId))).encode()
+    }
     noteDraftJson?.let { raw ->
         val draft = com.pittech.domain.CookNoteDraft.decode(raw)
         CookNoteComposer(draft, data.dishes, preferredTemperatureUnit, viewModel, noteEditing, notePhotoFirst,
             onChange = { noteDraftJson = it.encode() },
             onClose = { noteDraftJson = null; notePhotoFirst = false },
             onSaved = { attached -> noteDraftJson = null; notePhotoFirst = false })
-    }
-    if (showTemperature || editReading != null) {
-        TemperatureEntryDialog(
-            reading = editReading,
-            dishes = data.dishes,
-            preferredUnit = preferredTemperatureUnit,
-            onDismiss = {
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-                showTemperature = false
-                editReading = null
-            },
-            onSave = { probe, type, value, unit, measuredAt, dishId ->
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-                if (editReading == null) viewModel.addManualTemperature(data.cook.id, dishId, probe, type, value, unit, measuredAt)
-                else viewModel.updateSensorReading(editReading!!.copy(probeName = probe, measurementType = type, value = value, unit = unit, measuredAtUtcMillis = measuredAt, dishId = dishId))
-                showTemperature = false
-                editReading = null
-            },
-        )
     }
     if (showTarget) {
         TargetDialog(
@@ -835,7 +826,7 @@ fun CookDetailScreen(
                     onFocusHandled = { focusedTimelineId = null },
                     viewModel = viewModel,
                     onEditEvent = { event -> coroutineScope.launch { noteEditing = true; notePhotoFirst = false; noteDraftJson = viewModel.loadNote(event.id).encode() } },
-                    onEditReading = { editReading = it },
+                    onEditReading = { openReadingEdit(it) },
                     onError = error,
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
@@ -2294,53 +2285,6 @@ private fun TimelineEventDialog(
                     onSave(type, title.trim(), details.trim().ifBlank { null }, time, dishId.takeUnless { it == "whole" }, timeWasChosen)
                 }
             }, enabled = event != null || type != "note" || details.isNotBlank() || photoUri != null, modifier = Modifier.testTag("timeline-entry-save")) { Text("Save entry") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-@Composable
-private fun TemperatureEntryDialog(
-    reading: SensorReadingEntity?,
-    dishes: List<DishEntity>,
-    preferredUnit: String,
-    onDismiss: () -> Unit,
-    onSave: (String, String, Double, String, Long, String?) -> Unit,
-) {
-    val dialogFocusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    var probe by rememberSaveable(reading?.id) { mutableStateOf(reading?.probeName ?: "Food probe") }
-    var value by rememberSaveable(reading?.id) { mutableStateOf(reading?.value?.toString().orEmpty()) }
-    var type by rememberSaveable(reading?.id) { mutableStateOf(reading?.measurementType ?: "food_probe") }
-    var unit by rememberSaveable(reading?.id) { mutableStateOf(reading?.unit ?: preferredUnit) }
-    var time by rememberSaveable(reading?.id) { mutableStateOf(reading?.measuredAtUtcMillis ?: System.currentTimeMillis()) }
-    val defaultDishId = dishes.singleOrNull()?.id ?: "whole"
-    var dishId by rememberSaveable(reading?.id) { mutableStateOf(reading?.dishId ?: defaultDishId) }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (reading == null) "Record temperature" else "Edit temperature") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                OutlinedTextField(probe, { probe = it }, label = { Text("Probe or location") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("temperature-probe"))
-                OutlinedTextField(value, { value = it; error = null }, label = { Text("Temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth().testTag("temperature-value"))
-                SimpleDropdownField("Measurement", type.replace('_', ' ').replaceFirstChar { it.titlecase() }, listOf("Food probe", "Pit ambient", "Setpoint", "Other"), { type = it.lowercase().replace(' ', '_') })
-                SimpleDropdownField("Unit", unit, listOf("°F", "°C"), { unit = it })
-                SimpleDropdownField("For", dishId.takeUnless { it == "whole" }?.let { id -> dishes.firstOrNull { it.id == id }?.name } ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { selected -> dishId = dishes.firstOrNull { it.name == selected }?.id ?: "whole" })
-                DateTimePickerField("Measured at", time, { time = it }, "temperature-time")
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val parsedValue = value.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
-                if (probe.isBlank()) error = "Enter a probe or location name."
-                else if (parsedValue == null) error = "Enter a valid temperature."
-                else {
-                    dialogFocusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                    onSave(probe.trim(), type, parsedValue, unit, time, dishId.takeUnless { it == "whole" })
-                }
-            }, modifier = Modifier.testTag("temperature-save")) { Text("Save temperature") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
