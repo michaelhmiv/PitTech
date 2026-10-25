@@ -570,7 +570,7 @@ class PitTechUserFlowsTest {
         composeRule.activityRule.scenario.recreate()
         composeRule.onNodeWithTag("home-planning-toggle").performClick()
         composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("upcoming-not-started").fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithTag("upcoming-not-started").assertIsDisplayed()
+        composeRule.onNodeWithTag("upcoming-not-started").performScrollTo().assertIsDisplayed()
         saveScreenshot("serve-plan-not-started")
         composeRule.onNodeWithText("Adjust schedule").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("serve-plan-not-started").fetchSemanticsNodes().isNotEmpty() }
@@ -588,18 +588,27 @@ class PitTechUserFlowsTest {
         clearLocalData()
         composeRule.onNodeWithTag("start-cook").performClick()
         composeRule.onNodeWithTag("cook-more-details").performScrollTo().performClick()
-        fun top(tag: String) = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.top
-        fun topText(text: String) = composeRule.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.top
-        assertTrue(topText("Current stage") < top("cook-title"))
-        assertTrue(top("cook-title") < top("cook-add-dish"))
-        assertTrue(top("cook-add-dish") < top("cook-smoker"))
-        assertTrue(top("cook-smoker") < top("cook-setpoint"))
-        assertTrue(top("cook-setpoint") < top("cook-notes"))
-        assertTrue(top("cook-notes") < top("cook-fuel"))
-        assertTrue(top("cook-fuel") < top("cook-wood-blend"))
-        assertTrue(top("cook-wood-blend") < top("cook-outdoor-temperature"))
-        assertTrue(top("cook-outdoor-temperature") < top("cook-weather"))
-        assertTrue(top("cook-weather") < top("cook-wind"))
+        // Order is read from the semantics tree's layout order, not from
+        // on-screen geometry: boundsInRoot is clipped to the visible
+        // window, so fields scrolled above the viewport compare equal and
+        // a position chain cannot judge them. The tree walk visits the
+        // form's children in composition order at any scroll position.
+        val wantedTags = listOf("cook-title", "cook-add-dish", "cook-smoker", "cook-setpoint", "cook-notes",
+            "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind")
+        val seen = mutableListOf<String>()
+        fun walk(node: androidx.compose.ui.semantics.SemanticsNode) {
+            val tag = node.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.TestTag) { null }
+            if (tag != null && tag in wantedTags) seen += tag
+            val texts = node.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
+            if (texts?.any { it.text == "Current stage" } == true) seen += "stage"
+            node.children.forEach(::walk)
+        }
+        walk(composeRule.onRoot(useUnmergedTree = true).fetchSemanticsNode())
+        assertEquals(
+            listOf("stage", "cook-title", "cook-add-dish", "cook-smoker", "cook-setpoint", "cook-notes",
+                "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind"),
+            seen,
+        )
         // Nothing was entered, so leaving is quiet and keeps no draft.
         composeRule.onNodeWithContentDescription("Go back").performClick()
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
