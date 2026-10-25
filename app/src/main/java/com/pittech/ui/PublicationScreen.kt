@@ -168,6 +168,7 @@ import org.json.JSONObject
 
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 until array.length()).map(array::getJSONObject) }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun PublicLikeActions(id: String, account: AccountManager, writer: PublicationWriter) {
     val state by account.presentation.collectAsStateWithLifecycle(); val scope=rememberCoroutineScope()
     var busy by remember(id) { mutableStateOf(false) }; var signingIn by remember { mutableStateOf(false) }; var message by remember(id) { mutableStateOf<String?>(null) }
