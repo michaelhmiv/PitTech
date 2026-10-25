@@ -573,6 +573,18 @@ class PitTechUserFlowsTest {
             assertEquals(5.0, results.single { it.dishId == dishId && it.resultType == "overall_rating" }.numericValue!!, 0.0)
         }
         composeRule.onNodeWithTag("live-finish-cook").assertExists()
+        // This test runs last in the class, and clearLocalData() above also
+        // clears the pending crash report that test05 deliberately leaves
+        // behind: scripts/run-emulator-ui-tests.sh verifies after the batches
+        // that the synthetic report survives instrumentation, a force-stop
+        // and a relaunch. Restore it exactly as test05 wrote it so those
+        // checks keep measuring the app's report persistence, not this
+        // test's cleanup.
+        CrashDiagnostics.recordUncaughtException(
+            targetContext,
+            Thread.currentThread(),
+            IllegalStateException("Synthetic diagnostic for UI test"),
+        )
     }
 
     @Test
