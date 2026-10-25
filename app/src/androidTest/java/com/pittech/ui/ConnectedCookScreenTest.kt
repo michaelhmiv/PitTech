@@ -194,20 +194,30 @@ class ConnectedCookScreenTest {
     }
 
     @Test fun alertNotificationTapOpensAlertsSheetAtTheFiringRule() {
-        // PL-03 (#172): seed an active cook with one firing alert rule, then
-        // deliver the same intent the alert notification's content intent
-        // carries — cook id PLUS the firing rule's record id.
-        val rule = com.pittech.domain.CookAlertRule(type = "target", targetF = 203.0)
-        val recordId = "alert:${rule.id}"
-        val cookId = runBlocking(Dispatchers.IO) {
+        // PL-03 (#172): seed a cook whose target alert is genuinely firing,
+        // then deliver the same intent the alert notification's content
+        // intent carries — cook id PLUS the firing rule's record id. The
+        // alert is produced by the production path (food on the grill, a
+        // manual reading past the target, the engine's own evaluation):
+        // PitTechApplication re-evaluates every alert on each data change,
+        // so a hand-written "active" state would be recomputed away before
+        // the screen settles, while an earned one stays firing.
+        val now = System.currentTimeMillis()
+        val seeded = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()
-            val cook = app.cookRepository.startCook(com.pittech.domain.NewCookDraft("Alert routing"))
-            app.database.companionDao().put(com.pittech.data.CompanionRecord(
-                recordId, "alert", cook, "Brisket target",
-                com.pittech.domain.CookAlertEngine.encode(rule, com.pittech.domain.CookAlertState(active = true)),
-                System.currentTimeMillis(), System.currentTimeMillis()))
-            cook
+            val cook = app.cookRepository.startCook(com.pittech.domain.NewCookDraft("Alert routing", dishes = listOf(com.pittech.domain.DishDraft("Brisket", "Beef"))))
+            val dishId = app.database.cookDao().getDishesForCook(cook).single().id
+            app.cookRepository.addTimelineEvent(cook, dishId, "meat_on", "Food on", null, now - 600_000)
+            val dao = app.database.cookDao()
+            dao.insertProbesIgnoringDuplicates(listOf(com.pittech.data.ProbeEntity("p-alert-routing", cook, null, dishId, "Probe", "food", "manual", now)))
+            dao.insertReadingsIgnoringDuplicates(listOf(com.pittech.data.SensorReadingEntity("r-alert-routing", cook, dishId, "p-alert-routing", "Probe", "food", 205.0, "°F", now - 120_000, "UTC", "manual", recordedAtUtcMillis = now)))
+            val rule = com.pittech.domain.CookAlertRule(dishId = dishId, targetF = 203.0)
+            app.alertRepository.save(cook, "Brisket target", rule)
+            app.alertRepository.reconcile(app, cook)
+            cook to "alert:${rule.id}"
         }
+        val cookId = seeded.first
+        val recordId = seeded.second
         // MainActivity has the standard launch mode, so a notification tap
         // starts a fresh instance whose onCreate handles the intent —
         // reproduce exactly that.
@@ -231,7 +241,7 @@ class ConnectedCookScreenTest {
             val file = File(app.filesDir, "pittech-ui-test/alert-routing.png").apply { parentFile?.mkdirs() }
             file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         }
-        assertEquals("Seeded alert must still be active after the route opens", true, dbActive)
+        assertEquals("Earned alert must still be firing after the route opens", true, dbActive)
         compose.onNodeWithText("Alerts · 1 needs attention", substring = true).assertExists()
         // The Alerts sheet opens at the firing rule, highlighted.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("alert-focus-$recordId").fetchSemanticsNodes().isNotEmpty() }
