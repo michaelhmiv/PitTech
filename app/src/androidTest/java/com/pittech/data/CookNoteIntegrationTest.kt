@@ -84,7 +84,7 @@ class CookNoteIntegrationTest {
         try { repo.notes.save(CookNoteDraft(cookId = id, category = "temperature", temperatures = adoption.temperatures)); fail("Owned reading stolen") } catch (_: IllegalArgumentException) { }
         assertEquals(listOf(standalone.id), db.experienceDao().readingsForLog(adoption.id).map { it.id })
         // A device reading is never adoptable.
-        db.cookDao().insertSensorReading(SensorReadingEntity("device-1", id, null, "probe-1", "Pit", "pit", 225.0, "°F", 100L, "UTC", "controller", recordedAtUtcMillis = 100L))
+        db.cookDao().insertSensorReading(SensorReadingEntity("device-1", id, null, null, "Pit", "pit", 225.0, "°F", 100L, "UTC", "controller", recordedAtUtcMillis = 100L))
         try { repo.notes.save(CookNoteDraft(cookId = id, category = "temperature",
             temperatures = listOf(NoteTemperature(id = "device-1", probeName = "Pit", measurementType = "pit", valueText = "226", unit = "°F", measuredAt = 100L)))); fail("Device reading adopted") } catch (_: IllegalArgumentException) { }
         assertEquals(225.0, db.experienceDao().reading("device-1")!!.value, 0.0)
