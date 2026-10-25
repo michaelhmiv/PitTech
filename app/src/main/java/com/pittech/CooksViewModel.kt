@@ -113,12 +113,10 @@ class CooksViewModel(
         val working = repository.recipeAttempt(dishId)
         return if (working == null) recorded else recorded.copy(snapshot = com.pittech.data.RecipeExtraction.mergeAttempt(working, recorded.snapshot))
     }
-    internal suspend fun startRecipeMeal(title: String, revisions: List<String>) = repository.startRecipeMeal(title, revisions).also { openCook(it) }
     internal suspend fun addRecipeToMeal(cookId: String, revisionId: String) = repository.addRecipeToMeal(cookId, revisionId)
     internal suspend fun updateRecipeAttempt(dishId: String, snapshot: com.pittech.domain.RecipeSnapshot) = repository.updateRecipeAttempt(dishId, snapshot)
     internal suspend fun recipeAttempt(dishId: String) = repository.recipeAttempt(dishId)
     internal suspend fun saveMealPreset(cookId: String, name: String) = repository.saveMealPreset(cookId, name)
-    internal suspend fun startMealPreset(id: String) = repository.startMealPreset(id).also { openCook(it) }
     internal fun refreshReminderRules() { viewModelScope.launch { app.reminderRepository.reconcileAll(context) } }
     internal val reminders get() = app.reminderRepository
     internal suspend fun saveReminderRule(cookId: String, dishId: String?, title: String, trigger: com.pittech.domain.ReminderTrigger, id: String? = null, revisionId: String? = null, milestoneId: String? = null) = app.reminderRepository.save(cookId, dishId, title, trigger, id ?: java.util.UUID.randomUUID().toString(), revisionId, milestoneId).also { app.reminderRepository.cancelDisplayed(context, it); app.reminderRepository.reconcile(context, cookId) }
@@ -273,10 +271,11 @@ class CooksViewModel(
     fun saveServePlan(plan: com.pittech.domain.ServePlan) = perform {
         val id = app.servePlanRepository.save(plan, editingServePlanId)
         if (_setupPreview.value?.scheduledPlanId == id) _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
-        _servePlanEditor.value = null; _notice.value = "Cook saved for later. Recording starts only when you start the cook."
+        _servePlanEditor.value = null; _notice.value = "Plan saved — not started. Recording starts only when you start the cook."
     }
     fun previewScheduledCook(id: String) = perform {
         val plan = com.pittech.domain.ServeTimePlanner.decode(app.companionRepository.get(id)?.payload ?: error("Scheduled cook not found."))
+        _previewPlaybook.value = null
         _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
         _selectedCookId.value = null
     }
@@ -330,25 +329,113 @@ class CooksViewModel(
         editingPlaybookId = id
         _playbookEditor.value = app.companionRepository.get(id)?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) }
     }
-    fun closePlaybookEditor() { _playbookEditor.value = null }
+    fun closePlaybookEditor() { _playbookEditor.value = null; adoptPreviewPlaybook = false }
     fun savePlaybook(book: com.pittech.domain.CookPlaybook, photos: Boolean) = perform {
         val newId = app.companionRepository.save(book, editingPlaybookId, photos)
-        if (_setupPreview.value?.playbookId == editingPlaybookId && editingPlaybookId != null) _setupPreview.value = book.draft.copy(playbookId = newId)
+        if (adoptPreviewPlaybook) {
+            // PL-10: the user explicitly saved the cook-again preview's steps
+            // from the editor — the reviewed setup now follows the saved book.
+            adoptPreviewPlaybook = false
+            _previewPlaybook.value = null
+            _setupPreview.value = book.draft.copy(playbookId = newId)
+        } else if (_setupPreview.value?.playbookId == editingPlaybookId && editingPlaybookId != null) {
+            _setupPreview.value = book.draft.copy(playbookId = newId)
+        }
         _playbookEditor.value = null
         _notice.value = "Playbook saved on this phone."
     }
     fun previewPlaybook(id: String) = perform {
         val book = app.companionRepository.get(id)?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: error("Playbook not found.")
+        _previewPlaybook.value = null
         _setupPreview.value = book.draft.copy(title = book.name, playbookId = id)
         _selectedCookId.value = null
     }
+
+    /** PL-10 (#172): the playbook behind the open Start Cook review when it
+     * exists only as a preview (cook-again). It is deliberately NOT saved to
+     * the library: starting the cook attaches its steps as a snapshot, and
+     * it is saved only if the user edits the steps and saves from the
+     * playbook editor. */
+    private val _previewPlaybook = MutableStateFlow<com.pittech.domain.CookPlaybook?>(null)
+    val previewPlaybook: StateFlow<com.pittech.domain.CookPlaybook?> = _previewPlaybook.asStateFlow()
+    private var adoptPreviewPlaybook = false
     fun previewCookAgain(cookId: String) = perform {
         val book = app.companionRepository.suggest(cookId)
-        val id = app.companionRepository.save(book)
-        _setupPreview.value = book.draft.copy(playbookId = id)
+        _previewPlaybook.value = book
+        _setupPreview.value = book.draft.copy(playbookId = null, sourceLabel = "Cook again · copied from ${book.name}")
         _selectedCookId.value = null
     }
-    fun consumeSetupPreview() { _setupPreview.value = null }
+    /** PL-10: "Adjust playbook steps" on a cook-again review opens the editor
+     * on the transient book; saving there is the explicit save action. */
+    fun editPreviewPlaybook() {
+        val book = _previewPlaybook.value ?: return
+        editingPlaybookId = null
+        adoptPreviewPlaybook = true
+        _playbookEditor.value = book
+    }
+
+    /** PL-10 (#172): the Recipes library start lands on the same Start Cook
+     * review as every other start path — no cook exists until the review's
+     * "Begin preparation" is tapped. */
+    fun previewRecipeMeal(title: String, revisionIds: List<String>) = perform {
+        _previewPlaybook.value = null
+        _setupPreview.value = repository.recipeStartDraft(
+            title, revisionIds,
+            sourceLabel = "From your Recipes · saved recipes stay attached to their dishes",
+        )
+        _selectedCookId.value = null
+    }
+
+    /** PL-10 (#172): repeating a saved meal combination lands on the same
+     * Start Cook review; the preset's working copies ride along in the
+     * draft and are applied when the cook starts. */
+    fun previewMealPreset(id: String) = perform {
+        _previewPlaybook.value = null
+        _setupPreview.value = repository.presetStartDraft(id)
+        _selectedCookId.value = null
+    }
+    fun consumeSetupPreview() {
+        _setupPreview.value = null
+        // The transient cook-again book belongs to the open review only.
+        _previewPlaybook.value = null
+    }
+
+    // PL-13 (#172): the Start Cook setup kept on this device when a setup is
+    // left mid-edit. Meals offers "Resume setup" until the draft is discarded
+    // or a cook is started from it. Device-local only — never synced.
+    private val setupDraftKey = "start-cook-setup-draft"
+    private val setupDraftPlaybookKey = "start-cook-setup-draft-playbook"
+    private val _setupDraft = MutableStateFlow<NewCookDraft?>(loadSetupDraft())
+    val setupDraft: StateFlow<NewCookDraft?> = _setupDraft.asStateFlow()
+    private fun loadSetupDraft(): NewCookDraft? = runCatching {
+        context.getSharedPreferences("pittech-preferences", 0).getString(setupDraftKey, null)
+            ?.let { com.pittech.domain.SetupDraftCodec.decode(it) }
+    }.getOrNull()
+    fun keepSetupDraft(draft: NewCookDraft) {
+        _setupDraft.value = draft
+        val editor = context.getSharedPreferences("pittech-preferences", 0).edit()
+            .putString(setupDraftKey, com.pittech.domain.SetupDraftCodec.encode(draft))
+        // A cook-again preview's unsaved steps are part of the setup; keep
+        // them beside the draft so Resume restores the same review.
+        val book = _previewPlaybook.value
+        if (book != null) editor.putString(setupDraftPlaybookKey, com.pittech.domain.PlaybookCodec.encode(book))
+        else editor.remove(setupDraftPlaybookKey)
+        editor.apply()
+    }
+    fun discardSetupDraft() {
+        _setupDraft.value = null
+        context.getSharedPreferences("pittech-preferences", 0).edit()
+            .remove(setupDraftKey).remove(setupDraftPlaybookKey).apply()
+    }
+    fun resumeSetupDraft() {
+        val draft = _setupDraft.value ?: return
+        _previewPlaybook.value = runCatching {
+            context.getSharedPreferences("pittech-preferences", 0).getString(setupDraftPlaybookKey, null)
+                ?.let { com.pittech.domain.PlaybookCodec.decode(it) }
+        }.getOrNull()
+        _setupPreview.value = draft
+        _selectedCookId.value = null
+    }
     fun deletePlaybook(id: String) = perform { app.companionRepository.delete(id) }
 
     val cooks: StateFlow<List<CookWithDishes>> = repository.observeCooks()
@@ -468,7 +555,9 @@ class CooksViewModel(
         if (draft.recordGrill) require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.selectedDevice != null) { "Choose a connected grill in Devices before starting automatic recording." }
         val selected = app.grillMonitor.state.value.selectedDevice
         val resolved = if (draft.recordGrill && draft.smokerName.isBlank()) draft.copy(smokerName = selected?.name.orEmpty()) else draft
-        val cookId = repository.startCook(resolved)
+        val cookId = repository.startCook(resolved, transientPlaybook = _previewPlaybook.value)
+        _previewPlaybook.value = null
+        discardSetupDraft()
         _selectedCookId.value = cookId
         _savedCookId.value = cookId
         _notice.value = "Cook saved on this phone."
@@ -888,6 +977,7 @@ class CooksViewModel(
                 // PL-19: "Cook this" lands on the Start Cook review instead
                 // of teleporting into a live cook from a save dialog — the
                 // meal starts only when the user confirms the setup.
+                _previewPlaybook.value = null
                 _setupPreview.value = repository.recipeStartDraft(source.snapshot.companionRecords.firstOrNull()?.title ?: "New meal", revisions.sorted())
                 _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Review the meal setup to start cooking."
             } else {

@@ -56,4 +56,58 @@ class RecipeCompositionIntegrationTest {
             try { val restored = CookRepository(other, PhotoStorage(context)); restored.importSnapshot(snapshot, emptyMap()); assertEquals(db.recipeDao().sources().size, other.recipeDao().sources().size); assertEquals(3, other.recipeDao().recipes().size) } finally { other.close() }
         } finally { db.close() }
     }
+
+    /** PL-10 (#172): a meal combination now starts through the Start Cook
+     * review draft. The draft must carry the preset's fidelity — revision
+     * attachments plus working copies — so confirming the review produces
+     * exactly the cook the old direct start produced. */
+    @Test fun presetReviewDraftStartsWithWorkingCopiesIntact(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val repo = CookRepository(db, PhotoStorage(context))
+            val source = repo.startCook(NewCookDraft("Source", dishes = listOf(DishDraft("Chicken", "Poultry", preparationItems = listOf(IngredientDraft("Salt", amountText = "1", amountUnit = "tsp"))))))
+            val sourceDish = db.cookDao().getDishesForCook(source).single()
+            repo.completeCook(source)
+            val saved = repo.recipes.save(RecipeExtraction.fromMeal(repo.observeCookDetail(source).first()!!, sourceDish.id).snapshot, sourceCookId = source, sourceDishId = sourceDish.id)
+            val meal = repo.startRecipeMeal("Working meal", listOf(saved.currentRevisionId))
+            val mealDish = db.cookDao().getDishesForCook(meal).single()
+            val working = repo.recipeAttempt(mealDish.id)!!
+            repo.updateRecipeAttempt(mealDish.id, working.copy(dish = working.dish.copy(preparationItems = listOf(IngredientDraft("Jalapeños", amountText = "2", amountUnit = "count")))))
+            val preset = repo.saveMealPreset(meal, "Favorites")
+
+            val draft = repo.presetStartDraft(preset)
+            assertEquals("Favorites", draft.title)
+            assertEquals("From a saved meal combination · Favorites", draft.sourceLabel)
+            assertEquals(listOf(saved.currentRevisionId), draft.recipeRevisionIds)
+            assertEquals(1, draft.recipeAttemptSnapshots.filterNotNull().size)
+
+            val started = repo.startCook(draft)
+            val startedDish = db.cookDao().getDishesForCook(started).single()
+            assertEquals(saved.currentRevisionId, repo.recipes.source(startedDish.id)!!.recipeRevisionId)
+            assertEquals("Jalapeños", db.cookDao().getIngredientsForCook(started).single { it.dishId == startedDish.id }.name)
+        } finally { db.close() }
+    }
+
+    /** PL-10 (#172): previewing a cook-again setup must not save a playbook
+     * as a side effect. Starting from the preview attaches the suggested
+     * steps to the new cook as its plan while the playbook library gains
+     * nothing. */
+    @Test fun cookAgainStartAttachesStepsWithoutSavingAPlaybook(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val repo = CookRepository(db, PhotoStorage(context))
+            val companion = CookCompanionRepository(db, PhotoStorage(context))
+            val source = repo.startCook(NewCookDraft("Sunday ribs", dishes = listOf(DishDraft("Ribs", "Pork"))))
+            repo.completeCook(source)
+            val playbooksBefore = db.companionDao().observeAll().first().count { it.kind == "playbook" }
+            val book = companion.suggest(source)
+            val started = repo.startCook(book.draft.copy(playbookId = null), transientPlaybook = book)
+            val records = db.companionDao().observeAll().first()
+            assertEquals(playbooksBefore, records.count { it.kind == "playbook" })
+            assertTrue(records.any { it.kind == "plan" && it.cookId == started })
+            assertEquals(listOf("Ribs"), db.cookDao().getDishesForCook(started).map { it.name })
+        } finally { db.close() }
+    }
 }

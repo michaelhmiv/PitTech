@@ -1,6 +1,21 @@
 import SwiftUI
 import AuthenticationServices
 
+/// PL-14 (#172): a Form section header that carries the section's status
+/// under its title (DD-2) — the same five Account sections, with the same
+/// status words, as Android's Account sheet.
+private struct AccountSectionHeader: View {
+    let title: String
+    let status: String
+    let statusId: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(status).font(.footnote).textCase(nil).accessibilityIdentifier(statusId)
+        }
+    }
+}
+
 struct NativeAccountView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePrivateSyncCoordinator.self) private var sync
@@ -26,48 +41,80 @@ struct NativeAccountView: View {
         sync.presentation.conflicts.isEmpty && sync.enabled && account.signedIn &&
             (sync.presentation.status == "Waiting for connection" || sync.presentation.status == "Retry needed" || sync.presentation.lastSyncedAt > 0)
     }
+    /// PL-14: the Session section's status, carried in its header (DD-2).
+    private var sessionStatus: String {
+        if account.deletionRecord != nil { return "Deletion in progress" }
+        if account.signedIn { return "Signed in" }
+        if !account.enabled { return "Not available on this build" }
+        return "Signed out"
+    }
     var body: some View {
         Form {
             Section { Text("Your cookbook works without an account. Signing in doesn't publish or upload your local records.") }
+            // PL-14 (#172): Account is segmented into five sections, each
+            // header carrying its status (DD-2) — Session · Sync · Connect
+            // your AI · Device actions · Danger zone, mirroring Android.
             if !account.enabled {
-                Section { Text("Accounts arrive with community recipes and private sync.").accessibilityIdentifier("account-unavailable") }
-            } else if let deletion = account.deletionRecord {
-                Section("Account deletion") {
-                    Text(deletion.receipt?.description ?? "The deletion response was not confirmed. Recover the request before retrying.").accessibilityIdentifier("account-deletion-status")
-                    Text("Your local journal stays available on this device. Deletion does not stop your local cooking.")
-                    if deletion.cleanupUserId != nil { Button("Retry device account cleanup") { account.retryDeviceCleanup() }.disabled(account.busy) }
-                    if deletion.receipt?.state == "complete" {
-                        Button("Close completed request") { account.dismissCompletedDeletion() }.disabled(account.busy)
-                    } else {
-                        if deletion.receipt != nil { Button("Check deletion progress") { Task { await account.checkDeletion() } }.disabled(account.busy).accessibilityIdentifier("account-deletion-check") }
-                        Button("Recover deletion request") { Task { await account.recoverDeletion() } }.disabled(account.busy).accessibilityIdentifier("account-deletion-recover")
-                        if deletion.receipt == nil && account.signedIn { Button("Review and retry the same request") { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-deletion-retry") }
-                    }
+                Section {
+                    Text("Accounts arrive with community recipes and private sync.").accessibilityIdentifier("account-unavailable")
+                } header: {
+                    AccountSectionHeader(title: "Session", status: sessionStatus, statusId: "account-panel-session-status")
                 }
-                if deletion.receipt == nil && !account.signedIn {
+            } else {
+                Section {
+                    if let deletion = account.deletionRecord {
+                        Text(deletion.receipt?.description ?? "The deletion response was not confirmed. Recover the request before retrying.").accessibilityIdentifier("account-deletion-status")
+                        Text("Your local journal stays available on this device. Deletion does not stop your local cooking.")
+                        if deletion.cleanupUserId != nil { Button("Retry device account cleanup") { account.retryDeviceCleanup() }.disabled(account.busy) }
+                        if deletion.receipt?.state == "complete" {
+                            Button("Close completed request") { account.dismissCompletedDeletion() }.disabled(account.busy)
+                        } else {
+                            if deletion.receipt != nil { Button("Check deletion progress") { Task { await account.checkDeletion() } }.disabled(account.busy).accessibilityIdentifier("account-deletion-check") }
+                            Button("Recover deletion request") { Task { await account.recoverDeletion() } }.disabled(account.busy).accessibilityIdentifier("account-deletion-recover")
+                            if deletion.receipt == nil && account.signedIn { Button("Review and retry the same request") { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-deletion-retry") }
+                        }
+                    } else if account.signedIn {
+                        Text("Signed in").accessibilityIdentifier("account-signed-in")
+                        if let email = account.accountEmail {
+                            Text("Email sign-in: \(email)").privacySensitive().accessibilityIdentifier("account-auth-email")
+                        }
+                        if account.appleLinked {
+                            Text("Apple sign-in is linked.").accessibilityIdentifier("account-auth-apple")
+                        } else if account.appleSignInAvailable {
+                            Button("Add Apple sign-in") { Task { await account.attachApple() } }.disabled(account.busy).accessibilityIdentifier("account-apple-attach")
+                        }
+                        Button("Check connection") { Task { await account.checkSession() } }.disabled(account.busy)
+                        Button("Sign out", role: .destructive) { confirmingSignOut = true }.disabled(account.busy)
+                    } else {
+                        Text("You're signed out. Sign in to use private sync and AI connections.").accessibilityIdentifier("account-signin-note")
+                    }
+                } header: {
+                    AccountSectionHeader(title: "Session", status: sessionStatus, statusId: "account-panel-session-status")
+                }
+                if let deletion = account.deletionRecord, deletion.receipt == nil && !account.signedIn {
                     Section { Text("Verify the original account email to retry this device’s saved request. Another account cannot take over the request.") }
                     signInContent
-                }
-            } else if account.signedIn {
-                Section("Account") {
-                    Text("Signed in").accessibilityIdentifier("account-signed-in")
-                    if let email = account.accountEmail {
-                        Text("Email sign-in: \(email)").privacySensitive().accessibilityIdentifier("account-auth-email")
-                    }
-                    if account.appleLinked {
-                        Text("Apple sign-in is linked.").accessibilityIdentifier("account-auth-apple")
-                    } else if account.appleSignInAvailable {
-                        Button("Add Apple sign-in") { Task { await account.attachApple() } }.disabled(account.busy).accessibilityIdentifier("account-apple-attach")
-                    }
-                    Button("Check connection") { Task { await account.checkSession() } }.disabled(account.busy)
-                    Button("Sign out", role: .destructive) { confirmingSignOut = true }.disabled(account.busy)
-                    Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
-                }
-                McpConnectionsSection(mcp: mcp, creating: $creatingConnection)
-                McpDeviceActionsSection(device: deviceActions)
-            } else { signInContent }
-            Section("Private sync") {
+                } else if !account.signedIn && account.deletionRecord == nil { signInContent }
+            }
+            Section {
                 Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.").font(.footnote)
+                // PL-14 (#172): signing in surfaces the first sync as its
+                // own card, so turning private sync on is discoverable
+                // instead of depending on knowing that "Sync now" below is
+                // also the on switch. The card is the same one action —
+                // the coordinator's explicit sync.
+                if account.signedIn && sync.enabled && sync.presentation.lastSyncedAt <= 0 && sync.presentation.conflicts.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Turn on private sync").font(.headline)
+                        Text("Make the first encrypted backup of this journal now. After that, you can keep it in sync automatically while the app is open.").font(.footnote)
+                        Button("Turn on private sync") { Task { await sync.syncNow() } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-turn-on")
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(PitTechStyle.accentFill, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("sync-turn-on-card")
+                }
                 // Slice 7 (PL-10, DD-8): the sync status row always carries state —
                 // what happened, what is still safe, and the recovery action —
                 // instead of the coordinator's bare status string. First sync is
@@ -89,12 +136,39 @@ struct NativeAccountView: View {
                 Button("Sync now") { Task { await sync.syncNow() } }.disabled(sync.presentation.busy || !account.signedIn || !sync.enabled).accessibilityIdentifier("sync-now")
                 if !sync.presentation.conflicts.isEmpty { Button("Review conflicts (\(sync.presentation.conflicts.count))") { reviewingSync = true }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-conflicts") }
                 if sync.presentation.busy { ProgressView("Syncing…") }
+            } header: {
+                AccountSectionHeader(title: "Sync", status: syncRowCopy.headline, statusId: "account-panel-sync-status")
             }
             .onAppear { sync.refresh() }
             .onChange(of: account.signedIn) { _, _ in sync.refresh() }
-            Section("Remove local journal") {
+            if account.enabled && account.signedIn && account.deletionRecord == nil {
+                // Slice 8's sections, unchanged inside; their headers now
+                // carry the section status like every other section.
+                McpConnectionsSection(mcp: mcp, creating: $creatingConnection)
+                McpDeviceActionsSection(device: deviceActions)
+            } else if account.enabled && account.deletionRecord == nil {
+                Section {
+                    Text("Sign in above to connect an AI assistant like ChatGPT or Muse to your own meals, recipes and logs.").font(.footnote).accessibilityIdentifier("account-ai-signin-note")
+                } header: {
+                    AccountSectionHeader(title: "Connect your AI", status: "Sign in to connect", statusId: "account-panel-ai-status")
+                }
+                Section {
+                    Text("Sign in above to let an assistant ask this phone to do small things in the app — never to control a grill.").font(.footnote).accessibilityIdentifier("account-device-signin-note")
+                } header: {
+                    AccountSectionHeader(title: "Device actions", status: "Sign in to connect", statusId: "account-panel-device-status")
+                }
+            }
+            Section {
+                if account.signedIn && account.deletionRecord == nil {
+                    Text("Delete account and server data").font(.headline)
+                    Text("Deletes your account identity, profile, sessions, likes, private server sync and original public publications. Your local journal stays on this device unless you remove it below.").font(.footnote)
+                    Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
+                }
+                Text("Remove local journal").font(.headline)
                 Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
                 Button("Remove local journal", role: .destructive) { reviewingJournal = true }.disabled(account.busy).accessibilityIdentifier("local-journal-remove")
+            } header: {
+                AccountSectionHeader(title: "Danger zone", status: "Delete account · Remove local journal", statusId: "account-panel-danger-status")
             }
             if account.busy { ProgressView("Connecting…") }
             if let message = account.message { Section { Text(message).accessibilityIdentifier("account-message") } }
@@ -147,8 +221,19 @@ private struct McpConnectionsSection: View {
     @State private var tokenCopied = false
     /// Slice 8 (PL-14): the gate reads the existing subscription state.
     private var gate: McpProGate { mcpProGate(for: pro.entitlement) }
+    /// PL-14 (#172): the section header's status (DD-2), mirroring Android.
+    private var aiStatus: String {
+        if !mcp.available { return "Not available yet" }
+        switch gate {
+        case .checking: return "Checking Pro status"
+        case .needsPro: return "Needs PitTech Pro"
+        case .entitled:
+            let active = mcp.grants.filter(\.active).count
+            return active > 0 ? "\(active) connection\(active == 1 ? "" : "s")" : "No connections"
+        }
+    }
     var body: some View {
-        Section("Connect your AI") {
+        Section {
             Text("Let an AI assistant like ChatGPT or Muse help with your own meals, recipes and logs. Connections use your PitTech Pro and can be disconnected here any time. An assistant can never publish, control a grill, or change your account or billing.").font(.footnote)
             if !mcp.available {
                 Text("AI connections aren't available yet.").accessibilityIdentifier("mcp-unavailable")
@@ -205,6 +290,8 @@ private struct McpConnectionsSection: View {
                 if mcp.busy { ProgressView("Working…") }
                 if let message = mcp.message { Text(message).accessibilityIdentifier("mcp-message") }
             }
+        } header: {
+            AccountSectionHeader(title: "Connect your AI", status: aiStatus, statusId: "account-panel-ai-status")
         }
         .onAppear { Task { await mcp.refresh() } }
         .onChange(of: mcp.createdToken) { _, _ in tokenCopied = false }
@@ -393,8 +480,13 @@ private struct NativeLocalJournalReviewView: View {
 private struct McpDeviceActionsSection: View {
     let device: NativeMcpDeviceActions
     @State private var confirmingUnregister = false
+    /// PL-14 (#172): the section header's status (DD-2), mirroring Android.
+    private var deviceStatus: String {
+        if !device.available { return "Not available yet" }
+        return device.registered ? "On — this phone accepts requests" : "Off"
+    }
     var body: some View {
-        Section("Device actions") {
+        Section {
             Text("An assistant can ask this iPhone to do small things in the app — never to control a grill. Requests wait here until you open PitTech; nothing runs in the background and nothing counts as done until this phone reports it. Choose which kinds of requests this phone accepts.").font(.footnote)
             if !device.available {
                 Text("Device actions aren't available yet.").accessibilityIdentifier("mcp-device-unavailable")
@@ -419,6 +511,8 @@ private struct McpDeviceActionsSection: View {
                 if device.busy { ProgressView() }
                 if let message = device.message { Text(message).accessibilityIdentifier("mcp-device-message") }
             }
+        } header: {
+            AccountSectionHeader(title: "Device actions", status: deviceStatus, statusId: "account-panel-device-status")
         }
         .task { await device.refresh() }
         .confirmationDialog("Stop taking requests?", isPresented: $confirmingUnregister) {

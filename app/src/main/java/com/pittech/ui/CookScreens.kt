@@ -132,6 +132,11 @@ internal fun PitTechApp(
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val setupPreview by viewModel.setupPreview.collectAsStateWithLifecycle()
+    val previewPlaybook by viewModel.previewPlaybook.collectAsStateWithLifecycle()
+    val keptSetupDraft by viewModel.setupDraft.collectAsStateWithLifecycle()
+    // PL-14 (#172): the More → Account row carries the private-sync status.
+    val accountPresentation by viewModel.account.presentation.collectAsStateWithLifecycle()
+    val syncPresentation by viewModel.sync.presentation.collectAsStateWithLifecycle()
     val companionRecords by viewModel.companionRecords.collectAsStateWithLifecycle()
     val saving by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
@@ -145,6 +150,7 @@ internal fun PitTechApp(
     val restoredPreferences by viewModel.restoredPreferences.collectAsStateWithLifecycle()
     val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
+    LaunchedEffect(selectedSection) { if (selectedSection == MainSection.MORE.name) viewModel.sync.refresh() }
     val publicLinkSequence by viewModel.publicDiscovery.linkSequence.collectAsStateWithLifecycle()
     LaunchedEffect(publicLinkSequence) { if(publicLinkSequence>0)selectedSection=MainSection.DISCOVER.name }
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
@@ -157,7 +163,7 @@ internal fun PitTechApp(
     val cookbookOpenRequests by viewModel.cookbookOpenRequests.collectAsStateWithLifecycle()
     LaunchedEffect(cookbookOpenRequests) { if (cookbookOpenRequests > 0) myCookbook = true }
     RelayImportDialog(viewModel)
-    AccountDialog(viewModel.account, viewModel.sync, viewModel.mcpConnections, viewModel.mcpDeviceActions, viewModel.subscription)
+    AccountSheet(viewModel.account, viewModel.sync, viewModel.mcpConnections, viewModel.mcpDeviceActions, viewModel.subscription)
     // Slice 8 (PL-15 / DD-10): when the account surface closes after a
     // paywall sign-in detour — sign-in completed or cancelled — the gate
     // reopens on the destination the user was headed to.
@@ -278,8 +284,8 @@ internal fun PitTechApp(
             saveError = saveError,
             initialDraft = setupPreview,
             equipmentProfiles = companionRecords.filter { it.kind == "equipment" }.map { com.pittech.domain.CookPreparation.decodeEquipment(it.payload) },
-            initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: companionRecords.firstOrNull { it.id == setupPreview?.scheduledPlanId }?.let { com.pittech.domain.ServeTimePlanner.decode(it.payload).book },
-            onEditPlaybook = { if (setupPreview?.scheduledPlanId != null) viewModel.planServeTime(scheduledId = setupPreview?.scheduledPlanId) else setupPreview?.playbookId?.let(viewModel::editPlaybook) },
+            initialPlaybook = companionRecords.firstOrNull { it.id == setupPreview?.playbookId }?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: companionRecords.firstOrNull { it.id == setupPreview?.scheduledPlanId }?.let { com.pittech.domain.ServeTimePlanner.decode(it.payload).book } ?: previewPlaybook,
+            onEditPlaybook = { if (previewPlaybook != null) viewModel.editPreviewPlaybook() else if (setupPreview?.scheduledPlanId != null) viewModel.planServeTime(scheduledId = setupPreview?.scheduledPlanId) else setupPreview?.playbookId?.let(viewModel::editPlaybook) },
             preferredTemperatureUnit = temperatureUnit,
             preferredWeightUnit = weightUnit,
             onBack = {
@@ -291,6 +297,8 @@ internal fun PitTechApp(
             grillState = grillState,
             onGrill = { (context.applicationContext as com.pittech.PitTechApplication).grillMonitor.selectDevice(it) },
             onSampling = viewModel::configureGrillSampling,
+            onDraftChange = viewModel::keepSetupDraft,
+            onDiscardDraft = viewModel::discardSetupDraft,
         )
         }
         return
@@ -350,6 +358,9 @@ internal fun PitTechApp(
                     viewModel.consumeSetupPreview()
                     isStartingCook = true
                 },
+                setupDraft = keptSetupDraft,
+                onResumeSetup = viewModel::resumeSetupDraft,
+                onDiscardSetup = viewModel::discardSetupDraft,
             )
             MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SavedRecipesLibrary(viewModel, standalone = true)
@@ -394,7 +405,7 @@ internal fun PitTechApp(
                 onShowPrivacyOptions = onShowPrivacyOptions,
                 modifier = Modifier.padding(padding),
             )
-            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null, onPro = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.MORE) })
+            else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null, onPro = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.MORE) }, accountSubtitle = if (accountPresentation.signedIn) "Private sync — ${SyncStatusCopy.row(syncPresentation.status, syncPresentation.detail, syncPresentation.lastSyncedAt, syncPresentation.conflicts.size, true, viewModel.sync.enabled).headline}" else "Optional email sign-in and this device's session")
             }
         }
     }
@@ -413,6 +424,10 @@ private fun CooksHome(
     onOpenCook: (String) -> Unit,
     onRestoreBackup: () -> Unit,
     onStartCook: () -> Unit,
+    // PL-13 (#172): a kept Start Cook setup draft offers Resume right here.
+    setupDraft: NewCookDraft? = null,
+    onResumeSetup: () -> Unit = {},
+    onDiscardSetup: () -> Unit = {},
 ) {
     val activeCooks = cooks.filter { it.cook.status != CookStatus.COMPLETED }
     val finishedCooks = cooks.filter { it.cook.status == CookStatus.COMPLETED }
@@ -477,6 +492,28 @@ private fun CooksHome(
             Icon(Icons.Filled.Add, contentDescription = null)
             Spacer(Modifier.width(10.dp))
             Text("Start meal")
+        }
+
+        if (setupDraft != null) {
+            // PL-13: the kept setup is one tap from Meals, never a surprise.
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().testTag("setup-draft-card"),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Cook setup draft", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        setupDraft.title.ifBlank { "Untitled setup" } + setupDraft.sourceLabel?.let { " · $it" }.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onResumeSetup, modifier = Modifier.heightIn(min = 48.dp).testTag("resume-setup")) { Text("Resume setup") }
+                        TextButton(onClick = onDiscardSetup, modifier = Modifier.heightIn(min = 48.dp).testTag("discard-setup")) { Text("Discard setup") }
+                    }
+                }
+            }
         }
 
         if (cooks.isEmpty()) {
@@ -678,14 +715,18 @@ private fun StartCookScreen(
     grillState: com.pittech.devices.PolarisMonitorState,
     onGrill: (String) -> Unit,
     onSampling: (com.pittech.devices.GrillSamplingPolicy) -> Unit,
+    // PL-13 (#172): every edit to the setup is offered to the kept-draft
+    // store; leaving keeps the draft instead of discarding it.
+    onDraftChange: (NewCookDraft) -> Unit = {},
+    onDiscardDraft: () -> Unit = {},
 ) {
     val defaultCookName = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date()) }
     var title by rememberSaveable {
         mutableStateOf(initialDraft?.title ?: defaultCookName)
     }
     var recordGrill by rememberSaveable { mutableStateOf(false) }
-    var alreadyCooking by rememberSaveable { mutableStateOf(false) }
-    var foodOnTime by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
+    var alreadyCooking by rememberSaveable { mutableStateOf(initialDraft?.alreadyCooking ?: false) }
+    var foodOnTime by rememberSaveable { mutableLongStateOf(initialDraft?.foodOnAtUtcMillis ?: System.currentTimeMillis()) }
     var probe1 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe2 by rememberSaveable { mutableStateOf<String?>(null) }
     var probe3 by rememberSaveable { mutableStateOf<String?>(null) }
@@ -705,25 +746,64 @@ private fun StartCookScreen(
     var notes by rememberSaveable { mutableStateOf(initialDraft?.notes.orEmpty()) }
     var fuelType by rememberSaveable { mutableStateOf(initialDraft?.fuelType.orEmpty()) }
     var woodBlend by rememberSaveable { mutableStateOf(initialDraft?.woodOrPelletBlend.orEmpty()) }
-    var outdoorTemperature by rememberSaveable { mutableStateOf("") }
-    var outdoorTemperatureUnit by rememberSaveable { mutableStateOf(preferredTemperatureUnit) }
-    var weather by rememberSaveable { mutableStateOf("") }
-    var wind by rememberSaveable { mutableStateOf("") }
+    var outdoorTemperature by rememberSaveable { mutableStateOf(initialDraft?.outdoorTemperatureText.orEmpty()) }
+    var outdoorTemperatureUnit by rememberSaveable { mutableStateOf(initialDraft?.outdoorTemperatureUnit ?: preferredTemperatureUnit) }
+    var weather by rememberSaveable { mutableStateOf(initialDraft?.weatherNotes.orEmpty()) }
+    var wind by rememberSaveable { mutableStateOf(initialDraft?.windNotes.orEmpty()) }
     var moreCookDetails by rememberSaveable { mutableStateOf(false) }
     val dishes = remember { mutableStateListOf<DishDraft>().apply { addAll(initialDraft?.dishes.orEmpty()) } }
     // PL-19: saved-recipe sources stay parallel to the dish list while it
     // is reviewed/edited here, so removing or adding a dish never attaches
     // a recipe to the wrong dish when preparation begins.
     val dishRevisions = remember { mutableStateListOf<String?>().apply { addAll(initialDraft?.recipeRevisionIds.orEmpty()) } }
-    var followPlaybook by rememberSaveable { mutableStateOf(true) }
+    // PL-10: preset working copies ride parallel to the sources the same way.
+    val dishAttemptSnapshots = remember { mutableStateListOf<String?>().apply { addAll(initialDraft?.recipeAttemptSnapshots.orEmpty()) } }
+    var followPlaybook by rememberSaveable { mutableStateOf(initialDraft?.followPlaybook ?: true) }
     var showSteps by rememberSaveable { mutableStateOf(false) }
     var editPreviewDish by remember { mutableStateOf<Int?>(null) }
     editPreviewDish?.let { index -> DishEditorDialog(preferredWeightUnit = preferredWeightUnit, initial = dishes[index], onDismiss = { editPreviewDish = null }, onSave = { dishes[index] = it; editPreviewDish = null }) }
     var showDishDialog by rememberSaveable { mutableStateOf(false) }
-    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    var confirmLeave by rememberSaveable { mutableStateOf(false) }
+
+    // The setup exactly as it would start right now. The same value feeds
+    // "Begin preparation", the dirty check, and the PL-13 kept draft, so
+    // the three can never disagree about what the setup is.
+    fun currentDraft(): NewCookDraft = NewCookDraft(
+        title = title,
+        smokerName = smoker,
+        setpointText = setpoint,
+        setpointUnit = setpointUnit,
+        notes = notes,
+        fuelType = fuelType,
+        woodOrPelletBlend = woodBlend,
+        outdoorTemperatureText = outdoorTemperature,
+        outdoorTemperatureUnit = outdoorTemperatureUnit,
+        weatherNotes = weather,
+        windNotes = wind,
+        dishes = dishes.toList(),
+        recipeRevisionIds = if (dishRevisions.size == dishes.size) dishRevisions.toList() else emptyList(),
+        recipeAttemptSnapshots = if (dishAttemptSnapshots.size == dishes.size) dishAttemptSnapshots.toList() else emptyList(),
+        sourceLabel = initialDraft?.sourceLabel,
+        scheduledPlanId = initialDraft?.scheduledPlanId,
+        playbookId = initialDraft?.playbookId,
+        followPlaybook = followPlaybook,
+        recordGrill = recordGrill && grillState.selectedDevice != null,
+        alreadyCooking = alreadyCooking, foodOnAtUtcMillis = if (alreadyCooking) foodOnTime else null,
+        probe1DishIndex = probe1?.toIntOrNull(),
+        probe2DishIndex = probe2?.toIntOrNull(),
+        probe3DishIndex = probe3?.toIntOrNull(),
+        probe4DishIndex = probe4?.toIntOrNull(),
+    )
+    val initialSnapshot = remember { currentDraft() }
+    // PL-13: edits are kept as a draft on this phone as they happen, so
+    // leaving — by any route — never loses the setup.
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { currentDraft() }.collect { draft ->
+            if (draft != initialSnapshot) onDraftChange(draft)
+        }
+    }
     val requestBack = {
-        val hasInput = title != defaultCookName || smoker.isNotBlank() || setpoint.isNotBlank() || notes.isNotBlank() || fuelType.isNotBlank() || woodBlend.isNotBlank() || outdoorTemperature.isNotBlank() || weather.isNotBlank() || wind.isNotBlank() || dishes.isNotEmpty()
-        if (hasInput) confirmDiscard = true else onBack()
+        if (currentDraft() != initialSnapshot) confirmLeave = true else onBack()
     }
 
     if (showDishDialog) {
@@ -733,23 +813,35 @@ private fun StartCookScreen(
             onSave = { draft ->
                 dishes.add(draft)
                 if (dishRevisions.size == dishes.size - 1) dishRevisions.add(null)
+                if (dishAttemptSnapshots.size == dishes.size - 1) dishAttemptSnapshots.add(null)
                 showDishDialog = false
             },
         )
     }
 
-    if (confirmDiscard) {
+    if (confirmLeave) {
+        // PL-13: leaving a changed setup keeps it as a draft — the same
+        // words and choices as iOS. Discarding is the explicit third option.
         AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
-            title = { Text("Discard this cook setup?") },
-            text = { Text("The details you entered here have not been saved.") },
+            onDismissRequest = { confirmLeave = false },
+            title = { Text("Leave this cook setup?") },
+            text = { Text("Your setup is kept as a draft on this phone. Resume it any time from Meals.") },
             confirmButton = {
                 TextButton(onClick = {
-                    confirmDiscard = false
+                    confirmLeave = false
                     onBack()
-                }) { Text("Discard") }
+                }, modifier = Modifier.testTag("setup-keep-draft")) { Text("Keep draft") }
             },
-            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        onDiscardDraft()
+                        confirmLeave = false
+                        onBack()
+                    }, modifier = Modifier.testTag("setup-discard")) { Text("Discard setup") }
+                    TextButton(onClick = { confirmLeave = false }) { Text("Keep editing") }
+                }
+            },
         )
     }
 
@@ -771,35 +863,7 @@ private fun StartCookScreen(
                         Text(saveError, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
                     }
                     Button(
-                        onClick = {
-                            onStartCook(
-                                NewCookDraft(
-                                    title = title,
-                                    smokerName = smoker,
-                                    setpointText = setpoint,
-                                    setpointUnit = setpointUnit,
-                                    notes = notes,
-                                    fuelType = fuelType,
-                                    woodOrPelletBlend = woodBlend,
-                                    outdoorTemperatureText = outdoorTemperature,
-                                    outdoorTemperatureUnit = outdoorTemperatureUnit,
-                                    weatherNotes = weather,
-                                    windNotes = wind,
-                                    dishes = dishes.toList(),
-                                    recipeRevisionIds = if (dishRevisions.size == dishes.size) dishRevisions.toList() else emptyList(),
-                                    sourceLabel = initialDraft?.sourceLabel,
-                                    scheduledPlanId = initialDraft?.scheduledPlanId,
-                                    playbookId = initialDraft?.playbookId,
-                                    followPlaybook = followPlaybook,
-                                    recordGrill = recordGrill && grillState.selectedDevice != null,
-                                    alreadyCooking = alreadyCooking, foodOnAtUtcMillis = if (alreadyCooking) foodOnTime else null,
-                                    probe1DishIndex = probe1?.toIntOrNull(),
-                                    probe2DishIndex = probe2?.toIntOrNull(),
-                                    probe3DishIndex = probe3?.toIntOrNull(),
-                                    probe4DishIndex = probe4?.toIntOrNull(),
-                                ),
-                            )
-                        },
+                        onClick = { onStartCook(currentDraft()) },
                         enabled = !saving && CookEntryValidation.isOptionalPositiveNumberValid(setpoint),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("cook-save"),
                         shape = RoundedCornerShape(14.dp),
@@ -877,7 +941,7 @@ private fun StartCookScreen(
                 )
             } else {
                 dishes.forEachIndexed { index, dish ->
-                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index); if (dishRevisions.size == dishes.size + 1) dishRevisions.removeAt(index); probe1 = null; probe2 = null })
+                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index); if (dishRevisions.size == dishes.size + 1) dishRevisions.removeAt(index); if (dishAttemptSnapshots.size == dishes.size + 1) dishAttemptSnapshots.removeAt(index); probe1 = null; probe2 = null })
                 }
                 OutlinedButton(
                     onClick = { showDishDialog = true },

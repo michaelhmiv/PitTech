@@ -134,7 +134,15 @@ private struct RootPresentationModifier: ViewModifier {
                 if let id = store.pendingStartedCookId {
                     store.pendingStartedCookId = nil; store.notificationCookId = id
                 }
-            }) { start in PublicRecipeStartSheet(start: start).modifier(ScreenshotTextSize()) }
+            }) { start in
+                // PL-10 (#172): the Cook Pack start lands on the same
+                // unified Start Cook review as every other start path.
+                StartCookSheet(
+                    initialSetup: (try? store.recipeStartSetup(title: start.title, revisionIds: start.revisionIds, sourceLabel: "From a shared Cook Pack · the recipes are saved in your Recipes"))
+                        ?? CookSetupDraft(sourceLabel: "From a shared Cook Pack · the recipes are saved in your Recipes", title: start.title),
+                    onStarted: { store.pendingStartedCookId = $0 }
+                ).modifier(ScreenshotTextSize())
+            }
             .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
                 Button("OK", role: .cancel) { store.archiveMessage = nil }
             } message: { Text(store.archiveMessage ?? "") }
@@ -155,7 +163,7 @@ struct CookListView: View {
     /// Set by the first-run welcome's "Restore from backup" (#187): opens the
     /// same restore file importer as the empty-Meals entry below.
     @Binding var restoreRequested: Bool
-    @State private var showingStart = false
+    @State private var startSetup: CookSetupDraft?
     @State private var showingRestore = false
     @State private var mealPath: [String] = []
 
@@ -210,12 +218,34 @@ struct CookListView: View {
                             }
                         }
                     }
-                    Button { showingStart = true } label: {
+                    Button { startSetup = .blank(temperatureUnit: "°\(store.temperatureUnit)", weightUnit: store.weightUnit) } label: {
                         Label("Start meal", systemImage: "plus")
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 54)
                     }
                     .buttonStyle(.borderedProminent)
+
+                    if let draft = store.setupDraft {
+                        // PL-13: the kept setup is one tap from Meals,
+                        // never a surprise — same card as Android.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Cook setup draft").font(.headline)
+                            Text((draft.title.isEmpty ? "Untitled setup" : draft.title) + (draft.sourceLabel.map { " · \($0)" } ?? ""))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                Button("Resume setup") { startSetup = draft }
+                                    .buttonStyle(.borderedProminent)
+                                    .accessibilityIdentifier("resume-setup")
+                                Button("Discard setup", role: .destructive) { store.clearSetupDraft() }
+                                    .accessibilityIdentifier("discard-setup")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("setup-draft-card")
+                    }
 
                     if isLibraryEmpty {
                         Button { showingRestore = true } label: {
@@ -247,7 +277,7 @@ struct CookListView: View {
             }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
-            .sheet(isPresented: $showingStart) { StartCookSheet(onStarted: { mealPath.append($0) }) }
+            .sheet(item: $startSetup) { setup in StartCookSheet(initialSetup: setup, onStarted: { mealPath.append($0) }) }
             .onChange(of: restoreRequested) { _, requested in
                 if requested { showingRestore = true; restoreRequested = false }
             }
@@ -361,95 +391,141 @@ struct CookCard: View {
     }
 }
 
+/// PL-10 / PL-13 (#172): the one Start Cook review for every iOS start
+/// path — blank, Recipes, meal combinations, and shared Cook Packs all
+/// land here with the same fields in the same order as Android's Start
+/// Cook review (Source · Current stage · Cook name · Dishes · Smoker ·
+/// Starting setpoint · Cook notes · More cook details). Nothing is
+/// cooking until "Begin preparation" is tapped, and leaving a changed
+/// setup keeps it as a draft on this phone, exactly like Android.
 struct StartCookSheet: View {
     var onStarted: (String) -> Void = { _ in }
     @Environment(CookStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var firstDish = ""
-    @State private var alreadyCooking = false
-    @State private var foodOn = Date.now
+    @State private var setup: CookSetupDraft
+    @State private var initialSetup: CookSetupDraft
+    @State private var confirmLeave = false
+    @State private var error: String?
+    @State private var newDishName = ""
+    @State private var newDishFoodType = "Other"
+
+    init(initialSetup: CookSetupDraft, onStarted: @escaping (String) -> Void = { _ in }) {
+        self.onStarted = onStarted
+        _setup = State(initialValue: initialSetup)
+        _initialSetup = State(initialValue: initialSetup)
+    }
+
+    private var dirty: Bool { setup != initialSetup || !newDishName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         NavigationStack {
             Form {
+                if let label = setup.sourceLabel {
+                    Section("Source") {
+                        Text(label).accessibilityIdentifier("cook-source")
+                        Text("Nothing is cooking yet — review the setup, then begin preparation when you're ready.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section("Current stage") {
-                    Toggle("Already cooking", isOn: $alreadyCooking)
-                    if alreadyCooking { DatePicker("Actual Food on", selection: $foodOn, in: ...Date.now) }
+                    Toggle("Already cooking", isOn: $setup.alreadyCooking)
+                    if setup.alreadyCooking { DatePicker("Actual Food on", selection: $setup.foodOn, in: ...Date.now) }
                     else { Text("Preparing until you log Food on.") }
                 }
-                Section("Meal") {
-                    TextField("Meal name (optional)", text: $title).accessibilityIdentifier("meal-title")
-                    TextField("First dish (optional)", text: $firstDish).accessibilityIdentifier("meal-first-dish")
+                Section("Cook name") {
+                    TextField("Cook name", text: $setup.title).accessibilityIdentifier("meal-title")
+                }
+                Section("Dishes") {
+                    ForEach($setup.dishes) { $dish in
+                        if dish.revisionId != nil {
+                            // Sourced dishes are reviewed as they will be
+                            // attached — and removable — not re-typed.
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(dish.name)
+                                    if !dish.detailLine.isEmpty { Text(dish.detailLine).font(.footnote).foregroundStyle(.secondary) }
+                                }
+                            } icon: { Image(systemName: "book.closed") }
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(dish.name)
+                                if !dish.detailLine.isEmpty { Text(dish.detailLine).font(.footnote).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                    .onDelete { setup.dishes.remove(atOffsets: $0) }
+                    TextField("Dish name", text: $newDishName).accessibilityIdentifier("cook-dish-name")
+                    Picker("Food type", selection: $newDishFoodType) {
+                        ForEach(cookSetupFoodTypes, id: \.self) { Text($0).tag($0) }
+                    }.accessibilityIdentifier("cook-dish-food-type")
+                    Button("Add dish") {
+                        let name = newDishName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !name.isEmpty else { return }
+                        setup.dishes.append(CookSetupDish(name: name, foodType: newDishFoodType))
+                        newDishName = ""
+                    }.disabled(newDishName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("cook-add-dish")
+                }
+                Section("Smoker") {
+                    TextField("Smoker or grill (optional)", text: $setup.smokerName).accessibilityIdentifier("cook-smoker")
+                }
+                Section("Starting setpoint") {
+                    TextField("Starting setpoint (optional)", text: $setup.setpointText)
+                        .keyboardType(.decimalPad).accessibilityIdentifier("cook-setpoint")
+                    Picker("Unit", selection: $setup.setpointUnit) {
+                        Text("°F").tag("°F"); Text("°C").tag("°C")
+                    }.pickerStyle(.segmented)
+                }
+                Section("Cook notes") {
+                    TextField("Cook notes (optional)", text: $setup.notes, axis: .vertical).accessibilityIdentifier("cook-notes")
+                }
+                Section("More cook details") {
+                    TextField("Fuel type", text: $setup.fuelType).accessibilityIdentifier("cook-fuel")
+                    TextField("Wood or pellet blend", text: $setup.woodBlend).accessibilityIdentifier("cook-wood-blend")
+                    TextField("Outdoor temperature", text: $setup.outdoorTemperatureText)
+                        .keyboardType(.decimalPad).accessibilityIdentifier("cook-outdoor-temperature")
+                    Picker("Outdoor unit", selection: $setup.outdoorTemperatureUnit) {
+                        Text("°F").tag("°F"); Text("°C").tag("°C")
+                    }.pickerStyle(.segmented)
+                    TextField("Weather", text: $setup.weather).accessibilityIdentifier("cook-weather")
+                    TextField("Wind or exposure", text: $setup.wind).accessibilityIdentifier("cook-wind")
+                }
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
                 }
                 Section {
                     Text("You can start with manual logging and add temperature readings later.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Start meal")
+            .navigationTitle(setup.sourceLabel == nil ? "Start meal" : "Review meal setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { if dirty { confirmLeave = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") {
-                        store.startCook(title: title, firstDish: firstDish, alreadyCooking: alreadyCooking, foodOn: foodOn)
-                        if store.saveError == nil { if let id = store.activeCooks.first?.id { onStarted(id) }; dismiss() }
+                    Button("Begin preparation") {
+                        do {
+                            let id = try store.startCook(setup: setup)
+                            onStarted(id)
+                            dismiss()
+                        } catch { self.error = error.localizedDescription }
                     }.accessibilityIdentifier("start-meal-save")
                 }
             }
-        }
-    }
-}
-
-/// PL-19: the Start Cook review for recipes saved from a public Cook Pack.
-/// Mirrors Android's Start Cook review: the source is stated, the meal can
-/// be renamed, and nothing is cooking until "Start cooking" is tapped.
-struct PublicRecipeStartSheet: View {
-    let start: PublicRecipeStart
-    @Environment(CookStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var title: String
-    @State private var error: String?
-
-    init(start: PublicRecipeStart) {
-        self.start = start
-        _title = State(initialValue: start.title)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Source") {
-                    Text("From a shared Cook Pack · the recipes are saved in your Recipes")
-                    Text("Nothing is cooking yet — review the setup, then start when you're ready.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Meal") {
-                    TextField("Meal name", text: $title).accessibilityIdentifier("public-recipe-start-title")
-                    ForEach(start.revisionIds, id: \.self) { revision in
-                        if let snapshot = try? store.recipeSnapshot(revision) {
-                            Label(snapshot.name, systemImage: "book.closed")
-                        }
-                    }
-                }
-                if let error {
-                    Section { Text(error).foregroundStyle(.red) }
-                }
+            // PL-13: edits are kept as a draft on this phone as they
+            // happen — the same autosave Android's review does — so
+            // leaving by any route never loses the setup.
+            .onChange(of: setup) { _, current in
+                if current != initialSetup { store.keepSetupDraft(current) }
             }
-            .navigationTitle("Review meal setup")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Start cooking") {
-                        do {
-                            let id = try store.startRecipeMeal(title: title, revisionIds: start.revisionIds)
-                            store.pendingStartedCookId = id
-                            dismiss()
-                        } catch { self.error = error.localizedDescription }
-                    }.accessibilityIdentifier("public-recipe-start-confirm")
-                }
+            .confirmationDialog("Leave this cook setup?", isPresented: $confirmLeave, titleVisibility: .visible) {
+                Button("Keep draft") { dismiss() }.accessibilityIdentifier("setup-keep-draft")
+                Button("Discard setup", role: .destructive) { store.clearSetupDraft(); dismiss() }.accessibilityIdentifier("setup-discard")
+                Button("Keep editing", role: .cancel) { }
+            } message: {
+                Text("Your setup is kept as a draft on this phone. Resume it any time from Meals.")
             }
         }
     }

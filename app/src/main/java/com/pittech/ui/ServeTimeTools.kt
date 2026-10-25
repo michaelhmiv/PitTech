@@ -19,6 +19,15 @@ import java.time.format.DateTimeFormatter
 
 internal fun serveTime(at: Long, zone: String): String = Instant.ofEpochMilli(at).atZone(ZoneId.of(zone)).format(DateTimeFormatter.ofPattern("MMM d, HH:mm"))
 
+/** PL-10 (#172): a saved serve plan is explicitly badged "Not started" so
+ * it can never read as a cook already in progress. */
+@Composable
+internal fun NotStartedBadge(modifier: Modifier = Modifier) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.small, modifier = modifier) {
+        Text("Not started", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+    }
+}
+
 @Composable
 internal fun UpcomingCooks(viewModel: CooksViewModel) {
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
@@ -29,6 +38,7 @@ internal fun UpcomingCooks(viewModel: CooksViewModel) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Upcoming · ${r.title}", style = MaterialTheme.typography.titleMedium)
+                NotStartedBadge(Modifier.testTag("upcoming-not-started"))
                 Text("Serve ${serveTime(plan.serveAt, plan.zoneId)} · ${plan.zoneId}")
                 val windows = ServeTimePlanner.windows(plan)
                 Text("Prep ${serveTime(windows.minOf { it.prepAt }, plan.zoneId)}\nPreheat ${serveTime(windows.minOf { it.preheatAt }, plan.zoneId)}\nFood on from ${serveTime(windows.minOf { it.foodOnAt }, plan.zoneId)}")
@@ -71,6 +81,7 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
     AlertDialog(onDismissRequest = onClose, title = { Text("Plan serving time") }, text = {
         Column(Modifier.heightIn(max = 490.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(plan.book.name, { plan = plan.copy(book = plan.book.copy(name = it, draft = plan.book.draft.copy(title = it))) }, label = { Text("Cook name") }, modifier = Modifier.fillMaxWidth())
+            NotStartedBadge(Modifier.testTag("serve-plan-not-started"))
             Text("Serving date and time", style = MaterialTheme.typography.titleMedium)
             CookDateTimeControls(date, time, { date = it }, { time = it })
             OutlinedTextField(zone, { zone = it }, label = { Text("Time zone") }, modifier = Modifier.fillMaxWidth())
@@ -97,7 +108,7 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
         require(saved.schedules.none { it.evidenceNote == "Enter your duration range" }) { "Review each dish's duration range." }
         require(ServeTimePlanner.conflicts(saved).isEmpty()) { "Resolve the overlapping pit-temperature conflict before saving." }
         onSave(saved)
-    }.onFailure { error = it.message } }) { Text("Save for later") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
+    }.onFailure { error = it.message } }) { Text("Save plan") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
 }
 
 @Composable

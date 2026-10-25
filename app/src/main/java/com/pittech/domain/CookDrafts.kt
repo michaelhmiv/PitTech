@@ -51,6 +51,12 @@ data class NewCookDraft(
      * [dishes] (null = that dish has no saved-recipe source). Empty means
      * no attachments. PL-19: a reviewed recipe meal keeps its sources. */
     val recipeRevisionIds: List<String?> = emptyList(),
+    /** Working-copy recipe snapshots (encoded [com.pittech.domain.RecipeSnapshot]
+     * JSON) to apply over the attached revision when the cook starts, parallel
+     * to [dishes] (null = use the revision exactly as saved). Meal presets
+     * store working copies edited during the original cook; PL-10 routes the
+     * preset start through the Start Cook review without losing them. */
+    val recipeAttemptSnapshots: List<String?> = emptyList(),
     /** Where this draft came from, shown on the Start Cook review when set
      * (for example a shared Cook Pack), so the source is never a surprise. */
     val sourceLabel: String? = null,

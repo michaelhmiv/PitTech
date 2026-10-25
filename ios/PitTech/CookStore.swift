@@ -40,15 +40,34 @@ final class CookStore {
     @ObservationIgnored var telemetryOnLog: ((String) -> Void)?
     @ObservationIgnored var reminderScheduleTask: Task<Void, Never>?
     @ObservationIgnored var recipeGuideCache: [String: CachedRecipeGuide] = [:]
+    /// PL-13 (#172): the Start Cook setup kept on this device when a setup
+    /// is left mid-edit. Meals offers "Resume setup" until it is discarded
+    /// or a cook is started from it. Device-local only — never synced,
+    /// never part of the library archive.
+    var setupDraft: CookSetupDraft?
+    @ObservationIgnored private let defaults: UserDefaults
+    private static let setupDraftKey = "pittech.setupDraft.v1"
     private let directory: URL
-    init(directory: URL? = nil) {
+    init(directory: URL? = nil, defaults: UserDefaults = .standard) {
         self.directory = directory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        self.defaults = defaults
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
         load()
+        setupDraft = defaults.data(forKey: Self.setupDraftKey).flatMap { try? JSONDecoder().decode(CookSetupDraft.self, from: $0) }
         noteDrafts = (try? JSONDecoder().decode([CookNoteDraft].self, from: Data(contentsOf: draftsURL))) ?? []
         #if DEBUG
         if directory == nil { prepareUIFlowFixture() }
         #endif
+    }
+
+    func keepSetupDraft(_ draft: CookSetupDraft) {
+        setupDraft = draft
+        if let data = try? JSONEncoder().encode(draft) { defaults.set(data, forKey: Self.setupDraftKey) }
+    }
+
+    func clearSetupDraft() {
+        setupDraft = nil
+        defaults.removeObject(forKey: Self.setupDraftKey)
     }
 
     var activeCooks: [CookRecord] { library.cooks.filter(\.isActive).sorted { $0.startedAtUtcMillis > $1.startedAtUtcMillis } }

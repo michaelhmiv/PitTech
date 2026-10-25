@@ -13,6 +13,7 @@ import android.graphics.Bitmap
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -45,8 +46,11 @@ import com.pittech.data.PhotoEntity
 import com.pittech.data.ProbeEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TimelineEventEntity
+import com.pittech.domain.CookPlaybook
 import com.pittech.domain.DishDraft
+import com.pittech.domain.DishSchedule
 import com.pittech.domain.NewCookDraft
+import com.pittech.domain.ServePlan
 import com.pittech.ui.PitTechThemeMode
 import com.pittech.ui.ZipShareIntent
 import kotlinx.coroutines.Dispatchers
@@ -509,6 +513,106 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("nav-insights").performClick()
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
         composeRule.onNodeWithText("Saturday brisket").performScrollTo().assertIsDisplayed()
+    }
+
+    // PL-13 (issue #172): leaving a changed Start Cook setup keeps it as a
+    // draft on this phone — never a silent discard, never a
+    // confirm-and-lose dialog. Meals offers Resume setup; Discard setup is
+    // the explicit way to throw it away. (Named test08b so it runs before
+    // test09, whose end state the emulator script verifies afterwards.)
+    @Test
+    fun test08b_leavingAChangedSetupKeepsADraftAndResumeRestoresIt() {
+        clearLocalData()
+        targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE).edit()
+            .remove("start-cook-setup-draft").remove("start-cook-setup-draft-playbook").apply()
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag("start-cook").performClick()
+        composeRule.onNodeWithTag("cook-title").performTextClearance()
+        composeRule.onNodeWithTag("cook-title").performTextInput("Draft night ribs")
+        composeRule.onNodeWithTag("cook-smoker").performTextInput("Kettle")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Go back").performClick()
+        composeRule.onNodeWithText("Leave this cook setup?").assertIsDisplayed()
+        composeRule.onNodeWithText("Your setup is kept as a draft on this phone. Resume it any time from Meals.").assertIsDisplayed()
+        saveScreenshot("setup-leave-dialog")
+        composeRule.onNodeWithTag("setup-keep-draft").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("resume-setup").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("setup-draft-card").performScrollTo().assertIsDisplayed()
+        saveScreenshot("meals-setup-draft")
+        // Resume restores the same setup, fields intact.
+        composeRule.onNodeWithTag("resume-setup").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("cook-title").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("cook-title").assertTextContains("Draft night ribs")
+        composeRule.onNodeWithTag("cook-smoker").assertTextContains("Kettle")
+        // Leaving it unchanged asks nothing — the draft simply stays.
+        composeRule.onNodeWithContentDescription("Go back").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("resume-setup").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onAllNodesWithText("Leave this cook setup?").assertCountEquals(0)
+        // Discard setup is explicit and removes both the card and the draft.
+        composeRule.onNodeWithTag("discard-setup").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("resume-setup").fetchSemanticsNodes().isEmpty() }
+        assertEquals(null, targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE).getString("start-cook-setup-draft", null))
+    }
+
+    // PL-10 (issue #172): a saved serve plan is badged "Not started" in the
+    // editor and on its Upcoming card, and the editor's confirm is
+    // "Save plan" — the old "Save for later" wording is gone.
+    @Test
+    fun test08c_servePlanIsBadgedNotStarted() {
+        clearLocalData()
+        val application = targetContext.applicationContext as PitTechApplication
+        runBlocking(Dispatchers.IO) {
+            val book = CookPlaybook("Planned ribs", NewCookDraft("Planned ribs", dishes = listOf(DishDraft("Ribs", "Pork"))), emptyList())
+            val plan = ServePlan(book, System.currentTimeMillis() + 86_400_000, java.time.ZoneId.systemDefault().id,
+                schedules = listOf(DishSchedule(0, evidenceNote = "Your duration range")))
+            application.servePlanRepository.save(plan, null)
+        }
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag("home-planning-toggle").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("upcoming-not-started").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("upcoming-not-started").performScrollTo().assertIsDisplayed()
+        saveScreenshot("serve-plan-not-started")
+        composeRule.onNodeWithText("Adjust schedule").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("serve-plan-not-started").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithTag("serve-plan-not-started").assertIsDisplayed()
+        composeRule.onNodeWithText("Save plan").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Save for later").assertCountEquals(0)
+        composeRule.onNodeWithText("Cancel").performClick()
+    }
+
+    // PL-13 (issue #172): the Start Cook fields appear in the canonical
+    // order both platforms share — stage, name, dishes, smoker, setpoint,
+    // notes, then the More-details fields in order.
+    @Test
+    fun test08d_startCookFieldsFollowTheCanonicalOrder() {
+        clearLocalData()
+        composeRule.onNodeWithTag("start-cook").performClick()
+        composeRule.onNodeWithTag("cook-more-details").performScrollTo().performClick()
+        // Order is read from the semantics tree's layout order, not from
+        // on-screen geometry: boundsInRoot is clipped to the visible
+        // window, so fields scrolled above the viewport compare equal and
+        // a position chain cannot judge them. The tree walk visits the
+        // form's children in composition order at any scroll position.
+        val wantedTags = listOf("cook-title", "cook-add-dish", "cook-smoker", "cook-setpoint", "cook-notes",
+            "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind")
+        val seen = mutableListOf<String>()
+        fun walk(node: androidx.compose.ui.semantics.SemanticsNode) {
+            val tag = node.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.TestTag) { null }
+            if (tag != null && tag in wantedTags) seen += tag
+            val texts = node.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
+            if (texts?.any { it.text == "Current stage" } == true) seen += "stage"
+            node.children.forEach(::walk)
+        }
+        walk(composeRule.onRoot(useUnmergedTree = true).fetchSemanticsNode())
+        assertEquals(
+            listOf("stage", "cook-title", "cook-add-dish", "cook-smoker", "cook-setpoint", "cook-notes",
+                "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind"),
+            seen,
+        )
+        // Nothing was entered, so leaving is quiet and keeps no draft.
+        composeRule.onNodeWithContentDescription("Go back").performClick()
+        composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("resume-setup").assertCountEquals(0)
     }
 
     // PL-08 (issue #172): finish ends on the verdict step; verdicts saved
