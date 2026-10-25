@@ -693,15 +693,38 @@ class CooksViewModel(
         finish: Boolean,
         keepDoing: String = "",
         changeNextTime: String = "",
+        cookAgain: Boolean? = null,
         onFinished: ((Boolean) -> Unit)? = null,
     ) = perform({
         repository.saveLearning(cookId, dishId, keepDoing, changeNextTime)
-        repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish)
+        repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish, cookAgain = cookAgain, updateCookAgain = dishId != null)
         if (finish) reconcileRecording()
         if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         if (finish) cancelCompanionNotifications(cookId)
         _notice.value = if (finish) "Cook finished and results saved." else "Results saved."
     }, onFinished)
+
+    /**
+     * PL-08: the completion sheet's quick-verdict step — the whole-cook
+     * overall verdict plus one verdict (rating + cook again?) per dish,
+     * written through the one results model without touching other fields.
+     */
+    fun saveFinishVerdicts(
+        cookId: String,
+        overallRating: Double?,
+        dishVerdicts: Map<String, Pair<Double?, Boolean?>>,
+        onFinished: ((Boolean) -> Unit)? = null,
+    ) = perform({
+        repository.saveVerdict(cookId, null, overallRating, null)
+        dishVerdicts.forEach { (dishId, verdict) -> repository.saveVerdict(cookId, dishId, verdict.first, verdict.second) }
+        _notice.value = "Verdict saved."
+    }, onFinished)
+
+    fun reopenCook(cookId: String) = perform {
+        repository.reopenCook(cookId)
+        reconcileRecording()
+        _notice.value = "Cook reopened."
+    }
 
     fun completeCook(cookId: String) = perform {
         repository.completeCook(cookId)

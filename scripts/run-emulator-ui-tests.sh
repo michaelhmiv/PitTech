@@ -484,7 +484,7 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-recording_expected_count=22
+recording_expected_count=24
 if [[ "$recording_passed_count" -ne "$recording_expected_count" ]] || ! grep -q "OK (${recording_expected_count} tests)" "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
@@ -499,7 +499,7 @@ echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest,com.pittech.data.PublicationAcceptanceTest,com.pittech.data.LocalJournalRemovalTest,com.pittech.data.PrivateSyncStoreTest,com.pittech.data.PrivateSyncApplyTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (42 tests)' "$recipe_test_output"
+grep -q 'OK (43 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"
@@ -537,6 +537,7 @@ else
     "test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore"
     "test04b_preparationDurationStaysInOneOptionalNote"
     "test08_zipShareIntentUsesReadOnlyContentUri"
+    "test09_finishVerdictResultsHomeAndUndoFinish"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
@@ -614,6 +615,8 @@ pull_app_screenshot food-first-note
 if (( api_level == 36 )); then
   pull_app_screenshot recipe-composed-live
   pull_app_screenshot meal-finished-recipe-choice
+  pull_app_screenshot finish-verdict-step
+  pull_app_screenshot cook-results-timeline
   pull_app_screenshot cook-pack-selective-preview
   pull_app_screenshot cook-pack-saved-recipe
   pull_app_screenshot cook-pack-recorded-history-preview

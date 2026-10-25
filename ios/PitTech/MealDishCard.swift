@@ -93,7 +93,7 @@ struct MealDishCard: View {
                 }
             }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-            .sheet(isPresented: $showingVerdict) { DishVerdictSheet(cookId: cookId, dish: dish) }
+            .sheet(isPresented: $showingVerdict) { CookResultsSheet(cookId: cookId, focusedDishId: dish.id) }
     }
 }
 extension CookStore {

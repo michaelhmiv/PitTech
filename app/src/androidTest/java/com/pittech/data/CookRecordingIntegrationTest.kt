@@ -354,4 +354,58 @@ class CookRecordingIntegrationTest {
         } finally { migrated.close(); context.deleteDatabase(name) }
     }
 
+    // PL-08: the unified results save owns every field of a scope — the
+    // per-dish verdict and "cook again?" included — through one writer.
+    @Test fun unifiedResultsSaveWritesVerdictAndCookAgainForDishScope() = runBlocking {
+        val id = cook()
+        val dish = db.cookDao().getDishesForCook(id).first()
+        cooks.saveCookResults(
+            id, dish.id, "203", "°F", "45",
+            mapOf("overall_rating" to "5", "bark" to "4", "tenderness" to "5", "juiciness" to "4", "smoke" to "3", "seasoning" to "5"),
+            "Great bark", finish = false, cookAgain = true, updateCookAgain = true,
+        )
+        var rows = db.cookDao().observeResults(id).first().filter { it.dishId == dish.id }
+        fun value(type: String) = rows.firstOrNull { it.resultType == type }?.numericValue
+        assertEquals(5.0, value("overall_rating")!!, 0.0)
+        assertEquals(4.0, value("tenderness")!!, 0.0)
+        assertEquals(1.0, value("cook_again")!!, 0.0)
+        assertEquals(203.0, value("final_temperature")!!, 0.0)
+        // Clearing the verdict keeps "Not recorded" honest: the rows go away,
+        // they do not become a poor rating.
+        cooks.saveVerdict(id, dish.id, null, null)
+        rows = db.cookDao().observeResults(id).first().filter { it.dishId == dish.id }
+        assertNull(rows.firstOrNull { it.resultType == "overall_rating" })
+        assertNull(rows.firstOrNull { it.resultType == "cook_again" })
+        assertEquals(203.0, rows.first { it.resultType == "final_temperature" }.numericValue!!, 0.0)
+        // The quick verdict writes only verdict rows — notes stay untouched.
+        cooks.saveVerdict(id, dish.id, 4.0, false)
+        rows = db.cookDao().observeResults(id).first().filter { it.dishId == dish.id }
+        assertEquals(4.0, rows.first { it.resultType == "overall_rating" }.numericValue!!, 0.0)
+        assertEquals(0.0, rows.first { it.resultType == "cook_again" }.numericValue!!, 0.0)
+        assertEquals("Great bark", rows.first { it.resultType == "result_notes" }.textValue)
+    }
+
+    // PL-08: Undo finish lives on the finished cook — it restores the active
+    // cook, clears the end time, and leaves every recorded fact in place.
+    @Test fun reopenCookRestoresActiveAndKeepsRecordedResults() = runBlocking {
+        val id = cook()
+        val dish = db.cookDao().getDishesForCook(id).first()
+        cooks.saveDishVerdict(id, dish.id, 4.5, true, "More pepper")
+        cooks.saveCookResults(id, null, "201", "°F", "30", mapOf("overall_rating" to "4"), "", finish = true)
+        val finished = db.cookDao().getCook(id)!!
+        assertEquals(CookStatus.COMPLETED, finished.status)
+        assertNotNull(finished.endedAtUtcMillis)
+        val resultsBefore = db.cookDao().observeResults(id).first().map { Triple(it.resultType, it.dishId, it.numericValue ?: it.textValue) }.toSet()
+        cooks.reopenCook(id)
+        val reopened = db.cookDao().getCook(id)!!
+        assertEquals(CookStatus.ACTIVE, reopened.status)
+        assertNull(reopened.endedAtUtcMillis)
+        val resultsAfter = db.cookDao().observeResults(id).first().map { Triple(it.resultType, it.dishId, it.numericValue ?: it.textValue) }.toSet()
+        assertEquals(resultsBefore, resultsAfter)
+        assertEquals(1, db.cookDao().getTimelineEventsForCook(id).count { it.eventType == "cook_reopened" })
+        // Reopening an already-active cook is a no-op — no duplicate event.
+        cooks.reopenCook(id)
+        assertEquals(1, db.cookDao().getTimelineEventsForCook(id).count { it.eventType == "cook_reopened" })
+    }
+
 }

@@ -20,10 +20,13 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -507,6 +510,70 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("nav-insights").performClick()
         composeRule.onNodeWithText("Learn from your cooks").assertIsDisplayed()
         composeRule.onNodeWithText("Saturday brisket").performScrollTo().assertIsDisplayed()
+    }
+
+    // PL-08 (issue #172): finish ends on the verdict step; verdicts saved
+    // there render read-only on the cook's summary; Undo finish is on the
+    // finished cook itself.
+    @Test
+    fun test09_finishVerdictResultsHomeAndUndoFinish() {
+        clearLocalData()
+        val application = targetContext.applicationContext as PitTechApplication
+        val cookId = createTestCook("Verdict brisket")
+        val dao = application.database.cookDao()
+        val dishId = runBlocking(Dispatchers.IO) { dao.getDishesForCook(cookId).first().id }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-card-$cookId").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("cook-card-$cookId").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-tab-live", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Delete cook").performScrollTo()
+        composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
+        composeRule.onNodeWithTag("finish-cook-dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("finish-cook-save").performClick()
+        // The completion sheet's first section is the quick verdict.
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("completion-verdict").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("completion-verdict-cook-4").performScrollTo().performClick()
+        composeRule.onNodeWithTag("completion-verdict-$dishId-5").performScrollTo().performClick()
+        composeRule.onNodeWithTag("completion-again-$dishId").performScrollTo()
+        composeRule.onNode(hasText("Yes") and hasAnyAncestor(hasTestTag("completion-again-$dishId"))).performClick()
+        captureCurrentScreen("finish-verdict-step")
+        composeRule.onNodeWithTag("completion-verdict-save").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("completion-verdict-saved").fetchSemanticsNodes().isNotEmpty()
+        }
+        runBlocking(Dispatchers.IO) {
+            val results = dao.observeResults(cookId).first()
+            assertEquals(4.0, results.single { it.dishId == null && it.resultType == "overall_rating" }.numericValue!!, 0.0)
+            assertEquals(5.0, results.single { it.dishId == dishId && it.resultType == "overall_rating" }.numericValue!!, 0.0)
+            assertEquals(1.0, results.single { it.dishId == dishId && it.resultType == "cook_again" }.numericValue!!, 0.0)
+            assertEquals(CookStatus.COMPLETED, dao.getCook(cookId)!!.status)
+        }
+        composeRule.onNodeWithTag("leave-without-saving").performScrollTo().performClick()
+        // Saved results render read-only on the summary (Timeline).
+        composeRule.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Cook results"))
+        composeRule.onNodeWithTag("cook-results-card").assertIsDisplayed()
+        composeRule.onNodeWithText("Overall verdict: 4 / 5").assertIsDisplayed()
+        composeRule.onNodeWithText("Verdict: 5 / 5").assertIsDisplayed()
+        captureCurrentScreen("cook-results-timeline")
+        // Undo finish lives on the finished cook, not only after finishing.
+        composeRule.onNodeWithTag("cook-tab-live", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithText("Delete cook").performScrollTo()
+        composeRule.onNodeWithTag("live-undo-finish").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runBlocking(Dispatchers.IO) { dao.getCook(cookId)!!.status == CookStatus.ACTIVE }
+        }
+        runBlocking(Dispatchers.IO) {
+            assertEquals(null, dao.getCook(cookId)!!.endedAtUtcMillis)
+            val results = dao.observeResults(cookId).first()
+            assertEquals(5.0, results.single { it.dishId == dishId && it.resultType == "overall_rating" }.numericValue!!, 0.0)
+        }
+        composeRule.onNodeWithTag("live-finish-cook").assertExists()
     }
 
     @Test

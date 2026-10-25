@@ -594,6 +594,8 @@ class CookRepository(
         ratings: Map<String, String>,
         notes: String,
         finish: Boolean,
+        cookAgain: Boolean? = null,
+        updateCookAgain: Boolean = false,
     ) = database.withTransaction {
         require(CookEntryValidation.isOptionalPositiveNumberValid(finalTemperatureText)) { "Enter a positive final temperature or leave it blank." }
         require(CookEntryValidation.isOptionalPositiveNumberValid(restMinutesText)) { "Enter a positive rest time or leave it blank." }
@@ -631,7 +633,56 @@ class CookRepository(
                 ),
             ) else dao.deleteResult("$cookId:${dishId ?: "cook"}:$type")
         }
+        // PL-08: the unified results editor owns the per-dish "cook again?"
+        // verdict too — one writer for every results field of a scope.
+        if (updateCookAgain && dishId != null) {
+            val againId = "$cookId:$dishId:cook_again"
+            if (cookAgain == null) dao.deleteResult(againId) else dao.upsertResult(
+                CookResultEntity(
+                    id = againId, cookId = cookId, dishId = dishId,
+                    resultType = "cook_again", numericValue = if (cookAgain) 1.0 else 0.0, recordedAtUtcMillis = now,
+                ),
+            )
+        }
         if (finish) completeCook(cookId)
+    }
+
+    /**
+     * PL-08 quick verdict: writes ONLY the verdict rows of one scope (the
+     * overall rating, plus "cook again?" for a dish) so the finish sheet can
+     * record verdicts without touching final temperature, notes or any other
+     * saved result. A null rating deletes the row — "Not recorded" is a
+     * first-class state, distinct from a poor rating.
+     */
+    suspend fun saveVerdict(cookId: String, dishId: String?, rating: Double?, cookAgain: Boolean?) = database.withTransaction {
+        require(rating == null || rating.isFinite() && rating in 1.0..5.0) { "Ratings must be from 1 to 5." }
+        if (dishId != null) require(dao.getDish(dishId)?.cookId == cookId) { "This dish is unavailable." }
+        val now = System.currentTimeMillis()
+        val scope = dishId ?: "cook"
+        val ratingId = "$cookId:$scope:overall_rating"
+        if (rating == null) dao.deleteResult(ratingId) else dao.upsertResult(
+            CookResultEntity(ratingId, cookId, dishId, "overall_rating", numericValue = rating, unit = "stars", recordedAtUtcMillis = now),
+        )
+        if (dishId != null) {
+            val againId = "$cookId:$scope:cook_again"
+            if (cookAgain == null) dao.deleteResult(againId) else dao.upsertResult(
+                CookResultEntity(againId, cookId, dishId, "cook_again", numericValue = if (cookAgain) 1.0 else 0.0, recordedAtUtcMillis = now),
+            )
+        }
+    }
+
+    /**
+     * PL-08 "Undo finish": a finished cook returns to active from the
+     * finished cook itself, not only in the moment after finishing. Recorded
+     * facts stay exactly as recorded — results, readings and events are not
+     * touched; the reopen itself is a timeline event.
+     */
+    suspend fun reopenCook(cookId: String) = database.withTransaction {
+        val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
+        if (cook.status != CookStatus.COMPLETED) return@withTransaction
+        val now = System.currentTimeMillis()
+        dao.updateCook(cook.copy(status = CookStatus.ACTIVE, endedAtUtcMillis = null, updatedAtUtcMillis = now))
+        addTimelineEvent(cookId, null, "cook_reopened", "Cook reopened", null, now)
     }
 
     suspend fun completeCook(cookId: String) = database.withTransaction {
