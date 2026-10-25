@@ -38,14 +38,9 @@ struct ContentView: View {
         }
     }
 
-    /// Extracted so the TabView modifier chain stays type-checkable.
-    private var archiveIntakeBinding: Binding<NativeArchiveIntake?> {
-        Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
-    }
-
-    private var publicRecipeStartBinding: Binding<PublicRecipeStart?> {
-        Binding(get: { store.publicRecipeStart }, set: { store.publicRecipeStart = $0 })
-    }
+    // The archive + recipe-start sheets live in ArchiveSheetsModifier:
+    // attaching them here pushed this modifier chain past the compiler's
+    // type-checking budget (which is why tabRoot is extracted at all).
 
     private var tabRoot: some View {
         TabView(selection: $selectedTab) {
@@ -101,20 +96,7 @@ struct ContentView: View {
         }) {
             if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
         }
-        .sheet(item: archiveIntakeBinding, onDismiss: {
-            if let start = store.pendingPublicRecipeStart {
-                // PL-19: a "Cook this" save promotes to the Start Cook
-                // review sheet instead of opening a live cook directly.
-                store.pendingPublicRecipeStart = nil; store.publicRecipeStart = start; store.archiveCompletionMessage = nil
-            } else if let destination = store.publicCookDestination {
-                store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
-            } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
-        }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
-        .sheet(item: publicRecipeStartBinding, onDismiss: {
-            if let id = store.pendingStartedCookId {
-                store.pendingStartedCookId = nil; store.notificationCookId = id
-            }
-        }) { start in PublicRecipeStartSheet(start: start).modifier(ScreenshotTextSize()) }
+        .modifier(ArchiveSheetsModifier())
         .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
             Button("OK", role: .cancel) { store.archiveMessage = nil }
         } message: { Text(store.archiveMessage ?? "") }
@@ -126,6 +108,38 @@ struct ContentView: View {
         } message: {
             Text(store.saveError ?? "Please try again.")
         }
+    }
+}
+
+/// The Cook Pack archive sheet and the PL-19 Start Cook review sheet,
+/// attached as one modifier so ContentView's own chain stays type-checkable.
+private struct ArchiveSheetsModifier: ViewModifier {
+    @Environment(CookStore.self) private var store
+
+    private var archiveIntakeBinding: Binding<NativeArchiveIntake?> {
+        Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
+    }
+
+    private var publicRecipeStartBinding: Binding<PublicRecipeStart?> {
+        Binding(get: { store.publicRecipeStart }, set: { store.publicRecipeStart = $0 })
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: archiveIntakeBinding, onDismiss: {
+                if let start = store.pendingPublicRecipeStart {
+                    // PL-19: a "Cook this" save promotes to the Start Cook
+                    // review sheet instead of opening a live cook directly.
+                    store.pendingPublicRecipeStart = nil; store.publicRecipeStart = start; store.archiveCompletionMessage = nil
+                } else if let destination = store.publicCookDestination {
+                    store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
+                } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
+            }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
+            .sheet(item: publicRecipeStartBinding, onDismiss: {
+                if let id = store.pendingStartedCookId {
+                    store.pendingStartedCookId = nil; store.notificationCookId = id
+                }
+            }) { start in PublicRecipeStartSheet(start: start).modifier(ScreenshotTextSize()) }
     }
 }
 
