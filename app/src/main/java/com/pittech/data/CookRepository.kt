@@ -221,7 +221,7 @@ class CookRepository(
                     // attached revision, exactly as the direct preset start
                     // did before presets were routed through the review.
                     draft.recipeAttemptSnapshots.getOrNull(index)?.let { snapshot ->
-                        updateRecipeAttempt(dishes[index].id, RecipeSnapshotCodec.decode(snapshot))
+                        updateRecipeAttempt(dishes[index].id, com.pittech.domain.RecipeSnapshotCodec.decode(snapshot))
                     }
                 }
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)

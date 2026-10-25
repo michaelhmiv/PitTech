@@ -5,7 +5,7 @@ import XCTest
 /// every iOS start path, the same fields in the same order as Android,
 /// and a kept setup draft that behaves like Android's (kept on leave,
 /// resumed from Meals, cleared by starting or discarding).
-final class StartCookSetupTests: XCTestCase {
+@MainActor final class StartCookSetupTests: XCTestCase {
     private func makeStore() -> (store: CookStore, directory: URL, defaults: UserDefaults) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let defaults = UserDefaults(suiteName: "pittech-setup-tests-\(UUID().uuidString)")!
