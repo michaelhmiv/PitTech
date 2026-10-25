@@ -112,7 +112,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             val temperatures = selected.mapNotNull { snapshots[it]?.preferredPitTemperatureF }.distinct()
             if (temperatures.size > 1) Text("These recipes use different smoker settings. Choose the setting for this meal when ready.")
             OutlinedTextField(mealTitle, { mealTitle = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-meal-title"))
-            Button(onClick = { act { viewModel.startRecipeMeal(mealTitle, selected); selected = emptyList() } }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
+            Button(onClick = { viewModel.previewRecipeMeal(mealTitle, selected); selected = emptyList() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
             val active = cooks.filter { it.cook.status != CookStatus.COMPLETED }
             if (active.isNotEmpty()) {
                 val choices = active.mapIndexed { index, c -> c.cook.id to "${c.cook.title} (${index + 1})" }
@@ -120,12 +120,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                 OutlinedButton(onClick = { act { val id = existingMealId ?: return@act; selected.forEach { viewModel.addRecipeToMeal(id, it) }; selected = emptyList(); viewModel.openCook(id) } }, enabled = existingMealId != null && !busy) { Text("Add selected recipes") }
             }
         }
-        presets.forEach { preset -> TextButton(onClick = { act { viewModel.startMealPreset(preset.id) } }, enabled = !busy) { Text("Repeat ${preset.name}") } }
+        presets.forEach { preset -> TextButton(onClick = { viewModel.previewMealPreset(preset.id) }, enabled = !busy) { Text("Repeat ${preset.name}") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     detail?.let { recipe ->
         RecipeDetailsDialog(viewModel, recipe, revisions.filter { it.recipeId == recipe.id }, snapshots, cooks.map { it.cook.id }.toSet(), busy,
-            onClose = { detail = null }, onUse = { id -> act { viewModel.startRecipeMeal(recipe.name, listOf(id)); detail = null } },
+            onClose = { detail = null }, onUse = { id -> viewModel.previewRecipeMeal(recipe.name, listOf(id)); detail = null },
             onEdit = { revision -> act { editor = RecipeEditorRequest(snapshots.getValue(revision.id), recipe.id, recipe.currentRevisionId, revision.id, revision.sourceCookId, revision.sourceDishId, viewModel.recipes.assets(revision.id)); detail = null } },
             onDuplicate = { name -> act { viewModel.recipes.duplicate(recipe.id, name); detail = null } },
             onArchive = { act { viewModel.recipes.archive(recipe.id); detail = null } },

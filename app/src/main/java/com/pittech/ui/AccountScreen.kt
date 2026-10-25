@@ -2,24 +2,38 @@ package com.pittech.ui
 
 import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,48 +56,150 @@ import com.pittech.data.ActivityGoogleSignInHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null, subscription: com.pittech.billing.SubscriptionManager? = null) {
+/**
+ * PL-14 (#172): Account is a Night Service sheet, not a dialog — a full
+ * surface whose sections each carry their status in the header (DD-2).
+ * The hosted content is unchanged: hosted embeds (and tests) compose
+ * [AccountContent] directly and get the same sectioned layout.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable internal fun AccountSheet(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null, subscription: com.pittech.billing.SubscriptionManager? = null) {
     val showing by account.showing.collectAsStateWithLifecycle()
     if(!showing)return
-    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync, mcp, device, subscription)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
+    Dialog(onDismissRequest={account.close()},properties=DialogProperties(usePlatformDefaultWidth=false)){
+        Scaffold(
+            topBar={TopAppBar(title={Text("Account")},navigationIcon={IconButton(onClick={account.close()}){Icon(Icons.Filled.Close,"Close account")}})},
+        ){padding->
+            Box(Modifier.padding(padding).fillMaxSize()){AccountContent(account, sync, mcp, device, subscription)}
+        }
+    }
 }
+
+/** One PL-14 section: a Night Service card whose header always carries the
+ * section's current status (DD-2), so a collapsed-away state never hides
+ * whether the section needs attention. Sections stay expanded — collapsing
+ * them would bury controls that used to be one scroll away. */
+@Composable private fun AccountPanel(title: String, status: String, tag: String, content: @Composable () -> Unit) {
+    Card(
+        colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),
+        shape=RoundedCornerShape(16.dp),
+        modifier=Modifier.fillMaxWidth().testTag(tag),
+    ){
+        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+            Column(verticalArrangement=Arrangement.spacedBy(2.dp)){
+                Text(title,style=MaterialTheme.typography.titleMedium)
+                Text(status,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.testTag("$tag-status"))
+            }
+            content()
+        }
+    }
+}
+
 @Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null, subscription: com.pittech.billing.SubscriptionManager? = null) {
     val state by account.presentation.collectAsStateWithLifecycle()
+    val syncState by (sync?.presentation ?: remember{ kotlinx.coroutines.flow.MutableStateFlow(com.pittech.data.PrivateSyncPresentation()) }).collectAsStateWithLifecycle()
+    val mcpState by (mcp?.presentation ?: remember{ kotlinx.coroutines.flow.MutableStateFlow(com.pittech.data.McpConnectionsPresentation(available=false)) }).collectAsStateWithLifecycle()
+    val deviceState by (device?.presentation ?: remember{ kotlinx.coroutines.flow.MutableStateFlow(com.pittech.data.McpDevicePresentation(available=false)) }).collectAsStateWithLifecycle()
+    val subState by (subscription?.presentation ?: remember{ kotlinx.coroutines.flow.MutableStateFlow(com.pittech.billing.SubscriptionPresentation()) }).collectAsStateWithLifecycle()
+    val aiGate = if(subscription==null) com.pittech.data.McpProGate.ENTITLED else com.pittech.data.mcpProGate(subState.entitlement)
     var confirm by remember{mutableStateOf(false)}
     var reviewingDeletion by remember{mutableStateOf(false)}
     var reviewingJournal by remember{mutableStateOf(false)}
     LaunchedEffect(account,state.challengeEmail){while(true){delay(1000);account.tick()}}
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(4.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         Text("Your cookbook works without an account. Signing in doesn't publish or upload your local records.")
         if(!account.enabled)Text("Accounts arrive with community recipes and private sync.",Modifier.testTag("account-unavailable"))
-        else if(state.deletion!=null){
-            val deletion=state.deletion!!
-            Text("Account deletion",style=MaterialTheme.typography.titleMedium)
-            Text(deletion.receipt?.description?:"The deletion response was not confirmed. Recover the request before retrying.",Modifier.testTag("account-deletion-status"))
-            Text("Your local journal stays available on this device. Deletion does not stop your local cooking.")
-            if(deletion.cleanupUserId!=null)Button(onClick={account.retryDeviceCleanup()},enabled=!state.busy){Text("Retry device account cleanup")}
-            if(deletion.receipt?.state=="complete")Button(onClick={account.dismissCompletedDeletion()},enabled=!state.busy){Text("Close completed request")}
-            else{
-                if(deletion.receipt!=null)Button(onClick={account.checkDeletion()},enabled=!state.busy,modifier=Modifier.testTag("account-deletion-check")){Text("Check deletion progress")}
-                Button(onClick={account.recoverDeletion()},enabled=!state.busy,modifier=Modifier.testTag("account-deletion-recover")){Text("Recover deletion request")}
-                if(deletion.receipt==null && state.signedIn)TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-deletion-retry")){Text("Review and retry the same request")}
+        // Session — sign-in state, the deletion-in-progress flow, sign out.
+        AccountPanel(
+            title="Session",
+            status=when{
+                state.deletion!=null->"Deletion in progress"
+                state.signedIn->state.accountEmail?.let{"Signed in · $it"}?:"Signed in"
+                !account.enabled->"Not available on this build"
+                else->"Signed out"
+            },
+            tag="account-panel-session",
+        ){
+            if(state.deletion!=null){
+                val deletion=state.deletion!!
+                Text("Account deletion",style=MaterialTheme.typography.titleMedium)
+                Text(deletion.receipt?.description?:"The deletion response was not confirmed. Recover the request before retrying.",Modifier.testTag("account-deletion-status"))
+                Text("Your local journal stays available on this device. Deletion does not stop your local cooking.")
+                if(deletion.cleanupUserId!=null)Button(onClick={account.retryDeviceCleanup()},enabled=!state.busy){Text("Retry device account cleanup")}
+                if(deletion.receipt?.state=="complete")Button(onClick={account.dismissCompletedDeletion()},enabled=!state.busy){Text("Close completed request")}
+                else{
+                    if(deletion.receipt!=null)Button(onClick={account.checkDeletion()},enabled=!state.busy,modifier=Modifier.testTag("account-deletion-check")){Text("Check deletion progress")}
+                    Button(onClick={account.recoverDeletion()},enabled=!state.busy,modifier=Modifier.testTag("account-deletion-recover")){Text("Recover deletion request")}
+                    if(deletion.receipt==null && state.signedIn)TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-deletion-retry")){Text("Review and retry the same request")}
+                }
+                if(deletion.receipt==null && !state.signedIn){Text("Verify the original account email to retry this device’s saved request. Another account cannot take over the request.");AccountSignIn(account,state)}
+            }else if(state.signedIn){
+                Text("Signed in",Modifier.testTag("account-signed-in"),style=MaterialTheme.typography.titleMedium)
+                state.accountEmail?.let{Text("Email sign-in: $it",Modifier.testTag("account-auth-email"))}
+                if(state.googleLinked)Text("Google sign-in is linked.",Modifier.testTag("account-auth-google"))
+                else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
+                Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
+                TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
+            }else AccountSignIn(account,state)
+        }
+        // Sync — Slice 7's status row lives here, under a header that
+        // carries the same headline; signing in surfaces the first sync.
+        if(sync!=null)AccountPanel(
+            title="Sync",
+            status=SyncStatusCopy.row(syncState.status, syncState.detail, syncState.lastSyncedAt, syncState.conflicts.size, state.signedIn, sync.enabled).headline,
+            tag="account-panel-sync",
+        ){ SyncSection(sync,state.signedIn) }
+        // Connect your AI — Slice 8's gating, approval preview and token
+        // hard-stop are preserved exactly; signed out, the section says so
+        // in its header and body instead of vanishing.
+        AccountPanel(
+            title="Connect your AI",
+            status=when{
+                mcp==null->"Not available"
+                !state.signedIn->"Sign in to connect"
+                !mcpState.available->"Not available yet"
+                aiGate==com.pittech.data.McpProGate.NEEDS_PRO->"Needs PitTech Pro"
+                aiGate==com.pittech.data.McpProGate.CHECKING->"Checking Pro status"
+                mcpState.grants.count{it.active}>0->"${mcpState.grants.count{it.active}} connection${if(mcpState.grants.count{it.active}==1)"" else "s"}"
+                else->"No connections"
+            },
+            tag="account-panel-ai",
+        ){
+            if(mcp==null)Text("AI connections aren't available yet.",Modifier.testTag("mcp-unavailable"))
+            else if(!state.signedIn)Text("Sign in above to connect an AI assistant like ChatGPT or Muse to your own meals, recipes and logs.",Modifier.testTag("account-ai-signin-note"),style=MaterialTheme.typography.bodySmall)
+            else McpConnectionsSection(mcp, subscription)
+        }
+        // Device actions — same treatment as Connect your AI.
+        AccountPanel(
+            title="Device actions",
+            status=when{
+                device==null->"Not available"
+                !state.signedIn->"Sign in to connect"
+                !deviceState.available->"Not available yet"
+                deviceState.registered->"On — this phone accepts requests"
+                else->"Off"
+            },
+            tag="account-panel-device",
+        ){
+            if(device==null)Text("Device actions aren't available yet.",Modifier.testTag("mcp-device-unavailable"))
+            else if(!state.signedIn)Text("Sign in above to let an assistant ask this phone to do small things in the app — never to control a grill.",Modifier.testTag("account-device-signin-note"),style=MaterialTheme.typography.bodySmall)
+            else McpDeviceActionsSection(device)
+        }
+        // Danger zone — the two destructive actions, named in the header.
+        AccountPanel(
+            title="Danger zone",
+            status="Delete account · Remove local journal",
+            tag="account-panel-danger",
+        ){
+            if(state.signedIn && state.deletion==null){
+                Text("Delete account and server data",style=MaterialTheme.typography.titleMedium)
+                Text("Deletes your account identity, profile, sessions, likes, private server sync and original public publications. Your local journal stays on this device unless you remove it below.",style=MaterialTheme.typography.bodySmall)
+                TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
             }
-            if(deletion.receipt==null && !state.signedIn){Text("Verify the original account email to retry this device’s saved request. Another account cannot take over the request.");AccountSignIn(account,state)}
-        }else if(state.signedIn){
-            Text("Signed in",Modifier.testTag("account-signed-in"),style=MaterialTheme.typography.titleMedium)
-            state.accountEmail?.let{Text("Email sign-in: $it",Modifier.testTag("account-auth-email"))}
-            if(state.googleLinked)Text("Google sign-in is linked.",Modifier.testTag("account-auth-google"))
-            else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
-            Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
-            mcp?.let{McpConnectionsSection(it, subscription)}
-            device?.let{McpDeviceActionsSection(it)}
-            TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
-            TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
-        }else AccountSignIn(account,state)
-        sync?.let{SyncSection(it,state.signedIn)}
-        Text("Remove local journal",style=MaterialTheme.typography.titleMedium)
-        Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
-        TextButton(onClick={reviewingJournal=true},enabled=!state.busy,modifier=Modifier.testTag("local-journal-remove")){Text("Remove local journal")}
+            Text("Remove local journal",style=MaterialTheme.typography.titleMedium)
+            Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
+            TextButton(onClick={reviewingJournal=true},enabled=!state.busy,modifier=Modifier.testTag("local-journal-remove")){Text("Remove local journal")}
+        }
         if(state.busy)CircularProgressIndicator()
         state.message?.let{Text(it,Modifier.testTag("account-message"))}
     }
@@ -107,7 +223,6 @@ import kotlinx.coroutines.launch
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     LaunchedEffect(Unit){mcp.refresh()}
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("Connect your AI",style=MaterialTheme.typography.titleMedium)
         Text("Let an AI assistant like ChatGPT or Muse help with your own meals, recipes and logs. Connections use your PitTech Pro and can be disconnected here any time. An assistant can never publish, control a grill, or change your account or billing.",style=MaterialTheme.typography.bodySmall)
         if(!state.available)Text("AI connections aren't available yet.",Modifier.testTag("mcp-unavailable"))
         else{
@@ -189,7 +304,6 @@ import kotlinx.coroutines.launch
     var confirmingUnregister by remember{mutableStateOf(false)}
     LaunchedEffect(Unit){device.refresh()}
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("Device actions",style=MaterialTheme.typography.titleMedium)
         Text("An assistant can ask this phone to do small things in the app — never to control a grill. Requests wait here until you open PitTech; nothing runs in the background and nothing counts as done until this phone reports it. Choose which kinds of requests this phone accepts.",style=MaterialTheme.typography.bodySmall)
         if(!state.available)Text("Device actions aren't available yet.",Modifier.testTag("mcp-device-unavailable"))
         else{
@@ -254,8 +368,25 @@ import kotlinx.coroutines.launch
     val scope = rememberCoroutineScope()
     LaunchedEffect(signedIn){sync.refresh()}
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("Private sync",style=MaterialTheme.typography.titleMedium)
         Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.",style=MaterialTheme.typography.bodySmall)
+        // PL-14 (#172): signing in surfaces the first sync as its own card,
+        // so turning private sync on is discoverable instead of depending on
+        // knowing that "Sync now" below is also the on switch. The card is
+        // the same one action — the coordinator's explicit sync — and it
+        // leaves once a first sync exists or conflicts need review instead.
+        if (signedIn && sync.enabled && state.lastSyncedAt <= 0 && state.conflicts.isEmpty()) {
+            Card(
+                colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.secondaryContainer),
+                shape=RoundedCornerShape(12.dp),
+                modifier=Modifier.fillMaxWidth().testTag("sync-turn-on-card"),
+            ){
+                Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                    Text("Turn on private sync",style=MaterialTheme.typography.titleSmall)
+                    Text("Make the first encrypted backup of this journal now. After that, you can keep it in sync automatically while the app is open.",style=MaterialTheme.typography.bodySmall)
+                    Button(onClick={scope.launch{sync.syncNow()}},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("sync-turn-on")){Text("Turn on private sync")}
+                }
+            }
+        }
         // Slice 7 (PL-10, DD-8): the sync status row always carries state — what
         // happened, what is still safe, and the recovery action — instead of the
         // coordinator's bare status string. First sync is an Account action:

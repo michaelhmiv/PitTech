@@ -234,9 +234,11 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.tabBars.buttons["Discover"].tap()
             let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
             let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & set up meal");start.tap()
-            // PL-19: "Cook this" lands on the Start Cook review — the meal
-            // starts only when the setup is confirmed there.
-            let confirmStart = app.buttons["public-recipe-start-confirm"];XCTAssertTrue(confirmStart.waitForExistence(timeout: 20));confirmStart.tap()
+            // PL-19 / PL-10 (#172): "Cook this" lands on the unified Start
+            // Cook review — the meal starts only when the setup is
+            // confirmed there with "Begin preparation".
+            let confirmStart = app.buttons["start-meal-save"];XCTAssertTrue(confirmStart.waitForExistence(timeout: 20))
+            XCTAssertTrue(app.staticTexts["cook-source"].waitForExistence(timeout: 10));confirmStart.tap()
             let food = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"));XCTAssertTrue(food.firstMatch.waitForExistence(timeout: 20))
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
@@ -561,6 +563,13 @@ final class MealRecipeFlowsTests: XCTestCase {
             waitForExpectations(timeout: 5)
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()
+        // PL-10 (#172): composing a meal lands on the Start Cook review —
+        // no cook (and no food cards) exist until "Begin preparation".
+        let confirmStart = app.buttons["start-meal-save"]; XCTAssertTrue(confirmStart.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["cook-source"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-")).firstMatch.exists)
+        capture("Native start cook review recipes")
+        confirmStart.tap()
         let foods = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"))
         XCTAssertTrue(foods.firstMatch.waitForExistence(timeout: 15))
         // Scroll views expose visible cards to accessibility, so collect stable identities across the viewport.
@@ -620,5 +629,63 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(app.buttons["finish-meal"], app: app); app.buttons["finish-meal"].tap(); app.alerts.buttons["Finish meal"].tap()
         XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15)); reveal(app.buttons["Leave without saving"], app: app); app.buttons["Leave without saving"].tap()
         XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 10))
+    }
+    /// PL-13 (#172): leaving a changed Start Cook setup keeps it as a draft
+    /// on this phone — the same words and choices as Android — and Meals
+    /// offers Resume setup until the draft is discarded or started.
+    func testStartCookDiscardKeepsDraftAndResumeRestoresIt() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty"]; app.launch()
+        let start = app.buttons["Start meal"]; XCTAssertTrue(start.waitForExistence(timeout: 15)); start.tap()
+        let title = app.textFields["meal-title"]; XCTAssertTrue(title.waitForExistence(timeout: 15))
+        title.tap(); title.typeText("Draft night ribs")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Your setup is kept as a draft on this phone. Resume it any time from Meals."].waitForExistence(timeout: 10))
+        capture("Native setup leave dialog")
+        app.buttons["setup-keep-draft"].tap()
+        let resume = app.buttons["resume-setup"]; XCTAssertTrue(resume.waitForExistence(timeout: 15))
+        capture("Native meals setup draft")
+        resume.tap()
+        let restored = app.textFields["meal-title"]; XCTAssertTrue(restored.waitForExistence(timeout: 15))
+        XCTAssertEqual(restored.value as? String, "Draft night ribs")
+        // Leaving the resumed setup unchanged asks nothing; the draft stays.
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["resume-setup"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["setup-keep-draft"].exists)
+        // Discarding from the leave dialog is the explicit way to drop it.
+        app.buttons["resume-setup"].tap()
+        XCTAssertTrue(app.textFields["meal-title"].waitForExistence(timeout: 15))
+        let smoker = app.textFields["cook-smoker"]; reveal(smoker, app: app); smoker.tap(); smoker.typeText("Kettle")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["setup-discard"].waitForExistence(timeout: 10))
+        app.buttons["setup-discard"].tap()
+        XCTAssertTrue(app.buttons["Start meal"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["resume-setup"].exists)
+        app.terminate()
+    }
+    /// PL-13 (#172): the Start Cook sections appear in the canonical order
+    /// both platforms share. Section headers materialize as the form is
+    /// swept downward; their first-appearance order is the field order.
+    func testStartCookFieldsAppearInCanonicalOrder() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty"]; app.launch()
+        let start = app.buttons["Start meal"]; XCTAssertTrue(start.waitForExistence(timeout: 15)); start.tap()
+        XCTAssertTrue(app.textFields["meal-title"].waitForExistence(timeout: 15))
+        let expected = ["Current stage", "Cook name", "Dishes", "Smoker", "Starting setpoint", "Cook notes", "More cook details"]
+        var seen: [String] = []
+        for _ in 0..<10 {
+            for header in expected where !seen.contains(header) {
+                if app.staticTexts[header].exists { seen.append(header) }
+            }
+            if seen.count == expected.count { break }
+            app.swipeUp()
+        }
+        XCTAssertEqual(seen, expected)
+        // Field identifiers follow the same order within their sections.
+        for identifier in ["cook-smoker", "cook-setpoint", "cook-notes", "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind"] {
+            XCTAssertTrue(app.textFields[identifier].exists || app.otherElements[identifier].exists, "Missing Start Cook field \(identifier)")
+        }
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Start meal"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["resume-setup"].exists)
+        app.terminate()
     }
 }

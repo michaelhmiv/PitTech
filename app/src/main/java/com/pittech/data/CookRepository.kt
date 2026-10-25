@@ -2,6 +2,7 @@ package com.pittech.data
 
 import androidx.room.withTransaction
 import com.pittech.domain.CookEntryValidation
+import com.pittech.domain.CookPlaybook
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
 import kotlinx.coroutines.flow.Flow
@@ -83,9 +84,19 @@ class CookRepository(
         dao.observeConnectionGaps(),
     ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }, dao.observeAllIngredients()) { snapshot, ingredients -> snapshot.copy(ingredients = ingredients) }
 
-    suspend fun startCook(draft: NewCookDraft): String {
+    /**
+     * Starts a cook from a reviewed [NewCookDraft].
+     *
+     * PL-10 (#172): [transientPlaybook] carries a playbook that exists only
+     * as a preview (cook-again) and was never saved to the library; when
+     * present its steps attach to the new cook without persisting the book.
+     */
+    suspend fun startCook(draft: NewCookDraft, transientPlaybook: CookPlaybook? = null): String {
         require(draft.recipeRevisionIds.isEmpty() || draft.recipeRevisionIds.size == draft.dishes.size) {
             "Recipe sources must line up with the dishes they belong to."
+        }
+        require(draft.recipeAttemptSnapshots.isEmpty() || draft.recipeAttemptSnapshots.size == draft.dishes.size) {
+            "Recipe working copies must line up with the dishes they belong to."
         }
         require(CookEntryValidation.isOptionalPositiveNumberValid(draft.setpointText)) {
             "Enter a positive setpoint or leave it blank."
@@ -206,10 +217,20 @@ class CookRepository(
                     if (revisionId == null) return@forEachIndexed
                     val revision = recipes.revision(revisionId) ?: error("This recipe version is unavailable.")
                     attachRecipe(dishes[index].id, revision)
+                    // PL-10: a preset's working copy is applied over the
+                    // attached revision, exactly as the direct preset start
+                    // did before presets were routed through the review.
+                    draft.recipeAttemptSnapshots.getOrNull(index)?.let { snapshot ->
+                        updateRecipeAttempt(dishes[index].id, RecipeSnapshotCodec.decode(snapshot))
+                    }
                 }
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
                 val companion = CookCompanionRepository(database, photoStorage)
-                companion.applyToCook(cookId, draft, dishes.map { it.id })
+                if (transientPlaybook != null) {
+                    companion.applySnapshot(cookId, draft, transientPlaybook, null, dishes.map { it.id })
+                } else {
+                    companion.applyToCook(cookId, draft, dishes.map { it.id })
+                }
                 if (draft.alreadyCooking) {
                     val at = draft.foodOnAtUtcMillis ?: now
                     val foodOn = TimelineEventEntity(UUID.randomUUID().toString(), cookId, null, "note", "Food on", occurredAtUtcMillis = at,
@@ -914,15 +935,42 @@ class CookRepository(
     /** PL-19: the Start Cook review draft for recipes saved from a public
      * Cook Pack. Nothing starts here — the meal is reviewed (and can be
      * renamed or adjusted) in the ordinary Start Cook flow, and only
-     * "Begin preparation" creates the cook, with the recipes attached. */
-    suspend fun recipeStartDraft(title: String, revisionIds: List<String>): NewCookDraft {
+     * "Begin preparation" creates the cook, with the recipes attached.
+     * PL-10 (#172): the same review serves every recipe start, so the source
+     * label is a parameter — the Cook Pack default stays for Discover. */
+    suspend fun recipeStartDraft(
+        title: String,
+        revisionIds: List<String>,
+        sourceLabel: String = "From a shared Cook Pack · the recipes are saved in your Recipes",
+    ): NewCookDraft {
         val selected = revisionIds.map { id -> recipes.revision(id) ?: error("This recipe version is unavailable.") }
         val setups = selected.map { com.pittech.domain.RecipeSnapshotCodec.decode(it.snapshotJson).dish }
         return NewCookDraft(
             title.trim().ifBlank { "New meal" },
             dishes = setups,
             recipeRevisionIds = revisionIds,
-            sourceLabel = "From a shared Cook Pack · the recipes are saved in your Recipes",
+            sourceLabel = sourceLabel,
+        )
+    }
+
+    /** PL-10 (#172): the Start Cook review draft for a saved meal
+     * combination. Mirrors [startMealPreset]'s fidelity exactly — each
+     * recipe dish keeps its revision attachment and its working-copy
+     * snapshot, which [startCook] applies over the attachment — but nothing
+     * starts here; the cook is created only from the review. */
+    suspend fun presetStartDraft(id: String): NewCookDraft {
+        val preset = database.recipeDao().presets().firstOrNull { it.id == id } ?: error("This meal combination is unavailable.")
+        val items = com.pittech.domain.MealPresetCodec.items(preset.itemsJson)
+        val selected = (0 until items.length()).map { index -> val item = items.getJSONObject(index)
+            if (item.isNull("recipeRevisionId")) null else recipes.revision(item.getString("recipeRevisionId")) ?: error("A saved version in this meal is unavailable.") }
+        val snapshots = (0 until items.length()).map { index -> val item = items.getJSONObject(index); com.pittech.domain.RecipeSnapshotCodec.decode(
+            if (!item.isNull("setupSnapshotJson")) item.getString("setupSnapshotJson") else selected[index]?.snapshotJson ?: item.getString("snapshotJson")) }
+        return com.pittech.domain.MealPresetCodec.setup(preset.itemsJson).copy(
+            title = preset.name,
+            dishes = snapshots.map { it.dish },
+            recipeRevisionIds = selected.map { it?.id },
+            recipeAttemptSnapshots = (0 until items.length()).map { index -> if (selected[index] == null) null else com.pittech.domain.RecipeSnapshotCodec.encode(snapshots[index]) },
+            sourceLabel = "From a saved meal combination · ${preset.name}",
         )
     }
 

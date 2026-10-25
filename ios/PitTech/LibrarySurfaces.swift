@@ -5,7 +5,15 @@ struct MoreView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePublicCoordinator.self) private var community
     @Environment(ProSubscriptionCoordinator.self) private var pro
+    @Environment(NativePrivateSyncCoordinator.self) private var sync
     let runtime: NativeTelemetryRuntime
+    /// PL-14 (#172): once signed in, the Account row carries the private
+    /// sync status so it is visible without opening the sheet.
+    private var accountSubtitle: String {
+        guard account.signedIn else { return "Optional email sign-in and this device’s session" }
+        let headline = SyncStatusCopy.row(status: sync.presentation.status, detail: sync.presentation.detail, lastSyncedAt: sync.presentation.lastSyncedAt, conflictCount: sync.presentation.conflicts.count, signedIn: true, enabled: sync.enabled).headline
+        return "Private sync — \(headline)"
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -22,8 +30,9 @@ struct MoreView: View {
                     }.accessibilityIdentifier("more-devices")
                     if account.enabled {
                         Button { account.showingAccount = true } label: {
-                            MoreDestinationLabel(title: "Account", subtitle: "Optional email sign-in and this device’s session", symbol: "person.crop.circle")
+                            MoreDestinationLabel(title: "Account", subtitle: accountSubtitle, symbol: "person.crop.circle")
                         }.accessibilityIdentifier("more-account")
+                        .onAppear { if account.signedIn { sync.refresh() } }
                     }
                     if community.enabled { NavigationLink { NativeCommunityControlsView() } label: { MoreDestinationLabel(title: "Community controls", subtitle: "Reports, saved requests and blocked publishers", symbol: "hand.raised") }.accessibilityIdentifier("more-community-controls") }
                     if account.enabled && community.enabled {

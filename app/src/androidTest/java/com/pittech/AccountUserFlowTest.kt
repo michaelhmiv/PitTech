@@ -1,6 +1,7 @@
 package com.pittech
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -276,6 +277,75 @@ import android.graphics.Bitmap
                 compose.onAllNodesWithTag("account-google-attach").assertCountEquals(0)
             }
         } finally { scope.cancel() }
+    }
+    /** PL-14 (#172): Account is five sections whose headers carry their
+     * status, and signing in surfaces the first sync as a "Turn on private
+     * sync" card that runs the same explicit sync and leaves once a first
+     * sync exists. */
+    @Test fun accountSectionsCarryStatusAndFirstSyncSurfacesAsACard() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+        val user="12345678-1234-4234-8234-123456789abc"
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val projection=PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use{it.readText()})
+        val offline=object:PrivateSyncAPI{
+            override suspend fun snapshot(access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun commit(body: ByteArray,mutationId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun beginPhoto(assetId: String,bytes: Long,mime: String,sha: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun photoStatus(assetId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun putPart(assetId: String,index: Int,chunk: ByteArray,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun completePhoto(assetId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun abandonPhoto(assetId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun downloadPhoto(assetId: String,to: File,access: String): File=throw java.io.IOException("offline")
+        }
+        val library=object:PrivateSyncLibrary{
+            override suspend fun archive()=JSONObject().put("cooks",JSONArray()).put("dishes",JSONArray()).put("events",JSONArray())
+            override suspend fun photoBytes(type: String,id: String): PrivateSyncPhotoSource?=null
+            override suspend fun apply(plan: PrivateSyncApplyPlan){}
+        }
+        fun storage(session: AccountSession?)=object:AccountStorage{
+            var value=AccountState(session=session)
+            override fun load()=value
+            override fun save(value: AccountState){this.value=value}
+        }
+        try{
+            // Signed out: all five sections exist, headers carry the state,
+            // and no turn-on card is offered before there is an account.
+            val outStore=PrivateSyncMemoryStore()
+            val outAccount=AccountManager(storage(null),scope,AccountAPI{_,_,_->JSONObject()},true)
+            val outSync=PrivateSyncCoordinator(outStore,AccountPublicationSession(outAccount),scope,offline,library,projection,true)
+            var content by mutableStateOf<@Composable () -> Unit>({ AccountContent(outAccount,outSync) })
+            compose.setContent{PitTechTheme{key(content){content()}}}
+            compose.onNodeWithTag("account-panel-session").assertIsDisplayed()
+            compose.onNodeWithTag("account-panel-session-status").assertTextEquals("Signed out")
+            compose.onNodeWithTag("account-panel-sync-status").assertTextEquals("Sign in to start private sync")
+            compose.onNodeWithTag("account-panel-ai-status").assertTextEquals("Not available")
+            compose.onNodeWithTag("account-panel-device-status").assertTextEquals("Not available")
+            compose.onNodeWithTag("account-panel-danger").performScrollTo().assertIsDisplayed()
+            compose.onAllNodesWithTag("sync-turn-on").assertCountEquals(0)
+            screenshot("account-sections-signed-out")
+
+            // Signed in but never synced: the first sync is a card of its
+            // own, and tapping it runs the explicit first sync.
+            val f=Slice8Fixture(scope)
+            val store=PrivateSyncMemoryStore()
+            val sync=PrivateSyncCoordinator(store,AccountPublicationSession(f.account),scope,offline,library,projection,true)
+            compose.runOnIdle{content={AccountContent(f.account,sync,f.mcp,subscription=f.subscription)}}
+            compose.waitUntil(10000){compose.onAllNodesWithTag("sync-turn-on").fetchSemanticsNodes().isNotEmpty()}
+            compose.onNodeWithTag("account-panel-session-status").assertTextEquals("Signed in")
+            compose.onNodeWithTag("account-panel-ai-status").assertTextEquals("Checking Pro status")
+            compose.onNodeWithTag("sync-turn-on-card").performScrollTo().assertIsDisplayed()
+            screenshot("account-sections-turn-on-sync")
+            compose.onNodeWithTag("sync-turn-on").performScrollTo().performClick()
+            compose.waitUntil(10000){compose.onAllNodesWithText("Waiting for connection").fetchSemanticsNodes().isNotEmpty()}
+            assertEquals(0,store.load(user).lastSyncedAt)
+
+            // Once a first sync exists the card leaves; automatic sync —
+            // previously hidden behind that first sync — shows instead.
+            store.save(user,PrivateSyncState(account=user,serverVersion=1,lastSyncedAt=1234))
+            compose.runOnIdle{sync.refresh()}
+            compose.waitUntil(10000){compose.onAllNodesWithTag("sync-automatic").fetchSemanticsNodes().isNotEmpty()}
+            compose.onAllNodesWithTag("sync-turn-on").assertCountEquals(0)
+        }finally{scope.cancel()}
     }
     private fun screenshot(name: String) {
         val instrumentation=InstrumentationRegistry.getInstrumentation()

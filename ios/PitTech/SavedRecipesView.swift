@@ -30,6 +30,9 @@ struct SavedRecipesView: View {
     @State private var destination: String?
     @State private var selecting = false
     @State private var filterDraft: RecipeFilterDraft?
+    /// PL-10 (#172): recipe and preset starts land on the Start Cook
+    /// review — no cook exists until the review confirms.
+    @State private var startSetup: CookSetupDraft?
     private func selection(_ revision: String) -> Binding<Bool> {
         Binding(get: { selected.contains(revision) }, set: { chosen in
             if chosen { if !selected.contains(revision) { selected.append(revision) } }
@@ -99,7 +102,7 @@ struct SavedRecipesView: View {
                     let temperatures = Set(selected.compactMap { snapshots[$0]?.preferredPitTemperatureF })
                     if temperatures.count > 1 { Text("These recipes use different smoker settings. Choose the setting for this meal when ready.") }
                     TextField("Meal name (optional)", text: $title)
-                    Button("Start meal with \(selected.count) recipes") { act { destination = try store.startRecipeMeal(title: title, revisionIds: selected); selected = [] } }.accessibilityIdentifier("recipe-start-meal")
+                    Button("Start meal with \(selected.count) recipes") { act { startSetup = try store.recipeStartSetup(title: title, revisionIds: selected, sourceLabel: "From your Recipes · saved recipes stay attached to their dishes"); selected = [] } }.accessibilityIdentifier("recipe-start-meal")
                     if !store.activeCooks.isEmpty {
                         Picker("Existing meal", selection: $existingMeal) { Text("Choose a meal").tag(""); ForEach(store.activeCooks) { Text($0.title).tag($0.id) } }
                         Button("Add selected recipes") { act { for revision in selected { try store.addRecipeToMeal(cookId: existingMeal, revisionId: revision) }; destination = existingMeal; selected = [] } }.disabled(existingMeal.isEmpty)
@@ -110,7 +113,7 @@ struct SavedRecipesView: View {
                 Section("Meal combinations") {
                     ForEach(store.library.mealPresets.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
                         if let preset = store.library.mealPresets.first(where: { $0.objectValue?["id"]?.stringValue == id })?.objectValue {
-                            Button("Repeat \(preset["name"]?.stringValue ?? "meal")") { act { destination = try store.startMealPreset(id) } }
+                            Button("Repeat \(preset["name"]?.stringValue ?? "meal")") { act { startSetup = try store.presetStartSetup(id) } }
                         }
                     }
                 }
@@ -125,6 +128,7 @@ struct SavedRecipesView: View {
                         category = applied.category; tag = applied.tag; archived = applied.archived; filterDraft = nil
                     }
             }
+            .sheet(item: $startSetup) { setup in StartCookSheet(initialSetup: setup, onStarted: { destination = $0 }) }
             .navigationDestination(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) { if let destination { CookDetailView(cookId: destination) } }
     }
     private var favoriteButton: some View {
@@ -200,6 +204,8 @@ struct SavedRecipeDetailView: View {
     @State private var error: String?
     @State private var destination: String?
     @State private var sharingDraftId: String?
+    /// PL-10 (#172): "Use this version" lands on the Start Cook review.
+    @State private var startSetup: CookSetupDraft?
     let recipeId: String
     private var recipe: [String: JSONValue] { store.recipe(recipeId) ?? [:] }
     private var history: [[String: JSONValue]] { store.library.recipeRevisions.compactMap(\.objectValue).filter { $0["recipeId"]?.stringValue == recipeId }.sorted { ($0["revisionNumber"]?.numberValue ?? 0) > ($1["revisionNumber"]?.numberValue ?? 0) } }
@@ -225,7 +231,7 @@ struct SavedRecipeDetailView: View {
                 if store.library.cooks.contains(where: { $0.id == sourceId }) { NavigationLink("Open source meal") { CookDetailView(cookId: sourceId) } }
                 else { Text("Source meal is unavailable. Saved instructions and reference photos remain available.").foregroundStyle(.secondary) }
             }
-            Button("Use this version") { act { destination = try store.startRecipeMeal(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId]) } }
+            Button("Use this version") { act { startSetup = try store.recipeStartSetup(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId], sourceLabel: "From your Recipes · saved recipes stay attached to their dishes") } }
             Button("Share recipe") { act { sharingDraftId = try store.createRecipeSharingDraft(revisionId) } }.accessibilityIdentifier("recipe-share")
             Button("Edit a new version") { act { let revision = store.recipeRevision(revisionId) ?? [:]; editor = NativeRecipeRequest(snapshot: try store.recipeSnapshot(revisionId), recipeId: recipeId, expectedRevisionId: recipe["currentRevisionId"]?.stringValue, assetRevisionId: revisionId, sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue) } }
             TextField("Variation name", text: $duplicateName)
@@ -235,6 +241,7 @@ struct SavedRecipeDetailView: View {
         }.navigationTitle(recipe["name"]?.stringValue ?? "Recipe")
             .onAppear { if duplicateName.isEmpty { duplicateName = (recipe["name"]?.stringValue ?? "Recipe") + " copy" } }
             .sheet(item: $editor) { NativeRecipeEditor(request: $0) }
+            .sheet(item: $startSetup) { setup in StartCookSheet(initialSetup: setup, onStarted: { destination = $0 }) }
             .sheet(isPresented:Binding(get:{ sharingDraftId != nil },set:{ if !$0 { sharingDraftId = nil } })) {
                 if let sharingDraftId { NavigationStack { SharingDraftView(id:sharingDraftId) }.modifier(ScreenshotTextSize()) }
             }

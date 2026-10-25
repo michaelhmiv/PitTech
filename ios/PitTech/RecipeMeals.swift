@@ -15,6 +15,121 @@ extension PitTechLibrary {
 }
 
 @MainActor extension CookStore {
+    /// PL-10 / PL-13 (#172): the one start every iOS start path lands on —
+    /// the unified Start Cook review's setup, confirmed. Sourced dishes
+    /// attach their recipes (a preset's working copy rides in
+    /// `snapshotJSON` and is applied over the revision by the same
+    /// append path `startMealPreset` used); plain dishes are added as
+    /// typed. Starting clears the kept setup draft: the setup is a cook
+    /// now, not a draft.
+    @discardableResult func startCook(setup: CookSetupDraft) throws -> String {
+        guard !setup.alreadyCooking || (setup.foodOn <= .now && setup.foodOn.timeIntervalSince1970 > 0) else {
+            throw CookSetupError.invalidFoodOnTime
+        }
+        let prior = library
+        var cook = CookRecord.start(title: setup.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New meal" : setup.title.trimmingCharacters(in: .whitespacesAndNewlines))
+        cook.smokerName = setup.smokerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : setup.smokerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        cook.initialSetpointValue = Double(setup.setpointText)
+        cook.initialSetpointUnit = cook.initialSetpointValue == nil ? nil : setup.setpointUnit
+        cook.notes = setup.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : setup.notes
+        cook.fuelType = setup.fuelType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : setup.fuelType
+        cook.woodOrPelletBlend = setup.woodBlend.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : setup.woodBlend
+        cook.outdoorTemperatureValue = Double(setup.outdoorTemperatureText)
+        cook.outdoorTemperatureUnit = cook.outdoorTemperatureValue == nil ? nil : setup.outdoorTemperatureUnit
+        cook.weatherNotes = setup.weather.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : setup.weather
+        cook.windNotes = setup.wind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : setup.wind
+        do {
+            library.cooks.append(cook); library.lifecycles.append(.object(["cookId": .string(cook.id), "timingMode": .string("explicit_phases")]))
+            let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
+            for dish in setup.dishes {
+                if let revisionId = dish.revisionId {
+                    let snapshot = try dish.snapshotJSON.map { try RecipeSnapshot.decode($0) } ?? recipeSnapshot(revisionId)
+                    _ = try appendRecipeDish(cookId: cook.id, snapshot: snapshot, revisionId: revisionId)
+                } else {
+                    library.dishes.append(.object([
+                        "id": .string(UUID().uuidString.lowercased()),
+                        "cookId": .string(cook.id),
+                        "name": .string(dish.name.trimmingCharacters(in: .whitespacesAndNewlines)),
+                        "foodType": .string(dish.foodType),
+                        "cut": dish.cut.isEmpty ? .null : .string(dish.cut),
+                        "weightValue": Double(dish.weightText).map(JSONValue.number) ?? .null,
+                        "weightUnit": dish.weightText.isEmpty ? .null : .string(dish.weightUnit),
+                        "createdAtUtcMillis": .number(now),
+                        "updatedAtUtcMillis": .number(now)
+                    ]))
+                }
+            }
+            if setup.alreadyCooking {
+                try saveNote(CookNoteDraft(cookId: cook.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: setup.foodOn.timeIntervalSince1970 * 1_000))
+            }
+            try library.validateCookExperience(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }
+            clearSetupDraft()
+            return cook.id
+        } catch { library = prior; throw error }
+    }
+
+    /// PL-10 (#172): the Start Cook review setup for a Recipes start — the
+    /// saved recipes are carried as sourced dishes; nothing starts until
+    /// the review confirms through `startCook(setup:)`.
+    func recipeStartSetup(title: String, revisionIds: [String], sourceLabel: String) throws -> CookSetupDraft {
+        var setup = CookSetupDraft.blank(temperatureUnit: "°\(temperatureUnit)", weightUnit: weightUnit)
+        setup.sourceLabel = sourceLabel
+        setup.title = title.isEmpty ? "New meal" : title
+        setup.dishes = try revisionIds.map { revisionId in
+            let snapshot = try recipeSnapshot(revisionId)
+            let dish = snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue
+            return CookSetupDish(
+                name: dish?["name"]?.stringValue ?? snapshot.name,
+                foodType: dish?["foodType"]?.stringValue ?? "Other",
+                cut: dish?["cut"]?.stringValue ?? "",
+                weightText: dish?["weight"]?.stringValue ?? "",
+                weightUnit: dish?["weightUnit"]?.stringValue ?? "lb",
+                revisionId: revisionId
+            )
+        }
+        return setup
+    }
+
+    /// PL-10 (#172): the Start Cook review setup for a saved meal
+    /// combination, with the same fidelity `startMealPreset` had — setup
+    /// fields from the preset, each recipe dish's working copy carried
+    /// along to be applied when the cook starts.
+    func presetStartSetup(_ id: String) throws -> CookSetupDraft {
+        guard let preset = library.mealPresets.first(where: { $0.objectValue?["id"]?.stringValue == id })?.objectValue,
+              let raw = preset["itemsJson"]?.stringValue else { throw RecipeError.unavailable }
+        let payload = try MealPresetPayload.decode(raw)
+        let name = preset["name"]?.stringValue ?? "New meal"
+        var setup = CookSetupDraft.blank(temperatureUnit: "°\(temperatureUnit)", weightUnit: weightUnit)
+        setup.sourceLabel = "From a saved meal combination · \(name)"
+        setup.title = name
+        setup.smokerName = payload.setup["smoker"]?.stringValue ?? ""
+        setup.setpointText = payload.setup["setpoint"]?.stringValue ?? ""
+        setup.setpointUnit = payload.setup["unit"]?.stringValue ?? "°F"
+        setup.notes = payload.setup["notes"]?.stringValue ?? ""
+        setup.fuelType = payload.setup["fuel"]?.stringValue ?? ""
+        setup.woodBlend = payload.setup["wood"]?.stringValue ?? ""
+        setup.dishes = try payload.items.map { item in
+            let o = item.objectValue
+            let revision = o?["recipeRevisionId"]?.stringValue
+            let working = o?["setupSnapshotJson"]?.stringValue
+            let snapshot: RecipeSnapshot
+            if let working { snapshot = try RecipeSnapshot.decode(working) }
+            else if let revision { snapshot = try recipeSnapshot(revision) }
+            else { snapshot = try RecipeSnapshot.decode(o?["snapshotJson"]?.stringValue ?? "") }
+            let dish = snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue
+            return CookSetupDish(
+                name: dish?["name"]?.stringValue ?? snapshot.name,
+                foodType: dish?["foodType"]?.stringValue ?? "Other",
+                cut: dish?["cut"]?.stringValue ?? "",
+                weightText: dish?["weight"]?.stringValue ?? "",
+                weightUnit: dish?["weightUnit"]?.stringValue ?? "lb",
+                revisionId: revision,
+                snapshotJSON: working
+            )
+        }
+        return setup
+    }
+
     @discardableResult func startRecipeMeal(title: String, revisionIds: [String]) throws -> String {
         let selected = try revisionIds.map { try recipeSnapshot($0) }
         let prior = library, cook = CookRecord.start(title: title.isEmpty ? "New meal" : title)
