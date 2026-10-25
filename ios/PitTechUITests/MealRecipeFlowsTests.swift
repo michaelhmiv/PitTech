@@ -249,7 +249,11 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); app.tabBars.buttons["More"].tap()
             let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
-            let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10))
+            // PL-14 (#172): the sign-in form now sits below the Session
+            // section, so — like the pack-save fix above — scroll-poll the
+            // field (which materializes its virtualized row) before the
+            // existence wait instead of waiting on an unrealized node.
+            let email = app.textFields["account-email"]; reveal(email, app: app); XCTAssertTrue(email.waitForExistence(timeout: 10))
             XCTAssertFalse(app.buttons["account-apple-signin"].exists)
             email.tap(); email.typeText("cook@example.com")
             app.buttons["Hide keyboard"].tap()
@@ -641,7 +645,10 @@ final class MealRecipeFlowsTests: XCTestCase {
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.staticTexts["Your setup is kept as a draft on this phone. Resume it any time from Meals."].waitForExistence(timeout: 10))
         capture("Native setup leave dialog")
-        app.buttons["setup-keep-draft"].tap()
+        // The confirmation dialog exposes each button twice in the
+        // accessibility tree on this iOS version; firstMatch is the same
+        // remedy the sign-out confirmation in this file already uses.
+        app.buttons["setup-keep-draft"].firstMatch.tap()
         let resume = app.buttons["resume-setup"]; XCTAssertTrue(resume.waitForExistence(timeout: 15))
         capture("Native meals setup draft")
         resume.tap()
@@ -656,8 +663,8 @@ final class MealRecipeFlowsTests: XCTestCase {
         XCTAssertTrue(app.textFields["meal-title"].waitForExistence(timeout: 15))
         let smoker = app.textFields["cook-smoker"]; reveal(smoker, app: app); smoker.tap(); smoker.typeText("Kettle")
         app.buttons["Cancel"].tap()
-        XCTAssertTrue(app.buttons["setup-discard"].waitForExistence(timeout: 10))
-        app.buttons["setup-discard"].tap()
+        XCTAssertTrue(app.buttons["setup-discard"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["setup-discard"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Start meal"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["resume-setup"].exists)
         app.terminate()
@@ -670,19 +677,26 @@ final class MealRecipeFlowsTests: XCTestCase {
         let start = app.buttons["Start meal"]; XCTAssertTrue(start.waitForExistence(timeout: 15)); start.tap()
         XCTAssertTrue(app.textFields["meal-title"].waitForExistence(timeout: 15))
         let expected = ["Current stage", "Cook name", "Dishes", "Smoker", "Starting setpoint", "Cook notes", "More cook details"]
+        let fieldIds = ["cook-smoker", "cook-setpoint", "cook-notes", "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind"]
         var seen: [String] = []
-        for _ in 0..<10 {
+        var fieldsSeen: [String] = []
+        // Harvest during the sweep: Form rows virtualize, so a field near
+        // the top no longer exists once the sweep reaches the bottom —
+        // first-appearance order is collected on the way down instead of
+        // checking existence after the fact.
+        for _ in 0..<14 {
             for header in expected where !seen.contains(header) {
                 if app.staticTexts[header].exists { seen.append(header) }
             }
-            if seen.count == expected.count { break }
+            for identifier in fieldIds where !fieldsSeen.contains(identifier) {
+                if app.textFields[identifier].exists { fieldsSeen.append(identifier) }
+            }
+            if seen.count == expected.count && fieldsSeen.count == fieldIds.count { break }
             app.swipeUp()
         }
         XCTAssertEqual(seen, expected)
-        // Field identifiers follow the same order within their sections.
-        for identifier in ["cook-smoker", "cook-setpoint", "cook-notes", "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind"] {
-            XCTAssertTrue(app.textFields[identifier].exists || app.otherElements[identifier].exists, "Missing Start Cook field \(identifier)")
-        }
+        // Field identifiers appear in the same order within their sections.
+        XCTAssertEqual(fieldsSeen, fieldIds, "Start Cook fields out of order or missing")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["Start meal"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["resume-setup"].exists)
