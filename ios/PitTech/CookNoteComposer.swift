@@ -67,7 +67,15 @@ struct CookNoteComposer: View {
                     Section("Temperature") {
                         TextField("Probe or location", text: $t.probeName)
                         TextField("Temperature", text: $t.valueText).keyboardType(.numbersAndPunctuation)
-                        Picker("Measurement", selection: Binding(get: { ["pit", "pit_ambient"].contains(t.measurementType) ? "pit" : "food" }, set: { t.measurementType = $0 })) { Text("Food").tag("food"); Text("Pit").tag("pit") }
+                        // Legacy standalone readings can carry "setpoint"/
+                        // "other" (the retired Temperature Entry dialog's
+                        // types); keep that type selectable so editing one
+                        // never silently rewrites it.
+                        Picker("Measurement", selection: Binding(get: { ["pit", "pit_ambient"].contains(t.measurementType) ? "pit" : ["setpoint", "other"].contains(t.measurementType) ? t.measurementType : "food" }, set: { t.measurementType = $0 })) {
+                            Text("Food").tag("food"); Text("Pit").tag("pit")
+                            if t.measurementType == "setpoint" { Text("Setpoint").tag("setpoint") }
+                            if t.measurementType == "other" { Text("Other").tag("other") }
+                        }
                         Picker("Unit", selection: $t.unit) { Text("°F").tag("°F"); Text("°C").tag("°C") }
                         Picker("Temperature for", selection: Binding(get: { t.dishId ?? "" }, set: { t.dishId = $0.isEmpty ? nil : $0 })) {
                             Text("Whole cook").tag("")

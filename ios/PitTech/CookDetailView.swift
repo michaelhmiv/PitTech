@@ -232,7 +232,12 @@ struct CookDetailView: View {
                     do { draft = try store.loadNote(event.id) } catch { self.error = error.localizedDescription }
                 }, onDelete: { do { try store.deleteNote(event.id) } catch { self.error = error.localizedDescription } }).id(event.id)
             }
-            ForEach(readings.filter { !linked.contains($0.id) }.reversed()) { ReadingCard(reading: $0) }
+            ForEach(readings.filter { !linked.contains($0.id) }.reversed()) { reading in
+                // PL-07: a standalone manual reading edits in the note
+                // composer (the same job as Android); device readings stay
+                // display-only, exactly as automatic samples are immutable.
+                ReadingCard(reading: reading, onEdit: reading.source == "manual" ? { draft = store.readingDraft(reading) } : nil)
+            }
         }
     }
     private func duration(_ millis: Double) -> String { "\(Int(millis / 3_600_000))h \(Int(millis / 60_000) % 60)m" }
@@ -279,11 +284,14 @@ private struct CookNoteCard: View {
 
 struct ReadingCard: View {
     let reading: TemperatureSample
+    var onEdit: (() -> Void)? = nil
     var body: some View {
         HStack { VStack(alignment: .leading, spacing: 4) {
             Text(reading.probeName).font(.headline)
             Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-        }; Spacer(); Text("\(reading.value.formatted()) \(reading.unit)").font(.title3.monospacedDigit()) }
+        }; Spacer(); Text("\(reading.value.formatted()) \(reading.unit)").font(.title3.monospacedDigit())
+            if let onEdit { Menu { Button("Edit reading", action: onEdit) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) } }
+        }
             .padding(14).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 }
