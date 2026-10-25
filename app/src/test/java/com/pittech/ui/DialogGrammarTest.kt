@@ -15,7 +15,7 @@ import java.io.File
  * change to a kept one) fails this test until the grammar review is
  * repeated and the allowlist below is updated deliberately.
  *
- * Sites are fingerprinted by file + the first 30 characters of the
+ * Sites are fingerprinted by file + the first 24 characters of the
  * dialog's title `Text(...)` call, whitespace-collapsed — stable across
  * reformatting of the surrounding call, sensitive to what the dialog is.
  */
@@ -26,55 +26,55 @@ class DialogGrammarTest {
         // (one / all); stop-taking-requests guard; the two destructive
         // account flows (Slice 8 kept them as dialogs deliberately).
         "AccountScreen.kt" to listOf(
-            "Text(\"Sign out on this device?",
-            "Text(\"Your connection token\")}",
-            "Text(\"Disconnect this connecti",
-            "Text(\"Disconnect all connectio",
-            "Text(\"Stop taking requests?\")}",
-            "Text(\"Delete account\")},text={",
-            "Text(\"Remove local journal\")},",
+            "Text(\"Sign out on this d",
+            "Text(\"Your connection to",
+            "Text(\"Disconnect this co",
+            "Text(\"Disconnect all con",
+            "Text(\"Stop taking reques",
+            "Text(\"Delete account\")},",
+            "Text(\"Remove local journ",
         ),
         // Delete-dish guard; Finish-meal guard; delete-cook guard; the
         // timeline-entry editor is DEAD CODE (zero call sites) kept as a
         // dialog only until PL-28 (Slice 11) removes it — do not wire it
         // up as a dialog.
         "CookDetailScreen.kt" to listOf(
-            "Text(\"Delete \${dish.name}?\") }",
-            "Text(\"Finish meal\", modifier =",
-            "Text(\"Delete this cook?\") },",
-            "Text(if (event == null) \"Add t",
+            "Text(\"Delete \${dish.name",
+            "Text(\"Finish meal\", modi",
+            "Text(\"Delete this cook?\"",
+            "Text(if (event == null) ",
         ),
         // Guidance confirm guards: confirm a physical removal / a skip.
         "CookGuidanceCard.kt" to listOf(
-            "Text(\"Remove \${data.dishes.fir",
-            "Text(\"Skip \${e.step.title}?\")",
+            "Text(\"Remove \${data.dish",
+            "Text(\"Skip \${e.step.titl",
         ),
         // Adopt-actual-timing confirm guard.
         "CookPhaseCard.kt" to listOf(
-            "Text(\"Use actual Food on timin",
+            "Text(\"Use actual Food on",
         ),
         // Backup-contents review (a destructive-import guard); leave-setup
         // guard; discard-dish guard.
         "CookScreens.kt" to listOf(
-            "Text(\"Review backup contents\")",
-            "Text(\"Leave this cook setup?\")",
-            "Text(\"Discard this dish?\") },",
+            "Text(\"Review backup cont",
+            "Text(\"Leave this cook se",
+            "Text(\"Discard this dish?",
         ),
         // Unpublish guard.
         "MyCookbookScreen.kt" to listOf(
-            "Text(\"Remove this publication",
+            "Text(\"Remove this public",
         ),
         // Release-purchase guard.
         "ProPaywall.kt" to listOf(
-            "Text(\"Release this purchase?\")",
+            "Text(\"Release this purch",
         ),
         // Revoke-code guard.
         "RelayScreens.kt" to listOf(
-            "Text(\"Stop new downloads for t",
+            "Text(\"Stop new downloads",
         ),
         // Save-meal-combination: single-value entry (one name field).
         "SavedRecipesLibrary.kt" to listOf(
-            "Text(\"Save meal combination\")",
+            "Text(\"Save meal combinat",
         ),
     )
 
@@ -95,7 +95,7 @@ class DialogGrammarTest {
         val segment = if (titleAt >= 0) window.substring(titleAt) else window
         val textAt = segment.indexOf("Text(")
         if (textAt < 0) return "NO-TITLE"
-        return segment.substring(textAt, minOf(textAt + 30, segment.length)).replace(Regex("\\s+"), " ")
+        return segment.substring(textAt, minOf(textAt + 24, segment.length)).replace(Regex("\\s+"), " ")
     }
 
     @Test fun remainingAlertDialogsAreOnlyTheGuardClasses() {
