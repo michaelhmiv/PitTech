@@ -54,6 +54,8 @@ import java.util.UUID
             compose.onNodeWithTag("publication-confirm").performScrollTo().assertIsNotEnabled(); screenshot("publication-preview")
             compose.onNodeWithTag("publication-reviewed").performScrollTo().performClick()
             compose.onNodeWithTag("publication-confirm").performScrollTo().performClick(); waitFor("publication-complete"); assertEquals(1,api.writes); screenshot("publication-complete")
+            // PL-18: the published state offers the landing where the thing went.
+            compose.onNodeWithTag("publication-open-cookbook").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Done").performClick(); waitFor("publication-prepare")
             compose.onNodeWithTag("publication-prepare").performScrollTo().performClick(); waitFor("publication-confirm")
             compose.onNodeWithTag("publication-confirm").performScrollTo().assertTextEquals("Publish this update").assertIsNotEnabled()

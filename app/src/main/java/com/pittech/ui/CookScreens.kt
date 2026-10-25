@@ -141,6 +141,7 @@ internal fun PitTechApp(
     val selectedCook by viewModel.selectedCook.collectAsStateWithLifecycle()
     val insights by viewModel.insights.collectAsStateWithLifecycle()
     val importPreview by viewModel.importPreview.collectAsStateWithLifecycle()
+    val importHistoryAdded by viewModel.importHistoryAdded.collectAsStateWithLifecycle()
     val restoredPreferences by viewModel.restoredPreferences.collectAsStateWithLifecycle()
     val shareArchiveUri by viewModel.shareArchiveUri.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(MainSection.COOKS.name) }
@@ -152,6 +153,9 @@ internal fun PitTechApp(
     if(communitySettings)CommunityControlsDialog(viewModel.communityControls,viewModel.account,viewModel.publicDiscovery){communitySettings=false}
     var myCookbook by rememberSaveable { mutableStateOf(false) }
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
+    // PL-18: a completed publication asks to land in My Cookbook.
+    val cookbookOpenRequests by viewModel.cookbookOpenRequests.collectAsStateWithLifecycle()
+    LaunchedEffect(cookbookOpenRequests) { if (cookbookOpenRequests > 0) myCookbook = true }
     RelayImportDialog(viewModel)
     AccountDialog(viewModel.account, viewModel.sync, viewModel.mcpConnections, viewModel.mcpDeviceActions, viewModel.subscription)
     // Slice 8 (PL-15 / DD-10): when the account surface closes after a
@@ -208,7 +212,7 @@ internal fun PitTechApp(
 
     if (importPreview != null) {
         val draft = importPreview!!
-        if (draft.cookPack != null) CookPackImportDialog(draft, saving, saveError, viewModel::cancelImport, viewModel::confirmCookPackImport, viewModel::confirmCookPackHistoryImport)
+        if (draft.cookPack != null) CookPackImportDialog(draft, saving, saveError, viewModel::cancelImport, viewModel::confirmCookPackImport, viewModel::confirmCookPackHistoryImport, importHistoryAdded)
         else AlertDialog(
             onDismissRequest = viewModel::cancelImport,
             title = { Text("Review backup contents") },
@@ -350,7 +354,7 @@ internal fun PitTechApp(
             MainSection.RECIPES -> Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SavedRecipesLibrary(viewModel, standalone = true)
             }
-            MainSection.DISCOVER -> if (viewModel.publicDiscovery.enabled) PublicDiscoveryScreen(viewModel.publicDiscovery, Modifier.padding(padding), temperatureUnit, viewModel.account, viewModel.publicationWriter, viewModel.communityControls) else DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
+            MainSection.DISCOVER -> if (viewModel.publicDiscovery.enabled) PublicDiscoveryScreen(viewModel.publicDiscovery, Modifier.padding(padding), temperatureUnit, viewModel.account, viewModel.publicationWriter, viewModel.communityControls) { selectedSection = MainSection.RECIPES.name } else DiscoveryWelcome(Modifier.padding(padding)) { selectedSection = MainSection.RECIPES.name }
             MainSection.INSIGHTS -> InsightsScreen(
                 data = insights,
                 onOpenCook = viewModel::openCook,
@@ -707,6 +711,10 @@ private fun StartCookScreen(
     var wind by rememberSaveable { mutableStateOf("") }
     var moreCookDetails by rememberSaveable { mutableStateOf(false) }
     val dishes = remember { mutableStateListOf<DishDraft>().apply { addAll(initialDraft?.dishes.orEmpty()) } }
+    // PL-19: saved-recipe sources stay parallel to the dish list while it
+    // is reviewed/edited here, so removing or adding a dish never attaches
+    // a recipe to the wrong dish when preparation begins.
+    val dishRevisions = remember { mutableStateListOf<String?>().apply { addAll(initialDraft?.recipeRevisionIds.orEmpty()) } }
     var followPlaybook by rememberSaveable { mutableStateOf(true) }
     var showSteps by rememberSaveable { mutableStateOf(false) }
     var editPreviewDish by remember { mutableStateOf<Int?>(null) }
@@ -724,6 +732,7 @@ private fun StartCookScreen(
             onDismiss = { showDishDialog = false },
             onSave = { draft ->
                 dishes.add(draft)
+                if (dishRevisions.size == dishes.size - 1) dishRevisions.add(null)
                 showDishDialog = false
             },
         )
@@ -777,6 +786,8 @@ private fun StartCookScreen(
                                     weatherNotes = weather,
                                     windNotes = wind,
                                     dishes = dishes.toList(),
+                                    recipeRevisionIds = if (dishRevisions.size == dishes.size) dishRevisions.toList() else emptyList(),
+                                    sourceLabel = initialDraft?.sourceLabel,
                                     scheduledPlanId = initialDraft?.scheduledPlanId,
                                     playbookId = initialDraft?.playbookId,
                                     followPlaybook = followPlaybook,
@@ -807,6 +818,15 @@ private fun StartCookScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            initialDraft?.sourceLabel?.let { label ->
+                Card(Modifier.fillMaxWidth().testTag("cook-source")) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Source", style = MaterialTheme.typography.titleMedium)
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                        Text("Nothing is cooking yet — review the setup, then begin preparation when you're ready.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             if (initialPlaybook != null) {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -857,7 +877,7 @@ private fun StartCookScreen(
                 )
             } else {
                 dishes.forEachIndexed { index, dish ->
-                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index); probe1 = null; probe2 = null })
+                    DishDraftCard(dish = dish, onRemove = { dishes.removeAt(index); if (dishRevisions.size == dishes.size + 1) dishRevisions.removeAt(index); probe1 = null; probe2 = null })
                 }
                 OutlinedButton(
                     onClick = { showDishDialog = true },

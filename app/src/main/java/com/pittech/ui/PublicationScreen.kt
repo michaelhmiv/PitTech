@@ -31,6 +31,7 @@ import org.json.JSONObject
     var pending by remember { mutableStateOf<PublicationOperation?>(null) }; var reviewed by remember { mutableStateOf(false) }
     var displayName by remember { mutableStateOf("a PitTech cook") }; var published by remember { mutableStateOf<PublicationReceipt?>(null) }
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
+    var lastSignedInUser by remember { mutableStateOf<String?>(null) }
     fun invalidate() { prepared=null; reviewed=false; previewUser=null; updateSummary=null }
     suspend fun refreshPending() {
         pending=writer.pending(); linked=writer.binding(draft)
@@ -40,7 +41,23 @@ import org.json.JSONObject
         if(busy)return; busy=true; message=null
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. The exact request stays saved."; try { refreshPending() } catch(_: Exception) { } } finally { busy=false } }
     }
-    LaunchedEffect(state.signedIn) { invalidate(); published=null; try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message } }
+    LaunchedEffect(state.signedIn) {
+        // PL-18: a prepared preview survives the sign-in detour. It is
+        // only discarded when the signed-in account actually changes to a
+        // different user — the confirm step separately re-checks that the
+        // current user is the one who prepared it. Signing out keeps the
+        // marker so signing back in as the same user restores the preview;
+        // the signed-out branch of this sheet shows the sign-in prompt
+        // meanwhile, never the stale preview.
+        val currentUser = if(state.signedIn) runCatching { account.publicationUserId() }.getOrNull() else null
+        if(currentUser != null) {
+            if(lastSignedInUser != null && lastSignedInUser != currentUser) { invalidate(); published=null }
+            lastSignedInUser = currentUser
+        } else if(!state.signedIn) {
+            published = null
+        }
+        try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message }
+    }
     // Slice 8 (PL-15 / DD-10): completing sign-in returns to this sheet on
     // its own — the account dialog closes itself instead of waiting for a
     // manual "Return to publication" tap. Cancelling it lands here too.
@@ -69,6 +86,9 @@ import org.json.JSONObject
                     val uri=androidx.compose.ui.platform.LocalUriHandler.current
                     if(published!!.status=="pending_review")Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.")
                     else Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
+                    // J9: after publishing, the next step lands where the
+                    // thing went — My Cookbook — not back at the draft.
+                    OutlinedButton(onClick={ onClose(); viewModel.requestCookbookOpen() },enabled=!busy,modifier=Modifier.testTag("publication-open-cookbook")) { Text("Open My cookbook") }
                     Text("Your local recipe and measured results stay on this device. Independent copies saved by other cooks remain theirs.")
                 } else {
                     val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook")

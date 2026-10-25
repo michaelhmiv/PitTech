@@ -149,6 +149,14 @@ internal class SubscriptionManager(
 
     fun closePaywall() {
         val current = _presentation.value
+        // PL-17: closing the paywall with a purchase still pending arms the
+        // one-time re-offer for the feature that was being bought. A sign-in
+        // detour in flight is not a user close: the detour reopens the gate
+        // itself, so it must not arm the re-offer.
+        val entry = current.paywallEntry
+        if (entry != null && signInResumeEntry == null &&
+            (current.purchaseState is ProPurchaseState.PendingStore || current.cache?.state == "pending" || pendingPurchaseOutstanding)
+        ) pendingReofferEntry = entry
         _presentation.value = current.copy(
             paywallEntry = null,
             notice = null,
@@ -165,6 +173,18 @@ internal class SubscriptionManager(
      * no-ops, so the account surface closing for any other reason never
      * conjures a paywall. */
     private var signInResumeEntry: ProPlacement? = null
+
+    /** PL-17: a store-pending purchase that later verifies re-offers the
+     * feature it was bought from, once. Armed when the paywall closes while
+     * a purchase is pending; consumed when the entitlement lands. In-memory
+     * only: if the process dies first, opening the feature while entitled
+     * simply works in place, so nothing is lost. */
+    private var pendingReofferEntry: ProPlacement? = null
+    /** Set while a store purchase is outstanding in the store's pending
+     * state; cleared when an entitled cache lands. The verification path
+     * passes through a Verifying purchase state and may replace the cached
+     * record first, so the pending fact is kept separately. */
+    private var pendingPurchaseOutstanding = false
 
     fun beginSignInDetour() {
         val entry = _presentation.value.paywallEntry ?: return
@@ -209,6 +229,8 @@ internal class SubscriptionManager(
             currentOwner = owner
             readEnvironment = initialEnvironment
             lastTransaction = null
+            pendingReofferEntry = null
+            pendingPurchaseOutstanding = false
             _presentation.value = _presentation.value.copy(signedIn = true, cache = null,
                 purchaseState = ProPurchaseState.Idle, notice = null, hasRelease = false)
             _entitlement.value = AdEntitlement.UNKNOWN
@@ -291,9 +313,23 @@ internal class SubscriptionManager(
         check(owner == currentOwner)
         readEnvironment = SubscriptionEnvironment.from(cache.environment)
         val resetPending = cache.entitlement(now()) == AdEntitlement.ENTITLED && _presentation.value.purchaseState is ProPurchaseState.PendingStore
+        // PL-17: the entitlement landing after a pending purchase re-offers
+        // the feature once. Any entitled cache consumes the armed entry, so
+        // a later unrelated refresh can never re-offer it a second time.
+        if (cache.state == "pending") pendingPurchaseOutstanding = true
+        val reoffer = if (cache.entitlement(now()) == AdEntitlement.ENTITLED) {
+            val armed = pendingReofferEntry
+            pendingReofferEntry = null
+            val wasOutstanding = pendingPurchaseOutstanding
+            pendingPurchaseOutstanding = false
+            if (wasOutstanding) armed else null
+        } else null
         _presentation.value = _presentation.value.copy(
             cache = cache,
             purchaseState = if (resetPending) ProPurchaseState.Idle else _presentation.value.purchaseState,
+            paywallEntry = if (reoffer != null && _presentation.value.paywallEntry == null && signInResumeEntry == null) {
+                reoffer
+            } else _presentation.value.paywallEntry,
         )
         _entitlement.value = cache.entitlement(now())
         cacheStore.save(owner, cache)
@@ -303,6 +339,8 @@ internal class SubscriptionManager(
         currentOwner = null
         readEnvironment = initialEnvironment
         lastTransaction = null
+        pendingReofferEntry = null
+        pendingPurchaseOutstanding = false
         _presentation.value = _presentation.value.copy(signedIn = false, cache = null,
             purchaseState = ProPurchaseState.Idle, notice = null, hasRelease = false)
         _entitlement.value = AdEntitlement.UNKNOWN
@@ -342,10 +380,13 @@ internal class SubscriptionManager(
                 purchaseState = ProPurchaseState.Idle,
                 notice = "Purchase cancelled. Nothing was charged.",
             )
-            is ProPurchaseOutcome.Pending -> _presentation.value = _presentation.value.copy(
-                purchaseState = ProPurchaseState.PendingStore,
-                notice = "Your purchase is pending with Google Play. Pro unlocks after the store confirms it; nothing is charged by PitTech.",
-            )
+            is ProPurchaseOutcome.Pending -> {
+                pendingPurchaseOutstanding = true
+                _presentation.value = _presentation.value.copy(
+                    purchaseState = ProPurchaseState.PendingStore,
+                    notice = "Your purchase is pending with Google Play. Pro unlocks after the store confirms it; nothing is charged by PitTech.",
+                )
+            }
             is ProPurchaseOutcome.Purchased -> verifyLocked(outcome.purchase, acknowledgeAfterResponse = true, expectedOwner = account.ownerId)
             is ProPurchaseOutcome.AlreadyOwned -> {
                 // The purchase attempt is over; pivot to the restore flow.
@@ -395,6 +436,7 @@ internal class SubscriptionManager(
             return
         }
         if (verifiable.isEmpty()) {
+            pendingPurchaseOutstanding = true
             _presentation.value = _presentation.value.copy(
                 purchaseState = ProPurchaseState.PendingStore,
                 notice = "Your purchase is pending with Google Play. Pro unlocks after the store confirms it; nothing is charged by PitTech.",

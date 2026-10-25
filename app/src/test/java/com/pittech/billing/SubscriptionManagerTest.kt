@@ -133,6 +133,32 @@ class SubscriptionManagerTest {
     }
 
     @Test
+    fun pendingPurchaseReoffersTheFeatureOnceItConfirms() = runTest {
+        val (manager, billing, _) = manager()
+        billing.launch = ProPurchaseOutcome.Pending
+        manager.loadProduct()
+        manager.refresh()
+        manager.openPro(ProPlacement.ANALYSIS)
+        manager.subscribe(null)
+        assertEquals(ProPurchaseState.PendingStore, manager.presentation.value.purchaseState)
+        // The user closes the paywall while the purchase is still pending.
+        manager.closePaywall()
+        assertNull(manager.presentation.value.paywallEntry)
+        // The store later delivers the completed purchase; the backend verifies it.
+        manager.start()
+        billing.externalPurchases!!.invoke(ProStorePurchase("stub-token", acknowledged = false, pending = false))
+        advanceUntilIdle()
+        assertEquals(AdEntitlement.ENTITLED, manager.presentation.value.entitlement)
+        // PL-17: the feature the purchase was for is re-offered, exactly once.
+        assertEquals(ProPlacement.ANALYSIS, manager.presentation.value.paywallEntry)
+        manager.closePaywall()
+        manager.refresh()
+        advanceUntilIdle()
+        assertNull(manager.presentation.value.paywallEntry)
+        manager.stop()
+    }
+
+    @Test
     fun externalPendingPurchaseDoesNotUnlock() = runTest {
         val (manager, billing, api) = manager()
         manager.refresh()

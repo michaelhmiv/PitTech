@@ -37,6 +37,8 @@ import java.util.Base64
         compose.onNodeWithTag("public-save").performScrollTo().performClick();waitFor("pack-save-recipes");shot("public-selective-preview")
         compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
         compose.waitUntil(10000){compose.onAllNodesWithTag("pack-save-recipes").fetchSemanticsNodes().isEmpty()}
+        // PL-19: after Save, the detail's primary action is "Open in Recipes".
+        waitFor("public-open-recipes");compose.onNodeWithTag("public-open-recipes").assertIsDisplayed();shot("public-saved")
         val saved=runBlocking(Dispatchers.IO){app.database.recipeDao().recipes()};assertEquals(2,saved.size)
         assertTrue(runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().isEmpty()})
         val source=runBlocking(Dispatchers.IO){app.database.recipeDao().revision(saved.first().currentRevisionId)!!}
@@ -51,6 +53,12 @@ import java.util.Base64
         compose.onNodeWithTag("nav-discover").performClick()
         compose.onNodeWithTag("public-cook").performScrollTo().performClick();waitFor("pack-save-recipes")
         compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
+        // PL-19: "Cook this" lands on the Start Cook review — nothing is
+        // cooking until the setup is confirmed there.
+        waitFor("cook-save")
+        assertTrue(runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().isEmpty()})
+        compose.onNodeWithTag("cook-source").performScrollTo().assertIsDisplayed();shot("public-cook-review")
+        compose.onNodeWithTag("cook-save").performClick()
         compose.waitUntil(15000){runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().isNotEmpty()}}
         val cook=runBlocking(Dispatchers.IO){app.database.cookDao().getAllCooks().single()};assertEquals(2,runBlocking(Dispatchers.IO){app.database.cookDao().getDishesForCook(cook.id).size})
         val dish=runBlocking(Dispatchers.IO){app.database.cookDao().getDishesForCook(cook.id).first()}

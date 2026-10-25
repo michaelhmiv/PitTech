@@ -16,6 +16,17 @@ struct NativeArchiveIntake: Identifiable, Sendable {
     let library: PitTechLibrary
     let recipes: [NativeArchiveRecipePreview]
     var publicCookOnSave = false
+    /// The Discover item this preview was downloaded from, when it came
+    /// from one (PL-19: its detail becomes "Open in Recipes" after a save).
+    var publicSourceItemId: String? = nil
+}
+
+/// PL-19: the reviewed meal setup for recipes saved from a public Cook
+/// Pack. Nothing is cooking until the user confirms this review.
+struct PublicRecipeStart: Identifiable, Sendable {
+    let id = UUID()
+    let title: String
+    let revisionIds: [String]
 }
 
 enum NativeArchiveIntakeReader {
@@ -76,6 +87,7 @@ enum NativeArchiveIntakeReader {
                 }
             }
             intake.publicCookOnSave = cookOnSave
+            intake.publicSourceItemId = expectedPublicSource?.item
             guard !Task.isCancelled, archiveIntakeRequest == request else { try? FileManager.default.removeItem(at: intake.url); return }
             discardArchiveIntake(); archiveIntake = intake; archiveMessage = nil
         } catch is CancellationError { }
@@ -93,7 +105,13 @@ enum NativeArchiveIntakeReader {
         let data = try await withTaskCancellationHandler(operation: { try await preparation.value }, onCancel: { preparation.cancel() })
         try Task.checkCancellation()
         _ = try importArchive(data)
-        if source.publicCookOnSave { publicCookDestination = try startRecipeMeal(title: source.library.companionRecords.first?.objectValue?["title"]?.stringValue ?? "New meal", revisionIds: selected.sorted()) }
+        if let item = source.publicSourceItemId { lastSavedPublicItemId = item }
+        if source.publicCookOnSave {
+            // PL-19: "Cook this" routes through the Start Cook review
+            // instead of teleporting into a live cook from this save —
+            // the meal starts only when the user confirms the setup.
+            pendingPublicRecipeStart = PublicRecipeStart(title: source.library.companionRecords.first?.objectValue?["title"]?.stringValue ?? "New meal", revisionIds: selected.sorted())
+        }
         archiveCompletionMessage = "Saved \(selected.count) \(selected.count == 1 ? "recipe" : "recipes"). Find them in Recipes."
     }
     func importRecordedCook(_ source: NativeArchiveIntake) async throws {

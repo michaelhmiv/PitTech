@@ -101,6 +101,7 @@ class ProPaywallFlowTest {
         compose.onNodeWithTag("nav-insights").performClick()
         openPaywall("pro-entry-analysis")
         compose.onNodeWithTag("pro-product-unavailable").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("pro-check-again").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithTag("pro-price").assertCountEquals(0)
         compose.onAllNodesWithTag("pro-subscribe").assertCountEquals(0)
         compose.onNodeWithTag("pro-signin-required").performScrollTo().assertIsDisplayed()

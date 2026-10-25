@@ -216,6 +216,40 @@ import XCTest
         coordinator.stop()
     }
 
+    func testPendingPurchaseReoffersTheFeatureOnceItConfirms() async throws {
+        let store = FakeStore()
+        let api = FakeAPI()
+        store.purchaseResult = .pending
+        let (coordinator, _, _) = makeCoordinator(store: store, api: api)
+        await coordinator.loadProduct()
+        await coordinator.refresh()
+        coordinator.openPro(.analysis)
+        await coordinator.subscribe()
+        XCTAssertEqual(coordinator.purchaseState, .pendingStore)
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        // The user closes the paywall while the purchase is still pending.
+        coordinator.closePaywall()
+        XCTAssertNil(coordinator.presentedEntry)
+        // The store later delivers the transaction; the backend verifies it.
+        // The plain cache read stays failing so only the verify path can unlock.
+        api.throwOnEntitlement = true
+        store.updatesToSend = [ProStoreTransaction(transactionId: "stub-transaction", signedTransaction: "stub-jws")]
+        coordinator.start()
+        let deadline = Date().addingTimeInterval(5)
+        while coordinator.presentedEntry != .analysis, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(coordinator.entitlement, .entitled)
+        // PL-17: the feature the purchase was for is re-offered, exactly once.
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        coordinator.closePaywall()
+        api.throwOnEntitlement = false
+        api.entitlementState = "active"
+        await coordinator.refresh()
+        XCTAssertNil(coordinator.presentedEntry)
+        coordinator.stop()
+    }
+
     func testLocalPurchaseCallbackAloneNeverUnlocks() async {
         let store = FakeStore()
         let api = FakeAPI()

@@ -84,6 +84,9 @@ class CookRepository(
     ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }, dao.observeAllIngredients()) { snapshot, ingredients -> snapshot.copy(ingredients = ingredients) }
 
     suspend fun startCook(draft: NewCookDraft): String {
+        require(draft.recipeRevisionIds.isEmpty() || draft.recipeRevisionIds.size == draft.dishes.size) {
+            "Recipe sources must line up with the dishes they belong to."
+        }
         require(CookEntryValidation.isOptionalPositiveNumberValid(draft.setpointText)) {
             "Enter a positive setpoint or leave it blank."
         }
@@ -199,6 +202,11 @@ class CookRepository(
                 if (dishes.isNotEmpty()) dao.insertDishes(dishes)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 dao.insertTimelineEvents(events)
+                draft.recipeRevisionIds.forEachIndexed { index, revisionId ->
+                    if (revisionId == null) return@forEachIndexed
+                    val revision = recipes.revision(revisionId) ?: error("This recipe version is unavailable.")
+                    attachRecipe(dishes[index].id, revision)
+                }
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
                 val companion = CookCompanionRepository(database, photoStorage)
                 companion.applyToCook(cookId, draft, dishes.map { it.id })
@@ -900,10 +908,22 @@ class CookRepository(
     suspend fun startRecipeMeal(title: String, revisionIds: List<String>, newDishes: List<DishDraft> = emptyList()): String = database.withTransaction {
         val selected = revisionIds.map { id -> recipes.revision(id) ?: error("This recipe version is unavailable.") }
         val setups = selected.map { com.pittech.domain.RecipeSnapshotCodec.decode(it.snapshotJson).dish } + newDishes
-        val cookId = startCook(NewCookDraft(title.trim().ifBlank { "New meal" }, dishes = setups))
-        val dishes = dao.getDishesForCook(cookId)
-        selected.forEachIndexed { index, revision -> attachRecipe(dishes[index].id, revision) }
-        cookId
+        startCook(NewCookDraft(title.trim().ifBlank { "New meal" }, dishes = setups, recipeRevisionIds = revisionIds.map { it as String? } + List(newDishes.size) { null }))
+    }
+
+    /** PL-19: the Start Cook review draft for recipes saved from a public
+     * Cook Pack. Nothing starts here — the meal is reviewed (and can be
+     * renamed or adjusted) in the ordinary Start Cook flow, and only
+     * "Begin preparation" creates the cook, with the recipes attached. */
+    suspend fun recipeStartDraft(title: String, revisionIds: List<String>): NewCookDraft {
+        val selected = revisionIds.map { id -> recipes.revision(id) ?: error("This recipe version is unavailable.") }
+        val setups = selected.map { com.pittech.domain.RecipeSnapshotCodec.decode(it.snapshotJson).dish }
+        return NewCookDraft(
+            title.trim().ifBlank { "New meal" },
+            dishes = setups,
+            recipeRevisionIds = revisionIds,
+            sourceLabel = "From a shared Cook Pack · the recipes are saved in your Recipes",
+        )
     }
 
     suspend fun addRecipeToMeal(cookId: String, revisionId: String): String = database.withTransaction {

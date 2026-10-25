@@ -15,6 +15,11 @@ struct NativePublicDiscoveryView: View {
                     TextField("Search recipes", text: $query).textFieldStyle(.roundedBorder).accessibilityIdentifier("discover-query")
                     TextField("Food type (optional)", text: $food).textFieldStyle(.roundedBorder).accessibilityIdentifier("discover-food")
                     Picker("Sort", selection: $sort) { Text("Most liked").tag("liked"); Text("Most forked").tag("forked") }.pickerStyle(.segmented)
+                        // PL-19: sort changes apply on tap — no separate
+                        // Search tap stands between the choice and its
+                        // result. (The text fields still apply with the
+                        // Search button below.)
+                        .onChange(of: sort) { _, newSort in Task { await community.refresh(sort: newSort, food: food, query: query) } }
                     Button("Search recipes") { Task { await community.refresh(sort: sort, food: food, query: query) } }.disabled(community.loading).accessibilityIdentifier("discover-search")
                     if community.loading { ProgressView("Loading recipes…") }
                     if let message = community.message { Text(message).accessibilityIdentifier("discover-message") }
@@ -67,7 +72,14 @@ struct NativePublicRecipeView: View {
                     NativeCommunityActions(detail: detail)
                     Text("Your saved version stays yours. Publishing a variation is a separate choice.").font(.subheadline).foregroundStyle(.secondary)
                     HStack {
-                        Button("Save recipes") { preview(detail, cook: false) }.buttonStyle(.borderedProminent).accessibilityIdentifier("public-save")
+                        if store.lastSavedPublicItemId == id {
+                            // PL-19: after Save, the primary lands where
+                            // the thing went — the saved recipes.
+                            Button("Open in Recipes") { store.recipesTabRequest += 1 }.buttonStyle(.borderedProminent).accessibilityIdentifier("public-open-recipes")
+                            Button("Save recipes") { preview(detail, cook: false) }.buttonStyle(.bordered).accessibilityIdentifier("public-save")
+                        } else {
+                            Button("Save recipes") { preview(detail, cook: false) }.buttonStyle(.borderedProminent).accessibilityIdentifier("public-save")
+                        }
                         Button("Cook this") { preview(detail, cook: true) }.buttonStyle(.bordered).accessibilityIdentifier("public-cook")
                     }.disabled(community.preparing)
                     if community.preparing { ProgressView("Preparing your preview…"); Button("Cancel download") { task?.cancel() } }

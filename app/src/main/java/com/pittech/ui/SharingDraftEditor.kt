@@ -116,19 +116,32 @@ import kotlinx.coroutines.sync.withLock
                     }
                     TextButton({ cardSettings = !cardSettings }) { Text("Card appearance & note") }
                     if (cardSettings) ShareCardOptionsEditor(current) { document = it }
+                    // PL-18: the exits have a hierarchy — the Cook Pack file
+                    // is the primary exit, the share card and the code are
+                    // secondary, and saving a collection is a local action,
+                    // not a share. (Publish lives in its own panel below.)
+                    Button(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton({ act { persist(); cardPreview = true } }, enabled = !busy && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-preview-card")) { Text("Preview share card") }
-                    OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton(onClick = { act { persist(); relayShare = true } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-relay")) { Text("Share by code") }
                     exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
+                    OutlinedButton(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(24.dp))
             }
-            // Keep the next action reachable while title editing owns the keyboard.
-            // Focus-driven bring-into-view scrolling must not move this tap target.
-            if(publishingEnabled && document!=null)OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().padding(bottom=12.dp).heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
+            // PL-18: Publish sits inside its own panel, below the file and
+            // code exits in rank. The panel stays pinned: keep the next
+            // action reachable while title editing owns the keyboard —
+            // focus-driven bring-into-view scrolling must not move this
+            // tap target (the publication flow tests guard exactly that).
+            if(publishingEnabled && document!=null)Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Publish", style = MaterialTheme.typography.titleMedium)
+                    Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
+                }
+            }
         }
     }
     if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false },onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })

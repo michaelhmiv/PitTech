@@ -180,6 +180,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             let reviewed = app.switches["publication-reviewed"]; reveal(reviewed, app: app); reviewed.tap()
             reveal(confirm, app: app); XCTAssertTrue(confirm.isEnabled); confirm.tap()
             XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15)); capture(large ? "Native publication complete large text" : "Native publication complete")
+            // PL-18: the published state offers the landing where the thing went.
+            XCTAssertTrue(app.buttons["publication-open-cookbook"].exists)
             app.buttons["publication-done"].tap()
             reveal(open, app: app); open.tap(); reveal(prepare, app: app); prepare.tap()
             reveal(confirm, app: app); XCTAssertEqual(confirm.label, "Publish this update"); XCTAssertFalse(confirm.isEnabled)
@@ -220,6 +222,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             reveal(confirm, app: app);XCTAssertTrue(confirm.waitForExistence(timeout: 20));XCTAssertEqual(confirm.label, "Save 2 recipes")
             capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
+            // PL-19: after Save, the detail's primary is "Open in Recipes".
+            let openRecipes = app.buttons["public-open-recipes"];reveal(openRecipes, app: app);XCTAssertTrue(openRecipes.exists)
             app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
             app.staticTexts["Oak-smoked pork shoulder"].firstMatch.tap()
             let review = app.buttons["source-review-open"]; reveal(review, app: app); review.tap()
@@ -229,7 +233,10 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native source change review large text" : "Native source change review")
             app.tabBars.buttons["Discover"].tap()
             let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
-            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");start.tap()
+            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & set up meal");start.tap()
+            // PL-19: "Cook this" lands on the Start Cook review — the meal
+            // starts only when the setup is confirmed there.
+            let confirmStart = app.buttons["public-recipe-start-confirm"];XCTAssertTrue(confirmStart.waitForExistence(timeout: 20));confirmStart.tap()
             let food = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"));XCTAssertTrue(food.firstMatch.waitForExistence(timeout: 20))
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
@@ -529,6 +536,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             if large { let heading = app.staticTexts["Choose what to save"]; reveal(heading, app: app); XCTAssertGreaterThan(heading.frame.height, 40); reveal(add, app: app) }
             capture(large ? "Native recorded meal choice large text" : "Native recorded meal choice")
             add.tap()
+            // PL-19: adding history keeps the save sheet open with the
+            // recipe choice intact; the completion alert arrives only
+            // when the sheet is dismissed afterwards.
+            let added = app.staticTexts["pack-history-added"]; XCTAssertTrue(added.waitForExistence(timeout: 20))
+            XCTAssertTrue(app.buttons["pack-save-recipes"].exists)
+            app.navigationBars["Cook Pack"].buttons["Cancel"].tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20)); app.alerts.buttons["OK"].tap()
             app.tabBars.buttons["Meals"].tap()
             XCTAssertTrue(app.staticTexts["Pork and potatoes"].firstMatch.waitForExistence(timeout: 10))
