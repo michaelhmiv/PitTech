@@ -30,7 +30,11 @@ struct CookNoteDraft: Codable, Identifiable, Equatable {
     func validate() throws {
         guard occurredAt.isFinite, occurredAt > 0, metadata.isValid, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || metadata.action != nil || !temperatures.isEmpty || !photos.isEmpty || metadata.method != nil || metadata.durationMillis != nil || !(metadata.ingredients ?? []).isEmpty,
               Set(temperatures.map(\.id)).count == temperatures.count, Set(photos.map(\.id)).count == photos.count,
-              temperatures.allSatisfy({ Double($0.valueText)?.isFinite == true && $0.measuredAt.isFinite && $0.measuredAt > 0 && !$0.probeName.isEmpty && ["°F", "°C"].contains($0.unit) && ["food", "food_probe", "pit", "pit_ambient"].contains($0.measurementType) }) else { throw CookNoteError.invalid }
+              // "setpoint"/"other" are the legacy types the retired
+              // standalone Temperature Entry dialog offered; a manual
+              // reading carrying one must stay editable now that the
+              // composer is the only temperature editor.
+              temperatures.allSatisfy({ Double($0.valueText)?.isFinite == true && $0.measuredAt.isFinite && $0.measuredAt > 0 && !$0.probeName.isEmpty && ["°F", "°C"].contains($0.unit) && ["food", "food_probe", "pit", "pit_ambient", "setpoint", "other"].contains($0.measurementType) }) else { throw CookNoteError.invalid }
     }
 }
 enum CookNoteError: LocalizedError {

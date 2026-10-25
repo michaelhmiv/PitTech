@@ -122,6 +122,48 @@ import UIKit
         XCTAssertThrowsError(try store.saveNote(CookNoteDraft(cookId: second, temperatures: draft.temperatures)))
         XCTAssertEqual(store.readings(for: first).count, 1); XCTAssertTrue(store.readings(for: second).isEmpty)
     }
+    /// PL-07 (issue #172): a standalone manual reading edits in the note
+    /// composer — saving the composer's draft adopts the reading into the
+    /// note under its own identity. Device readings and readings owned by
+    /// another note can never be taken over this way.
+    func testComposerAdoptsStandaloneManualReadingButNeverSteals() async throws {
+        let store = CookStore(directory: try folder()); store.startCook(title: "Adoption", firstDish: "Brisket")
+        let cook = try XCTUnwrap(store.activeCooks.first), dish = try XCTUnwrap(store.dishRecords(cook.id).first)
+        store.library.readings.append(.object(["id": .string("standalone-1"), "cookId": .string(cook.id), "dishId": .string(dish.id), "probeName": .string("Hand thermometer"), "measurementType": .string("food_probe"), "value": .number(150), "unit": .string("°F"), "measuredAtUtcMillis": .number(1_700_000_000_000), "timeZoneId": .string("UTC"), "source": .string("manual"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1_700_000_000_000)]))
+        store.library.readings.append(.object(["id": .string("device-1"), "cookId": .string(cook.id), "probeName": .string("Pit"), "measurementType": .string("pit"), "value": .number(225), "unit": .string("°F"), "measuredAtUtcMillis": .number(1_700_000_000_000), "timeZoneId": .string("UTC"), "source": .string("controller_cloud"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1_700_000_000_000)]))
+        store.save()
+        let standalone = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "standalone-1" })
+        var adoption = store.readingDraft(standalone)
+        adoption.temperatures[0].valueText = "171"
+        try store.saveNote(adoption)
+        XCTAssertEqual(store.readings(for: cook.id).first { $0.id == "standalone-1" }?.value, 171)
+        XCTAssertEqual(store.events(for: cook.id).count, 1)
+        XCTAssertEqual(store.library.logReadingLinks.count, 1)
+        // The adopted reading is owned now; a second note cannot steal it.
+        XCTAssertThrowsError(try store.saveNote(CookNoteDraft(cookId: cook.id, metadata: CookNoteMetadata(category: "temperature"), temperatures: adoption.temperatures)))
+        XCTAssertEqual(store.events(for: cook.id).count, 1)
+        // A device reading is never adoptable.
+        let device = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "device-1" })
+        XCTAssertThrowsError(try store.saveNote(store.readingDraft(device)))
+        XCTAssertEqual(store.readings(for: cook.id).first { $0.id == "device-1" }?.value, 225)
+        XCTAssertEqual(store.events(for: cook.id).count, 1)
+    }
+    /// PL-07 (issue #172): a legacy standalone reading whose type came from
+    /// the retired Temperature Entry dialog ("setpoint") stays editable in
+    /// the composer and keeps its type — editing never rewrites it.
+    func testAdoptedLegacySetpointReadingKeepsItsType() async throws {
+        let store = CookStore(directory: try folder()); store.startCook(title: "Legacy types", firstDish: "Ribs")
+        let cook = try XCTUnwrap(store.activeCooks.first)
+        store.library.readings.append(.object(["id": .string("legacy-1"), "cookId": .string(cook.id), "probeName": .string("Smoker setpoint"), "measurementType": .string("setpoint"), "value": .number(250), "unit": .string("°F"), "measuredAtUtcMillis": .number(1_700_000_000_000), "timeZoneId": .string("UTC"), "source": .string("manual"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1_700_000_000_000)]))
+        store.save()
+        let legacy = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "legacy-1" })
+        var adoption = store.readingDraft(legacy)
+        adoption.temperatures[0].valueText = "255"
+        try store.saveNote(adoption)
+        let saved = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "legacy-1" })
+        XCTAssertEqual(saved.value, 255)
+        XCTAssertEqual(saved.measurementType, "setpoint")
+    }
     func testChartKeepsIdentityUnitsGapsAndExtremaWithoutInventingTrends() async throws {
         func sample(_ id: String, _ value: Double, _ at: Double, unit: String = "°F", probe: String = "p", source: String = "controller_cloud") -> TemperatureSample {
             TemperatureSample(json: .object(["id": .string(id), "cookId": .string("cook"), "probeId": .string(probe), "probeName": .string("Same name"), "measurementType": .string("food"), "value": .number(value), "unit": .string(unit), "measuredAtUtcMillis": .number(at), "source": .string(source), "samplingIntervalMillis": .number(300_000)]))!

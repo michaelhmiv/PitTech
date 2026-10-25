@@ -63,6 +63,78 @@ class CookNoteIntegrationTest {
         assertEquals(other, db.experienceDao().reading(foreign.temperatures.single().id)!!.cookId)
         assertEquals(1, db.cookDao().getTimelineEventsForCook(id).count { it.eventType == "note" })
     }
+    /**
+     * PL-07 (issue #172): the composer is the only temperature editor now
+     * that the standalone Temperature Entry dialog is retired. Saving a
+     * composer draft whose temperature carries a standalone manual reading's
+     * identity adopts that reading into the note — but a reading owned by
+     * another note, a device reading, or another cook's reading can never
+     * be taken over.
+     */
+    @Test fun composerAdoptsStandaloneManualReadingButNeverSteals(): Unit = runBlocking {
+        val id = cook(); val dishes = db.cookDao().getDishesForCook(id)
+        val standalone = repo.addManualTemperature(id, dishes[0].id, "Hand thermometer", "food_probe", 150.0, "°F", 100L)
+        val adoption = CookNoteDraft(cookId = id, dishId = dishes[0].id, category = "temperature", occurredAt = 100L,
+            temperatures = listOf(NoteTemperature(id = standalone.id, probeName = "Hand thermometer", measurementType = "food_probe",
+                valueText = "171", unit = "°F", measuredAt = 100L, dishId = dishes[0].id, probeId = standalone.probeId)))
+        repo.notes.save(adoption)
+        assertEquals(171.0, db.experienceDao().reading(standalone.id)!!.value, 0.0)
+        assertEquals(listOf(standalone.id), db.experienceDao().readingsForLog(adoption.id).map { it.id })
+        // The adopted reading is now owned; a second note cannot steal it.
+        try { repo.notes.save(CookNoteDraft(cookId = id, category = "temperature", temperatures = adoption.temperatures)); fail("Owned reading stolen") } catch (_: IllegalArgumentException) { }
+        assertEquals(listOf(standalone.id), db.experienceDao().readingsForLog(adoption.id).map { it.id })
+        // A device reading is never adoptable.
+        db.cookDao().insertSensorReading(SensorReadingEntity("device-1", id, null, null, "Pit", "pit", 225.0, "°F", 100L, "UTC", "controller", recordedAtUtcMillis = 100L))
+        try { repo.notes.save(CookNoteDraft(cookId = id, category = "temperature",
+            temperatures = listOf(NoteTemperature(id = "device-1", probeName = "Pit", measurementType = "pit", valueText = "226", unit = "°F", measuredAt = 100L)))); fail("Device reading adopted") } catch (_: IllegalArgumentException) { }
+        assertEquals(225.0, db.experienceDao().reading("device-1")!!.value, 0.0)
+        // Another cook's standalone manual reading is not adoptable either.
+        val other = cook()
+        val foreignStandalone = repo.addManualTemperature(other, null, "Other probe", "food", 140.0, "°F", 100L)
+        try { repo.notes.save(CookNoteDraft(cookId = id, category = "temperature",
+            temperatures = listOf(NoteTemperature(id = foreignStandalone.id, probeName = "Other probe", measurementType = "food", valueText = "141", unit = "°F", measuredAt = 100L)))); fail("Cross-cook reading adopted") } catch (_: IllegalArgumentException) { }
+        assertEquals(140.0, db.experienceDao().reading(foreignStandalone.id)!!.value, 0.0)
+    }
+    /**
+     * PL-07 (issue #172): the note-link deletion contract, stated plainly —
+     * deleting a note deletes the note and the readings it owns; its photos
+     * are NOT deleted, they stay in the cook's gallery with the link severed
+     * (and undo restores the link).
+     */
+    @Test fun deletingNoteDeletesOwnedReadingsButPhotosStayInGalleryUnlinked(): Unit = runBlocking {
+        val id = cook()
+        var draft = CookNoteDraft(cookId = id, category = "temperature", description = "Delete semantics",
+            temperatures = listOf(NoteTemperature(valueText = "160")))
+        draft = draft.copy(photos = listOf(photo(draft.id)))
+        repo.notes.save(draft)
+        assertEquals(1, db.cookDao().getPhotosForCook(id).count { it.eventId == draft.id })
+        val bundle = repo.notes.delete(draft.id)
+        assertNull(db.cookDao().getTimelineEvent(draft.id))
+        assertTrue(db.experienceDao().readingsForLog(draft.id).isEmpty())
+        assertNull(db.experienceDao().reading(draft.temperatures.single().id))
+        val gallery = db.cookDao().getPhotosForCook(id)
+        assertEquals(1, gallery.size)
+        assertNull(gallery.single().eventId)
+        repo.notes.restore(bundle)
+        assertEquals(1, db.cookDao().getPhotosForCook(id).count { it.eventId == draft.id })
+        assertEquals(1, db.experienceDao().readingsForLog(draft.id).size)
+    }
+    /**
+     * PL-07 (issue #172): a note created by a reminder check-in is a real
+     * composer note — it loads into the composer model and edits there under
+     * the same identity instead of living in a side channel.
+     */
+    @Test fun reminderCheckInNoteLoadsAndEditsAsAComposerNote(): Unit = runBlocking {
+        val id = cook()
+        val reminder = repo.createCookReminder(id, "Check the bark", System.currentTimeMillis() + 60_000)
+        val checkIn = repo.completeCookReminder(reminder.id, "Bark looks dark")!!
+        val loaded = repo.notes.load(checkIn.event.id)
+        assertEquals("Bark looks dark", loaded.description)
+        assertEquals("check_in", loaded.action)
+        repo.notes.save(loaded.copy(description = "Bark looks dark; wrapped"))
+        assertEquals("Bark looks dark; wrapped", db.cookDao().getTimelineEvent(checkIn.event.id)!!.details)
+        assertEquals(1, db.cookDao().getTimelineEventsForCook(id).count { it.id == checkIn.event.id })
+    }
     @Test fun portableArchiveKeepsMetadataLinksAndTimingWithoutDrafts(): Unit = runBlocking {
         val id = cook(); val draft = CookNoteDraft(cookId = id, category = "temperature", action = "food_on", temperatures = listOf(NoteTemperature(valueText = "64", unit = "°C")))
         repo.notes.save(draft); repo.notes.persistDraft(CookNoteDraft(cookId = id, description = "Unfinished"))

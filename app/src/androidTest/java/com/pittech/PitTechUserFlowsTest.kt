@@ -345,6 +345,13 @@ class PitTechUserFlowsTest {
         val photoCountBeforePickerCancel = runBlocking(Dispatchers.IO) { (targetContext.applicationContext as PitTechApplication).database.cookDao().getAllPhotos().size }
         composeRule.onNodeWithTag("photo-source-cancel").performClick()
         assertEquals(photoCountBeforePickerCancel, runBlocking(Dispatchers.IO) { (targetContext.applicationContext as PitTechApplication).database.cookDao().getAllPhotos().size })
+        // PL-07 (issue #172): cancelling the photo source returns to the
+        // composer instead of ejecting to Cook Detail — the composer opened
+        // by the Photo shortcut is still there, and keeping its draft is
+        // what closes it now.
+        composeRule.onNodeWithTag("timeline-entry-details").assertIsDisplayed()
+        composeRule.onNodeWithText("Keep draft").performClick()
+        composeRule.waitUntil(10_000) { composeRule.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isEmpty() }
         composeRule.onNodeWithTag("timeline-add").performClick()
         waitForText("Add to cook log")
         saveScreenshot("cook-log-entry")
