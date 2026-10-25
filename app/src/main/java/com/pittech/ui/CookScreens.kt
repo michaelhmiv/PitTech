@@ -153,7 +153,12 @@ internal fun PitTechApp(
     var myCookbook by rememberSaveable { mutableStateOf(false) }
     if(myCookbook)MyCookbookDialog(viewModel) { myCookbook=false }
     RelayImportDialog(viewModel)
-    AccountDialog(viewModel.account, viewModel.sync, viewModel.mcpConnections, viewModel.mcpDeviceActions)
+    AccountDialog(viewModel.account, viewModel.sync, viewModel.mcpConnections, viewModel.mcpDeviceActions, viewModel.subscription)
+    // Slice 8 (PL-15 / DD-10): when the account surface closes after a
+    // paywall sign-in detour — sign-in completed or cancelled — the gate
+    // reopens on the destination the user was headed to.
+    val accountShowing by viewModel.account.showing.collectAsStateWithLifecycle()
+    LaunchedEffect(accountShowing) { if (!accountShowing) viewModel.subscription.resumeAfterSignInDetour() }
     ProGateDialog(
         viewModel.subscription,
         previouslyEntitled,

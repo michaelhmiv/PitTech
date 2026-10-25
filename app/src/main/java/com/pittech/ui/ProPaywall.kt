@@ -70,21 +70,26 @@ internal fun ProGateDialog(
     val destination = proDestination(state.signedIn, state.entitlement, state.serverState, previouslyEntitled)
     var showingRecap by remember(entry) { mutableStateOf(false) }
     val entitled = state.entitlement == AdEntitlement.ENTITLED
+    // Sign-in from the gate is a detour, not an exit (Slice 8, PL-15 /
+    // DD-10): park the entry and close the gate so the account surface is
+    // reachable; when the account surface closes, the host resumes the
+    // detour and this gate reopens on the same destination.
+    val detourSignIn = { subscription.beginSignInDetour(); onSignIn() }
     when (destination) {
         ProDestination.LOADING -> ProLoadingDialog(subscription, entry)
-        ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, onSignIn, activity)
+        ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, detourSignIn, activity)
         ProDestination.PRO -> if (showingRecap && (entry == ProPlacement.ANALYSIS || entry == ProPlacement.MORE)) {
             ProRecapDialog(subscription, personal, customization, entitled, onBack = { showingRecap = false })
         } else {
             when (entry) {
-                ProPlacement.BENCHMARKS -> CommunityBenchmarksDialog(subscription, entry, benchmarks, onSignIn, activity)
+                ProPlacement.BENCHMARKS -> CommunityBenchmarksDialog(subscription, entry, benchmarks, detourSignIn, activity)
                 ProPlacement.ANALYSIS -> ProPersonalAnalysisDialog(subscription, entry, personal, onRecap = { showingRecap = true })
                 ProPlacement.CURVES -> ProAdvancedCurvesDialog(subscription, entry, personal, customization, entitled)
                 ProPlacement.THEMES -> ProCustomizationDialog(subscription, entry, customization)
                 ProPlacement.MORE -> ProMoreHubDialog(subscription, entry, onRecap = { showingRecap = true })
             }
         }
-        ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, onSignIn, activity)
+        ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, detourSignIn, activity)
     }
 }
 

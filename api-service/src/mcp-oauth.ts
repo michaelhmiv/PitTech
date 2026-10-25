@@ -143,6 +143,7 @@ export interface AuthorizationRequest {
   codeChallenge: string; codeChallengeMethod: string; responseType: string;
 }
 export interface PendingAuthorization { userCode: string; pollToken: string; expiresAt: number; client: McpOAuthClient; scopes: McpScope[] }
+export interface DescribedAuthorization { clientName: string; scopes: McpScope[]; expiresAt: number }
 export interface TokenResponse { access_token: string; refresh_token: string; token_type: 'Bearer'; expires_in: number; scope: string }
 
 export class McpOAuth {
@@ -193,13 +194,35 @@ export class McpOAuth {
     return { userCode, pollToken, expiresAt: pending.expiresAt, client, scopes: pending.scopes };
   }
 
+  /** Normalizes a user code exactly as approve() has always accepted it
+   * (case/space/dash tolerant); undefined for anything malformed. */
+  private normalizeUserCode(userCodeRaw: string): string | undefined {
+    const userCode = userCodeRaw.trim().toUpperCase().replace(/[\s-]/g, '');
+    if (!/^[A-Z2-9]{8}$/.test(userCode)) return undefined;
+    return userCode.slice(0, 4) + '-' + userCode.slice(4);
+  }
+
+  /** The in-app approval confirmation step (issue #172, PL-16 / DD-9):
+   * what a user code would connect, shown to the owner BEFORE Approve
+   * arms. Read-only — describing never approves, consumes, or extends a
+   * pending. Unknown, expired and already-approved codes are the same
+   * undefined, exactly as approve() reports them. */
+  async describe(userCodeRaw: string): Promise<DescribedAuthorization | undefined> {
+    const formatted = this.normalizeUserCode(userCodeRaw);
+    if (!formatted) return undefined;
+    const pending = await this.store.pendingByUserCodeHash(this.secrets.hash('mcp-oauth-user-code', formatted));
+    if (!pending || pending.approvedUserId !== null || pending.expiresAt <= this.now()) return undefined;
+    const client = this.clients.get(pending.clientId);
+    if (!client) return undefined;
+    return { clientName: client.name, scopes: pending.scopes, expiresAt: pending.expiresAt };
+  }
+
   /** The owner approving a user code in the app: creates the grant and a
    * bound authorization code. Unknown, expired or already-approved codes
    * are the same false. */
   async approve(userId: string, userCodeRaw: string): Promise<boolean> {
-    const userCode = userCodeRaw.trim().toUpperCase().replace(/[\s-]/g, '');
-    if (!/^[A-Z2-9]{8}$/.test(userCode)) return false;
-    const formatted = userCode.slice(0, 4) + '-' + userCode.slice(4);
+    const formatted = this.normalizeUserCode(userCodeRaw);
+    if (!formatted) return false;
     const pending = await this.store.pendingByUserCodeHash(this.secrets.hash('mcp-oauth-user-code', formatted));
     if (!pending || pending.approvedUserId !== null || pending.expiresAt <= this.now()) return false;
     const client = this.clients.get(pending.clientId);

@@ -518,6 +518,38 @@ import XCTest
         coordinator.closePaywall()
         XCTAssertNil(coordinator.presentedEntry)
     }
+
+    /// Slice 8 (PL-15 / DD-10): a paywall sign-in detour parks the entry
+    /// and reopens the gate on the same destination when the account
+    /// surface closes. The resume fires whether sign-in completed or
+    /// was cancelled — it never inspects the outcome — and without a
+    /// detour it is a no-op, so an ordinary account visit opens nothing.
+    func testSignInDetourReopensTheGateOnTheSameEntry() {
+        let (coordinator, _, _) = makeCoordinator()
+        coordinator.resumeSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+        XCTAssertFalse(coordinator.consumeSignInDetour())
+        coordinator.openPro(.analysis)
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        coordinator.beginSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+        XCTAssertEqual(coordinator.signInResumeEntry, .analysis)
+        // The host asks once, as the paywall sheet finishes dismissing.
+        XCTAssertTrue(coordinator.consumeSignInDetour())
+        XCTAssertFalse(coordinator.consumeSignInDetour())
+        coordinator.resumeSignInDetour()
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        XCTAssertNil(coordinator.signInResumeEntry)
+        // The parked entry is consumed: a second account close opens nothing.
+        coordinator.closePaywall()
+        coordinator.resumeSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+        // Beginning a detour with no gate open parks nothing.
+        coordinator.beginSignInDetour()
+        XCTAssertFalse(coordinator.consumeSignInDetour())
+        coordinator.resumeSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+    }
 }
 
 private final class SessionBox: @unchecked Sendable {

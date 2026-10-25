@@ -139,9 +139,14 @@ struct NativeAccountView: View {
 private struct McpConnectionsSection: View {
     let mcp: NativeMcpConnections
     @Binding var creating: Bool
+    @Environment(ProSubscriptionCoordinator.self) private var pro
+    @Environment(\.dismiss) private var dismiss
     @State private var code = ""
     @State private var confirmingRevoke: String?
     @State private var confirmingRevokeAll = false
+    @State private var tokenCopied = false
+    /// Slice 8 (PL-14): the gate reads the existing subscription state.
+    private var gate: McpProGate { mcpProGate(for: pro.entitlement) }
     var body: some View {
         Section("Connect your AI") {
             Text("Let an AI assistant like ChatGPT or Muse help with your own meals, recipes and logs. Connections use your PitTech Pro and can be disconnected here any time. An assistant can never publish, control a grill, or change your account or billing.").font(.footnote)
@@ -158,26 +163,79 @@ private struct McpConnectionsSection: View {
                     }.accessibilityIdentifier("mcp-grant-\(grant.id)")
                 }
                 if mcp.grants.allSatisfy({ !$0.active }) { Text("No AI connections yet.").font(.footnote) }
-                Button("New connection") { creating = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-new")
                 if mcp.grants.filter(\.active).count > 1 { Button("Disconnect all", role: .destructive) { confirmingRevokeAll = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-all") }
-                Text("Approve a connection").font(.headline)
-                Text("If an assistant shows you a code in your browser, enter it here to finish connecting.").font(.footnote)
-                TextField("Connection code", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled().accessibilityIdentifier("mcp-approve-code")
-                Button("Approve") { let entered = code; code = ""; Task { await mcp.approve(userCode: entered) } }.disabled(mcp.busy || code.isEmpty).accessibilityIdentifier("mcp-approve")
-                if let token = mcp.createdToken {
+                switch gate {
+                case .checking:
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Your connection token for \(mcp.createdNickname ?? "the new connection")").font(.headline)
-                        Text("Copy it into the assistant now. It is shown only once and is not saved on this device.").font(.footnote)
-                        Text(token).textSelection(.enabled).accessibilityIdentifier("mcp-token-value")
-                        Button("Copy token") { UIPasteboard.general.string = token }.accessibilityIdentifier("mcp-copy-token")
-                        Button("Done") { mcp.dismissCreatedToken() }.accessibilityIdentifier("mcp-token-done")
-                    }.accessibilityIdentifier("mcp-created-token")
+                        Text("Checking PitTech Pro status…").font(.headline)
+                        Text("Creating or approving a connection needs your verified Pro status first. Your existing connections are unchanged.").font(.footnote)
+                        Button("Check again") { Task { await pro.reconcile() } }.accessibilityIdentifier("mcp-pro-check")
+                    }.accessibilityIdentifier("mcp-pro-checking")
+                case .needsPro:
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AI connections need PitTech Pro").font(.headline)
+                        Text("Creating or approving a connection needs an active PitTech Pro subscription — without it, the assistant can't use the connection, so PitTech doesn't create one that would only fail later. Your existing connections stay listed above and can be disconnected any time.").font(.footnote)
+                        Button("See PitTech Pro") { pro.openPro(.more); dismiss() }.accessibilityIdentifier("mcp-pro-see")
+                    }.accessibilityIdentifier("mcp-pro-gate")
+                case .entitled:
+                    Button("New connection") { creating = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-new")
+                    Text("Approve a connection").font(.headline)
+                    Text("If an assistant shows you a code in your browser, enter it here. PitTech shows you exactly what the code connects before anything is approved.").font(.footnote)
+                    TextField("Connection code", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled().accessibilityIdentifier("mcp-approve-code")
+                        .onChange(of: code) { _, entered in
+                            if let preview = mcp.approvalPreview, preview.code != entered.trimmingCharacters(in: .whitespaces).uppercased() { mcp.dismissApprovalPreview() }
+                        }
+                    if let preview = mcp.approvalPreview {
+                        // Slice 8 (PL-16 / DD-9): the confirmation step.
+                        // Approve does not exist until the client and its
+                        // full scope list have been shown for this code.
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Connect \(preview.clientName)?").font(.headline)
+                            Text("\(preview.clientName) will be able to:").font(.footnote)
+                            ForEach(preview.scopes, id: \.self) { Text("• \(McpScopeCatalog.label($0))").font(.footnote) }
+                            Text("PitTech Pro: active on this account.").font(.footnote)
+                            Text("This code expires \(Date(timeIntervalSince1970: Double(preview.expiresAt) / 1000), format: .dateTime). Nothing is connected until you approve.").font(.footnote)
+                            Button("Approve") { let reviewed = preview.code; code = ""; Task { await mcp.approve(userCode: reviewed) } }.disabled(mcp.busy).accessibilityIdentifier("mcp-approve")
+                            Button("Not now") { mcp.dismissApprovalPreview() }.disabled(mcp.busy).accessibilityIdentifier("mcp-approve-cancel")
+                        }.accessibilityIdentifier("mcp-approval-preview")
+                    } else {
+                        Button("Review connection") { Task { await mcp.reviewCode(code) } }.disabled(mcp.busy || code.isEmpty).accessibilityIdentifier("mcp-review-code")
+                    }
                 }
                 if mcp.busy { ProgressView("Working…") }
                 if let message = mcp.message { Text(message).accessibilityIdentifier("mcp-message") }
             }
         }
         .onAppear { Task { await mcp.refresh() } }
+        .onChange(of: mcp.createdToken) { _, _ in tokenCopied = false }
+        // Slice 8 (PL-16 / DD-9): the show-once token is a hard-stop sheet,
+        // presented the moment creation completes — not a block that can
+        // materialise off-screen in the account scroll. A sheet, not an
+        // alert: every alert button dismisses, which would burn the token
+        // when Copy is tapped. Here Copy confirms itself ("Copied") in
+        // place, swipe-dismiss is disabled, and Done is the only exit.
+        .sheet(isPresented: Binding(get: { mcp.createdToken != nil }, set: { if !$0 { mcp.dismissCreatedToken() } })) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("For \(mcp.createdNickname ?? "the new connection")").font(.headline)
+                    Text("Copy it into the assistant now. It is shown only once and is not saved on this device.").font(.footnote)
+                    Text(mcp.createdToken ?? "").textSelection(.enabled).accessibilityIdentifier("mcp-token-value")
+                    Button(tokenCopied ? "Copied" : "Copy token") {
+                        if let token = mcp.createdToken { UIPasteboard.general.string = token }
+                        tokenCopied = true
+                    }.accessibilityIdentifier("mcp-copy-token")
+                    Button("Done") { mcp.dismissCreatedToken() }.accessibilityIdentifier("mcp-token-done")
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .accessibilityIdentifier("mcp-created-token")
+                .navigationTitle("Your connection token")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .interactiveDismissDisabled()
+            .presentationDetents([.medium])
+        }
         .confirmationDialog("Disconnect this connection?", isPresented: Binding(get: { confirmingRevoke != nil }, set: { if !$0 { confirmingRevoke = nil } }), titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { if let id = confirmingRevoke { confirmingRevoke = nil; Task { await mcp.revoke(id) } } }.accessibilityIdentifier("mcp-confirm-revoke")
         } message: { Text("The assistant using it loses access immediately. Your library is unchanged.") }
@@ -193,6 +251,7 @@ private struct McpCreateView: View {
     @State private var nickname = "ChatGPT"
     @State private var selected: Set<String> = McpScopeCatalog.defaultSelected
     @State private var days = 90
+    @State private var attempted = false
     var body: some View {
         Form {
             Section { TextField("Name this connection", text: $nickname).accessibilityIdentifier("mcp-nickname") }
@@ -208,7 +267,22 @@ private struct McpCreateView: View {
                 Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.").font(.footnote)
             }
             Section {
-                Button("Create connection") { let name = nickname, scopes = selected, expiry = days; done(); Task { await mcp.create(nickname: name, scopes: scopes, expiresInDays: expiry) } }.disabled(nickname.isEmpty || selected.isEmpty).accessibilityIdentifier("mcp-create-submit")
+                // Slice 8 (PL-16): the form stays open until the create
+                // call resolves — success hands off to the hard-stop
+                // token sheet; failure keeps the filled form and says
+                // what happened, here.
+                Button("Create connection") {
+                    let name = nickname, scopes = selected, expiry = days
+                    attempted = true
+                    Task {
+                        await mcp.create(nickname: name, scopes: scopes, expiresInDays: expiry)
+                        if mcp.createdToken != nil { done() }
+                    }
+                }.disabled(nickname.isEmpty || selected.isEmpty || mcp.busy).accessibilityIdentifier("mcp-create-submit")
+                if mcp.busy && attempted { ProgressView("Creating…") }
+                if attempted && !mcp.busy && mcp.createdToken == nil, let message = mcp.message {
+                    Text(message).font(.footnote).accessibilityIdentifier("mcp-create-error")
+                }
             }
         }.navigationTitle("New AI connection").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }

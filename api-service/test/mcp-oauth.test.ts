@@ -93,6 +93,24 @@ test('full flow: approve in app → poll reveals code once → PKCE exchange min
   assert.equal(grant?.nickname, 'ChatGPT');
 });
 
+test('describe shows client + scopes for the approval confirmation and never approves', async () => {
+  const f = fixture();
+  const pending = await f.oauth.startAuthorization(authz());
+  const described = await f.oauth.describe(pending.userCode.toLowerCase().replace('-', ' '));
+  assert.ok(described, 'user code is case/space/dash tolerant, like approve');
+  assert.equal(described.clientName, 'ChatGPT');
+  assert.deepEqual(described.scopes, ['library:read', 'media:read']);
+  assert.equal(described.expiresAt, pending.expiresAt);
+  assert.deepEqual(await f.oauth.pollStatus(pending.pollToken), { status: 'pending' }, 'describing changed no state');
+  assert.equal(await f.oauth.describe('ZZZZ-ZZZZ'), undefined, 'unknown code');
+  assert.equal(await f.oauth.describe('not a code'), undefined, 'malformed code');
+  assert.equal(await f.oauth.approve('user-9', pending.userCode), true);
+  assert.equal(await f.oauth.describe(pending.userCode), undefined, 'already-approved codes describe as nothing');
+  const second = await f.oauth.startAuthorization(authz());
+  f.setNow(NOW + 16 * 60 * 1000);
+  assert.equal(await f.oauth.describe(second.userCode), undefined, 'expired codes describe as nothing');
+});
+
 test('exchange rejects wrong verifier, wrong client and wrong redirect identically', async () => {
   const f = fixture();
   const pending = await f.oauth.startAuthorization(authz());
@@ -198,4 +216,26 @@ test('HTTP: discovery metadata, approval page, approve + token round trip', asyn
   const badForm = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokenBody.access_token, client_id: 'chatgpt' });
   const replay = await fetch(s.base + '/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: badForm });
   assert.equal(replay.status, 400); assert.deepEqual(await replay.json(), { error: 'invalid_grant' });
+});
+
+test('HTTP: describe powers the in-app approval confirmation and approves nothing', async t => {
+  const s: HttpSetup = await httpSetup(t);
+  const q = new URLSearchParams({ response_type: 'code', client_id: 'chatgpt', redirect_uri: CLIENT.redirectUris[0], scope: 'library:read media:read', state: 'st', code_challenge: CHALLENGE, code_challenge_method: 'S256' });
+  const pageRes = await fetch(s.base + '/oauth/authorize?' + q);
+  const html = await pageRes.text();
+  const codeMatch = /[A-Z2-9]{4}-[A-Z2-9]{4}/.exec(html);
+  assert.ok(codeMatch);
+  const describe = (userCode: string, access?: string) => fetch(s.base + '/v1/me/mcp/oauth/describe', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(access ? { Authorization: 'Bearer ' + access } : {}) }, body: JSON.stringify({ userCode }) });
+  assert.equal((await describe(codeMatch[0])).status, 401, 'a native session is required');
+  const ok = await describe(codeMatch[0], s.access);
+  assert.equal(ok.status, 200);
+  const body = await ok.json() as { clientName: string; scopes: string[]; expiresAt: number };
+  assert.equal(body.clientName, 'ChatGPT');
+  assert.deepEqual(body.scopes, ['library:read', 'media:read']);
+  assert.ok(body.expiresAt > NOW);
+  assert.equal((await describe('ZZZZ-ZZZZ', s.access)).status, 404, 'unknown codes are indistinguishable');
+  // Describing approved nothing: the code still needs its own approve call.
+  const approve = await fetch(s.base + '/v1/me/mcp/oauth/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + s.access }, body: JSON.stringify({ userCode: codeMatch[0] }) });
+  assert.equal(approve.status, 200);
+  assert.equal((await describe(codeMatch[0], s.access)).status, 404, 'approved codes no longer describe');
 });

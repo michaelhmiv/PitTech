@@ -76,6 +76,9 @@ struct NativePublicationView: View {
             }
             .onChange(of: identity) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
+            // Slice 8 (PL-15 / DD-10): completing sign-in returns to this
+            // sheet on its own; cancelling the account sheet lands here too.
+            .onChange(of: account.signedIn) { _, signedIn in if signedIn { signingIn = false } }
     }
     private func invalidate() { prepared = nil; reviewed = false; previewUser = nil; updateSummary = nil }
     private func refreshPending() throws {
@@ -176,6 +179,9 @@ struct NativePublicLikeActions: View {
             if let message { Text(message) }
         }.task { if writer == nil { writer = NativePublicationWriter.forApp(session: account) } }
             .onChange(of: account.stateUserId) { _, _ in message = nil }
+            // Slice 8 (PL-15 / DD-10): sign-in completion closes the
+            // account sheet and returns here automatically.
+            .onChange(of: account.signedIn) { _, signedIn in if signedIn { signingIn = false } }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
     }
     private func set(_ liked: Bool) {

@@ -283,4 +283,119 @@ import android.graphics.Bitmap
         val file=File(instrumentation.targetContext.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle()
     }
+
+    /** Slice 8 fixture: a signed-in account, a fake MCP API, and a real
+     * SubscriptionManager over stub billing whose entitlement the test
+     * flips between the server states unknown / none / active. */
+    private class Slice8Fixture(val scope: CoroutineScope) {
+        @Volatile var entitlementState = "unknown"
+        val storage = object : AccountStorage {
+            var value = AccountState(session = AccountSession("A".repeat(43), "A".repeat(43), "2100-01-01T00:00:00.000Z", "2100-02-01T00:00:00.000Z", "12345678-1234-4234-8234-123456789abc"))
+            override fun load() = value
+            override fun save(value: AccountState) { this.value = value }
+        }
+        val account = AccountManager(storage, scope, AccountAPI { _, _, _ -> JSONObject() }, true)
+        val mcpApi = McpAPI { method, path, _, _ ->
+            when {
+                path.endsWith("describe") -> JSONObject().put("clientName", "ChatGPT").put("scopes", JSONArray(listOf("library:read"))).put("expiresAt", System.currentTimeMillis() + 900_000)
+                path.endsWith("approve") -> JSONObject().put("approved", true)
+                method == "POST" && path.endsWith("grants") -> JSONObject()
+                    .put("grant", JSONObject().put("id", "grant-1").put("nickname", "ChatGPT").put("scopes", JSONArray(listOf("library:read"))).put("createdAt", 1).put("expiresAt", Long.MAX_VALUE / 4).put("revokedAt", JSONObject.NULL).put("lastUsedAt", JSONObject.NULL).put("clientId", JSONObject.NULL))
+                    .put("token", "pitmcp_uitesttoken")
+                else -> JSONObject().put("grants", JSONArray())
+            }
+        }
+        val mcp = McpConnectionsManager(account, scope, mcpApi)
+        val billing = object : com.pittech.billing.ProBillingClient {
+            override val productId = "pittech.pro.monthly"
+            override suspend fun queryProduct(): com.pittech.billing.ProStoreProduct? = null
+            override suspend fun launchPurchase(activity: android.app.Activity?) = com.pittech.billing.ProPurchaseOutcome.Cancelled
+            override suspend fun queryOwnedPurchases(): List<com.pittech.billing.ProStorePurchase> = emptyList()
+            override suspend fun acknowledge(purchaseToken: String) = true
+            override var externalPurchases: ((com.pittech.billing.ProStorePurchase) -> Unit)? = null
+            override fun close() {}
+        }
+        val subApi = com.pittech.billing.SubscriptionAPI { path, _, _ ->
+            JSONObject("""{"version":"entitlement-cache-v1","environment":"production","verified":${entitlementState != "unknown"},"state":"$entitlementState","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1"}""")
+        }
+        val subscription = com.pittech.billing.SubscriptionManager(billing, scope, subApi, { "A".repeat(43) }, true, com.pittech.billing.MemorySubscriptionCacheStore(), ownerId = { "stub-account" })
+    }
+
+    /** Slice 8 (PL-14): with Pro unverified the section shows the checking
+     * state and no create/approve controls; "Check again" re-reads the
+     * entitlement and, once active, the controls appear. */
+    @Test fun mcpSectionGatesOnProState() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
+        try {
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-pro-checking").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-pro-checking").performScrollTo().assertIsDisplayed()
+            compose.onAllNodesWithTag("mcp-new").assertCountEquals(0)
+            compose.onAllNodesWithTag("mcp-review-code").assertCountEquals(0)
+            f.entitlementState = "active"
+            compose.onNodeWithTag("mcp-pro-check").performScrollTo().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-new").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-new").performScrollTo().assertIsDisplayed()
+        } finally { scope.cancel() }
+    }
+
+    /** Slice 8 (PL-14): with Pro verified absent (server state "none" —
+     * the canonical not-entitled state in the entitlement mapping), the
+     * honest gate card replaces the create/approve controls entirely —
+     * existing connections stay listed and disconnectable, but nothing
+     * new can be created or approved until Pro is active. */
+    @Test fun mcpSectionShowsProGateWhenNotEntitled() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
+        try {
+            f.entitlementState = "none"
+            kotlinx.coroutines.runBlocking { f.subscription.refresh() }
+            compose.waitUntil(10000) { f.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.NOT_ENTITLED }
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-pro-gate").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-pro-gate").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("mcp-pro-see").assertIsDisplayed()
+            compose.onAllNodesWithTag("mcp-new").assertCountEquals(0)
+            compose.onAllNodesWithTag("mcp-review-code").assertCountEquals(0)
+        } finally { scope.cancel() }
+    }
+
+    /** Slice 8 (PL-16 / DD-9): creating a connection ends in the hard-stop
+     * token dialog whose copy action confirms itself; approving a code
+     * first shows the client and its scopes — Approve does not exist
+     * until the review has happened. */
+    @Test fun mcpTokenDialogAndApprovalConfirmation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
+        try {
+            f.entitlementState = "active"
+            kotlinx.coroutines.runBlocking { f.subscription.refresh() }
+            compose.waitUntil(10000) { f.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.ENTITLED }
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-new").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-new").performScrollTo().performClick()
+            compose.onNodeWithTag("mcp-create-submit").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-created-token").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-token-value").assertTextEquals("pitmcp_uitesttoken")
+            screenshot("mcp-token-dialog")
+            compose.onNodeWithTag("mcp-copy-token").performClick()
+            compose.onNodeWithText("Copied").assertIsDisplayed()
+            compose.onNodeWithTag("mcp-token-done").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-created-token").fetchSemanticsNodes().isEmpty() }
+            compose.onAllNodesWithTag("mcp-create-submit").assertCountEquals(0)
+            compose.onNodeWithTag("mcp-approve-code").performScrollTo().performTextReplacement("ABCD-2345")
+            compose.onAllNodesWithTag("mcp-approve").assertCountEquals(0)
+            compose.onNodeWithTag("mcp-review-code").performScrollTo().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-approval-preview").performScrollTo()
+            compose.onNodeWithText("Connect ChatGPT?", substring = true).assertIsDisplayed()
+            // Scoped to the preview subtree: the created grant's row in
+            // the list above carries the same scope label.
+            compose.onNodeWithTag("mcp-approval-preview").onChildren().filterToOne(hasText("See your library", substring = true)).assertIsDisplayed()
+            screenshot("mcp-approval-confirmation")
+            compose.onNodeWithTag("mcp-approve").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isEmpty() }
+        } finally { scope.cancel() }
+    }
 }

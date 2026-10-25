@@ -86,6 +86,9 @@ struct NativeMyCookbookView: View {
             }
             .navigationDestination(isPresented: Binding(get: { editingDraft != nil }, set: { if !$0 { editingDraft = nil } })) { if let editingDraft { SharingDraftView(id: editingDraft) } }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
+            // Slice 8 (PL-15 / DD-10): sign-in completion returns to the
+            // cookbook automatically; cancelling lands here too.
+            .onChange(of: account.signedIn) { _, signedIn in if signedIn { signingIn = false } }
     }
     @ViewBuilder private var ownerEditingPreview: some View {
                     if let ownerPreview, let ownerReceipt {

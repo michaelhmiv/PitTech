@@ -91,4 +91,42 @@ final class McpConnectionsTests: XCTestCase {
         await badMcp.approve(userCode: "XXXX-XXXX")
         XCTAssertTrue((badMcp.message ?? "").contains("isn't valid"))
     }
+
+    /// Slice 8 (PL-16 / DD-9): reviewing a code fetches the client name
+    /// and full scope list for the confirmation step; describing approves
+    /// nothing, and approving afterwards clears the preview.
+    @MainActor func testReviewDescribesTheCodeBeforeApprovalArms() async {
+        let api = API()
+        api.handler = { _, path in
+            if path.hasSuffix("describe") {
+                return ["clientName": "ChatGPT", "scopes": ["library:read", "library:delete"], "expiresAt": self.now + 15 * 60_000]
+            }
+            if path.hasSuffix("approve") { return ["approved": true] }
+            return ["grants": []]
+        }
+        let mcp = fixture(api)
+        await mcp.reviewCode(" abcd-2345 ")
+        XCTAssertEqual(mcp.approvalPreview?.code, "ABCD-2345")
+        XCTAssertEqual(mcp.approvalPreview?.clientName, "ChatGPT")
+        XCTAssertEqual(mcp.approvalPreview?.scopes, ["library:read", "library:delete"])
+        XCTAssertEqual(mcp.approvalPreview?.expiresAt, now + 15 * 60_000)
+        XCTAssertFalse(api.calls.contains { $0.1.hasSuffix("approve") })
+        await mcp.approve(userCode: mcp.approvalPreview!.code)
+        XCTAssertNil(mcp.approvalPreview)
+        XCTAssertTrue((mcp.message ?? "").contains("Approved"))
+        let bad = API()
+        bad.handler = { _, path in if path.hasSuffix("describe") { throw NativeAccountError.status(404) }; return ["grants": []] }
+        let badMcp = fixture(bad)
+        await badMcp.reviewCode("XXXX-XXXX")
+        XCTAssertNil(badMcp.approvalPreview)
+        XCTAssertTrue((badMcp.message ?? "").contains("isn't valid"))
+    }
+
+    /// Slice 8 (PL-14): the connection gate maps the existing entitlement
+    /// state — entitled passes, not-entitled gates, unknown checks.
+    func testProGateMapsEntitlementStates() {
+        XCTAssertEqual(mcpProGate(for: .entitled), .entitled)
+        XCTAssertEqual(mcpProGate(for: .notEntitled), .needsPro)
+        XCTAssertEqual(mcpProGate(for: .unknown), .checking)
+    }
 }

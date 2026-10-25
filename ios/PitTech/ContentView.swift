@@ -83,8 +83,17 @@ struct ContentView: View {
                 Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
             }
         }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
-        .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 })) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
-        .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } })) {
+        .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 }), onDismiss: {
+            // Slice 8 (PL-15 / DD-10): the account sheet closing after a
+            // paywall sign-in detour — completed or cancelled — reopens
+            // the gate on the destination the user was headed to.
+            pro.resumeSignInDetour()
+        }) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
+        .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } }), onDismiss: {
+            // Slice 8 (PL-15 / DD-10): a paywall dismissed for sign-in
+            // hands straight over to the account sheet.
+            if pro.consumeSignInDetour() { account.showingAccount = true }
+        }) {
             if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
         }
         .sheet(item: archiveIntakeBinding, onDismiss: {

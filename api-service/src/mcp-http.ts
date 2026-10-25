@@ -13,18 +13,23 @@ import type { McpPortabilityStore } from './mcp-portability.ts';
  * token shape, so a connected assistant can never mint, list-scope, or
  * revoke its own or another connection's grant. Revoking stays reachable
  * regardless of Pro state: the entitlement gate lives in McpGrants
- * .authenticate (data calls), never in grant management.
+ * .authenticate (data calls), never in grant management. The describe
+ * route is the same discipline: an owner-session, read-only lookup that
+ * powers the in-app approval confirmation (issue #172, PL-16) — it
+ * approves nothing and changes no state.
  */
 
 export type McpGrantRoute =
   | '/v1/me/mcp/grants'            // POST create · GET list · DELETE disconnect-all
   | '/v1/me/mcp/grants/:id'        // DELETE revoke one
+  | '/v1/me/mcp/oauth/describe'    // POST describe a user code for the approval confirmation
   | '/v1/me/mcp/oauth/approve';    // POST approve a browser-shown user code
 
 export function mcpGrantRoute(url: string, method: string): McpGrantRoute | undefined {
   const path = url.split('?', 1)[0];
   if (path === '/v1/me/mcp/grants' && ['POST', 'GET', 'DELETE'].includes(method)) return '/v1/me/mcp/grants';
   if (/^\/v1\/me\/mcp\/grants\/[0-9a-fA-F-]{36}$/.test(path) && method === 'DELETE') return '/v1/me/mcp/grants/:id';
+  if (path === '/v1/me/mcp/oauth/describe' && method === 'POST') return '/v1/me/mcp/oauth/describe';
   if (path === '/v1/me/mcp/oauth/approve' && method === 'POST') return '/v1/me/mcp/oauth/approve';
 }
 
@@ -106,6 +111,17 @@ export async function handleMcpGrants(req: IncomingMessage, res: ServerResponse,
     const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '')?.[1];
     if (!auth || !token) throw new ApiError(401, 'authentication_required');
     const user = await auth.user(token);
+    if (route === '/v1/me/mcp/oauth/describe') {
+      if (!oauth) throw new ApiError(404, 'mcp_grant_not_found');
+      const value = fields(await object(req, 8192), 'userCode');
+      if (typeof value.userCode !== 'string') throw new ApiError(422, 'invalid_mcp_request');
+      // Read-only confirmation data for the in-app approval step
+      // (issue #172, PL-16): unknown, expired and already-approved codes
+      // are one answer, and describing never approves anything.
+      const described = await oauth.describe(value.userCode);
+      if (!described) throw new ApiError(404, 'mcp_grant_not_found');
+      json(200, { clientName: described.clientName, scopes: described.scopes, expiresAt: described.expiresAt }); return;
+    }
     if (route === '/v1/me/mcp/oauth/approve') {
       if (!oauth) throw new ApiError(404, 'mcp_grant_not_found');
       const value = fields(await object(req, 8192), 'userCode');

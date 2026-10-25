@@ -387,4 +387,30 @@ class SubscriptionManagerTest {
         assertFalse(manager.presentation.value.hasRelease)
         assertTrue(billing.acknowledged.isEmpty())
     }
+
+    /** Slice 8 (PL-15 / DD-10): a paywall sign-in detour parks the entry
+     * and reopens the gate on the same destination when the account
+     * surface closes. The resume fires whether sign-in completed or was
+     * cancelled — it never inspects the outcome — and without a detour
+     * it is a no-op, so an ordinary account visit opens nothing. */
+    @Test
+    fun signInDetourReopensTheGateOnTheSameEntry() = runTest {
+        val (manager, _, _) = manager()
+        manager.resumeAfterSignInDetour()
+        assertNull(manager.presentation.value.paywallEntry)
+        manager.openPro(ProPlacement.ANALYSIS)
+        assertEquals(ProPlacement.ANALYSIS, manager.presentation.value.paywallEntry)
+        manager.beginSignInDetour()
+        assertNull(manager.presentation.value.paywallEntry)
+        manager.resumeAfterSignInDetour()
+        assertEquals(ProPlacement.ANALYSIS, manager.presentation.value.paywallEntry)
+        // The parked entry is consumed: a second account close opens nothing.
+        manager.closePaywall()
+        manager.resumeAfterSignInDetour()
+        assertNull(manager.presentation.value.paywallEntry)
+        // Beginning a detour with no gate open parks nothing.
+        manager.beginSignInDetour()
+        manager.resumeAfterSignInDetour()
+        assertNull(manager.presentation.value.paywallEntry)
+    }
 }

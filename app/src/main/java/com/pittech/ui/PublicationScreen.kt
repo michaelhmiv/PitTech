@@ -41,6 +41,10 @@ import org.json.JSONObject
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. The exact request stays saved."; try { refreshPending() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) { invalidate(); published=null; try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=e.message } }
+    // Slice 8 (PL-15 / DD-10): completing sign-in returns to this sheet on
+    // its own — the account dialog closes itself instead of waiting for a
+    // manual "Return to publication" tap. Cancelling it lands here too.
+    LaunchedEffect(state.signedIn) { if(state.signedIn) signingIn=false }
     ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy)onClose() }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth()) { Text("Publish preview",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
@@ -146,7 +150,9 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
 @Composable internal fun PublicLikeActions(id: String, account: AccountManager, writer: PublicationWriter) {
     val state by account.presentation.collectAsStateWithLifecycle(); val scope=rememberCoroutineScope()
     var busy by remember(id) { mutableStateOf(false) }; var signingIn by remember { mutableStateOf(false) }; var message by remember(id) { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.signedIn) { message=null }
+    // Slice 8 (PL-15 / DD-10): sign-in completion closes the account
+    // dialog and returns here automatically, like the publication sheet.
+    LaunchedEffect(state.signedIn) { message=null; if(state.signedIn) signingIn=false }
     fun set(liked: Boolean) { if(busy)return; busy=true; scope.launch {
         try { writer.json(if(liked)"POST" else "DELETE","/v1/recipes/$id/like"); message=if(liked)"Your like is saved." else "Your like is removed." }
         catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=(e.message ?: "Couldn't reconnect.")+" Recover interrupted changes in My cookbook." } finally { busy=false }

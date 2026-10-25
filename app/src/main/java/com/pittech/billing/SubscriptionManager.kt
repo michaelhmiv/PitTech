@@ -156,6 +156,28 @@ internal class SubscriptionManager(
         )
     }
 
+    /** The destination a paywall sign-in detour must return to (Slice 8,
+     * PL-15 / DD-10). [beginSignInDetour] parks the open entry and closes
+     * the gate so the account surface is reachable; when that surface
+     * closes — sign-in completed OR cancelled — [resumeAfterSignInDetour]
+     * reopens the gate on the same entry and the destination is recomputed
+     * from the now-current account state. Without a detour both calls are
+     * no-ops, so the account surface closing for any other reason never
+     * conjures a paywall. */
+    private var signInResumeEntry: ProPlacement? = null
+
+    fun beginSignInDetour() {
+        val entry = _presentation.value.paywallEntry ?: return
+        signInResumeEntry = entry
+        _presentation.value = _presentation.value.copy(paywallEntry = null, notice = null)
+    }
+
+    fun resumeAfterSignInDetour() {
+        val entry = signInResumeEntry ?: return
+        signInResumeEntry = null
+        openPro(entry)
+    }
+
     suspend fun loadProduct() = mutex.withLock { loadProductLocked() }
     suspend fun refresh() = mutex.withLock { refreshLocked() }
     suspend fun reconcile() = mutex.withLock { reconcileLocked() }
