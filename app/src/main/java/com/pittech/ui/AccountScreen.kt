@@ -4,8 +4,6 @@ import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +25,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -415,35 +415,72 @@ import kotlinx.coroutines.launch
         }
         if(state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text("Syncing…",Modifier.testTag("sync-busy-label"))}
     }
-    if(reviewing)SyncConflictDialog(sync,state.conflicts,state.busy,onClose={reviewing=false})
+    if(reviewing)SyncConflictSheet(sync,state.conflicts,state.busy,onClose={reviewing=false})
 }
-@OptIn(ExperimentalLayoutApi::class)
-@Composable private fun SyncConflictDialog(sync: com.pittech.data.PrivateSyncCoordinator, conflicts: List<com.pittech.data.PrivateSyncConflictView>, busy: Boolean, onClose: () -> Unit) {
+
+/** PL-16 (#172): the conflict review is a sheet (DD-6: lists & management are
+ * sheets, not dialogs) that shows both versions side by side as readable
+ * content — fields, not one-line summaries — and prints the consequence on
+ * each choice itself: it applies on this device right away and uploads on
+ * the next sync. Where a record kind cannot keep both versions, the sheet
+ * says so for that item instead of the button silently not being there. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun SyncConflictSheet(sync: com.pittech.data.PrivateSyncCoordinator, conflicts: List<com.pittech.data.PrivateSyncConflictView>, busy: Boolean, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest=onClose,title={Text("Review synced edits")},text={
-        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+            Text("Review synced edits",style=MaterialTheme.typography.titleLarge)
             Text("Two devices changed the same entry. Your journal keeps the current version until you choose.")
             // Slice 7 (PL-10): the consequence is computed from the actual pending
             // set, never a generic warning.
             Text(SyncStatusCopy.conflictConsequence(conflicts.size),Modifier.testTag("sync-conflict-consequence"),style=MaterialTheme.typography.bodySmall)
             conflicts.forEach { conflict ->
-                Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
+                Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Text(conflict.reason,style=MaterialTheme.typography.titleSmall)
-                    Text("Yours: ${conflict.mineSummary}")
-                    Text("Other device: ${conflict.theirsSummary}")
-                    Text(SyncStatusCopy.CONFLICT_ITEM_NOTE,style=MaterialTheme.typography.bodySmall)
-                    // FlowRow: the three resolution buttons must all stay reachable on narrow
-                    // screens. A fixed Row pushed "Keep both" off-screen horizontally, where
-                    // taps landed outside the dialog and the resolution never fired.
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                        Button(onClick={scope.launch{sync.resolve(conflict.id,"mine")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-mine-${conflict.id}")){Text("Keep mine")}
-                        Button(onClick={scope.launch{sync.resolve(conflict.id,"theirs")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-theirs-${conflict.id}")){Text("Use theirs")}
-                        if(conflict.canKeepBoth)Button(onClick={scope.launch{sync.resolve(conflict.id,"both")}},enabled=!busy,modifier=Modifier.testTag("sync-keep-both-${conflict.id}")){Text("Keep both")}
+                    Text(conflict.recordLabel,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
+                        SyncConflictSide("Yours",conflict.mineFields,Modifier.weight(1f).testTag("sync-conflict-mine-${conflict.id}"))
+                        SyncConflictSide("Other device",conflict.theirsFields,Modifier.weight(1f).testTag("sync-conflict-theirs-${conflict.id}"))
                     }
+                    // Each choice carries its own consequence, printed before
+                    // the tap: immediate on this device, uploaded next sync.
+                    SyncConflictChoice("mine","Keep mine",conflict.id,busy){scope.launch{sync.resolve(conflict.id,"mine")}}
+                    SyncConflictChoice("theirs","Use theirs",conflict.id,busy){scope.launch{sync.resolve(conflict.id,"theirs")}}
+                    if(conflict.canKeepBoth)SyncConflictChoice("both","Keep both",conflict.id,busy){scope.launch{sync.resolve(conflict.id,"both")}}
+                    else Text(SyncStatusCopy.conflictKeepBothUnavailable(conflict.recordType),Modifier.testTag("sync-keep-both-unavailable-${conflict.id}"),style=MaterialTheme.typography.bodySmall)
+                }
+            }
+            Button(onClick=onClose,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Done")}
+        }
+    }
+}
+
+/** One side of the PL-16 comparison: a titled card listing the version's
+ * actual content fields. */
+@Composable private fun SyncConflictSide(title: String, fields: List<com.pittech.data.ConflictPreviewField>, modifier: Modifier = Modifier) {
+    Card(
+        colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),
+        shape=RoundedCornerShape(12.dp),
+        modifier=modifier,
+    ){
+        Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+            Text(title,style=MaterialTheme.typography.titleSmall)
+            fields.forEach { field ->
+                Column(verticalArrangement=Arrangement.spacedBy(1.dp)){
+                    Text(field.label,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(field.value,style=MaterialTheme.typography.bodyMedium)
                 }
             }
         }
-    },confirmButton={TextButton(onClick=onClose){Text("Done")}})
+    }
+}
+
+/** A resolution button with its PL-16 consequence printed directly under it. */
+@Composable private fun SyncConflictChoice(choice: String, label: String, conflictId: String, busy: Boolean, onResolve: () -> Unit) {
+    Column(verticalArrangement=Arrangement.spacedBy(2.dp)){
+        Button(onClick=onResolve,enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sync-keep-$choice-$conflictId")){Text(label)}
+        Text(SyncStatusCopy.conflictChoiceNote(choice),Modifier.testTag("sync-conflict-note-$choice-$conflictId"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 @Composable private fun AccountSignIn(account:AccountManager,state:AccountPresentation){
     var email by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}

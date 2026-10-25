@@ -155,14 +155,24 @@ import android.graphics.Bitmap
             // the safety clause, not just the bare status string.
             compose.onNodeWithTag("sync-status-detail").performScrollTo().assertTextContains("Nothing is overwritten until you choose.", substring = true)
             compose.onNodeWithTag("sync-conflicts").performScrollTo().performClick()
-            compose.onNodeWithText("Yours: Note \"Local title\"").assertIsDisplayed()
-            compose.onNodeWithText("Other device: Note \"Remote title\"").assertIsDisplayed()
+            // PL-16: the sheet shows both versions side by side as content —
+            // the note's own fields — not one-line summaries.
+            compose.onNodeWithTag("sync-conflict-mine-${conflict.getString("id")}").assertIsDisplayed()
+            compose.onNodeWithTag("sync-conflict-theirs-${conflict.getString("id")}").assertIsDisplayed()
+            compose.onNodeWithText("Local title").assertIsDisplayed()
+            compose.onNodeWithText("Remote title").assertIsDisplayed()
             // Slice 7 (PL-10): the review states the concrete consequence for the
             // actual pending set (one conflict here), not a generic warning.
             compose.onNodeWithTag("sync-conflict-consequence").performScrollTo().assertTextEquals(com.pittech.ui.SyncStatusCopy.conflictConsequence(1))
+            // PL-16: the consequence is printed on the choice itself, before
+            // the tap — immediate on this device, uploads on the next sync.
+            compose.onNodeWithTag("sync-conflict-note-mine-${conflict.getString("id")}").performScrollTo().assertTextEquals(com.pittech.ui.SyncStatusCopy.conflictChoiceNote("mine"))
             screenshot("sync-conflict-review")
             compose.onNodeWithTag("sync-keep-mine-${conflict.getString("id")}").performScrollTo().performClick()
             compose.waitUntil(10000){store.load(user).resolved.contains(conflict.getString("id"))}
+            // The resolution applied on this device and is marked pending —
+            // it uploads on the next sync, exactly as the choice stated.
+            assertTrue(store.load(user).pending)
             assertEquals("Local title",library.snapshot().optJSONArray("events")!!.getJSONObject(0).getString("title"))
             compose.onNodeWithText("Done").performClick();compose.waitForIdle()
             seed()

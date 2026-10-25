@@ -111,6 +111,47 @@ class PrivateSyncProtocolTest {
         assertNull(PrivateSyncProtocol.resolve(immutable, "mine", deviceA).restoreType)
     }
 
+    @Test fun conflictViewPreviewsActualContentSideBySide() {
+        // PL-16: the review renders the conflicting content itself, not the
+        // one-line summaries — the note's title, type and time are fields on
+        // each side, so the two versions can be judged against each other.
+        fun fullNote(title: String) = notePayload(title).put("eventType", "note").put("occurredAtUtcMillis", 1000)
+        val base = JSONArray().put(row("events", "note-1", 1, deviceA, fullNote("Base")))
+        val mine = row("events", "note-1", 2, deviceA, fullNote("Mine"))
+        val theirs = row("events", "note-1", 2, deviceB, fullNote("Theirs"))
+        val conflict = PrivateSyncMerge.merge(base, JSONArray().put(mine), JSONArray().put(theirs)).getJSONArray("conflicts").getJSONObject(0)
+        val view = PrivateSyncProtocol.conflictView(conflict, deviceA)
+        assertEquals("events", view.recordType); assertEquals("Note", view.recordLabel); assertTrue(view.canKeepBoth)
+        fun field(fields: List<ConflictPreviewField>, label: String) = fields.firstOrNull { it.label == label }?.value
+        assertEquals("Mine", field(view.mineFields, "Title")); assertEquals("Theirs", field(view.theirsFields, "Title"))
+        assertEquals("note", field(view.mineFields, "Type"))
+        assertEquals("Jan 1, 1970 · 12:00 AM UTC", field(view.mineFields, "Occurred"))
+        // Reference ids and bookkeeping timestamps carry no judging value.
+        assertTrue(view.mineFields.none { it.label in setOf("Id", "Cook Id", "Created", "Updated", "Recorded") })
+        // A reading preview pairs the value with its unit as one field.
+        val reading = PrivateSyncProtocol.previewFields(row("readings", "r-1", 1, deviceA, JSONObject().put("id", "r-1").put("value", 74.1).put("unit", "°C").put("probeName", "Pit").put("measuredAtUtcMillis", 1000)))
+        assertEquals("74.1 °C", field(reading, "Value")); assertEquals("Pit", field(reading, "Probe"))
+        assertTrue(reading.none { it.label == "Unit" })
+        // A tombstone side previews as deleted, with its entry named.
+        val tombstone = PrivateSyncProtocol.previewFields(row("events", "note-9", 1, deviceA, null, deleted = true))
+        assertEquals(listOf(ConflictPreviewField("Status", "Deleted"), ConflictPreviewField("Entry", "Note note-9")), tombstone)
+    }
+
+    @Test fun keepBothUnavailableKindsAreExactlyTheLinkAndSingletonKeys() {
+        // PL-16, from contracts/private-sync-projection-v1.json: of the 21
+        // projected kinds, only logReadingLinks (keyed by readingId) and
+        // lifecycles (keyed by cookId) cannot hold two versions at once.
+        assertEquals(setOf("logReadingLinks", "lifecycles"), PrivateSyncProtocol.keepBothUnavailableTypes())
+        val lifecycleView = PrivateSyncProtocol.conflictView(
+            PrivateSyncMerge.merge(
+                JSONArray().put(row("lifecycles", "cook-1", 1, deviceA, JSONObject().put("cookId", "cook-1").put("timingMode", "legacy_preserved"))),
+                JSONArray().put(row("lifecycles", "cook-1", 2, deviceA, JSONObject().put("cookId", "cook-1").put("timingMode", "explicit_phases"))),
+                JSONArray().put(row("lifecycles", "cook-1", 2, deviceB, JSONObject().put("cookId", "cook-1").put("timingMode", "legacy_preserved"))),
+            ).getJSONArray("conflicts").getJSONObject(0), deviceA)
+        assertFalse(lifecycleView.canKeepBoth)
+        assertEquals("explicit_phases", lifecycleView.mineFields.firstOrNull { it.label == "Timing mode" }?.value)
+    }
+
     @Test fun summariesDescribeCompetingVersionsAndKeepBothLimits() {
         val base = JSONArray().put(row("lifecycles", "cook-1", 1, deviceA, JSONObject().put("cookId", "cook-1").put("timingMode", "legacy_preserved")))
         val mine = row("lifecycles", "cook-1", 2, deviceA, JSONObject().put("cookId", "cook-1").put("timingMode", "explicit_phases"))

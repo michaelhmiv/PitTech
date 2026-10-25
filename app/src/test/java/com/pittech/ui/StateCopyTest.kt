@@ -51,6 +51,41 @@ class StateCopyTest {
         )
     }
 
+    @Test fun conflictChoiceNotesStateImmediateAndNextSyncOnTheChoice() {
+        // PL-16: each choice prints its own consequence before it is tapped —
+        // it applies on this device right away, and the resolution uploads
+        // on the next sync (previously only the sheet-level note said so).
+        assertEquals(
+            "Keep mine applies on this device right away — your version stays. The choice uploads on the next sync.",
+            SyncStatusCopy.conflictChoiceNote("mine"),
+        )
+        assertEquals(
+            "Use theirs applies on this device right away — the other device's version replaces yours. The choice uploads on the next sync.",
+            SyncStatusCopy.conflictChoiceNote("theirs"),
+        )
+        assertEquals(
+            "Keep both applies on this device right away — both versions stay, the other as a new entry. The choice uploads on the next sync.",
+            SyncStatusCopy.conflictChoiceNote("both"),
+        )
+    }
+
+    @Test fun conflictKeepBothUnavailableNamesTheKindAndWhy() {
+        // PL-16: where Keep both cannot exist, the sheet says so for that
+        // item instead of the button silently not being there.
+        assertEquals(
+            "Keep both isn't available for meal timing — a meal has one timing record, so choose one version.",
+            SyncStatusCopy.conflictKeepBothUnavailable("lifecycles"),
+        )
+        assertEquals(
+            "Keep both isn't available for a note temperature link — a reading links to one note, so choose one version.",
+            SyncStatusCopy.conflictKeepBothUnavailable("logReadingLinks"),
+        )
+        assertEquals(
+            "Keep both isn't available for this entry, so choose one version.",
+            SyncStatusCopy.conflictKeepBothUnavailable("events"),
+        )
+    }
+
     @Test fun waitingRowPrefersTheCoordinatorDetail() {
         val row = SyncStatusCopy.row("Waiting for connection", "Waiting for connection. Photo uploads resume where they stopped.", 0, 0, signedIn = true, enabled = true)
         assertEquals("Waiting for connection. Photo uploads resume where they stopped.", row.body)
