@@ -367,7 +367,8 @@ class CookRecordingIntegrationTest {
         var rows = db.cookDao().observeResults(id).first().filter { it.dishId == dish.id }
         fun value(type: String) = rows.firstOrNull { it.resultType == type }?.numericValue
         assertEquals(5.0, value("overall_rating")!!, 0.0)
-        assertEquals(4.0, value("tenderness")!!, 0.0)
+        assertEquals(4.0, value("bark")!!, 0.0)
+        assertEquals(5.0, value("tenderness")!!, 0.0)
         assertEquals(1.0, value("cook_again")!!, 0.0)
         assertEquals(203.0, value("final_temperature")!!, 0.0)
         // Clearing the verdict keeps "Not recorded" honest: the rows go away,
