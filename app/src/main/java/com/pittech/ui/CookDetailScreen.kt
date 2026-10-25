@@ -2563,10 +2563,12 @@ private fun CookResultsSheet(
         Column(Modifier.heightIn(max = 640.dp).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text(if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("results-dialog-title"))
             Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
-            (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
             // Fields scroll between the pinned header and the pinned action
             // row (DD-6): Save is always reachable, like the dialog's actions.
+            // The save error leads the scrolling region, as it did in the
+            // retired dialog, so it stays reachable by scroll.
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
             if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" }, enabled = !busy)
             RatingChipRow("Verdict", rating, { rating = it; error = null }, "result-verdict", !busy)
             if (selectedDishKey != null) {
