@@ -388,6 +388,7 @@ import android.graphics.Bitmap
             compose.onAllNodesWithTag("mcp-approve").assertCountEquals(0)
             compose.onNodeWithTag("mcp-review-code").performScrollTo().performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-approval-preview").performScrollTo()
             compose.onNodeWithText("Connect ChatGPT?", substring = true).assertIsDisplayed()
             // Scoped to the preview subtree: the created grant's row in
             // the list above carries the same scope label.
