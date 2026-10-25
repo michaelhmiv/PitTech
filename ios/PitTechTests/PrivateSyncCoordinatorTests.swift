@@ -545,4 +545,44 @@ import XCTest
         XCTAssertEqual(store.library.probeAssignments.count, 1)
         XCTAssertEqual(store.library.activityTimers.count, 1)
     }
+
+    // Slice 7 (PL-10 / PL-13, DD-8): the sync status row and the canonical
+    // empty states. These literals are the cross-platform contract — the
+    // Android StateCopyTest pins the same strings.
+    func testSyncStatusRowCopyPerState() {
+        let never = SyncStatusCopy.row(status: "Last synced never", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertEqual(never.headline, "Last synced never")
+        XCTAssertEqual(never.body, "Waiting for first connection — nothing has been backed up yet. Your journal is safe on this device. Tap Sync now to make the first backup.")
+
+        let signedOut = SyncStatusCopy.row(status: "Sync is off", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: false, enabled: true)
+        XCTAssertEqual(signedOut.headline, "Sign in to start private sync")
+        XCTAssertTrue(signedOut.body.hasPrefix("Nothing is uploaded while you are signed out"))
+
+        let disabled = SyncStatusCopy.row(status: "Sync is off", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: false, enabled: false)
+        XCTAssertEqual(disabled.body, "Private sync is not available on this build. Your journal stays on this device and nothing is uploaded.")
+
+        let conflict = SyncStatusCopy.row(status: "Conflicts to review", detail: nil, lastSyncedAt: 123, conflictCount: 3, signedIn: true, enabled: true)
+        XCTAssertTrue(conflict.body.contains("Two devices changed the same 3 items."))
+        XCTAssertEqual(SyncStatusCopy.conflictConsequence(1), "Choosing “Use theirs” for it replaces this device's unsynced changes to 1 item. Each choice is recorded on this device now and uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictConsequence(4), "Choosing “Use theirs” for all 4 replaces this device's unsynced changes to 4 items. Each choice is recorded on this device now and uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictItemNote, "Keep mine keeps this device's version of this item. Use theirs replaces it with the other device's version.")
+
+        let waiting = SyncStatusCopy.row(status: "Waiting for connection", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertTrue(waiting.body.contains("Sync tries again when a connection returns"))
+        let retry = SyncStatusCopy.row(status: "Retry needed", detail: nil, lastSyncedAt: 99, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertEqual(retry.body, "Your journal is unchanged on this device. Tap Sync now to retry.")
+        let synced = SyncStatusCopy.row(status: "Last synced Oct 24, 2026", detail: nil, lastSyncedAt: 99, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertEqual(synced.body, "Changes you make now stay on this device until the next sync uploads them.")
+    }
+
+    func testEmptyStateCopyParityLiterals() {
+        XCTAssertEqual(EmptyStateCopy.timelineTitle, "No cook history yet")
+        XCTAssertEqual(EmptyStateCopy.timelineBody, "Notes, temperature checks and photos you add during the cook will show up here.")
+        XCTAssertEqual(EmptyStateCopy.photosEmptyBody, "Photos you add to this cook will show up here. Add one with the Photo button on the cook.")
+        XCTAssertEqual(EmptyStateCopy.connectionsEmpty, "No connections yet. Add one below, then attach it to a cook on the next step.")
+        XCTAssertEqual(EmptyStateCopy.sharedCodesEmpty, "No shared codes yet. Open a saved recipe or meal, choose Share, then Share by code.")
+        XCTAssertEqual(EmptyStateCopy.blocksBody, "Publishers you block from a publication or profile will be listed here, and their publications stay hidden.")
+        XCTAssertEqual(EmptyStateCopy.reportsBody, "Receipts for reports you send about a publication or profile will show up here.")
+        XCTAssertEqual(EmptyStateCopy.profilePublicationsBody, "Named publications from this cook will show up here.")
+    }
 }

@@ -646,6 +646,10 @@ fun CookDetailScreen(
                 showPhotoGallery = false
                 viewingPhoto = photo
             },
+            onAddPhoto = {
+                showPhotoGallery = false
+                openNote("photo", photoFirst = true)
+            },
         )
     }
     if (confirmDeleteCook) {
@@ -839,6 +843,7 @@ fun CookDetailScreen(
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
                     onFoodFilter = { selectedFood = it },
+                    onAddNote = { openNote() },
                     guide = { RecipeGuideMilestones(data, guideRecords) },
                 )
                 CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, guide = remember(data, guideRecords) { alignedGuide(data, guideRecords) }, guideVisible = guideState(guideRecords).visible, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
@@ -1224,6 +1229,7 @@ private fun TimelineTab(
     focusEventId: String? = null,
     onFoodFilter: (String?) -> Unit = {},
     onFocusHandled: () -> Unit = {},
+    onAddNote: () -> Unit = {},
     guide: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -1324,18 +1330,20 @@ private fun TimelineTab(
         }
 
         if (rows.isEmpty()) {
-            val emptyTitle = if (selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL) "No cook history yet" else "No matching entries"
+            // Slice 7 (PL-13, DD-8): one empty wording per surface, identical on
+            // both platforms, teaching what belongs here and offering the action
+            // that creates it.
+            val unfiltered = selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 guide()
-                Text(emptyTitle, style = MaterialTheme.typography.titleLarge)
+                Text(if (unfiltered) EmptyStateCopy.TIMELINE_TITLE else EmptyStateCopy.TIMELINE_FILTERED_TITLE, style = MaterialTheme.typography.titleLarge)
                 Text(
-                    if (selectedFilter == TimelineFilter.ALL) {
-                        "Notes, temperature checks, and photos will show up here as the cook progresses."
-                    } else {
-                        "Choose another filter or add an entry."
-                    },
+                    if (unfiltered) EmptyStateCopy.TIMELINE_BODY else EmptyStateCopy.TIMELINE_FILTERED_BODY,
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                if (unfiltered) {
+                    Button(onClick = onAddNote, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-empty-add-note")) { Text("Add a note") }
+                }
             }
         } else {
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -1958,6 +1966,7 @@ private fun PhotoGalleryDialog(
     photos: List<com.pittech.data.PhotoEntity>,
     onDismiss: () -> Unit,
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onAddPhoto: () -> Unit = {},
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1974,6 +1983,12 @@ private fun PhotoGalleryDialog(
                     Modifier.weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    if (photos.isEmpty()) {
+                        // Slice 7 (PL-13): an empty gallery teaches instead of
+                        // rendering a blank sheet under the "Photos (0)" title.
+                        Text(EmptyStateCopy.PHOTOS_EMPTY_BODY, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("photo-gallery-empty"))
+                        Button(onClick = onAddPhoto, modifier = Modifier.heightIn(min = 48.dp).testTag("photo-gallery-add")) { Text("Add a photo") }
+                    }
                     photos.forEach { photo ->
                         Row(
                             Modifier.fillMaxWidth().testTag("photo-gallery-row-${photo.id}"),

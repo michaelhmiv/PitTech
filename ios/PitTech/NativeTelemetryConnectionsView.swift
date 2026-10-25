@@ -50,7 +50,7 @@ struct NativeTelemetryConnectionsView: View {
                             Button("Forget connection", role: .destructive) { Task { do { try await runtime.remove(profile, store: store) } catch { self.error = error.localizedDescription } } }
                         }
                     }
-                    if runtime.profiles.isEmpty { Section { Text("No connections yet. Add one below, then attach it to a cook on the next step.") } }
+                    if runtime.profiles.isEmpty { Section { Text(EmptyStateCopy.connectionsEmpty) } }
                 }
                 if step == 2 {
                     if runtime.profiles.isEmpty { Section { Text("Connect a connection first (step 1), then attach it here.") } }

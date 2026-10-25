@@ -128,7 +128,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                     }
                 }
             }
-            if (profiles.isEmpty()) Text("No connections yet. Add one below, then attach it to a cook on the next step.")
+            if (profiles.isEmpty()) Text(EmptyStateCopy.CONNECTIONS_EMPTY)
         }
         if (step == 2) {
             if (profiles.isEmpty()) Text("Connect a connection first (step 1), then attach it here.")

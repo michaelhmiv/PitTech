@@ -150,9 +150,15 @@ import android.graphics.Bitmap
             seed()
             compose.setContent{PitTechTheme{AccountContent(account,sync)}}
             compose.waitUntil(10000){compose.onAllNodesWithText("Conflicts to review").fetchSemanticsNodes().isNotEmpty()}
+            // Slice 7 (PL-10): the Account sync status row carries the state and
+            // the safety clause, not just the bare status string.
+            compose.onNodeWithTag("sync-status-detail").performScrollTo().assertTextContains("Nothing is overwritten until you choose.", substring = true)
             compose.onNodeWithTag("sync-conflicts").performScrollTo().performClick()
             compose.onNodeWithText("Yours: Note \"Local title\"").assertIsDisplayed()
             compose.onNodeWithText("Other device: Note \"Remote title\"").assertIsDisplayed()
+            // Slice 7 (PL-10): the review states the concrete consequence for the
+            // actual pending set (one conflict here), not a generic warning.
+            compose.onNodeWithTag("sync-conflict-consequence").performScrollTo().assertTextEquals(com.pittech.ui.SyncStatusCopy.conflictConsequence(1))
             screenshot("sync-conflict-review")
             compose.onNodeWithTag("sync-keep-mine-${conflict.getString("id")}").performScrollTo().performClick()
             compose.waitUntil(10000){store.load(user).resolved.contains(conflict.getString("id"))}

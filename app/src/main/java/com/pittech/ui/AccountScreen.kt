@@ -203,8 +203,21 @@ import kotlinx.coroutines.launch
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         Text("Private sync",style=MaterialTheme.typography.titleMedium)
         Text("Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.",style=MaterialTheme.typography.bodySmall)
-        Text(state.status,Modifier.testTag("sync-status"))
-        state.detail?.let{Text(it,Modifier.testTag("sync-message"),style=MaterialTheme.typography.bodySmall)}
+        // Slice 7 (PL-10, DD-8): the sync status row always carries state — what
+        // happened, what is still safe, and the recovery action — instead of the
+        // coordinator's bare status string. First sync is an Account action:
+        // "Sync now" below is the same button in every state, and the row says
+        // what it will do before the first backup exists.
+        val row = SyncStatusCopy.row(state.status, state.detail, state.lastSyncedAt, state.conflicts.size, signedIn, sync.enabled)
+        Column(Modifier.testTag("sync-status-row"),verticalArrangement=Arrangement.spacedBy(2.dp)){
+            Text(row.headline,Modifier.testTag("sync-status"),style=MaterialTheme.typography.titleSmall)
+            Text(row.body,Modifier.testTag("sync-status-detail"),style=MaterialTheme.typography.bodySmall)
+        }
+        // The detail is already the row's body in the states that use it; only
+        // repeat it as the message line where the row's body is the fixed copy.
+        val detailInRow = state.conflicts.isEmpty() && sync.enabled && signedIn &&
+            (state.status == "Waiting for connection" || state.status == "Retry needed" || state.lastSyncedAt > 0)
+        if (!detailInRow) state.detail?.let{Text(it,Modifier.testTag("sync-message"),style=MaterialTheme.typography.bodySmall)}
         if (state.lastSyncedAt > 0 && signedIn && sync.enabled) {
             Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                 Checkbox(state.automatic,{ value -> scope.launch { sync.setAutomatic(value) } },enabled=!state.busy,modifier=Modifier.testTag("sync-automatic"))
@@ -216,7 +229,7 @@ import kotlinx.coroutines.launch
             Button(onClick={scope.launch{sync.syncNow()}},enabled=!state.busy && signedIn && sync.enabled,modifier=Modifier.heightIn(min=48.dp).testTag("sync-now")){Text("Sync now")}
             if(state.conflicts.isNotEmpty())Button(onClick={reviewing=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("sync-conflicts")){Text("Review conflicts (${state.conflicts.size})")}
         }
-        if(state.busy)CircularProgressIndicator()
+        if(state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text("Syncing…",Modifier.testTag("sync-busy-label"))}
     }
     if(reviewing)SyncConflictDialog(sync,state.conflicts,state.busy,onClose={reviewing=false})
 }
@@ -226,11 +239,15 @@ import kotlinx.coroutines.launch
     AlertDialog(onDismissRequest=onClose,title={Text("Review synced edits")},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             Text("Two devices changed the same entry. Your journal keeps the current version until you choose.")
+            // Slice 7 (PL-10): the consequence is computed from the actual pending
+            // set, never a generic warning.
+            Text(SyncStatusCopy.conflictConsequence(conflicts.size),Modifier.testTag("sync-conflict-consequence"),style=MaterialTheme.typography.bodySmall)
             conflicts.forEach { conflict ->
                 Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
                     Text(conflict.reason,style=MaterialTheme.typography.titleSmall)
                     Text("Yours: ${conflict.mineSummary}")
                     Text("Other device: ${conflict.theirsSummary}")
+                    Text(SyncStatusCopy.CONFLICT_ITEM_NOTE,style=MaterialTheme.typography.bodySmall)
                     // FlowRow: the three resolution buttons must all stay reachable on narrow
                     // screens. A fixed Row pushed "Keep both" off-screen horizontally, where
                     // taps landed outside the dialog and the resolution never fired.

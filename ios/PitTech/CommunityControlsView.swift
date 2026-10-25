@@ -36,7 +36,7 @@ struct NativeCommunityControlsView: View {
                 }
             }
             Section("Blocked publishers on this device") {
-                if controls.blocks.isEmpty { Text("No publishers blocked on this device.") }
+                if controls.blocks.isEmpty { Text(EmptyStateCopy.blocksTitle); Text(EmptyStateCopy.blocksBody).font(.footnote) }
                 ForEach(controls.blocks, id: \.alias) { block in
                     VStack(alignment: .leading) {
                         Text(block.title.isEmpty ? "Blocked publisher" : "Blocked from: " + block.title)
@@ -45,7 +45,7 @@ struct NativeCommunityControlsView: View {
                 }
             }
             Section("Report receipts") {
-                if controls.reports.isEmpty { Text("No report receipts on this device.") }
+                if controls.reports.isEmpty { Text(EmptyStateCopy.reportsTitle); Text(EmptyStateCopy.reportsBody).font(.footnote) }
                 ForEach(controls.reports) { receipt in
                     VStack(alignment: .leading) {
                         Text("Report " + String(receipt.id.prefix(8)) + " · " + receipt.status.capitalized)

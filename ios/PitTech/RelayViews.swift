@@ -87,7 +87,7 @@ struct NativeSharedCodesView: View {
                 Text("Codes created on this device").font(.title2.bold())
                 Text("Your management capability stays on this device. Revocation stops new downloads; recipients keep copies they already saved.").font(.subheadline)
                 NativeRelayProgress()
-                if relay.shares.isEmpty { Text("No shared codes yet. Open a saved recipe or meal, choose Share, then Share by code.") }
+                if relay.shares.isEmpty { Text(EmptyStateCopy.sharedCodesEmpty) }
                 ForEach(relay.shares) { NativeOwnedRelayRow(value: $0) }
             }.padding(20)
         }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("My shared codes").navigationBarTitleDisplayMode(.inline).onAppear { relay.refresh() }
