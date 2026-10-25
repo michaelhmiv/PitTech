@@ -110,6 +110,10 @@ import UniformTypeIdentifiers
             if let probe = next.probes.first(where: { $0.objectValue?["id"]?.stringValue == probeId })?.objectValue {
                 guard probe["cookId"]?.stringValue == draft.cookId else { throw CookNoteError.scope }
             } else { next.probes.append(.object(["id": .string(probeId), "cookId": .string(draft.cookId), "name": .string(t.probeName), "measurementType": .string(t.measurementType), "source": .string("manual"), "createdAtUtcMillis": .number(now)])) }
+            // Replace by identity: an owned row was already removed above,
+            // but an adopted standalone row is still present — writing the
+            // draft's row must not leave a duplicate id behind.
+            next.readings.removeAll { $0.objectValue?["id"]?.stringValue == t.id }
             next.readings.append(.object(["id": .string(t.id), "cookId": .string(draft.cookId), "dishId": t.dishId.map(JSONValue.string) ?? .null, "probeId": .string(probeId), "probeName": .string(t.probeName), "measurementType": .string(t.measurementType), "value": .number(Double(t.valueText)!), "unit": .string(t.unit), "measuredAtUtcMillis": .number(t.measuredAt), "recordedAtUtcMillis": old?["recordedAtUtcMillis"] ?? .number(now), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("manual"), "qualityStatus": .string("valid"), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(0)]))
             next.logReadingLinks.append(.object(["readingId": .string(t.id), "eventId": .string(draft.id)]))
         }
