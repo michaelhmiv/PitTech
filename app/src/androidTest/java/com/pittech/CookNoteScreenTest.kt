@@ -85,7 +85,7 @@ class CookNoteScreenTest {
         assertEquals("Bark check at dawn", CookNoteDraft.decode(drafts.single().payload).description)
         // Resume brings the same composer back with the typed text intact.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-resume-note", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("cook-resume-note", useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNodeWithTag("cook-resume-note", useUnmergedTree = true).assertIsDisplayed().performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("timeline-entry-details").assertTextContains("Bark check at dawn")
         compose.onNodeWithText("Keep draft").performClick()
