@@ -11,7 +11,7 @@ protocol NativeMcpAPI { func call(_ method: String, _ path: String, body: [Strin
 struct NativeMcpClient: NativeMcpAPI {
     var configuration: URLSessionConfiguration?
     func call(_ method: String, _ path: String, body: [String: Any]? = nil, access: String? = nil) async throws -> Data {
-        let allowed = path == "/v1/me/mcp/grants" || path == "/v1/me/mcp/oauth/approve" ||
+        let allowed = path == "/v1/me/mcp/grants" || path == "/v1/me/mcp/oauth/approve" || path == "/v1/me/mcp/oauth/describe" ||
             path == "/v1/me/mcp/devices" || path == "/v1/me/mcp/device-commands" ||
             path.range(of: "^/v1/me/mcp/grants/[0-9a-fA-F-]{36}$", options: .regularExpression) != nil ||
             path.range(of: "^/v1/me/mcp/devices/[0-9a-fA-F-]{36}$", options: .regularExpression) != nil ||
@@ -80,6 +80,29 @@ enum McpScopeCatalog {
     static func label(_ id: String) -> String { all.first { $0.id == id }?.label ?? id }
 }
 
+/// What an entered OAuth user code would connect (Slice 8, PL-16):
+/// fetched by the describe step so the confirmation can name the client
+/// and list its full scopes before Approve exists. Mirrors Android.
+struct McpApprovalPreview: Equatable {
+    let code: String
+    let clientName: String
+    let scopes: [String]
+    let expiresAt: Int64
+}
+
+/// The Connect-your-AI Pro gate, derived from the existing subscription
+/// entitlement (Slice 8, PL-14). Creating and approving gate on it;
+/// listing and disconnecting existing connections never do.
+enum McpProGate: Equatable { case entitled, checking, needsPro }
+
+func mcpProGate(for entitlement: AdEntitlementState) -> McpProGate {
+    switch entitlement {
+    case .entitled: return .entitled
+    case .notEntitled: return .needsPro
+    case .unknown: return .checking
+    }
+}
+
 @MainActor @Observable final class NativeMcpConnections {
     private(set) var loaded = false
     private(set) var available = true
@@ -89,6 +112,8 @@ enum McpScopeCatalog {
     /// The one-time token from a create, in memory only until dismissed.
     private(set) var createdToken: String?
     private(set) var createdNickname: String?
+    /// The reviewed code awaiting an informed approval, if any.
+    private(set) var approvalPreview: McpApprovalPreview?
 
     private let account: NativeAccountCoordinator
     private let api: NativeMcpAPI
@@ -165,6 +190,38 @@ enum McpScopeCatalog {
         }
     }
 
+    /// Slice 8 (PL-16 / DD-9): describe the code before approval can arm.
+    /// Read-only — it approves nothing — and what it returns (client name,
+    /// full scope list, expiry) is exactly what the confirmation step
+    /// shows. Unknown, expired and already-approved codes are
+    /// indistinguishable, matching the endpoint.
+    func reviewCode(_ userCode: String) async {
+        await perform {
+            let code = userCode.trimmingCharacters(in: .whitespaces).uppercased()
+            guard !code.isEmpty else { return }
+            let token = try await account.access()
+            let data: Data
+            do {
+                data = try await api.call("POST", "/v1/me/mcp/oauth/describe", body: ["userCode": code], access: token)
+            } catch let error as NativeAccountError {
+                if case .status(404) = error {
+                    approvalPreview = nil
+                    message = "That code isn't valid or has expired. Check the code in your browser and try again."
+                    return
+                }
+                throw error
+            }
+            guard let reply = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let clientName = reply["clientName"] as? String,
+                  let scopes = reply["scopes"] as? [String],
+                  let expiresAt = (reply["expiresAt"] as? NSNumber)?.int64Value
+            else { throw NativeAccountError.invalid }
+            approvalPreview = McpApprovalPreview(code: code, clientName: clientName, scopes: scopes, expiresAt: expiresAt)
+        }
+    }
+
+    func dismissApprovalPreview() { approvalPreview = nil }
+
     func approve(userCode: String) async {
         await perform {
             let code = userCode.trimmingCharacters(in: .whitespaces).uppercased()
@@ -173,9 +230,10 @@ enum McpScopeCatalog {
             do {
                 _ = try await api.call("POST", "/v1/me/mcp/oauth/approve", body: ["userCode": code], access: token)
             } catch let error as NativeAccountError {
-                if case .status(404) = error { message = "That code isn't valid or has expired. Check the code in your browser and try again."; return }
+                if case .status(404) = error { approvalPreview = nil; message = "That code isn't valid or has expired. Check the code in your browser and try again."; return }
                 throw error
             }
+            approvalPreview = nil
             message = "Approved. The assistant finishes connecting in your browser."
             try await loadLocked(token)
         }

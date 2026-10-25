@@ -160,7 +160,11 @@ struct ProPaywallView: View {
                             .font(.subheadline)
                             .accessibilityIdentifier("pro-signin-required")
                         if pro.accountsEnabled {
-                            Button("Sign in") { account.showingAccount = true }
+                            // Slice 8 (PL-15 / DD-10): sign-in is a detour —
+                            // the gate parks this destination, the account
+                            // sheet takes over, and closing it (signed in
+                            // or cancelled) lands back here.
+                            Button("Sign in") { pro.beginSignInDetour() }
                                 .buttonStyle(.bordered)
                                 .frame(minHeight: 44)
                                 .accessibilityIdentifier("pro-signin")

@@ -79,4 +79,45 @@ class McpConnectionsTest {
         badManager.approve("XXXX-XXXX"); awaitIdle(badManager)
         assertTrue(badManager.presentation.value.message!!.contains("isn't valid"))
     }
+
+    /** Slice 8 (PL-16 / DD-9): reviewing a code fetches the client name
+     * and full scope list for the confirmation step; describing approves
+     * nothing, and approving afterwards clears the preview. */
+    @Test fun reviewDescribesTheCodeBeforeApprovalArms() = runBlocking {
+        val calls = mutableListOf<String>()
+        val api = McpAPI { _, path, body, _ ->
+            calls += path
+            when {
+                path.endsWith("describe") -> JSONObject()
+                    .put("clientName", "ChatGPT")
+                    .put("scopes", JSONArray(listOf("library:read", "library:delete")))
+                    .put("expiresAt", now + 15 * 60_000)
+                path.endsWith("approve") -> JSONObject().put("approved", true)
+                else -> JSONObject().put("grants", JSONArray())
+            }
+        }
+        val (manager, _) = fixture(api)
+        manager.reviewCode(" abcd-2345 "); awaitIdle(manager)
+        val preview = manager.presentation.value.approvalPreview
+        assertEquals("ABCD-2345", preview?.code)
+        assertEquals("ChatGPT", preview?.clientName)
+        assertEquals(listOf("library:read", "library:delete"), preview?.scopes)
+        assertEquals(now + 15 * 60_000, preview?.expiresAt)
+        assertFalse(calls.any { it.endsWith("approve") })
+        manager.approve(preview!!.code); awaitIdle(manager)
+        assertNull(manager.presentation.value.approvalPreview)
+        assertTrue(manager.presentation.value.message!!.contains("Approved"))
+        val (badManager, _) = fixture(McpAPI { _, path, _, _ -> if (path.endsWith("describe")) throw AccountFailure(404) else JSONObject().put("grants", JSONArray()) })
+        badManager.reviewCode("XXXX-XXXX"); awaitIdle(badManager)
+        assertNull(badManager.presentation.value.approvalPreview)
+        assertTrue(badManager.presentation.value.message!!.contains("isn't valid"))
+    }
+
+    /** Slice 8 (PL-14): the connection gate maps the existing entitlement
+     * state — entitled passes, not-entitled gates, unknown checks. */
+    @Test fun proGateMapsEntitlementStates() {
+        assertEquals(McpProGate.ENTITLED, mcpProGate(com.pittech.ads.AdEntitlement.ENTITLED))
+        assertEquals(McpProGate.NEEDS_PRO, mcpProGate(com.pittech.ads.AdEntitlement.NOT_ENTITLED))
+        assertEquals(McpProGate.CHECKING, mcpProGate(com.pittech.ads.AdEntitlement.UNKNOWN))
+    }
 }

@@ -131,6 +131,9 @@ import org.json.JSONObject
     }
     editingDraft?.let { draft -> SharingDraftEditor(draft,viewModel,account,writer,publishingEnabled=account.enabled) { editingDraft=null } }
     removing?.let { item -> AlertDialog(onDismissRequest={ removing=null },title={ Text("Remove this publication from public access?") },text={ Text("Other cooks keep independent copies they already saved.") },confirmButton={ TextButton(onClick={ removing=null; run { checkAccount(); writer.json("DELETE","/v1/recipes/"+item.getString("id"),expected=item.getString("revisionId")); reload() } },modifier=Modifier.testTag("cookbook-unpublish-confirm")) { Text("Remove publication") } },dismissButton={ TextButton(onClick={ removing=null }) { Text("Cancel") } }) }
+    // Slice 8 (PL-15 / DD-10): sign-in completion returns to the cookbook
+    // automatically; cancelling the account dialog lands here too.
+    LaunchedEffect(state.signedIn) { if(state.signedIn) signingIn=false }
     if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") } })
 }
 @Composable private fun CookbookProfileSummary(profile: JSONObject) {

@@ -138,6 +138,40 @@ enum ProProductState: Equatable, Sendable {
         notice = nil
     }
 
+    // MARK: - Sign-in detour (Slice 8, PL-15 / DD-10)
+
+    /// Where a paywall sign-in detour returns to, parked by
+    /// `beginSignInDetour` and consumed by `resumeSignInDetour`.
+    private(set) var signInResumeEntry: ProPlacement?
+    private(set) var signInDetourPending = false
+
+    /// The paywall's Sign in action: park the destination and close the
+    /// gate so the account sheet can take its place.
+    func beginSignInDetour() {
+        guard let entry = presentedEntry else { return }
+        signInResumeEntry = entry
+        signInDetourPending = true
+        presentedEntry = nil
+    }
+
+    /// Called as the paywall sheet finishes dismissing: true when that
+    /// dismissal was a sign-in detour, so the host opens the account
+    /// sheet next. The parked entry survives for the resume.
+    func consumeSignInDetour() -> Bool {
+        defer { signInDetourPending = false }
+        return signInDetourPending
+    }
+
+    /// Called when the account sheet closes after a detour — sign-in
+    /// completed or cancelled alike — reopening the gate on the
+    /// destination the user was headed to. A no-op without a detour, so
+    /// an ordinary account visit never opens the paywall.
+    func resumeSignInDetour() {
+        guard let entry = signInResumeEntry else { return }
+        signInResumeEntry = nil
+        openPro(entry)
+    }
+
     // MARK: - Product
 
     func loadProduct() async {

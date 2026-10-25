@@ -42,12 +42,12 @@ import com.pittech.data.ActivityGoogleSignInHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null) {
+@Composable internal fun AccountDialog(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null, subscription: com.pittech.billing.SubscriptionManager? = null) {
     val showing by account.showing.collectAsStateWithLifecycle()
     if(!showing)return
-    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync, mcp, device)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
+    AlertDialog(onDismissRequest={account.close()},title={Text("Account")},text={AccountContent(account, sync, mcp, device, subscription)},confirmButton={TextButton(onClick={account.close()}){Text("Done")}})
 }
-@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null) {
+@Composable internal fun AccountContent(account: AccountManager, sync: com.pittech.data.PrivateSyncCoordinator? = null, mcp: com.pittech.data.McpConnectionsManager? = null, device: com.pittech.data.McpDeviceActionsManager? = null, subscription: com.pittech.billing.SubscriptionManager? = null) {
     val state by account.presentation.collectAsStateWithLifecycle()
     var confirm by remember{mutableStateOf(false)}
     var reviewingDeletion by remember{mutableStateOf(false)}
@@ -75,7 +75,7 @@ import kotlinx.coroutines.launch
             if(state.googleLinked)Text("Google sign-in is linked.",Modifier.testTag("account-auth-google"))
             else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
             Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
-            mcp?.let{McpConnectionsSection(it)}
+            mcp?.let{McpConnectionsSection(it, subscription)}
             device?.let{McpDeviceActionsSection(it)}
             TextButton(onClick={confirm=true},enabled=!state.busy){Text("Sign out")}
             TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
@@ -92,8 +92,14 @@ import kotlinx.coroutines.launch
     if(reviewingJournal)LocalJournalRemovalConfirmation(onCancel={reviewingJournal=false},onConfirm={reviewingJournal=false;account.removeLocalJournal()})
 }
 
-@Composable private fun McpConnectionsSection(mcp: com.pittech.data.McpConnectionsManager) {
+@Composable private fun McpConnectionsSection(mcp: com.pittech.data.McpConnectionsManager, subscription: com.pittech.billing.SubscriptionManager? = null) {
     val state by mcp.presentation.collectAsStateWithLifecycle()
+    // Slice 8 (PL-14): the Pro gate reads the existing subscription state.
+    // Hosts that embed the account content without a subscription manager
+    // keep the section ungated-by-unknown rather than inventing a state.
+    val subState by (subscription?.presentation ?: remember{ kotlinx.coroutines.flow.MutableStateFlow(com.pittech.billing.SubscriptionPresentation()) }).collectAsStateWithLifecycle()
+    val gate = if(subscription==null) com.pittech.data.McpProGate.ENTITLED else com.pittech.data.mcpProGate(subState.entitlement)
+    val scope = rememberCoroutineScope()
     var creating by remember{mutableStateOf(false)}
     var confirmRevoke by remember{mutableStateOf<String?>(null)}
     var confirmRevokeAll by remember{mutableStateOf(false)}
@@ -115,28 +121,64 @@ import kotlinx.coroutines.launch
                 }
             }
             if(state.grants.none{it.active})Text("No AI connections yet.",style=MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                Button(onClick={creating=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-new")){Text("New connection")}
-                if(state.grants.count{it.active}>1)TextButton(onClick={confirmRevokeAll=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-all")){Text("Disconnect all")}
-            }
-            Text("Approve a connection",style=MaterialTheme.typography.titleSmall)
-            Text("If an assistant shows you a code in your browser, enter it here to finish connecting.",style=MaterialTheme.typography.bodySmall)
-            OutlinedTextField(code,{code=it},label={Text("Connection code")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-approve-code"))
-            Button(onClick={mcp.approve(code);code=""},enabled=!state.busy && code.isNotBlank(),modifier=Modifier.heightIn(min=48.dp).testTag("mcp-approve")){Text("Approve")}
-            state.createdToken?.let{token->
-                Column(Modifier.testTag("mcp-created-token"),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                    Text("Your connection token for ${state.createdNickname ?: "the new connection"}",style=MaterialTheme.typography.titleSmall)
-                    Text("Copy it into the assistant now. It is shown only once and is not saved on this device.",style=MaterialTheme.typography.bodySmall)
-                    Text(token,Modifier.testTag("mcp-token-value"))
+            if(state.grants.count{it.active}>1)TextButton(onClick={confirmRevokeAll=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-all")){Text("Disconnect all")}
+            when(gate){
+                com.pittech.data.McpProGate.CHECKING->Column(Modifier.testTag("mcp-pro-checking"),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Text("Checking PitTech Pro status…",style=MaterialTheme.typography.titleSmall)
+                    Text("Creating or approving a connection needs your verified Pro status first. Your existing connections are unchanged.",style=MaterialTheme.typography.bodySmall)
+                    TextButton(onClick={scope.launch{subscription?.reconcile()}},modifier=Modifier.testTag("mcp-pro-check")){Text("Check again")}
+                }
+                com.pittech.data.McpProGate.NEEDS_PRO->Column(Modifier.testTag("mcp-pro-gate"),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Text("AI connections need PitTech Pro",style=MaterialTheme.typography.titleSmall)
+                    Text("Creating or approving a connection needs an active PitTech Pro subscription — without it, the assistant can't use the connection, so PitTech doesn't create one that would only fail later. Your existing connections stay listed above and can be disconnected any time.",style=MaterialTheme.typography.bodySmall)
+                    Button(onClick={subscription?.openPro(com.pittech.billing.ProPlacement.MORE)},enabled=subscription!=null,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-pro-see")){Text("See PitTech Pro")}
+                }
+                com.pittech.data.McpProGate.ENTITLED->{
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        Button(onClick={clipboard.setText(androidx.compose.ui.text.AnnotatedString(token))},modifier=Modifier.testTag("mcp-copy-token")){Text("Copy token")}
-                        TextButton(onClick={mcp.dismissCreatedToken()},modifier=Modifier.testTag("mcp-token-done")){Text("Done")}
+                        Button(onClick={creating=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-new")){Text("New connection")}
+                    }
+                    Text("Approve a connection",style=MaterialTheme.typography.titleSmall)
+                    Text("If an assistant shows you a code in your browser, enter it here. PitTech shows you exactly what the code connects before anything is approved.",style=MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(code,{code=it;state.approvalPreview?.let{preview->if(preview.code!=it.trim().uppercase())mcp.dismissApprovalPreview()}},label={Text("Connection code")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-approve-code"))
+                    val preview=state.approvalPreview
+                    if(preview==null){
+                        Button(onClick={mcp.reviewCode(code)},enabled=!state.busy && code.isNotBlank(),modifier=Modifier.heightIn(min=48.dp).testTag("mcp-review-code")){Text("Review connection")}
+                    }else{
+                        // Slice 8 (PL-16 / DD-9): the confirmation step. Approve
+                        // does not exist until the client and its full scope
+                        // list have been shown for this exact code.
+                        Column(Modifier.testTag("mcp-approval-preview"),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                            Text("Connect ${preview.clientName}?",style=MaterialTheme.typography.titleSmall)
+                            Text("${preview.clientName} will be able to:",style=MaterialTheme.typography.bodySmall)
+                            preview.scopes.forEach{Text("• "+com.pittech.data.McpScopeCatalog.label(it),style=MaterialTheme.typography.bodySmall)}
+                            Text("PitTech Pro: active on this account.",style=MaterialTheme.typography.bodySmall)
+                            Text("This code expires ${java.time.Instant.ofEpochMilli(preview.expiresAt)}. Nothing is connected until you approve.",style=MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                                Button(onClick={mcp.approve(preview.code);code=""},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-approve")){Text("Approve")}
+                                TextButton(onClick={mcp.dismissApprovalPreview()},enabled=!state.busy,modifier=Modifier.testTag("mcp-approve-cancel")){Text("Not now")}
+                            }
+                        }
                     }
                 }
             }
             if(state.busy)CircularProgressIndicator()
             state.message?.let{Text(it,Modifier.testTag("mcp-message"))}
         }
+    }
+    // Slice 8 (PL-16 / DD-9): the show-once token is a hard-stop dialog,
+    // presented the moment creation completes — not a section that can
+    // materialise off-screen in the account scroll. Copy confirms itself;
+    // Done is the only exit, and dismissing by scrim/back does nothing
+    // because the token is never shown again.
+    state.createdToken?.let{token->
+        var copied by remember(token){mutableStateOf(false)}
+        AlertDialog(onDismissRequest={},title={Text("Your connection token")},text={
+            Column(Modifier.testTag("mcp-created-token"),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                Text("For ${state.createdNickname ?: "the new connection"}",style=MaterialTheme.typography.titleSmall)
+                Text("Copy it into the assistant now. It is shown only once and is not saved on this device.",style=MaterialTheme.typography.bodySmall)
+                Text(token,Modifier.testTag("mcp-token-value"))
+            }
+        },confirmButton={Button(onClick={clipboard.setText(androidx.compose.ui.text.AnnotatedString(token));copied=true},modifier=Modifier.testTag("mcp-copy-token")){Text(if(copied)"Copied" else "Copy token")}},dismissButton={TextButton(onClick={mcp.dismissCreatedToken()},modifier=Modifier.testTag("mcp-token-done")){Text("Done")}})
     }
     if(creating)McpCreateDialog(mcp=mcp,onClose={creating=false})
     confirmRevoke?.let{id->AlertDialog(onDismissRequest={confirmRevoke=null},title={Text("Disconnect this connection?")},text={Text("The assistant using it loses access immediately. Your library is unchanged.")},confirmButton={TextButton(onClick={confirmRevoke=null;mcp.revoke(id)},modifier=Modifier.testTag("mcp-confirm-revoke")){Text("Disconnect")}},dismissButton={TextButton(onClick={confirmRevoke=null}){Text("Cancel")}})}
@@ -169,9 +211,15 @@ import kotlinx.coroutines.launch
     if(confirmingUnregister)AlertDialog(onDismissRequest={confirmingUnregister=false},title={Text("Stop taking requests?")},text={Text("This phone stops accepting assistant requests, and any waiting requests for it are canceled. You can turn a class back on any time.")},confirmButton={TextButton(onClick={confirmingUnregister=false;device.unregister()},modifier=Modifier.testTag("mcp-device-confirm-unregister")){Text("Stop")}},dismissButton={TextButton(onClick={confirmingUnregister=false}){Text("Cancel")}})
 }
 @Composable private fun McpCreateDialog(mcp: com.pittech.data.McpConnectionsManager, onClose: () -> Unit) {
+    val state by mcp.presentation.collectAsStateWithLifecycle()
     var nickname by remember{mutableStateOf("ChatGPT")}
     var selected by remember{mutableStateOf(com.pittech.data.McpScopeCatalog.defaultSelected)}
     var days by remember{mutableStateOf(90)}
+    // Slice 8 (PL-16): the form stays open until the create call resolves.
+    // Success hands off to the hard-stop token dialog; failure keeps the
+    // filled form and says what happened, here — not behind the dialog.
+    var submitted by remember{mutableStateOf(false)}
+    LaunchedEffect(state.busy){if(submitted && !state.busy && state.createdToken!=null)onClose()}
     AlertDialog(onDismissRequest=onClose,title={Text("New AI connection")},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
             OutlinedTextField(nickname,{nickname=it},label={Text("Name this connection")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-nickname"))
@@ -192,8 +240,10 @@ import kotlinx.coroutines.launch
                 }
             }
             Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.",style=MaterialTheme.typography.bodySmall)
+            if(submitted && state.busy)CircularProgressIndicator()
+            if(submitted && !state.busy && state.createdToken==null)Text(state.message ?: "Couldn't create the connection. Check your connection and try again.",Modifier.testTag("mcp-create-error"),style=MaterialTheme.typography.bodySmall)
         }
-    },confirmButton={TextButton(onClick={mcp.create(nickname,selected,days);onClose()},enabled=nickname.isNotBlank() && selected.isNotEmpty(),modifier=Modifier.testTag("mcp-create-submit")){Text("Create connection")}},dismissButton={TextButton(onClick=onClose){Text("Cancel")}})
+    },confirmButton={TextButton(onClick={submitted=true;mcp.create(nickname,selected,days)},enabled=nickname.isNotBlank() && selected.isNotEmpty() && !state.busy,modifier=Modifier.testTag("mcp-create-submit")){Text(if(submitted && state.busy)"Creating…" else "Create connection")}},dismissButton={TextButton(onClick=onClose){Text("Cancel")}})
 }
 @Composable private fun SyncSection(sync: com.pittech.data.PrivateSyncCoordinator, signedIn: Boolean) {
     val state by sync.presentation.collectAsStateWithLifecycle()
