@@ -152,7 +152,7 @@ import android.graphics.Bitmap
             compose.waitUntil(10000){compose.onAllNodesWithText("Conflicts to review").fetchSemanticsNodes().isNotEmpty()}
             // Slice 7 (PL-10): the Account sync status row carries the state and
             // the safety clause, not just the bare status string.
-            compose.onNodeWithTag("sync-status-detail").performScrollTo().assertTextContains("Nothing is overwritten until you choose.")
+            compose.onNodeWithTag("sync-status-detail").performScrollTo().assertTextContains("Nothing is overwritten until you choose.", substring = true)
             compose.onNodeWithTag("sync-conflicts").performScrollTo().performClick()
             compose.onNodeWithText("Yours: Note \"Local title\"").assertIsDisplayed()
             compose.onNodeWithText("Other device: Note \"Remote title\"").assertIsDisplayed()
