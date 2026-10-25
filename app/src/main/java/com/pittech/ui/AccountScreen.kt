@@ -218,8 +218,11 @@ import kotlinx.coroutines.launch
     // Slice 8 (PL-16): the form stays open until the create call resolves.
     // Success hands off to the hard-stop token dialog; failure keeps the
     // filled form and says what happened, here — not behind the dialog.
+    // Keyed on the token, not the busy edge: the manager's final publish
+    // carries busy=false and the token together, and StateFlow conflation
+    // can eat a bare busy true→false transition.
     var submitted by remember{mutableStateOf(false)}
-    LaunchedEffect(state.busy){if(submitted && !state.busy && state.createdToken!=null)onClose()}
+    LaunchedEffect(state.createdToken, state.busy){if(submitted && !state.busy && state.createdToken!=null)onClose()}
     AlertDialog(onDismissRequest=onClose,title={Text("New AI connection")},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
             OutlinedTextField(nickname,{nickname=it},label={Text("Name this connection")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-nickname"))

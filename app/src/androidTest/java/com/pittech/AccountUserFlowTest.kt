@@ -323,8 +323,7 @@ import android.graphics.Bitmap
 
     /** Slice 8 (PL-14): with Pro unverified the section shows the checking
      * state and no create/approve controls; "Check again" re-reads the
-     * entitlement and, once active, the controls appear. With Pro verified
-     * absent, the honest gate card replaces them instead. */
+     * entitlement and, once active, the controls appear. */
     @Test fun mcpSectionGatesOnProState() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val f = Slice8Fixture(scope)
@@ -339,18 +338,26 @@ import android.graphics.Bitmap
             compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-new").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("mcp-new").performScrollTo().assertIsDisplayed()
         } finally { scope.cancel() }
-        val scope2 = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val f2 = Slice8Fixture(scope2)
+    }
+
+    /** Slice 8 (PL-14): with Pro verified absent, the honest gate card
+     * replaces the create/approve controls entirely — existing
+     * connections stay listed and disconnectable, but nothing new can
+     * be created or approved until Pro is active. */
+    @Test fun mcpSectionShowsProGateWhenNotEntitled() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
         try {
-            f2.entitlementState = "free"
-            kotlinx.coroutines.runBlocking { f2.subscription.refresh() }
-            compose.waitUntil(10000) { f2.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.NOT_ENTITLED }
-            compose.setContent { PitTechTheme { key(2) { AccountContent(f2.account, mcp = f2.mcp, subscription = f2.subscription) } } }
+            f.entitlementState = "free"
+            kotlinx.coroutines.runBlocking { f.subscription.refresh() }
+            compose.waitUntil(10000) { f.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.NOT_ENTITLED }
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
             compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-pro-gate").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("mcp-pro-gate").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("mcp-pro-see").assertIsDisplayed()
             compose.onAllNodesWithTag("mcp-new").assertCountEquals(0)
-        } finally { scope2.cancel() }
+            compose.onAllNodesWithTag("mcp-review-code").assertCountEquals(0)
+        } finally { scope.cancel() }
     }
 
     /** Slice 8 (PL-16 / DD-9): creating a connection ends in the hard-stop
