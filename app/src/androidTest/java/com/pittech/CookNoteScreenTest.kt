@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pittech.domain.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
@@ -56,6 +57,75 @@ class CookNoteScreenTest {
         compose.onNodeWithTag("reminder-checkin-dismiss").performClick()
         compose.waitUntil(15_000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getReminder(reminder.id)?.status == com.pittech.data.CookReminderEntity.STATUS_COMPLETED } }
         assertEquals(0, runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId).count { PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "check_in" } })
+    }
+    /**
+     * PL-07 (issue #172): on a photo-first entry, cancelling the photo
+     * source returns to the composer (it used to eject to Cook Detail);
+     * text typed in the composer then survives a dismiss, because dismiss
+     * keeps the durable draft, and Resume brings the same text back.
+     */
+    @Test fun photoFirstCancelReturnsToComposerAndTextSurvivesDismissAndResume() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PitTechApplication
+        val id = runBlocking(Dispatchers.IO) { app.database.clearAllTables(); app.cookRepository.startCook(NewCookDraft("Photo cancel cook", dishes = listOf(DishDraft("Brisket", "beef")))) }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Photo cancel cook").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Photo cancel cook").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-add-photo", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("timeline-add-photo", useUnmergedTree = true).performClick()
+        // Photo-first: the source chooser opens on top of the composer.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("photo-source-cancel").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("photo-source-cancel").performClick()
+        // The composer is still open — the cancel did not eject us.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("timeline-entry-details").assertIsDisplayed().performTextInput("Bark check at dawn")
+        closeFocusedSoftKeyboard()
+        androidx.test.espresso.Espresso.pressBack()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isEmpty() }
+        val drafts = runBlocking(Dispatchers.IO) { app.database.experienceDao().observeDrafts(id).first() }
+        assertEquals(1, drafts.size)
+        assertEquals("Bark check at dawn", CookNoteDraft.decode(drafts.single().payload).description)
+        // Resume brings the same composer back with the typed text intact.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-resume-note", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-resume-note", useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("timeline-entry-details").assertTextContains("Bark check at dawn")
+        compose.onNodeWithText("Keep draft").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("timeline-entry-details").fetchSemanticsNodes().isEmpty() }
+    }
+
+    /**
+     * PL-07 (issue #172): a standalone manual reading (the retired
+     * Temperature Entry dialog's old job) now edits in the note composer —
+     * probe and value fields inline, no "More details" — and saving adopts
+     * the reading into the note under its own identity.
+     */
+    @Test fun standaloneManualReadingEditsInTheComposer() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PitTechApplication
+        val seeded = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val cookId = app.cookRepository.startCook(NewCookDraft("Standalone reading cook", dishes = listOf(DishDraft("Brisket", "beef"))))
+            val dish = app.database.cookDao().getDishesForCook(cookId).single()
+            cookId to app.cookRepository.addManualTemperature(cookId, dish.id, "Hand thermometer", "food_probe", 150.0, "°F", System.currentTimeMillis())
+        }
+        val (cookId, reading) = seeded
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Standalone reading cook").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Standalone reading cook").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("cook-tab-timeline", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cook-tab-timeline", useUnmergedTree = true).performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("temperature-actions-Hand thermometer").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("temperature-actions-Hand thermometer").performScrollTo().performClick()
+        compose.onNodeWithTag("temperature-edit-Hand thermometer").performClick()
+        // The composer — not a temperature dialog — with the probe field
+        // visible inline, before any "More details" tap.
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Edit temperature").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("temperature-probe").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("temperature-value").performTextClearance()
+        compose.onNodeWithTag("temperature-value").performTextInput("171")
+        closeFocusedSoftKeyboard()
+        compose.onNodeWithTag("temperature-save").performClick()
+        compose.waitUntil(15_000) { runBlocking(Dispatchers.IO) { app.database.experienceDao().reading(reading.id)?.value == 171.0 } }
+        val events = runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId).filter { it.eventType == "note" } }
+        assertEquals(1, events.size)
+        assertEquals(listOf(reading.id), runBlocking(Dispatchers.IO) { app.database.experienceDao().readingsForLog(events.single().id).map { it.id } })
     }
     @Test fun temperatureShortcutSavesDescriptionAndReadingInOneEditableNote() {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as PitTechApplication
