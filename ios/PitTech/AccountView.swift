@@ -124,7 +124,14 @@ struct NativeAccountView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(syncRowCopy.headline).font(.subheadline.weight(.semibold)).accessibilityIdentifier("sync-status")
                     Text(syncRowCopy.body).font(.footnote).accessibilityIdentifier("sync-status-detail")
-                }.accessibilityIdentifier("sync-status-row")
+                }
+                // Without .contain, this container's identifier replaces the
+                // children's in the AX tree (the same defect #191 fixed on the
+                // empty Meals card): no element answered to "sync-status" or
+                // "sync-status-detail", and flows-a's conflict test failed at
+                // "sync-status unreachable" with the row on screen.
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("sync-status-row")
                 // The detail is already the row's body in the states that use it;
                 // only repeat it as the message line where the row's body is the
                 // fixed copy.
@@ -426,6 +433,12 @@ private struct NativeDeletionReviewView: View {
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
     }
 }
+/// PL-16 (#172): the conflict review shows both versions as readable
+/// content — fields, not one-line summaries — under "Yours" and "Other
+/// device", and prints the consequence on each choice itself: it applies on
+/// this device right away and uploads on the next sync. Where a record kind
+/// cannot keep both versions, the sheet says so for that item instead of
+/// the button silently not being there.
 struct NativeSyncConflictReviewView: View {
     @Environment(NativePrivateSyncCoordinator.self) private var sync
     @Environment(NativeMcpConnections.self) private var mcp
@@ -439,17 +452,59 @@ struct NativeSyncConflictReviewView: View {
                 Text(SyncStatusCopy.conflictConsequence(sync.presentation.conflicts.count)).font(.footnote).accessibilityIdentifier("sync-conflict-consequence")
             }
             ForEach(sync.presentation.conflicts) { conflict in
-                Section(conflict.reason) {
-                    Text("Yours: \(conflict.mineSummary)")
-                    Text("Other device: \(conflict.theirsSummary)")
-                    Text(SyncStatusCopy.conflictItemNote).font(.footnote)
-                    Button("Keep mine") { Task { await sync.resolve(conflict.id, choice: "mine") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-mine-\(conflict.id)")
-                    Button("Use theirs") { Task { await sync.resolve(conflict.id, choice: "theirs") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-theirs-\(conflict.id)")
-                    if conflict.canKeepBoth { Button("Keep both") { Task { await sync.resolve(conflict.id, choice: "both") } }.disabled(sync.presentation.busy).accessibilityIdentifier("sync-keep-both-\(conflict.id)") }
+                Section {
+                    NativeSyncConflictSide(title: "Yours", fields: conflict.mineFields).accessibilityIdentifier("sync-conflict-mine-\(conflict.id)")
+                    NativeSyncConflictSide(title: "Other device", fields: conflict.theirsFields).accessibilityIdentifier("sync-conflict-theirs-\(conflict.id)")
+                    // Each choice carries its own consequence, printed before
+                    // the tap: immediate on this device, uploaded next sync.
+                    NativeSyncConflictChoice(choice: "mine", label: "Keep mine", conflictId: conflict.id, busy: sync.presentation.busy) { await sync.resolve(conflict.id, choice: "mine") }
+                    NativeSyncConflictChoice(choice: "theirs", label: "Use theirs", conflictId: conflict.id, busy: sync.presentation.busy) { await sync.resolve(conflict.id, choice: "theirs") }
+                    if conflict.canKeepBoth {
+                        NativeSyncConflictChoice(choice: "both", label: "Keep both", conflictId: conflict.id, busy: sync.presentation.busy) { await sync.resolve(conflict.id, choice: "both") }
+                    } else {
+                        Text(SyncStatusCopy.conflictKeepBothUnavailable(conflict.recordType)).font(.footnote).accessibilityIdentifier("sync-keep-both-unavailable-\(conflict.id)")
+                    }
+                } header: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(conflict.reason)
+                        Text(conflict.recordLabel).font(.caption)
+                    }
                 }
             }
         }.navigationTitle("Review synced edits").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("sync-review-done") } }
+    }
+}
+
+/// One side of the PL-16 comparison: the version's actual content fields.
+private struct NativeSyncConflictSide: View {
+    let title: String
+    let fields: [NativeConflictPreviewField]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.headline)
+            ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(field.label).font(.caption).foregroundStyle(.secondary)
+                    Text(field.value)
+                }
+            }
+        }
+    }
+}
+
+/// A resolution button with its PL-16 consequence printed directly under it.
+private struct NativeSyncConflictChoice: View {
+    let choice: String
+    let label: String
+    let conflictId: String
+    let busy: Bool
+    let resolve: () async -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button(label) { Task { await resolve() } }.disabled(busy).accessibilityIdentifier("sync-keep-\(choice)-\(conflictId)")
+            Text(SyncStatusCopy.conflictChoiceNote(choice)).font(.footnote).accessibilityIdentifier("sync-conflict-note-\(choice)-\(conflictId)")
+        }
     }
 }
 private struct NativeLocalJournalReviewView: View {

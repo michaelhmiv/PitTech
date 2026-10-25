@@ -142,14 +142,25 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let status = app.staticTexts["sync-status"]; reveal(status, app: app)
                 XCTAssertEqual(status.label, "Conflicts to review")
                 let review = app.buttons["sync-conflicts"]; reveal(review, app: app); review.tap()
-                let yours = app.staticTexts["Yours: Note \"Local title\""]; reveal(yours, app: app)
+                // PL-16: both versions are shown as content — the note's own
+                // fields under "Yours" and "Other device" — not summaries.
+                let yours = app.staticTexts["Yours"]; reveal(yours, app: app)
                 XCTAssertTrue(yours.waitForExistence(timeout: 10))
-                let theirs = app.staticTexts["Other device: Note \"Remote title\""]; reveal(theirs, app: app)
+                let localTitle = app.staticTexts["Local title"]; reveal(localTitle, app: app)
+                XCTAssertTrue(localTitle.waitForExistence(timeout: 10))
+                let theirs = app.staticTexts["Other device"]; reveal(theirs, app: app)
                 XCTAssertTrue(theirs.waitForExistence(timeout: 10))
+                let remoteTitle = app.staticTexts["Remote title"]; reveal(remoteTitle, app: app)
+                XCTAssertTrue(remoteTitle.waitForExistence(timeout: 10))
                 // Slice 7 (PL-10): the review states the concrete consequence for
                 // the actual pending set (one conflict in this fixture).
                 let consequence = app.staticTexts["sync-conflict-consequence"]; reveal(consequence, app: app)
                 XCTAssertTrue(consequence.label.contains("replaces this device's unsynced changes to 1 item"), consequence.label)
+                // PL-16: the consequence is printed on the choice itself —
+                // immediate on this device, uploads on the next sync.
+                let mineNote = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Keep mine applies on this device right away")).firstMatch
+                reveal(mineNote, app: app)
+                XCTAssertTrue(mineNote.label.contains("uploads on the next sync"), mineNote.label)
                 if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
                 let action = app.buttons[choice]; reveal(action, app: app); action.tap()
                 // The conflict resolves offline; the review list empties without an upload claim.

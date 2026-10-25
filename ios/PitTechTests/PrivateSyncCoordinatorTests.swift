@@ -567,6 +567,17 @@ import XCTest
         XCTAssertEqual(SyncStatusCopy.conflictConsequence(4), "Choosing “Use theirs” for all 4 replaces this device's unsynced changes to 4 items. Each choice is recorded on this device now and uploads on the next sync.")
         XCTAssertEqual(SyncStatusCopy.conflictItemNote, "Keep mine keeps this device's version of this item. Use theirs replaces it with the other device's version.")
 
+        // PL-16: each choice prints its own consequence before it is tapped —
+        // it applies on this device right away, and the resolution uploads
+        // on the next sync; where Keep both cannot exist, the sheet says so
+        // for that item instead of the button silently not being there.
+        XCTAssertEqual(SyncStatusCopy.conflictChoiceNote("mine"), "Keep mine applies on this device right away — your version stays. The choice uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictChoiceNote("theirs"), "Use theirs applies on this device right away — the other device's version replaces yours. The choice uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictChoiceNote("both"), "Keep both applies on this device right away — both versions stay, the other as a new entry. The choice uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictKeepBothUnavailable("lifecycles"), "Keep both isn't available for meal timing — a meal has one timing record, so choose one version.")
+        XCTAssertEqual(SyncStatusCopy.conflictKeepBothUnavailable("logReadingLinks"), "Keep both isn't available for a note temperature link — a reading links to one note, so choose one version.")
+        XCTAssertEqual(SyncStatusCopy.conflictKeepBothUnavailable("events"), "Keep both isn't available for this entry, so choose one version.")
+
         let waiting = SyncStatusCopy.row(status: "Waiting for connection", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: true, enabled: true)
         XCTAssertTrue(waiting.body.contains("Sync tries again when a connection returns"))
         let retry = SyncStatusCopy.row(status: "Retry needed", detail: nil, lastSyncedAt: 99, conflictCount: 0, signedIn: true, enabled: true)

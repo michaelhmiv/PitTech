@@ -62,6 +62,26 @@ internal object SyncStatusCopy {
     const val CONFLICT_ITEM_NOTE: String =
         "Keep mine keeps this device's version of this item. Use theirs replaces it with the other device's version."
 
+    /** PL-16: the consequence printed on a choice itself, before it is
+     * tapped — the choice applies on this device immediately, and the
+     * resolution uploads on the next sync (the coordinator records every
+     * resolution with `pending = true`; see the header note). */
+    fun conflictChoiceNote(choice: String): String = when (choice) {
+        "mine" -> "Keep mine applies on this device right away — your version stays. The choice uploads on the next sync."
+        "theirs" -> "Use theirs applies on this device right away — the other device's version replaces yours. The choice uploads on the next sync."
+        else -> "Keep both applies on this device right away — both versions stay, the other as a new entry. The choice uploads on the next sync."
+    }
+
+    /** PL-16: where Keep both cannot exist for a record kind, the sheet says
+     * so for that item instead of the button silently not being there. The
+     * two kinds are the projection's link/singleton keys (see
+     * PrivateSyncProtocol.keepBothUnavailableTypes). */
+    fun conflictKeepBothUnavailable(recordType: String): String = when (recordType) {
+        "lifecycles" -> "Keep both isn't available for meal timing — a meal has one timing record, so choose one version."
+        "logReadingLinks" -> "Keep both isn't available for a note temperature link — a reading links to one note, so choose one version."
+        else -> "Keep both isn't available for this entry, so choose one version."
+    }
+
     private fun items(count: Int): String = if (count == 1) "1 item" else "$count items"
     private fun all(count: Int): String = if (count == 1) "it" else "all $count"
 }

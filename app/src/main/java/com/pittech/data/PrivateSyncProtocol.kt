@@ -7,7 +7,11 @@ import java.util.UUID
 /** How a retained conflict is resolved. A restore replays loser/chosen content through the
  * same transactional apply as a merge; just dropping the copy still sends its explicit ID. */
 internal data class ConflictResolution(val resolvedId: String, val restoreType: String? = null, val restoreId: String? = null, val restorePayload: JSONObject? = null, val restoreAssetId: String? = null, val newIdentity: Boolean = false)
-internal data class PrivateSyncConflictView(val id: String, val mineSummary: String, val theirsSummary: String, val reason: String, val mineIsWinner: Boolean, val canKeepBoth: Boolean)
+/** One readable field of a conflicting version's content, for the PL-16
+ * side-by-side preview. Derived from the payload only — presentation, never
+ * a change to what sync stores or sends. */
+internal data class ConflictPreviewField(val label: String, val value: String)
+internal data class PrivateSyncConflictView(val id: String, val mineSummary: String, val theirsSummary: String, val reason: String, val mineIsWinner: Boolean, val canKeepBoth: Boolean, val recordType: String, val recordLabel: String, val mineFields: List<ConflictPreviewField>, val theirsFields: List<ConflictPreviewField>)
 
 /** Pure sync-envelope helpers. No storage, clock, account or network access. */
 internal object PrivateSyncProtocol {
@@ -133,7 +137,139 @@ internal object PrivateSyncProtocol {
             "immutable_identity" -> "Measured history changed"
             else -> "Edited on two devices"
         }
-        return PrivateSyncConflictView(conflict.getString("id"), summarize(mine), summarize(theirs), reason, content(mine) == content(winner), winner.getString("recordType") !in noKeepBoth)
+        val type = winner.getString("recordType")
+        return PrivateSyncConflictView(conflict.getString("id"), summarize(mine), summarize(theirs), reason, content(mine) == content(winner), type !in noKeepBoth,
+            type, label(type), previewFields(mine), previewFields(theirs))
+    }
+
+    /** Record kinds whose identity is a link or a singleton, so two versions
+     * can never coexist: `logReadingLinks` is keyed by reading (a reading
+     * links to one note) and `lifecycles` by cook (a meal has one timing
+     * record). Every other projected kind is keyed by its own id and can
+     * keep both versions (the loser restores under a fresh identity). */
+    fun keepBothUnavailableTypes(): Set<String> = noKeepBoth
+
+    // PL-16: the content preview behind the side-by-side sheet. Fields render
+    // in a curated order with human labels; reference ids and bookkeeping
+    // timestamps are omitted because they carry no judging value, and the
+    // payload itself is never altered.
+    private val previewOrder = listOf(
+        "title", "name", "status", "eventType", "kind", "details", "description", "caption",
+        "value", "numericValue", "weightValue", "amountValue", "amountText", "targetType", "resultType", "textValue",
+        "changeNotes", "revisionNumber", "timingMode", "method", "targetTypeNote",
+        "foodType", "cut", "gradeOrSource", "thicknessNotes", "startingCondition", "boneIn", "placement", "pieceCount", "prepNotes",
+        "stage", "brand", "smokerName", "fuelType", "woodOrPelletBlend", "initialSetpointValue", "outdoorTemperatureValue",
+        "weatherNotes", "windNotes", "measurementType", "probeName", "scope", "explanation", "sourceReference",
+        "deviceName", "role", "firmwareVersion", "mimeType", "favorite", "tagsJson",
+        "occurredAtUtcMillis", "measuredAtUtcMillis", "startedAtUtcMillis", "endedAtUtcMillis", "appliedAtUtcMillis",
+        "capturedAtUtcMillis", "addedAtUtcMillis", "effectiveAt", "archivedAtUtcMillis",
+        "notes", "snapshotJson", "itemsJson", "payload", "triggerConfig", "noteMetadataJson", "temperatureContextJson",
+    )
+    private val previewLabels = mapOf(
+        "title" to "Title", "name" to "Name", "status" to "Status", "eventType" to "Type", "kind" to "Kind",
+        "details" to "Details", "description" to "Description", "caption" to "Caption", "value" to "Value",
+        "numericValue" to "Value", "weightValue" to "Weight", "amountValue" to "Amount", "amountText" to "Amount",
+        "targetType" to "Target", "resultType" to "Result", "textValue" to "Text", "changeNotes" to "Change notes",
+        "revisionNumber" to "Version", "timingMode" to "Timing mode", "foodType" to "Food", "cut" to "Cut",
+        "gradeOrSource" to "Grade / source", "thicknessNotes" to "Thickness", "startingCondition" to "Starting condition",
+        "boneIn" to "Bone in", "placement" to "Placement", "pieceCount" to "Pieces", "prepNotes" to "Prep notes",
+        "stage" to "Stage", "brand" to "Brand", "smokerName" to "Smoker", "fuelType" to "Fuel",
+        "woodOrPelletBlend" to "Wood / pellets", "initialSetpointValue" to "Starting setpoint",
+        "outdoorTemperatureValue" to "Outdoor temperature", "weatherNotes" to "Weather", "windNotes" to "Wind",
+        "measurementType" to "Measurement", "probeName" to "Probe", "scope" to "Scope", "explanation" to "Why",
+        "sourceReference" to "Source", "deviceName" to "Device name", "role" to "Role", "firmwareVersion" to "Firmware",
+        "mimeType" to "File type", "favorite" to "Favorite", "tagsJson" to "Tags",
+        "occurredAtUtcMillis" to "Occurred", "measuredAtUtcMillis" to "Measured", "startedAtUtcMillis" to "Started",
+        "endedAtUtcMillis" to "Ended", "appliedAtUtcMillis" to "Applied", "capturedAtUtcMillis" to "Captured",
+        "addedAtUtcMillis" to "Added", "effectiveAt" to "Effective", "archivedAtUtcMillis" to "Archived",
+        "notes" to "Notes", "snapshotJson" to "Contents", "itemsJson" to "Items", "payload" to "Contents",
+        "triggerConfig" to "Trigger", "noteMetadataJson" to "Note details", "temperatureContextJson" to "Temperature context",
+    )
+    private val previewSkip = setOf(
+        "id", "cookId", "dishId", "recipeId", "recipeRevisionId", "parentRevisionId", "currentRevisionId",
+        "sourceCookId", "sourceDishId", "sourcePhotoId", "sourceMilestoneId", "sourceRecipeRevisionId",
+        "eventId", "readingId", "deviceId", "probeId", "recordId", "assetId",
+        "createdAtUtcMillis", "updatedAtUtcMillis", "recordedAtUtcMillis", "created", "updated",
+        "schemaVersion", "snapshotSchemaVersion", "source", "sourceDeviceId", "timeZoneId", "startedTimeZoneId", "timestampBasis",
+    )
+    private val previewTimestamps = setOf(
+        "occurredAtUtcMillis", "measuredAtUtcMillis", "startedAtUtcMillis", "endedAtUtcMillis", "appliedAtUtcMillis",
+        "capturedAtUtcMillis", "addedAtUtcMillis", "effectiveAt", "archivedAtUtcMillis",
+    )
+    private val previewUnitFor = mapOf(
+        "value" to "unit", "numericValue" to "unit", "weightValue" to "weightUnit",
+        "amountValue" to "amountUnit", "initialSetpointValue" to "initialSetpointUnit",
+        "outdoorTemperatureValue" to "outdoorTemperatureUnit",
+    )
+    private val previewTimeFormat = java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy · h:mm a 'UTC'", java.util.Locale.US).withZone(java.time.ZoneOffset.UTC)
+
+    fun previewFields(row: JSONObject): List<ConflictPreviewField> {
+        val type = row.getString("recordType"); val id = row.getString("recordId")
+        if (row.getBoolean("deleted")) return listOf(
+            ConflictPreviewField("Status", "Deleted"),
+            ConflictPreviewField("Entry", label(type) + " " + shortId(id)),
+        )
+        val payload = row.getJSONObject("payload")
+        val consumed = mutableSetOf<String>(); val fields = mutableListOf<ConflictPreviewField>()
+        fun render(key: String) {
+            if (key in consumed || key in previewSkip || !payload.has(key) || payload.isNull(key)) return
+            val raw = payload.get(key)
+            if (raw is String && raw.isBlank()) return
+            consumed += key
+            val unitKey = previewUnitFor[key]
+            val unit = if (unitKey != null && payload.has(unitKey) && !payload.isNull(unitKey)) {
+                consumed += unitKey; payload.optString(unitKey, "").trim()
+            } else ""
+            val value = previewValue(key, raw, unit)
+            if (value.isNotBlank()) fields += ConflictPreviewField(previewLabels[key] ?: previewLabel(key), value)
+        }
+        for (key in previewOrder) render(key)
+        val remaining = payload.keys().asSequence().toList().sorted()
+        for (key in remaining) render(key)
+        if (fields.isEmpty()) fields += ConflictPreviewField("Entry", label(type) + " " + shortId(id))
+        return fields.take(18)
+    }
+
+    private fun previewLabel(key: String): String =
+        key.replace(Regex("([a-z])([A-Z])"), "$1 $2").replaceFirstChar { it.uppercase() }
+
+    private fun previewValue(key: String, raw: Any, unit: String): String = when {
+        key in previewTimestamps && raw is Number ->
+            runCatching { previewTimeFormat.format(java.time.Instant.ofEpochMilli(raw.toLong())) }.getOrElse { trimNumber(raw.toDouble()) }
+        raw is Boolean -> if (raw) "Yes" else "No"
+        raw is Number -> {
+            val base = if (key.endsWith("Millis")) trimNumber(raw.toDouble()) + " ms" else trimNumber(raw.toDouble())
+            if (unit.isNotEmpty()) "$base $unit" else base
+        }
+        raw is String -> previewText(key, raw)
+        raw is JSONArray -> previewArray(raw)
+        raw is JSONObject -> previewObject(raw)
+        else -> raw.toString().take(200)
+    }
+
+    private fun previewText(key: String, raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+            runCatching {
+                if (trimmed.startsWith("[")) return previewArray(JSONArray(trimmed))
+                return previewObject(JSONObject(trimmed))
+            }
+        }
+        return trimmed.take(200)
+    }
+
+    private fun previewArray(array: JSONArray): String {
+        val strings = (0 until array.length()).mapNotNull { array.opt(it) as? String }
+        if (strings.size == array.length() && strings.isNotEmpty()) return strings.joinToString(", ").take(200)
+        return if (array.length() == 1) "1 item" else "${array.length()} items"
+    }
+
+    private fun previewObject(obj: JSONObject): String {
+        for (key in listOf("title", "name")) {
+            val value = obj.optString(key, "").trim()
+            if (value.isNotEmpty()) return value.take(200)
+        }
+        return if (obj.length() == 1) "1 detail" else "${obj.length()} details"
     }
 
     fun summarize(row: JSONObject): String {

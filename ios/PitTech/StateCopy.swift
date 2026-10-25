@@ -68,6 +68,30 @@ enum SyncStatusCopy {
     /// Shown under each conflict's two summaries, next to its choices.
     static let conflictItemNote = "Keep mine keeps this device's version of this item. Use theirs replaces it with the other device's version."
 
+    /// PL-16: the consequence printed on a choice itself, before it is
+    /// tapped — the choice applies on this device immediately, and the
+    /// resolution uploads on the next sync (the coordinator records every
+    /// resolution with `pending = true`; see the header note).
+    static func conflictChoiceNote(_ choice: String) -> String {
+        switch choice {
+        case "mine": return "Keep mine applies on this device right away — your version stays. The choice uploads on the next sync."
+        case "theirs": return "Use theirs applies on this device right away — the other device's version replaces yours. The choice uploads on the next sync."
+        default: return "Keep both applies on this device right away — both versions stay, the other as a new entry. The choice uploads on the next sync."
+        }
+    }
+
+    /// PL-16: where Keep both cannot exist for a record kind, the sheet says
+    /// so for that item instead of the button silently not being there. The
+    /// two kinds are the projection's link/singleton keys (see
+    /// NativePrivateSyncProtocol.keepBothUnavailableTypes).
+    static func conflictKeepBothUnavailable(_ recordType: String) -> String {
+        switch recordType {
+        case "lifecycles": return "Keep both isn't available for meal timing — a meal has one timing record, so choose one version."
+        case "logReadingLinks": return "Keep both isn't available for a note temperature link — a reading links to one note, so choose one version."
+        default: return "Keep both isn't available for this entry, so choose one version."
+        }
+    }
+
     private static func items(_ count: Int) -> String { count == 1 ? "1 item" : "\(count) items" }
     private static func all(_ count: Int) -> String { count == 1 ? "it" : "all \(count)" }
 }
