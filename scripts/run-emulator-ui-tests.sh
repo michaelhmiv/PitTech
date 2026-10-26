@@ -685,6 +685,16 @@ check_saved_diagnostic_report() {
 check_saved_diagnostic_report "after instrumentation"
 echo "Restarting PitTech to verify its saved crash report survives a process restart."
 adb shell am force-stop com.pittech.debug
+# PL-20 (#172): crash recovery's Continue now returns to the cook that
+# was open when the crash hit (recorded in the diagnostics prefs by the
+# view model). This phase covers the no-cook-open landing — recovery
+# completes onto Meals home, where the saved cook's card is visible;
+# the resume-to-the-open-cook landing is covered by WelcomeFlowTest's
+# crash tests. Clear the diagnostics prefs (which also drops the
+# open-cook record) while the app is stopped so the landing here is
+# deterministic; the saved report itself lives in its own file and is
+# unaffected.
+timeout 20 adb shell run-as com.pittech.debug rm -f shared_prefs/pittech-diagnostics.xml || true
 check_saved_diagnostic_report "after force-stop"
 timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
 check_saved_diagnostic_report "after relaunch"
