@@ -403,15 +403,39 @@ jobs:
                   "Expected exactly one bundle ID record with identifier com.pittech; "
                   f"the identifier filter returned {len(bundle_records)} record(s): {returned}")
           bundle_id = exact_matches[0]["id"]
-          capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
-          if not any(c.get("attributes", {}).get("capabilityType") == "ASSOCIATED_DOMAINS" for c in capabilities):
-              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
-                  "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
-                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
-          if not any(c.get("attributes", {}).get("capabilityType") == "APPLE_ID_AUTH" for c in capabilities):
-              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
-                  "attributes": {"capabilityType": "APPLE_ID_AUTH"},
-                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+
+          def ensure_capability(capability_type, settings=None):
+              def is_present():
+                  current = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
+                  return any(c.get("attributes", {}).get("capabilityType") == capability_type for c in current)
+              if is_present():
+                  return
+              attributes = {"capabilityType": capability_type}
+              if settings is not None:
+                  attributes["settings"] = settings
+              try:
+                  created = call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
+                      "attributes": attributes,
+                      "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+                  print(f"Enabled capability {capability_type} on {bundle_id}: "
+                        f"{json.dumps(created.get('data', {}).get('attributes', {}))}")
+              except SystemExit:
+                  # A concurrent or earlier run may have created the capability
+                  # between the presence check and this create; only a create
+                  # that still leaves the capability missing is a real failure.
+                  if not is_present():
+                      raise
+                  print(f"Capability {capability_type} on {bundle_id} was created concurrently; continuing.")
+
+          ensure_capability("ASSOCIATED_DOMAINS")
+          # Sign in with Apple has no default configuration: a bare create is
+          # rejected with 409 ENTITY_ERROR ("Please select at least one
+          # configuration for Sign In with Apple."). This app is its own
+          # Primary App ID, expressed with the APPLE_ID_AUTH_APP_CONSENT
+          # setting and its PRIMARY_APP_CONSENT option (the settings shape
+          # Apple's API defines for this capability).
+          ensure_capability("APPLE_ID_AUTH", settings=[{"key": "APPLE_ID_AUTH_APP_CONSENT",
+              "options": [{"key": "PRIMARY_APP_CONSENT"}]}])
 
           profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:
