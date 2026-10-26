@@ -154,9 +154,9 @@ class PitTechUserFlowsTest {
         // the chip node directly instead.)
         composeRule.waitForIdle()
         val chipConfig = composeRule.onNodeWithTag("dish-boneless").fetchSemanticsNode().config
-        android.util.Log.e("S11DIAG2", "boneless config: $chipConfig")
+        println("S11DIAG2 boneless config: $chipConfig")
         val bannerCount = composeRule.onAllNodesWithText("Resume draft").fetchSemanticsNodes().size
-        android.util.Log.e("S11DIAG2", "resume banner count: $bannerCount")
+        println("S11DIAG2 resume banner count: $bannerCount")
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
