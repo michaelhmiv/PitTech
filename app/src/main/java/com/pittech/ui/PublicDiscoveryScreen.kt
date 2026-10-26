@@ -133,7 +133,7 @@ import org.json.JSONObject
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { array->(0 until array.length()).map(array::getJSONObject) }
 
 /** Shared TURN-IN chip colors for this area: marigold fill when selected. */
-@Composable internal fun turnInChipColors(): FilterChipColors = FilterChipDefaults.filterChipColors(
+@Composable internal fun turnInChipColors() = FilterChipDefaults.filterChipColors(
     containerColor=pitTechTokens().surface,
     labelColor=pitTechTokens().ink,
     selectedContainerColor=pitTechTokens().marigold,

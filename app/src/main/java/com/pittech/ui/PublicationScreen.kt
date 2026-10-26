@@ -5,6 +5,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -184,7 +186,7 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
         // carries no local like state or count on this surface, so the
         // placard keeps the existing copy; Remove stays a quiet button.
         if(state.signedIn) {
-            TurnInPlacard(icon=androidx.compose.material.icons.Icons.Filled.Favorite,label="Like this recipe",onClick={ set(true) },modifier=Modifier.fillMaxWidth(),testTag="public-like",enabled=!busy)
+            TurnInPlacard(icon=Icons.Filled.Favorite,label="Like this recipe",onClick={ set(true) },modifier=Modifier.fillMaxWidth(),testTag="public-like",enabled=!busy)
             TextButton(onClick={ set(false) },enabled=!busy,modifier=Modifier.testTag("public-unlike")) { Text("Remove my like") }
         } else {
             TextButton(onClick={ signingIn=true }) { Text("Sign in to like this recipe") }; Text("Signing in won't add a like automatically.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
