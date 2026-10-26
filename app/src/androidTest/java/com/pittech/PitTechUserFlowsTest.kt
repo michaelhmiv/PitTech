@@ -147,16 +147,13 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("dish-starting-condition").performScrollTo().performClick()
         composeRule.onNodeWithText("Refrigerated").performClick()
         composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
-        // TEMP DIAGNOSTIC (slice 11 gate, test02 boneIn at font 1.5):
-        // log the chip's semantics (Selected?) and whether a restored
-        // draft banner is in the editor, into the evidence logcat. (The
-        // editor is a dialog root, so onRoot() is ambiguous here — query
-        // the chip node directly instead.)
+        // TEMP DIAGNOSTIC (slice 11 gate, test02 boneIn): screenshot the
+        // editor right after the boneless click — the evidence artifact
+        // shows whether the chip registered selected and whether a
+        // restored-draft banner is present. (Log/println channels do not
+        // survive this script's capture; screenshots do.)
         composeRule.waitForIdle()
-        val chipConfig = composeRule.onNodeWithTag("dish-boneless").fetchSemanticsNode().config
-        println("S11DIAG2 boneless config: $chipConfig")
-        val bannerCount = composeRule.onAllNodesWithText("Resume draft").fetchSemanticsNodes().size
-        println("S11DIAG2 resume banner count: $bannerCount")
+        saveScreenshot("diag-boneless-state")
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
