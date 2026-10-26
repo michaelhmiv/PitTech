@@ -560,10 +560,10 @@ struct InsightsView: View {
                     HStack(alignment: .top, spacing: 16) {
                         InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
                         InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
-                        InsightsStat(value: "\(store.library.readings.count)", label: "Readings")
-                        InsightsStat(value: "\(store.library.events.count)", label: "Notes")
+                        InsightsStat(value: "\(store.library.readings.count)", label: "Temperature readings")
+                        InsightsStat(value: "\(store.library.events.count)", label: "Timeline notes")
                         if let average = durations.average {
-                            InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Avg session")
+                            InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Average session time")
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
