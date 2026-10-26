@@ -65,16 +65,16 @@ import org.json.JSONObject
     LaunchedEffect(state.signedIn) { if(state.signedIn) signingIn=false }
     ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy)onClose() }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth()) { Text("Publish preview",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
+            Row(Modifier.fillMaxWidth()) { Text("Publish preview",style=PitTechTextStyles.bannerTitle,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.")
+                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.",color=pitTechTokens().inkMuted)
                 if(!state.signedIn) {
                     Text("Sign in to publish. This sharing draft stays on this device, and sign-in won't publish it.")
                     Button(onClick={ signingIn=true },modifier=Modifier.testTag("publication-sign-in")) { Text("Sign in to continue") }
                 } else if(pending!=null) {
                     val op=pending!!
-                    Text(if(op.rejected)"This request was rejected" else "An interrupted request is saved",style=MaterialTheme.typography.titleMedium)
-                    Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.")
+                    Text(if(op.rejected)"This request was rejected" else "An interrupted request is saved",style=PitTechTextStyles.bannerCard)
+                    Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.",color=pitTechTokens().inkMuted)
                     prepared?.let { PublicationContent(it) }
                     if(op.draftId==draft && prepared!=null && !op.rejected)Button(onClick={ run { writer.recover(); prepared=null; refreshPending(); message="The saved publication was recovered." } },enabled=!busy,modifier=Modifier.testTag("publication-recover")) { Text("Retry the saved publication") }
                     if(op.draftId!=draft)Text("Recover the saved account or publication change in My cookbook first.")
@@ -83,7 +83,7 @@ import org.json.JSONObject
                         TextButton(onClick={ run { withContext(Dispatchers.IO) { writer.store.discardRejected(checkNotNull(account.publicationUserId())) }; prepared=null; refreshPending() } },enabled=!busy) { Text("Discard rejected request") }
                     }
                 } else if(published!=null) {
-                    Text(if(published!!.status=="pending_review")"Submitted for review" else "Published",style=MaterialTheme.typography.titleLarge,modifier=Modifier.testTag("publication-complete"))
+                    Text(if(published!!.status=="pending_review")"Submitted for review" else "Published",style=PitTechTextStyles.bannerTitle,modifier=Modifier.testTag("publication-complete"))
                     val uri=androidx.compose.ui.platform.LocalUriHandler.current
                     if(published!!.status=="pending_review")Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.")
                     else Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
@@ -95,7 +95,7 @@ import org.json.JSONObject
                     val kindLabels=mapOf("recipe" to "Recipe","collection" to "Meal collection","attempt" to "Actual recorded cook")
                     SimpleDropdownField("Publication",kindLabels.getValue(kind),kindLabels.values.toList(),{ label -> kind=kindLabels.entries.first { it.value==label }.key; invalidate() },enabled=!busy)
                     SimpleDropdownField("Public credit",if(identity=="anonymous")"Anonymous · a PitTech cook" else "My display name",listOf("Anonymous · a PitTech cook","My display name"),{ identity=if(it=="My display name")"named" else "anonymous"; invalidate() },enabled=!busy)
-                    Text(if(identity=="anonymous")"Your profile name and cookbook link won't appear on this publication." else "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.")
+                    Text(if(identity=="anonymous")"Your profile name and cookbook link won't appear on this publication." else "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.",color=pitTechTokens().inkMuted)
                     if(linked!=null)Row { Checkbox(updating,{ updating=it; invalidate() },enabled=!busy); Text("Update the publication linked to this draft",Modifier.weight(1f)) }
                     Button(onClick={ run {
                         invalidate(); val user=checkNotNull(account.publicationUserId()); val profile=writer.read("/v1/me/profile")
@@ -113,8 +113,8 @@ import org.json.JSONObject
                         check(account.publicationUserId()==user); prepared=value; previewUser=user; reviewed=false
                     } },enabled=!busy,modifier=Modifier.testTag("publication-prepare")) { Text("Prepare public preview") }
                     prepared?.let { value ->
-                        Text("Public credit · $displayName",style=MaterialTheme.typography.titleMedium,modifier=Modifier.testTag("publication-credit"))
-                        updateSummary?.let { Text(it,style=MaterialTheme.typography.titleMedium) }
+                        Text("Public credit · $displayName",style=PitTechTextStyles.bannerCard,modifier=Modifier.testTag("publication-credit"))
+                        updateSummary?.let { TurnInStatusStrip(it,pitTechTokens().marigold) }
                         PublicationContent(value)
                         Text(PublicationTerms.text,modifier=Modifier.testTag("publication-terms"))
                         Row { Checkbox(reviewed,{ reviewed=it },modifier=Modifier.testTag("publication-reviewed")); Text("I reviewed the content and credit and agree to these public-copy terms",Modifier.weight(1f)) }
@@ -125,12 +125,12 @@ import org.json.JSONObject
                     }
                 }
                 if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.PUBLISHING)}
-                message?.let { Text(it,Modifier.testTag("publication-message")) }
+                message?.let { TurnInStatusStrip(it,pitTechTokens().flag,Modifier.testTag("publication-message")) }
                 Spacer(Modifier.height(24.dp))
             }
         }
     }
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=MaterialTheme.typography.titleLarge);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
 }
 
 @Composable internal fun PublicationContent(prepared: PreparedPublication) {
@@ -138,15 +138,15 @@ import org.json.JSONObject
     val temperatureUnit=context.getSharedPreferences("pittech-preferences",0).getString("temperature-unit","°F") ?: "°F"
     val payload=prepared.payload; val recipes=remember(prepared) { payload.rows("recipes") }
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Text(payload.getString("title"),style=MaterialTheme.typography.headlineMedium,modifier=Modifier.testTag("publication-preview-title"))
-        Text(when(payload.getString("kind")) { "attempt" -> "Actual recorded cook"; "collection" -> "Meal collection"; else -> "Recipe" },style=MaterialTheme.typography.titleMedium)
-        Text("${recipes.size} selected recipes · ${prepared.photos.size} selected photos")
+        Text(payload.getString("title"),style=PitTechTextStyles.bannerTitle,modifier=Modifier.testTag("publication-preview-title"))
+        Text(when(payload.getString("kind")) { "attempt" -> "Actual recorded cook"; "collection" -> "Meal collection"; else -> "Recipe" },style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+        Text("${recipes.size} selected recipes · ${prepared.photos.size} selected photos",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
         Text("Public credit: "+if(payload.getString("identityMode")=="named")"your display name" else "a PitTech cook")
         recipes.forEach { recipe ->
-            Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge); Text(recipe.getString("description"))
-            Text(listOf("foodType","cut","method").mapNotNull { if(recipe.isNull(it))null else recipe.optString(it).takeIf(String::isNotBlank) }.joinToString(" · "))
-            if(!recipe.isNull("weightGrams"))Text("Weight · "+String.format(java.util.Locale.ROOT,"%.2f kg",recipe.getDouble("weightGrams")/1000))
-            val tags=recipe.getJSONArray("tags"); Text((0 until tags.length()).joinToString(" · ") { tags.getString(it) },style=MaterialTheme.typography.bodySmall)
+            Text(recipe.getString("title"),style=PitTechTextStyles.bannerCard); Text(recipe.getString("description"))
+            Text(listOf("foodType","cut","method").mapNotNull { if(recipe.isNull(it))null else recipe.optString(it).takeIf(String::isNotBlank) }.joinToString(" · "),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+            if(!recipe.isNull("weightGrams"))Text("Weight · "+String.format(java.util.Locale.ROOT,"%.2f kg",recipe.getDouble("weightGrams")/1000),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+            val tags=recipe.getJSONArray("tags"); Text((0 until tags.length()).joinToString(" · ") { tags.getString(it) },style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
             recipe.optJSONObject("source")?.let { source ->
                 val uri=androidx.compose.ui.platform.LocalUriHandler.current
                 Text(if(source.optBoolean("removed"))"Based on a removed recipe" else "Based on a pinned public recipe")
@@ -180,22 +180,25 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
         catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect.")+" Recover interrupted changes in My cookbook." } finally { busy=false }
     } }
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        // §7 disposition: the Like is a placard, not a text button. The app
+        // carries no local like state or count on this surface, so the
+        // placard keeps the existing copy; Remove stays a quiet button.
         if(state.signedIn) {
-            OutlinedButton(onClick={ set(true) },enabled=!busy,modifier=Modifier.testTag("public-like")) { Text("Like this recipe") }
+            TurnInPlacard(icon=androidx.compose.material.icons.Icons.Filled.Favorite,label="Like this recipe",onClick={ set(true) },modifier=Modifier.fillMaxWidth(),testTag="public-like",enabled=!busy)
             TextButton(onClick={ set(false) },enabled=!busy,modifier=Modifier.testTag("public-unlike")) { Text("Remove my like") }
         } else {
-            TextButton(onClick={ signingIn=true }) { Text("Sign in to like this recipe") }; Text("Signing in won't add a like automatically.",style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick={ signingIn=true }) { Text("Sign in to like this recipe") }; Text("Signing in won't add a like automatically.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
         }
         message?.let { Text(it) }
     }
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=MaterialTheme.typography.titleLarge);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to recipe") }}}
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to recipe") }}}
 }
 
 @Composable private fun PublicationPhotoPreview(assets: List<JSONObject>, photos: Map<String,ByteArray>, hero: String) {
     if(assets.isEmpty())return
     var selected by remember(assets) { mutableStateOf(0) }; val index=selected.coerceIn(0,assets.lastIndex); val asset=assets[index]
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Text("Selected photo ${index+1} of ${assets.size}",style=MaterialTheme.typography.titleMedium)
+        Text("Selected photo ${index+1} of ${assets.size}",style=PitTechTextStyles.bannerCard)
         photos[asset.getString("id")]?.let { bytes ->
             val bitmap=remember(bytes) {
                 val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }; BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
@@ -204,7 +207,7 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
             }
             if(bitmap!=null)Image(bitmap,asset.getString("caption").ifBlank { "Selected public photo" },Modifier.fillMaxWidth().heightIn(max=260.dp))
         }
-        if(hero==asset.getString("id"))Text("Cover photo",style=MaterialTheme.typography.bodySmall)
+        if(hero==asset.getString("id"))Text("Cover photo",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().attentionText)
         Text(asset.getString("caption"))
         if(assets.size>1)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             TextButton(onClick={ selected=maxOf(0,index-1) },enabled=index>0,modifier=Modifier.weight(1f).heightIn(min=48.dp)) { Text("Previous photo") }

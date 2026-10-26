@@ -252,10 +252,21 @@ internal fun PitTechApp(
                     Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}")
-                    Text("${draft.cookCount} cooks · ${draft.dishCount} dishes · ${draft.eventCount} log entries · ${draft.readingCount} readings · ${draft.resultCount} results · ${draft.photoCount} photos")
+                    Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                    // TURN-IN (slice 5, frame s18): the counts read as a
+                    // grid of score cells, not one long sentence.
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInScoreCell("Cooks", "${draft.cookCount}", Modifier.weight(1f))
+                        TurnInScoreCell("Dishes", "${draft.dishCount}", Modifier.weight(1f))
+                        TurnInScoreCell("Log entries", "${draft.eventCount}", Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInScoreCell("Readings", "${draft.readingCount}", Modifier.weight(1f))
+                        TurnInScoreCell("Results", "${draft.resultCount}", Modifier.weight(1f))
+                        TurnInScoreCell("Photos", "${draft.photoCount}", Modifier.weight(1f))
+                    }
                     if (draft.savedToolsCount > 0) Text("${draft.savedToolsCount} saved playbooks, plans, alerts, checklists or equipment records")
-                    Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.")
+                    Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.", color = pitTechTokens().inkMuted)
                     if (draft.preferences != null) {
                         Text("This full backup also restores temperature, weight, and appearance preferences.")
                     } else {

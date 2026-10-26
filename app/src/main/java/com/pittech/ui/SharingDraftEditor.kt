@@ -23,14 +23,14 @@ import kotlinx.coroutines.sync.withLock
     val collections = rows.filter { it.kind == SharingDraftCodec.COLLECTION }.distinctBy { SharingDraftCodec.decode(it.payload).collectionId }
     var editing by remember { mutableStateOf<String?>(null) }; val scope = rememberCoroutineScope(); var error by remember { mutableStateOf<String?>(null) }
     if (drafts.isNotEmpty()) {
-        Text("Sharing drafts", style = MaterialTheme.typography.titleMedium)
+        Text("Sharing drafts", style = PitTechTextStyles.bannerCard)
         drafts.forEach { row -> OutlinedButton(onClick = { editing = row.id }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("resume-sharing-${row.id}")) { Text("Resume ${row.title}") } }
     }
     if (collections.isNotEmpty()) {
-        Text("Meal collections", style = MaterialTheme.typography.titleMedium)
+        Text("Meal collections", style = PitTechTextStyles.bannerCard)
         collections.forEach { row -> OutlinedButton(onClick = { scope.launch { try { editing = viewModel.sharing.duplicate(row.id) } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy & customize ${row.title}") } }
     }
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
     editing?.let { SharingDraftEditor(it, viewModel) { editing = null } }
 }
 
@@ -69,24 +69,26 @@ import kotlinx.coroutines.sync.withLock
         val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Sharing draft", style = MaterialTheme.typography.titleLarge); Text(if (saved) "Saved on this device" else "Saving edits…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Column(Modifier.weight(1f)) { Text("Sharing draft", style = PitTechTextStyles.bannerTitle); Text(if (saved) "Saved on this device" else "Saving edits…", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted) }
                 TextButton(onClick = { act { persist(); onClose() } }, enabled = !busy) { Text("Done") }
             }
             Column(Modifier.weight(1f).verticalScroll(contentScroll), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 document?.let { current ->
-                    Text("Choose exactly what you want to share. Your original meal stays unchanged.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(current.title, { document = current.copy(title = it.take(160)) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth().testTag("sharing-title"))
+                    Text("Choose exactly what you want to share. Your original meal stays unchanged.", color = pitTechTokens().inkMuted)
+                    TurnInLiteralBoxedField("Title", Modifier.fillMaxWidth()) {
+                        OutlinedTextField(current.title, { document = current.copy(title = it.take(160)) }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("sharing-title"))
+                    }
                     current.entries.forEachIndexed { index, entry ->
                         val assets by produceState(emptyList<com.pittech.data.CompanionPhoto>(), id, entry.id, record?.updatedAtUtcMillis) { value = viewModel.sharing.assets(id).filter { it.action == entry.id } }
-                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInCard(Modifier.fillMaxWidth()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(entry.included, { included -> document = current.copy(entries = current.entries.map { if (it.id == entry.id) it.copy(included = included) else it }, heroPhotoId = current.heroPhotoId.takeUnless { !included && it in entry.photoIds }) }, modifier = Modifier.testTag("sharing-include-${entry.id}"))
-                                    Text(entry.snapshot.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                                    Text(entry.snapshot.name, style = PitTechTextStyles.bannerCard, modifier = Modifier.weight(1f))
                                 }
                                 TextButton(onClick = { act { persist(); editId = entry.id } }, enabled = !busy) { Text("Edit recipe, ingredients & instructions") }
                                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(entry.includeStory, { enabled -> document = current.copy(entries = current.entries.map { if (it.id == entry.id) it.copy(includeStory = enabled) else it }) }); Text("Include recorded cook story", modifier = Modifier.weight(1f)) }
-                                if (entry.includeStory) Text("Recorded milestones, readings and results remain source facts.", style = MaterialTheme.typography.bodySmall)
+                                if (entry.includeStory) Text("Recorded milestones, readings and results remain source facts.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                                 assets.forEach { asset ->
                                     RecipePicture(viewModel.sharing.photoUri(asset.relativePath))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -102,7 +104,7 @@ import kotlinx.coroutines.sync.withLock
                         }
                     }
                     OutlinedButton(onClick = { act { persist(); chooseRecipe = true } }, enabled = current.entries.size < 20 && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add a saved recipe") }
-                    Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                     if (current.sourceHistoryJson != null) {
                         val originalDishes = remember(current.sourceHistoryJson) { com.pittech.data.CookPackHistory.rows(org.json.JSONObject(current.sourceHistoryJson), "dishes").map { it.getString("id") }.toSet() }
                         val chosen = current.entries.filter { it.included }
@@ -112,7 +114,7 @@ import kotlinx.coroutines.sync.withLock
                             Checkbox(includeRecordedCook, { includeRecordedCook = it }, enabled = eligible && !exporting, modifier = Modifier.testTag("sharing-include-history"))
                             Text("Include this recorded meal", modifier = Modifier.weight(1f))
                         }
-                        Text(if (eligible) "Recipients can choose to add this finished meal to history." else "Enable the recorded story for each selected original dish first.", style = MaterialTheme.typography.bodySmall)
+                        Text(if (eligible) "Recipients can choose to add this finished meal to history." else "Enable the recorded story for each selected original dish first.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                     }
                     TextButton({ cardSettings = !cardSettings }) { Text("Card appearance & note") }
                     if (cardSettings) ShareCardOptionsEditor(current) { document = it }
@@ -123,11 +125,11 @@ import kotlinx.coroutines.sync.withLock
                     Button(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton({ act { persist(); cardPreview = true } }, enabled = !busy && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-preview-card")) { Text("Preview share card") }
                     OutlinedButton(onClick = { act { persist(); relayShare = true } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-relay")) { Text("Share by code") }
-                    exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    exportError?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
                     OutlinedButton(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
                 Spacer(Modifier.height(24.dp))
             }
             // PL-18: Publish sits inside its own panel, below the file and
@@ -135,10 +137,10 @@ import kotlinx.coroutines.sync.withLock
             // action reachable while title editing owns the keyboard —
             // focus-driven bring-into-view scrolling must not move this
             // tap target (the publication flow tests guard exactly that).
-            if(publishingEnabled && document!=null)Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Publish", style = MaterialTheme.typography.titleMedium)
-                    Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if(publishingEnabled && document!=null)TurnInCard(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Publish", style = PitTechTextStyles.bannerCard)
+                    Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                     OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
                 }
             }

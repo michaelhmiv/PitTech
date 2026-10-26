@@ -278,3 +278,42 @@ struct TurnInProTag: View {
             .background(PitTechStyle.marigold, in: RoundedRectangle(cornerRadius: 6))
     }
 }
+
+/// One boxed field (§4) for form surfaces: the field keeps its own title
+/// (placeholder and accessibility label, unchanged) and gains the boxed
+/// treatment — raised surface, ruling border, rounded corners. The same
+/// recipe Slice 2 applied privately in the results editor, shared from
+/// Slice 5 for the community and sharing forms. Renders its label text
+/// verbatim — no transforms, per the kit law.
+struct TurnInBoxedFieldModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(PitTechFont.body)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+    }
+}
+
+extension View {
+    func turnInBoxedField() -> some View { modifier(TurnInBoxedFieldModifier()) }
+}
+
+/// Dashed explanatory card (§4): an empty state that teaches — a dashed
+/// ruling outline on the ground. Android's kit has carried it since
+/// Slice 4; added here in Slice 5 for the community and sharing empties.
+struct TurnInDashedCard<Content: View>: View {
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(PitTechStyle.ruling, style: StrokeStyle(lineWidth: 1, dash: [8, 6]))
+            )
+    }
+}

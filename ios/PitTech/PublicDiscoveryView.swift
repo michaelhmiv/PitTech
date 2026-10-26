@@ -10,29 +10,38 @@ struct NativePublicDiscoveryView: View {
         NavigationStack(path: Binding(get: { community.path }, set: { community.path = $0 })) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Find your next cook").font(.title.bold())
-                    Text("Browse, save and cook without an account. Saving makes your own private copy.").foregroundStyle(.secondary)
-                    TextField("Search recipes", text: $query).textFieldStyle(.roundedBorder).accessibilityIdentifier("discover-query")
-                    TextField("Food type (optional)", text: $food).textFieldStyle(.roundedBorder).accessibilityIdentifier("discover-food")
+                    TurnInMetaLabel("Public cookbook")
+                    TurnInBannerText("Find your next cook", font: PitTechFont.bannerTitle)
+                    Text("Browse, save and cook without an account. Saving makes your own private copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                    TextField("Search recipes", text: $query).turnInBoxedField().accessibilityIdentifier("discover-query")
+                    TextField("Food type (optional)", text: $food).turnInBoxedField().accessibilityIdentifier("discover-food")
                     Picker("Sort", selection: $sort) { Text("Most liked").tag("liked"); Text("Most forked").tag("forked") }.pickerStyle(.segmented)
                         // PL-19: sort changes apply on tap — no separate
                         // Search tap stands between the choice and its
                         // result. (The text fields still apply with the
                         // Search button below.)
                         .onChange(of: sort) { _, newSort in Task { await community.refresh(sort: newSort, food: food, query: query) } }
-                    Button("Search recipes") { Task { await community.refresh(sort: sort, food: food, query: query) } }.disabled(community.loading).accessibilityIdentifier("discover-search")
+                    Button("Search recipes") { Task { await community.refresh(sort: sort, food: food, query: query) } }.buttonStyle(.borderedProminent).disabled(community.loading).accessibilityIdentifier("discover-search")
                     if community.loading { ProgressView("Loading recipes…") }
-                    if let message = community.message { Text(message).accessibilityIdentifier("discover-message") }
-                    if community.items.isEmpty && !community.loading && community.message == nil { Text("No recipes here yet. Try another food or search.").accessibilityIdentifier("discover-empty") }
+                    if let message = community.message { TurnInStatusStrip(text: message, accent: PitTechStyle.flag).accessibilityIdentifier("discover-message") }
+                    if community.items.isEmpty && !community.loading && community.message == nil {
+                        TurnInDashedCard {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("No recipes here yet. Try another food or search.").font(PitTechFont.body).accessibilityIdentifier("discover-empty")
+                                Text("Published cooks appear here. Try another food, or clear the search.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                            }
+                        }
+                    }
                     LazyVStack(spacing: 14) {
                         ForEach(community.items) { item in
                             NavigationLink(value: item.id) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Label(item.title, systemImage: "book.closed").font(.headline)
-                                    Text(item.credit.displayName).font(.subheadline)
-                                    Text("\(item.likes) likes · \(item.forks) forks").font(.caption)
-                                }.frame(maxWidth: .infinity, minHeight: 72, alignment: .leading).padding(16)
-                                    .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                                TurnInCard {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        TurnInBannerText(item.title)
+                                        Text(item.credit.displayName).font(PitTechFont.body)
+                                        Text("\(item.likes) likes · \(item.forks) forks").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                                    }
+                                }
                             }.buttonStyle(.plain).accessibilityIdentifier("discover-open-" + item.id)
                         }
                     }
@@ -63,14 +72,14 @@ struct NativePublicRecipeView: View {
                 if let detail {
                     if let image, let picture = UIImage(data: image) {
                         Image(uiImage: picture).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 16)).accessibilityLabel(detail.heroCaption.isEmpty ? "Selected photograph for " + detail.title : detail.heroCaption)
-                        if !detail.heroCaption.isEmpty { Text(detail.heroCaption).font(.caption) }
+                        if !detail.heroCaption.isEmpty { Text(detail.heroCaption).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                     }
-                    Text(detail.title).font(.title.bold()).accessibilityIdentifier("public-title")
-                    Text("Shared by " + detail.credit.displayName)
+                    TurnInBannerText(detail.title, font: PitTechFont.bannerTitle).accessibilityIdentifier("public-title")
+                    Text("Shared by " + detail.credit.displayName).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     if let url = detail.credit.profileUrl, let destination = try? NativePublicLink.destination(url), destination.hasPrefix("profile:") { NavigationLink("View public cookbook", value: destination) }
                     if account.enabled && community.enabled { NativePublicLikeActions(id: id) }
                     NativeCommunityActions(detail: detail)
-                    Text("Your saved version stays yours. Publishing a variation is a separate choice.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("Your saved version stays yours. Publishing a variation is a separate choice.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     HStack {
                         if store.lastSavedPublicItemId == id {
                             // PL-19: after Save, the primary lands where
@@ -85,26 +94,31 @@ struct NativePublicRecipeView: View {
                     if community.preparing { ProgressView("Preparing your preview…"); Button("Cancel download") { task?.cancel() } }
                     ForEach(detail.recipes.indices, id: \.self) { index in
                         let recipe = detail.recipes[index].objectValue ?? [:]
-                        Text(recipe["title"]?.stringValue ?? "Recipe").font(.title2.bold())
-                        if let source = recipe["source"]?.objectValue {
-                            if source["removed"]?.boolValue == true { Text("Based on a removed recipe").font(.subheadline).foregroundStyle(.secondary) }
-                            else if let item = source["itemId"]?.stringValue, UUID(uuidString: item) != nil {
-                                NavigationLink("Based on a recipe shared by " + (source["displayName"]?.stringValue ?? "a PitTech cook"), value: item).font(.subheadline)
+                        TurnInCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Recipe").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                                TurnInBannerText(recipe["title"]?.stringValue ?? "Recipe")
+                                if let source = recipe["source"]?.objectValue {
+                                    if source["removed"]?.boolValue == true { Text("Based on a removed recipe").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
+                                    else if let item = source["itemId"]?.stringValue, UUID(uuidString: item) != nil {
+                                        NavigationLink("Based on a recipe shared by " + (source["displayName"]?.stringValue ?? "a PitTech cook"), value: item).font(PitTechFont.body)
+                                    }
+                                }
+                                Text(recipe["description"]?.stringValue ?? "").font(PitTechFont.body)
+                                if let grams = recipe["weightGrams"]?.numberValue { Text("Recorded weight · \(grams / 1000, specifier: "%.2f") kg").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                                let ingredients = recipe["ingredients"]?.arrayValue ?? []
+                                ForEach(ingredients.indices, id: \.self) { ingredient in
+                                    let row = ingredients[ingredient].objectValue ?? [:]
+                                    Text((row["name"]?.stringValue ?? "") + " · " + (row["amount"]?.stringValue ?? "")).font(PitTechFont.body)
+                                }
+                                let instructions = recipe["instructions"]?.arrayValue ?? []
+                                ForEach(instructions.indices, id: \.self) { step in
+                                    let row = instructions[step].objectValue ?? [:]
+                                    Text(row["title"]?.stringValue ?? "Step").font(PitTechFont.bodyEmphasis)
+                                    if let method = row["method"]?.stringValue, !method.isEmpty { Text("Method · " + method).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                                    Text(row["details"]?.stringValue ?? "").font(PitTechFont.body)
+                                }
                             }
-                        }
-                        Text(recipe["description"]?.stringValue ?? "")
-                        if let grams = recipe["weightGrams"]?.numberValue { Text("Recorded weight · \(grams / 1000, specifier: "%.2f") kg") }
-                        let ingredients = recipe["ingredients"]?.arrayValue ?? []
-                        ForEach(ingredients.indices, id: \.self) { ingredient in
-                            let row = ingredients[ingredient].objectValue ?? [:]
-                            Text((row["name"]?.stringValue ?? "") + " · " + (row["amount"]?.stringValue ?? ""))
-                        }
-                        let instructions = recipe["instructions"]?.arrayValue ?? []
-                        ForEach(instructions.indices, id: \.self) { step in
-                            let row = instructions[step].objectValue ?? [:]
-                            Text(row["title"]?.stringValue ?? "Step").font(.headline)
-                            if let method = row["method"]?.stringValue, !method.isEmpty { Text("Method · " + method).font(.subheadline) }
-                            Text(row["details"]?.stringValue ?? "")
                         }
                         if let story = recipe["story"]?.objectValue { NativePublicStoryView(story: story) }
                         let assets = recipe["assets"]?.arrayValue ?? []

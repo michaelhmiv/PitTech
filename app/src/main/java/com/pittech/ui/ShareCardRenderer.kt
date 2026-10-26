@@ -29,7 +29,7 @@ data class ShareCardRenderTheme(val background: Int, val ink: Int, val supportin
                 "ember" -> "#DECFBB"
                 "sage-night" -> "#3A3F33"
                 "parchment" -> "#E6DFCE"
-                else -> "#E2D9CD"
+                else -> "#D8D2C4"
             }
             return ShareCardRenderTheme(
                 Color.parseColor(theme.background),

@@ -32,8 +32,8 @@ import org.json.JSONObject
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         // PL-23 (DD-8): Discover is a network surface — offline is stated,
         // with the cached content below unchanged.
-        if(!rememberOnlineState())Text(OfflineCopy.CHANGES_WAIT,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.testTag("discover-offline"))
-        if(controls!=null && account!=null)TextButton(onClick={managingControls=true}){Text("Community controls")}
+        if(!rememberOnlineState())TurnInStatusStrip(OfflineCopy.CHANGES_WAIT,pitTechTokens().cobalt,Modifier.testTag("discover-offline"))
+        if(controls!=null && account!=null)OutlinedButton(onClick={managingControls=true},modifier=Modifier.heightIn(min=48.dp)) { Text("Community controls") }
         if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
             if(state.detailLoading) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.LOADING_RECIPE) }
@@ -42,14 +42,14 @@ import org.json.JSONObject
                     val bitmap=remember(bytes) { BitmapFactory.decodeByteArray(bytes,0,bytes.size) }
                     if(bitmap != null)Image(bitmap.asImageBitmap(),"Selected photograph for ${detail.title}",Modifier.fillMaxWidth().heightIn(max=280.dp))
                     val caption=detail.recipes.flatMap { it.rows("assets") }.firstOrNull { it.getString("id")==detail.hero?.getString("id") }?.optString("caption").orEmpty()
-                    if(caption.isNotEmpty())Text(caption,style=MaterialTheme.typography.bodySmall)
+                    if(caption.isNotEmpty())Text(caption,style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
                 }
-                Text(detail.title,Modifier.testTag("public-title"),style=MaterialTheme.typography.headlineMedium)
-                Text("Shared by ${detail.credit}")
+                Text(detail.title,Modifier.testTag("public-title"),style=PitTechTextStyles.bannerTitle)
+                Text("Shared by ${detail.credit}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                 detail.profileUrl?.let { url->TextButton(onClick={manager.openProfile(com.pittech.data.PublicLink.destination(url).substringAfter(':'))}) { Text("View public cookbook") } }
                 if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
                 if(controls!=null && account!=null)CommunityActions(detail,controls,account,manager)
-                Text("Your saved version stays yours. Publishing a variation is a separate choice.")
+                Text("Your saved version stays yours. Publishing a variation is a separate choice.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
                 if(state.savedDetailId == detail.id) {
                     // PL-19: after Save, the primary lands where the thing
                     // went — the saved recipes in Recipes.
@@ -61,18 +61,23 @@ import org.json.JSONObject
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
                 if(state.preparing) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.DOWNLOADING_COOK_PACK) }; TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
-                    Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge)
-                    recipe.optJSONObject("source")?.let { source->
-                        if(source.optBoolean("removed"))Text("Based on a removed recipe",style=MaterialTheme.typography.bodySmall)
-                        else TextButton(onClick={manager.open(source.getString("itemId"))}) { Text("Based on a recipe shared by "+source.optString("displayName","a PitTech cook")) }
-                    }
-                    Text(recipe.optString("description"))
-                    if(!recipe.isNull("weightGrams"))Text("Recorded weight · ${recipe.getDouble("weightGrams")/1000} kg")
-                    recipe.rows("ingredients").forEach { Text(it.optString("name")+" · "+it.optString("amount")) }
-                    recipe.rows("instructions").forEach { step->
-                        Text(step.optString("title"),style=MaterialTheme.typography.titleMedium)
-                        if(!step.isNull("method") && step.getString("method").isNotEmpty())Text("Method · "+step.getString("method"),style=MaterialTheme.typography.bodySmall)
-                        Text(step.optString("details"))
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Text("Recipe",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                            Text(recipe.getString("title"),style=PitTechTextStyles.bannerCard)
+                            recipe.optJSONObject("source")?.let { source->
+                                if(source.optBoolean("removed"))Text("Based on a removed recipe",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
+                                else TextButton(onClick={manager.open(source.getString("itemId"))}) { Text("Based on a recipe shared by "+source.optString("displayName","a PitTech cook")) }
+                            }
+                            Text(recipe.optString("description"),style=MaterialTheme.typography.bodyMedium)
+                            if(!recipe.isNull("weightGrams"))Text("Recorded weight · ${recipe.getDouble("weightGrams")/1000} kg",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                            recipe.rows("ingredients").forEach { Text(it.optString("name")+" · "+it.optString("amount"),style=MaterialTheme.typography.bodyMedium) }
+                            recipe.rows("instructions").forEach { step->
+                                Text(step.optString("title"),style=MaterialTheme.typography.titleMedium)
+                                if(!step.isNull("method") && step.getString("method").isNotEmpty())Text("Method · "+step.getString("method"),style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
+                                Text(step.optString("details"),style=MaterialTheme.typography.bodyMedium)
+                            }
+                        }
                     }
                     if(!recipe.isNull("story"))PublicStoryView(recipe.getJSONObject("story"),temperatureUnit)
                     recipe.rows("assets").forEach { photo->detail.media.firstOrNull { it.getString("id")==photo.getString("id") }?.let { asset->
@@ -83,27 +88,40 @@ import org.json.JSONObject
             state.message?.let { Text(it,Modifier.testTag("public-message")) }
             OutlinedButton(onClick={ manager.open(state.detailId!!) },enabled=!state.detailLoading && !state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("Refresh preview") }
         } else {
-            Text("Find your next cook",style=MaterialTheme.typography.headlineMedium)
-            Text("Browse, save and cook without an account. Saving makes your own private copy.")
-            OutlinedTextField(query,{query=it.take(80)},label={ Text("Search recipes") },modifier=Modifier.fillMaxWidth().testTag("discover-query"))
-            OutlinedTextField(food,{food=it.take(80)},label={ Text("Food type (optional)") },modifier=Modifier.fillMaxWidth().testTag("discover-food"))
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                TurnInMetaLabel("Public cookbook")
+                Text("Find your next cook",style=PitTechTextStyles.bannerTitle)
+            }
+            Text("Browse, save and cook without an account. Saving makes your own private copy.",style=MaterialTheme.typography.bodyMedium,color=pitTechTokens().inkMuted)
+            TurnInLiteralBoxedField("Search recipes",Modifier.fillMaxWidth()) {
+                OutlinedTextField(query,{query=it.take(80)},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("discover-query"))
+            }
+            TurnInLiteralBoxedField("Food type (optional)",Modifier.fillMaxWidth()) {
+                OutlinedTextField(food,{food=it.take(80)},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("discover-food"))
+            }
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                TurnInMetaLabel("Sort")
                 // PL-19: sort changes apply on tap — no separate Search tap
                 // stands between the choice and its result. (The text
                 // fields still apply with the Search button below.)
-                FilterChip(sort=="liked",{sort="liked";manager.refresh("liked",food,query)},{Text("Most liked")})
-                FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query)},{Text("Most forked")})
+                FilterChip(sort=="liked",{sort="liked";manager.refresh("liked",food,query)},label={Text("Most liked")},colors=turnInChipColors())
+                FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query)},label={Text("Most forked")},colors=turnInChipColors())
             }
             Button(onClick={ manager.refresh(sort,food,query) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("discover-search")) { Text("Search recipes") }
             if(state.loading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_RECIPES)}
-            state.message?.let { Text(it,Modifier.testTag("discover-message")) }
-            if(state.items.isEmpty() && !state.loading && state.message == null)Text("No recipes here yet. Try another food or search.",Modifier.testTag("discover-empty"))
+            state.message?.let { TurnInStatusStrip(it,pitTechTokens().flag,Modifier.testTag("discover-message")) }
+            if(state.items.isEmpty() && !state.loading && state.message == null)TurnInDashedCard(Modifier.testTag("discover-empty")) {
+                Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("No recipes here yet. Try another food or search.",style=MaterialTheme.typography.bodyMedium)
+                    Text("Published cooks appear here. Try another food, or clear the search.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
+                }
+            }
             state.items.forEach { item ->
-                OutlinedCard(onClick={ manager.open(item.id) },modifier=Modifier.fillMaxWidth().testTag("discover-open-${item.id}")) {
-                    Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(item.title,style=MaterialTheme.typography.titleLarge)
-                        Text(item.credit)
-                        Text("${item.likes} likes · ${item.forks} forks",style=MaterialTheme.typography.bodySmall)
+                TurnInCard(Modifier.fillMaxWidth().testTag("discover-open-${item.id}"),onClick={ manager.open(item.id) }) {
+                    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text(item.title,style=PitTechTextStyles.bannerCard)
+                        Text(item.credit,style=MaterialTheme.typography.bodyMedium)
+                        Text("${item.likes} likes · ${item.forks} forks",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                     }
                 }
             }
@@ -113,3 +131,11 @@ import org.json.JSONObject
     if(managingControls && controls!=null && account!=null)CommunityControlsDialog(controls,account,manager){managingControls=false}
 }
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { array->(0 until array.length()).map(array::getJSONObject) }
+
+/** Shared TURN-IN chip colors for this area: marigold fill when selected. */
+@Composable internal fun turnInChipColors(): FilterChipColors = FilterChipDefaults.filterChipColors(
+    containerColor=pitTechTokens().surface,
+    labelColor=pitTechTokens().ink,
+    selectedContainerColor=pitTechTokens().marigold,
+    selectedLabelColor=pitTechTokens().onAccent,
+)

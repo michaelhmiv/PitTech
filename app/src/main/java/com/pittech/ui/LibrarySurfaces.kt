@@ -45,16 +45,23 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-/** Native, honest interim surface while the community release is built. */
+/** Native, honest interim surface while the community release is built.
+ * TURN-IN (slice 5, frame c05): the placeholder wears the dashed-card
+ * composition; the shared [NotAvailablePlaceholder] pattern is unchanged
+ * for its other homes. Copy stays the [NotAvailableCopy] constants. */
 @Composable internal fun DiscoveryWelcome(modifier: Modifier = Modifier, onRecipes: () -> Unit) {
-    NotAvailablePlaceholder(
-        icon = Icons.Filled.Explore,
-        title = NotAvailableCopy.DISCOVER_TITLE,
-        message = NotAvailableCopy.DISCOVER_MESSAGE,
-        onwardLabel = NotAvailableCopy.DISCOVER_ONWARD,
-        onOnward = onRecipes,
-        modifier = modifier,
-    )
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        TurnInDashedCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(color = pitTechTokens().surfaceRaised, shape = RoundedCornerShape(18.dp)) {
+                    Icon(Icons.Filled.Explore, null, Modifier.padding(18.dp).size(32.dp), tint = pitTechTokens().emberText)
+                }
+                Text(NotAvailableCopy.DISCOVER_TITLE, style = PitTechTextStyles.bannerTitle)
+                Text(NotAvailableCopy.DISCOVER_MESSAGE, style = MaterialTheme.typography.bodyMedium, color = pitTechTokens().inkMuted)
+            }
+        }
+        OutlinedButton(onClick = onRecipes, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(NotAvailableCopy.DISCOVER_ONWARD) }
+    }
 }
 
 @Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null, onCookbook: (() -> Unit)? = null, onCommunity: (() -> Unit)? = null, onPro: (() -> Unit)? = null, accountSubtitle: String = "Optional email sign-in and this device’s session") {

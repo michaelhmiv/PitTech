@@ -35,10 +35,10 @@ import java.util.UUID
 @Composable internal fun ShareCardOptionsEditor(document: SharingDocument, onChange: (SharingDocument) -> Unit) {
     val value = document.card
     val photos = document.entries.filter { it.included }.flatMap { entry -> entry.photoIds.mapIndexed { i,id -> id to "${entry.snapshot.name} · photo ${i+1}" } }
-    Text("Share-card appearance", style = MaterialTheme.typography.titleMedium)
+    Text("Share-card appearance", style = PitTechTextStyles.bannerCard)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("photo" to "Photo", "chart" to "Recorded chart", "none" to "No hero").forEach { (key,label) ->
-            FilterChip(value.hero == key, { onChange(document.copy(card = value.copy(hero = key), heroPhotoId = if (key == "photo") document.heroPhotoId?.takeIf { id -> photos.any { it.first == id } } ?: photos.firstOrNull()?.first else document.heroPhotoId)) }, { Text(label) }, enabled = key != "photo" || photos.isNotEmpty())
+            FilterChip(value.hero == key, { onChange(document.copy(card = value.copy(hero = key), heroPhotoId = if (key == "photo") document.heroPhotoId?.takeIf { id -> photos.any { it.first == id } } ?: photos.firstOrNull()?.first else document.heroPhotoId)) }, { Text(label) }, enabled = key != "photo" || photos.isNotEmpty(), colors = turnInChipColors())
         }
     }
     if (value.hero == "photo") {
@@ -49,15 +49,17 @@ import java.util.UUID
         }
     }
     ChoiceField("Temperature unit", value.unit, listOf("auto", "°C", "°F")) { onChange(document.copy(card = value.copy(unit = it))) }
-    OutlinedTextField(value.note, { input ->
-        val n = input.codePointCount(0,input.length); val text = if (n > 2000) input.substring(0,input.offsetByCodePoints(0,2000)) else input
-        onChange(document.copy(card = value.copy(note = text)))
-    }, label = { Text("Card note (optional)") }, modifier = Modifier.fillMaxWidth().testTag("card-note"), maxLines = 4)
+    TurnInLiteralBoxedField("Card note (optional)", Modifier.fillMaxWidth()) {
+        OutlinedTextField(value.note, { input ->
+            val n = input.codePointCount(0,input.length); val text = if (n > 2000) input.substring(0,input.offsetByCodePoints(0,2000)) else input
+            onChange(document.copy(card = value.copy(note = text)))
+        }, modifier = Modifier.fillMaxWidth().testTag("card-note"), maxLines = 4)
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(value.includeVerdict, { onChange(document.copy(card = value.copy(includeVerdict = it))) }, enabled = document.entries.any { it.included && it.includeStory })
         Text("Include recorded verdict", modifier = Modifier.weight(1f))
     }
-    Text("Only selected photos and enabled recorded stories appear. Full text and original measurements remain in the Cook Pack.", style = MaterialTheme.typography.bodySmall)
+    Text("Only selected photos and enabled recorded stories appear. Full text and original measurements remain in the Cook Pack.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
 }
 
 /** Handed-off URIs have an owner and a bounded cache lifetime; preview cancel creates no file. */
@@ -98,9 +100,9 @@ internal object ShareCardFiles {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (working) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.RENDERING_SHARE_CARD) }
                 image?.let { Image(it.asImageBitmap(), contentDescription = "Exact exported card preview", modifier = Modifier.fillMaxWidth().aspectRatio(1080f/1350f).testTag("share-card-preview")) }
-                Text(if (theme.isPro) "1080 × 1350 PNG · ${theme.name} theme" else "1080 × 1350 PNG · default theme", style = MaterialTheme.typography.bodySmall)
+                Text(if (theme.isPro) "1080 × 1350 PNG · ${theme.name} theme" else "1080 × 1350 PNG · default theme", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
                 if (onProThemes != null) ProEntryRow(com.pittech.billing.ProPlacement.THEMES) { onProThemes() }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error); OutlinedButton({ retry++ }) { Text("Retry image") } }
+                error?.let { TurnInStatusStrip(it, pitTechTokens().flag); OutlinedButton({ retry++ }) { Text("Retry image") } }
                 Button(onClick = {
                     bytes?.let { value -> scope.launch {
                         runCatching {

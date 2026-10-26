@@ -28,7 +28,7 @@ enum ProCustomization {
     }
 
     static let cardThemes: [CardTheme] = [
-        CardTheme(id: "classic", name: "Classic", isPro: false, background: "#F5F0E7", ink: "#242622", supporting: "#514C45", accent: "#58665A"),
+        CardTheme(id: "classic", name: "Classic", isPro: false, background: "#FBF9F4", ink: "#1D2733", supporting: "#5C6B7A", accent: "#A84A0C"),
         CardTheme(id: "ember", name: "Ember", isPro: true, background: "#FBF3E8", ink: "#2B2118", supporting: "#6B5B4C", accent: "#B04D2E"),
         CardTheme(id: "sage-night", name: "Sage night", isPro: true, background: "#23261F", ink: "#F2EFE6", supporting: "#B9B3A4", accent: "#9DB29A"),
         CardTheme(id: "parchment", name: "Parchment", isPro: true, background: "#FDFBF5", ink: "#33302A", supporting: "#6E675C", accent: "#416C8A"),
@@ -46,9 +46,9 @@ enum ProCustomization {
     }
 
     static let chartPalettes: [ChartPalette] = [
-        ChartPalette(id: "classic", name: "Classic", isPro: false, intendedBackground: "#F5F0E7", colors: ["#B04D2E", "#58665A", "#416C8A", "#8B5D84", "#A17A2C", "#357D78"]),
-        ChartPalette(id: "color-vision-safe", name: "Color-vision safe", isPro: true, intendedBackground: "#F5F0E7", colors: ["#0072B2", "#D55E00", "#00855F", "#A34D7E", "#2A7F9E", "#444444"]),
-        ChartPalette(id: "high-contrast", name: "High contrast", isPro: true, intendedBackground: "#F5F0E7", colors: ["#000000", "#005A9C", "#8B0000", "#006400", "#4B0082", "#8B4513"]),
+        ChartPalette(id: "classic", name: "Classic", isPro: false, intendedBackground: "#FBF9F4", colors: ["#B04D2E", "#58665A", "#416C8A", "#8B5D84", "#A17A2C", "#357D78"]),
+        ChartPalette(id: "color-vision-safe", name: "Color-vision safe", isPro: true, intendedBackground: "#FBF9F4", colors: ["#0072B2", "#D55E00", "#00855F", "#A34D7E", "#2A7F9E", "#444444"]),
+        ChartPalette(id: "high-contrast", name: "High contrast", isPro: true, intendedBackground: "#FBF9F4", colors: ["#000000", "#005A9C", "#8B0000", "#006400", "#4B0082", "#8B4513"]),
         ChartPalette(id: "sage-night-chart", name: "Sage night chart", isPro: true, intendedBackground: "#23261F", colors: ["#F0C987", "#A8D5BA", "#A8C8E8", "#D8B8E0", "#E8E18A", "#9AD5D0"]),
     ]
 

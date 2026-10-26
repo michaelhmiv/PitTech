@@ -17,29 +17,38 @@ struct NativeArchiveImportView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if source.preview.cookPack != nil {
-                        Text("Choose what to save").font(.title2.weight(.semibold))
-                        Text("Save either dish or the whole collection. Your copies can be edited and cooked offline.").foregroundStyle(PitTechStyle.supporting)
+                        TurnInBannerText("Choose what to save")
+                        Text("Save either dish or the whole collection. Your copies can be edited and cooked offline.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                         ForEach(source.recipes) { recipe in
                             NativeArchiveRecipeCard(recipe: recipe, selected: selection(recipe.id)).disabled(saving)
                         }
                         Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")" + (source.publicCookOnSave ? " & set up meal" : "")).frame(maxWidth: .infinity, minHeight: 44) }
                             .buttonStyle(.borderedProminent).disabled(selected.isEmpty || saving).accessibilityIdentifier("pack-save-recipes")
                         if source.preview.cookPack?.objectValue?["kind"]?.stringValue == "cook" {
-                            Text("Add all \(source.preview.dishes) recorded dishes in this file. Recipe selections above apply when saving recipes.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                            Text("Add all \(source.preview.dishes) recorded dishes in this file. Recipe selections above apply when saving recipes.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                             if historyAdded {
                                 // PL-19: this sheet stays open after adding
                                 // history — the recipe selection above is
                                 // still the user's to save.
                                 Button("Added to history") {}.buttonStyle(.bordered).frame(minHeight: 44).disabled(true).accessibilityIdentifier("pack-add-history")
-                                Text("The recorded meal is in your history. Your recipe choices above are unchanged — save them whenever you're ready.").font(.caption).foregroundStyle(PitTechStyle.supporting).accessibilityIdentifier("pack-history-added")
+                                Text("The recorded meal is in your history. Your recipe choices above are unchanged — save them whenever you're ready.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("pack-history-added")
                             } else {
                                 Button("Add recorded meal to history") { saveHistory() }.buttonStyle(.bordered).frame(minHeight: 44).disabled(saving).accessibilityIdentifier("pack-add-history")
                             }
                         }
-                        Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                        Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     } else {
-                        Text("Restore your backup").font(.title2.weight(.semibold))
-                        Text("\(source.preview.cooks) meals · \(source.preview.dishes) dishes · \(source.preview.recipes) recipes · \(source.preview.readings) readings").foregroundStyle(PitTechStyle.supporting)
+                        TurnInBannerText("Restore your backup")
+                        // TURN-IN (slice 5, frame s18): the counts read as
+                        // a grid of score cells, not one long sentence.
+                        HStack(spacing: 8) {
+                            TurnInScoreCell(label: "Meals", value: "\(source.preview.cooks)")
+                            TurnInScoreCell(label: "Dishes", value: "\(source.preview.dishes)")
+                        }
+                        HStack(spacing: 8) {
+                            TurnInScoreCell(label: "Recipes", value: "\(source.preview.recipes)")
+                            TurnInScoreCell(label: "Readings", value: "\(source.preview.readings)")
+                        }
                         Text("Existing meal IDs are skipped. Restored monitoring and reminders remain inactive.")
                         Button("Restore backup") {
                             do { let result = try store.importArchive(at: source.url); store.archiveCompletionMessage = "Restored \(result.imported) meals; skipped \(result.skipped) duplicates."; dismiss() }
@@ -47,7 +56,7 @@ struct NativeArchiveImportView: View {
                         }.buttonStyle(.borderedProminent).frame(minHeight: 44).accessibilityIdentifier("archive-restore")
                     }
                     if saving { ProgressView("Saving recipes…") }
-                    if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+                    if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
                 }.padding(20)
             }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle(source.preview.cookPack != nil ? "Cook Pack" : "Cook archive").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) } }
@@ -85,6 +94,7 @@ private struct NativeArchiveRecipeCard: View {
     let recipe: NativeArchiveRecipePreview
     @Binding var selected: Bool
     var body: some View {
+        TurnInCard {
         Group {
         if textSize >= .xxxLarge {
             VStack(alignment: .leading, spacing: 12) {
@@ -93,12 +103,12 @@ private struct NativeArchiveRecipeCard: View {
                         Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10)).accessibilityHidden(true)
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(recipe.title).font(.headline)
-                        if !recipe.detail.isEmpty { Text(recipe.detail).font(.subheadline).foregroundStyle(PitTechStyle.supporting) }
+                        TurnInBannerText(recipe.title)
+                        if !recipe.detail.isEmpty { Text(recipe.detail).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                     }.fixedSize(horizontal: false, vertical: true)
                 }
-                if !recipe.description.isEmpty { Text(recipe.description).font(.subheadline) }
-                if recipe.hasGuide { Label("Recorded cook guide included", systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(PitTechStyle.sage) }
+                if !recipe.description.isEmpty { Text(recipe.description).font(PitTechFont.body) }
+                if recipe.hasGuide { Label("Recorded cook guide included", systemImage: "clock.arrow.circlepath").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.emberText) }
                 Toggle("Save recipe", isOn: $selected).frame(minHeight: 44).accessibilityIdentifier("pack-select-" + recipe.id)
             }
         } else {
@@ -108,14 +118,15 @@ private struct NativeArchiveRecipeCard: View {
                     Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10)).accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(recipe.title).font(.headline)
-                    if !recipe.detail.isEmpty { Text(recipe.detail).font(.subheadline).foregroundStyle(PitTechStyle.supporting) }
-                    if !recipe.description.isEmpty { Text(recipe.description).font(.subheadline).lineLimit(3) }
-                    if recipe.hasGuide { Label("Recorded cook guide included", systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(PitTechStyle.sage) }
+                    TurnInBannerText(recipe.title)
+                    if !recipe.detail.isEmpty { Text(recipe.detail).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                    if !recipe.description.isEmpty { Text(recipe.description).font(PitTechFont.body).lineLimit(3) }
+                    if recipe.hasGuide { Label("Recorded cook guide included", systemImage: "clock.arrow.circlepath").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.emberText) }
                 }.fixedSize(horizontal: false, vertical: true)
             }
         }.accessibilityIdentifier("pack-select-" + recipe.id)
         }
-        }.tint(PitTechStyle.sage).padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        }.tint(PitTechStyle.sage)
+        }
     }
 }

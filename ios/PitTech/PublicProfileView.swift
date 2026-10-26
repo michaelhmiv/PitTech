@@ -11,22 +11,36 @@ struct NativePublicProfileView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let profile {
-                    Text(profile.displayName).font(.title.bold())
-                    Text("@" + profile.handle).foregroundStyle(.secondary)
-                    Text("Named publications from this public cookbook. Saving a recipe makes a private copy.")
+                    TurnInCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            TurnInMetaLabel("Public cookbook")
+                            TurnInBannerText(profile.displayName)
+                            Text("@" + profile.handle).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                            Text("Named publications from this public cookbook. Saving a recipe makes a private copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                    }
                     ForEach(items) { item in
                         NavigationLink(value: item.id) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(item.title).font(.headline)
-                                Text("\(item.likes) likes · \(item.forks) forks").font(.caption)
-                            }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).padding(16).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                            TurnInCard {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    TurnInBannerText(item.title)
+                                    Text("\(item.likes) likes · \(item.forks) forks").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                                }
+                            }
                         }.buttonStyle(.plain)
                     }
-                    if items.isEmpty && !loading { Text(EmptyStateCopy.profilePublicationsTitle); Text(EmptyStateCopy.profilePublicationsBody).font(.footnote) }
+                    if items.isEmpty && !loading {
+                        TurnInDashedCard {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(EmptyStateCopy.profilePublicationsTitle).font(PitTechFont.body)
+                                Text(EmptyStateCopy.profilePublicationsBody).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                            }
+                        }
+                    }
                     if let cursor = profile.nextCursor { Button("More recipes") { Task { await load(cursor) } }.disabled(loading) }
                 }
                 if loading { ProgressView("Loading cookbook…") }
-                if let message { Text(message) }
+                if let message { TurnInStatusStrip(text: message, accent: PitTechStyle.flag) }
                 Button("Refresh cookbook") { Task { await load() } }.disabled(loading)
             }.padding(20)
         }.navigationTitle("Public cookbook").navigationBarTitleDisplayMode(.inline).background(PitTechStyle.canvas.ignoresSafeArea()).task(id: handle) { await load() }
