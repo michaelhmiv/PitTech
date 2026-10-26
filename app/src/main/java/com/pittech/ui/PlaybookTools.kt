@@ -2,12 +2,16 @@
 
 package com.pittech.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.semantics
@@ -32,22 +36,56 @@ internal fun PlaybookLibrary(viewModel: CooksViewModel) {
     val cooks by viewModel.cooks.collectAsStateWithLifecycle()
     val books = records.filter { it.kind == "playbook" }
     var expanded by remember { mutableStateOf(false) }
-    TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("playbooks-toggle")) { Text("Playbooks · ${books.size}") }
+    val tokens = pitTechTokens()
+    TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("playbooks-toggle")) { Text("Playbooks · ${books.size}", style = PitTechTextStyles.bodyEmphasis) }
     if (expanded) {
-        Text("Save a good cook here, then review its setup and steps before cooking again.")
-        OutlinedButton(onClick = viewModel::newPlaybook, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Create playbook") }
+        // TURN-IN (Slice 3, Area 03 `dark-13-playbooks` / `dark-15`): each
+        // playbook is a plan card — banner name with its revision chip, the
+        // setpoint / dishes / steps as score cells, and the plan's first
+        // steps as a milestone rail. (The app has no standalone playbook
+        // detail screen; the frame's detail composition lands here and in
+        // the editor.) When the library is empty the toggle simply shows
+        // the intro and the create path — the frame's empty state
+        // (`dark-14`) in the app's own words.
+        Text("Save a good cook here, then review its setup and steps before cooking again.", style = PitTechTextStyles.body, color = tokens.inkMuted)
+        Button(onClick = viewModel::newPlaybook, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Create playbook") }
         books.forEach { record ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(record.title, style = MaterialTheme.typography.titleMedium)
-                    val book = remember(record.payload) { PlaybookCodec.decode(record.payload) }
-                    Text("Revision ${book.revision} · ${book.draft.dishes.size} dishes · ${book.steps.size} steps")
+            val book = remember(record.payload) { PlaybookCodec.decode(record.payload) }
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TurnInBannerText(record.title, modifier = Modifier.weight(1f))
+                        Surface(shape = RoundedCornerShape(8.dp), color = Color.Transparent, contentColor = tokens.emberText, border = BorderStroke(1.dp, tokens.ember)) {
+                            Text("Revision ${book.revision}", style = PitTechTextStyles.monoMeta, color = tokens.emberText, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        }
+                    }
+                    if (book.draft.smokerName.isNotBlank()) Text(book.draft.smokerName, style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (book.draft.setpointText.isNotBlank()) TurnInScoreCell("Setpoint", "${book.draft.setpointText}${book.draft.setpointUnit}", Modifier.weight(1f))
+                        TurnInScoreCell("Dishes", "${book.draft.dishes.size}", Modifier.weight(1f))
+                        TurnInScoreCell("Steps", "${book.steps.size}", Modifier.weight(1f))
+                    }
+                    if (book.steps.isNotEmpty()) TurnInMilestoneRail(book.steps.take(4).map { step ->
+                        TurnInRailStep(
+                            label = PlaybookCodec.actions[step.action] ?: step.action,
+                            sublabel = when (step.trigger) {
+                                "elapsed" -> "${step.minutes} min"
+                                "after_action" -> "after ${PlaybookCodec.actions[step.anchor] ?: step.anchor}"
+                                "temperature" -> step.temperatureF?.let { "${it.toInt()}°" }
+                                "clock" -> step.clockAtUtcMillis?.let { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it)) }
+                                else -> null
+                            },
+                            state = TurnInRailState.UPCOMING,
+                        )
+                    })
                     val cookIds = records.filter { it.kind == "plan" && CookPlanEngine.decode(it.payload).playbookId == record.id }.mapNotNull { it.cookId }.toSet()
                     val outcomes = cooks.filter { it.cook.id in cookIds && it.cook.status == CookStatus.COMPLETED }
                     if (outcomes.isNotEmpty()) TextButton(onClick = { viewModel.openCook(outcomes.first().cook.id) }) { Text("${outcomes.size} cooks from this revision · open latest results") }
-                    OutlinedButton(onClick = { viewModel.previewPlaybook(record.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cook this") }
-                    TextButton(onClick = { viewModel.planServeTime(record.id) }) { Text("Plan serving time") }
-                    TextButton(onClick = { viewModel.editPlaybook(record.id) }) { Text("Edit a new revision") }
+                    Button(onClick = { viewModel.previewPlaybook(record.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cook this") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { viewModel.planServeTime(record.id) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Plan serving time") }
+                        TextButton(onClick = { viewModel.editPlaybook(record.id) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Edit a new revision") }
+                    }
                 }
             }
         }
@@ -60,9 +98,10 @@ internal fun CookPlaybookTools(data: CookDetailData, viewModel: CooksViewModel, 
     val plan = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
     if (configuredOnly == true && (plan == null || data.cook.status == CookStatus.COMPLETED) || configuredOnly == false && plan != null && data.cook.status != CookStatus.COMPLETED) return
     if (data.cook.status == CookStatus.COMPLETED) {
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Make the next cook easier", style = MaterialTheme.typography.titleMedium)
+        // A3 `dark-13`: the save-from-a-cook entry (F9) as a plan card.
+        TurnInCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TurnInBannerText("Make the next cook easier")
                 Button(onClick = { viewModel.preparePlaybook(data.cook.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("save-playbook")) { Text("Save as playbook") }
                 OutlinedButton(onClick = { viewModel.previewCookAgain(data.cook.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cook again") }
             }
@@ -106,27 +145,39 @@ private fun PlaybookEditor(initial: CookPlaybook, busy: Boolean, error: String?,
         }) { Text("Save playbook") }
     }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(book.name, { book = book.copy(name = it) }, label = { Text("Playbook name") }, modifier = Modifier.fillMaxWidth().testTag("playbook-name"))
-            Text("Review suggested checks. Timing helps you inspect the food; you decide when to act.")
-            OutlinedTextField(book.draft.smokerName, { book = book.copy(draft = book.draft.copy(smokerName = it)) }, label = { Text("Smoker") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(book.draft.setpointText, { book = book.copy(draft = book.draft.copy(setpointText = it)) }, label = { Text("Starting setpoint (${book.draft.setpointUnit})") }, modifier = Modifier.fillMaxWidth())
+            // A3 `dark-16-playbook-editor`: boxed fields, the steps as
+            // numbered cards with their trigger lines in mono.
+            TurnInBoxedField("Playbook name") {
+                OutlinedTextField(book.name, { book = book.copy(name = it) }, modifier = Modifier.fillMaxWidth().testTag("playbook-name"))
+            }
+            Text("Review suggested checks. Timing helps you inspect the food; you decide when to act.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
+            TurnInBoxedField("Smoker") {
+                OutlinedTextField(book.draft.smokerName, { book = book.copy(draft = book.draft.copy(smokerName = it)) }, modifier = Modifier.fillMaxWidth())
+            }
+            TurnInBoxedField("Starting setpoint (${book.draft.setpointUnit})") {
+                OutlinedTextField(book.draft.setpointText, { book = book.copy(draft = book.draft.copy(setpointText = it)) }, modifier = Modifier.fillMaxWidth())
+            }
             book.draft.dishes.forEachIndexed { i, d -> OutlinedButton(onClick = { editingDish = i }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Edit ${d.name} and preparation") } }
             TextButton(onClick = { editingDish = book.draft.dishes.size }) { Text("Add dish") }
             book.steps.forEachIndexed { i, s ->
-                Text("${i + 1}. ${s.title}", style = MaterialTheme.typography.titleSmall)
-                Text(stepDescription(s))
-                if (s.instructions.isNotBlank()) Text(s.instructions)
-                FlowRow {
-                    TextButton(onClick = { editingStep = s }) { Text("Edit") }
-                    TextButton(onClick = { book = book.copy(steps = book.steps.filterNot { it.id == s.id }) }) { Text("Remove") }
-                    if (i > 0) TextButton(onClick = { val steps = book.steps.toMutableList(); steps.removeAt(i); steps.add(i - 1, s); book = book.copy(steps = steps) }) { Text("Move up") }
+                TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${i + 1}. ${s.title}", style = PitTechTextStyles.bodyEmphasis)
+                        Text(stepDescription(s), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                        if (s.instructions.isNotBlank()) Text(s.instructions, style = PitTechTextStyles.body)
+                        FlowRow {
+                            TextButton(onClick = { editingStep = s }) { Text("Edit") }
+                            TextButton(onClick = { book = book.copy(steps = book.steps.filterNot { it.id == s.id }) }) { Text("Remove") }
+                            if (i > 0) TextButton(onClick = { val steps = book.steps.toMutableList(); steps.removeAt(i); steps.add(i - 1, s); book = book.copy(steps = steps) }) { Text("Move up") }
+                        }
+                    }
                 }
             }
             OutlinedButton(onClick = { editingStep = PlaybookStep() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("playbook-add-step")) { Text("Add step") }
             if (book.sourceCookId != null && book.previousRevisionId == null) {
                 Row { Checkbox(includePhotos, { includePhotos = it }); Text("Include milestone photos (up to 12)", Modifier.padding(top = 12.dp)) }
             }
-            Text("${book.targets.size} targets will be copied. Sensor history and connection messages stay in the original cook.")
+            Text("${book.targets.size} targets will be copied. Sensor history and connection messages stay in the original cook.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
             (localError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
@@ -190,27 +241,42 @@ internal fun StepEditor(initial: PlaybookStep, dishes: List<DishDraft>, onClose:
                     repeat = initialDraft.repeat; time = initialDraft.time; date = initialDraft.date
                 })
             }
-            OutlinedTextField(step.title, { step = step.copy(title = it) }, label = { Text("What to check or do") }, modifier = Modifier.fillMaxWidth())
+            // A3 `dark-17-step-editor` (and `dark-18` for the error): boxed
+            // fields; a failed save flags at the field block's end and the
+            // step's edits stay put.
+            TurnInBoxedField("What to check or do") {
+                OutlinedTextField(step.title, { step = step.copy(title = it) }, modifier = Modifier.fillMaxWidth())
+            }
             ChoiceField("Action", PlaybookCodec.actions.getValue(step.action), PlaybookCodec.actions.values.toList()) { label -> step = step.copy(action = PlaybookCodec.actions.entries.first { it.value == label }.key) }
             val dishLabels = dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
             ChoiceField("Dish", step.dishIndex?.let { dishLabels.getOrNull(it) } ?: "Whole cook", listOf("Whole cook") + dishLabels) { label -> step = step.copy(dishIndex = dishLabels.indexOf(label).takeIf { it >= 0 }) }
             ChoiceField("When to remind", PlaybookCodec.triggers.getValue(step.trigger), PlaybookCodec.triggers.values.toList()) { label -> step = step.copy(trigger = PlaybookCodec.triggers.entries.first { it.value == label }.key) }
-            if (step.trigger in setOf("elapsed", "after_action")) OutlinedTextField(minutes, { minutes = it }, label = { Text("Minutes after") }, modifier = Modifier.fillMaxWidth())
+            if (step.trigger in setOf("elapsed", "after_action")) TurnInBoxedField("Minutes after") {
+                OutlinedTextField(minutes, { minutes = it }, modifier = Modifier.fillMaxWidth())
+            }
             if (step.trigger == "after_action") ChoiceField("After", PlaybookCodec.actions.getValue(step.anchor), PlaybookCodec.actions.values.toList()) { label -> step = step.copy(anchor = PlaybookCodec.actions.entries.first { it.value == label }.key) }
-            if (initial.sourceObservations.isNotBlank()) Text("Source observations: ${initial.sourceObservations}. Choose a reminder trigger based on what you want to check.")
+            if (initial.sourceObservations.isNotBlank()) Text("Source observations: ${initial.sourceObservations}. Choose a reminder trigger based on what you want to check.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
             if (step.trigger == "temperature") {
-                OutlinedTextField(temp, { temp = it }, label = { Text("Temperature $tempUnit") }, modifier = Modifier.fillMaxWidth())
+                TurnInBoxedField("Temperature $tempUnit") {
+                    OutlinedTextField(temp, { temp = it }, modifier = Modifier.fillMaxWidth())
+                }
                 ChoiceField("Unit", tempUnit, listOf("°F", "°C")) { unit -> temp = temp.toDoubleOrNull()?.let { temperatureText(CookPlanEngine.fahrenheit(it, tempUnit), unit) }.orEmpty(); tempUnit = unit }
                 if (probeNames.isNotEmpty()) ChoiceField("Food probe", step.probeName.ifBlank { "Any food probe for this dish" }, listOf("Any food probe for this dish") + probeNames.distinct()) { label -> step = step.copy(probeName = label.takeUnless { it == "Any food probe for this dish" }.orEmpty()) }
-                else OutlinedTextField(step.probeName, { step = step.copy(probeName = it) }, label = { Text("Food probe name (optional)") }, supportingText = { Text("Leave blank to use this dish's food probe. You can choose a recorded channel while cooking.") }, modifier = Modifier.fillMaxWidth())
+                else TurnInBoxedField("Food probe name (optional)") {
+                    OutlinedTextField(step.probeName, { step = step.copy(probeName = it) }, supportingText = { Text("Leave blank to use this dish's food probe. You can choose a recorded channel while cooking.") }, modifier = Modifier.fillMaxWidth())
+                }
             }
             if (step.trigger == "clock") {
                 CookDateTimeControls(date, time, { date = it }, { time = it })
             }
-            OutlinedTextField(repeat, { repeat = it }, label = { Text("Repeat every minutes (optional)") }, modifier = Modifier.fillMaxWidth())
+            TurnInBoxedField("Repeat every minutes (optional)") {
+                OutlinedTextField(repeat, { repeat = it }, modifier = Modifier.fillMaxWidth())
+            }
             ChoiceField("While", step.stage.replaceFirstChar { it.uppercase() }, listOf("Prep", "Cooking", "Resting", "Holding")) { step = step.copy(stage = it.lowercase()) }
-            OutlinedTextField(step.instructions, { step = step.copy(instructions = it) }, label = { Text("Notes / what to look for") }, modifier = Modifier.fillMaxWidth())
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            TurnInBoxedField("Notes / what to look for") {
+                OutlinedTextField(step.instructions, { step = step.copy(instructions = it) }, modifier = Modifier.fillMaxWidth())
+            }
+            error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
         }
     }
 }

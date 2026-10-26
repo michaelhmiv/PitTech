@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restaurant
@@ -53,12 +54,18 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val scope = rememberCoroutineScope()
     fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That change couldn't be saved. Your cookbook is unchanged — try again.") } finally { busy = false } } }
     val snapshots = remember(revisions) { revisions.associate { it.id to RecipeSnapshotCodec.decode(it.snapshotJson) } }
-    if (standalone) Text("Your cookbook, ready for another cook.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    else TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}") }
+    // TURN-IN (Slice 3, Area 03 `dark-01-library`): the library is composed
+    // as the frame's — a boxed search with the filter entry riding beside
+    // it, the Favorites / Compose chips, meal-preset lanes, and recipe
+    // cards with banner names and mono meta lines. Every control, handler,
+    // and test tag keeps its existing home; the copy is the app's own.
+    val tokens = pitTechTokens()
+    if (standalone) Text("Your cookbook, ready for another cook.", style = PitTechTextStyles.body, color = tokens.inkMuted)
+    else TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}", style = PitTechTextStyles.bodyEmphasis) }
     if (expanded) {
         SavedSharingDocuments(viewModel)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(query, { query = it }, label = { Text("Find a recipe") }, modifier = Modifier.weight(1f).testTag("recipe-search"))
+            OutlinedTextField(query, { query = it }, placeholder = { Text("Find a recipe") }, singleLine = true, modifier = Modifier.weight(1f).testTag("recipe-search"))
             OutlinedIconButton(onClick = { filters = true }, modifier = Modifier.size(48.dp).testTag("recipe-filters")) { Icon(Icons.Filled.FilterList, "Filter recipes") }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,7 +73,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             FilterChip(composing, { composing = !composing; if (!composing) selected = emptyList() }, label = { Text(if (composing) "Cancel selection" else "Build a meal") }, modifier = Modifier.heightIn(min = 48.dp).testTag("recipe-compose"))
         }
         if (category != "All categories" || tag != "All tags" || archived) {
-            Text(listOfNotNull(category.takeUnless { it == "All categories" }, tag.takeUnless { it == "All tags" }, "Archived".takeIf { archived }).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            Text(listOfNotNull(category.takeUnless { it == "All categories" }, tag.takeUnless { it == "All tags" }, "Archived".takeIf { archived }).joinToString(" · "), style = PitTechTextStyles.monoMeta, color = tokens.attentionText)
         }
         if (filters) {
             var pendingCategory by remember { mutableStateOf(category) }; var pendingTag by remember { mutableStateOf(tag) }; var pendingArchived by remember { mutableStateOf(archived) }
@@ -86,13 +93,14 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             (r.archivedAtUtcMillis != null) == archived && r.name.contains(query, true) && (!favorites || r.favorite) &&
                 (category == "All categories" || s?.dish?.foodType == category) && (tag == "All tags" || tag in s?.tags.orEmpty()) }
         // PL-25: the Recipes empties are the shared StateCopy wording.
+        // (A3 `dark-02-library-empty`: the filtered empty is a quiet card;
+        // the brand empty keeps the same words in the same card shape.)
         if (shown.isEmpty()) {
-            if (recipes.isEmpty()) {
-                Text(EmptyStateCopy.RECIPES_TITLE, style = MaterialTheme.typography.titleMedium)
-                Text(EmptyStateCopy.RECIPES_BODY)
-            } else {
-                Text(EmptyStateCopy.RECIPES_FILTERED_TITLE, style = MaterialTheme.typography.titleMedium)
-                Text(EmptyStateCopy.RECIPES_FILTERED_BODY)
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInBannerText(if (recipes.isEmpty()) EmptyStateCopy.RECIPES_TITLE else EmptyStateCopy.RECIPES_FILTERED_TITLE)
+                    Text(if (recipes.isEmpty()) EmptyStateCopy.RECIPES_BODY else EmptyStateCopy.RECIPES_FILTERED_BODY, style = PitTechTextStyles.body)
+                }
             }
         }
         shown.forEach { recipe ->
@@ -100,12 +108,13 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             LaunchedEffect(recipe.currentRevisionId) { assets = viewModel.recipes.assets(recipe.currentRevisionId) }
             var menu by remember { mutableStateOf(false) }
             val snapshot = snapshots[recipe.currentRevisionId]
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     assets.firstOrNull()?.let { RecipePicture(viewModel.recipes.photoUri(it.relativeFilePath)) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (composing) Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
-                        TextButton(onClick = { detail = recipe }, modifier = Modifier.weight(1f).testTag("recipe-open-" + recipe.id)) { Text(recipe.name, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
+                        TextButton(onClick = { detail = recipe }, modifier = Modifier.weight(1f).testTag("recipe-open-" + recipe.id)) { TurnInBannerText(recipe.name, style = PitTechTextStyles.bannerTitle) }
+                        if (recipe.favorite) Icon(Icons.Filled.Favorite, null, tint = tokens.flag, modifier = Modifier.size(20.dp))
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Actions for ${recipe.name}") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -114,26 +123,40 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                         }
                     }
                     snapshot?.let { s ->
-                        Text(listOf(s.dish.foodType, s.dish.cut, if (s.dish.weightText.isNotBlank()) "${s.dish.weightText} ${s.dish.weightUnit}" else "").filter(String::isNotBlank).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (s.description.isNotBlank()) Text(s.description, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                        Text(listOf(s.dish.foodType, s.dish.cut, if (s.dish.weightText.isNotBlank()) "${s.dish.weightText} ${s.dish.weightUnit}" else "").filter(String::isNotBlank).joinToString(" · "), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                        if (s.description.isNotBlank()) Text(s.description, style = PitTechTextStyles.body, maxLines = 3)
                     }
-                    Text("Saved recipe · version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: 1}${if (recipe.favorite) " · favorite" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    Text("Saved recipe · version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: 1}${if (recipe.favorite) " · favorite" else ""}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
                 }
             }
         }
         if (selected.isNotEmpty()) {
-            val temperatures = selected.mapNotNull { snapshots[it]?.preferredPitTemperatureF }.distinct()
-            if (temperatures.size > 1) Text("These recipes use different smoker settings. Choose the setting for this meal when ready.")
-            OutlinedTextField(mealTitle, { mealTitle = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-meal-title"))
-            Button(onClick = { viewModel.previewRecipeMeal(mealTitle, selected); selected = emptyList() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
-            val active = cooks.filter { it.cook.status != CookStatus.COMPLETED }
-            if (active.isNotEmpty()) {
-                val choices = active.mapIndexed { index, c -> c.cook.id to "${c.cook.title} (${index + 1})" }
-                SimpleDropdownField("Existing meal", choices.firstOrNull { it.first == existingMealId }?.second ?: "Choose a meal", listOf("Choose a meal") + choices.map { it.second }, { value -> existingMealId = choices.firstOrNull { it.second == value }?.first })
-                OutlinedButton(onClick = { act { val id = existingMealId ?: return@act; selected.forEach { viewModel.addRecipeToMeal(id, it) }; selected = emptyList(); viewModel.openCook(id) } }, enabled = existingMealId != null && !busy) { Text("Add selected recipes") }
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInMetaLabel("Build a meal")
+                    val temperatures = selected.mapNotNull { snapshots[it]?.preferredPitTemperatureF }.distinct()
+                    if (temperatures.size > 1) TurnInStatusStrip("These recipes use different smoker settings. Choose the setting for this meal when ready.", tokens.cobalt)
+                    TurnInBoxedField("Meal name (optional)") {
+                        OutlinedTextField(mealTitle, { mealTitle = it }, modifier = Modifier.fillMaxWidth().testTag("recipe-meal-title"))
+                    }
+                    Button(onClick = { viewModel.previewRecipeMeal(mealTitle, selected); selected = emptyList() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
+                    val active = cooks.filter { it.cook.status != CookStatus.COMPLETED }
+                    if (active.isNotEmpty()) {
+                        val choices = active.mapIndexed { index, c -> c.cook.id to "${c.cook.title} (${index + 1})" }
+                        SimpleDropdownField("Existing meal", choices.firstOrNull { it.first == existingMealId }?.second ?: "Choose a meal", listOf("Choose a meal") + choices.map { it.second }, { value -> existingMealId = choices.firstOrNull { it.second == value }?.first })
+                        OutlinedButton(onClick = { act { val id = existingMealId ?: return@act; selected.forEach { viewModel.addRecipeToMeal(id, it) }; selected = emptyList(); viewModel.openCook(id) } }, enabled = existingMealId != null && !busy) { Text("Add selected recipes") }
+                    }
+                }
             }
         }
-        presets.forEach { preset -> TextButton(onClick = { viewModel.previewMealPreset(preset.id) }, enabled = !busy) { Text("Repeat ${preset.name}") } }
+        presets.forEach { preset ->
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInMetaLabel("Meal preset")
+                    TextButton(onClick = { viewModel.previewMealPreset(preset.id) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Repeat ${preset.name}", style = PitTechTextStyles.bannerCard, color = tokens.ink) }
+                }
+            }
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     detail?.let { recipe ->
@@ -150,6 +173,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
 
 @Composable private fun RecipeDetailsDialog(viewModel: CooksViewModel, recipe: SavedRecipe, history: List<RecipeRevision>, snapshots: Map<String, RecipeSnapshot>, cookIds: Set<String>, busy: Boolean,
     onClose: () -> Unit, onUse: (String) -> Unit, onEdit: (RecipeRevision) -> Unit, onDuplicate: (String) -> Unit, onArchive: () -> Unit, onShare: (String) -> Unit) {
+    val tokens = pitTechTokens()
     var selected by remember(recipe.id) { mutableStateOf(recipe.currentRevisionId) }
     var duplicateName by remember(recipe.id) { mutableStateOf(recipe.name + " copy") }
     val revision = history.firstOrNull { it.id == selected }; val snapshot = snapshots[selected]
@@ -160,24 +184,73 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         TextButton(onClick = onClose, enabled = !busy, modifier = Modifier.testTag("recipe-details-close")) { Text("Close") }
         TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") }
     }) {
-        Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { recipeVersionLabel(it, history) }.orEmpty(), history.sortedWith(compareByDescending<RecipeRevision> { it.revisionNumber }.thenBy { it.id }).map { recipeVersionLabel(it, history) }, { label -> selected = history.first { recipeVersionLabel(it, history) == label }.id })
-            Text(if (selected == recipe.currentRevisionId) "Preferred version" else "Previous version")
-            if (revision?.sourceCookId != null) Text(if (revision.sourceCookId in cookIds) "Saved from your meal history." else "Source meal is unavailable. Saved instructions and reference photos remain available.")
+            // A3 `dark-04-recipe-detail`: the preferred version wears the
+            // marigold pill; a previous version stays a quiet mono line.
+            if (selected == recipe.currentRevisionId) {
+                Surface(shape = RoundedCornerShape(8.dp), color = tokens.marigold, contentColor = tokens.onAccent) {
+                    Text("Preferred version", style = PitTechTextStyles.monoMeta, color = tokens.onAccent, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                }
+            } else Text("Previous version", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+            if (revision?.sourceCookId != null) {
+                if (revision.sourceCookId in cookIds) Text("Saved from your meal history.", style = PitTechTextStyles.body)
+                else TurnInStatusStrip("Source meal is unavailable. Saved instructions and reference photos remain available.", tokens.cobalt)
+            }
             snapshot?.publicSource?.let { source ->
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                Text(if (source.removed) "Saved from a removed recipe" else "Saved from " + source.displayName)
+                Text(if (source.removed) "Saved from a removed recipe" else "Saved from " + source.displayName, style = PitTechTextStyles.body)
                 if (!source.removed) TextButton(onClick = { uriHandler.openUri(source.url) }) { Text("View shared source") }
-                Text("This saved version is yours. Changes to the public recipe don't replace it.", style = MaterialTheme.typography.bodySmall)
+                Text("This saved version is yours. Changes to the public recipe don't replace it.", style = PitTechTextStyles.body, color = tokens.inkMuted)
             }
             if(viewModel.publicDiscovery.enabled)snapshot?.takeIf { it.publicSource?.removed==false }?.let { PublicSourceReviewButton(it,viewModel.publicDiscovery) }
-            snapshot?.let { s -> Text(s.description); Text(s.dish.prepNotes); s.dish.preparationItems.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }; s.instructions.forEach { Text(it.title + it.details.takeIf { x -> x.isNotBlank() }?.let { x -> " · $x" }.orEmpty()) }; if (s.resultNotes.isNotBlank()) Text(s.resultNotes) }
-            assets.forEach { asset -> RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath)); if (asset.caption.isNotBlank()) Text(asset.caption) }
-            revision?.let { r -> TextButton(onClick = { onEdit(r) }, enabled = !busy) { Text("Edit as a new version") } }
-            TextButton(onClick = { onShare(selected) }, enabled = revision != null && !busy, modifier = Modifier.testTag("recipe-share")) { Text("Share recipe") }
-            OutlinedTextField(duplicateName, { duplicateName = it }, label = { Text("Variation name") }, modifier = Modifier.fillMaxWidth())
-            TextButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank()) { Text("Duplicate recipe") }
-            TextButton(onClick = onArchive, enabled = !busy) { Text("Archive recipe") }
+            snapshot?.let { s ->
+                // The frame's score cells, from the values the snapshot
+                // actually carries: pit, serves, and the first target.
+                val cells = listOfNotNull(
+                    s.preferredPitTemperatureF?.let { "Pit" to "${it.toInt()}°" },
+                    s.servings.takeIf { it.isNotBlank() }?.let { "Serves" to it },
+                    s.targets.firstOrNull()?.let { "Target" to "${it.value.toInt()}${it.unit}" },
+                )
+                if (cells.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    cells.forEach { (label, value) -> TurnInScoreCell(label, value, Modifier.weight(1f)) }
+                }
+                if (s.description.isNotBlank()) Text(s.description, style = PitTechTextStyles.body)
+                if (s.dish.preparationItems.isNotEmpty()) TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInMetaLabel("Ingredients")
+                        s.dish.preparationItems.forEach { item ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(item.name, style = PitTechTextStyles.bodyEmphasis)
+                                Text("${item.amountText} ${item.amountUnit}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                            }
+                        }
+                    }
+                }
+                if (s.dish.prepNotes.isNotBlank()) Text(s.dish.prepNotes, style = PitTechTextStyles.body)
+                if (s.instructions.isNotEmpty()) TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInMetaLabel("Instructions")
+                        s.instructions.forEach { Text(it.title + it.details.takeIf { x -> x.isNotBlank() }?.let { x -> " · $x" }.orEmpty(), style = PitTechTextStyles.body) }
+                    }
+                }
+                if (s.resultNotes.isNotBlank()) TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInMetaLabel("Results note")
+                        Text(s.resultNotes, style = PitTechTextStyles.body)
+                    }
+                }
+            }
+            assets.forEach { asset -> RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath)); if (asset.caption.isNotBlank()) Text(asset.caption, style = PitTechTextStyles.monoMeta, color = tokens.inkMuted) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                revision?.let { r -> Button(onClick = { onEdit(r) }, enabled = !busy, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Edit as a new version") } }
+                OutlinedButton(onClick = { onShare(selected) }, enabled = revision != null && !busy, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("recipe-share")) { Text("Share recipe") }
+            }
+            TurnInBoxedField("Variation name") {
+                OutlinedTextField(duplicateName, { duplicateName = it }, modifier = Modifier.fillMaxWidth())
+            }
+            OutlinedButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Duplicate recipe") }
+            TextButton(onClick = onArchive, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Archive recipe", color = tokens.flag) }
         }
     }
 }
@@ -194,10 +267,10 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val scope = rememberCoroutineScope()
     fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That change couldn't be saved. Your cookbook is unchanged — try again.") } finally { busy = false } } }
     if (data.cook.status == CookStatus.COMPLETED || sources.any { source -> data.dishes.any { it.id == source.dishId } }) {
-        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("meal-recipe-actions")) { Text(if (data.cook.status == CookStatus.COMPLETED) "Save selected dishes as recipes" else "Recipes in this meal") }
+        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("meal-recipe-actions")) { Text(if (data.cook.status == CookStatus.COMPLETED) "Save selected dishes as recipes" else "Recipes in this meal", style = PitTechTextStyles.bodyEmphasis) }
         if (expanded) data.dishes.forEach { dish ->
             val source = sources.firstOrNull { it.dishId == dish.id }
-            Text(dish.name, style = MaterialTheme.typography.titleSmall)
+            TurnInBannerText(dish.name)
             if (data.cook.status == CookStatus.COMPLETED) {
                 OutlinedButton(onClick = { act { val draft = viewModel.recipeExtraction(data.cook.id, dish.id); editor = RecipeEditorRequest(draft.snapshot, sourceCookId = data.cook.id, sourceDishId = dish.id, sourcePhotos = data.photos, selectedPhotoIds = draft.photoIds, context = draft.contextEvents) } }, enabled = !busy, modifier = Modifier.testTag("dish-save-recipe-" + dish.id)) { Text("Save as new recipe") }
                 if (source != null) TextButton(onClick = { act {

@@ -15,7 +15,9 @@ struct MealRecipeActions: View {
         if !dishes.isEmpty && (cook?.isActive == false || dishes.contains(where: { store.recipeSource($0.id) != nil })) {
             DisclosureGroup(cook?.isActive == false ? "Save selected dishes as recipes" : "Recipes in this meal", isExpanded: $expanded) {
                 ForEach(dishes) { dish in
-                    Text(dish.name).font(.headline)
+                    // TURN-IN (Slice 3): dish names ride the banner face,
+                    // matching Android's meal-recipe actions.
+                    TurnInBannerText(dish.name)
                     if cook?.isActive == false {
                         Button("Save as new recipe") { act { editor = try request(dish.id) } }
                         if let source = store.recipeSource(dish.id), let recipeId = source["recipeId"]?.stringValue {
@@ -47,7 +49,7 @@ struct MealRecipeActions: View {
                     TextField("Meal combination name", text: $presetName)
                     Button("Save meal combination") { act { try store.saveMealPreset(cookId, name: presetName) } }.disabled(presetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
             }.sheet(item: $editor) { NativeRecipeEditor(request: $0) }
                 .onAppear { if initiallyExpanded { expanded = true }; if presetName.isEmpty { presetName = cook?.title ?? "Meal" } }
         }

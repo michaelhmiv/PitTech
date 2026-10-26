@@ -46,38 +46,43 @@ struct NativePublicSourceReview: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Compare your saved copy with the shared source. Your edits may also appear as differences. Meals already using your saved version keep it.")
+                // TURN-IN (Slice 3, Area 03 `dark-09-source-review`): the
+                // revisions read as mono lines and every compared section
+                // is a saved/shared card pair.
+                Text("Compare your saved copy with the shared source. Your edits may also appear as differences. Meals already using your saved version keep it.").font(PitTechFont.body)
                 if let source = snapshot.publicSource {
-                    Text("Saved source reference · " + String(source.revisionId.prefix(8))).font(.caption)
+                    Text("Saved source reference · " + String(source.revisionId.prefix(8))).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     Button("Check shared source") { Task {
                         guard !busy else { return }; busy = true; detail = nil; selected = nil; message = nil; defer { busy = false }
                         do { let result = try await community.detail(source.itemId); detail = result.0; offline = result.1 } catch { message = error.localizedDescription }
                     } }.disabled(busy).accessibilityIdentifier("source-review-check")
                     if let detail {
-                        Text(offline ? "Saved browsing preview only. Connect to check the current source." : detail.revisionId == source.revisionId ? "The shared reference is unchanged." : "The shared recipe has a different reference.").font(.headline)
-                        Text("Shared reference · " + String(detail.revisionId.prefix(8))).font(.caption)
-                        Text("Choose the shared dish to compare. A collection may contain several dishes.")
-                        ForEach(detail.recipes.indices, id: \.self) { index in Button(detail.recipes[index].objectValue?["title"]?.stringValue ?? "Recipe") { selected = index }.accessibilityIdentifier("source-review-member-\(index)") }
+                        Text(offline ? "Saved browsing preview only. Connect to check the current source." : detail.revisionId == source.revisionId ? "The shared reference is unchanged." : "The shared recipe has a different reference.").font(PitTechFont.bodyEmphasis)
+                        Text("Shared reference · " + String(detail.revisionId.prefix(8))).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                        Text("Choose the shared dish to compare. A collection may contain several dishes.").font(PitTechFont.body)
+                        ForEach(detail.recipes.indices, id: \.self) { index in Button(detail.recipes[index].objectValue?["title"]?.stringValue ?? "Recipe") { selected = index }.buttonStyle(.bordered).accessibilityIdentifier("source-review-member-\(index)") }
                         if let selected, detail.recipes.indices.contains(selected) {
                             if let sections = try? NativeSourceComparison.sections(snapshot, recipe: detail.recipes[selected]) {
                                 ForEach(sections, id: \.title) { section in
-                                    Text(section.title + (section.changed ? " · differences" : " · unchanged")).font(.title3.bold())
+                                    Text(section.title + (section.changed ? " · differences" : " · unchanged")).font(PitTechFont.bodyEmphasis).foregroundStyle(section.changed ? PitTechStyle.attentionText : PitTechStyle.ink)
                                     comparison("Your saved copy", section.saved); comparison(offline ? "Saved shared preview" : "Shared recipe", section.shared)
                                 }
-                            } else { Text("This recipe could not be compared safely. Your saved copy is unchanged.") }
+                            } else { Text("This recipe could not be compared safely. Your saved copy is unchanged.").font(PitTechFont.body) }
                         }
                     }
                 }
-                Text("This review does not replace recipes, reference measurements, or an active meal. To keep a different shared version, open its source and use the separate Save preview.").font(.subheadline)
-                if busy { ProgressView("Checking source…") }; if let message { Text(message) }
+                Text("This review does not replace recipes, reference measurements, or an active meal. To keep a different shared version, open its source and use the separate Save preview.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                if busy { ProgressView("Checking source…") }; if let message { TurnInStatusStrip(text: message, accent: PitTechStyle.flag) }
             }.padding(20)
         }.accessibilityIdentifier("source-review-content").navigationTitle("Review shared changes").navigationBarTitleDisplayMode(.inline)
     }
     @ViewBuilder private func comparison(_ title: String, _ rows: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            if rows.isEmpty { Text("None listed") }
-            ForEach(rows.indices, id: \.self) { index in Text("\(index + 1). " + rows[index]) }
-        }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+        TurnInCard {
+            VStack(alignment: .leading, spacing: 8) {
+                TurnInMetaLabel(title)
+                if rows.isEmpty { Text("None listed").font(PitTechFont.body) }
+                ForEach(rows.indices, id: \.self) { index in Text("\(index + 1). " + rows[index]).font(PitTechFont.body) }
+            }
+        }
     }
 }

@@ -137,34 +137,66 @@ private fun RecipeEditorRequest.initialDraft(): RecipeEditorDraft = RecipeEditor
                         resetToInitialDraft()
                     })
                 }
-                OutlinedTextField(snapshot.name, { value -> snapshot = snapshot.copy(name = value, dish = if (snapshot.dish.name == snapshot.name) snapshot.dish.copy(name = value) else snapshot.dish) }, label = { Text("Recipe name") }, modifier = Modifier.fillMaxWidth().testTag("recipe-name"))
-                OutlinedTextField(snapshot.description, { snapshot = snapshot.copy(description = it) }, label = { Text("Description (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-description"))
-                OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth())
+                // TURN-IN (Slice 3, Area 03 `dark-06-recipe-editor`): the
+                // editor's fields are boxed fields — the label rides above
+                // the box as a caps meta label (§4). Labels, tags, and
+                // validation are the app's own, unchanged.
+                TurnInBoxedField("Recipe name") {
+                    OutlinedTextField(snapshot.name, { value -> snapshot = snapshot.copy(name = value, dish = if (snapshot.dish.name == snapshot.name) snapshot.dish.copy(name = value) else snapshot.dish) }, modifier = Modifier.fillMaxWidth().testTag("recipe-name"))
+                }
+                TurnInBoxedField("Description (optional)") {
+                    OutlinedTextField(snapshot.description, { snapshot = snapshot.copy(description = it) }, modifier = Modifier.fillMaxWidth().testTag("recipe-description"))
+                }
+                TurnInBoxedField("Tags, separated by commas") {
+                    OutlinedTextField(tags, { tags = it }, modifier = Modifier.fillMaxWidth())
+                }
                 TextButton(onClick = { showSetup = true }) { Text("Edit dish, ingredients & preparation") }
-                OutlinedTextField(snapshot.servings, { snapshot = snapshot.copy(servings = it) }, label = { Text("Serving amount (optional)") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(pit, { pit = it }, label = { Text("Preferred smoker temperature °F (optional)") }, modifier = Modifier.fillMaxWidth())
+                TurnInBoxedField("Serving amount (optional)") {
+                    OutlinedTextField(snapshot.servings, { snapshot = snapshot.copy(servings = it) }, modifier = Modifier.fillMaxWidth())
+                }
+                TurnInBoxedField("Preferred smoker temperature °F (optional)") {
+                    OutlinedTextField(pit, { pit = it }, modifier = Modifier.fillMaxWidth())
+                }
                 TextButton(onClick = { showInstructions = !showInstructions }) { Text("Instructions, timings & targets") }
                 if (showInstructions) {
                     instructions.forEachIndexed { index, edit ->
                         fun change(next: InstructionEdit) { instructions = instructions.mapIndexed { i, old -> if (i == index) next else old } }
-                        OutlinedTextField(edit.original.title, { change(edit.copy(original = edit.original.copy(title = it))) }, label = { Text("Instruction") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(edit.original.details, { change(edit.copy(original = edit.original.copy(details = it))) }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
-                        SimpleDropdownField("Method", CookingMethods.labels[edit.original.method] ?: "Not set", listOf("Not set") + CookingMethods.labels.values,
-                            { label -> change(edit.copy(original = edit.original.copy(method = CookingMethods.labels.entries.firstOrNull { it.value == label }?.key))) })
-                        OutlinedTextField(edit.offset, { change(edit.copy(offset = it)) }, label = { Text("Minutes from On smoker (optional)") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(edit.duration, { change(edit.copy(duration = it)) }, label = { Text("Expected duration, minutes (optional)") }, modifier = Modifier.fillMaxWidth())
-                        TextButton(onClick = { instructions = instructions.filterIndexed { i, _ -> i != index } }) { Text("Remove instruction") }
+                        TurnInCard(Modifier.fillMaxWidth()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TurnInBoxedField("Instruction") {
+                                    OutlinedTextField(edit.original.title, { change(edit.copy(original = edit.original.copy(title = it))) }, modifier = Modifier.fillMaxWidth())
+                                }
+                                TurnInBoxedField("Notes") {
+                                    OutlinedTextField(edit.original.details, { change(edit.copy(original = edit.original.copy(details = it))) }, modifier = Modifier.fillMaxWidth())
+                                }
+                                SimpleDropdownField("Method", CookingMethods.labels[edit.original.method] ?: "Not set", listOf("Not set") + CookingMethods.labels.values,
+                                    { label -> change(edit.copy(original = edit.original.copy(method = CookingMethods.labels.entries.firstOrNull { it.value == label }?.key))) })
+                                TurnInBoxedField("Minutes from On smoker (optional)") {
+                                    OutlinedTextField(edit.offset, { change(edit.copy(offset = it)) }, modifier = Modifier.fillMaxWidth())
+                                }
+                                TurnInBoxedField("Expected duration, minutes (optional)") {
+                                    OutlinedTextField(edit.duration, { change(edit.copy(duration = it)) }, modifier = Modifier.fillMaxWidth())
+                                }
+                                TextButton(onClick = { instructions = instructions.filterIndexed { i, _ -> i != index } }) { Text("Remove instruction") }
+                            }
+                        }
                     }
                     TextButton(onClick = { instructions = instructions + InstructionEdit(RecipeInstruction(UUID.randomUUID().toString(), ""), "", "") }) { Text("+ Instruction") }
                     targets.forEachIndexed { index, target ->
                         fun change(next: TargetEdit) { targets = targets.mapIndexed { i, old -> if (i == index) next else old } }
-                        OutlinedTextField(target.explanation, { change(target.copy(explanation = it)) }, label = { Text("Target description") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(target.value, { change(target.copy(value = it)) }, label = { Text("Target temperature") }, modifier = Modifier.fillMaxWidth())
+                        TurnInBoxedField("Target description") {
+                            OutlinedTextField(target.explanation, { change(target.copy(explanation = it)) }, modifier = Modifier.fillMaxWidth())
+                        }
+                        TurnInBoxedField("Target temperature") {
+                            OutlinedTextField(target.value, { change(target.copy(value = it)) }, modifier = Modifier.fillMaxWidth())
+                        }
                         SimpleDropdownField("Unit", target.unit, listOf("°F", "°C"), { change(target.copy(unit = it)) })
                         TextButton(onClick = { targets = targets.filterIndexed { i, _ -> i != index } }) { Text("Remove target") }
                     }
                     TextButton(onClick = { targets = targets + TargetEdit("personal_finish", "", "°F", "") }) { Text("+ Temperature target") }
-                    OutlinedTextField(snapshot.resultNotes, { snapshot = snapshot.copy(resultNotes = it) }, label = { Text("Recipe notes & lessons") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                    TurnInBoxedField("Recipe notes & lessons") {
+                        OutlinedTextField(snapshot.resultNotes, { snapshot = snapshot.copy(resultNotes = it) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                    }
                 }
                 if (request.attemptDishId == null) {
                     TextButton(onClick = { showPhotos = !showPhotos }) { Text("Reference photos") }
@@ -172,26 +204,30 @@ private fun RecipeEditorRequest.initialDraft(): RecipeEditorDraft = RecipeEditor
                         request.assets.forEach { asset ->
                             Row { Checkbox(asset.id in keptAssets, { selected -> keptAssets = if (selected) keptAssets + asset.id else keptAssets - asset.id }); Text("Keep reference photo") }
                             RecipePicture(viewModel.recipes.photoUri(asset.relativeFilePath))
-                            OutlinedTextField(captions[asset.id] ?: asset.caption, { captions = captions + (asset.id to it) }, label = { Text("Caption") }, modifier = Modifier.fillMaxWidth())
+                            TurnInBoxedField("Caption") {
+                                OutlinedTextField(captions[asset.id] ?: asset.caption, { captions = captions + (asset.id to it) }, modifier = Modifier.fillMaxWidth())
+                            }
                         }
                         request.sourcePhotos.forEach { photo ->
                             Row { Checkbox(photo.id in keptPhotos, { selected -> keptPhotos = if (selected) keptPhotos + photo.id else keptPhotos - photo.id }); Text(photo.caption ?: "Meal photo") }
-                            if (photo.id in keptPhotos) { RecipePicture(viewModel.recipes.photoUri(photo.relativePath)); OutlinedTextField(captions[photo.id] ?: photo.caption.orEmpty(), { captions = captions + (photo.id to it) }, label = { Text("Caption") }, modifier = Modifier.fillMaxWidth()) }
+                            if (photo.id in keptPhotos) { RecipePicture(viewModel.recipes.photoUri(photo.relativePath)); TurnInBoxedField("Caption") { OutlinedTextField(captions[photo.id] ?: photo.caption.orEmpty(), { captions = captions + (photo.id to it) }, modifier = Modifier.fillMaxWidth()) } }
                         }
-                        addedPhotos.forEach { uri -> RecipePicture(uri); OutlinedTextField(captions[uri].orEmpty(), { captions = captions + (uri to it) }, label = { Text("Caption") }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = { addedPhotos = addedPhotos - uri }) { Text("Remove photo") } }
+                        addedPhotos.forEach { uri -> RecipePicture(uri); TurnInBoxedField("Caption") { OutlinedTextField(captions[uri].orEmpty(), { captions = captions + (uri to it) }, modifier = Modifier.fillMaxWidth()) }; TextButton(onClick = { addedPhotos = addedPhotos - uri }) { Text("Remove photo") } }
                         TextButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("+ Reference photos") }
                     }
                 }
                 TextButton(onClick = { showFacts = !showFacts }) { Text("Recorded history") }
                 if (showFacts) {
-                    Text("Recorded observations stay separate from editable instructions.", style = MaterialTheme.typography.bodySmall)
+                    Text("Recorded observations stay separate from editable instructions.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
                     snapshot.observations.forEach { fact -> Row {
                         Checkbox(fact.sourceEventId in keptFacts, { selected -> keptFacts = if (selected) keptFacts + fact.sourceEventId else keptFacts - fact.sourceEventId })
-                        Column { Text(fact.title); if (fact.details.isNotBlank()) Text(fact.details); fact.offsetMillis?.let { Text("${it / 60000.0} minutes from recorded On smoker") } }
+                        Column { Text(fact.title, style = PitTechTextStyles.bodyEmphasis); if (fact.details.isNotBlank()) Text(fact.details, style = PitTechTextStyles.body); fact.offsetMillis?.let { Text("${it / 60000.0} minutes from recorded On smoker", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted) } }
                     } }
-                    request.context.forEach { event -> Row { Checkbox(event.id in contextIds, { selected -> contextIds = if (selected) contextIds + event.id else contextIds - event.id }); Column { Text("Shared meal context: ${event.title}"); event.details?.let { Text(it) } } } }
+                    request.context.forEach { event -> Row { Checkbox(event.id in contextIds, { selected -> contextIds = if (selected) contextIds + event.id else contextIds - event.id }); Column { Text("Shared meal context: ${event.title}", style = PitTechTextStyles.bodyEmphasis); event.details?.let { Text(it, style = PitTechTextStyles.body) } } } }
                 }
-                if (!valid) Text("Review the recipe name, instruction titles and numeric quantities.", color = MaterialTheme.colorScheme.error)
+                // A3 `dark-07-editor-error`: the failure is flagged in
+                // place at the top of the form's end; the edits stay put.
+                if (!valid) TurnInStatusStrip("Review the recipe name, instruction titles and numeric quantities.", pitTechTokens().flag)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
     }

@@ -243,6 +243,28 @@ struct TurnInStatusStrip: View {
     }
 }
 
+/// A single raised fact cell: mono value under a meta label. Added in
+/// Slice 3 for the recipe detail scoreboard (pit temperature, serves,
+/// target) — the same cell Android carries as `TurnInScoreCell`.
+struct TurnInScoreCell: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TurnInMetaLabel(label)
+            Text(value)
+                .font(PitTechFont.monoReadout)
+                .foregroundStyle(PitTechStyle.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(PitTechStyle.ruling, lineWidth: 1))
+    }
+}
+
 /// The marigold PRO tag (§3.1): a fill, so its text is navy on-accent,
 /// never white. Added in Slice 2 for the Pro entry rows and hub; Slice 7
 /// reconciles the remaining Pro surfaces to it.

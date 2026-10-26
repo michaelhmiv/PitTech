@@ -39,10 +39,21 @@ internal fun PrepComboTools(items: List<IngredientDraft>, onChange: (List<Ingred
     if (items.any { it.name.isNotBlank() }) TextButton(onClick = { saving = true; error = null }, modifier = Modifier.testTag("prep-save-combo")) { Text("Save this ingredient combo") }
     // PL-22 (DD-6): combo list, combo detail, and the save-combo form are
     // list / short-editor surfaces — sheets, not dialogs.
+    // TURN-IN (Slice 3, Area 03 `dark-10-combos` / `dark-11-combos-empty`
+    // / `dark-12-combo-detail`): combos are cards in the select sheet;
+    // the detail sheet lists ingredients as name · amount rows with the
+    // yield scaling in a boxed field.
     if (selecting) SheetSurface(onDismiss = { selecting = false }, title = "Ingredient combos", actions = { TextButton(onClick = { selecting = false }) { Text("Close") } }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (combos.isEmpty()) Text("Save ingredients from a dish to reuse your rub, brine, or marinade here.")
-            combos.forEach { record -> OutlinedButton(onClick = { selected = CookPreparation.decodeCombo(record.payload); scaleTo = ""; selecting = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(record.title) } }
+            if (combos.isEmpty()) Text("Save ingredients from a dish to reuse your rub, brine, or marinade here.", style = PitTechTextStyles.body)
+            combos.forEach { record ->
+                TurnInCard(Modifier.fillMaxWidth(), onClick = { selected = CookPreparation.decodeCombo(record.payload); scaleTo = ""; selecting = false }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TurnInBannerText(record.title, modifier = Modifier.weight(1f))
+                        Text("${runCatching { CookPreparation.decodeCombo(record.payload).items.size }.getOrDefault(0)} ingredients", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                    }
+                }
+            }
         }
     }
     selected?.let { combo -> SheetSurface(onDismiss = { selected = null }, title = combo.name, actions = {
@@ -55,11 +66,18 @@ internal fun PrepComboTools(items: List<IngredientDraft>, onChange: (List<Ingred
         }) { Text("Add to dish") }
     }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            combo.items.forEach { Text("${it.name} · ${it.amountText} ${it.amountUnit}") }
-            Text("Adds a copy to this dish. You can edit the quantities before saving.")
+            combo.items.forEach { item ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(item.name, style = PitTechTextStyles.bodyEmphasis)
+                    Text("${item.amountText} ${item.amountUnit}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                }
+            }
+            Text("Adds a copy to this dish. You can edit the quantities before saving.", style = PitTechTextStyles.body)
             if (combo.yieldAmount != null) {
-                Text("Recipe yield: ${combo.yieldAmount} ${combo.yieldUnit}")
-                OutlinedTextField(scaleTo, { scaleTo = it }, label = { Text("New yield in ${combo.yieldUnit} (optional)") }, modifier = Modifier.fillMaxWidth())
+                Text("Recipe yield: ${combo.yieldAmount} ${combo.yieldUnit}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                TurnInBoxedField("New yield in ${combo.yieldUnit} (optional)") {
+                    OutlinedTextField(scaleTo, { scaleTo = it }, modifier = Modifier.fillMaxWidth())
+                }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -79,10 +97,16 @@ internal fun PrepComboTools(items: List<IngredientDraft>, onChange: (List<Ingred
         }) { Text("Save combo") }
     }) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it }, label = { Text("Combo name") }, modifier = Modifier.fillMaxWidth().testTag("prep-combo-name"))
-            OutlinedTextField(yield, { yield = it }, label = { Text("Recipe yield (optional)") }, modifier = Modifier.fillMaxWidth())
-            if (yield.isNotBlank()) OutlinedTextField(yieldUnit, { yieldUnit = it }, label = { Text("Yield unit") }, modifier = Modifier.fillMaxWidth())
-            Text("An explicit yield allows scaling ingredient quantities when you reuse the combo.")
+            TurnInBoxedField("Combo name") {
+                OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth().testTag("prep-combo-name"))
+            }
+            TurnInBoxedField("Recipe yield (optional)") {
+                OutlinedTextField(yield, { yield = it }, modifier = Modifier.fillMaxWidth())
+            }
+            if (yield.isNotBlank()) TurnInBoxedField("Yield unit") {
+                OutlinedTextField(yieldUnit, { yieldUnit = it }, modifier = Modifier.fillMaxWidth())
+            }
+            Text("An explicit yield allows scaling ingredient quantities when you reuse the combo.", style = PitTechTextStyles.body)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
