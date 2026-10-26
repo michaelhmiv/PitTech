@@ -126,7 +126,7 @@ struct PitTechLibrary: Codable, Sendable {
 
     init() {
         schemaVersion = Self.archiveVersion
-        preferences = ["temperatureUnit": .string("F"), "weightUnit": .string("lb"), "themeMode": .string("system")]
+        preferences = ["temperatureUnit": .string("F"), "weightUnit": .string("lb"), "themeMode": .string("dark")]
         cooks = []
         dishes = []
         ingredients = []

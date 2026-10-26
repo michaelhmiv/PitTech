@@ -6,6 +6,19 @@
 	<array><dict><key>CFBundleURLName</key><string>com.pittech.share</string><key>CFBundleURLSchemes</key><array><string>$(PITTECH_LINK_SCHEME)</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
 	<key>CFBundleDisplayName</key>
 	<string>PitTech</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>NotoSansDisplayCondensed-Bold.ttf</string>
+		<string>NotoSansDisplayCondensed-ExtraBold.ttf</string>
+		<string>NotoSansDisplayCondensed-Black.ttf</string>
+		<string>IBMPlexMono-Regular.ttf</string>
+		<string>IBMPlexMono-Medium.ttf</string>
+		<string>IBMPlexMono-SemiBold.ttf</string>
+		<string>IBMPlexMono-Bold.ttf</string>
+		<string>Inter-Regular.ttf</string>
+		<string>Inter-Medium.ttf</string>
+		<string>Inter-Bold.ttf</string>
+	</array>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIcons</key>

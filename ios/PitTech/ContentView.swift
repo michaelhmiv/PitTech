@@ -640,11 +640,22 @@ struct SettingsView: View {
                 // Feedback, Ads and privacy, About — same contents per
                 // section on both platforms, platform mechanics aside.
                 Section("Appearance") {
-                    // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is
-                    // the only appearance — stated honestly, not a dead picker.
-                    LabeledContent("Appearance", value: "Night Service (dark)")
-                        .accessibilityIdentifier("appearance-night-service")
-                    Text("PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.")
+                    // TURN-IN (BUILD-SPEC §3.4, copy delta §1.1.1): the working
+                    // Dark / Light / System control designed in Area 06 frame
+                    // f01 replaces the #172 informational row. The selection
+                    // shown is the resolved appearance (PitTechAppearance),
+                    // so a library carrying the old factory seed reads Dark.
+                    Picker("Appearance", selection: Binding(
+                        get: { PitTechAppearance.selectionTag(store.library.preferences?["themeMode"]?.stringValue) },
+                        set: { store.setPreference("themeMode", value: $0) }
+                    )) {
+                        Text("Dark").tag("DARK")
+                        Text("Light").tag("LIGHT")
+                        Text("System").tag("SYSTEM")
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("appearance-picker")
+                    Text("Dark is the default — light is the same layout.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
