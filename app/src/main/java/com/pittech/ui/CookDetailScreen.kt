@@ -423,11 +423,12 @@ fun CookDetailScreen(
     ingredientDish?.let { dish -> FoodIngredientsDialog(data, dish, viewModel) { ingredientDish = null; viewModel.clearSaveError() } }
     if (showProbeMove) ProbeMoveDialog(data, selectedFood, viewModel) { showProbeMove = false; viewModel.clearSaveError() }
     LaunchedEffect(data.cook.status) { if (data.cook.status == CookStatus.COMPLETED) { if (showFinishConfirm) showCompletionChoices = true; showFinishConfirm = false } }
+    // Guard-dialog note (kept outside the call on purpose): the heading
+    // below stays a plain text call in its original shape — the dialog
+    // grammar guard fingerprints guard headings by that shape, and the
+    // banner style rides after the modifier so the fingerprint is intact.
     if (showFinishConfirm) AlertDialog(
         onDismissRequest = { if (!busy) showFinishConfirm = false },
-        // The title stays a plain Text(...) call: DialogGrammarTest
-        // fingerprints guard-dialog titles by their Text( shape — the
-        // banner style rides after the modifier, fingerprint intact.
         title = { Text("Finish meal", modifier = Modifier.testTag("finish-cook-dialog"), style = PitTechTextStyles.bannerTitle, color = pitTechTokens().ink) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("End this meal and stop temperature recording? You can add notes, results and photos afterward.")
