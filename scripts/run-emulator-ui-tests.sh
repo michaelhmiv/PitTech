@@ -260,6 +260,13 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 20 adb shell pm clear com.pittech.debug
   timeout 120 adb install -r -d "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
   timeout 120 adb install -r -d -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  # The pm clear wiped the seeded welcome flag, and prepareRunningCook
+  # launches the previous build's MainActivity: without the flag it waits
+  # on the Welcome surface, the main UI never composes, the grill monitor
+  # never goes foreground, and no device is ever selected. Seed the
+  # previous build now; the restore after the upgrade below stays as the
+  # guarantee for the phases that follow it.
+  seed_welcome_seen
   timeout 12m adb shell am instrument -w -r \
     -e class 'com.pittech.LiveUpgradeRecordingTest#prepareRunningCook' \
     "$instrumentation_target" | tee "$output_dir/live-upgrade-prepare.txt"
