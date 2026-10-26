@@ -148,13 +148,15 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Refrigerated").performClick()
         composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
         // TEMP DIAGNOSTIC (slice 11 gate, test02 boneIn at font 1.5):
-        // dump the tree so the chip's selected state and any restored
-        // draft banner are visible in the evidence logcat.
+        // log the chip's semantics (Selected?) and whether a restored
+        // draft banner is in the editor, into the evidence logcat. (The
+        // editor is a dialog root, so onRoot() is ambiguous here — query
+        // the chip node directly instead.)
         composeRule.waitForIdle()
-        val dishTree = composeRule.onRoot(useUnmergedTree = true).printToString()
-        dishTree.chunked(3000).forEachIndexed { index, chunk ->
-            android.util.Log.e("S11DIAG2", "chunk $index: $chunk")
-        }
+        val chipConfig = composeRule.onNodeWithTag("dish-boneless").fetchSemanticsNode().config
+        android.util.Log.e("S11DIAG2", "boneless config: $chipConfig")
+        val bannerCount = composeRule.onAllNodesWithText("Resume draft").fetchSemanticsNodes().size
+        android.util.Log.e("S11DIAG2", "resume banner count: $bannerCount")
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
