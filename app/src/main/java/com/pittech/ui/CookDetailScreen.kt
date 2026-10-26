@@ -94,7 +94,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -595,6 +597,10 @@ fun CookDetailScreen(
         )
     }
     val checkInReminder = completionReminder
+    DisposableEffect(showReminderCheckIn, completionReminder?.id) {
+        android.util.Log.d("CHECKIN-DIAG", "state showReminderCheckIn=$showReminderCheckIn completionId=${completionReminder?.id}")
+        onDispose { }
+    }
     if (showReminderCheckIn && checkInReminder != null) {
         ReminderCheckInDialog(
             reminder = checkInReminder,
@@ -621,6 +627,7 @@ fun CookDetailScreen(
                 completionReminder = null
             },
             onSnooze = {
+                android.util.Log.d("CHECKIN-DIAG", "onSnooze tapped id=${checkInReminder.id}")
                 viewModel.snoozeCookReminder(checkInReminder, com.pittech.domain.ReminderVocabulary.SNOOZE_MILLIS)
                 reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
                 reminderPhotoUri = null
@@ -874,6 +881,7 @@ fun CookDetailScreen(
                     onError = error,
                     onCancelReminder = viewModel::dismissCookReminder,
                     onLogReminder = { reminder ->
+                        android.util.Log.d("CHECKIN-DIAG", "onLogReminder fired id=${reminder.id} dueAt=${reminder.dueAtUtcMillis}")
                         completionReminder = reminder
                         showReminderCheckIn = true
                     },
@@ -2428,6 +2436,7 @@ private fun ReminderCheckInDialog(
     onComplete: (String) -> Unit,
 ) {
     var note by rememberSaveable(reminder.id) { mutableStateOf("") }
+    SideEffect { android.util.Log.d("CHECKIN-DIAG", "check-in sheet composed id=${reminder.id}") }
     // PL-22 (DD-6): a check-in is contextual capture — a sheet, not a dialog.
     SheetSurface(
         // PL-02: closing (scrim/Back) never changes the reminder.
