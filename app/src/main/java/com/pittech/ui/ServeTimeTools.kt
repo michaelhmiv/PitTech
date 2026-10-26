@@ -68,9 +68,9 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
     var editingSchedule by remember { mutableStateOf<Int?>(null) }
     var editingDish by remember { mutableStateOf<Int?>(null) }
     var editingStep by remember { mutableStateOf<PlaybookStep?>(null) }
-    editingStep?.let { s -> StepEditor(s, plan.book.draft.dishes, { editingStep = null }, otherSteps = plan.book.steps) { step -> plan = plan.copy(book = plan.book.copy(steps = if (plan.book.steps.any { it.id == step.id }) plan.book.steps.map { if (it.id == step.id) step else it } else plan.book.steps + step)); editingStep = null } }
+    editingStep?.let { s -> StepEditor(s, plan.book.draft.dishes, { editingStep = null }, otherSteps = plan.book.steps, draftKey = s.id) { step -> plan = plan.copy(book = plan.book.copy(steps = if (plan.book.steps.any { it.id == step.id }) plan.book.steps.map { if (it.id == step.id) step else it } else plan.book.steps + step)); editingStep = null } }
     var error by remember { mutableStateOf<String?>(null) }
-    editingDish?.let { i -> DishEditorDialog(initial = plan.book.draft.dishes.getOrNull(i), onDismiss = { editingDish = null }, onSave = { dish ->
+    editingDish?.let { i -> DishEditorDialog(initial = plan.book.draft.dishes.getOrNull(i), draftKey = "serveplan", onDismiss = { editingDish = null }, onSave = { dish ->
         val dishes = plan.book.draft.dishes.toMutableList(); if (i in dishes.indices) dishes[i] = dish else dishes.add(dish)
         val schedules = if (i in plan.schedules.indices) plan.schedules else plan.schedules + DishSchedule(i, evidenceNote = "Enter your duration range")
         plan = plan.copy(book = plan.book.copy(draft = plan.book.draft.copy(dishes = dishes)), schedules = schedules); editingDish = null

@@ -68,6 +68,11 @@ class MainActivity : ComponentActivity() {
             }
             var welcomeRestoreBackup by remember { mutableStateOf(false) }
             var welcomeConnectThermometer by remember { mutableStateOf(false) }
+            // PL-20 (#172): crash recovery returns to the cook that was
+            // open when the crash hit; its attach action also lands on
+            // Settings with the feedback form open.
+            var crashResumeCookId by remember { mutableStateOf<String?>(null) }
+            var crashAttachFeedback by remember { mutableStateOf(false) }
             fun dismissWelcome() {
                 WelcomePreferences.markSeen(preferences)
                 welcomeSeen = true
@@ -104,6 +109,13 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onContinue = {
+                                crashResumeCookId = CrashDiagnostics.openCookAtCrash(this@MainActivity)
+                                CrashDiagnostics.acknowledgeReport(this@MainActivity, pending)
+                                crashReport = null
+                            },
+                            onAttachToProblemReport = {
+                                crashResumeCookId = CrashDiagnostics.openCookAtCrash(this@MainActivity)
+                                crashAttachFeedback = true
                                 CrashDiagnostics.acknowledgeReport(this@MainActivity, pending)
                                 crashReport = null
                             },
@@ -134,6 +146,8 @@ class MainActivity : ComponentActivity() {
                         onShowPrivacyOptions = adsConsentManager::showPrivacyOptions,
                         startWithRestoreBackup = welcomeRestoreBackup,
                         startAtDevices = welcomeConnectThermometer,
+                        startCookId = crashResumeCookId,
+                        startAtFeedback = crashAttachFeedback,
                     )
                 }
             }

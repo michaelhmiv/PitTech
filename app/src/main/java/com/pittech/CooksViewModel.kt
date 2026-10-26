@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -443,6 +444,17 @@ class CooksViewModel(
 
     private val _selectedCookId = MutableStateFlow<String?>(null)
     val selectedCookId: StateFlow<String?> = _selectedCookId.asStateFlow()
+
+    init {
+        // PL-20 (#172): keep the diagnostics record of the open cook
+        // current so crash recovery can return to it. The initial value
+        // is dropped: at process start nothing has been selected yet,
+        // and the record from before a crash must survive until
+        // recovery reads it.
+        viewModelScope.launch {
+            _selectedCookId.drop(1).collect { CrashDiagnostics.recordOpenCook(context, it) }
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val selectedCook = _selectedCookId.filterNotNull()

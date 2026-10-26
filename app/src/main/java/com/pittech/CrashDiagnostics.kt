@@ -43,6 +43,7 @@ internal object CrashDiagnostics {
     private const val PREFERENCES = "pittech-diagnostics"
     private const val LAST_EXIT_TIMESTAMP = "last-exit-timestamp"
     private const val ACKNOWLEDGED_REPORT = "acknowledged-report"
+    private const val OPEN_COOK_ID = "open-cook-id"
     private const val MAX_STACK_TRACE_LENGTH = 24_000
 
     fun install(application: Application) {
@@ -122,6 +123,23 @@ internal object CrashDiagnostics {
             .putString(ACKNOWLEDGED_REPORT, report.referenceCode)
             .apply()
     }
+
+    /**
+     * PL-20 (#172): remember which cook is open so crash recovery can
+     * return to it instead of always dumping to Meals home. Written by
+     * the view model as the selection changes; device-local diagnostics
+     * state only — never exported or synced.
+     */
+    internal fun recordOpenCook(context: Context, cookId: String?) {
+        val edit = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+        if (cookId == null) edit.remove(OPEN_COOK_ID) else edit.putString(OPEN_COOK_ID, cookId)
+        edit.apply()
+    }
+
+    /** The cook that was open when the last crash hit, if one was open. */
+    internal fun openCookAtCrash(context: Context): String? =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(OPEN_COOK_ID, null)?.takeIf { it.isNotBlank() }
 
     internal fun clearPendingReport(context: Context) {
         runCatching { File(context.filesDir, REPORT_FILE).delete() }

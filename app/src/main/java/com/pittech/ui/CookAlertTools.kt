@@ -73,22 +73,51 @@ internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, con
         Spacer(Modifier.height(24.dp))
     }
     }
-    editing?.let { rule -> AlertEditor(rule, data, busy, error, { editing = null }) { title, saved, timed -> viewModel.saveCookAlert(data.cook.id, title, saved, timed) { if (it) editing = null } } }
+    editing?.let { rule ->
+        // PL-24 (#172): an existing rule drafts under its own id; a new
+        // rule (a fresh id is minted at every open) drafts under the
+        // cook's single "new" slot.
+        val isExisting = alerts.any { record -> runCatching { CookAlertEngine.decode(record.payload).first.id }.getOrNull() == rule.id }
+        AlertEditor(rule, data, busy, error, { editing = null }, draftKey = if (isExisting) "${data.cook.id}:${rule.id}" else "${data.cook.id}:new") { title, saved, timed -> viewModel.saveCookAlert(data.cook.id, title, saved, timed) { if (it) editing = null } }
+    }
 }
 
 @Composable
-private fun AlertEditor(initial: CookAlertRule, data: CookDetailData, busy: Boolean, saveError: String?, onClose: () -> Unit, onSave: (String, CookAlertRule, Boolean) -> Unit) {
-    var rule by remember(initial) { mutableStateOf(initial) }
-    var title by remember { mutableStateOf(CookAlertEngine.types.getValue(initial.type)) }
+private fun AlertEditor(initial: CookAlertRule, data: CookDetailData, busy: Boolean, saveError: String?, onClose: () -> Unit, draftKey: String, onSave: (String, CookAlertRule, Boolean) -> Unit) {
+    // PL-24 (#172): autosave + resume. The draft codec does not validate
+    // (CookAlertEngine.encode would reject a half-typed rule).
     val preferredUnit = preferredInputTemperatureUnit()
-    var tempUnit by remember { mutableStateOf(preferredUnit) }
-    var target by remember { mutableStateOf(initial.targetF?.let { temperatureText(it, tempUnit) }.orEmpty()) }
-    var low by remember { mutableStateOf(temperatureText(initial.lowF ?: 200.0, tempUnit)) }
-    var high by remember { mutableStateOf(temperatureText(initial.highF ?: 300.0, tempUnit)) }
-    var dwell by remember { mutableStateOf((initial.dwellMillis / 60_000).toString()) }
-    var missing by remember { mutableStateOf((initial.missingMillis / 60_000).toString()) }
-    var timed by remember { mutableStateOf(false) }
+    val draftStore = rememberEditorDraftStore()
+    val fullDraftKey = EditorDraftKeys.alert(draftKey)
+    val initialDraft = remember(initial) {
+        AlertEditorDraft(
+            rule = initial, title = CookAlertEngine.types.getValue(initial.type), tempUnit = preferredUnit,
+            target = initial.targetF?.let { temperatureText(it, preferredUnit) }.orEmpty(),
+            low = temperatureText(initial.lowF ?: 200.0, preferredUnit),
+            high = temperatureText(initial.highF ?: 300.0, preferredUnit),
+            dwell = (initial.dwellMillis / 60_000).toString(),
+            missing = (initial.missingMillis / 60_000).toString(),
+            timed = false,
+        )
+    }
+    val storedDraft = remember(initial) { draftStore.load(fullDraftKey)?.let(AlertEditorDraftCodec::decode)?.takeIf { it != initialDraft } }
+    var openedDraft by remember(initial) { mutableStateOf(storedDraft ?: initialDraft) }
+    var draftRestored by remember(initial) { mutableStateOf(storedDraft != null) }
+    var rule by remember(initial) { mutableStateOf(openedDraft.rule) }
+    var title by remember { mutableStateOf(openedDraft.title) }
+    var tempUnit by remember { mutableStateOf(openedDraft.tempUnit) }
+    var target by remember { mutableStateOf(openedDraft.target) }
+    var low by remember { mutableStateOf(openedDraft.low) }
+    var high by remember { mutableStateOf(openedDraft.high) }
+    var dwell by remember { mutableStateOf(openedDraft.dwell) }
+    var missing by remember { mutableStateOf(openedDraft.missing) }
+    var timed by remember { mutableStateOf(openedDraft.timed) }
     var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(rule, title, tempUnit, target, low, high, dwell, missing, timed) {
+        val current = AlertEditorDraft(rule, title, tempUnit, target, low, high, dwell, missing, timed)
+        if (current != openedDraft) draftStore.save(fullDraftKey, AlertEditorDraftCodec.encode(current))
+        else draftStore.clear(fullDraftKey)
+    }
     val loggingOnly = data.recording?.samplingMode == "on_log"
     // PL-22 (DD-6): the alert editor is a multi-field editor — full screen.
     FullScreenSurface(onDismiss = onClose, title = "Cook alert", actions = {
@@ -97,11 +126,21 @@ private fun AlertEditor(initial: CookAlertRule, data: CookDetailData, busy: Bool
             runCatching {
                 require(!loggingOnly || timed || rule.type == "target") { "Choose timed monitoring for this sensor alert." }
                 val saved = rule.copy(targetF = target.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, lowF = low.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, highF = high.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, dwellMillis = (dwell.toLongOrNull() ?: throw IllegalArgumentException("Enter whole dwell minutes.")) * 60_000, missingMillis = (missing.toLongOrNull() ?: throw IllegalArgumentException("Enter whole missing minutes.")) * 60_000)
-                CookAlertEngine.validate(saved); require(title.isNotBlank()); onSave(title, saved, timed)
+                CookAlertEngine.validate(saved); require(title.isNotBlank()); draftStore.clear(fullDraftKey); onSave(title, saved, timed)
             }.onFailure { error = ErrorCopy.failureText(it, "That alert couldn't be saved. Your other alerts are unchanged — check the values and try again.") }
         }) { Text("Save alert") }
     }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (draftRestored) {
+                ResumeDraftBanner(onDiscard = {
+                    draftStore.clear(fullDraftKey)
+                    draftRestored = false
+                    openedDraft = initialDraft
+                    rule = initialDraft.rule; title = initialDraft.title; tempUnit = initialDraft.tempUnit
+                    target = initialDraft.target; low = initialDraft.low; high = initialDraft.high
+                    dwell = initialDraft.dwell; missing = initialDraft.missing; timed = initialDraft.timed
+                })
+            }
             OutlinedTextField(title, { title = it }, label = { Text("Alert name") }, modifier = Modifier.fillMaxWidth())
             ChoiceField("Watch", CookAlertEngine.types.getValue(rule.type), CookAlertEngine.types.values.toList()) { label -> rule = rule.copy(type = CookAlertEngine.types.entries.first { it.value == label }.key, dishId = if (label == "Food target") rule.dishId else null) }
             if (rule.type in setOf("target", "pit_range")) ChoiceField("Temperature unit", tempUnit, listOf("°F", "°C")) { unit ->

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -92,6 +93,8 @@ import com.pittech.data.CookStatus
 import com.pittech.data.CookWithDishes
 import com.pittech.domain.CookEntryValidation
 import com.pittech.domain.DishDraft
+import com.pittech.domain.DishDraftCodec
+import com.pittech.domain.EditorDraftKeys
 import com.pittech.domain.IngredientDraft
 import com.pittech.domain.NewCookDraft
 import java.text.DateFormat
@@ -121,6 +124,11 @@ internal fun PitTechApp(
     // exact destinations the empty-Meals entries use.
     startWithRestoreBackup: Boolean = false,
     startAtDevices: Boolean = false,
+    // PL-20 (#172): crash recovery returns to the cook that was open when
+    // the crash hit, and its attach action lands on Settings with the
+    // feedback form open.
+    startCookId: String? = null,
+    startAtFeedback: Boolean = false,
 ) {
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(viewModel, lifecycleOwner) {
@@ -195,6 +203,15 @@ internal fun PitTechApp(
             moreDestination = "Devices"
         }
     }
+    LaunchedEffect(startCookId) {
+        if (startCookId != null) viewModel.openCook(startCookId)
+    }
+    LaunchedEffect(startAtFeedback) {
+        if (startAtFeedback) {
+            selectedSection = MainSection.MORE.name
+            moreDestination = "Settings"
+        }
+    }
 
     LaunchedEffect(restoredPreferences) {
         restoredPreferences?.let { restored ->
@@ -260,6 +277,17 @@ internal fun PitTechApp(
     if (selectedCookId != null) {
         val detail = selectedCook
         if (detail == null || detail.cook.id != selectedCookId) {
+            // PL-20 (#172): a selection whose detail never arrives is a
+            // cook that no longer exists (the crash-recovery record can
+            // outlive its cook — deleted, or replaced by a restore).
+            // Fall back home after a grace period instead of hanging on
+            // the interstitial forever; a real local cook loads in well
+            // under the grace period, and the effect is cancelled the
+            // moment the detail lands.
+            LaunchedEffect(selectedCookId) {
+                kotlinx.coroutines.delay(5_000)
+                viewModel.closeCook()
+            }
             Scaffold { padding ->
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text("Opening cook…", style = MaterialTheme.typography.bodyLarge)
@@ -386,7 +414,18 @@ internal fun PitTechApp(
                 if (BuildConfig.TELEMETRY_BETA_ENABLED) {
                     TelemetryConnectionsScreen(viewModel, Modifier.weight(1f))
                 } else {
-                    FeaturePlaceholder(title = "Devices", message = "Grill connections aren't available yet.", note = "You can add temperature readings by hand during a cook.", modifier = Modifier.weight(1f))
+                    // PL-30 (#172): the shared "not available yet" pattern,
+                    // with a route onward to Meals (where readings are
+                    // added by hand) instead of a dead-end text block.
+                    NotAvailablePlaceholder(
+                        icon = Icons.Filled.Thermostat,
+                        title = NotAvailableCopy.DEVICES_TITLE,
+                        message = NotAvailableCopy.DEVICES_MESSAGE,
+                        note = NotAvailableCopy.DEVICES_NOTE,
+                        onwardLabel = NotAvailableCopy.DEVICES_ONWARD,
+                        onOnward = { selectedSection = MainSection.COOKS.name },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
 
             }
@@ -406,6 +445,7 @@ internal fun PitTechApp(
                 },
                 privacyOptionsRequired = privacyOptionsRequired,
                 onShowPrivacyOptions = onShowPrivacyOptions,
+                openFeedbackOnStart = startAtFeedback,
                 modifier = Modifier.padding(padding),
             )
             else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null, onPro = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.MORE) }, accountSubtitle = if (accountPresentation.signedIn) "Private sync — ${SyncStatusCopy.row(syncPresentation.status, syncPresentation.detail, syncPresentation.lastSyncedAt, syncPresentation.conflicts.size, true, viewModel.sync.enabled).headline}" else "Optional email sign-in and this device's session")
@@ -683,25 +723,6 @@ private fun formatBackupDate(value: String): String = runCatching {
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(Instant.parse(value).toEpochMilli()))
 }.getOrDefault(value)
 
-@Composable
-private fun FeaturePlaceholder(
-    title: String,
-    message: String,
-    note: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineMedium)
-        Text(message, style = MaterialTheme.typography.bodyLarge)
-        Text(note, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StartCookScreen(
@@ -764,7 +785,7 @@ private fun StartCookScreen(
     var followPlaybook by rememberSaveable { mutableStateOf(initialDraft?.followPlaybook ?: true) }
     var showSteps by rememberSaveable { mutableStateOf(false) }
     var editPreviewDish by remember { mutableStateOf<Int?>(null) }
-    editPreviewDish?.let { index -> DishEditorDialog(preferredWeightUnit = preferredWeightUnit, initial = dishes[index], onDismiss = { editPreviewDish = null }, onSave = { dishes[index] = it; editPreviewDish = null }) }
+    editPreviewDish?.let { index -> DishEditorDialog(preferredWeightUnit = preferredWeightUnit, initial = dishes[index], draftKey = "startcook", onDismiss = { editPreviewDish = null }, onSave = { dishes[index] = it; editPreviewDish = null }) }
     var showDishDialog by rememberSaveable { mutableStateOf(false) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
 
@@ -812,6 +833,7 @@ private fun StartCookScreen(
     if (showDishDialog) {
         DishEditorDialog(
             preferredWeightUnit = preferredWeightUnit,
+            draftKey = "startcook",
             onDismiss = { showDishDialog = false },
             onSave = { draft ->
                 dishes.add(draft)
@@ -1050,28 +1072,77 @@ private fun DishDraftCard(dish: DishDraft, onRemove: () -> Unit) {
 internal fun DishEditorDialog(
     initial: DishDraft? = null,
     preferredWeightUnit: String = "lb",
+    // PL-24 (#172): the draft scope identifies WHICH dish edit this is
+    // (start cook, a cook, a recipe, a playbook, a serve plan) so an
+    // interrupted edit restores in its own context only.
+    draftKey: String,
     onDismiss: () -> Unit,
     onSave: (DishDraft) -> Unit,
 ) {
-    var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
-    var foodType by rememberSaveable { mutableStateOf(initial?.foodType ?: "Other") }
-    var cut by rememberSaveable { mutableStateOf(initial?.cut.orEmpty()) }
-    var weight by rememberSaveable { mutableStateOf(initial?.weightText.orEmpty()) }
-    var weightUnit by rememberSaveable { mutableStateOf(initial?.weightUnit ?: preferredWeightUnit) }
-    var detailsExpanded by rememberSaveable { mutableStateOf(false) }
-    var startingCondition by rememberSaveable { mutableStateOf(initial?.startingCondition) }
-    var boneIn by rememberSaveable { mutableStateOf(initial?.boneIn) }
-    var placement by rememberSaveable { mutableStateOf(initial?.placement.orEmpty()) }
-    var gradeOrSource by rememberSaveable { mutableStateOf(initial?.gradeOrSource.orEmpty()) }
-    var thicknessNotes by rememberSaveable { mutableStateOf(initial?.thicknessNotes.orEmpty()) }
-    var prepNotes by rememberSaveable { mutableStateOf(initial?.prepNotes.orEmpty()) }
-    var preparationItems by remember { mutableStateOf(initial?.preparationItems?.takeIf { it.isNotEmpty() } ?: listOf(IngredientDraft(name = ""))) }
-    var photoUris by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val draftStore = rememberEditorDraftStore()
+    val fullDraftKey = EditorDraftKeys.dish(draftKey)
+    // The dish as opened: the caller's values, or the kept draft when one
+    // exists. Autosave below only writes once the fields move away from
+    // this baseline, so merely opening the editor manufactures no draft.
+    val initialDish = remember(fullDraftKey) {
+        DishDraft(
+            name = initial?.name.orEmpty(), foodType = initial?.foodType ?: "Other",
+            cut = initial?.cut.orEmpty(), weightText = initial?.weightText.orEmpty(),
+            weightUnit = initial?.weightUnit ?: preferredWeightUnit,
+            startingCondition = initial?.startingCondition, boneIn = initial?.boneIn,
+            placement = initial?.placement.orEmpty(), gradeOrSource = initial?.gradeOrSource.orEmpty(),
+            thicknessNotes = initial?.thicknessNotes.orEmpty(), prepNotes = initial?.prepNotes.orEmpty(),
+            preparationItems = initial?.preparationItems?.takeIf { it.isNotEmpty() } ?: listOf(IngredientDraft(name = "")),
+            photoUris = emptyList(),
+        )
+    }
+    val restored = remember(fullDraftKey) {
+        draftStore.load(fullDraftKey)?.let(DishDraftCodec::decode)?.takeIf { it != initialDish }
+    }
+    var openedDish by remember(fullDraftKey) { mutableStateOf(restored ?: initialDish) }
+    var draftRestored by rememberSaveable(fullDraftKey) { mutableStateOf(restored != null) }
+    var name by rememberSaveable { mutableStateOf(openedDish.name) }
+    var foodType by rememberSaveable { mutableStateOf(openedDish.foodType) }
+    var cut by rememberSaveable { mutableStateOf(openedDish.cut) }
+    var weight by rememberSaveable { mutableStateOf(openedDish.weightText) }
+    var weightUnit by rememberSaveable { mutableStateOf(openedDish.weightUnit) }
+    var detailsExpanded by rememberSaveable { mutableStateOf(restored != null) }
+    var startingCondition by rememberSaveable { mutableStateOf(openedDish.startingCondition) }
+    var boneIn by rememberSaveable { mutableStateOf(openedDish.boneIn) }
+    var placement by rememberSaveable { mutableStateOf(openedDish.placement) }
+    var gradeOrSource by rememberSaveable { mutableStateOf(openedDish.gradeOrSource) }
+    var thicknessNotes by rememberSaveable { mutableStateOf(openedDish.thicknessNotes) }
+    var prepNotes by rememberSaveable { mutableStateOf(openedDish.prepNotes) }
+    var preparationItems by remember { mutableStateOf(openedDish.preparationItems.takeIf { it.isNotEmpty() } ?: listOf(IngredientDraft(name = ""))) }
+    var photoUris by rememberSaveable { mutableStateOf(openedDish.photoUris) }
     var nameError by rememberSaveable { mutableStateOf(false) }
     var weightError by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
+    fun currentDish() = DishDraft(
+        name = name, foodType = foodType, cut = cut, weightText = weight, weightUnit = weightUnit,
+        startingCondition = startingCondition, boneIn = boneIn, placement = placement,
+        gradeOrSource = gradeOrSource, thicknessNotes = thicknessNotes, prepNotes = prepNotes,
+        preparationItems = preparationItems, photoUris = photoUris,
+    )
+    // PL-24: autosave the working dish once it diverges from how the
+    // editor opened; reverting to the opened state clears the draft,
+    // and saving the dish clears it too.
+    LaunchedEffect(name, foodType, cut, weight, weightUnit, startingCondition, boneIn, placement, gradeOrSource, thicknessNotes, prepNotes, preparationItems, photoUris) {
+        val current = currentDish()
+        if (current != openedDish) draftStore.save(fullDraftKey, DishDraftCodec.encode(current))
+    }
+    fun resetToInitial() {
+        openedDish = initialDish
+        name = initialDish.name; foodType = initialDish.foodType; cut = initialDish.cut
+        weight = initialDish.weightText; weightUnit = initialDish.weightUnit
+        detailsExpanded = false; startingCondition = initialDish.startingCondition; boneIn = initialDish.boneIn
+        placement = initialDish.placement; gradeOrSource = initialDish.gradeOrSource
+        thicknessNotes = initialDish.thicknessNotes; prepNotes = initialDish.prepNotes
+        preparationItems = initialDish.preparationItems
+        photoUris = initialDish.photoUris
+    }
     val requestDismiss = {
         val hasInput = name.isNotBlank() || foodType != "Other" || cut.isNotBlank() || weight.isNotBlank() ||
             startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() ||
@@ -1099,21 +1170,11 @@ internal fun DishEditorDialog(
                 weightError = !CookEntryValidation.isOptionalPositiveNumberValid(weight)
                 val invalidAmounts = preparationItems.any { !CookEntryValidation.isOptionalPositiveNumberValid(it.amountText) }
                 if (!nameError && !weightError && !invalidAmounts) {
+                    draftStore.clear(fullDraftKey)
                     onSave(
-                        DishDraft(
+                        currentDish().copy(
                             name = name.trim(),
-                            foodType = foodType,
-                            cut = cut,
-                            weightText = weight,
-                            weightUnit = weightUnit,
-                            startingCondition = startingCondition,
-                            boneIn = boneIn,
-                            placement = placement,
-                            gradeOrSource = gradeOrSource,
-                            thicknessNotes = thicknessNotes,
-                            prepNotes = prepNotes,
                             preparationItems = preparationItems.filter { it.name.isNotBlank() },
-                            photoUris = photoUris,
                         ),
                     )
                 }
@@ -1124,6 +1185,13 @@ internal fun DishEditorDialog(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                if (draftRestored) {
+                    ResumeDraftBanner(onDiscard = {
+                        draftStore.clear(fullDraftKey)
+                        draftRestored = false
+                        resetToInitial()
+                    })
+                }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; nameError = false },
@@ -1330,18 +1398,30 @@ internal fun DishEditorDialog(
     }
 
     if (confirmDiscard) {
+        // PL-24 (#172): leaving keeps the dish as a draft — the same
+        // words and choices as the Start Cook leave dialog (PL-13).
+        // Discarding is the explicit third option.
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
-            title = { Text("Discard this dish?") },
-            text = { Text("The dish details and selected photos have not been saved.") },
+            title = { Text("Leave this dish?") },
+            text = { Text("Your dish is kept as a draft on this phone. It comes back next time you open this editor.") },
             confirmButton = {
                 TextButton(onClick = {
-                    photoUris.forEach { CameraPhotoFiles.delete(context, it) }
                     confirmDiscard = false
                     onDismiss()
-                }) { Text("Discard") }
+                }, modifier = Modifier.testTag("dish-keep-draft")) { Text("Keep draft") }
             },
-            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        photoUris.forEach { CameraPhotoFiles.delete(context, it) }
+                        draftStore.clear(fullDraftKey)
+                        confirmDiscard = false
+                        onDismiss()
+                    }, modifier = Modifier.testTag("dish-discard")) { Text("Discard dish") }
+                    TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+                }
+            },
         )
     }
 }

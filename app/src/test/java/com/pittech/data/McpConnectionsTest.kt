@@ -113,6 +113,28 @@ class McpConnectionsTest {
         assertTrue(badManager.presentation.value.message!!.contains("isn't valid"))
     }
 
+    /** PL-30 (#172): an expired grant renders "Expired" and is NOT
+     * active — it must not offer Disconnect or inflate Disconnect-all. */
+    @Test fun expiredGrantsAreNotActiveAndRevokedGrantsAreNotActive() {
+        val now = 1_700_000_000_000L
+        fun view(revoked: Long?, expires: Long) = McpGrantView(
+            id = "g", nickname = "ChatGPT", scopes = emptyList(),
+            createdAt = now - 10_000, expiresAt = expires, revokedAt = revoked,
+            lastUsedAt = null, clientId = null,
+        )
+        val live = view(revoked = null, expires = now + 60_000)
+        assertTrue(live.active(now))
+        assertEquals("Connected", live.status(now))
+        val expired = view(revoked = null, expires = now - 1)
+        assertTrue(!expired.active(now))
+        assertEquals("Expired", expired.status(now))
+        val expiringNow = view(revoked = null, expires = now)
+        assertTrue(!expiringNow.active(now))
+        val revoked = view(revoked = now - 1, expires = now + 60_000)
+        assertTrue(!revoked.active(now))
+        assertEquals("Disconnected", revoked.status(now))
+    }
+
     /** Slice 8 (PL-14): the connection gate maps the existing entitlement
      * state — entitled passes, not-entitled gates, unknown checks. */
     @Test fun proGateMapsEntitlementStates() {

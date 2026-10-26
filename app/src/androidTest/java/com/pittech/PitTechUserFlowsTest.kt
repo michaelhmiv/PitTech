@@ -146,6 +146,16 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("dish-starting-condition").performScrollTo().performClick()
         composeRule.onNodeWithText("Refrigerated").performClick()
         composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
+        // Slice 11 gate: at font scale 1.5 the tap can land while the
+        // form is still settling from the scroll and the toggle is
+        // silently dropped (the dish then saves boneIn=null). Verify the
+        // visible outcome and re-tap once if the selection did not
+        // register; a genuinely unresponsive chip still fails here and
+        // in the saved-dish assertions below.
+        if (runCatching { composeRule.onNodeWithTag("dish-boneless").assertIsSelected() }.isFailure) {
+            composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
+            composeRule.onNodeWithTag("dish-boneless").assertIsSelected()
+        }
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")

@@ -34,15 +34,13 @@ class DialogGrammarTest {
             "Text(\"Delete account\")},",
             "Text(\"Remove local journ",
         ),
-        // Delete-dish guard; Finish-meal guard; delete-cook guard; the
-        // timeline-entry editor is DEAD CODE (zero call sites) kept as a
-        // dialog only until PL-28 (Slice 11) removes it — do not wire it
-        // up as a dialog.
+        // Delete-dish guard; Finish-meal guard; delete-cook guard.
+        // (The call-site-less timeline-entry editor dialog was retired
+        // by PL-28 in Slice 11 — see CorpseRetirementTest.)
         "CookDetailScreen.kt" to listOf(
             "Text(\"Delete \${dish.name",
             "Text(\"Finish meal\", modi",
             "Text(\"Delete this cook?\"",
-            "Text(if (event == null) ",
         ),
         // Guidance confirm guards: confirm a physical removal / a skip.
         "CookGuidanceCard.kt" to listOf(
@@ -54,11 +52,12 @@ class DialogGrammarTest {
             "Text(\"Use actual Food on",
         ),
         // Backup-contents review (a destructive-import guard); leave-setup
-        // guard; discard-dish guard.
+        // guard; leave-dish draft guard (PL-24 — was the discard-dish
+        // guard before draft persistence became the house standard).
         "CookScreens.kt" to listOf(
             "Text(\"Review backup cont",
             "Text(\"Leave this cook se",
-            "Text(\"Discard this dish?",
+            "Text(\"Leave this dish?\")",
         ),
         // Unpublish guard.
         "MyCookbookScreen.kt" to listOf(

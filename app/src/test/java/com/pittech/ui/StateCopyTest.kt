@@ -127,6 +127,21 @@ class StateCopyTest {
         assertEquals("Checking PitTech Pro status…", LoadingCopy.CHECKING_PRO)
     }
 
+    /** PL-30 (#172): the shared "not available yet" pattern strings —
+     * identical literals are pinned in StateCopy.swift's iOS tests. */
+    @Test fun notAvailablePatternCopyIsTheSharedContract() {
+        assertEquals("Devices", NotAvailableCopy.DEVICES_TITLE)
+        assertEquals("Grill connections aren't available yet.", NotAvailableCopy.DEVICES_MESSAGE)
+        assertEquals("You can add temperature readings by hand during a cook.", NotAvailableCopy.DEVICES_NOTE)
+        assertEquals("Open Meals", NotAvailableCopy.DEVICES_ONWARD)
+        assertEquals("Find your next cook", NotAvailableCopy.DISCOVER_TITLE)
+        assertEquals(
+            "Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account.",
+            NotAvailableCopy.DISCOVER_MESSAGE,
+        )
+        assertEquals("Open your recipes", NotAvailableCopy.DISCOVER_ONWARD)
+    }
+
     @Test fun emptyStatesTeachWhatBelongsAndWhatCreatesIt() {
         assertEquals("Notes, temperature checks and photos you add during the cook will show up here.", EmptyStateCopy.TIMELINE_BODY)
         assertEquals("Photos you add to this cook will show up here. Add one with the Photo button on the cook.", EmptyStateCopy.PHOTOS_EMPTY_BODY)

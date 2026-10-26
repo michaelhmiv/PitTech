@@ -48,7 +48,11 @@ struct McpGrant: Identifiable, Equatable {
         if expiresAt <= now { return "Expired" }
         return "Connected"
     }
-    var active: Bool { revokedAt == nil }
+    /// PL-30 (#172): a grant counts as active only while it can actually
+    /// be used — not revoked AND not expired. Expired grants render as
+    /// "Expired" (see `status(now:)`) and must not offer Disconnect or
+    /// inflate the connection counts and Disconnect-all. Mirrors Android.
+    func active(now: Int64) -> Bool { revokedAt == nil && expiresAt > now }
     static func parse(_ o: [String: Any]) -> McpGrant? {
         guard let id = o["id"] as? String, let nickname = o["nickname"] as? String,
               let created = (o["createdAt"] as? NSNumber)?.int64Value, let expires = (o["expiresAt"] as? NSNumber)?.int64Value
@@ -185,7 +189,7 @@ func mcpProGate(for entitlement: AdEntitlementState) -> McpProGate {
         await perform {
             let token = try await account.access()
             _ = try await api.call("DELETE", "/v1/me/mcp/grants", body: nil, access: token)
-            grants = grants.map { $0.active ? McpGrant(id: $0.id, nickname: $0.nickname, scopes: $0.scopes, createdAt: $0.createdAt, expiresAt: $0.expiresAt, revokedAt: now(), lastUsedAt: $0.lastUsedAt, clientId: $0.clientId) : $0 }
+            grants = grants.map { $0.active(now: now()) ? McpGrant(id: $0.id, nickname: $0.nickname, scopes: $0.scopes, createdAt: $0.createdAt, expiresAt: $0.expiresAt, revokedAt: now(), lastUsedAt: $0.lastUsedAt, clientId: $0.clientId) : $0 }
             message = "All connections disconnected."
         }
     }

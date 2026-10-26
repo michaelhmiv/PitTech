@@ -172,6 +172,24 @@ enum FeedbackCopy {
     static let submitUnavailable = "Couldn't submit your feedback — the feedback service is unavailable. What you wrote stays in the form — try again later."
 }
 
+/// PL-30 (#172): the ONE "not available yet" pattern. Every surface whose
+/// feature is not available on this build renders the same shape — icon,
+/// title, what-isn't-available message, an optional note about what works
+/// instead, and exactly one route onward — with these strings, identical
+/// on both platforms (pinned by unit tests on each side). iOS has no
+/// Devices placeholder (its telemetry connections ship enabled); the
+/// Devices strings are declared here so the contract stays complete and
+/// the Discover surface uses the same pattern.
+enum NotAvailableCopy {
+    static let devicesTitle = "Devices"
+    static let devicesMessage = "Grill connections aren't available yet."
+    static let devicesNote = "You can add temperature readings by hand during a cook."
+    static let devicesOnward = "Open Meals"
+    static let discoverTitle = "Find your next cook"
+    static let discoverMessage = "Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account."
+    static let discoverOnward = "Open your recipes"
+}
+
 /// PL-26 (Slice 10): Settings alignment. The section order is identical on
 /// both platforms (pinned by unit tests on each side), backup/export lives
 /// in "Your data" on both, and the backup scope is stated with these exact

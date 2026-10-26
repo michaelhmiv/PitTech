@@ -83,7 +83,13 @@ internal data class McpGrantView(
         expiresAt <= now -> "Expired"
         else -> "Connected"
     }
-    val active: Boolean get() = revokedAt == null
+    /**
+     * PL-30 (#172): a grant counts as active only while it can actually
+     * be used — not revoked AND not expired. Expired grants render as
+     * "Expired" (see [status]) and must not offer Disconnect or inflate
+     * the connection counts and Disconnect-all.
+     */
+    fun active(now: Long): Boolean = revokedAt == null && expiresAt > now
     companion object {
         fun parse(o: JSONObject): McpGrantView {
             val scopes = o.optJSONArray("scopes")?.let { array -> List(array.length()) { array.optString(it) } } ?: emptyList()
