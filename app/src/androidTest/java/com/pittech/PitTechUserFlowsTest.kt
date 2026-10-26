@@ -146,6 +146,14 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("dish-starting-condition").performScrollTo().performClick()
         composeRule.onNodeWithText("Refrigerated").performClick()
         composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
+        // TEMP DIAGNOSTIC (slice 11 gate, test02 boneIn at font 1.5):
+        // dump the tree so the chip's selected state and any restored
+        // draft banner are visible in the evidence logcat.
+        composeRule.waitForIdle()
+        val dishTree = composeRule.onRoot(useUnmergedTree = true).printToString()
+        dishTree.chunked(3000).forEachIndexed { index, chunk ->
+            android.util.Log.e("S11DIAG2", "chunk $index: $chunk")
+        }
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
