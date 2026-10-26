@@ -62,7 +62,7 @@ internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, con
                 // face, its state as a colored status word beneath.
                 TurnInBannerText(record.title)
                 Text(
-                    (if (!rule.enabled) "Off" else if (state.active) "Needs attention" else "Watching").uppercase(),
+                    (if (!rule.enabled) "Off" else if (state.active) "Needs attention" else "Watching"),
                     style = PitTechTextStyles.monoMeta,
                     color = if (!rule.enabled) pitTechTokens().inkMuted else if (state.active) pitTechTokens().attentionText else pitTechTokens().inkMuted,
                 )

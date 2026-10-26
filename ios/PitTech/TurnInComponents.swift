@@ -20,7 +20,10 @@ struct TurnInMetaLabel: View {
     }
 
     var body: some View {
-        Text(text.uppercased())
+        // Literal text, tracked type: the frames' caps are a CSS
+        // transform over literal text, and data-derived labels (dish
+        // names, group headings) are never rewritten.
+        Text(text)
             .font(PitTechFont.metaLabel)
             .tracking(PitTechFont.metaLabelTracking)
             .foregroundStyle(color)
@@ -66,7 +69,7 @@ struct TurnInTrendChip: View {
     let fill: Color
 
     var body: some View {
-        Text(text.uppercased())
+        Text(text)
             .font(PitTechFont.monoMeta)
             .foregroundStyle(PitTechStyle.onAccent)
             .padding(.horizontal, 8)
@@ -104,7 +107,7 @@ struct TurnInMilestoneRail: View {
                     Circle()
                         .fill(step.state == .done ? PitTechStyle.ember : step.state == .current ? PitTechStyle.marigold : PitTechStyle.ruling)
                         .frame(width: 12, height: 12)
-                    Text(step.label.uppercased())
+                    Text(step.label)
                         .font(PitTechFont.metaLabel)
                         .tracking(PitTechFont.metaLabelTracking)
                         .foregroundStyle(step.state == .current ? PitTechStyle.attentionText : step.state == .done ? PitTechStyle.ink : PitTechStyle.inkMuted)

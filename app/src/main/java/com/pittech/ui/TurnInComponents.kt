@@ -53,14 +53,18 @@ import androidx.compose.ui.unit.dp
  * stay correct by construction.
  */
 
-/** Tracked-caps section label — the §3.2 caps floor lives in the token. */
+/** Tracked section label — the §3.2 floor lives in the token. The string
+ * renders exactly as passed: like the frames (whose caps are a CSS
+ * transform over literal DOM text), the tracked meta type carries the
+ * look and the words stay the app's own, so data-derived labels (food
+ * group headings, dish names) are never rewritten. */
 @Composable
 internal fun TurnInMetaLabel(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = pitTechTokens().inkMuted,
 ) {
-    Text(text.uppercase(), style = PitTechTextStyles.metaLabel, color = color, modifier = modifier)
+    Text(text, style = PitTechTextStyles.metaLabel, color = color, modifier = modifier)
 }
 
 /** A surface name set in the banner face (cook names, card titles). The
@@ -150,7 +154,7 @@ internal fun TurnInTrendChip(text: String, fill: Color, modifier: Modifier = Mod
     val tokens = pitTechTokens()
     Surface(modifier = modifier, shape = RoundedCornerShape(8.dp), color = fill, contentColor = tokens.onAccent) {
         Text(
-            text.uppercase(),
+            text,
             style = PitTechTextStyles.monoMeta,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
@@ -193,7 +197,7 @@ internal fun TurnInMilestoneRail(steps: List<TurnInRailStep>, modifier: Modifier
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    step.label.uppercase(),
+                    step.label,
                     style = PitTechTextStyles.metaLabel,
                     color = when (step.state) {
                         TurnInRailState.CURRENT -> tokens.attentionText
@@ -350,7 +354,7 @@ internal fun TurnInBoxedField(
 @Composable
 internal fun TurnInSheetKicker(text: String, modifier: Modifier = Modifier) {
     Text(
-        text.uppercase(),
+        text,
         style = PitTechTextStyles.monoMeta,
         color = pitTechTokens().inkMuted,
         modifier = modifier,

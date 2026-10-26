@@ -699,7 +699,7 @@ fun CookDetailScreen(
             },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(formatTimestamp(event.occurredAtUtcMillis).uppercase(), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                Text(formatTimestamp(event.occurredAtUtcMillis), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
                 event.details?.let { Text(it) }
                 val snapshot = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
                 if (snapshot.isNotBlank()) Text(snapshot)
@@ -726,7 +726,7 @@ fun CookDetailScreen(
             TopAppBar(
                 title = { Column {
                     TurnInBannerText(data.cook.title, style = PitTechTextStyles.bannerTitle, maxLines = 1)
-                    Text(statusLabel(data.cook.status).uppercase(), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted, modifier = Modifier.testTag("live-cook-status"))
+                    Text(statusLabel(data.cook.status), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted, modifier = Modifier.testTag("live-cook-status"))
                 } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back to cooks") } },
                 actions = {
@@ -1628,7 +1628,7 @@ private fun TimelineTab(
                     item(key = "timeline-guide") { guide() }
                     item(key = "timeline-summary") {
                         Text(
-                            "Started ${formatTimeOfDay(data.cook.startedAtUtcMillis)} · ${formatCookDuration(calculateElapsed(data))} elapsed".uppercase(),
+                            "Started ${formatTimeOfDay(data.cook.startedAtUtcMillis)} · ${formatCookDuration(calculateElapsed(data))} elapsed",
                             style = PitTechTextStyles.monoMeta,
                             color = pitTechTokens().inkMuted,
                             modifier = Modifier.padding(bottom = 4.dp).testTag("timeline-summary"),
@@ -2372,7 +2372,7 @@ private fun PhotoViewerDialog(
                         )
                     } ?: Text("Photo could not be loaded", color = Color.White)
                 }
-                photo.capturedAtUtcMillis?.let { Text("Captured ${formatTimestamp(it)}".uppercase(), color = Color.White.copy(alpha = 0.75f), style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 12.dp)) }
+                photo.capturedAtUtcMillis?.let { Text("Captured ${formatTimestamp(it)}", color = Color.White.copy(alpha = 0.75f), style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 12.dp)) }
                 val temperatureContext = com.pittech.data.TemperatureContext.summary(photo.temperatureContextJson)
                 Text(if (temperatureContext.isBlank()) "Temperature context unavailable for this photo's capture time" else temperatureContext + " · " + contextTimeLabel(photo.temperatureContextJson), color = Color.White.copy(alpha = 0.75f), style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 12.dp).testTag("photo-temperature-context"))
                 Text("Pinch to zoom · Drag to move", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp))
