@@ -392,7 +392,17 @@ jobs:
           (sign_dir / "ci.cer").write_bytes(base64.b64decode(created["attributes"]["certificateContent"]))
           print(f"Created distribution certificate {created['id']}")
 
-          bundle_id = call("GET", "/bundleIds?filter[identifier]=com.pittech")["data"][0]["id"]
+          bundle_records = call("GET", "/bundleIds?filter[identifier]=com.pittech&limit=200").get("data", [])
+          exact_matches = [record for record in bundle_records
+                           if record.get("attributes", {}).get("identifier") == "com.pittech"]
+          if len(exact_matches) != 1:
+              returned = ", ".join(
+                  f"{record.get('attributes', {}).get('identifier')} ({record.get('id')})"
+                  for record in bundle_records) or "none"
+              raise SystemExit(
+                  "Expected exactly one bundle ID record with identifier com.pittech; "
+                  f"the identifier filter returned {len(bundle_records)} record(s): {returned}")
+          bundle_id = exact_matches[0]["id"]
           capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
           if not any(c.get("attributes", {}).get("capabilityType") == "ASSOCIATED_DOMAINS" for c in capabilities):
               call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
@@ -447,7 +457,7 @@ jobs:
           profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/PitTech-profile.plist")
           app_identifier=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/PitTech-profile.plist")
           if [[ "$app_identifier" != "R42LWFBXBH.com.pittech" ]]; then
-            echo "::error::The provisioning profile must match team R42LWFBXBH and bundle ID com.pittech."
+            echo "::error::The provisioning profile must match team R42LWFBXBH and bundle ID com.pittech. Got application-identifier: $app_identifier"
             exit 1
           fi
           cp "$RUNNER_TEMP/PitTech.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
