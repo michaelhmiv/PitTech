@@ -329,7 +329,16 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(submit.isEnabled)
             capture(large ? "Account deletion review large text" : "Account deletion review")
             submit.tap()
-            let status = app.staticTexts["account-deletion-status"]; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app)
+            // The submit dismisses the "Delete account" sheet before the Account
+            // form settles; wait out the transition first. In large text the status
+            // row sits at the top of the PL-14 form while the scroll position is
+            // still at the Danger zone, so the row is virtualized away: scroll it
+            // into view (which materializes it) BEFORE waiting on it — asserting
+            // existence first can never succeed at large text.
+            XCTAssertTrue(app.navigationBars["Delete account"].waitForNonExistence(timeout: 10))
+            let status = app.staticTexts["account-deletion-status"]; reveal(status, app: app)
+            XCTAssertTrue(status.waitForExistence(timeout: 10))
+            capture(large ? "Account deletion status large text" : "Account deletion status")
             XCTAssertTrue(status.label.contains("queued"))
             let recover = app.buttons["account-deletion-recover"]; reveal(recover, app: app); recover.tap()
             let check = app.buttons["account-deletion-check"]; reveal(check, app: app); check.tap()
