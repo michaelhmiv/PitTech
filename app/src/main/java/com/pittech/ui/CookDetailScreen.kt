@@ -117,6 +117,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -780,6 +781,11 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
+                    // While a notice snackbar is up it docks over the bottom
+                    // of this viewport; inset the board's scroll window by
+                    // its height so the next-action cards can never come to
+                    // rest underneath it (see LiveCookTab's root modifier).
+                    bottomInset = if (snackbar.currentSnackbarData != null) 80.dp else 0.dp,
                     dishesContent = {
                         MealRecipeActions(data, viewModel)
                         RecipeGuideMilestones(data, guideRecords, compact = true) { selectedTab = CookTab.TIMELINE.name }
@@ -1105,6 +1111,7 @@ private fun LiveCookTab(
     alertStrip: String?,
     alertFocused: Boolean,
     railSteps: List<TurnInRailStep>,
+    bottomInset: Dp = 0.dp,
     onQuickNote: () -> Unit,
     onQuickTemperature: () -> Unit,
     onQuickPhoto: () -> Unit,
@@ -1139,7 +1146,15 @@ private fun LiveCookTab(
     val setpoint = data.readings.filter { it.measurementType == "setpoint" }.maxByOrNull { it.measuredAtUtcMillis }
     val cookTargets = data.targets.filter { it.dishId == null }
     val tokens = pitTechTokens()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
+    // The inset is applied BEFORE verticalScroll, so it shrinks the scroll
+    // viewport itself: with a snackbar docked at the bottom, scroll-to-reveal
+    // parks rows above the snackbar instead of underneath it. At font scale
+    // 1.5 this board is tall enough that the pending-reminder card starts
+    // below the fold, and without the inset its "Log now" button came to
+    // rest in the snackbar's zone, where the snooze notice ate the next tap
+    // (CookNoteScreenTest.legacyCheckIn, API 36 font 1.5). No snackbar, no
+    // inset — the board's layout is unchanged.
+    Column(Modifier.fillMaxSize().padding(bottom = bottomInset).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // TURN-IN Live board (`d12`–`d15`): state strips, the scoreboard,
         // the milestone rail, alert/reminder chips, the dish lanes, the
