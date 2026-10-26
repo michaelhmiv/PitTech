@@ -30,9 +30,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
@@ -147,13 +145,16 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("dish-starting-condition").performScrollTo().performClick()
         composeRule.onNodeWithText("Refrigerated").performClick()
         composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
-        // TEMP DIAGNOSTIC (slice 11 gate, test02 boneIn): screenshot the
-        // editor right after the boneless click — the evidence artifact
-        // shows whether the chip registered selected and whether a
-        // restored-draft banner is present. (Log/println channels do not
-        // survive this script's capture; screenshots do.)
-        composeRule.waitForIdle()
-        saveScreenshot("diag-boneless-state")
+        // Slice 11 gate: at font scale 1.5 the tap can land while the
+        // form is still settling from the scroll and the toggle is
+        // silently dropped (the dish then saves boneIn=null). Verify the
+        // visible outcome and re-tap once if the selection did not
+        // register; a genuinely unresponsive chip still fails here and
+        // in the saved-dish assertions below.
+        if (runCatching { composeRule.onNodeWithTag("dish-boneless").assertIsSelected() }.isFailure) {
+            composeRule.onNodeWithTag("dish-boneless").performScrollTo().performClick()
+            composeRule.onNodeWithTag("dish-boneless").assertIsSelected()
+        }
         composeRule.onNodeWithTag("preparation-name-0").performScrollTo().performTextInput("Salt and pepper rub")
         composeRule.onNodeWithTag("preparation-item-details-0").performScrollTo().performClick()
         composeRule.onNodeWithTag("preparation-amount-0").performScrollTo().performTextInput("3")
