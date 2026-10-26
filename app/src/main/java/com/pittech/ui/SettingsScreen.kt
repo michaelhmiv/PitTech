@@ -16,6 +16,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -341,16 +343,30 @@ fun SettingsScreen(
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
         SectionCard("Appearance") {
-            // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is the
-            // only appearance. This row states that honestly instead of offering
-            // a picker that no longer changes anything.
+            // TURN-IN (BUILD-SPEC §3.4): the working Dark / Light / System
+            // control designed in Area 06 frame f01 replaces the #172
+            // informational row. Dark is the fresh-install default.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    PitTechThemeMode.DARK to "Dark",
+                    PitTechThemeMode.LIGHT to "Light",
+                    PitTechThemeMode.SYSTEM to "System",
+                ).forEach { (mode, label) ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                            .testTag("theme-mode-${mode.name.lowercase()}"),
+                    )
+                }
+            }
             Text(
-                "Night Service (dark)",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.testTag("appearance-night-service"),
-            )
-            Text(
-                "PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.",
+                "Dark is the default — light is the same layout.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

@@ -98,10 +98,11 @@ struct MealDishCard: View {
 }
 extension CookStore {
     var appearance: ColorScheme? {
-        // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is the
-        // only appearance. The saved themeMode preference still decodes for
-        // backups/device actions, but it no longer changes the appearance.
-        .dark
+        // TURN-IN (BUILD-SPEC §3.4): the saved themeMode preference drives
+        // the appearance again — Dark / Light / System with Dark the
+        // default when unset. It still decodes for backups/device actions
+        // exactly as before. Resolution lives in PitTechAppearance.
+        PitTechAppearance.resolve(library.preferences?["themeMode"]?.stringValue)
     }
     func setMealPaused(_ id: String, paused: Bool) {
         guard let index = library.cooks.firstIndex(where: { $0.id == id && $0.isActive }) else { return }

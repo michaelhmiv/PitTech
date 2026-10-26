@@ -113,11 +113,17 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("more-settings").performClick()
-        // #172: appearance is fixed Night Service dark — an honest informational
-        // row, not a picker (DD-7 rejected, owner ruling 2026-10-24).
-        composeRule.onNodeWithTag("appearance-night-service").assertIsDisplayed()
-        composeRule.onNodeWithText("Night Service (dark)").assertIsDisplayed()
+        // TURN-IN Slice 0 (BUILD-SPEC §3.4/§3.5): the appearance control is a
+        // working Dark / Light / System selector; Dark is the default on a
+        // fresh install. Exercise it in both modes, then return to Dark.
+        composeRule.onNodeWithTag("theme-mode-dark").assertIsDisplayed().assertIsSelected()
+        composeRule.onNodeWithText("Dark is the default — light is the same layout.").assertIsDisplayed()
         saveScreenshot("settings-dark")
+        composeRule.onNodeWithTag("theme-mode-light").performClick()
+        composeRule.onNodeWithTag("theme-mode-light").assertIsSelected()
+        saveScreenshot("settings-light")
+        composeRule.onNodeWithTag("theme-mode-dark").performClick()
+        composeRule.onNodeWithTag("theme-mode-dark").assertIsSelected()
 
         composeRule.onNodeWithText("Save full backup (ZIP)").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("share-full-backup").performScrollTo().assertIsDisplayed()
