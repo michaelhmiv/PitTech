@@ -11,8 +11,12 @@ final class SettingsAppearanceUITests: XCTestCase {
         app.launchArguments = ["--ui-test-reset"]
         app.launch()
 
-        app.tabBars.buttons["More"].tap()
-        let settings = app.buttons["Settings & support"]
+        let moreTab = app.tabBars.buttons["More"]
+        XCTAssertTrue(moreTab.waitForExistence(timeout: 10))
+        moreTab.tap()
+        // The row's accessibility identifier is the stable handle; its
+        // composed label includes the subtitle and does not match by title.
+        let settings = app.buttons["more-settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         settings.tap()
 
