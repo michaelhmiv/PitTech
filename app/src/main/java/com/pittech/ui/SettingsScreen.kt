@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -63,6 +62,7 @@ fun SettingsScreen(
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     var savedCrashReport by remember(context) { mutableStateOf(CrashDiagnostics.savedReport(context)) }
     var backupDetails by remember { mutableStateOf(false) }
+    var noticesAsset by remember { mutableStateOf<String?>(null) }
     var feedbackKindName by rememberSaveable { mutableStateOf<String?>(null) }
     var feedbackTitle by rememberSaveable { mutableStateOf("") }
     var feedbackDescription by rememberSaveable { mutableStateOf("") }
@@ -97,10 +97,52 @@ fun SettingsScreen(
     val feedbackKind = feedbackKindName?.let { runCatching { FeedbackKind.valueOf(it) }.getOrNull() }
     if (feedbackKind != null) {
         val reportToInclude = savedCrashReport.takeIf { feedbackKind == FeedbackKind.BUG && includeCrashReport }
-        AlertDialog(
-            onDismissRequest = { if (!feedbackSubmitting) feedbackKindName = null },
-            title = { Text(if (feedbackKind == FeedbackKind.BUG) "Report a problem" else "Request a feature") },
-            text = {
+        // PL-22 (DD-6): the feedback form is a form — full screen.
+        // (Container only; the form's contents and flow are PL-27's slice.)
+        FullScreenSurface(
+            onDismiss = { if (!feedbackSubmitting) feedbackKindName = null },
+            title = if (feedbackKind == FeedbackKind.BUG) "Report a problem" else "Request a feature",
+            dismissEnabled = !feedbackSubmitting,
+            actions = {
+                TextButton(
+                    onClick = { feedbackKindName = null },
+                    enabled = !feedbackSubmitting,
+                ) { Text("Cancel") }
+                TextButton(
+                    enabled = feedbackTitle.isNotBlank() && !feedbackSubmitting,
+                    onClick = {
+                        val device = listOf(Build.MANUFACTURER, Build.MODEL)
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                            .joinToString(" ")
+                            .ifBlank { "Unknown device" }
+                        val request = FeedbackRequest(
+                            kind = feedbackKind,
+                            title = feedbackTitle,
+                            description = feedbackDescription,
+                            appVersion = BuildConfig.VERSION_NAME,
+                            androidVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                            device = device,
+                            diagnosticReport = reportToInclude,
+                        )
+                        feedbackSubmitting = true
+                        feedbackError = null
+                        FeedbackApi.submitAsync(request) { result ->
+                            feedbackSubmitting = false
+                            when (result) {
+                                is FeedbackSubmitResult.Success -> {
+                                    feedbackKindName = null
+                                    feedbackNotice = result.issueNumber
+                                        ?.let { "Thanks — feedback submitted as GitHub issue #$it." }
+                                        ?: "Thanks — your feedback was submitted."
+                                }
+                                is FeedbackSubmitResult.Failure -> feedbackError = result.message
+                            }
+                        }
+                    },
+                ) { Text(if (feedbackSubmitting) "Submitting…" else "Submit feedback") }
+            },
+        ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -165,49 +207,7 @@ fun SettingsScreen(
                     )
                     feedbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = feedbackTitle.isNotBlank() && !feedbackSubmitting,
-                    onClick = {
-                        val device = listOf(Build.MANUFACTURER, Build.MODEL)
-                            .filter { it.isNotBlank() }
-                            .distinct()
-                            .joinToString(" ")
-                            .ifBlank { "Unknown device" }
-                        val request = FeedbackRequest(
-                            kind = feedbackKind,
-                            title = feedbackTitle,
-                            description = feedbackDescription,
-                            appVersion = BuildConfig.VERSION_NAME,
-                            androidVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-                            device = device,
-                            diagnosticReport = reportToInclude,
-                        )
-                        feedbackSubmitting = true
-                        feedbackError = null
-                        FeedbackApi.submitAsync(request) { result ->
-                            feedbackSubmitting = false
-                            when (result) {
-                                is FeedbackSubmitResult.Success -> {
-                                    feedbackKindName = null
-                                    feedbackNotice = result.issueNumber
-                                        ?.let { "Thanks — feedback submitted as GitHub issue #$it." }
-                                        ?: "Thanks — your feedback was submitted."
-                                }
-                                is FeedbackSubmitResult.Failure -> feedbackError = result.message
-                            }
-                        }
-                    },
-                ) { Text(if (feedbackSubmitting) "Submitting…" else "Submit feedback") }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { feedbackKindName = null },
-                    enabled = !feedbackSubmitting,
-                ) { Text("Cancel") }
-            },
-        )
+        }
     }
 
     Column(
@@ -258,16 +258,16 @@ fun SettingsScreen(
         }
 
         SectionCard("Your data") {
-            Text("Your cook records and photos stay in PitTech's private storage on this phone. No account is needed, and you can use your cook log offline. Save a backup somewhere you can find it if you change phones or reinstall PitTech.", style = MaterialTheme.typography.bodyLarge)
+            Text(SettingsCopy.DATA_STAYS_LINE, style = MaterialTheme.typography.bodyLarge)
             TextButton(onClick = { backupDetails = !backupDetails }) { Text(if (backupDetails) "Hide backup details" else "Backup details") }
-            if (backupDetails) Text("A full ZIP includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.", style = MaterialTheme.typography.bodyMedium)
+            if (backupDetails) Text(SettingsCopy.FULL_BACKUP_SCOPE, style = MaterialTheme.typography.bodyMedium)
             Button(onClick = { zip.launch("PitTech_Backup.zip") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Save full backup (ZIP)") }
             OutlinedButton(onClick = { viewModel.createShareArchive() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("share-full-backup")) { Text("Share full backup (ZIP)") }
             if (backupDetails) Text("Share opens Android's app chooser. The ZIP is sent only after you choose an app; available destinations depend on what is installed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { xlsx.launch("PitTech_Cook_Log.xlsx") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export Excel workbook") }
             OutlinedButton(onClick = { csv.launch("PitTech_Readings.csv") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export temperature readings (CSV)") }
             OutlinedButton(onClick = { restore.launch(arrayOf("application/zip", "application/x-zip-compressed")) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Restore from ZIP backup") }
-            if (busy) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text("Working with your cook data…", style = MaterialTheme.typography.bodyLarge) }
+            if (busy) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.WORKING_WITH_DATA, style = MaterialTheme.typography.bodyLarge) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
             notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyLarge) }
         }
@@ -322,6 +322,37 @@ fun SettingsScreen(
                     Text("Privacy options")
                 }
             }
+        }
+
+        // PL-26: About closes the aligned section order on both platforms
+        // (SettingsCopy.SECTION_ORDER) — Version, Contact support, and the
+        // bundled third-party notices iOS already showed.
+        SectionCard("About") {
+            Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("settings-version"))
+            TextButton(
+                onClick = { uriHandler.openUri("mailto:sportfolioholdings@gmail.com") },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Contact support") }
+            TextButton(
+                onClick = { noticesAsset = "third-party-telemetry-notices.txt" },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Third-party telemetry notices") }
+            TextButton(
+                onClick = { noticesAsset = "third-party-grill-notices.txt" },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Third-party grill notices") }
+        }
+    }
+
+    noticesAsset?.let { asset ->
+        val noticesText = remember(asset) {
+            runCatching { context.assets.open(asset).bufferedReader().use { it.readText() } }
+                .getOrElse { "No dependency notices in this build." }
+        }
+        FullScreenSurface(onDismiss = { noticesAsset = null }, title = "Third-party notices", actions = {
+            TextButton(onClick = { noticesAsset = null }) { Text("Done") }
+        }) {
+            Text(noticesText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()))
         }
     }
 }

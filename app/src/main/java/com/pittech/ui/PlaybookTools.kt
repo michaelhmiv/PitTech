@@ -97,8 +97,15 @@ private fun PlaybookEditor(initial: CookPlaybook, busy: Boolean, error: String?,
         book = book.copy(draft = book.draft.copy(dishes = dishes))
         editingDish = null
     }) }
-    AlertDialog(onDismissRequest = onClose, title = { Text("Save cook playbook") }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): the playbook and step editors are multi-field — full screen.
+    FullScreenSurface(onDismiss = onClose, title = "Save cook playbook", actions = {
+        TextButton(onClick = onClose) { Text("Cancel") }
+        TextButton(enabled = !busy, onClick = {
+            try { PlaybookCodec.validate(book); require(CookEntryValidation.isOptionalPositiveNumberValid(book.draft.setpointText)) { "Enter a valid setpoint." }; onSave(book, includePhotos) }
+            catch (failure: IllegalArgumentException) { localError = ErrorCopy.failureText(failure, "Check the playbook details and try again.") }
+        }) { Text("Save playbook") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(book.name, { book = book.copy(name = it) }, label = { Text("Playbook name") }, modifier = Modifier.fillMaxWidth().testTag("playbook-name"))
             Text("Review suggested checks. Timing helps you inspect the food; you decide when to act.")
             OutlinedTextField(book.draft.smokerName, { book = book.copy(draft = book.draft.copy(smokerName = it)) }, label = { Text("Smoker") }, modifier = Modifier.fillMaxWidth())
@@ -122,10 +129,7 @@ private fun PlaybookEditor(initial: CookPlaybook, busy: Boolean, error: String?,
             Text("${book.targets.size} targets will be copied. Sensor history and connection messages stay in the original cook.")
             (localError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(enabled = !busy, onClick = {
-        try { PlaybookCodec.validate(book); require(CookEntryValidation.isOptionalPositiveNumberValid(book.draft.setpointText)) { "Enter a valid setpoint." }; onSave(book, includePhotos) }
-        catch (failure: IllegalArgumentException) { localError = failure.message }
-    }) { Text("Save playbook") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
+    }
 }
 
 @Composable
@@ -139,8 +143,20 @@ internal fun StepEditor(initial: PlaybookStep, dishes: List<DishDraft>, onClose:
     var time by remember { mutableStateOf(initial.clockAtUtcMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime().toString().take(5) } ?: "18:00") }
     var date by remember { mutableStateOf(initial.clockAtUtcMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() } ?: LocalDate.now().toString()) }
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(onDismissRequest = onClose, title = { Text("Cook step") }, text = {
-        Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    FullScreenSurface(onDismiss = onClose, title = "Cook step", actions = {
+        TextButton(onClick = onClose) { Text("Cancel") }
+        TextButton(onClick = {
+            runCatching {
+                val clock = if (step.trigger == "clock") ServeTimePlanner.localGoal(date, time, ZoneId.systemDefault().id) else null
+                require(minutes.toLongOrNull() != null) { "Enter whole minutes." }
+                require(repeat.isBlank() || repeat.toLongOrNull() != null) { "Enter whole repeat minutes." }
+                val s = step.copy(minutes = minutes.toLong(), temperatureF = temp.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, repeatMinutes = repeat.toLongOrNull(), clockAtUtcMillis = clock)
+                PlaybookCodec.validate(CookPlaybook("Step", NewCookDraft("Step", dishes = dishes), otherSteps.filterNot { it.id == s.id } + s))
+                onSave(s)
+            }.onFailure { error = ErrorCopy.failureText(it, "That step couldn't be saved. The playbook is unchanged — check the step details and try again.") }
+        }) { Text("Save step") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(step.title, { step = step.copy(title = it) }, label = { Text("What to check or do") }, modifier = Modifier.fillMaxWidth())
             ChoiceField("Action", PlaybookCodec.actions.getValue(step.action), PlaybookCodec.actions.values.toList()) { label -> step = step.copy(action = PlaybookCodec.actions.entries.first { it.value == label }.key) }
             val dishLabels = dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
@@ -163,16 +179,7 @@ internal fun StepEditor(initial: PlaybookStep, dishes: List<DishDraft>, onClose:
             OutlinedTextField(step.instructions, { step = step.copy(instructions = it) }, label = { Text("Notes / what to look for") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(onClick = {
-        runCatching {
-            val clock = if (step.trigger == "clock") ServeTimePlanner.localGoal(date, time, ZoneId.systemDefault().id) else null
-            require(minutes.toLongOrNull() != null) { "Enter whole minutes." }
-            require(repeat.isBlank() || repeat.toLongOrNull() != null) { "Enter whole repeat minutes." }
-            val s = step.copy(minutes = minutes.toLong(), temperatureF = temp.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, repeatMinutes = repeat.toLongOrNull(), clockAtUtcMillis = clock)
-            PlaybookCodec.validate(CookPlaybook("Step", NewCookDraft("Step", dishes = dishes), otherSteps.filterNot { it.id == s.id } + s))
-            onSave(s)
-        }.onFailure { error = it.message ?: "Check the step details." }
-    }) { Text("Save step") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
+    }
 }
 
 @Composable

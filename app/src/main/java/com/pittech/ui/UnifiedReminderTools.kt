@@ -34,7 +34,7 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That reminder change couldn't be saved. Your reminders are unchanged — try again.") } finally { busy = false } } }
     OutlinedButton({ show = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (initialDishId == null) "meal-reminders" else "dish-reminders-$initialDishId")) { Text("Reminders${rules.count { it.enabled }.takeIf { it > 0 }?.let { " · $it enabled" }.orEmpty()}") }
     if (show) ModalBottomSheet(onDismissRequest = { show = false }) {
         Column(Modifier.heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -126,10 +126,13 @@ private fun announcedActionFor(rule: ReminderRule, revisions: List<RecipeRevisio
  */
 @Composable internal fun ReminderRecordActionDialog(rule: ReminderRule, defaultAction: String?, busy: Boolean, onConfirm: (String) -> Unit, onClose: () -> Unit) {
     var action by remember(rule.id, defaultAction) { mutableStateOf(defaultAction) }
-    AlertDialog(onDismissRequest = onClose, title = { Text("Record what actually happened") }, text = { Column {
+    SheetSurface(onDismiss = onClose, title = "Record what actually happened", actions = {
+        TextButton(onClose) { Text("Cancel") }
+        TextButton({ action?.let(onConfirm) }, enabled = !busy && action != null, modifier = Modifier.testTag("reminder-record-confirm")) { Text("Record action") }
+    }) { Column {
         Text("Only confirm an action you performed. This creates one current-cook entry.")
         ChoiceField("Actual action", action?.let { PlaybookCodec.actions[it] ?: it } ?: "Choose action…", CookPhases.phaseActions.map { PlaybookCodec.actions[it] ?: it }) { label -> action = PlaybookCodec.actions.entries.first { it.value == label }.key }
-    } }, confirmButton = { TextButton({ action?.let(onConfirm) }, enabled = !busy && action != null, modifier = Modifier.testTag("reminder-record-confirm")) { Text("Record action") } }, dismissButton = { TextButton(onClose) { Text("Cancel") } })
+    } }
 }
 
 /**
@@ -138,18 +141,17 @@ private fun announcedActionFor(rule: ReminderRule, revisions: List<RecipeRevisio
  * timer check-in. Closing it (scrim/Back) changes nothing.
  */
 @Composable internal fun ReminderRuleCheckInDialog(rule: ReminderRule, announcedAction: String?, busy: Boolean, onLogIt: (String) -> Unit, onLogOther: () -> Unit, onSnooze: () -> Unit, onDismiss: () -> Unit, onClose: () -> Unit) {
-    AlertDialog(onDismissRequest = onClose, title = { Text(rule.title) }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("This reminder fired. What happened?")
-        if (announcedAction != null) Text("It announced: ${PlaybookCodec.actions[announcedAction] ?: announcedAction}.")
-    } }, confirmButton = {
-        if (announcedAction != null) Button({ onLogIt(announcedAction) }, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-logit")) { Text("Log it · Record ${PlaybookCodec.actions[announcedAction] ?: announcedAction}") }
-        else Button(onLogOther, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-logit")) { Text("Log it…") }
-    }, dismissButton = {
+    SheetSurface(onDismiss = onClose, title = rule.title, actions = {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onSnooze, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-snooze")) { Text(ReminderVocabulary.SNOOZE) }
             TextButton(onDismiss, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(ReminderVocabulary.DISMISS) }
         }
-    })
+        if (announcedAction != null) Button({ onLogIt(announcedAction) }, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-logit")) { Text("Log it · Record ${PlaybookCodec.actions[announcedAction] ?: announcedAction}") }
+        else Button(onLogOther, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-logit")) { Text("Log it…") }
+    }) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("This reminder fired. What happened?")
+        if (announcedAction != null) Text("It announced: ${PlaybookCodec.actions[announcedAction] ?: announcedAction}.")
+    } }
 }
 
 @Composable private fun ReminderRuleEditor(data: CookDetailData, request: ReminderEdit, busy: Boolean, error: String?, onClose: () -> Unit, onSave: (String, String?, ReminderTrigger) -> Unit) {
@@ -180,7 +182,11 @@ private fun announcedActionFor(rule: ReminderRule, revisions: List<RecipeRevisio
         }.also { ReminderTriggerCodec.encode(it) }
     }.getOrNull()
     val labels = linkedMapOf("duration" to "After a duration", "clock" to "At a clock time", "probe" to "Probe temperature", "action" to "After an actual action", "historical" to "Previous cook milestone")
-    AlertDialog(onDismissRequest = onClose, title = { Text("Reminder") }, text = { Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): the multi-field reminder-rule editor goes full screen.
+    FullScreenSurface(onDismiss = onClose, title = "Reminder", actions = {
+        TextButton(onClose, enabled = !busy) { Text("Cancel") }
+        TextButton({ trigger()?.let { onSave(title, dishId, it) } }, enabled = !busy && title.isNotBlank() && trigger() != null, modifier = Modifier.testTag("reminder-rule-save")) { Text("Save reminder") }
+    }) { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(title, { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth().testTag("reminder-rule-title"))
         ChoiceField("Scope", data.dishes.firstOrNull { it.id == dishId }?.name ?: "Meal", listOf("Meal") + data.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }) { label -> dishId = if (label == "Meal") null else data.dishes[label.substringBefore('.').toInt() - 1].id }
         ChoiceField("Type", labels[kind] ?: "Choose", labels.filterKeys { it != "historical" || initial is ReminderTrigger.Historical }.values.toList()) { kind = labels.entries.first { e -> e.value == it }.key }
@@ -212,5 +218,5 @@ private fun announcedActionFor(rule: ReminderRule, revisions: List<RecipeRevisio
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    } }, confirmButton = { TextButton({ trigger()?.let { onSave(title, dishId, it) } }, enabled = !busy && title.isNotBlank() && trigger() != null, modifier = Modifier.testTag("reminder-rule-save")) { Text("Save reminder") } }, dismissButton = { TextButton(onClose, enabled = !busy) { Text("Cancel") } })
+    } }
 }

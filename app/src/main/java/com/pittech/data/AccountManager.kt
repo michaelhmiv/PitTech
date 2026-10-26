@@ -43,7 +43,7 @@ internal class AccountManager(private val storage: AccountStorage, private val s
             mutex.withLock {
                 try { ready(); operation(); publish(message=_presentation.value.message) }
                 catch(e: CancellationException) { publish(message="Request interrupted. Retry to recover the same sign-in."); throw e }
-                catch(e: Exception) { publish(message=if(e is AccountFailure) e.message else "Check your email, code or link and try again.") }
+                catch(e: Exception) { publish(message=if(e is AccountFailure) e.message else com.pittech.ui.ErrorCopy.ACCOUNT_ACTION_FAILED) }
             }
         }
     }

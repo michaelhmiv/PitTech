@@ -596,4 +596,22 @@ import XCTest
         XCTAssertEqual(EmptyStateCopy.reportsBody, "Receipts for reports you send about a publication or profile will show up here.")
         XCTAssertEqual(EmptyStateCopy.profilePublicationsBody, "Named publications from this cook will show up here.")
     }
+
+    /// Slice 10 (PL-25 / PL-26 / PL-23): the unified state table — same
+    /// literals as Android's StateCopyTest pins.
+    func testSlice10UnifiedCopyIsPinned() {
+        XCTAssertEqual(EmptyStateCopy.insightsTitle, "No cooks yet")
+        XCTAssertEqual(EmptyStateCopy.insightsBody, "Finished cooks will show up here with their results, readings and statistics. Start a cook to begin your history.")
+        XCTAssertEqual(EmptyStateCopy.recipesTitle, "Your cookbook starts here")
+        XCTAssertEqual(EmptyStateCopy.recipesBody, "Save selected dishes from a finished meal here. The original cook stays in your meal history.")
+        XCTAssertEqual(EmptyStateCopy.recipesFilteredTitle, "No matching recipes")
+        XCTAssertEqual(EmptyStateCopy.recipesFilteredBody, "No recipes match these filters. Try another search or change the filters.")
+        XCTAssertEqual(ErrorCopy.saveChangeFailed, "Couldn't save that change. Your cook log is unchanged on this device — try again.")
+        XCTAssertEqual(OfflineCopy.banner, "You're offline. Changes wait on this device until a connection returns.")
+        XCTAssertEqual(OfflineCopy.changesWait, "Offline — changes wait on this device until a connection returns.")
+        XCTAssertEqual(SettingsCopy.sectionOrder, ["Appearance", "Units", "Cook notifications", "Your data", "Feedback", "Ads and privacy", "About"])
+        XCTAssertEqual(SettingsCopy.fullBackupScope, "A full backup (ZIP) includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.")
+        XCTAssertEqual(LoadingCopy.checkingPro, "Checking PitTech Pro status…")
+        XCTAssertEqual(FeedbackCopy.submitFailed, "Couldn't submit your feedback. What you wrote stays in the form — check your connection and try again.")
+    }
 }

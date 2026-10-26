@@ -627,7 +627,7 @@ class CooksViewModel(
     suspend fun persistNoteDraft(draft: com.pittech.domain.CookNoteDraft) {
         try { repository.notes.persistDraft(draft) }
         catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (failure: Exception) { _error.value = failure.message ?: "This note draft could not be saved. Try again." }
+        catch (failure: Exception) { _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_NOTE_DRAFT_FAILED) }
     }
     suspend fun stageNotePhoto(id: String, uri: String) = repository.notes.stagePhoto(id, uri)
     fun discardNoteDraft(id: String) = perform { repository.notes.discardDraft(id) }
@@ -779,7 +779,7 @@ class CooksViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = failure.message ?: "That check-in could not be saved. Try again."
+                _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_CHECK_IN_FAILED)
             } finally {
                 _busy.value = false
             }
@@ -1027,7 +1027,7 @@ class CooksViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = failure.message ?: "That change could not be saved. Try again."
+                _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_CHANGE_FAILED)
             } finally {
                 _busy.value = false
                 onFinished?.invoke(succeeded)
@@ -1051,7 +1051,7 @@ class CooksViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = failure.message ?: "That timeline entry could not be saved. Try again."
+                _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_TIMELINE_ENTRY_FAILED)
             } finally {
                 _busy.value = false
             }

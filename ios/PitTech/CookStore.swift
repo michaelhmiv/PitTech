@@ -578,7 +578,7 @@ final class CookStore {
             submitReminderSchedules(reminderSchedules)
             onLibrarySaved?()
         } catch {
-            saveError = "PitTech couldn't save this change. Check available storage and try again."
+            saveError = ErrorCopy.saveChangeFailed
         }
     }
 }

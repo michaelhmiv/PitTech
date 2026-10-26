@@ -28,7 +28,7 @@ import kotlinx.coroutines.sync.withLock
     }
     if (collections.isNotEmpty()) {
         Text("Meal collections", style = MaterialTheme.typography.titleMedium)
-        collections.forEach { row -> OutlinedButton(onClick = { scope.launch { try { editing = viewModel.sharing.duplicate(row.id) } catch (e: Exception) { error = e.message } } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy & customize ${row.title}") } }
+        collections.forEach { row -> OutlinedButton(onClick = { scope.launch { try { editing = viewModel.sharing.duplicate(row.id) } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy & customize ${row.title}") } }
     }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     editing?.let { SharingDraftEditor(it, viewModel) { editing = null } }
@@ -55,13 +55,13 @@ import kotlinx.coroutines.sync.withLock
         val previous = record ?: kotlin.error("Draft unavailable.")
         record = viewModel.sharing.save(id, value, previous.updatedAtUtcMillis); saved = true
     }
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
-    LaunchedEffect(id) { try { reload() } catch (e: Exception) { error = e.message } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } finally { busy = false } } }
+    LaunchedEffect(id) { try { reload() } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } }
     LaunchedEffect(document, editId, relayShare, publishing) {
         val value = document ?: return@LaunchedEffect
         if (editId != null || relayShare || publishing) return@LaunchedEffect
         saved = false; delay(500)
-        withContext(NonCancellable) { try { persist(value); error = null } catch (e: Exception) { error = e.message } }
+        withContext(NonCancellable) { try { persist(value); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } }
     }
     // Only the active editor sheet handles its dismissal callbacks.
     if (!publishing) ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { if (!publishing) act { persist(); onClose() } }) {
@@ -147,12 +147,12 @@ import kotlinx.coroutines.sync.withLock
     if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false },onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })
     if (publishing) PublicationDialog(id,viewModel,account,publisher) { publishing=false; act { reload() } }
     if (relayShare) RelayShareDialog(id, includeRecordedCook, viewModel) { relayShare = false }
-    if (chooseRecipe) AlertDialog(onDismissRequest = { chooseRecipe = false }, title = { Text("Add a recipe") }, text = {
-        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+    if (chooseRecipe) SheetSurface(onDismiss = { chooseRecipe = false }, title = "Add a recipe", actions = { TextButton(onClick = { chooseRecipe = false }) { Text("Done") } }) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
             recipes.filter { it.archivedAtUtcMillis == null }.forEach { recipe -> TextButton(onClick = { act { viewModel.sharing.addRecipe(id, recipe.currentRevisionId, record!!.updatedAtUtcMillis); chooseRecipe = false; reload() } }, enabled = !busy) { Text(recipe.name) } }
             if (recipes.isEmpty()) Text("Save a dish as a recipe first.")
         }
-    }, confirmButton = { TextButton(onClick = { chooseRecipe = false }) { Text("Done") } })
+    }
     editId?.let { key -> document?.entries?.firstOrNull { it.id == key }?.let { entry ->
         RecipeEditorDialog(RecipeEditorRequest(entry.snapshot), viewModel, busy, error, onClose = { editId = null }, onSave = { edit -> act {
             viewModel.sharing.editEntry(id, key, edit.snapshot, edit.addedPhotoUris, edit.captions, record!!.updatedAtUtcMillis); reload(); editId = null

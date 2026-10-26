@@ -3,6 +3,7 @@ package com.pittech.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.pittech.data.PublicManager
@@ -10,7 +11,7 @@ import com.pittech.data.PublicPresentation
 
 @Composable internal fun PublicProfileContent(manager: PublicManager,state: PublicPresentation) {
     TextButton(onClick={manager.back()}) { Text("Back to Discover") }
-    if(state.profileLoading)CircularProgressIndicator()
+    if(state.profileLoading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_PROFILE)}
     state.profileName?.let { name->
         Text(name,style=MaterialTheme.typography.headlineMedium)
         Text("@${state.profileHandle}")

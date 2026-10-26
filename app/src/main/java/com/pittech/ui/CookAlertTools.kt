@@ -90,8 +90,18 @@ private fun AlertEditor(initial: CookAlertRule, data: CookDetailData, busy: Bool
     var timed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val loggingOnly = data.recording?.samplingMode == "on_log"
-    AlertDialog(onDismissRequest = onClose, title = { Text("Cook alert") }, text = {
-        Column(Modifier.heightIn(max = 470.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): the alert editor is a multi-field editor — full screen.
+    FullScreenSurface(onDismiss = onClose, title = "Cook alert", actions = {
+        TextButton(onClick = onClose) { Text("Cancel") }
+        TextButton(enabled = !busy, onClick = {
+            runCatching {
+                require(!loggingOnly || timed || rule.type == "target") { "Choose timed monitoring for this sensor alert." }
+                val saved = rule.copy(targetF = target.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, lowF = low.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, highF = high.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, dwellMillis = (dwell.toLongOrNull() ?: throw IllegalArgumentException("Enter whole dwell minutes.")) * 60_000, missingMillis = (missing.toLongOrNull() ?: throw IllegalArgumentException("Enter whole missing minutes.")) * 60_000)
+                CookAlertEngine.validate(saved); require(title.isNotBlank()); onSave(title, saved, timed)
+            }.onFailure { error = ErrorCopy.failureText(it, "That alert couldn't be saved. Your other alerts are unchanged — check the values and try again.") }
+        }) { Text("Save alert") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(title, { title = it }, label = { Text("Alert name") }, modifier = Modifier.fillMaxWidth())
             ChoiceField("Watch", CookAlertEngine.types.getValue(rule.type), CookAlertEngine.types.values.toList()) { label -> rule = rule.copy(type = CookAlertEngine.types.entries.first { it.value == label }.key, dishId = if (label == "Food target") rule.dishId else null) }
             if (rule.type in setOf("target", "pit_range")) ChoiceField("Temperature unit", tempUnit, listOf("°F", "°C")) { unit ->
@@ -122,11 +132,5 @@ private fun AlertEditor(initial: CookAlertRule, data: CookDetailData, busy: Bool
             Text("Up to 3 alerts, at least 15 minutes apart. Acknowledge stops repeats until recovery; snooze leaves the condition visible.", style = MaterialTheme.typography.bodySmall)
             (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(enabled = !busy, onClick = {
-        runCatching {
-            require(!loggingOnly || timed || rule.type == "target") { "Choose timed monitoring for this sensor alert." }
-            val saved = rule.copy(targetF = target.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, lowF = low.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, highF = high.toDoubleOrNull()?.let { CookPlanEngine.fahrenheit(it, tempUnit) }, dwellMillis = (dwell.toLongOrNull() ?: throw IllegalArgumentException("Enter whole dwell minutes.")) * 60_000, missingMillis = (missing.toLongOrNull() ?: throw IllegalArgumentException("Enter whole missing minutes.")) * 60_000)
-            CookAlertEngine.validate(saved); require(title.isNotBlank()); onSave(title, saved, timed)
-        }.onFailure { error = it.message }
-    }) { Text("Save alert") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
+    }
 }

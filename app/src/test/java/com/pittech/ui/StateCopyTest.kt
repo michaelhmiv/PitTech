@@ -103,6 +103,30 @@ class StateCopyTest {
         assertEquals("Changes you make now stay on this device until the next sync uploads them.", row.body)
     }
 
+    // Slice 10 (PL-25 / PL-26 / PL-23): the unified state table grew the
+    // Insights + Recipes empties, the DD-8 save-failure set, the feedback
+    // set, the offline wording, and the Settings section order. These
+    // literals are the cross-platform contract — StateCopy.swift pins the
+    // same strings.
+    @Test fun slice10UnifiedCopyIsPinned() {
+        assertEquals("No cooks yet", EmptyStateCopy.INSIGHTS_TITLE)
+        assertEquals("Finished cooks will show up here with their results, readings and statistics. Start a cook to begin your history.", EmptyStateCopy.INSIGHTS_BODY)
+        assertEquals("Your cookbook starts here", EmptyStateCopy.RECIPES_TITLE)
+        assertEquals("Save selected dishes from a finished meal here. The original cook stays in your meal history.", EmptyStateCopy.RECIPES_BODY)
+        assertEquals("No matching recipes", EmptyStateCopy.RECIPES_FILTERED_TITLE)
+        assertEquals("No recipes match these filters. Try another search or change the filters.", EmptyStateCopy.RECIPES_FILTERED_BODY)
+        assertEquals("Couldn't save that change. Your cook log is unchanged on this device — try again.", ErrorCopy.SAVE_CHANGE_FAILED)
+        assertEquals("Couldn't submit your feedback. What you wrote stays in the form — check your connection and try again.", FeedbackCopy.SUBMIT_FAILED)
+        assertEquals("You're offline. Changes wait on this device until a connection returns.", OfflineCopy.BANNER)
+        assertEquals("Offline — changes wait on this device until a connection returns.", OfflineCopy.CHANGES_WAIT)
+        assertEquals(
+            listOf("Appearance", "Units", "Cook notifications", "Your data", "Feedback", "Ads and privacy", "About"),
+            SettingsCopy.SECTION_ORDER,
+        )
+        assertEquals("A full backup (ZIP) includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.", SettingsCopy.FULL_BACKUP_SCOPE)
+        assertEquals("Checking PitTech Pro status…", LoadingCopy.CHECKING_PRO)
+    }
+
     @Test fun emptyStatesTeachWhatBelongsAndWhatCreatesIt() {
         assertEquals("Notes, temperature checks and photos you add during the cook will show up here.", EmptyStateCopy.TIMELINE_BODY)
         assertEquals("Photos you add to this cook will show up here. Add one with the Photo button on the cook.", EmptyStateCopy.PHOTOS_EMPTY_BODY)

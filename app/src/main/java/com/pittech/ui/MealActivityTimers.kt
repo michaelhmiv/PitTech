@@ -28,7 +28,7 @@ internal fun MealActivityTimers(cookId: String, dishes: List<DishEntity>, active
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(timers) { while (timers.any { it.status == "running" }) { now = System.currentTimeMillis(); delay(1000) } }
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That timer change couldn't be saved. The timer is unchanged — try again.") } finally { busy = false } } }
     TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("task-timers")) {
         Text("Task timers" + timers.count { it.status == "running" }.takeIf { it > 0 }?.let { " ($it running)" }.orEmpty())
     }

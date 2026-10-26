@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -54,10 +53,13 @@ internal fun CommunityBenchmarksDialog(
         ProPaywallDialog(subscription, entry, onSignIn, activity)
         return
     }
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    // PL-22 (DD-6): benchmarks are a reading surface — full screen, same
+    // states and test tags, with the close action pinned.
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             when (state) {
                 is CommunityBenchmarksState.Loading -> Column(
                     Modifier.fillMaxWidth().testTag("community-loading"),
@@ -105,9 +107,7 @@ internal fun CommunityBenchmarksDialog(
                 }
                 is CommunityBenchmarksState.SignedOut, is CommunityBenchmarksState.Forbidden -> Unit
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 @Composable

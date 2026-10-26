@@ -563,7 +563,7 @@ private struct McpDeviceActionsSection: View {
                         .disabled(device.busy)
                         .accessibilityIdentifier("mcp-device-unregister")
                 }
-                if device.busy { ProgressView() }
+                if device.busy { ProgressView(LoadingCopy.working) }
                 if let message = device.message { Text(message).accessibilityIdentifier("mcp-device-message") }
             }
         } header: {

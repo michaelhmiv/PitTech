@@ -76,7 +76,8 @@ struct SavedRecipesView: View {
                     .font(.caption).foregroundStyle(PitTechStyle.sage)
             }
             if shown.isEmpty {
-                ContentUnavailableView(store.library.recipes.isEmpty ? "Your cookbook starts here" : "No matching recipes", systemImage: "book.closed", description: Text(store.library.recipes.isEmpty ? "Save selected dishes from a finished meal. Your original cook stays in history." : "Try another search or change the filters."))
+                // PL-25: the Recipes empties are the shared StateCopy wording.
+                ContentUnavailableView(store.library.recipes.isEmpty ? EmptyStateCopy.recipesTitle : EmptyStateCopy.recipesFilteredTitle, systemImage: "book.closed", description: Text(store.library.recipes.isEmpty ? EmptyStateCopy.recipesBody : EmptyStateCopy.recipesFilteredBody))
             }
             ForEach(shown.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
                 if let o = store.recipe(id), let revision = o["currentRevisionId"]?.stringValue {
