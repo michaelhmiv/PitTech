@@ -122,6 +122,48 @@ import UIKit
         XCTAssertThrowsError(try store.saveNote(CookNoteDraft(cookId: second, temperatures: draft.temperatures)))
         XCTAssertEqual(store.readings(for: first).count, 1); XCTAssertTrue(store.readings(for: second).isEmpty)
     }
+    /// PL-07 (issue #172): a standalone manual reading edits in the note
+    /// composer — saving the composer's draft adopts the reading into the
+    /// note under its own identity. Device readings and readings owned by
+    /// another note can never be taken over this way.
+    func testComposerAdoptsStandaloneManualReadingButNeverSteals() async throws {
+        let store = CookStore(directory: try folder()); store.startCook(title: "Adoption", firstDish: "Brisket")
+        let cook = try XCTUnwrap(store.activeCooks.first), dish = try XCTUnwrap(store.dishRecords(cook.id).first)
+        store.library.readings.append(.object(["id": .string("standalone-1"), "cookId": .string(cook.id), "dishId": .string(dish.id), "probeName": .string("Hand thermometer"), "measurementType": .string("food_probe"), "value": .number(150), "unit": .string("°F"), "measuredAtUtcMillis": .number(1_700_000_000_000), "timeZoneId": .string("UTC"), "source": .string("manual"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1_700_000_000_000)]))
+        store.library.readings.append(.object(["id": .string("device-1"), "cookId": .string(cook.id), "probeName": .string("Pit"), "measurementType": .string("pit"), "value": .number(225), "unit": .string("°F"), "measuredAtUtcMillis": .number(1_700_000_000_000), "timeZoneId": .string("UTC"), "source": .string("controller_cloud"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1_700_000_000_000)]))
+        store.save()
+        let standalone = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "standalone-1" })
+        var adoption = store.readingDraft(standalone)
+        adoption.temperatures[0].valueText = "171"
+        try store.saveNote(adoption)
+        XCTAssertEqual(store.readings(for: cook.id).first { $0.id == "standalone-1" }?.value, 171)
+        XCTAssertEqual(store.events(for: cook.id).count, 1)
+        XCTAssertEqual(store.library.logReadingLinks.count, 1)
+        // The adopted reading is owned now; a second note cannot steal it.
+        XCTAssertThrowsError(try store.saveNote(CookNoteDraft(cookId: cook.id, metadata: CookNoteMetadata(category: "temperature"), temperatures: adoption.temperatures)))
+        XCTAssertEqual(store.events(for: cook.id).count, 1)
+        // A device reading is never adoptable.
+        let device = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "device-1" })
+        XCTAssertThrowsError(try store.saveNote(store.readingDraft(device)))
+        XCTAssertEqual(store.readings(for: cook.id).first { $0.id == "device-1" }?.value, 225)
+        XCTAssertEqual(store.events(for: cook.id).count, 1)
+    }
+    /// PL-07 (issue #172): a legacy standalone reading whose type came from
+    /// the retired Temperature Entry dialog ("setpoint") stays editable in
+    /// the composer and keeps its type — editing never rewrites it.
+    func testAdoptedLegacySetpointReadingKeepsItsType() async throws {
+        let store = CookStore(directory: try folder()); store.startCook(title: "Legacy types", firstDish: "Ribs")
+        let cook = try XCTUnwrap(store.activeCooks.first)
+        store.library.readings.append(.object(["id": .string("legacy-1"), "cookId": .string(cook.id), "probeName": .string("Smoker setpoint"), "measurementType": .string("setpoint"), "value": .number(250), "unit": .string("°F"), "measuredAtUtcMillis": .number(1_700_000_000_000), "timeZoneId": .string("UTC"), "source": .string("manual"), "qualityStatus": .string("valid"), "recordedAtUtcMillis": .number(1_700_000_000_000)]))
+        store.save()
+        let legacy = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "legacy-1" })
+        var adoption = store.readingDraft(legacy)
+        adoption.temperatures[0].valueText = "255"
+        try store.saveNote(adoption)
+        let saved = try XCTUnwrap(store.readings(for: cook.id).first { $0.id == "legacy-1" })
+        XCTAssertEqual(saved.value, 255)
+        XCTAssertEqual(saved.measurementType, "setpoint")
+    }
     func testChartKeepsIdentityUnitsGapsAndExtremaWithoutInventingTrends() async throws {
         func sample(_ id: String, _ value: Double, _ at: Double, unit: String = "°F", probe: String = "p", source: String = "controller_cloud") -> TemperatureSample {
             TemperatureSample(json: .object(["id": .string(id), "cookId": .string("cook"), "probeId": .string(probe), "probeName": .string("Same name"), "measurementType": .string("food"), "value": .number(value), "unit": .string(unit), "measuredAtUtcMillis": .number(at), "source": .string(source), "samplingIntervalMillis": .number(300_000)]))!
@@ -138,5 +180,55 @@ import UIKit
             return sample(String(index), value, timestamp, unit: unit)
         }
         XCTAssertTrue(CookChartMath.reduced(rows).contains { $0.id == "302" })
+    }
+    // PL-08 (issue #172): the unified results save writes every field of a
+    // scope through the one model; the quick verdict touches only verdict
+    // rows; Undo finish reverts the finish and keeps recorded results.
+    func testUnifiedResultsSaveVerdictAndReopen() async throws {
+        let directory = try folder(), store = CookStore(directory: directory)
+        store.startCook(title: "Results cook", firstDish: "Brisket")
+        let cook = try XCTUnwrap(store.activeCooks.first), dish = try XCTUnwrap(store.dishRecords(cook.id).first)
+        var whole = CookResultsValues()
+        whole.finalTemperature = 203; whole.finalTemperatureUnit = "°F"; whole.restMinutes = 45
+        whole.overallRating = 4; whole.tenderness = 5; whole.notes = "Solid smoke ring"
+        whole.keepDoing = "Keep the overnight rest"; whole.changeNextTime = "Trim harder"
+        try store.saveCookResults(cookId: cook.id, dishId: nil, values: whole)
+        var dishValues = CookResultsValues()
+        dishValues.overallRating = 5; dishValues.bark = 4; dishValues.juiciness = 4; dishValues.smoke = 3; dishValues.seasoning = 5
+        dishValues.cookAgain = true; dishValues.notes = "Best bark yet"
+        try store.saveCookResults(cookId: cook.id, dishId: dish.id, values: dishValues)
+        let savedWhole = store.cookResults(cookId: cook.id, dishId: nil)
+        XCTAssertEqual(savedWhole.overallRating, 4)
+        XCTAssertEqual(savedWhole.tenderness, 5)
+        XCTAssertEqual(savedWhole.finalTemperature, 203)
+        XCTAssertEqual(savedWhole.restMinutes, 45)
+        XCTAssertEqual(savedWhole.notes, "Solid smoke ring")
+        XCTAssertEqual(savedWhole.keepDoing, "Keep the overnight rest")
+        XCTAssertEqual(savedWhole.changeNextTime, "Trim harder")
+        let savedDish = store.cookResults(cookId: cook.id, dishId: dish.id)
+        XCTAssertEqual(savedDish.overallRating, 5)
+        XCTAssertEqual(savedDish.bark, 4)
+        XCTAssertEqual(savedDish.cookAgain, true)
+        XCTAssertTrue(store.hasAnyDisplayableResults(cookId: cook.id))
+        // The quick verdict writes only verdict rows — the dish's detail
+        // ratings and notes stay exactly as recorded.
+        try store.saveVerdict(cookId: cook.id, dishId: dish.id, rating: nil, again: nil)
+        let cleared = store.cookResults(cookId: cook.id, dishId: dish.id)
+        XCTAssertNil(cleared.overallRating)
+        XCTAssertNil(cleared.cookAgain)
+        XCTAssertEqual(cleared.bark, 4)
+        XCTAssertEqual(cleared.notes, "Best bark yet")
+        // Saved results persist across a relaunch.
+        let restored = CookStore(directory: directory)
+        XCTAssertEqual(restored.cookResults(cookId: cook.id, dishId: nil).overallRating, 4)
+        XCTAssertEqual(restored.cookResults(cookId: cook.id, dishId: dish.id).bark, 4)
+        // Finish, then Undo finish from the finished cook.
+        store.finishCook(cook.id)
+        XCTAssertEqual(store.library.cooks.first?.status, "completed")
+        XCTAssertNotNil(store.library.cooks.first?.endedAtUtcMillis)
+        store.reopenCook(cook.id)
+        XCTAssertEqual(store.library.cooks.first?.status, "active")
+        XCTAssertNil(store.library.cooks.first?.endedAtUtcMillis)
+        XCTAssertEqual(store.cookResults(cookId: cook.id, dishId: nil).overallRating, 4)
     }
 }

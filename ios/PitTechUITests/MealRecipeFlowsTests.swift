@@ -142,10 +142,25 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let status = app.staticTexts["sync-status"]; reveal(status, app: app)
                 XCTAssertEqual(status.label, "Conflicts to review")
                 let review = app.buttons["sync-conflicts"]; reveal(review, app: app); review.tap()
-                let yours = app.staticTexts["Yours: Note \"Local title\""]; reveal(yours, app: app)
+                // PL-16: both versions are shown as content — the note's own
+                // fields under "Yours" and "Other device" — not summaries.
+                let yours = app.staticTexts["Yours"]; reveal(yours, app: app)
                 XCTAssertTrue(yours.waitForExistence(timeout: 10))
-                let theirs = app.staticTexts["Other device: Note \"Remote title\""]; reveal(theirs, app: app)
+                let localTitle = app.staticTexts["Local title"]; reveal(localTitle, app: app)
+                XCTAssertTrue(localTitle.waitForExistence(timeout: 10))
+                let theirs = app.staticTexts["Other device"]; reveal(theirs, app: app)
                 XCTAssertTrue(theirs.waitForExistence(timeout: 10))
+                let remoteTitle = app.staticTexts["Remote title"]; reveal(remoteTitle, app: app)
+                XCTAssertTrue(remoteTitle.waitForExistence(timeout: 10))
+                // Slice 7 (PL-10): the review states the concrete consequence for
+                // the actual pending set (one conflict in this fixture).
+                let consequence = app.staticTexts["sync-conflict-consequence"]; reveal(consequence, app: app)
+                XCTAssertTrue(consequence.label.contains("replaces this device's unsynced changes to 1 item"), consequence.label)
+                // PL-16: the consequence is printed on the choice itself —
+                // immediate on this device, uploads on the next sync.
+                let mineNote = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Keep mine applies on this device right away")).firstMatch
+                reveal(mineNote, app: app)
+                XCTAssertTrue(mineNote.label.contains("uploads on the next sync"), mineNote.label)
                 if choice == "Keep mine" { capture(large ? "Native sync conflict review large text" : "Native sync conflict review") }
                 let action = app.buttons[choice]; reveal(action, app: app); action.tap()
                 // The conflict resolves offline; the review list empties without an upload claim.
@@ -153,6 +168,10 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let done = app.buttons["sync-review-done"]; reveal(done, app: app); done.tap()
                 let synced = app.staticTexts["sync-status"]; reveal(synced, app: app)
                 XCTAssertEqual(synced.label, "Last synced never")
+                // Slice 7 (PL-10): with no completed sync, the status row's body
+                // carries the first-connection state instead of a bare status.
+                let detail = app.staticTexts["sync-status-detail"]; reveal(detail, app: app)
+                XCTAssertTrue(detail.label.contains("Waiting for first connection"), detail.label)
                 if choice == "Keep mine" {
                     let now = app.buttons["sync-now"]; reveal(now, app: app); now.tap()
                     XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))
@@ -172,6 +191,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             let reviewed = app.switches["publication-reviewed"]; reveal(reviewed, app: app); reviewed.tap()
             reveal(confirm, app: app); XCTAssertTrue(confirm.isEnabled); confirm.tap()
             XCTAssertTrue(app.staticTexts["publication-complete"].waitForExistence(timeout: 15)); capture(large ? "Native publication complete large text" : "Native publication complete")
+            // PL-18: the published state offers the landing where the thing went.
+            XCTAssertTrue(app.buttons["publication-open-cookbook"].exists)
             app.buttons["publication-done"].tap()
             reveal(open, app: app); open.tap(); reveal(prepare, app: app); prepare.tap()
             reveal(confirm, app: app); XCTAssertEqual(confirm.label, "Publish this update"); XCTAssertFalse(confirm.isEnabled)
@@ -212,6 +233,8 @@ final class MealRecipeFlowsTests: XCTestCase {
             reveal(confirm, app: app);XCTAssertTrue(confirm.waitForExistence(timeout: 20));XCTAssertEqual(confirm.label, "Save 2 recipes")
             capture(large ? "Native public selective preview large text" : "Native public selective preview");confirm.tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20));app.alerts.buttons["OK"].tap()
+            // PL-19: after Save, the detail's primary is "Open in Recipes".
+            let openRecipes = app.buttons["public-open-recipes"];reveal(openRecipes, app: app);XCTAssertTrue(openRecipes.exists)
             app.tabBars.buttons["Recipes"].tap();XCTAssertTrue(app.staticTexts["Oak-smoked pork shoulder"].firstMatch.waitForExistence(timeout: 10))
             app.staticTexts["Oak-smoked pork shoulder"].firstMatch.tap()
             let review = app.buttons["source-review-open"]; reveal(review, app: app); review.tap()
@@ -221,7 +244,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native source change review large text" : "Native source change review")
             app.tabBars.buttons["Discover"].tap()
             let cook = app.buttons["public-cook"];reveal(cook, app: app);cook.tap()
-            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & start meal");start.tap()
+            let start = app.buttons["pack-save-recipes"];XCTAssertTrue(start.waitForExistence(timeout: 20));reveal(start, app: app);XCTAssertEqual(start.label, "Save 2 recipes & set up meal");start.tap()
+            // PL-19 / PL-10 (#172): "Cook this" lands on the unified Start
+            // Cook review — the meal starts only when the setup is
+            // confirmed there with "Begin preparation".
+            let confirmStart = app.buttons["start-meal-save"];XCTAssertTrue(confirmStart.waitForExistence(timeout: 20))
+            XCTAssertTrue(app.staticTexts["cook-source"].waitForExistence(timeout: 10));confirmStart.tap()
             let food = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"));XCTAssertTrue(food.firstMatch.waitForExistence(timeout: 20))
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
@@ -232,7 +260,11 @@ final class MealRecipeFlowsTests: XCTestCase {
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--account-ui-test"] + (large ? ["--screenshot-large-text"] : [])
             app.launch(); app.tabBars.buttons["More"].tap()
             let open = app.buttons["more-account"]; reveal(open, app: app); open.tap()
-            let email = app.textFields["account-email"]; XCTAssertTrue(email.waitForExistence(timeout: 10))
+            // PL-14 (#172): the sign-in form now sits below the Session
+            // section, so — like the pack-save fix above — scroll-poll the
+            // field (which materializes its virtualized row) before the
+            // existence wait instead of waiting on an unrealized node.
+            let email = app.textFields["account-email"]; reveal(email, app: app); XCTAssertTrue(email.waitForExistence(timeout: 10))
             XCTAssertFalse(app.buttons["account-apple-signin"].exists)
             email.tap(); email.typeText("cook@example.com")
             app.buttons["Hide keyboard"].tap()
@@ -297,7 +329,16 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(submit.isEnabled)
             capture(large ? "Account deletion review large text" : "Account deletion review")
             submit.tap()
-            let status = app.staticTexts["account-deletion-status"]; XCTAssertTrue(status.waitForExistence(timeout: 10)); reveal(status, app: app)
+            // The submit dismisses the "Delete account" sheet before the Account
+            // form settles; wait out the transition first. In large text the status
+            // row sits at the top of the PL-14 form while the scroll position is
+            // still at the Danger zone, so the row is virtualized away: scroll it
+            // into view (which materializes it) BEFORE waiting on it — asserting
+            // existence first can never succeed at large text.
+            XCTAssertTrue(app.navigationBars["Delete account"].waitForNonExistence(timeout: 10))
+            let status = app.staticTexts["account-deletion-status"]; reveal(status, app: app)
+            XCTAssertTrue(status.waitForExistence(timeout: 10))
+            capture(large ? "Account deletion status large text" : "Account deletion status")
             XCTAssertTrue(status.label.contains("queued"))
             let recover = app.buttons["account-deletion-recover"]; reveal(recover, app: app); recover.tap()
             let check = app.buttons["account-deletion-check"]; reveal(check, app: app); check.tap()
@@ -345,7 +386,10 @@ final class MealRecipeFlowsTests: XCTestCase {
             XCTAssertTrue(message.label.contains("Local journal removed"))
             capture(large ? "Local journal removed large text" : "Local journal removed")
             app.buttons["Done"].tap(); app.tabBars.buttons["Meals"].tap()
-            XCTAssertTrue(app.staticTexts["No finished cooks yet"].waitForExistence(timeout: 10))
+            // Slice 1 (#172 PL-13): a fully wiped library lands on the
+            // first-run empty Meals card; "No finished cooks yet" now only
+            // shows in the completed-meals section of a non-empty library.
+            XCTAssertTrue(app.otherElements["meals-empty-card"].waitForExistence(timeout: 10))
             app.terminate()
         }
     }
@@ -518,6 +562,12 @@ final class MealRecipeFlowsTests: XCTestCase {
             if large { let heading = app.staticTexts["Choose what to save"]; reveal(heading, app: app); XCTAssertGreaterThan(heading.frame.height, 40); reveal(add, app: app) }
             capture(large ? "Native recorded meal choice large text" : "Native recorded meal choice")
             add.tap()
+            // PL-19: adding history keeps the save sheet open with the
+            // recipe choice intact; the completion alert arrives only
+            // when the sheet is dismissed afterwards.
+            let added = app.staticTexts["pack-history-added"]; XCTAssertTrue(added.waitForExistence(timeout: 20))
+            XCTAssertTrue(app.buttons["pack-save-recipes"].exists)
+            app.navigationBars["Cook Pack"].buttons["Cancel"].tap()
             XCTAssertTrue(app.alerts["Cook archive"].waitForExistence(timeout: 20)); app.alerts.buttons["OK"].tap()
             app.tabBars.buttons["Meals"].tap()
             XCTAssertTrue(app.staticTexts["Pork and potatoes"].firstMatch.waitForExistence(timeout: 10))
@@ -537,6 +587,13 @@ final class MealRecipeFlowsTests: XCTestCase {
             waitForExpectations(timeout: 5)
         }
         let start = app.buttons["recipe-start-meal"]; reveal(start, app: app); start.tap()
+        // PL-10 (#172): composing a meal lands on the Start Cook review —
+        // no cook (and no food cards) exist until "Begin preparation".
+        let confirmStart = app.buttons["start-meal-save"]; XCTAssertTrue(confirmStart.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["cook-source"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-")).firstMatch.exists)
+        capture("Native start cook review recipes")
+        confirmStart.tap()
         let foods = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "food-card-"))
         XCTAssertTrue(foods.firstMatch.waitForExistence(timeout: 15))
         // Scroll views expose visible cards to accessibility, so collect stable identities across the viewport.
@@ -596,5 +653,73 @@ final class MealRecipeFlowsTests: XCTestCase {
         reveal(app.buttons["finish-meal"], app: app); app.buttons["finish-meal"].tap(); app.alerts.buttons["Finish meal"].tap()
         XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15)); reveal(app.buttons["Leave without saving"], app: app); app.buttons["Leave without saving"].tap()
         XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 10))
+    }
+    /// PL-13 (#172): leaving a changed Start Cook setup keeps it as a draft
+    /// on this phone — the same words and choices as Android — and Meals
+    /// offers Resume setup until the draft is discarded or started.
+    func testStartCookDiscardKeepsDraftAndResumeRestoresIt() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty"]; app.launch()
+        let start = app.buttons["Start meal"]; XCTAssertTrue(start.waitForExistence(timeout: 15)); start.tap()
+        let title = app.textFields["meal-title"]; XCTAssertTrue(title.waitForExistence(timeout: 15))
+        title.tap(); title.typeText("Draft night ribs")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Your setup is kept as a draft on this phone. Resume it any time from Meals."].waitForExistence(timeout: 10))
+        capture("Native setup leave dialog")
+        // The confirmation dialog exposes each button twice in the
+        // accessibility tree on this iOS version; firstMatch is the same
+        // remedy the sign-out confirmation in this file already uses.
+        app.buttons["setup-keep-draft"].firstMatch.tap()
+        let resume = app.buttons["resume-setup"]; XCTAssertTrue(resume.waitForExistence(timeout: 15))
+        capture("Native meals setup draft")
+        resume.tap()
+        let restored = app.textFields["meal-title"]; XCTAssertTrue(restored.waitForExistence(timeout: 15))
+        XCTAssertEqual(restored.value as? String, "Draft night ribs")
+        // Leaving the resumed setup unchanged asks nothing; the draft stays.
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["resume-setup"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["setup-keep-draft"].exists)
+        // Discarding from the leave dialog is the explicit way to drop it.
+        app.buttons["resume-setup"].tap()
+        XCTAssertTrue(app.textFields["meal-title"].waitForExistence(timeout: 15))
+        let smoker = app.textFields["cook-smoker"]; reveal(smoker, app: app); smoker.tap(); smoker.typeText("Kettle")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["setup-discard"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["setup-discard"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Start meal"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["resume-setup"].exists)
+        app.terminate()
+    }
+    /// PL-13 (#172): the Start Cook sections appear in the canonical order
+    /// both platforms share. Section headers materialize as the form is
+    /// swept downward; their first-appearance order is the field order.
+    func testStartCookFieldsAppearInCanonicalOrder() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty"]; app.launch()
+        let start = app.buttons["Start meal"]; XCTAssertTrue(start.waitForExistence(timeout: 15)); start.tap()
+        XCTAssertTrue(app.textFields["meal-title"].waitForExistence(timeout: 15))
+        let expected = ["Current stage", "Cook name", "Dishes", "Smoker", "Starting setpoint", "Cook notes", "More cook details"]
+        let fieldIds = ["cook-smoker", "cook-setpoint", "cook-notes", "cook-fuel", "cook-wood-blend", "cook-outdoor-temperature", "cook-weather", "cook-wind"]
+        var seen: [String] = []
+        var fieldsSeen: [String] = []
+        // Harvest during the sweep: Form rows virtualize, so a field near
+        // the top no longer exists once the sweep reaches the bottom —
+        // first-appearance order is collected on the way down instead of
+        // checking existence after the fact.
+        for _ in 0..<14 {
+            for header in expected where !seen.contains(header) {
+                if app.staticTexts[header].exists { seen.append(header) }
+            }
+            for identifier in fieldIds where !fieldsSeen.contains(identifier) {
+                if app.textFields[identifier].exists { fieldsSeen.append(identifier) }
+            }
+            if seen.count == expected.count && fieldsSeen.count == fieldIds.count { break }
+            app.swipeUp()
+        }
+        XCTAssertEqual(seen, expected)
+        // Field identifiers appear in the same order within their sections.
+        XCTAssertEqual(fieldsSeen, fieldIds, "Start Cook fields out of order or missing")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Start meal"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["resume-setup"].exists)
+        app.terminate()
     }
 }

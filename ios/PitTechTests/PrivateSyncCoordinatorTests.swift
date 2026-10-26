@@ -545,4 +545,85 @@ import XCTest
         XCTAssertEqual(store.library.probeAssignments.count, 1)
         XCTAssertEqual(store.library.activityTimers.count, 1)
     }
+
+    // Slice 7 (PL-10 / PL-13, DD-8): the sync status row and the canonical
+    // empty states. These literals are the cross-platform contract — the
+    // Android StateCopyTest pins the same strings.
+    func testSyncStatusRowCopyPerState() {
+        let never = SyncStatusCopy.row(status: "Last synced never", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertEqual(never.headline, "Last synced never")
+        XCTAssertEqual(never.body, "Waiting for first connection — nothing has been backed up yet. Your journal is safe on this device. Tap Sync now to make the first backup.")
+
+        let signedOut = SyncStatusCopy.row(status: "Sync is off", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: false, enabled: true)
+        XCTAssertEqual(signedOut.headline, "Sign in to start private sync")
+        XCTAssertTrue(signedOut.body.hasPrefix("Nothing is uploaded while you are signed out"))
+
+        let disabled = SyncStatusCopy.row(status: "Sync is off", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: false, enabled: false)
+        XCTAssertEqual(disabled.body, "Private sync is not available on this build. Your journal stays on this device and nothing is uploaded.")
+
+        let conflict = SyncStatusCopy.row(status: "Conflicts to review", detail: nil, lastSyncedAt: 123, conflictCount: 3, signedIn: true, enabled: true)
+        XCTAssertTrue(conflict.body.contains("Two devices changed the same 3 items."))
+        XCTAssertEqual(SyncStatusCopy.conflictConsequence(1), "Choosing “Use theirs” for it replaces this device's unsynced changes to 1 item. Each choice is recorded on this device now and uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictConsequence(4), "Choosing “Use theirs” for all 4 replaces this device's unsynced changes to 4 items. Each choice is recorded on this device now and uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictItemNote, "Keep mine keeps this device's version of this item. Use theirs replaces it with the other device's version.")
+
+        // PL-16: each choice prints its own consequence before it is tapped —
+        // it applies on this device right away, and the resolution uploads
+        // on the next sync; where Keep both cannot exist, the sheet says so
+        // for that item instead of the button silently not being there.
+        XCTAssertEqual(SyncStatusCopy.conflictChoiceNote("mine"), "Keep mine applies on this device right away — your version stays. The choice uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictChoiceNote("theirs"), "Use theirs applies on this device right away — the other device's version replaces yours. The choice uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictChoiceNote("both"), "Keep both applies on this device right away — both versions stay, the other as a new entry. The choice uploads on the next sync.")
+        XCTAssertEqual(SyncStatusCopy.conflictKeepBothUnavailable("lifecycles"), "Keep both isn't available for meal timing — a meal has one timing record, so choose one version.")
+        XCTAssertEqual(SyncStatusCopy.conflictKeepBothUnavailable("logReadingLinks"), "Keep both isn't available for a note temperature link — a reading links to one note, so choose one version.")
+        XCTAssertEqual(SyncStatusCopy.conflictKeepBothUnavailable("events"), "Keep both isn't available for this entry, so choose one version.")
+
+        let waiting = SyncStatusCopy.row(status: "Waiting for connection", detail: nil, lastSyncedAt: 0, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertTrue(waiting.body.contains("Sync tries again when a connection returns"))
+        let retry = SyncStatusCopy.row(status: "Retry needed", detail: nil, lastSyncedAt: 99, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertEqual(retry.body, "Your journal is unchanged on this device. Tap Sync now to retry.")
+        let synced = SyncStatusCopy.row(status: "Last synced Oct 24, 2026", detail: nil, lastSyncedAt: 99, conflictCount: 0, signedIn: true, enabled: true)
+        XCTAssertEqual(synced.body, "Changes you make now stay on this device until the next sync uploads them.")
+    }
+
+    func testEmptyStateCopyParityLiterals() {
+        XCTAssertEqual(EmptyStateCopy.timelineTitle, "No cook history yet")
+        XCTAssertEqual(EmptyStateCopy.timelineBody, "Notes, temperature checks and photos you add during the cook will show up here.")
+        XCTAssertEqual(EmptyStateCopy.photosEmptyBody, "Photos you add to this cook will show up here. Add one with the Photo button on the cook.")
+        XCTAssertEqual(EmptyStateCopy.connectionsEmpty, "No connections yet. Add one below, then attach it to a cook on the next step.")
+        XCTAssertEqual(EmptyStateCopy.sharedCodesEmpty, "No shared codes yet. Open a saved recipe or meal, choose Share, then Share by code.")
+        XCTAssertEqual(EmptyStateCopy.blocksBody, "Publishers you block from a publication or profile will be listed here, and their publications stay hidden.")
+        XCTAssertEqual(EmptyStateCopy.reportsBody, "Receipts for reports you send about a publication or profile will show up here.")
+        XCTAssertEqual(EmptyStateCopy.profilePublicationsBody, "Named publications from this cook will show up here.")
+    }
+
+    /// Slice 10 (PL-25 / PL-26 / PL-23): the unified state table — same
+    /// literals as Android's StateCopyTest pins.
+    func testSlice10UnifiedCopyIsPinned() {
+        XCTAssertEqual(EmptyStateCopy.insightsTitle, "No cooks yet")
+        XCTAssertEqual(EmptyStateCopy.insightsBody, "Finished cooks will show up here with their results, readings and statistics. Start a cook to begin your history.")
+        XCTAssertEqual(EmptyStateCopy.recipesTitle, "Your cookbook starts here")
+        XCTAssertEqual(EmptyStateCopy.recipesBody, "Save selected dishes from a finished meal here. The original cook stays in your meal history.")
+        XCTAssertEqual(EmptyStateCopy.recipesFilteredTitle, "No matching recipes")
+        XCTAssertEqual(EmptyStateCopy.recipesFilteredBody, "No recipes match these filters. Try another search or change the filters.")
+        XCTAssertEqual(ErrorCopy.saveChangeFailed, "Couldn't save that change. Your cook log is unchanged on this device — try again.")
+        XCTAssertEqual(OfflineCopy.banner, "You're offline. Changes wait on this device until a connection returns.")
+        XCTAssertEqual(OfflineCopy.changesWait, "Offline — changes wait on this device until a connection returns.")
+        XCTAssertEqual(SettingsCopy.sectionOrder, ["Appearance", "Units", "Cook notifications", "Your data", "Feedback", "Ads and privacy", "About"])
+        XCTAssertEqual(SettingsCopy.fullBackupScope, "A full backup (ZIP) includes your cooks, log entries, readings, results, reminders, photos, playbooks, plans, checklists, equipment, and app preferences.")
+        XCTAssertEqual(LoadingCopy.checkingPro, "Checking PitTech Pro status…")
+        XCTAssertEqual(FeedbackCopy.submitFailed, "Couldn't submit your feedback. What you wrote stays in the form — check your connection and try again.")
+    }
+
+    /// PL-30 (#172): the shared "not available yet" pattern strings —
+    /// identical literals to Android's StateCopyTest pins.
+    func testNotAvailablePatternCopyIsPinned() {
+        XCTAssertEqual(NotAvailableCopy.devicesTitle, "Devices")
+        XCTAssertEqual(NotAvailableCopy.devicesMessage, "Grill connections aren't available yet.")
+        XCTAssertEqual(NotAvailableCopy.devicesNote, "You can add temperature readings by hand during a cook.")
+        XCTAssertEqual(NotAvailableCopy.devicesOnward, "Open Meals")
+        XCTAssertEqual(NotAvailableCopy.discoverTitle, "Find your next cook")
+        XCTAssertEqual(NotAvailableCopy.discoverMessage, "Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account.")
+        XCTAssertEqual(NotAvailableCopy.discoverOnward, "Open your recipes")
+    }
 }

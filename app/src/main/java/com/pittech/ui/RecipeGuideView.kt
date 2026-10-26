@@ -25,9 +25,9 @@ internal fun guideState(records: List<CompanionRecord>) = records.firstOrNull { 
 @Composable internal fun RecipeGuideControl(data: CookDetailData, records: List<CompanionRecord>, viewModel: CooksViewModel, remindersActive: Boolean) {
     val sources = remember(records) { guideSources(records) }; val state = remember(records) { guideState(records) }; val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(data.cook.id) { runCatching { viewModel.guide.ensure(data.cook.id) }.onFailure { error = it.message } }
+    LaunchedEffect(data.cook.id) { runCatching { viewModel.guide.ensure(data.cook.id) }.onFailure { error = ErrorCopy.failureText(it, "The guide couldn't be updated. Your cook is unchanged — try again.") } }
     if (sources.isEmpty() && records.none { it.kind == "recipe_attempt" }) return
-    fun save(value: GuidePresentation) { scope.launch { runCatching { viewModel.guide.save(data.cook.id, value) }.onFailure { error = it.message } } }
+    fun save(value: GuidePresentation) { scope.launch { runCatching { viewModel.guide.save(data.cook.id, value) }.onFailure { error = ErrorCopy.failureText(it, "The guide couldn't be updated. Your cook is unchanged — try again.") } } }
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Show guide", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))

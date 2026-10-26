@@ -79,6 +79,44 @@ internal class TelemetryProfileStore(context: Context) {
     }
 }
 
+/**
+ * PL-05 (#172): an in-progress attach/assign edit for one connection. Held
+ * by the runtime so it survives the Devices sheet being dismissed; a
+ * successful attach consumes it.
+ */
+internal data class TelemetryAssignmentDraft(
+    val profileId: String,
+    val sourceId: String? = null,
+    val cookId: String? = null,
+    val roles: Map<String, TelemetryKind> = emptyMap(),
+    val dishes: Map<String, String?> = emptyMap(),
+)
+
+/**
+ * PL-05: the empty-devices line. "No devices found" is a settled-discovery
+ * verdict; before discovery settles the sheet says it is still looking (or
+ * that a connect is needed first) instead of flashing a false empty state.
+ */
+internal fun devicesEmptyStateText(discoveryInFlight: Boolean, discoverySettled: Boolean): String = when {
+    discoveryInFlight -> "Looking for devices…"
+    discoverySettled -> "No devices found. Check Bluetooth or the provider's cloud connection, then reconnect."
+    else -> "Connect this connection to discover its devices."
+}
+
+/** PL-05: the stepper opens on Connect until a first connection exists, then on Attach. */
+internal fun initialDevicesStep(hasProfiles: Boolean): Int = if (hasProfiles) 2 else 1
+
+/** PL-05: a fresh draft seeded from a connection's saved attach/assign state. */
+internal fun seedAssignmentDraft(profile: TelemetryProfile, activeCookId: String?): TelemetryAssignmentDraft {
+    val source = profile.sources.firstOrNull { it.deviceId in profile.selectedDeviceIds } ?: profile.sources.firstOrNull()
+    return TelemetryAssignmentDraft(
+        profileId = profile.id,
+        sourceId = source?.deviceId,
+        cookId = profile.cookId ?: activeCookId,
+        roles = source?.channels?.associate { it.id to it.kind } ?: emptyMap(),
+    )
+}
+
 /** Each provider branch supplies its own factory. Missing adapters stay unavailable. */
 internal interface TelemetryConnectorFactory {
     suspend fun revoke(context: Context, profile: TelemetryProfile) { TelemetryTokenStore(context).clear(profile.provider, profile.id) }

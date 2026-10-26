@@ -1,5 +1,6 @@
 package com.pittech.data
 
+import com.pittech.ads.AdEntitlement
 import com.pittech.online.OnlineConfiguration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +38,7 @@ internal class McpClient(client: OkHttpClient = OkHttpClient()) : McpAPI {
     private val client = client.newBuilder().followRedirects(false).followSslRedirects(false).cookieJar(okhttp3.CookieJar.NO_COOKIES).cache(null).callTimeout(30, TimeUnit.SECONDS).build()
     override suspend fun call(method: String, path: String, body: JSONObject?, access: String?): JSONObject {
         require(method in setOf("GET", "POST", "DELETE"))
-        require(path == "/v1/me/mcp/grants" || path == "/v1/me/mcp/oauth/approve" ||
+        require(path == "/v1/me/mcp/grants" || path == "/v1/me/mcp/oauth/approve" || path == "/v1/me/mcp/oauth/describe" ||
             path == "/v1/me/mcp/devices" || path == "/v1/me/mcp/device-commands" ||
             Regex("^/v1/me/mcp/grants/[0-9a-fA-F-]{36}$").matches(path) ||
             Regex("^/v1/me/mcp/devices/[0-9a-fA-F-]{36}$").matches(path) ||
@@ -82,7 +83,13 @@ internal data class McpGrantView(
         expiresAt <= now -> "Expired"
         else -> "Connected"
     }
-    val active: Boolean get() = revokedAt == null
+    /**
+     * PL-30 (#172): a grant counts as active only while it can actually
+     * be used — not revoked AND not expired. Expired grants render as
+     * "Expired" (see [status]) and must not offer Disconnect or inflate
+     * the connection counts and Disconnect-all.
+     */
+    fun active(now: Long): Boolean = revokedAt == null && expiresAt > now
     companion object {
         fun parse(o: JSONObject): McpGrantView {
             val scopes = o.optJSONArray("scopes")?.let { array -> List(array.length()) { array.optString(it) } } ?: emptyList()
@@ -118,6 +125,31 @@ internal object McpScopeCatalog {
     fun label(id: String): String = all.firstOrNull { it.id == id }?.label ?: id
 }
 
+/** What a browser-shown code would connect, fetched before approval so
+ * the confirmation step can show it (Slice 8, PL-16 / DD-9). Describing
+ * approves nothing; the preview is only ever replaced by a fresh review
+ * or cleared by approval/dismissal. */
+internal data class McpApprovalPreview(
+    val code: String,
+    val clientName: String,
+    val scopes: List<String>,
+    val expiresAt: Long,
+)
+
+/** The Pro gate for connection management (Slice 8, PL-14). The section
+ * copy has always promised "Connections use your PitTech Pro"; creating
+ * or approving a connection now actually requires the verified
+ * entitlement behind that copy, read from the existing subscription
+ * state. Disconnecting is never gated — a lapsed subscriber can always
+ * revoke. UNKNOWN is a checking state, never a silent pass. */
+internal enum class McpProGate { ENTITLED, CHECKING, NEEDS_PRO }
+
+internal fun mcpProGate(entitlement: AdEntitlement): McpProGate = when (entitlement) {
+    AdEntitlement.ENTITLED -> McpProGate.ENTITLED
+    AdEntitlement.UNKNOWN -> McpProGate.CHECKING
+    AdEntitlement.NOT_ENTITLED -> McpProGate.NEEDS_PRO
+}
+
 internal data class McpConnectionsPresentation(
     val loaded: Boolean = false,
     val available: Boolean = true,
@@ -127,6 +159,8 @@ internal data class McpConnectionsPresentation(
     /** The one-time token from a create, held in memory only until dismissed. */
     val createdToken: String? = null,
     val createdNickname: String? = null,
+    /** The approval confirmation step's content, once a code is reviewed. */
+    val approvalPreview: McpApprovalPreview? = null,
 )
 
 internal class McpConnectionsManager(
@@ -209,16 +243,38 @@ internal class McpConnectionsManager(
         ))
     }
 
+    /** Fetches what a code would connect so the UI can run its
+     * confirmation step before Approve arms (PL-16 / DD-9). Read-only on
+     * the server: a reviewed code still needs its own approve call. */
+    fun reviewCode(userCode: String) = perform {
+        val code = userCode.trim().uppercase()
+        require(code.isNotEmpty())
+        val token = account.access()
+        try {
+            val reply = api.call("POST", "/v1/me/mcp/oauth/describe", JSONObject().put("userCode", code), token)
+            val scopes = reply.optJSONArray("scopes")?.let { array -> List(array.length()) { array.optString(it) } } ?: emptyList()
+            publish(_presentation.value.copy(
+                busy = false,
+                approvalPreview = McpApprovalPreview(code, reply.getString("clientName"), scopes, reply.getLong("expiresAt")),
+            ))
+        } catch (e: AccountFailure) {
+            if (e.status == 404) { publish(_presentation.value.copy(busy = false, approvalPreview = null, message = "That code isn't valid or has expired. Check the code in your browser and try again.")); return@perform }
+            throw e
+        }
+    }
+
+    fun dismissApprovalPreview() { publish(_presentation.value.copy(approvalPreview = null)) }
+
     fun approve(userCode: String) = perform {
         val code = userCode.trim().uppercase()
         require(code.isNotEmpty())
         val token = account.access()
         try {
             api.call("POST", "/v1/me/mcp/oauth/approve", JSONObject().put("userCode", code), token)
-            publish(_presentation.value.copy(busy = false, message = "Approved. The assistant finishes connecting in your browser."))
+            publish(_presentation.value.copy(busy = false, approvalPreview = null, message = "Approved. The assistant finishes connecting in your browser."))
             loadLocked(token)
         } catch (e: AccountFailure) {
-            if (e.status == 404) { publish(_presentation.value.copy(busy = false, message = "That code isn't valid or has expired. Check the code in your browser and try again.")); return@perform }
+            if (e.status == 404) { publish(_presentation.value.copy(busy = false, approvalPreview = null, message = "That code isn't valid or has expired. Check the code in your browser and try again.")); return@perform }
             throw e
         }
     }

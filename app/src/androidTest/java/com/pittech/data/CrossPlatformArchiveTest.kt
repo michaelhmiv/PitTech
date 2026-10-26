@@ -131,4 +131,43 @@ class CrossPlatformArchiveTest {
     private suspend fun repoDaoSetFixtureNotes(db: PitTechDatabase, id: String) {
         db.cookDao().updateCook(db.cookDao().getCook(id)!!.copy(notes = "🌶".repeat(17000)))
     }
+
+    // PL-08: saved results — the whole-cook verdict, the per-dish verdict
+    // with its detail ratings and "cook again?", and the learning notes —
+    // round-trip through the library archive unchanged.
+    @Test fun savedResultsRoundTripThroughLibraryArchive(): Unit = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        val recipient = Room.inMemoryDatabaseBuilder(context, PitTechDatabase::class.java).build()
+        try {
+            val storage = PhotoStorage(context)
+            val repo = CookRepository(source, storage); val transfer = PitTechDataTransfer(context, repo)
+            val cook = repo.startCook(NewCookDraft("Results round trip", dishes = listOf(DishDraft("Brisket", "Beef"))))
+            val dish = source.cookDao().getDishesForCook(cook).single()
+            repo.saveCookResults(cook, null, "203", "°F", "45", mapOf("overall_rating" to "4", "tenderness" to "5"), "Solid smoke ring", finish = false)
+            repo.saveLearning(cook, null, "Keep the overnight rest", "Trim harder")
+            repo.saveCookResults(cook, dish.id, "205", "°F", "60", mapOf("overall_rating" to "5", "bark" to "4", "juiciness" to "4", "smoke" to "3", "seasoning" to "5"), "Best bark yet", finish = false, cookAgain = true, updateCookAgain = true)
+            repo.completeCook(cook)
+            val bytes = ByteArrayOutputStream(); transfer.writeZip(bytes)
+            val preview = transfer.previewImport(ByteArrayInputStream(bytes.toByteArray()))
+            val destination = CookRepository(recipient, storage)
+            destination.importSnapshot(preview.snapshot, preview.attachments)
+            val importedCook = recipient.cookDao().getAllCooks().single()
+            val importedDish = recipient.cookDao().getDishesForCook(importedCook.id).single()
+            val rows = recipient.cookDao().observeResults(importedCook.id).first()
+            fun row(dishId: String?, type: String) = rows.firstOrNull { it.dishId == dishId && it.resultType == type }
+            assertEquals(4.0, row(null, "overall_rating")!!.numericValue!!, 0.0)
+            assertEquals(5.0, row(null, "tenderness")!!.numericValue!!, 0.0)
+            assertEquals(203.0, row(null, "final_temperature")!!.numericValue!!, 0.0)
+            assertEquals("Solid smoke ring", row(null, "result_notes")!!.textValue)
+            assertEquals("Keep the overnight rest", row(null, "keep_doing")!!.textValue)
+            assertEquals("Trim harder", row(null, "change_next_time")!!.textValue)
+            assertEquals(5.0, row(importedDish.id, "overall_rating")!!.numericValue!!, 0.0)
+            assertEquals(4.0, row(importedDish.id, "bark")!!.numericValue!!, 0.0)
+            assertEquals(4.0, row(importedDish.id, "juiciness")!!.numericValue!!, 0.0)
+            assertEquals(1.0, row(importedDish.id, "cook_again")!!.numericValue!!, 0.0)
+            assertEquals(205.0, row(importedDish.id, "final_temperature")!!.numericValue!!, 0.0)
+            assertEquals("Best bark yet", row(importedDish.id, "result_notes")!!.textValue)
+        } finally { source.close(); recipient.close() }
+    }
 }

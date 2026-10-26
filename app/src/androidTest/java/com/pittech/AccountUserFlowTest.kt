@@ -1,6 +1,7 @@
 package com.pittech
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -150,12 +151,28 @@ import android.graphics.Bitmap
             seed()
             compose.setContent{PitTechTheme{AccountContent(account,sync)}}
             compose.waitUntil(10000){compose.onAllNodesWithText("Conflicts to review").fetchSemanticsNodes().isNotEmpty()}
+            // Slice 7 (PL-10): the Account sync status row carries the state and
+            // the safety clause, not just the bare status string.
+            compose.onNodeWithTag("sync-status-detail").performScrollTo().assertTextContains("Nothing is overwritten until you choose.", substring = true)
             compose.onNodeWithTag("sync-conflicts").performScrollTo().performClick()
-            compose.onNodeWithText("Yours: Note \"Local title\"").assertIsDisplayed()
-            compose.onNodeWithText("Other device: Note \"Remote title\"").assertIsDisplayed()
+            // PL-16: the sheet shows both versions side by side as content —
+            // the note's own fields — not one-line summaries.
+            compose.onNodeWithTag("sync-conflict-mine-${conflict.getString("id")}").assertIsDisplayed()
+            compose.onNodeWithTag("sync-conflict-theirs-${conflict.getString("id")}").assertIsDisplayed()
+            compose.onNodeWithText("Local title").assertIsDisplayed()
+            compose.onNodeWithText("Remote title").assertIsDisplayed()
+            // Slice 7 (PL-10): the review states the concrete consequence for the
+            // actual pending set (one conflict here), not a generic warning.
+            compose.onNodeWithTag("sync-conflict-consequence").performScrollTo().assertTextEquals(com.pittech.ui.SyncStatusCopy.conflictConsequence(1))
+            // PL-16: the consequence is printed on the choice itself, before
+            // the tap — immediate on this device, uploads on the next sync.
+            compose.onNodeWithTag("sync-conflict-note-mine-${conflict.getString("id")}").performScrollTo().assertTextEquals(com.pittech.ui.SyncStatusCopy.conflictChoiceNote("mine"))
             screenshot("sync-conflict-review")
             compose.onNodeWithTag("sync-keep-mine-${conflict.getString("id")}").performScrollTo().performClick()
             compose.waitUntil(10000){store.load(user).resolved.contains(conflict.getString("id"))}
+            // The resolution applied on this device and is marked pending —
+            // it uploads on the next sync, exactly as the choice stated.
+            assertTrue(store.load(user).pending)
             assertEquals("Local title",library.snapshot().optJSONArray("events")!!.getJSONObject(0).getString("title"))
             compose.onNodeWithText("Done").performClick();compose.waitForIdle()
             seed()
@@ -271,10 +288,194 @@ import android.graphics.Bitmap
             }
         } finally { scope.cancel() }
     }
+    /** PL-14 (#172): Account is five sections whose headers carry their
+     * status, and signing in surfaces the first sync as a "Turn on private
+     * sync" card that runs the same explicit sync and leaves once a first
+     * sync exists. */
+    @Test fun accountSectionsCarryStatusAndFirstSyncSurfacesAsACard() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+        val user="12345678-1234-4234-8234-123456789abc"
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val projection=PrivateSyncProjection(context.assets.open("private-sync-projection-v1.json").bufferedReader().use{it.readText()})
+        val offline=object:PrivateSyncAPI{
+            override suspend fun snapshot(access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun commit(body: ByteArray,mutationId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun beginPhoto(assetId: String,bytes: Long,mime: String,sha: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun photoStatus(assetId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun putPart(assetId: String,index: Int,chunk: ByteArray,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun completePhoto(assetId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun abandonPhoto(assetId: String,access: String): JSONObject=throw java.io.IOException("offline")
+            override suspend fun downloadPhoto(assetId: String,to: File,access: String): File=throw java.io.IOException("offline")
+        }
+        val library=object:PrivateSyncLibrary{
+            override suspend fun archive()=JSONObject().put("cooks",JSONArray()).put("dishes",JSONArray()).put("events",JSONArray())
+            override suspend fun photoBytes(type: String,id: String): PrivateSyncPhotoSource?=null
+            override suspend fun apply(plan: PrivateSyncApplyPlan){}
+        }
+        fun storage(session: AccountSession?)=object:AccountStorage{
+            var value=AccountState(session=session)
+            override fun load()=value
+            override fun save(value: AccountState){this.value=value}
+        }
+        try{
+            // Signed out: all five sections exist, headers carry the state,
+            // and no turn-on card is offered before there is an account.
+            val outStore=PrivateSyncMemoryStore()
+            val outAccount=AccountManager(storage(null),scope,AccountAPI{_,_,_->JSONObject()},true)
+            val outSync=PrivateSyncCoordinator(outStore,AccountPublicationSession(outAccount),scope,offline,library,projection,true)
+            var content by mutableStateOf<@Composable () -> Unit>({ AccountContent(outAccount,outSync) })
+            compose.setContent{PitTechTheme{key(content){content()}}}
+            compose.onNodeWithTag("account-panel-session").assertIsDisplayed()
+            compose.onNodeWithTag("account-panel-session-status").assertTextEquals("Signed out")
+            compose.onNodeWithTag("account-panel-sync-status").assertTextEquals("Sign in to start private sync")
+            compose.onNodeWithTag("account-panel-ai-status").assertTextEquals("Not available")
+            compose.onNodeWithTag("account-panel-device-status").assertTextEquals("Not available")
+            compose.onNodeWithTag("account-panel-danger").performScrollTo().assertIsDisplayed()
+            compose.onAllNodesWithTag("sync-turn-on").assertCountEquals(0)
+            screenshot("account-sections-signed-out")
+
+            // Signed in but never synced: the first sync is a card of its
+            // own, and tapping it runs the explicit first sync.
+            val f=Slice8Fixture(scope)
+            val store=PrivateSyncMemoryStore()
+            val sync=PrivateSyncCoordinator(store,AccountPublicationSession(f.account),scope,offline,library,projection,true)
+            compose.runOnIdle{content={AccountContent(f.account,sync,f.mcp,subscription=f.subscription)}}
+            compose.waitUntil(10000){compose.onAllNodesWithTag("sync-turn-on").fetchSemanticsNodes().isNotEmpty()}
+            compose.onNodeWithTag("account-panel-session-status").assertTextEquals("Signed in")
+            compose.onNodeWithTag("account-panel-ai-status").assertTextEquals("Checking Pro status")
+            compose.onNodeWithTag("sync-turn-on-card").performScrollTo().assertIsDisplayed()
+            screenshot("account-sections-turn-on-sync")
+            compose.onNodeWithTag("sync-turn-on").performScrollTo().performClick()
+            compose.waitUntil(10000){compose.onAllNodesWithText("Waiting for connection").fetchSemanticsNodes().isNotEmpty()}
+            assertEquals(0,store.load(user).lastSyncedAt)
+
+            // Once a first sync exists the card leaves; automatic sync —
+            // previously hidden behind that first sync — shows instead.
+            store.save(user,PrivateSyncState(account=user,serverVersion=1,lastSyncedAt=1234))
+            compose.runOnIdle{sync.refresh()}
+            compose.waitUntil(10000){compose.onAllNodesWithTag("sync-automatic").fetchSemanticsNodes().isNotEmpty()}
+            compose.onAllNodesWithTag("sync-turn-on").assertCountEquals(0)
+        }finally{scope.cancel()}
+    }
     private fun screenshot(name: String) {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val image=instrumentation.uiAutomation.takeScreenshot()
         val file=File(instrumentation.targetContext.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle()
+    }
+
+    /** Slice 8 fixture: a signed-in account, a fake MCP API, and a real
+     * SubscriptionManager over stub billing whose entitlement the test
+     * flips between the server states unknown / none / active. */
+    private class Slice8Fixture(val scope: CoroutineScope) {
+        @Volatile var entitlementState = "unknown"
+        val storage = object : AccountStorage {
+            var value = AccountState(session = AccountSession("A".repeat(43), "A".repeat(43), "2100-01-01T00:00:00.000Z", "2100-02-01T00:00:00.000Z", "12345678-1234-4234-8234-123456789abc"))
+            override fun load() = value
+            override fun save(value: AccountState) { this.value = value }
+        }
+        val account = AccountManager(storage, scope, AccountAPI { _, _, _ -> JSONObject() }, true)
+        val mcpApi = McpAPI { method, path, _, _ ->
+            when {
+                path.endsWith("describe") -> JSONObject().put("clientName", "ChatGPT").put("scopes", JSONArray(listOf("library:read"))).put("expiresAt", System.currentTimeMillis() + 900_000)
+                path.endsWith("approve") -> JSONObject().put("approved", true)
+                method == "POST" && path.endsWith("grants") -> JSONObject()
+                    .put("grant", JSONObject().put("id", "grant-1").put("nickname", "ChatGPT").put("scopes", JSONArray(listOf("library:read"))).put("createdAt", 1).put("expiresAt", Long.MAX_VALUE / 4).put("revokedAt", JSONObject.NULL).put("lastUsedAt", JSONObject.NULL).put("clientId", JSONObject.NULL))
+                    .put("token", "pitmcp_uitesttoken")
+                else -> JSONObject().put("grants", JSONArray())
+            }
+        }
+        val mcp = McpConnectionsManager(account, scope, mcpApi)
+        val billing = object : com.pittech.billing.ProBillingClient {
+            override val productId = "pittech.pro.monthly"
+            override suspend fun queryProduct(): com.pittech.billing.ProStoreProduct? = null
+            override suspend fun launchPurchase(activity: android.app.Activity?) = com.pittech.billing.ProPurchaseOutcome.Cancelled
+            override suspend fun queryOwnedPurchases(): List<com.pittech.billing.ProStorePurchase> = emptyList()
+            override suspend fun acknowledge(purchaseToken: String) = true
+            override var externalPurchases: ((com.pittech.billing.ProStorePurchase) -> Unit)? = null
+            override fun close() {}
+        }
+        val subApi = com.pittech.billing.SubscriptionAPI { path, _, _ ->
+            JSONObject("""{"version":"entitlement-cache-v1","environment":"production","verified":${entitlementState != "unknown"},"state":"$entitlementState","verifiedUntil":"2026-11-17T12:00:00Z","lastVerifiedAt":"2026-10-18T12:00:00Z","offlineValidUntil":"2026-10-25T12:00:00Z","contractVersion":"store-verification-v1"}""")
+        }
+        val subscription = com.pittech.billing.SubscriptionManager(billing, scope, subApi, { "A".repeat(43) }, true, com.pittech.billing.MemorySubscriptionCacheStore(), ownerId = { "stub-account" })
+    }
+
+    /** Slice 8 (PL-14): with Pro unverified the section shows the checking
+     * state and no create/approve controls; "Check again" re-reads the
+     * entitlement and, once active, the controls appear. */
+    @Test fun mcpSectionGatesOnProState() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
+        try {
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-pro-checking").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-pro-checking").performScrollTo().assertIsDisplayed()
+            compose.onAllNodesWithTag("mcp-new").assertCountEquals(0)
+            compose.onAllNodesWithTag("mcp-review-code").assertCountEquals(0)
+            f.entitlementState = "active"
+            compose.onNodeWithTag("mcp-pro-check").performScrollTo().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-new").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-new").performScrollTo().assertIsDisplayed()
+        } finally { scope.cancel() }
+    }
+
+    /** Slice 8 (PL-14): with Pro verified absent (server state "none" —
+     * the canonical not-entitled state in the entitlement mapping), the
+     * honest gate card replaces the create/approve controls entirely —
+     * existing connections stay listed and disconnectable, but nothing
+     * new can be created or approved until Pro is active. */
+    @Test fun mcpSectionShowsProGateWhenNotEntitled() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
+        try {
+            f.entitlementState = "none"
+            kotlinx.coroutines.runBlocking { f.subscription.refresh() }
+            compose.waitUntil(10000) { f.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.NOT_ENTITLED }
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-pro-gate").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-pro-gate").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("mcp-pro-see").assertIsDisplayed()
+            compose.onAllNodesWithTag("mcp-new").assertCountEquals(0)
+            compose.onAllNodesWithTag("mcp-review-code").assertCountEquals(0)
+        } finally { scope.cancel() }
+    }
+
+    /** Slice 8 (PL-16 / DD-9): creating a connection ends in the hard-stop
+     * token dialog whose copy action confirms itself; approving a code
+     * first shows the client and its scopes — Approve does not exist
+     * until the review has happened. */
+    @Test fun mcpTokenDialogAndApprovalConfirmation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val f = Slice8Fixture(scope)
+        try {
+            f.entitlementState = "active"
+            kotlinx.coroutines.runBlocking { f.subscription.refresh() }
+            compose.waitUntil(10000) { f.subscription.presentation.value.entitlement == com.pittech.ads.AdEntitlement.ENTITLED }
+            compose.setContent { PitTechTheme { AccountContent(f.account, mcp = f.mcp, subscription = f.subscription) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-new").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-new").performScrollTo().performClick()
+            compose.onNodeWithTag("mcp-create-submit").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-created-token").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-token-value").assertTextEquals("pitmcp_uitesttoken")
+            screenshot("mcp-token-dialog")
+            compose.onNodeWithTag("mcp-copy-token").performClick()
+            compose.onNodeWithText("Copied").assertIsDisplayed()
+            compose.onNodeWithTag("mcp-token-done").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-created-token").fetchSemanticsNodes().isEmpty() }
+            compose.onAllNodesWithTag("mcp-create-submit").assertCountEquals(0)
+            compose.onNodeWithTag("mcp-approve-code").performScrollTo().performTextReplacement("ABCD-2345")
+            compose.onAllNodesWithTag("mcp-approve").assertCountEquals(0)
+            compose.onNodeWithTag("mcp-review-code").performScrollTo().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("mcp-approval-preview").performScrollTo()
+            compose.onNodeWithText("Connect ChatGPT?", substring = true).assertIsDisplayed()
+            // Scoped to the preview subtree: the created grant's row in
+            // the list above carries the same scope label.
+            compose.onNodeWithTag("mcp-approval-preview").onChildren().filterToOne(hasText("See your library", substring = true)).assertIsDisplayed()
+            screenshot("mcp-approval-confirmation")
+            compose.onNodeWithTag("mcp-approve").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("mcp-approval-preview").fetchSemanticsNodes().isEmpty() }
+        } finally { scope.cancel() }
     }
 }

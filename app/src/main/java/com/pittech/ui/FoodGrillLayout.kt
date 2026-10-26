@@ -27,7 +27,7 @@ import java.util.Locale
 
 @Composable
 internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displayUnit: String,
-    onSelect: (String?) -> Unit, onLog: (String, String, String?) -> Unit,
+    onSelect: (String?) -> Unit, onLog: (String, String, String?) -> Unit, onRecordAction: (DishEntity, String) -> Unit = { dish, action -> onLog(dish.id, "action", action) },
     onAdd: () -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, reminders: List<ReminderRule> = emptyList(), occurrences: List<ReminderOccurrence> = emptyList(), selectedTools: @Composable (DishEntity) -> Unit = {}) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.pittech.PitTechApplication
@@ -113,7 +113,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                     }
                     if (selectedFood == dish.id) {
                         FoodActions(dish, if (legacy && phase?.phase == "prep") "unknown" else phase?.phase ?: "prep", data.cook.status != CookStatus.COMPLETED,
-                            onLog, onEdit, onIngredients, onProbe, data.probes.any { it.measurementType == "food_probe" })
+                            onLog, onRecordAction, onEdit, onIngredients, onProbe, data.probes.any { it.measurementType == "food_probe" })
                         selectedTools(dish)
                     }
                 }
@@ -124,7 +124,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable private fun FoodActions(dish: DishEntity, phase: String, active: Boolean,
-    onLog: (String, String, String?) -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, hasProbes: Boolean) {
+    onLog: (String, String, String?) -> Unit, onRecordAction: (DishEntity, String) -> Unit, onEdit: (DishEntity) -> Unit, onIngredients: (DishEntity) -> Unit, onProbe: (String) -> Unit, hasProbes: Boolean) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("general" to "Note", "photo" to "Photo", "temperature" to "Temp").forEach { (category, label) ->
@@ -144,7 +144,11 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 actions.forEach { action ->
-                    TextButton(onClick = { onLog(dish.id, "action", action) }, modifier = Modifier.testTag("food-action-" + action + "-" + dish.id)) {
+                    // PL-01 (issue #172): a phase action records in one tap —
+                    // Wrap included. It no longer merely opens a composer
+                    // that records nothing until a second Save; a note or
+                    // photo can be added to the recorded entry afterwards.
+                    TextButton(onClick = { onRecordAction(dish, action) }, modifier = Modifier.testTag("food-action-" + action + "-" + dish.id)) {
                         Text(PlaybookCodec.actions[action] ?: action)
                     }
                 }
@@ -166,25 +170,27 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
     var movedAt by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text("Move a probe") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val probeChoices = probes.mapIndexed { index, probe -> probe.id to (probe.name + if (probes.count { it.name == probe.name } > 1) " (" + (index + 1) + ")" else "") }
-                val foods = foodChoices(data.dishes)
-                SimpleDropdownField("Probe", probeChoices.firstOrNull { it.first == probeId }?.second ?: "No probe", probeChoices.map { it.second },
-                    { name -> probeId = probeChoices.firstOrNull { it.second == name }?.first }, testTag = "probe-move-probe")
-                SimpleDropdownField("Food", foods.firstOrNull { it.first == dishId }?.second ?: "Unassigned", listOf("Unassigned") + foods.map { it.second },
-                    { name -> dishId = foods.firstOrNull { it.second == name }?.first }, testTag = "probe-move-food")
-                Text("Earlier readings stay with their food.", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { changeTime = !changeTime }, modifier = Modifier.testTag("probe-move-time-toggle")) { Text(if (changeTime) "Use the current time" else "I moved it earlier") }
-                if (changeTime) DateTimePickerField("Actual move time", movedAt, { movedAt = it }, "probe-move-time")
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        confirmButton = { TextButton(onClick = { probeId?.let { id ->
-            viewModel.assignGrillProbe(data.cook.id, id, dishId, movedAt.takeIf { changeTime }) { saved -> if (saved) onClose() }
-        } }, enabled = !busy && probeId != null, modifier = Modifier.testTag("probe-move-save")) { Text(if (busy) "Saving…" else "Move probe") } },
-        dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") } })
+    // PL-22 (DD-6): probe reassignment is contextual capture — a sheet.
+    SheetSurface(onDismiss = { if (!busy) onClose() }, title = "Move a probe", dismissEnabled = !busy,
+        actions = {
+            TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") }
+            TextButton(onClick = { probeId?.let { id ->
+                viewModel.assignGrillProbe(data.cook.id, id, dishId, movedAt.takeIf { changeTime }) { saved -> if (saved) onClose() }
+            } }, enabled = !busy && probeId != null, modifier = Modifier.testTag("probe-move-save")) { Text(if (busy) "Saving…" else "Move probe") }
+        }) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val probeChoices = probes.mapIndexed { index, probe -> probe.id to (probe.name + if (probes.count { it.name == probe.name } > 1) " (" + (index + 1) + ")" else "") }
+            val foods = foodChoices(data.dishes)
+            SimpleDropdownField("Probe", probeChoices.firstOrNull { it.first == probeId }?.second ?: "No probe", probeChoices.map { it.second },
+                { name -> probeId = probeChoices.firstOrNull { it.second == name }?.first }, testTag = "probe-move-probe")
+            SimpleDropdownField("Food", foods.firstOrNull { it.first == dishId }?.second ?: "Unassigned", listOf("Unassigned") + foods.map { it.second },
+                { name -> dishId = foods.firstOrNull { it.second == name }?.first }, testTag = "probe-move-food")
+            Text("Earlier readings stay with their food.", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { changeTime = !changeTime }, modifier = Modifier.testTag("probe-move-time-toggle")) { Text(if (changeTime) "Use the current time" else "I moved it earlier") }
+            if (changeTime) DateTimePickerField("Actual move time", movedAt, { movedAt = it }, "probe-move-time")
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }
 }
 
 private fun foodClock(at: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at))

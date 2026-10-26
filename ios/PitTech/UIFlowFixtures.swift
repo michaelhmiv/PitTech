@@ -18,6 +18,9 @@ struct ScreenshotTextSize: ViewModifier {
             catch { assertionFailure("The UI fixture could not reset its owned photos."); return }
         }
         library = PitTechLibrary(); noteDrafts = []
+        // PL-13: a kept Start Cook setup draft is device state too — a reset
+        // launch starts with no draft, like a fresh install.
+        clearSetupDraft()
         if CommandLine.arguments.contains("--ui-test-pack") { prepareIncomingPackFixture(); return }
         if !CommandLine.arguments.contains("--ui-test-empty") {
             for (name, category) in [("Chicken", "Poultry"), ("Mac and cheese", "Pasta"), ("Pork", "Pork")] {

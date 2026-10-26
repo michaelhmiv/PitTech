@@ -43,7 +43,7 @@ collect_evidence_and_stop() {
   set +e
   timeout 20 adb logcat -d -v threadtime > "$output_dir/logcat.txt" 2>&1
   if (( result != 0 )); then
-    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-draft-before-publish publication-owner-update-preview publication-failure source-change-review pro-paywall; do
+    for screenshot in reminder-after-log-now timeline-edit-dialog timeline-after-temperature-filter connected-cook-live connected-cook-final alert-routing guidance-plan prep-checklist food-first-live food-first-timeline food-first-note meal-preparation-note recipe-composed-live meal-finished-recipe-choice cook-pack-selective-preview cook-pack-saved-recipe cook-pack-recorded-history-preview show-guide-live show-guide-timeline show-guide-charts share-card-chart share-card-photo share-card-none share-card-relay share-card-preview telemetry-connections account-signed-in account-signed-out account-deletion-review account-deletion-complete sync-conflict-review community-report-saved community-report-status community-publisher-blocked public-detail public-selective-preview public-saved public-cook-review public-cook publication-preview publication-complete publication-cookbook publication-owner-edit-preview publication-owner-draft-before-publish publication-owner-update-preview publication-failure source-change-review pro-paywall; do
       if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${screenshot}.png"; then
         timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${screenshot}.png" > "$output_dir/${screenshot}.png"
       fi
@@ -195,6 +195,33 @@ fi
 timeout 120 adb install -r "$app_apk"
 timeout 120 adb install -r -t "$test_apk"
 
+# #187: the first-run welcome would otherwise greet every UI-test class on a
+# fresh data state. Seed its seen flag in the app's preferences (merging into
+# the existing file when one is present); WelcomeFlowTest clears the key
+# itself when it needs the real first run. Call again after any `pm clear`.
+seed_welcome_seen() {
+  local existing attempt
+  for attempt in 1 2 3; do
+    existing="$(timeout 20 adb shell run-as com.pittech.debug cat shared_prefs/pittech-preferences.xml 2>/dev/null || true)"
+    if [[ "$existing" == *"welcome-seen-v1"* ]]; then
+      return 0
+    fi
+    if [[ "$existing" == *"</map>"* ]]; then
+      existing="${existing/<\/map>/<boolean name=\"welcome-seen-v1\" value=\"true\" \/><\/map>}"
+    else
+      existing="<?xml version='1.0' encoding='utf-8' standalone='yes' ?><map><boolean name=\"welcome-seen-v1\" value=\"true\" /></map>"
+    fi
+    # shared_prefs/ does not exist until the app writes a preference, which a
+    # fresh install (or an old release that never wrote one) has not done.
+    # The nested quoting is the pattern the receipt write below uses: adb
+    # shell joins its arguments, so the inner command must arrive quoted or
+    # the redirection is parsed by the outer (non-app) shell and never lands.
+    printf '%s' "$existing" | timeout 20 adb shell run-as com.pittech.debug sh -c "'mkdir -p shared_prefs; cat > shared_prefs/pittech-preferences.xml'" || true
+  done
+  echo "WARNING: could not seed the welcome-seen flag; UI tests may hit the first-run welcome." >&2
+}
+seed_welcome_seen
+
 if (( api_level >= 37 )); then
   # Ahead-of-time compilation avoids startup ANRs while this preview image is
   # still doing first-boot dex work on the CI runner. Test assertions stay identical.
@@ -243,6 +270,8 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 120 adb install -r -t "$test_apk"
   # Deliberately NO force-stop: installing the APK interrupts the old service.
   timeout 120 adb install -r "$app_apk"
+  # The pm clear above wiped the seeded welcome flag (#187); restore it.
+  seed_welcome_seen
   # Use a boundary after installation, then wait for another real accepted sample.
   install_epoch="$(adb shell date +%s | tr -d '\r')"
   [[ "$install_epoch" =~ ^[0-9]+$ ]]
@@ -414,7 +443,7 @@ telemetry_test_output="$output_dir/telemetry-integration-tests.txt"
 telemetry_test_selector='com.pittech.data.TelemetryRecordingIntegrationTest,com.pittech.devices.TelemetryTokenStoreTest,com.pittech.devices.CombustionAnchorStoreTest,com.pittech.devices.TelemetryRecoveryIntegrationTest,com.pittech.devices.TelemetryRuntimeIntegrationTest,com.pittech.TelemetryRecordingServiceTest,com.pittech.TelemetryConnectionsScreenTest'
 echo "Running telemetry persistence, credentials, recovery and UI tests on API $api_level."
 timeout 10m adb shell am instrument -w -r -e class "$telemetry_test_selector" "$instrumentation_target" | tee "$telemetry_test_output"
-if ! grep -q 'OK (23 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
+if ! grep -q 'OK (25 tests)' "$telemetry_test_output" || grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$telemetry_test_output"; then
   echo "Telemetry instrumentation tests did not all pass." >&2
   exit 1
 fi
@@ -455,7 +484,7 @@ timeout 10m adb shell am instrument -w -r \
   -e class "$recording_test_selector" \
   "$instrumentation_target" | tee "$recording_test_output"
 recording_passed_count="$(grep -c '^INSTRUMENTATION_STATUS_CODE: 0' "$recording_test_output" || true)"
-recording_expected_count=18
+recording_expected_count=24
 if [[ "$recording_passed_count" -ne "$recording_expected_count" ]] || ! grep -q "OK (${recording_expected_count} tests)" "$recording_test_output" ||
    grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recording_test_output"; then
   echo "Connected-cook instrumentation tests did not all pass." >&2
@@ -470,7 +499,7 @@ echo "Running recipe ownership, archive and durable preparation timer tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.data.RecipeIntegrationTest,com.pittech.data.ActivityTimerIntegrationTest,com.pittech.data.ActivityTimerMigrationTest,com.pittech.data.RecipeCompositionIntegrationTest,com.pittech.data.ReminderIntegrationTest,com.pittech.data.ReminderMigrationTest,com.pittech.data.CrossPlatformArchiveTest,com.pittech.data.SharingIntegrationTest,com.pittech.data.CookPackIntegrationTest,com.pittech.data.CookPackCrossPlatformTest,com.pittech.data.DenseSharingPersistenceTest,com.pittech.data.WorkbookIntegrationTest,com.pittech.data.RecipeGuideIntegrationTest,com.pittech.data.ShareCardIntegrationTest,com.pittech.data.RelayStorageTest,com.pittech.data.AccountStorageTest,com.pittech.data.PublicStorageTest,com.pittech.data.PublicationOperationsTest,com.pittech.data.OwnedPublicationTest,com.pittech.data.PublicationAcceptanceTest,com.pittech.data.LocalJournalRemovalTest,com.pittech.data.PrivateSyncStoreTest,com.pittech.data.PrivateSyncApplyTest' \
   "$instrumentation_target" | tee "$recipe_test_output"
-grep -q 'OK (41 tests)' "$recipe_test_output"
+grep -q 'OK (45 tests)' "$recipe_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$recipe_test_output"
 for card in chart photo none relay; do
   timeout 10 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/share-card-${card}.png" > "$output_dir/share-card-${card}.png"
@@ -486,9 +515,9 @@ timeout 20 adb exec-out run-as com.pittech.debug cat files/pittech-portable/andr
 companion_test_output="$output_dir/companion-tests.txt"
 echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
-  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest,com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest' \
+  -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest,com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest,com.pittech.WelcomeFlowTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (73 tests)' "$companion_test_output"
+grep -q 'OK (87 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -508,6 +537,10 @@ else
     "test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore"
     "test04b_preparationDurationStaysInOneOptionalNote"
     "test08_zipShareIntentUsesReadOnlyContentUri"
+    "test08b_leavingAChangedSetupKeepsADraftAndResumeRestoresIt"
+    "test08c_servePlanIsBadgedNotStarted"
+    "test08d_startCookFieldsFollowTheCanonicalOrder"
+    "test09_finishVerdictResultsHomeAndUndoFinish"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
@@ -585,6 +618,8 @@ pull_app_screenshot food-first-note
 if (( api_level == 36 )); then
   pull_app_screenshot recipe-composed-live
   pull_app_screenshot meal-finished-recipe-choice
+  pull_app_screenshot finish-verdict-step
+  pull_app_screenshot cook-results-timeline
   pull_app_screenshot cook-pack-selective-preview
   pull_app_screenshot cook-pack-saved-recipe
   pull_app_screenshot cook-pack-recorded-history-preview
@@ -594,6 +629,13 @@ if (( api_level == 36 )); then
   pull_app_screenshot share-card-preview
   pull_app_screenshot account-signed-in
   pull_app_screenshot account-signed-out
+  pull_app_screenshot account-sections-signed-out
+  pull_app_screenshot account-sections-turn-on-sync
+  pull_app_screenshot start-cook-review-recipes
+  pull_app_screenshot start-cook-review-use-version
+  pull_app_screenshot setup-leave-dialog
+  pull_app_screenshot meals-setup-draft
+  pull_app_screenshot serve-plan-not-started
   pull_app_screenshot account-deletion-review
   pull_app_screenshot account-deletion-complete
   pull_app_screenshot sync-conflict-review
@@ -602,6 +644,8 @@ if (( api_level == 36 )); then
   pull_app_screenshot community-publisher-blocked
   pull_app_screenshot public-detail
   pull_app_screenshot public-selective-preview
+  pull_app_screenshot public-saved
+  pull_app_screenshot public-cook-review
   pull_app_screenshot public-cook
   pull_app_screenshot publication-preview
   pull_app_screenshot publication-complete
@@ -641,6 +685,16 @@ check_saved_diagnostic_report() {
 check_saved_diagnostic_report "after instrumentation"
 echo "Restarting PitTech to verify its saved crash report survives a process restart."
 adb shell am force-stop com.pittech.debug
+# PL-20 (#172): crash recovery's Continue now returns to the cook that
+# was open when the crash hit (recorded in the diagnostics prefs by the
+# view model). This phase covers the no-cook-open landing — recovery
+# completes onto Meals home, where the saved cook's card is visible;
+# the resume-to-the-open-cook landing is covered by WelcomeFlowTest's
+# crash tests. Clear the diagnostics prefs (which also drops the
+# open-cook record) while the app is stopped so the landing here is
+# deterministic; the saved report itself lives in its own file and is
+# unaffected.
+timeout 20 adb shell run-as com.pittech.debug rm -f shared_prefs/pittech-diagnostics.xml || true
 check_saved_diagnostic_report "after force-stop"
 timeout 60 adb shell am start -W -n com.pittech.debug/com.pittech.MainActivity
 check_saved_diagnostic_report "after relaunch"

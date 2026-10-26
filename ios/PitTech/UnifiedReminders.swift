@@ -1,7 +1,7 @@
 import Foundation
 import UserNotifications
 
-struct NativeReminderSchedule { let id: String; let occurrenceId: String; let cookId: String; let title: String; let due: Double; let historical: Bool }
+struct NativeReminderSchedule { let id: String; let occurrenceId: String; let cookId: String; let title: String; let due: Double; let historical: Bool; var announcedAction: String? = nil }
 struct NativeReminderReconciliation { var schedules: [NativeReminderSchedule] = []; var cancellations: [String] = [] }
 enum NativeReminderEngine {
     static func configuration(_ raw: String) throws -> [String: JSONValue] {
@@ -106,6 +106,25 @@ extension PitTechLibrary {
         }
         save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
     }
+    /// PL-01 (issue #172): the physical action a rule announced when it
+    /// fired — only a previous-cook milestone rule names one, resolved from
+    /// its source snapshot. Anything else returns nil so callers ask
+    /// explicitly and never preselect (the blanket "wrap" default is gone).
+    func announcedReminderAction(_ rule: [String: JSONValue]) -> String? {
+        guard rule["kind"]?.stringValue == "historical",
+              let revision = rule["sourceRecipeRevisionId"]?.stringValue,
+              let milestone = rule["sourceMilestoneId"]?.stringValue,
+              let snapshot = try? recipeSnapshot(revision) else { return nil }
+        let action = snapshot.observations.compactMap(\.objectValue).first { $0["sourceEventId"]?.stringValue == milestone }?["action"]?.stringValue
+        return action.flatMap { ["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done"].contains($0) ? $0 : nil }
+    }
+    /// PL-01: the food card records a phase action in one tap (the guidance
+    /// pattern); a note or photo can be added to the entry afterwards.
+    func recordDishAction(cookId: String, dishId: String?, action: String) throws -> String {
+        let draft = CookNoteDraft(cookId: cookId, dishId: dishId, metadata: CookNoteMetadata(category: "action", action: action), title: Self.actionLabel(action))
+        try saveNote(draft)
+        return draft.id
+    }
     func confirmReminderAction(_ id: String, action: String) throws -> String {
         guard let rule = reminderRule(id), let cookId = rule["cookId"]?.stringValue, ["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done"].contains(action) else { throw CookNoteError.invalid }
         let receipt = library.reminderOccurrences.compactMap(\.objectValue).filter { $0["ruleId"]?.stringValue == id }.max { ($0["sequence"]?.numberValue ?? 0) < ($1["sequence"]?.numberValue ?? 0) }
@@ -150,7 +169,7 @@ extension PitTechLibrary {
             state["dueAtUtcMillis"] = .number(due); state["status"] = .string("scheduled"); putOccurrence(state)
             rule["status"] = .string("scheduled"); library.reminderRules[index] = .object(rule)
             let occurrenceId = occurrence!["id"]!.stringValue!
-            result.schedules.append(.init(id: "meal-reminder:" + occurrenceId, occurrenceId: occurrenceId, cookId: cookId, title: rule["title"]?.stringValue ?? "Check the food", due: due, historical: rule["kind"]?.stringValue == "historical"))
+            result.schedules.append(.init(id: "meal-reminder:" + occurrenceId, occurrenceId: occurrenceId, cookId: cookId, title: rule["title"]?.stringValue ?? "Check the food", due: due, historical: rule["kind"]?.stringValue == "historical", announcedAction: announcedReminderAction(rule)))
             result.cancellations += allIdentifiers.filter { $0 != "meal-reminder:" + occurrenceId }
         }
         return result
@@ -165,7 +184,7 @@ extension PitTechLibrary {
             for schedule in reconciliation.schedules {
                 guard library.reminderRules.contains(where: { $0.objectValue?["cookId"]?.stringValue == schedule.cookId && $0.objectValue?["enabled"]?.boolValue == true && library.reminderOccurrences.contains(where: { $0.objectValue?["id"]?.stringValue == schedule.occurrenceId && $0.objectValue?["dueAtUtcMillis"]?.numberValue == schedule.due }) }) else { continue }
                 let content = UNMutableNotificationContent(); content.title = schedule.title
-                content.body = schedule.historical ? "Last time this milestone happened around this point. Check your food." : "Check your food. Dismissing this reminder does not record an action."
+                content.body = schedule.announcedAction.map { "Time to check your food. Open the check-in to record \(Self.actionLabel($0)) in one tap." } ?? (schedule.historical ? "Last time this milestone happened around this point. Check your food." : "Check your food. Dismissing this reminder does not record an action.")
                 content.sound = .default; content.userInfo = ["cookId": schedule.cookId, "occurrenceId": schedule.occurrenceId]
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, (schedule.due - Date.now.timeIntervalSince1970 * 1000) / 1000), repeats: false)
                 do { try await center.add(UNNotificationRequest(identifier: schedule.id, content: content, trigger: trigger)) } catch { reminderMessage = "Reminder saved. Notifications are unavailable; enable them in Settings." }

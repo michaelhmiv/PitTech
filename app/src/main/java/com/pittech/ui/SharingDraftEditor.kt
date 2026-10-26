@@ -28,7 +28,7 @@ import kotlinx.coroutines.sync.withLock
     }
     if (collections.isNotEmpty()) {
         Text("Meal collections", style = MaterialTheme.typography.titleMedium)
-        collections.forEach { row -> OutlinedButton(onClick = { scope.launch { try { editing = viewModel.sharing.duplicate(row.id) } catch (e: Exception) { error = e.message } } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy & customize ${row.title}") } }
+        collections.forEach { row -> OutlinedButton(onClick = { scope.launch { try { editing = viewModel.sharing.duplicate(row.id) } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy & customize ${row.title}") } }
     }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     editing?.let { SharingDraftEditor(it, viewModel) { editing = null } }
@@ -55,13 +55,13 @@ import kotlinx.coroutines.sync.withLock
         val previous = record ?: kotlin.error("Draft unavailable.")
         record = viewModel.sharing.save(id, value, previous.updatedAtUtcMillis); saved = true
     }
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
-    LaunchedEffect(id) { try { reload() } catch (e: Exception) { error = e.message } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } finally { busy = false } } }
+    LaunchedEffect(id) { try { reload() } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } }
     LaunchedEffect(document, editId, relayShare, publishing) {
         val value = document ?: return@LaunchedEffect
         if (editId != null || relayShare || publishing) return@LaunchedEffect
         saved = false; delay(500)
-        withContext(NonCancellable) { try { persist(value); error = null } catch (e: Exception) { error = e.message } }
+        withContext(NonCancellable) { try { persist(value); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That sharing change couldn't be saved. Your drafts are unchanged — try again.") } }
     }
     // Only the active editor sheet handles its dismissal callbacks.
     if (!publishing) ModalBottomSheet(sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), onDismissRequest = { if (!publishing) act { persist(); onClose() } }) {
@@ -116,52 +116,46 @@ import kotlinx.coroutines.sync.withLock
                     }
                     TextButton({ cardSettings = !cardSettings }) { Text("Card appearance & note") }
                     if (cardSettings) ShareCardOptionsEditor(current) { document = it }
+                    // PL-18: the exits have a hierarchy — the Cook Pack file
+                    // is the primary exit, the share card and the code are
+                    // secondary, and saving a collection is a local action,
+                    // not a share. (Publish lives in its own panel below.)
+                    Button(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton({ act { persist(); cardPreview = true } }, enabled = !busy && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-preview-card")) { Text("Preview share card") }
-                    OutlinedButton(onClick = { act { persist(); viewModel.createShareCookPack(id, includeRecordedCook) } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-export-pack")) { Text(if (exporting) "Preparing Cook Pack…" else "Share Cook Pack file") }
                     OutlinedButton(onClick = { act { persist(); relayShare = true } }, enabled = !busy && !exporting && current.entries.any { it.included }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sharing-relay")) { Text("Share by code") }
                     exportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
+                    OutlinedButton(onClick = { act { persist(); viewModel.sharing.saveCollection(id); viewModel.sharing.discard(id); onClose() } }, enabled = current.entries.any { it.included } && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal collection") }
                     TextButton(onClick = { act { viewModel.sharing.discard(id); onClose() } }, enabled = !busy) { Text("Discard draft") }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(24.dp))
             }
-            // Keep the next action reachable while title editing owns the keyboard.
-            // Focus-driven bring-into-view scrolling must not move this tap target.
-            if(publishingEnabled && document!=null)OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().padding(bottom=12.dp).heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
+            // PL-18: Publish sits inside its own panel, below the file and
+            // code exits in rank. The panel stays pinned: keep the next
+            // action reachable while title editing owns the keyboard —
+            // focus-driven bring-into-view scrolling must not move this
+            // tap target (the publication flow tests guard exactly that).
+            if(publishingEnabled && document!=null)Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Publish", style = MaterialTheme.typography.titleMedium)
+                    Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
+                }
+            }
         }
     }
     if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false },onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })
     if (publishing) PublicationDialog(id,viewModel,account,publisher) { publishing=false; act { reload() } }
     if (relayShare) RelayShareDialog(id, includeRecordedCook, viewModel) { relayShare = false }
-    if (chooseRecipe) AlertDialog(onDismissRequest = { chooseRecipe = false }, title = { Text("Add a recipe") }, text = {
-        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+    if (chooseRecipe) SheetSurface(onDismiss = { chooseRecipe = false }, title = "Add a recipe", actions = { TextButton(onClick = { chooseRecipe = false }) { Text("Done") } }) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
             recipes.filter { it.archivedAtUtcMillis == null }.forEach { recipe -> TextButton(onClick = { act { viewModel.sharing.addRecipe(id, recipe.currentRevisionId, record!!.updatedAtUtcMillis); chooseRecipe = false; reload() } }, enabled = !busy) { Text(recipe.name) } }
             if (recipes.isEmpty()) Text("Save a dish as a recipe first.")
         }
-    }, confirmButton = { TextButton(onClick = { chooseRecipe = false }) { Text("Done") } })
+    }
     editId?.let { key -> document?.entries?.firstOrNull { it.id == key }?.let { entry ->
         RecipeEditorDialog(RecipeEditorRequest(entry.snapshot), viewModel, busy, error, onClose = { editId = null }, onSave = { edit -> act {
             viewModel.sharing.editEntry(id, key, edit.snapshot, edit.addedPhotoUris, edit.captions, record!!.updatedAtUtcMillis); reload(); editId = null
         } })
     } }
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable internal fun DishVerdictEditor(data: com.pittech.data.CookDetailData, dish: com.pittech.data.DishEntity, viewModel: CooksViewModel, onClose: () -> Unit) {
-    val rows = data.results.filter { it.dishId == dish.id }
-    var rating by remember { mutableStateOf(rows.firstOrNull { it.resultType == "overall_rating" }?.numericValue) }
-    var again by remember { mutableStateOf(rows.firstOrNull { it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 }) }
-    var notes by remember { mutableStateOf(rows.firstOrNull { it.resultType == "result_notes" }?.textValue.orEmpty()) }
-    var saving by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = { if (!saving) onClose() }, title = { Text(dish.name) }, text = {
-        Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Results are optional and can be edited later.")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { (1..5).forEach { n -> FilterChip(rating == n.toDouble(), { rating = if (rating == n.toDouble()) null else n.toDouble() }, label = { Text("$n / 5") }) } }
-            if (rating != null && rating!! % 1 != 0.0) Text("Saved rating: $rating / 5")
-            Text("Cook again?")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(again == null, { again = null }, label = { Text("Not decided") }); FilterChip(again == true, { again = true }, label = { Text("Yes") }); FilterChip(again == false, { again = false }, label = { Text("No") }) }
-            OutlinedTextField(notes, { notes = it }, label = { Text("Result notes") }, modifier = Modifier.fillMaxWidth())
-        }
-    }, confirmButton = { TextButton(onClick = { saving = true; viewModel.saveDishVerdict(data.cook.id, dish.id, rating, again, notes) { ok -> saving = false; if (ok) onClose() } }, enabled = !saving) { Text("Save") } }, dismissButton = { TextButton(onClick = onClose, enabled = !saving) { Text("Cancel") } })
 }

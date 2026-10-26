@@ -83,8 +83,9 @@ internal fun InsightsScreen(
         )
 
         if (data.cooks.isEmpty()) {
-            SectionCard("No cooks yet") {
-                Text("Start a cook to begin saving dishes, notes, and temperature readings.", style = MaterialTheme.typography.bodyLarge)
+            // PL-25: the Insights empty is the shared StateCopy wording.
+            SectionCard(EmptyStateCopy.INSIGHTS_TITLE) {
+                Text(EmptyStateCopy.INSIGHTS_BODY, style = MaterialTheme.typography.bodyLarge)
                 Button(onClick = onStartCook, modifier = Modifier.fillMaxWidth()) { Text("Start a cook") }
             }
         } else {

@@ -158,7 +158,9 @@ class FoodFirstCookScreenTest {
         compose.onNodeWithTag("food-probe-assignment-" + steaks.id, useUnmergedTree = true).assertTextContains("Assigned: Probe 2")
         compose.onNodeWithTag("food-temperature-" + potatoes.id).performScrollTo().performClick()
         compose.onNodeWithTag("note-food-scope").assertTextContains("Potatoes")
-        assertTrue(compose.onAllNodesWithTag("temperature-probe").fetchSemanticsNodes().isEmpty())
+        // PL-07 (issue #172): the probe field is inline on the temperature
+        // row — it exists without opening "More details".
+        compose.onNodeWithTag("temperature-probe").assertExists()
         compose.onNodeWithTag("temperature-value").performTextInput("180")
         compose.onNodeWithTag("timeline-entry-details").performClick().performTextInput("Tender at the center")
         saveEntryWithKeyboardOpen()

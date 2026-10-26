@@ -51,7 +51,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That change couldn't be saved. Your cookbook is unchanged — try again.") } finally { busy = false } } }
     val snapshots = remember(revisions) { revisions.associate { it.id to RecipeSnapshotCodec.decode(it.snapshotJson) } }
     if (standalone) Text("Your cookbook, ready for another cook.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     else TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("saved-recipes-toggle")) { Text("Saved Recipes · ${recipes.count { it.archivedAtUtcMillis == null }}") }
@@ -70,18 +70,31 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         }
         if (filters) {
             var pendingCategory by remember { mutableStateOf(category) }; var pendingTag by remember { mutableStateOf(tag) }; var pendingArchived by remember { mutableStateOf(archived) }
-            AlertDialog(onDismissRequest = { filters = false }, title = { Text("Filter recipes") }, text = {
+            // PL-22 (DD-6): filters are contextual controls — a sheet.
+            SheetSurface(onDismiss = { filters = false }, title = "Filter recipes", actions = {
+                TextButton(onClick = { filters = false }) { Text("Cancel") }
+                TextButton(onClick = { category = pendingCategory; tag = pendingTag; archived = pendingArchived; filters = false }) { Text("Apply filters") }
+            }) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SimpleDropdownField("Category", pendingCategory, listOf("All categories") + snapshots.values.map { it.dish.foodType }.distinct().sorted(), { pendingCategory = it })
                     SimpleDropdownField("Tag", pendingTag, listOf("All tags") + snapshots.values.flatMap { it.tags }.distinct().sorted(), { pendingTag = it })
                     FilterChip(pendingArchived, { pendingArchived = !pendingArchived }, label = { Text("Show archived recipes") })
                 }
-            }, confirmButton = { TextButton(onClick = { category = pendingCategory; tag = pendingTag; archived = pendingArchived; filters = false }) { Text("Apply filters") } }, dismissButton = { TextButton(onClick = { filters = false }) { Text("Cancel") } })
+            }
         }
         val shown = recipes.filter { r -> val s = snapshots[r.currentRevisionId]
             (r.archivedAtUtcMillis != null) == archived && r.name.contains(query, true) && (!favorites || r.favorite) &&
                 (category == "All categories" || s?.dish?.foodType == category) && (tag == "All tags" || tag in s?.tags.orEmpty()) }
-        if (shown.isEmpty()) Text(if (recipes.isEmpty()) "Save selected dishes from a finished meal here. Your meal history stays available." else "No recipes match these filters.")
+        // PL-25: the Recipes empties are the shared StateCopy wording.
+        if (shown.isEmpty()) {
+            if (recipes.isEmpty()) {
+                Text(EmptyStateCopy.RECIPES_TITLE, style = MaterialTheme.typography.titleMedium)
+                Text(EmptyStateCopy.RECIPES_BODY)
+            } else {
+                Text(EmptyStateCopy.RECIPES_FILTERED_TITLE, style = MaterialTheme.typography.titleMedium)
+                Text(EmptyStateCopy.RECIPES_FILTERED_BODY)
+            }
+        }
         shown.forEach { recipe ->
             var assets by remember(recipe.currentRevisionId) { mutableStateOf(emptyList<RecipeAsset>()) }
             LaunchedEffect(recipe.currentRevisionId) { assets = viewModel.recipes.assets(recipe.currentRevisionId) }
@@ -112,7 +125,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             val temperatures = selected.mapNotNull { snapshots[it]?.preferredPitTemperatureF }.distinct()
             if (temperatures.size > 1) Text("These recipes use different smoker settings. Choose the setting for this meal when ready.")
             OutlinedTextField(mealTitle, { mealTitle = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-meal-title"))
-            Button(onClick = { act { viewModel.startRecipeMeal(mealTitle, selected); selected = emptyList() } }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
+            Button(onClick = { viewModel.previewRecipeMeal(mealTitle, selected); selected = emptyList() }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-start-meal")) { Text("Start meal with ${selected.size} recipes") }
             val active = cooks.filter { it.cook.status != CookStatus.COMPLETED }
             if (active.isNotEmpty()) {
                 val choices = active.mapIndexed { index, c -> c.cook.id to "${c.cook.title} (${index + 1})" }
@@ -120,12 +133,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                 OutlinedButton(onClick = { act { val id = existingMealId ?: return@act; selected.forEach { viewModel.addRecipeToMeal(id, it) }; selected = emptyList(); viewModel.openCook(id) } }, enabled = existingMealId != null && !busy) { Text("Add selected recipes") }
             }
         }
-        presets.forEach { preset -> TextButton(onClick = { act { viewModel.startMealPreset(preset.id) } }, enabled = !busy) { Text("Repeat ${preset.name}") } }
+        presets.forEach { preset -> TextButton(onClick = { viewModel.previewMealPreset(preset.id) }, enabled = !busy) { Text("Repeat ${preset.name}") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     detail?.let { recipe ->
         RecipeDetailsDialog(viewModel, recipe, revisions.filter { it.recipeId == recipe.id }, snapshots, cooks.map { it.cook.id }.toSet(), busy,
-            onClose = { detail = null }, onUse = { id -> act { viewModel.startRecipeMeal(recipe.name, listOf(id)); detail = null } },
+            onClose = { detail = null }, onUse = { id -> viewModel.previewRecipeMeal(recipe.name, listOf(id)); detail = null },
             onEdit = { revision -> act { editor = RecipeEditorRequest(snapshots.getValue(revision.id), recipe.id, recipe.currentRevisionId, revision.id, revision.sourceCookId, revision.sourceDishId, viewModel.recipes.assets(revision.id)); detail = null } },
             onDuplicate = { name -> act { viewModel.recipes.duplicate(recipe.id, name); detail = null } },
             onArchive = { act { viewModel.recipes.archive(recipe.id); detail = null } },
@@ -142,8 +155,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     val revision = history.firstOrNull { it.id == selected }; val snapshot = snapshots[selected]
     var assets by remember(selected) { mutableStateOf(emptyList<RecipeAsset>()) }
     LaunchedEffect(selected) { assets = viewModel.recipes.assets(selected) }
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(recipe.name) }, text = {
-        Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // PL-22 (DD-6): recipe detail is a reading surface — a tall sheet.
+    SheetSurface(onDismiss = { if (!busy) onClose() }, title = recipe.name, dismissEnabled = !busy, fillHeightFraction = 0.92f, actions = {
+        TextButton(onClick = onClose, enabled = !busy, modifier = Modifier.testTag("recipe-details-close")) { Text("Close") }
+        TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") }
+    }) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SimpleDropdownField("Version", history.firstOrNull { it.id == selected }?.let { recipeVersionLabel(it, history) }.orEmpty(), history.sortedWith(compareByDescending<RecipeRevision> { it.revisionNumber }.thenBy { it.id }).map { recipeVersionLabel(it, history) }, { label -> selected = history.first { recipeVersionLabel(it, history) == label }.id })
             Text(if (selected == recipe.currentRevisionId) "Preferred version" else "Previous version")
             if (revision?.sourceCookId != null) Text(if (revision.sourceCookId in cookIds) "Saved from your meal history." else "Source meal is unavailable. Saved instructions and reference photos remain available.")
@@ -162,10 +179,10 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             TextButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank()) { Text("Duplicate recipe") }
             TextButton(onClick = onArchive, enabled = !busy) { Text("Archive recipe") }
         }
-    }, confirmButton = { TextButton(onClick = { onUse(selected) }, enabled = revision != null && !busy) { Text("Use this version") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy, modifier=Modifier.testTag("recipe-details-close")) { Text("Close") } })
+    }
 }
 
-@Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false) {
+@Composable internal fun MealRecipeActions(data: CookDetailData, viewModel: CooksViewModel, initiallyExpanded: Boolean = false, onCombinationSaved: ((String) -> Unit)? = null) {
     if (data.dishes.isEmpty()) return
     var editor by remember(data.cook.id) { mutableStateOf<RecipeEditorRequest?>(null) }
     var expanded by remember(data.cook.id, initiallyExpanded) { mutableStateOf(initiallyExpanded) }
@@ -175,7 +192,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     var busy by remember { mutableStateOf(false) }
     val sources by remember { viewModel.recipes.observeSources() }.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That change couldn't be saved. Your cookbook is unchanged — try again.") } finally { busy = false } } }
     if (data.cook.status == CookStatus.COMPLETED || sources.any { source -> data.dishes.any { it.id == source.dishId } }) {
         TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("meal-recipe-actions")) { Text(if (data.cook.status == CookStatus.COMPLETED) "Save selected dishes as recipes" else "Recipes in this meal") }
         if (expanded) data.dishes.forEach { dish ->
@@ -200,7 +217,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     if (preset) AlertDialog(onDismissRequest = { if (!busy) preset = false }, title = { Text("Save meal combination") }, text = { OutlinedTextField(presetName, { presetName = it }, label = { Text("Name") }) },
-        confirmButton = { TextButton(onClick = { act { viewModel.saveMealPreset(data.cook.id, presetName); preset = false } }, enabled = !busy && presetName.isNotBlank()) { Text("Save") } }, dismissButton = { TextButton(onClick = { preset = false }, enabled = !busy) { Text("Cancel") } })
+        confirmButton = { TextButton(onClick = { act { viewModel.saveMealPreset(data.cook.id, presetName); preset = false; onCombinationSaved?.invoke(presetName) } }, enabled = !busy && presetName.isNotBlank()) { Text("Save") } }, dismissButton = { TextButton(onClick = { preset = false }, enabled = !busy) { Text("Cancel") } })
     editor?.let { request -> RecipeEditorDialog(request, viewModel, busy, error, onClose = { editor = null }, onSave = { edit -> act {
         if (request.attemptDishId != null) viewModel.updateRecipeAttempt(request.attemptDishId, edit.snapshot)
         else {

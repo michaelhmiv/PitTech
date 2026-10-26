@@ -99,7 +99,7 @@ import java.time.Instant
                 Text("My shared codes", style = MaterialTheme.typography.headlineSmall)
                 Text("Your management capability stays on this device. Revocation stops new downloads; recipients keep copies already saved.")
                 RelayProgress(state, viewModel.relay::cancel)
-                if (state.shares.isEmpty()) Text("No shared codes yet. Open a saved recipe or meal, choose Share, then Share by code.")
+                if (state.shares.isEmpty()) Text(EmptyStateCopy.SHARED_CODES_EMPTY)
                 state.shares.forEach { OwnedRelayRow(it, state.busy, viewModel) }
                 TextButton(onClose, Modifier.heightIn(min = 48.dp)) { Text("Done") }
             }

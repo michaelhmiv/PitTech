@@ -160,6 +160,13 @@ class MealRecipeUserFlowsTest {
         sourceRecipes.forEach { recipe -> waitFor("recipe-select-${recipe.id}"); compose.onNodeWithTag("recipe-select-${recipe.id}").performScrollTo().performClick() }
         compose.onNodeWithTag("recipe-meal-title").performScrollTo().performTextInput("Three source meal")
         compose.onNodeWithTag("recipe-start-meal").performScrollTo().performClick()
+        // PL-10 (#172): the Recipes start lands on the Start Cook review —
+        // the source card shows and no cook exists until "Begin preparation".
+        waitFor("cook-source")
+        compose.onNodeWithTag("cook-source").assertIsDisplayed()
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().none { it.status == CookStatus.ACTIVE } })
+        shot("start-cook-review-recipes")
+        compose.onNodeWithTag("cook-save").performClick()
         waitFor("meal-reminders")
         val meal = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().single { it.status == CookStatus.ACTIVE } }
         val dishes = runBlocking(Dispatchers.IO) { app.database.cookDao().getDishesForCook(meal.id) }
@@ -207,6 +214,29 @@ class MealRecipeUserFlowsTest {
         compose.onNodeWithTag("leave-without-saving").performScrollTo().performClick()
         assertEquals(CookStatus.COMPLETED, runBlocking(Dispatchers.IO) { app.database.cookDao().getCook(meal.id)!!.status })
     }
+    /** PL-10 (#172): "Use this version" no longer instant-creates a cook —
+     * it lands on the same Start Cook review, and the cook exists only
+     * after "Begin preparation" confirms it, with the recipe attached. */
+    @Test fun useThisVersionReviewsBeforeStarting() {
+        val recipe = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            app.cookRepository.recipes.save(RecipeSnapshot("Review ribs", DishDraft("Review ribs", "Pork")))
+        }
+        compose.activityRule.scenario.recreate()
+        waitFor("nav-recipes"); compose.onNodeWithTag("nav-recipes").performClick()
+        waitFor("recipe-open-${recipe.id}"); compose.onNodeWithTag("recipe-open-${recipe.id}").performScrollTo().performClick()
+        compose.onNodeWithText("Use this version").performClick()
+        waitFor("cook-source")
+        compose.onNodeWithTag("cook-source").assertIsDisplayed()
+        compose.onNodeWithText("From your Recipes · saved recipes stay attached to their dishes").assertIsDisplayed()
+        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().isEmpty() })
+        shot("start-cook-review-use-version")
+        compose.onNodeWithTag("cook-save").performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().size == 1 } }
+        val cook = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllCooks().single() }
+        val dish = runBlocking(Dispatchers.IO) { app.database.cookDao().getDishesForCook(cook.id).single() }
+        assertEquals(recipe.currentRevisionId, runBlocking(Dispatchers.IO) { app.cookRepository.recipes.source(dish.id)!!.recipeRevisionId })
+    }
     @Test fun recordedCookPreviewAddsHistoryWithoutSavingRecipesOrStartingAutomation() {
         val uri = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()
@@ -235,5 +265,10 @@ class MealRecipeUserFlowsTest {
         assertTrue(runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().isEmpty() })
         assertTrue(runBlocking(Dispatchers.IO) { app.database.reminderDao().rules().isEmpty() })
         assertTrue(runBlocking(Dispatchers.IO) { app.database.recordingDao().getAllRecordings().isEmpty() })
+        // PL-19: adding history leaves the save dialog open with the recipe
+        // selection intact — the recipes can still be saved afterwards.
+        waitFor("pack-history-added")
+        compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
+        compose.waitUntil(20000) { runBlocking(Dispatchers.IO) { app.database.recipeDao().recipes().size == 2 } }
     }
 }

@@ -22,6 +22,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,6 +56,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Notifications
@@ -63,6 +66,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +77,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -124,6 +129,8 @@ import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TimelineEventEntity
 import com.pittech.domain.CookEntryValidation
 import com.pittech.domain.DishDraft
+import com.pittech.domain.DishDraftCodec
+import com.pittech.domain.EditorDraftKeys
 import com.pittech.domain.IngredientDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -149,7 +156,7 @@ fun CookDetailScreen(
     val grillState by viewModel.grillState.collectAsStateWithLifecycle()
     var showConnections by rememberSaveable { mutableStateOf(false) }
     var sharingDraftId by rememberSaveable { mutableStateOf<String?>(null) }
-    var verdictDishId by rememberSaveable { mutableStateOf<String?>(null) }
+    var resultsDishId by rememberSaveable { mutableStateOf<String?>(null) }
     val recordingRunning by viewModel.recordingServiceRunning.collectAsStateWithLifecycle()
     var noteDraftJson by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var noteEditing by rememberSaveable(data.cook.id) { mutableStateOf(false) }
@@ -163,30 +170,51 @@ fun CookDetailScreen(
     var editDish by remember { mutableStateOf<DishEntity?>(null) }
     var ingredientDish by remember { mutableStateOf<DishEntity?>(null) }
     var dishToDelete by remember { mutableStateOf<DishEntity?>(null) }
-    var editEvent by remember { mutableStateOf<TimelineEventEntity?>(null) }
-    var showNewEvent by remember { mutableStateOf(false) }
-    var showTemperature by remember { mutableStateOf(false) }
     var showTarget by remember { mutableStateOf(false) }
-    var editReading by remember { mutableStateOf<SensorReadingEntity?>(null) }
     var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     val reminderRules by viewModel.reminders.observeRules().collectAsStateWithLifecycle(emptyList())
     val guideFlow = remember(data.cook.id) { viewModel.guide.observe(data.cook.id) }
     val guideRecords by guideFlow.collectAsStateWithLifecycle(emptyList())
     val reminderOccurrences by viewModel.reminders.observeOccurrences().collectAsStateWithLifecycle(emptyList())
+    val liveCompanionRecords by viewModel.companionRecords.collectAsStateWithLifecycle(emptyList())
+    val liveActivityTimers by remember(data.cook.id) { viewModel.activities.observe(data.cook.id) }.collectAsStateWithLifecycle(emptyList())
+    val liveSummaries = remember(data.cook.id, liveCompanionRecords, liveActivityTimers) {
+        val plan = liveCompanionRecords.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
+        val alertRecords = liveCompanionRecords.filter { it.kind == "alert" && it.cookId == data.cook.id }
+        val alertSummary = if (alertRecords.isEmpty()) "Not set up" else {
+            val enabled = alertRecords.count { com.pittech.domain.CookAlertEngine.decode(it.payload).first.enabled }
+            val attention = alertRecords.count { com.pittech.domain.CookAlertEngine.decode(it.payload).second.active }
+            "$enabled enabled" + if (attention > 0) " · $attention need attention" else ""
+        }
+        val checklistRecord = liveCompanionRecords.firstOrNull { it.kind == "checklist" && it.cookId == data.cook.id }
+        val checklistSummary = checklistRecord?.let { record ->
+            val items = com.pittech.domain.CookPreparation.decodeChecklist(record.payload)
+            "${items.count { it.done }}/${items.size} done"
+        } ?: "Not started"
+        val runningTimers = liveActivityTimers.count { it.status == "running" }
+        LivePanelSummaries(
+            guidance = plan?.let { "Playbook · ${it.title}" } ?: "No playbook",
+            alerts = alertSummary,
+            checklist = checklistSummary,
+            timers = if (runningTimers > 0) "$runningTimers running" else "None running",
+        )
+    }
+    // PL-03: the alert line shown on the Live Zone strip — the needs-attention
+    // count plus named acknowledgments, readable without opening anything.
+    val alertStrip = remember(data.cook.id, liveCompanionRecords) {
+        val alertRecords = liveCompanionRecords.filter { it.kind == "alert" && it.cookId == data.cook.id }
+        com.pittech.domain.CookAlertEngine.stripSummary(alertRecords.map { record ->
+            record.title to com.pittech.domain.CookAlertEngine.decode(record.payload).second
+        })
+    }
     var selectedFood by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var showProbeMove by remember { mutableStateOf(false) }
     var showFinishConfirm by remember { mutableStateOf(false) }
     var showCompletionChoices by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var finishRequested by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var confirmDeleteCook by remember { mutableStateOf(false) }
     var showExportCook by remember { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
     var preparingPhoto by remember { mutableStateOf(false) }
-    var photoSourceDestination by rememberSaveable { mutableStateOf("log") }
-    var photoEntryMode by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var logComposerSession by rememberSaveable(data.cook.id) { mutableStateOf(0) }
-    var logPhotoUri by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
-    var logPhotoCaption by rememberSaveable(data.cook.id) { mutableStateOf("") }
     var reminderPhotoUri by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var reminderPhotoCaption by rememberSaveable(data.cook.id) { mutableStateOf("") }
     var showReminderComposer by rememberSaveable { mutableStateOf(false) }
@@ -207,34 +235,33 @@ fun CookDetailScreen(
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     val deletedEvent by viewModel.deletedEvent.collectAsStateWithLifecycle()
     val pendingReminderId by viewModel.pendingReminderId.collectAsStateWithLifecycle()
+    val pendingReminderRuleId by viewModel.pendingReminderRuleId.collectAsStateWithLifecycle()
+    val pendingAlertId by viewModel.pendingAlertId.collectAsStateWithLifecycle()
+    var alertFocusId by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
+    var ruleCheckIn by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
+    var ruleCheckInAnnounced by remember { mutableStateOf<String?>(null) }
+    var ruleRecord by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
+    var ruleRecordAnnounced by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    // PL-28 (#172): the photo source sheet only ever serves the reminder
+    // check-in (its one opener) — the legacy "log" destination wrote state
+    // nothing read (the retired TimelineEventDialog was its only
+    // consumer), so the callbacks take the reminder path directly.
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            if (photoSourceDestination == "reminder") {
-                reminderPhotoUri = uri.toString()
-                showReminderCheckIn = true
-            } else {
-                logPhotoUri = uri.toString()
-                showNewEvent = true
-            }
-        } else if (photoSourceDestination == "reminder") {
-            showReminderCheckIn = true
+            reminderPhotoUri = uri.toString()
         }
+        showReminderCheckIn = true
     }
     val addCameraPhoto = rememberCameraPhotoCapture(
         onPhotoCaptured = { uri ->
-            if (photoSourceDestination == "reminder") {
-                reminderPhotoUri = uri.toString()
-                showReminderCheckIn = true
-            } else {
-                logPhotoUri = uri.toString()
-                showNewEvent = true
-            }
+            reminderPhotoUri = uri.toString()
+            showReminderCheckIn = true
         },
         onCaptureCancelled = {
-            if (photoSourceDestination == "reminder") showReminderCheckIn = true
+            showReminderCheckIn = true
         },
     )
     val savePhoto = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/*")) { uri ->
@@ -248,7 +275,7 @@ fun CookDetailScreen(
                         ?: error("The selected location could not be opened.")
                 }
             }.onSuccess { android.widget.Toast.makeText(context, "Photo saved.", android.widget.Toast.LENGTH_SHORT).show() }
-                .onFailure { android.widget.Toast.makeText(context, it.message ?: "Photo could not be saved.", android.widget.Toast.LENGTH_LONG).show() }
+                .onFailure { android.widget.Toast.makeText(context, ErrorCopy.failureText(it, "The photo couldn't be saved. The cook is unchanged — try again."), android.widget.Toast.LENGTH_LONG).show() }
         }
     }
     val requestReminderPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -276,7 +303,7 @@ fun CookDetailScreen(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(send, "Share cook photo"))
-        }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Photo could not be shared.", android.widget.Toast.LENGTH_LONG).show() }
+        }.onFailure { android.widget.Toast.makeText(context, ErrorCopy.failureText(it, "The photo couldn't be shared. The cook is unchanged — try again."), android.widget.Toast.LENGTH_LONG).show() }
     }
 
     fun saveReminder() {
@@ -297,6 +324,41 @@ fun CookDetailScreen(
             completionReminder = reminder
             showReminderCheckIn = true
         }
+    }
+
+    // PL-02: a unified-reminder notification tap opens THAT rule's check-in
+    // here — hoisted above the (collapsible) Reminders panel so the route
+    // cannot be hidden by a collapsed panel.
+    LaunchedEffect(pendingReminderRuleId, data.cook.id) {
+        val id = pendingReminderRuleId ?: return@LaunchedEffect
+        val rule = viewModel.reminders.rule(id)
+        if (rule != null && rule.cookId == data.cook.id) {
+            ruleCheckInAnnounced = viewModel.reminderAnnouncedAction(id)
+            ruleCheckIn = rule
+        }
+        viewModel.consumeReminderRuleCheckIn()
+    }
+
+    // PL-03: an alert notification tap opens the Alerts sheet at THAT rule —
+    // hoisted above the (collapsible) Alerts panel so the route cannot be
+    // hidden by a collapsed panel.
+    LaunchedEffect(pendingAlertId, data.cook.id) {
+        val id = pendingAlertId ?: return@LaunchedEffect
+        alertFocusId = id
+        viewModel.consumeAlertFocus()
+    }
+    ruleCheckIn?.let { rule ->
+        ReminderRuleCheckInDialog(rule, ruleCheckInAnnounced, busy,
+            onLogIt = { action -> coroutineScope.launch { viewModel.confirmReminderAction(rule.id, action) }; ruleCheckIn = null },
+            onLogOther = { ruleRecordAnnounced = ruleCheckInAnnounced; ruleRecord = rule; ruleCheckIn = null },
+            onSnooze = { coroutineScope.launch { viewModel.changeReminderRule(rule.id, "snooze") }; ruleCheckIn = null },
+            onDismiss = { coroutineScope.launch { viewModel.changeReminderRule(rule.id, "complete") }; ruleCheckIn = null },
+            onClose = { ruleCheckIn = null })
+    }
+    ruleRecord?.let { rule ->
+        ReminderRecordActionDialog(rule, ruleRecordAnnounced, busy,
+            onConfirm = { action -> coroutineScope.launch { viewModel.confirmReminderAction(rule.id, action) }; ruleRecord = null },
+            onClose = { ruleRecord = null })
     }
 
     LaunchedEffect(notice, pendingPhotoRetry) {
@@ -334,7 +396,7 @@ fun CookDetailScreen(
         }
     }
     if (addDish) {
-        DishEditorDialog(preferredWeightUnit = preferredWeightUnit, onDismiss = { addDish = false }) { draft ->
+        DishEditorDialog(preferredWeightUnit = preferredWeightUnit, draftKey = "cook:${data.cook.id}", onDismiss = { addDish = false }) { draft ->
             viewModel.addDish(data.cook.id, draft)
             addDish = false
         }
@@ -372,8 +434,14 @@ fun CookDetailScreen(
     if (showCompletionChoices) ModalBottomSheet(onDismissRequest = { showCompletionChoices = false }) {
         Column(Modifier.testTag("meal-completion-choices").heightIn(max = 620.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Meal finished", style = MaterialTheme.typography.titleLarge)
+            // PL-08 / DD-5: the sheet finish creates LEADS with the quick
+            // verdict — overall + per-dish chips, all visible — then the
+            // recipe saves, then Leave. One finish path, one results model.
+            CompletionVerdictSection(data, viewModel, busy)
+            var combinationSaved by remember(data.cook.id) { mutableStateOf<String?>(null) }
+            MealRecipeActions(data, viewModel, initiallyExpanded = true, onCombinationSaved = { name -> combinationSaved = name })
+            combinationSaved?.let { name -> Text("Meal combination “$name” saved. Find it in Recipes to repeat this meal.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("completion-combination-saved")) }
             TextButton({ selectedTab = CookTab.TIMELINE.name; showCompletionChoices = false }, modifier = Modifier.testTag("meal-view-summary")) { Text("View meal summary") }
-            MealRecipeActions(data, viewModel, initiallyExpanded = true)
             TextButton({ showCompletionChoices = false }, modifier = Modifier.testTag("leave-without-saving")) { Text("Leave without saving") }
             Spacer(Modifier.height(24.dp))
         }
@@ -386,33 +454,26 @@ fun CookDetailScreen(
             title = action?.let { com.pittech.domain.PlaybookCodec.actions[it] }.orEmpty(),
             temperatures = if (category == "temperature") listOf(com.pittech.domain.NoteTemperature(unit = preferredTemperatureUnit, dishId = dishId)) else emptyList()).encode()
     }
+    // PL-07 (issue #172): the standalone Temperature Entry dialog is retired.
+    // Editing a standalone manual reading opens the same note composer as
+    // every other temperature job, carrying the reading's own identity; on
+    // save the composer adopts the reading into the note it creates, so a
+    // manual temp is edited the same way everywhere.
+    fun openReadingEdit(reading: SensorReadingEntity) {
+        noteEditing = true
+        notePhotoFirst = false
+        noteDraftJson = com.pittech.domain.CookNoteDraft(cookId = data.cook.id, dishId = reading.dishId, category = "temperature",
+            occurredAt = reading.measuredAtUtcMillis,
+            temperatures = listOf(com.pittech.domain.NoteTemperature(id = reading.id, probeName = reading.probeName,
+                measurementType = reading.measurementType, valueText = reading.value.toString(), unit = reading.unit,
+                measuredAt = reading.measuredAtUtcMillis, dishId = reading.dishId, probeId = reading.probeId))).encode()
+    }
     noteDraftJson?.let { raw ->
         val draft = com.pittech.domain.CookNoteDraft.decode(raw)
         CookNoteComposer(draft, data.dishes, preferredTemperatureUnit, viewModel, noteEditing, notePhotoFirst,
             onChange = { noteDraftJson = it.encode() },
             onClose = { noteDraftJson = null; notePhotoFirst = false },
             onSaved = { attached -> noteDraftJson = null; notePhotoFirst = false })
-    }
-    if (showTemperature || editReading != null) {
-        TemperatureEntryDialog(
-            reading = editReading,
-            dishes = data.dishes,
-            preferredUnit = preferredTemperatureUnit,
-            onDismiss = {
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-                showTemperature = false
-                editReading = null
-            },
-            onSave = { probe, type, value, unit, measuredAt, dishId ->
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-                if (editReading == null) viewModel.addManualTemperature(data.cook.id, dishId, probe, type, value, unit, measuredAt)
-                else viewModel.updateSensorReading(editReading!!.copy(probeName = probe, measurementType = type, value = value, unit = unit, measuredAtUtcMillis = measuredAt, dishId = dishId))
-                showTemperature = false
-                editReading = null
-            },
-        )
     }
     if (showTarget) {
         TargetDialog(
@@ -426,43 +487,43 @@ fun CookDetailScreen(
         )
     }
     if (showResults) {
-        ResultsDialog(
+        CookResultsSheet(
             data = data,
             preferredUnit = preferredTemperatureUnit,
-            finishRequested = finishRequested,
+            initialDishId = resultsDishId,
             busy = busy,
             saveError = error,
-            onDismiss = { showResults = false; viewModel.clearSaveError() },
-            onSave = { dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change ->
+            onDismiss = { showResults = false; resultsDishId = null; viewModel.clearSaveError() },
+            onSave = { dishId, finalTemp, unit, rest, ratings, notes, keep, change, cookAgain ->
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
-                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, finish, keep, change) { saved ->
-                    if (saved) showResults = false
+                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, false, keep, change, cookAgain) { saved ->
+                    if (saved) { showResults = false; resultsDishId = null }
                 }
             },
         )
     }
     if (showExportCook) {
-        AlertDialog(
-            onDismissRequest = { showExportCook = false },
-            title = { Text("Export this cook") },
-            text = { Text("Save a file somewhere you control, or share a complete ZIP with another app.") },
-            confirmButton = {
-                Column {
-                    TextButton(onClick = { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }) { Text("Excel workbook") }
-                    TextButton(onClick = { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }) { Text("Save this cook as ZIP") }
-                    TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share this cook") }
-                    TextButton(onClick = { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }) { Text("Temperature readings CSV") }
-                    TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
-                }
-            },
-        )
+        // PL-22 (DD-6): the export chooser is a sheet, not a dialog.
+        SheetSurface(
+            onDismiss = { showExportCook = false },
+            title = "Export cook data",
+        ) {
+            Text("Data files for your own records — a workbook, a backup ZIP, or the readings as CSV. To share recipes with other cooks, use Share meal and the Cook Pack instead.")
+            Column {
+                TextButton(onClick = { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }) { Text("Excel workbook") }
+                TextButton(onClick = { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }) { Text("Save this cook as ZIP") }
+                TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share backup ZIP") }
+                TextButton(onClick = { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }) { Text("Temperature readings CSV") }
+                TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
+            }
+        }
     }
     if (showPhotoSource) {
         PhotoSourceDialog(
             onDismiss = {
                 showPhotoSource = false
-                if (photoSourceDestination == "reminder") showReminderCheckIn = true
+                showReminderCheckIn = true
             },
             onTakePhoto = {
                 showPhotoSource = false
@@ -479,12 +540,19 @@ fun CookDetailScreen(
         )
     }
     if (preparingPhoto) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("Reading grill before photo…") },
-            text = { Text("The photo will open even if a temperature reading is unavailable.") },
-            confirmButton = {},
-        )
+        // PL-23 (DD-8): a labelled wait — spinner plus its gerund label —
+        // in a non-dismissible sheet instead of a bare dialog shell.
+        SheetSurface(
+            onDismiss = {},
+            title = "Reading grill before photo…",
+            dismissEnabled = false,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator()
+                Text("Reading grill before photo…", style = MaterialTheme.typography.bodyLarge)
+            }
+            Text("The photo will open even if a temperature reading is unavailable.")
+        }
     }
     if (showReminderComposer) {
         ReminderComposerDialog(
@@ -503,8 +571,27 @@ fun CookDetailScreen(
             photoUri = reminderPhotoUri,
             photoCaption = reminderPhotoCaption,
             onPhotoCaptionChange = { reminderPhotoCaption = it },
+            // PL-02 (issue #172): scrim/Back only closes the check-in — the
+            // hidden 1-hour snooze is gone. The reminder stays pending and
+            // visible; nothing changes silently.
+            onClose = {
+                reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
+                reminderPhotoUri = null
+                reminderPhotoCaption = ""
+                showReminderCheckIn = false
+                completionReminder = null
+                viewModel.consumeReminderCheckIn()
+            },
             onDismiss = {
-                viewModel.snoozeCookReminder(checkInReminder, 60L * 60 * 1000)
+                viewModel.dismissCookReminder(checkInReminder)
+                reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
+                reminderPhotoUri = null
+                reminderPhotoCaption = ""
+                showReminderCheckIn = false
+                completionReminder = null
+            },
+            onSnooze = {
+                viewModel.snoozeCookReminder(checkInReminder, com.pittech.domain.ReminderVocabulary.SNOOZE_MILLIS)
                 reminderPhotoUri?.let { CameraPhotoFiles.delete(context, it) }
                 reminderPhotoUri = null
                 reminderPhotoCaption = ""
@@ -513,7 +600,6 @@ fun CookDetailScreen(
             },
             onAddPhoto = {
                 showReminderCheckIn = false
-                photoSourceDestination = "reminder"
                 showPhotoSource = true
             },
             onRemovePhoto = {
@@ -554,6 +640,10 @@ fun CookDetailScreen(
                 showPhotoGallery = false
                 viewingPhoto = photo
             },
+            onAddPhoto = {
+                showPhotoGallery = false
+                openNote("photo", photoFirst = true)
+            },
         )
     }
     if (confirmDeleteCook) {
@@ -567,17 +657,25 @@ fun CookDetailScreen(
     }
 
     viewingMarker?.let { event ->
-        AlertDialog(onDismissRequest = { viewingMarker = null }, title = { Text(event.title) },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // PL-22 (DD-6): the chart-marker viewer is contextual display — a sheet.
+        SheetSurface(
+            onDismiss = { viewingMarker = null },
+            title = event.title,
+            actions = {
+                TextButton(onClick = { viewingMarker = null }) { Text("Close") }
+                TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") }
+            },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(formatTimestamp(event.occurredAtUtcMillis))
                 event.details?.let { Text(it) }
                 val snapshot = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
                 if (snapshot.isNotBlank()) Text(snapshot)
                 data.photos.filter { it.eventId == event.id }.forEach { photo -> PhotoThumbnail(photo, Modifier.size(90.dp)) { viewingMarker = null; viewingPhoto = photo } }
-            } }, confirmButton = { TextButton(onClick = { focusedTimelineId = event.id; viewingMarker = null; selectedTab = CookTab.TIMELINE.name }) { Text("Open timeline") } }, dismissButton = { TextButton(onClick = { viewingMarker = null }) { Text("Close") } })
+            }
+        }
     }
     sharingDraftId?.let { id -> SharingDraftEditor(id, viewModel) { sharingDraftId = null } }
-    verdictDishId?.let { id -> data.dishes.firstOrNull { it.id == id }?.let { dish -> DishVerdictEditor(data, dish, viewModel) { verdictDishId = null } } }
     if (showConnections) ModalBottomSheet(onDismissRequest = { showConnections = false }) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -589,6 +687,7 @@ fun CookDetailScreen(
     }
     Scaffold(
         topBar = {
+            Column {
             TopAppBar(
                 title = { Column { Text(data.cook.title, maxLines = 1); Text(statusLabel(data.cook.status), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-cook-status")) } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back to cooks") } },
@@ -597,6 +696,8 @@ fun CookDetailScreen(
                     IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") }
                 },
             )
+            OfflineBanner()
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
@@ -641,31 +742,49 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
-                    foodLayout = {
-                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, it.message ?: "Draft could not be created.", android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
-                        UnifiedReminderTools(data, viewModel); MealRecipeActions(data, viewModel)
+                    dishesContent = {
+                        MealRecipeActions(data, viewModel)
                         RecipeGuideMilestones(data, guideRecords, compact = true) { selectedTab = CookTab.TIMELINE.name }
                         FoodGrillLayout(data, selectedFood, preferredTemperatureUnit,
                         onSelect = { selectedFood = it },
                         onLog = { food, category, action -> selectedFood = food; openNote(category, action, category == "photo", food) },
+                        onRecordAction = { dish, action ->
+                            // PL-01: record now; offer the note as a follow-up
+                            // on the recorded entry, never as a gate before it.
+                            selectedFood = dish.id
+                            viewModel.recordDishActionNow(data.cook.id, dish.id, action) { eventId ->
+                                coroutineScope.launch {
+                                    val result = snackbar.showSnackbar(
+                                        message = "${com.pittech.domain.PlaybookCodec.actions[action] ?: action} recorded for ${dish.name}.",
+                                        actionLabel = "Add note",
+                                        withDismissAction = true,
+                                        duration = androidx.compose.material3.SnackbarDuration.Long,
+                                    )
+                                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                        noteEditing = true
+                                        notePhotoFirst = false
+                                        noteDraftJson = viewModel.loadNote(eventId).encode()
+                                    }
+                                }
+                            }
+                        },
                         onAdd = { addDish = true }, onEdit = { editDish = it },
                         onIngredients = { ingredientDish = it },
                         onProbe = { food -> selectedFood = food; viewModel.clearSaveError(); showProbeMove = true }, reminders = reminderRules, occurrences = reminderOccurrences,
                         selectedTools = { dish ->
-                            TextButton(onClick = { verdictDishId = dish.id }, modifier = Modifier.testTag("dish-verdict-${dish.id}")) { Text("Results & cook again") }
+                            TextButton(onClick = { resultsDishId = dish.id; viewModel.clearSaveError(); showResults = true }, modifier = Modifier.testTag("dish-verdict-${dish.id}")) { Text("Results & cook again") }
                             UnifiedReminderTools(data, viewModel, dish.id); RecipeReferenceTools(data, viewModel, dish.id)
                         }) },
-                    displayUnit = preferredTemperatureUnit,
-                    configuredTools = { CookPlaybookTools(data, viewModel, configuredOnly = true); CookAlertTools(data, viewModel, configuredOnly = true) },
-                    playbookTools = {
-                        MealActivityTimers(data.cook.id, data.dishes, data.cook.status != CookStatus.COMPLETED, viewModel)
+                    guidancePanel = {
                         CookPhaseCard(data,
                             onFoodOn = { dish -> openNote("action", "food_on"); noteDraftJson = noteDraftJson?.let { com.pittech.domain.CookNoteDraft.decode(it).copy(dishId = dish).encode() } },
                             onPreheat = { openNote("action", "preheat_start") },
                             onAdopt = { viewModel.adoptFoodOnTiming(data.cook.id, it) })
-                        if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).any { it.phase == "prep" }) CookChecklistTools(data, viewModel)
-                        CookPlaybookTools(data, viewModel, configuredOnly = false) },
-                    preparationTools = { if (com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(data.events), data.dishes.map { it.id }, data.cook.startedAtUtcMillis, System.currentTimeMillis()).none { it.phase == "prep" }) CookChecklistTools(data, viewModel); CookLearningTools(data, viewModel); CookAlertTools(data, viewModel, configuredOnly = false) },
+                        CookPlaybookTools(data, viewModel, configuredOnly = null) },
+                    remindersPanel = { UnifiedReminderTools(data, viewModel) },
+                    alertsPanel = { CookAlertTools(data, viewModel, configuredOnly = null, focusedAlertId = alertFocusId) },
+                    checklistPanel = { CookChecklistTools(data, viewModel) },
+                    timersPanel = { MealActivityTimers(data.cook.id, data.dishes, data.cook.status != CookStatus.COMPLETED, viewModel) },
                     grillPanel = {
                         if (com.pittech.BuildConfig.TELEMETRY_BETA_ENABLED) CookTelemetryPanel(data, viewModel)
                         if (com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null) CookGrillPanel(
@@ -679,6 +798,15 @@ fun CookDetailScreen(
                             { viewModel.readGrillNow(data.cook.id) },
                         )
                     },
+                    grillAvailable = com.pittech.BuildConfig.TELEMETRY_BETA_ENABLED || com.pittech.BuildConfig.CONTROLLER_TESTING_ENABLED || data.recording != null,
+                    learningTools = { CookLearningTools(data, viewModel) },
+                    shareMealAction = {
+                        if (data.dishes.isNotEmpty()) TextButton(onClick = { coroutineScope.launch { runCatching { viewModel.sharing.fromMeal(data.cook.id, data.dishes.map { it.id }.toSet()) }.onSuccess { sharingDraftId = it }.onFailure { android.widget.Toast.makeText(context, ErrorCopy.failureText(it, "The sharing draft couldn't be created. The cook is unchanged — try again."), android.widget.Toast.LENGTH_LONG).show() } } }, modifier = Modifier.testTag("meal-sharing-draft")) { Text("Share meal") }
+                    },
+                    summaries = liveSummaries,
+                    alertStrip = alertStrip,
+                    alertFocused = alertFocusId != null,
+                    displayUnit = preferredTemperatureUnit,
                     busy = busy,
                     onTogglePause = { if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id) },
                     onAddTarget = { showTarget = true },
@@ -687,9 +815,10 @@ fun CookDetailScreen(
                     onEditDish = { editDish = it },
                     onResults = {
                         viewModel.clearSaveError()
-                        finishRequested = false
+                        resultsDishId = null
                         showResults = true
                     },
+                    onUndoFinish = { viewModel.reopenCook(data.cook.id) },
                     onExport = { showExportCook = true },
                     onFinish = {
                         focusManager.clearFocus(force = true)
@@ -700,7 +829,7 @@ fun CookDetailScreen(
                     onDelete = { confirmDeleteCook = true },
                     onCopySetup = { viewModel.previewCookAgain(data.cook.id) },
                     onError = error,
-                    onCancelReminder = viewModel::cancelCookReminder,
+                    onCancelReminder = viewModel::dismissCookReminder,
                     onLogReminder = { reminder ->
                         completionReminder = reminder
                         showReminderCheckIn = true
@@ -715,11 +844,12 @@ fun CookDetailScreen(
                     onFocusHandled = { focusedTimelineId = null },
                     viewModel = viewModel,
                     onEditEvent = { event -> coroutineScope.launch { noteEditing = true; notePhotoFirst = false; noteDraftJson = viewModel.loadNote(event.id).encode() } },
-                    onEditReading = { editReading = it },
+                    onEditReading = { openReadingEdit(it) },
                     onError = error,
                     onPhotoClick = { viewingPhoto = it },
                     onShowPhotoGallery = { showPhotoGallery = true },
                     onFoodFilter = { selectedFood = it },
+                    onAddNote = { openNote() },
                     guide = { RecipeGuideMilestones(data, guideRecords) },
                 )
                 CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, guide = remember(data, guideRecords) { alignedGuide(data, guideRecords) }, guideVisible = guideState(guideRecords).visible, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
@@ -798,15 +928,81 @@ private fun CookQuickActionsBar(
     }
 }
 
+/**
+ * Panel summaries computed at the call site, where the companion-record and
+ * activity-timer flows are in scope (PL-04 / DD-2: a collapsed panel header
+ * must still carry the panel's live state).
+ */
+internal data class LivePanelSummaries(
+    val guidance: String,
+    val alerts: String,
+    val checklist: String,
+    val timers: String,
+)
+
+/**
+ * One Live-tab panel (PL-04): a titled card whose header always shows the
+ * panel's live state summary, expanded or collapsed. Open/closed state is
+ * remembered per cook and panel.
+ */
+@Composable
+private fun LivePanel(
+    cookId: String,
+    id: String,
+    title: String,
+    summary: String?,
+    initiallyExpanded: Boolean = true,
+    forceExpanded: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    var expanded by rememberSaveable(cookId, id) { mutableStateOf(initiallyExpanded) }
+    // PL-03: a notification route (alert tap) opens its panel even when the
+    // user last left it collapsed.
+    LaunchedEffect(forceExpanded) { if (forceExpanded) expanded = true }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.testTag("live-panel-$id"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    summary?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse $title" else "Expand $title",
+                )
+            }
+            if (expanded) content()
+        }
+    }
+}
+
 @Composable
 private fun LiveCookTab(
     data: CookDetailData,
-    foodLayout: @Composable () -> Unit,
-    configuredTools: @Composable () -> Unit,
-    displayUnit: String,
+    dishesContent: @Composable () -> Unit,
+    guidancePanel: @Composable () -> Unit,
+    remindersPanel: @Composable () -> Unit,
+    alertsPanel: @Composable () -> Unit,
+    checklistPanel: @Composable () -> Unit,
+    timersPanel: @Composable () -> Unit,
     grillPanel: @Composable () -> Unit,
-    playbookTools: @Composable () -> Unit,
-    preparationTools: @Composable () -> Unit,
+    grillAvailable: Boolean,
+    learningTools: @Composable () -> Unit,
+    shareMealAction: @Composable () -> Unit,
+    summaries: LivePanelSummaries,
+    alertStrip: String?,
+    alertFocused: Boolean,
+    displayUnit: String,
     busy: Boolean,
     onTogglePause: () -> Unit,
     onAddTarget: () -> Unit,
@@ -816,6 +1012,7 @@ private fun LiveCookTab(
     onResults: () -> Unit,
     onExport: () -> Unit,
     onFinish: () -> Unit,
+    onUndoFinish: () -> Unit,
     onDelete: () -> Unit,
     onCopySetup: () -> Unit,
     onError: String?,
@@ -825,8 +1022,6 @@ private fun LiveCookTab(
     onShowPhotoGallery: () -> Unit,
     onViewTimeline: () -> Unit,
 ) {
-    var showMoreTools by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var showPrep by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(data.cook.id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
     val elapsed = calculateElapsed(data).coerceAtLeast(0)
@@ -835,35 +1030,70 @@ private fun LiveCookTab(
     val pending = data.reminders.filter { it.status == CookReminderEntity.STATUS_PENDING }.sortedBy { it.dueAtUtcMillis }
     val pit = data.readings.filter { it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.maxByOrNull { it.measuredAtUtcMillis }
     val setpoint = data.readings.filter { it.measurementType == "setpoint" }.maxByOrNull { it.measuredAtUtcMillis }
+    val cookTargets = data.targets.filter { it.dishId == null }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Elapsed " + formatCookDuration(elapsed), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("live-cook-elapsed"))
-        }
-        if (pit != null || setpoint != null) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                listOf("Pit" to pit, "Setpoint" to setpoint).forEach { (label, reading) ->
-                    Column(Modifier.weight(1f)) {
-                        Text(label, style = MaterialTheme.typography.labelLarge)
-                        Text(if (reading != null && FoodLivePresentation.accepted(reading))
-                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)) + " " + displayUnit
-                            else "—", style = MaterialTheme.typography.headlineSmall)
-                        reading?.let { Text((if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
-                            formatTimeOfDay(it.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // Live Zone poster (PL-04): the cook at a glance — elapsed, pit and
+        // setpoint, the latest temperature for every dish, and cook targets.
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("live-zone"),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Elapsed " + formatCookDuration(elapsed), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("live-cook-elapsed"))
+                }
+                if (pit != null || setpoint != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        listOf("Pit" to pit, "Setpoint" to setpoint).forEach { (label, reading) ->
+                            Column(Modifier.weight(1f)) {
+                                Text(label, style = MaterialTheme.typography.labelLarge)
+                                Text(if (reading != null && FoodLivePresentation.accepted(reading))
+                                    String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)) + " " + displayUnit
+                                    else "—", style = MaterialTheme.typography.headlineSmall)
+                                reading?.let { Text((if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
+                                    formatTimeOfDay(it.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                        }
+                    }
+                }
+                data.dishes.forEach { dish ->
+                    val latest = data.readings.filter { it.dishId == dish.id && FoodLivePresentation.accepted(it) }.maxByOrNull { it.measuredAtUtcMillis }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(dish.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text(if (latest != null)
+                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(latest.value, latest.unit, displayUnit)) + " " + displayUnit
+                            else "No reading yet", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                cookTargets.forEach { target ->
+                    Text("Target · " + target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // PL-03: alert state on the strip — the needs-attention
+                // count and named acknowledgments, readable without opening
+                // anything. Acknowledging (notification action or Alerts
+                // sheet) is confirmed right here on Live.
+                alertStrip?.let { line ->
+                    Row(Modifier.fillMaxWidth().testTag("live-alerts-strip"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
         }
-        foodLayout()
-        configuredTools()
-        onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        // Next-action strip: the pending reminders, earliest first, with
+        // their one-tap record path — never inside a collapsed panel (DD-2).
         pending.forEach { reminder ->
             Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text(reminder.title); Text(formatTimeOfDay(reminder.dueAtUtcMillis), style = MaterialTheme.typography.bodySmall) }
                 TextButton(onClick = { onLogReminder(reminder) }) { Text("Log now") }
-                TextButton(onClick = { onCancelReminder(reminder) }) { Text("Cancel") }
+                TextButton(onClick = { onCancelReminder(reminder) }) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) }
             } }
         }
+        onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        dishesContent()
         if (recent != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Recent activity", style = MaterialTheme.typography.labelLarge)
@@ -881,25 +1111,44 @@ private fun LiveCookTab(
                 }
             }
         }
-        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
-            modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
-        TextButton(onClick = { showMoreTools = !showMoreTools }, modifier = Modifier.testTag("live-more-tools-toggle")) {
-            Text(if (showMoreTools) "Hide cook tools" else "Cook tools")
+        // Panels in lifecycle order (PL-04), each with a state-summary
+        // header (DD-2). The alert and playbook tools render ONCE here —
+        // the old configured-only/full split instances are unified.
+        LivePanel(data.cook.id, "guidance", "Guidance", summaries.guidance) { guidancePanel() }
+        LivePanel(data.cook.id, "reminders", "Reminders",
+            if (pending.isEmpty()) "None pending" else "${pending.size} pending · next ${formatTimeOfDay(pending.first().dueAtUtcMillis)}") { remindersPanel() }
+        LivePanel(data.cook.id, "alerts", "Alerts", summaries.alerts, forceExpanded = alertFocused) { alertsPanel() }
+        LivePanel(data.cook.id, "checklist", "Checklist", summaries.checklist) { checklistPanel() }
+        LivePanel(data.cook.id, "timers", "Timers", summaries.timers) { timersPanel() }
+        if (grillAvailable) LivePanel(data.cook.id, "grill", "Grill & recording",
+            if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING) "Recording" else "Not recording") { grillPanel() }
+        LivePanel(data.cook.id, "targets", "Targets",
+            if (data.targets.isEmpty()) "No targets" else "${data.targets.size} set") {
+            data.targets.forEach { target ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onDeleteTarget(target) }) { Text("Delete") }
+                }
+            }
+            OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Add target") }
         }
-        if (showMoreTools) {
-            grillPanel()
-            playbookTools()
-            preparationTools()
-            Text("Started " + formatTimestamp(data.cook.startedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
-            data.cook.smokerName?.let { Text("Smoker: " + it) }
-            data.cook.notes?.let { Text(it) }
-            data.cook.fuelType?.let { Text("Fuel: " + it) }
-            data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: " + it) }
-            data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: " + it + " " + data.cook.outdoorTemperatureUnit.orEmpty()) }
-            data.cook.weatherNotes?.let { Text("Weather: " + it) }
-            data.cook.windNotes?.let { Text("Wind: " + it) }
-            TextButton(onClick = { showPrep = !showPrep }, modifier = Modifier.testTag("live-prep-toggle")) { Text(if (showPrep) "Hide preparation" else "Preparation details") }
-            if (showPrep) data.dishes.forEach { dish ->
+        LivePanel(data.cook.id, "results", "Results",
+            if (data.results.isEmpty()) "Not recorded yet" else "Recorded") {
+            OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("live-record-results")) {
+                Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
+            }
+            learningTools()
+        }
+        LivePanel(data.cook.id, "export", "Export & share", null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export data files") }
+                OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reuse setup") }
+            }
+            shareMealAction()
+        }
+        LivePanel(data.cook.id, "preparation", "Preparation details",
+            "${data.dishes.size} dish${if (data.dishes.size == 1) "" else "es"}", initiallyExpanded = false) {
+            data.dishes.forEach { dish ->
                 Text(dish.name, style = MaterialTheme.typography.titleMedium)
                 dish.startingCondition?.let { Text("Starting condition: " + it) }
                 dish.prepNotes?.let { Text(it) }
@@ -908,28 +1157,32 @@ private fun LiveCookTab(
                         (item.amountValue?.let { " · " + it + " " + item.amountUnit.orEmpty() } ?: ""))
                 }
             }
-            data.targets.forEach { target ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { onDeleteTarget(target) }) { Text("Delete") }
-                }
-            }
-            OutlinedButton(onClick = onAddTarget, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Add target") }
-            OutlinedButton(onClick = onResults, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("live-record-results")) {
-                Text(if (data.cook.status == CookStatus.COMPLETED) "Edit cook results" else "Record results")
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Export") }
-                OutlinedButton(onClick = onCopySetup, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reuse setup") }
-            }
-            if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy) {
-                Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
-            }
-            TextButton(onClick = onDelete, enabled = !busy) { Text("Delete cook") }
         }
+        LivePanel(data.cook.id, "details", "Cook details",
+            "Started " + formatTimeOfDay(data.cook.startedAtUtcMillis), initiallyExpanded = false) {
+            Text("Started " + formatTimestamp(data.cook.startedAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+            data.cook.smokerName?.let { Text("Smoker: " + it) }
+            data.cook.notes?.let { Text(it) }
+            data.cook.fuelType?.let { Text("Fuel: " + it) }
+            data.cook.woodOrPelletBlend?.let { Text("Wood or pellets: " + it) }
+            data.cook.outdoorTemperatureValue?.let { Text("Outdoor temperature: " + it + " " + data.cook.outdoorTemperatureUnit.orEmpty()) }
+            data.cook.weatherNotes?.let { Text("Weather: " + it) }
+            data.cook.windNotes?.let { Text("Wind: " + it) }
+        }
+        // Meal-level end actions stay visible — Results and Pause left the
+        // collapsed "Cook tools" bucket with this re-rank (PL-04).
+        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
+        // PL-08: Undo finish lives on the finished cook itself, not only in
+        // the moment after finishing.
+        if (data.cook.status == CookStatus.COMPLETED) OutlinedButton(onClick = onUndoFinish, enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("live-undo-finish")) { Text("Undo finish") }
+        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
+        }
+        TextButton(onClick = onDelete, enabled = !busy) { Text("Delete cook") }
     }
 }
-
 @Composable
 private fun DashboardSectionPair(
     compact: Boolean,
@@ -982,6 +1235,7 @@ private fun TimelineTab(
     focusEventId: String? = null,
     onFoodFilter: (String?) -> Unit = {},
     onFocusHandled: () -> Unit = {},
+    onAddNote: () -> Unit = {},
     guide: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -996,7 +1250,11 @@ private fun TimelineTab(
     val coroutineScope = rememberCoroutineScope()
     val rows = buildTimelineLines(data, selectedFilter, newestFirst, foodFilter)
     val days = rows.groupBy { timelineDayKey(it.time) }
-    val latestIndex = rows.size + days.size + 1
+    // Header items above the day groups: guide + summary, plus the results
+    // card when the cook has saved results (PL-08).
+    val showResultsCard = data.results.any { it.resultType in RESULT_DISPLAY_TYPES }
+    val headerItems = if (showResultsCard) 3 else 2
+    val latestIndex = rows.size + days.size + headerItems - 1
     LaunchedEffect(selectedFilterName, foodFilter) {
         filterPreferences.edit().putString(data.cook.id + ":type", selectedFilterName).putString(data.cook.id + ":food", foodFilter).apply()
         onFoodFilter(foodFilter)
@@ -1011,7 +1269,7 @@ private fun TimelineTab(
     }
     LaunchedEffect(focusEventId, rows.map { it.stableKey }) {
         if (focusEventId != null) {
-            var position = 2
+            var position = headerItems
             var target: Int? = null
             days.values.forEach { group -> position++; group.forEach { row -> if (row is TimelineLine.Event && row.event.id == focusEventId) target = position; position++ } }
             target?.let { listState.scrollToItem(it); onFocusHandled() }
@@ -1078,18 +1336,20 @@ private fun TimelineTab(
         }
 
         if (rows.isEmpty()) {
-            val emptyTitle = if (selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL) "No cook history yet" else "No matching entries"
+            // Slice 7 (PL-13, DD-8): one empty wording per surface, identical on
+            // both platforms, teaching what belongs here and offering the action
+            // that creates it.
+            val unfiltered = selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 guide()
-                Text(emptyTitle, style = MaterialTheme.typography.titleLarge)
+                Text(if (unfiltered) EmptyStateCopy.TIMELINE_TITLE else EmptyStateCopy.TIMELINE_FILTERED_TITLE, style = MaterialTheme.typography.titleLarge)
                 Text(
-                    if (selectedFilter == TimelineFilter.ALL) {
-                        "Notes, temperature checks, and photos will show up here as the cook progresses."
-                    } else {
-                        "Choose another filter or add an entry."
-                    },
+                    if (unfiltered) EmptyStateCopy.TIMELINE_BODY else EmptyStateCopy.TIMELINE_FILTERED_BODY,
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                if (unfiltered) {
+                    Button(onClick = onAddNote, modifier = Modifier.heightIn(min = 48.dp).testTag("timeline-empty-add-note")) { Text("Add a note") }
+                }
             }
         } else {
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -1107,6 +1367,9 @@ private fun TimelineTab(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp).testTag("timeline-summary"),
                         )
+                    }
+                    if (showResultsCard) {
+                        item(key = "timeline-results") { CookResultsCard(data) }
                     }
                     days.forEach { (dayKey, dayRows) ->
                         item(key = "timeline-day-$dayKey") {
@@ -1629,13 +1892,67 @@ private fun ChartsTab(data: CookDetailData, displayUnit: String, guide: AlignedG
     }
 }
 
+/** The result types the results card displays — search metadata that shares
+ * the results table (favorite, method, tags) is not a cook result. */
+private val RESULT_DISPLAY_TYPES = setOf(
+    "overall_rating", "cook_again", "final_temperature", "rest_minutes",
+    "bark", "tenderness", "juiciness", "smoke", "seasoning",
+    "result_notes", "keep_doing", "change_next_time",
+)
+
+private fun formatResultRating(value: Double): String =
+    if (value % 1.0 == 0.0) "${value.toInt()} / 5" else "$value / 5"
+
+private fun formatResultNumber(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+
+/**
+ * PL-08: saved results finally render — read-only, on the cook's summary
+ * (Timeline). This resurrects the formerly dead CookResultsCard as the one
+ * display of the one results model: the overall verdict, then one block per
+ * dish with its verdict, detail ratings, and facts. Recorded facts are shown
+ * exactly as saved; editing happens in the results editor, never here.
+ */
 @Composable
 private fun CookResultsCard(data: CookDetailData) {
+    fun rowsFor(dishId: String?) = data.results.filter { it.dishId == dishId }
+    fun numeric(rows: List<com.pittech.data.CookResultEntity>, type: String) = rows.firstOrNull { it.resultType == type }?.numericValue
+    fun text(rows: List<com.pittech.data.CookResultEntity>, type: String) = rows.firstOrNull { it.resultType == type }?.textValue?.takeIf { it.isNotBlank() }
+    @Composable
+    fun ResultFacts(rows: List<com.pittech.data.CookResultEntity>) {
+        val details = listOf("Bark" to "bark", "Tenderness" to "tenderness", "Juiciness" to "juiciness", "Smoke" to "smoke", "Seasoning" to "seasoning")
+            .mapNotNull { (label, type) -> numeric(rows, type)?.let { "$label ${formatResultRating(it)}" } }
+        if (details.isNotEmpty()) Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
+        rows.firstOrNull { it.resultType == "final_temperature" }?.let { row ->
+            row.numericValue?.let { Text("Final temperature: ${formatResultNumber(it)} ${row.unit.orEmpty()}".trim(), style = MaterialTheme.typography.bodyLarge) }
+        }
+        numeric(rows, "rest_minutes")?.let { Text("Rest: ${formatResultNumber(it)} min", style = MaterialTheme.typography.bodyLarge) }
+        numeric(rows, "cook_again")?.let { Text("Cook again: ${if (it == 1.0) "Yes" else "No"}", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "result_notes")?.let { Text("Notes: $it", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "keep_doing")?.let { Text("Keep doing: $it", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "change_next_time")?.let { Text("Change next time: $it", style = MaterialTheme.typography.bodyLarge) }
+    }
     SectionCard("Cook results") {
-        data.results.forEach { result ->
-            val label = result.resultType.replace('_', ' ').replaceFirstChar { it.titlecase() }
-            val value = result.numericValue?.let { "$it ${result.unit.orEmpty()}" } ?: result.textValue.orEmpty()
-            Text("$label: $value", style = MaterialTheme.typography.bodyLarge)
+        Column(Modifier.testTag("cook-results-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val cookRows = rowsFor(null)
+            Text(
+                "Overall verdict: " + (numeric(cookRows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            )
+            ResultFacts(cookRows)
+            data.dishes.forEach { dish ->
+                val rows = rowsFor(dish.id)
+                if (rows.any { it.resultType in RESULT_DISPLAY_TYPES }) {
+                    Column(Modifier.testTag("cook-results-dish-${dish.id}"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(dish.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Verdict: " + (numeric(rows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        ResultFacts(rows)
+                    }
+                }
+            }
         }
     }
 }
@@ -1655,22 +1972,26 @@ private fun PhotoGalleryDialog(
     photos: List<com.pittech.data.PhotoEntity>,
     onDismiss: () -> Unit,
     onPhotoClick: (com.pittech.data.PhotoEntity) -> Unit,
+    onAddPhoto: () -> Unit = {},
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 640.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(24.dp),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // PL-22 (DD-6): the photo gallery is a reading surface — a tall sheet.
+    // The title row keeps its own test tags inside the sheet.
+    SheetSurface(onDismiss = onDismiss, fillHeightFraction = 0.92f) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Photos (${photos.size})", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).testTag("photo-gallery-title"), fontWeight = FontWeight.SemiBold)
                     TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 44.dp).testTag("photo-gallery-close")) { Text("Done") }
                 }
                 Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    if (photos.isEmpty()) {
+                        // Slice 7 (PL-13): an empty gallery teaches instead of
+                        // rendering a blank sheet under the "Photos (0)" title.
+                        Text(EmptyStateCopy.PHOTOS_EMPTY_BODY, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("photo-gallery-empty"))
+                        Button(onClick = onAddPhoto, modifier = Modifier.heightIn(min = 48.dp).testTag("photo-gallery-add")) { Text("Add a photo") }
+                    }
                     photos.forEach { photo ->
                         Row(
                             Modifier.fillMaxWidth().testTag("photo-gallery-row-${photo.id}"),
@@ -1692,7 +2013,6 @@ private fun PhotoGalleryDialog(
                     }
                 }
             }
-        }
     }
 }
 
@@ -1808,10 +2128,15 @@ private fun ReminderComposerDialog(
     onSave: () -> Unit,
 ) {
     val options = listOf(30L * 60 * 1000 to "30 min", 60L * 60 * 1000 to "1 hour", 2L * 60 * 60 * 1000 to "2 hours", 5L * 60 * 60 * 1000 to "5 hours")
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set a cook reminder") },
-        text = {
+    // PL-22 (DD-6): reminder composer is a short editor — a sheet, not a dialog.
+    SheetSurface(
+        onDismiss = onDismiss,
+        title = "Set a cook reminder",
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onSave, enabled = title.isNotBlank(), modifier = Modifier.testTag("reminder-save")) { Text("Set reminder") }
+        },
+    ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(value = title, onValueChange = onTitleChange, label = { Text("What should you check?") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("reminder-title"))
                 Text("Remind me in", style = MaterialTheme.typography.titleSmall)
@@ -1823,10 +2148,7 @@ private fun ReminderComposerDialog(
                 }
                 Text("Notifications may arrive a little after the selected time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        },
-        confirmButton = { TextButton(onClick = onSave, enabled = title.isNotBlank(), modifier = Modifier.testTag("reminder-save")) { Text("Set reminder") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
 @Composable
@@ -1835,16 +2157,24 @@ private fun ReminderCheckInDialog(
     photoUri: String?,
     photoCaption: String,
     onPhotoCaptionChange: (String) -> Unit,
+    onClose: () -> Unit,
     onDismiss: () -> Unit,
+    onSnooze: () -> Unit,
     onAddPhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
     onComplete: (String) -> Unit,
 ) {
     var note by rememberSaveable(reminder.id) { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("How did it go?") },
-        text = {
+    // PL-22 (DD-6): a check-in is contextual capture — a sheet, not a dialog.
+    SheetSurface(
+        // PL-02: closing (scrim/Back) never changes the reminder.
+        onDismiss = onClose,
+        title = "How did it go?",
+        actions = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) }
+            TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text(com.pittech.domain.ReminderVocabulary.LOG_IT) }
+        },
+    ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(reminder.title)
                 OutlinedTextField(
@@ -1868,11 +2198,11 @@ private fun ReminderCheckInDialog(
                     )
                     TextButton(onClick = onRemovePhoto) { Text("Remove photo") }
                 }
+                // The unified vocabulary, offered explicitly: Log it (confirm),
+                // Snooze 10 min, Dismiss.
+                TextButton(onClick = onSnooze, modifier = Modifier.testTag("reminder-checkin-snooze")) { Text(com.pittech.domain.ReminderVocabulary.SNOOZE) }
             }
-        },
-        confirmButton = { TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text("Log check-in") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Remind me in 1 hour") } },
-    )
+    }
 }
 
 @Composable
@@ -1888,11 +2218,16 @@ private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave
     var outdoorUnit by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.outdoorTemperatureUnit ?: "°F") }
     var weather by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.weatherNotes.orEmpty()) }
     var wind by rememberSaveable(data.cook.id) { mutableStateOf(data.cook.windNotes.orEmpty()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit cook details") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): Cook Basics is a multi-field editor — a full screen.
+    FullScreenSurface(
+        onDismiss = onDismiss,
+        title = "Edit cook details",
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = { if (CookEntryValidation.isOptionalPositiveNumberValid(setpoint) && CookEntryValidation.isOptionalFiniteNumberValid(outdoor)) onSave(title, smoker, setpoint, unit, notes, fuel, wood, outdoor, outdoorUnit, weather, wind) }) { Text("Save details") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Cook name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(smoker, { smoker = it }, label = { Text("Smoker or grill") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(setpoint, { setpoint = it }, label = { Text("Starting setpoint") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
@@ -1907,31 +2242,81 @@ private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave
                 OutlinedTextField(weather, { weather = it }, label = { Text("Weather") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(wind, { wind = it }, label = { Text("Wind or exposure") }, modifier = Modifier.fillMaxWidth())
             }
-        },
-        confirmButton = { TextButton(onClick = { if (CookEntryValidation.isOptionalPositiveNumberValid(setpoint) && CookEntryValidation.isOptionalFiniteNumberValid(outdoor)) onSave(title, smoker, setpoint, unit, notes, fuel, wood, outdoor, outdoorUnit, weather, wind) }) { Text("Save details") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
 @Composable
 private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete: () -> Unit, onSave: (DishEntity) -> Unit) {
-    var name by rememberSaveable(dish.id) { mutableStateOf(dish.name) }
-    var foodType by rememberSaveable(dish.id) { mutableStateOf(dish.foodType) }
-    var cut by rememberSaveable(dish.id) { mutableStateOf(dish.cut.orEmpty()) }
-    var weight by rememberSaveable(dish.id) { mutableStateOf(dish.weightValue?.toString().orEmpty()) }
-    var weightUnit by rememberSaveable(dish.id) { mutableStateOf(dish.weightUnit ?: "lb") }
-    var condition by rememberSaveable(dish.id) { mutableStateOf(dish.startingCondition ?: "Not set") }
-    var boneIn by rememberSaveable(dish.id) { mutableStateOf(dish.boneIn) }
-    var placement by rememberSaveable(dish.id) { mutableStateOf(dish.placement.orEmpty()) }
-    var gradeOrSource by rememberSaveable(dish.id) { mutableStateOf(dish.gradeOrSource.orEmpty()) }
-    var thicknessNotes by rememberSaveable(dish.id) { mutableStateOf(dish.thicknessNotes.orEmpty()) }
-    var notes by rememberSaveable(dish.id) { mutableStateOf(dish.prepNotes.orEmpty()) }
-    var moreDetails by rememberSaveable(dish.id) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit ${dish.name}") },
-        text = {
-            Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-24 (#172): the dish-details editor autosaves like every other
+    // multi-field editor; the working fields are DishDraft-shaped.
+    val draftStore = rememberEditorDraftStore()
+    val fullDraftKey = EditorDraftKeys.dishDetails(dish.id)
+    val restored = remember(fullDraftKey) {
+        draftStore.load(fullDraftKey)?.let(DishDraftCodec::decode)?.takeIf { draft ->
+            draft.name != dish.name || draft.cut != dish.cut.orEmpty() || draft.weightText != dish.weightValue?.toString().orEmpty() ||
+                draft.placement != dish.placement.orEmpty() || draft.gradeOrSource != dish.gradeOrSource.orEmpty() ||
+                draft.thicknessNotes != dish.thicknessNotes.orEmpty() || draft.prepNotes != dish.prepNotes.orEmpty()
+        }
+    }
+    var draftRestored by rememberSaveable(dish.id) { mutableStateOf(restored != null) }
+    var name by rememberSaveable(dish.id) { mutableStateOf(restored?.name ?: dish.name) }
+    var foodType by rememberSaveable(dish.id) { mutableStateOf(restored?.foodType ?: dish.foodType) }
+    var cut by rememberSaveable(dish.id) { mutableStateOf(restored?.cut ?: dish.cut.orEmpty()) }
+    var weight by rememberSaveable(dish.id) { mutableStateOf(restored?.weightText ?: dish.weightValue?.toString().orEmpty()) }
+    var weightUnit by rememberSaveable(dish.id) { mutableStateOf(restored?.weightUnit ?: dish.weightUnit ?: "lb") }
+    var condition by rememberSaveable(dish.id) { mutableStateOf((if (restored != null) restored.startingCondition else dish.startingCondition) ?: "Not set") }
+    var boneIn by rememberSaveable(dish.id) { mutableStateOf(if (restored != null) restored.boneIn else dish.boneIn) }
+    var placement by rememberSaveable(dish.id) { mutableStateOf(restored?.placement ?: dish.placement.orEmpty()) }
+    var gradeOrSource by rememberSaveable(dish.id) { mutableStateOf(restored?.gradeOrSource ?: dish.gradeOrSource.orEmpty()) }
+    var thicknessNotes by rememberSaveable(dish.id) { mutableStateOf(restored?.thicknessNotes ?: dish.thicknessNotes.orEmpty()) }
+    var notes by rememberSaveable(dish.id) { mutableStateOf(restored?.prepNotes ?: dish.prepNotes.orEmpty()) }
+    var moreDetails by rememberSaveable(dish.id) { mutableStateOf(restored != null) }
+    LaunchedEffect(name, foodType, cut, weight, weightUnit, condition, boneIn, placement, gradeOrSource, thicknessNotes, notes) {
+        // Only a real divergence from the saved dish becomes a draft;
+        // reverting to the saved values clears it again.
+        val current = DishDraft(
+            name = name, foodType = foodType, cut = cut, weightText = weight, weightUnit = weightUnit,
+            startingCondition = condition.takeUnless { it == "Not set" }, boneIn = boneIn,
+            placement = placement, gradeOrSource = gradeOrSource, thicknessNotes = thicknessNotes, prepNotes = notes,
+        )
+        val saved = DishDraft(
+            name = dish.name, foodType = dish.foodType, cut = dish.cut.orEmpty(),
+            weightText = dish.weightValue?.toString().orEmpty(), weightUnit = dish.weightUnit ?: "lb",
+            startingCondition = dish.startingCondition, boneIn = dish.boneIn,
+            placement = dish.placement.orEmpty(), gradeOrSource = dish.gradeOrSource.orEmpty(),
+            thicknessNotes = dish.thicknessNotes.orEmpty(), prepNotes = dish.prepNotes.orEmpty(),
+        )
+        if (current != saved) draftStore.save(fullDraftKey, DishDraftCodec.encode(current))
+        else draftStore.clear(fullDraftKey)
+    }
+    // PL-22 (DD-6): Dish Details is a multi-field editor — a full screen.
+    FullScreenSurface(
+        onDismiss = onDismiss,
+        title = "Edit ${dish.name}",
+        actions = {
+            TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Text("Delete dish") }
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+            TextButton(onClick = {
+                if (name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(weight)) {
+                    draftStore.clear(fullDraftKey)
+                    onSave(dish.copy(name=name.trim(), foodType=foodType, cut=cut.trim().ifBlank { null }, weightValue=CookEntryValidation.optionalPositiveNumber(weight), weightUnit=weightUnit.takeIf { weight.isNotBlank() }, startingCondition=condition.takeUnless { it == "Not set" }, boneIn=boneIn, placement=placement.trim().ifBlank { null }, gradeOrSource=gradeOrSource.trim().ifBlank { null }, thicknessNotes=thicknessNotes.trim().ifBlank { null }, prepNotes=notes.trim().ifBlank { null }))
+                }
+            }) { Text("Save dish") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (draftRestored) {
+                    ResumeDraftBanner(onDiscard = {
+                        draftStore.clear(fullDraftKey)
+                        draftRestored = false
+                        name = dish.name; foodType = dish.foodType; cut = dish.cut.orEmpty()
+                        weight = dish.weightValue?.toString().orEmpty(); weightUnit = dish.weightUnit ?: "lb"
+                        condition = dish.startingCondition ?: "Not set"; boneIn = dish.boneIn
+                        placement = dish.placement.orEmpty(); gradeOrSource = dish.gradeOrSource.orEmpty()
+                        thicknessNotes = dish.thicknessNotes.orEmpty(); notes = dish.prepNotes.orEmpty()
+                        moreDetails = false
+                    })
+                }
                 OutlinedTextField(name, { name = it }, label = { Text("Dish name") }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = { moreDetails = !moreDetails }, modifier = Modifier.testTag("food-details-toggle")) { Text(if (moreDetails) "Hide food details" else "More food details") }
                 if (moreDetails) {
@@ -1952,154 +2337,7 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
                 OutlinedTextField(notes, { notes = it }, label = { Text("Preparation notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(weight)) {
-                    onSave(dish.copy(name=name.trim(), foodType=foodType, cut=cut.trim().ifBlank { null }, weightValue=CookEntryValidation.optionalPositiveNumber(weight), weightUnit=weightUnit.takeIf { weight.isNotBlank() }, startingCondition=condition.takeUnless { it == "Not set" }, boneIn=boneIn, placement=placement.trim().ifBlank { null }, gradeOrSource=gradeOrSource.trim().ifBlank { null }, thicknessNotes=thicknessNotes.trim().ifBlank { null }, prepNotes=notes.trim().ifBlank { null }))
-                }
-            }) { Text("Save dish") }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Text("Delete dish") }
-                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
-            }
-        },
-    )
-}
-
-@Composable
-private fun TimelineEventDialog(
-    event: TimelineEventEntity?,
-    dishes: List<DishEntity>,
-    draftKey: Int,
-    photoEntryMode: Boolean,
-    initialType: String,
-    photoUri: String?,
-    photoCaption: String,
-    onChoosePhoto: () -> Unit,
-    onRemovePhoto: () -> Unit,
-    onPhotoCaptionChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onSave: (String, String, String?, Long, String?, Boolean) -> Unit,
-) {
-    val dialogFocusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    var type by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.eventType ?: if (photoEntryMode) "photo" else initialType) }
-    var title by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.title ?: if (photoEntryMode) "Photo added" else if (initialType == "note") "Cook note" else initialType.replace('_', ' ').replaceFirstChar { it.uppercase() }) }
-    var details by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.details.orEmpty()) }
-    var time by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.occurredAtUtcMillis ?: System.currentTimeMillis()) }
-    var timeWasChosen by rememberSaveable(draftKey, event?.id) { mutableStateOf(event != null) }
-    val defaultDishId = dishes.singleOrNull()?.id ?: "whole"
-    var dishId by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.dishId ?: defaultDishId) }
-    var showMoreDetails by rememberSaveable(draftKey, event?.id) { mutableStateOf(event != null) }
-    val choices = listOf("Meat on", "Spritz", "Wrap", "Flip", "Temperature check", "Fuel added", "Move", "Remove", "Rest", "Finish", "Photo", "Note", "Custom")
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (event == null) "Add to cook log" else "Edit timeline entry") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                if (event != null || showMoreDetails) {
-                    OutlinedTextField(title, { title = it }, label = { Text("Entry title") }, placeholder = { Text("Spritzed the meat, added fuel…") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("timeline-entry-title"))
-                }
-                OutlinedTextField(
-                    details,
-                    { details = it },
-                    label = { Text(if (event == null) "Write a note (optional)" else "Notes or details") },
-                    placeholder = { if (event == null) Text("What happened with the cook?") },
-                    minLines = if (event == null) 3 else 2,
-                    modifier = Modifier.fillMaxWidth().testTag("timeline-entry-details"),
-                )
-                if (event == null) {
-                    OutlinedButton(onClick = onChoosePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text(if (photoUri == null) "Attach a photo (optional)" else "Change attached photo")
-                    }
-                    if (photoUri != null) {
-                        Text("Photo will be saved with this log entry.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-                        OutlinedTextField(
-                            value = photoCaption,
-                            onValueChange = onPhotoCaptionChange,
-                            label = { Text("Photo caption (optional)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().testTag("timeline-photo-caption"),
-                        )
-                        TextButton(onClick = onRemovePhoto) { Text("Remove photo") }
-                    }
-                }
-                TextButton(onClick = { showMoreDetails = !showMoreDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) {
-                    Text(if (showMoreDetails) "Hide entry details" else "Add date, dish, or entry type")
-                }
-                if (showMoreDetails) {
-                    SimpleDropdownField("Entry type", displayEventType(type), choices, { selected ->
-                        type = selected.lowercase().replace(' ', '_')
-                        if (title.isBlank() || title == event?.title || title == "Cook note" || title == "Photo added") {
-                            title = if (selected == "Photo") "Photo added" else selected
-                        }
-                    }, testTag = "timeline-entry-type")
-                    SimpleDropdownField("For", dishId.takeUnless { it == "whole" }?.let { id -> dishes.firstOrNull { it.id == id }?.name } ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { selected -> dishId = dishes.firstOrNull { it.name == selected }?.id ?: "whole" })
-                    DateTimePickerField("Occurred at", time, { time = it; timeWasChosen = true }, "timeline-entry-time")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (title.isNotBlank()) {
-                    dialogFocusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                    onSave(type, title.trim(), details.trim().ifBlank { null }, time, dishId.takeUnless { it == "whole" }, timeWasChosen)
-                }
-            }, enabled = event != null || type != "note" || details.isNotBlank() || photoUri != null, modifier = Modifier.testTag("timeline-entry-save")) { Text("Save entry") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-@Composable
-private fun TemperatureEntryDialog(
-    reading: SensorReadingEntity?,
-    dishes: List<DishEntity>,
-    preferredUnit: String,
-    onDismiss: () -> Unit,
-    onSave: (String, String, Double, String, Long, String?) -> Unit,
-) {
-    val dialogFocusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    var probe by rememberSaveable(reading?.id) { mutableStateOf(reading?.probeName ?: "Food probe") }
-    var value by rememberSaveable(reading?.id) { mutableStateOf(reading?.value?.toString().orEmpty()) }
-    var type by rememberSaveable(reading?.id) { mutableStateOf(reading?.measurementType ?: "food_probe") }
-    var unit by rememberSaveable(reading?.id) { mutableStateOf(reading?.unit ?: preferredUnit) }
-    var time by rememberSaveable(reading?.id) { mutableStateOf(reading?.measuredAtUtcMillis ?: System.currentTimeMillis()) }
-    val defaultDishId = dishes.singleOrNull()?.id ?: "whole"
-    var dishId by rememberSaveable(reading?.id) { mutableStateOf(reading?.dishId ?: defaultDishId) }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (reading == null) "Record temperature" else "Edit temperature") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                OutlinedTextField(probe, { probe = it }, label = { Text("Probe or location") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("temperature-probe"))
-                OutlinedTextField(value, { value = it; error = null }, label = { Text("Temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth().testTag("temperature-value"))
-                SimpleDropdownField("Measurement", type.replace('_', ' ').replaceFirstChar { it.titlecase() }, listOf("Food probe", "Pit ambient", "Setpoint", "Other"), { type = it.lowercase().replace(' ', '_') })
-                SimpleDropdownField("Unit", unit, listOf("°F", "°C"), { unit = it })
-                SimpleDropdownField("For", dishId.takeUnless { it == "whole" }?.let { id -> dishes.firstOrNull { it.id == id }?.name } ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { selected -> dishId = dishes.firstOrNull { it.name == selected }?.id ?: "whole" })
-                DateTimePickerField("Measured at", time, { time = it }, "temperature-time")
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val parsedValue = value.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
-                if (probe.isBlank()) error = "Enter a probe or location name."
-                else if (parsedValue == null) error = "Enter a valid temperature."
-                else {
-                    dialogFocusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                    onSave(probe.trim(), type, parsedValue, unit, time, dishId.takeUnless { it == "whole" })
-                }
-            }, modifier = Modifier.testTag("temperature-save")) { Text("Save temperature") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
 @Composable
@@ -2155,11 +2393,20 @@ private fun TargetDialog(
     var explanation by rememberSaveable { mutableStateOf("") }
     var dishId by rememberSaveable { mutableStateOf("whole") }
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add a cook target") },
-        text = {
-            Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    // PL-22 (DD-6): the target editor is contextual capture — a sheet.
+    SheetSurface(
+        onDismiss = onDismiss,
+        title = "Add a cook target",
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = {
+                val number = CookEntryValidation.optionalPositiveNumber(value)
+                if (number == null) error = "Enter a positive temperature."
+                else onSave(dishId.takeUnless { it == "whole" }, type, number, unit, explanation.trim().ifBlank { null })
+            }) { Text("Save target") }
+        },
+    ) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 SimpleDropdownField("Target type", type.replace('_', ' ').replaceFirstChar { it.titlecase() }, listOf("Personal finish", "Food safety", "Serving goal"), { type = it.lowercase().replace(' ', '_') })
                 OutlinedTextField(value, { value = it; error = null }, label = { Text("Target temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
                 SimpleDropdownField("Unit", unit, listOf("°F", "°C"), { unit = it })
@@ -2167,32 +2414,109 @@ private fun TargetDialog(
                 OutlinedTextField(explanation, { explanation = it }, label = { Text("Source or reason (optional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
                 Text("PitTech stores this as your note. It does not decide whether food is safe or done.", style = MaterialTheme.typography.bodySmall)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val number = CookEntryValidation.optionalPositiveNumber(value)
-                if (number == null) error = "Enter a positive temperature."
-                else onSave(dishId.takeUnless { it == "whole" }, type, number, unit, explanation.trim().ifBlank { null })
-            }) { Text("Save target") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    }
 }
 
+/**
+ * One rating chip row (PL-08 / DD-5): chips 1–5, tapping the selected chip
+ * clears back to "Not recorded" — skipping a rating is a first-class state,
+ * different from a poor rating. Imported fractional ratings (e.g. 4.5) have
+ * no chip; they are named as saved until the user picks a chip or clears.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResultsDialog(
+private fun VerdictChipRow(value: Double?, onChange: (Double?) -> Unit, tagPrefix: String, enabled: Boolean) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        (1..5).forEach { n ->
+            FilterChip(
+                selected = value == n.toDouble(),
+                onClick = { onChange(if (value == n.toDouble()) null else n.toDouble()) },
+                enabled = enabled,
+                label = { Text("$n / 5") },
+                modifier = Modifier.testTag("$tagPrefix-$n"),
+            )
+        }
+    }
+    when {
+        value == null -> Text("Not recorded", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        value % 1.0 != 0.0 -> Text("Saved rating: ${formatResultRating(value)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RatingChipRow(label: String, valueText: String, onChange: (String) -> Unit, tagPrefix: String, enabled: Boolean) {
+    Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    VerdictChipRow(valueText.toDoubleOrNull(), { onChange(it?.let { n -> if (n % 1.0 == 0.0) n.toInt().toString() else n.toString() } ?: "") }, tagPrefix, enabled)
+}
+
+/**
+ * PL-08 / DD-5: the completion sheet's first section — the quick verdict.
+ * The overall verdict plus one verdict per dish (rating chips + "Cook
+ * again?"), every group visible before any other choice on the sheet.
+ * Saving writes only verdict rows through the one results model, so
+ * anything recorded elsewhere is untouched and anything skipped stays
+ * "Not recorded".
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CompletionVerdictSection(data: CookDetailData, viewModel: CooksViewModel, busy: Boolean) {
+    fun savedRating(dishId: String?) = data.results.firstOrNull { it.dishId == dishId && it.resultType == "overall_rating" }?.numericValue
+    fun savedAgain(dishId: String) = data.results.firstOrNull { it.dishId == dishId && it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 }
+    var overall by remember(data.cook.id, data.results) { mutableStateOf(savedRating(null)) }
+    var dishRatings by remember(data.cook.id, data.results) { mutableStateOf(data.dishes.associate { dish -> dish.id to savedRating(dish.id) }) }
+    var dishAgain by remember(data.cook.id, data.results) { mutableStateOf(data.dishes.associate { dish -> dish.id to savedAgain(dish.id) }) }
+    var saved by remember(data.cook.id) { mutableStateOf(false) }
+    Column(Modifier.testTag("completion-verdict"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Quick verdict", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("How did it turn out? Anything you skip stays Not recorded — results can be edited any time from the cook.", style = MaterialTheme.typography.bodyMedium)
+        Text("Overall", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        VerdictChipRow(overall, { overall = it; saved = false }, "completion-verdict-cook", !busy)
+        data.dishes.forEach { dish ->
+            Text(dish.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            VerdictChipRow(dishRatings[dish.id], { value -> dishRatings = dishRatings + (dish.id to value); saved = false }, "completion-verdict-${dish.id}", !busy)
+            Text("Cook again?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("completion-again-${dish.id}")) {
+                FilterChip(dishAgain[dish.id] == null, { dishAgain = dishAgain + (dish.id to null); saved = false }, enabled = !busy, label = { Text("Not decided") })
+                FilterChip(dishAgain[dish.id] == true, { dishAgain = dishAgain + (dish.id to true); saved = false }, enabled = !busy, label = { Text("Yes") })
+                FilterChip(dishAgain[dish.id] == false, { dishAgain = dishAgain + (dish.id to false); saved = false }, enabled = !busy, label = { Text("No") })
+            }
+        }
+        Button(
+            onClick = { viewModel.saveFinishVerdicts(data.cook.id, overall, data.dishes.associate { dish -> dish.id to (dishRatings[dish.id] to dishAgain[dish.id]) }) { ok -> if (ok) saved = true } },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().testTag("completion-verdict-save"),
+        ) { Text("Save verdict") }
+        if (saved) Text("Verdict saved", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("completion-verdict-saved"))
+    }
+}
+
+/**
+ * PL-08: THE results editor — one system for the whole cook and every dish,
+ * replacing both the old ResultsDialog and the per-dish DishVerdictEditor.
+ * Every scope edits the same fields of the same results rows, including the
+ * per-dish "cook again?" the light editor used to own. Per DD-5 the verdict
+ * and every rating chip group are visible without opening anything; only
+ * prose (notes, keep/change) sits behind a reveal. Per DD-6 this is a sheet,
+ * not a dialog. There is deliberately no finish toggle: finishing has
+ * exactly one path — the Finish button and its verdict-first completion
+ * sheet.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CookResultsSheet(
     data: CookDetailData,
     preferredUnit: String,
-    finishRequested: Boolean,
+    initialDishId: String?,
     busy: Boolean,
     saveError: String?,
     onDismiss: () -> Unit,
-    onSave: (String?, String, String, String, Map<String, String>, String, Boolean, String, String) -> Unit,
+    onSave: (String?, String, String, String, Map<String, String>, String, String, String, Boolean?) -> Unit,
 ) {
-    val dialogFocusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+    val sheetFocusManager = LocalFocusManager.current
+    val sheetKeyboardController = LocalSoftwareKeyboardController.current
     val firstDishId = data.dishes.firstOrNull()?.id ?: "whole"
-    var selectedDishId by rememberSaveable(data.cook.id) { mutableStateOf(firstDishId) }
+    var selectedDishId by rememberSaveable(data.cook.id, initialDishId) { mutableStateOf(initialDishId?.takeIf { id -> data.dishes.any { it.id == id } } ?: firstDishId) }
     val selectedDishKey = selectedDishId.takeUnless { it == "whole" }
     val existing = data.results.filter { it.dishId == selectedDishKey }
     fun savedNumber(type: String) = existing.firstOrNull { it.resultType == type }?.numericValue?.toString().orEmpty()
@@ -2205,65 +2529,63 @@ private fun ResultsDialog(
     var juiciness by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("juiciness")) }
     var smoke by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("smoke")) }
     var seasoning by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(savedNumber("seasoning")) }
-    var detailRatings by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(false) }
+    var cookAgain by remember(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "cook_again" }?.numericValue?.let { it == 1.0 }) }
     var notes by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "result_notes" }?.textValue.orEmpty()) }
     var keep by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "keep_doing" }?.textValue.orEmpty()) }
     var change by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "change_next_time" }?.textValue.orEmpty()) }
     var showLearning by rememberSaveable { mutableStateOf(false) }
-    var finish by rememberSaveable(data.cook.id, finishRequested) { mutableStateOf(false) }
-    val willFinish = finishRequested || finish
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(if (finishRequested) "Finish cook" else if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", modifier = Modifier.testTag("results-dialog-title")) },
-        text = {
-            Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
-                if (willFinish) Text("Finishing ends this cook, temperature recording, and pending reminders and plan checks.", style = MaterialTheme.typography.bodyMedium)
-                (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
-                if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" }, enabled = !busy)
-                OutlinedTextField(finalTemp, { finalTemp = it; error = null }, enabled = !busy, label = { Text("Final temperature (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("result-final-temperature"))
-                SimpleDropdownField("Temperature unit", unit, listOf("°F", "°C"), { unit = it }, enabled = !busy)
-                OutlinedTextField(rest, { rest = it; error = null }, enabled = !busy, label = { Text("Rest time in minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(rating, { rating = it; error = null }, enabled = !busy, label = { Text("Overall rating (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = { detailRatings = !detailRatings }, enabled = !busy) { Text(if (detailRatings) "Hide detailed ratings" else "Rate bark, tenderness, and more") }
-                if (detailRatings) {
-                    OutlinedTextField(bark, { bark = it; error = null }, enabled = !busy, label = { Text("Bark (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(tenderness, { tenderness = it; error = null }, enabled = !busy, label = { Text("Tenderness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(juiciness, { juiciness = it; error = null }, enabled = !busy, label = { Text("Juiciness (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(smoke, { smoke = it; error = null }, enabled = !busy, label = { Text("Smoke level (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(seasoning, { seasoning = it; error = null }, enabled = !busy, label = { Text("Seasoning (1–5)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.heightIn(max = 640.dp).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("results-dialog-title"))
+            Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
+            // Fields scroll between the pinned header and the pinned action
+            // row (DD-6): Save is always reachable, like the dialog's actions.
+            // The save error leads the scrolling region, as it did in the
+            // retired dialog, so it stays reachable by scroll.
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("results-save-error")) }
+            if (data.dishes.isNotEmpty()) SimpleDropdownField("Results for", selectedDishKey?.let { key -> data.dishes.firstOrNull { it.id == key }?.name } ?: "Whole cook", listOf("Whole cook") + data.dishes.map { it.name }, { selectedName -> selectedDishId = data.dishes.firstOrNull { dish -> dish.name == selectedName }?.id ?: "whole" }, enabled = !busy)
+            RatingChipRow("Verdict", rating, { rating = it; error = null }, "result-verdict", !busy)
+            if (selectedDishKey != null) {
+                Text("Cook again?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("result-cook-again")) {
+                    FilterChip(cookAgain == null, { cookAgain = null }, enabled = !busy, label = { Text("Not decided") })
+                    FilterChip(cookAgain == true, { cookAgain = true }, enabled = !busy, label = { Text("Yes") })
+                    FilterChip(cookAgain == false, { cookAgain = false }, enabled = !busy, label = { Text("No") })
                 }
-                OutlinedTextField(notes, { notes = it }, enabled = !busy, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                TextButton(onClick = { showLearning = !showLearning }, enabled = !busy) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
-                if (showLearning) {
-                    OutlinedTextField(keep, { keep = it }, enabled = !busy, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(change, { change = it }, enabled = !busy, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
-                }
-                if (!finishRequested && data.cook.status != CookStatus.COMPLETED) FilterChip(
-                    selected = finish,
-                    onClick = { finish = !finish },
-                    enabled = !busy,
-                    label = { Text(if (finish) "Finish cook when saved" else "Also finish this cook") },
-                    modifier = Modifier.testTag("results-finish-toggle"),
-                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val allRatings = listOf(rating, bark, tenderness, juiciness, smoke, seasoning)
-                val valid = CookEntryValidation.isOptionalPositiveNumberValid(finalTemp) && CookEntryValidation.isOptionalPositiveNumberValid(rest) &&
-                    allRatings.all { it.isBlank() || CookEntryValidation.optionalPositiveNumber(it)?.let { number -> number in 1.0..5.0 } == true }
-                if (!valid) error = "Use positive values; ratings must be from 1 to 5."
-                else {
-                    dialogFocusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                    onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, willFinish, keep, change)
-                }
-            }, enabled = !busy, modifier = Modifier.testTag("results-save")) { Text(if (busy) "Saving…" else if (willFinish) "Finish cook" else "Save results") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
-    )
+            OutlinedTextField(finalTemp, { finalTemp = it; error = null }, enabled = !busy, label = { Text("Final temperature (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("result-final-temperature"))
+            SimpleDropdownField("Temperature unit", unit, listOf("°F", "°C"), { unit = it }, enabled = !busy)
+            OutlinedTextField(rest, { rest = it; error = null }, enabled = !busy, label = { Text("Rest time in minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+            RatingChipRow("Bark", bark, { bark = it; error = null }, "result-bark", !busy)
+            RatingChipRow("Tenderness", tenderness, { tenderness = it; error = null }, "result-tenderness", !busy)
+            RatingChipRow("Juiciness", juiciness, { juiciness = it; error = null }, "result-juiciness", !busy)
+            RatingChipRow("Smoke", smoke, { smoke = it; error = null }, "result-smoke", !busy)
+            RatingChipRow("Seasoning", seasoning, { seasoning = it; error = null }, "result-seasoning", !busy)
+            OutlinedTextField(notes, { notes = it }, enabled = !busy, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = { showLearning = !showLearning }, enabled = !busy) { Text(if (showLearning) "Hide next-cook lessons" else "Keep doing / change next time") }
+            if (showLearning) {
+                OutlinedTextField(keep, { keep = it }, enabled = !busy, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(change, { change = it }, enabled = !busy, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
+            }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+                Spacer(Modifier.weight(1f))
+                Button(onClick = {
+                    val valid = CookEntryValidation.isOptionalPositiveNumberValid(finalTemp) && CookEntryValidation.isOptionalPositiveNumberValid(rest)
+                    if (!valid) error = "Use positive values; ratings must be from 1 to 5."
+                    else {
+                        sheetFocusManager.clearFocus(force = true)
+                        sheetKeyboardController?.hide()
+                        onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, keep, change, cookAgain)
+                    }
+                }, enabled = !busy, modifier = Modifier.testTag("results-save")) { Text(if (busy) "Saving…" else "Save results") }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
 }
 
 private fun displayEventType(type: String): String = type.replace('_', ' ').replaceFirstChar { it.titlecase() }

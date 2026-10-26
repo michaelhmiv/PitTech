@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct ContentView: View {
     @Environment(CookStore.self) private var store
@@ -8,11 +9,53 @@ struct ContentView: View {
     @Environment(ProSubscriptionCoordinator.self) private var pro
     @Environment(\.scenePhase) private var scenePhase
     @State private var telemetry = NativeTelemetryRuntime()
+    @State private var connectivity = ConnectivityMonitor()
     @State private var selectedTab = "meals"
+    // First-run welcome (#187): first launch only, never in UI tests or
+    // screenshot runs (fixture launches), identical content/order to Android.
+    @AppStorage(WelcomeGate.seenKey) private var welcomeSeen = false
+    @State private var mealsRestoreRequested = false
+    @State private var showingWelcomeConnections = false
+
+    private var showWelcome: Bool {
+        // iOS has no crash-recovery surface today, so no crash can be pending
+        // at launch here; the rule matches Android's regardless.
+        WelcomeGate.shouldShow(seen: welcomeSeen, crashPendingAtLaunch: false, suppressedForTesting: WelcomeGate.suppressedForTesting)
+    }
 
     var body: some View {
+        Group {
+            if showWelcome {
+                WelcomeView(
+                    onStartCooking: { welcomeSeen = true },
+                    onRestoreBackup: { welcomeSeen = true; mealsRestoreRequested = true },
+                    onConnectThermometer: { welcomeSeen = true; selectedTab = "more"; showingWelcomeConnections = true }
+                )
+            } else {
+                tabRoot
+            }
+        }
+        .sheet(isPresented: $showingWelcomeConnections) {
+            NavigationStack { NativeTelemetryConnectionsView(runtime: telemetry, embedded: true) }
+        }
+    }
+
+    // Every root sheet and alert lives in RootPresentationModifier:
+    // attaching them here pushed this modifier chain past the compiler's
+    // type-checking budget (which is why tabRoot is extracted at all).
+
+    private var tabRoot: some View {
+        // PL-23 (DD-8): the offline banner sits above the tabs on every
+        // tab while the device has no connection.
+        VStack(spacing: 0) {
+            if !connectivity.isOnline { OfflineBannerView() }
+            tabView
+        }
+    }
+
+    private var tabView: some View {
         TabView(selection: $selectedTab) {
-            CookListView()
+            CookListView(restoreRequested: $mealsRestoreRequested)
                 .tabItem { Label("Meals", systemImage: "flame") }.tag("meals")
             NavigationStack { SavedRecipesView() }.tabItem { Label("Recipes", systemImage: "book") }.tag("recipes")
             Group { if community.enabled { NativePublicDiscoveryView() } else { DiscoveryWelcomeView() } }.tabItem { Label("Discover", systemImage: "safari") }.tag("discover")
@@ -21,6 +64,7 @@ struct ContentView: View {
             MoreView(runtime: telemetry).tabItem { Label("More", systemImage: "ellipsis") }.tag("more")
         }
         .onChange(of: community.linkSequence) { _, _ in selectedTab = "discover" }
+        .onChange(of: store.recipesTabRequest) { _, _ in selectedTab = "recipes" }
         .environment(telemetry)
         .tint(PitTechStyle.accent)
         .task {
@@ -36,77 +80,205 @@ struct ContentView: View {
         .background(PitTechStyle.canvas)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PitTechReminderCook"))) { notification in if let payload = notification.object as? [String: Any] {
             if let id = payload["occurrenceId"] as? String, let at = payload["at"] as? Double { store.recordReminderDelivery(id, at: at) }
-            if payload["open"] as? Bool == true { store.notificationCookId = payload["cookId"] as? String }
-        } }
-        .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) }.environment(telemetry) } }
-        .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {
-            if let file = relay.downloaded {
-                relay.downloaded = nil
-                Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
+            if payload["open"] as? Bool == true {
+                store.notificationCookId = payload["cookId"] as? String
+                // PL-02: occurrence ids are "<ruleId>:<sequence>" — route the
+                // tap to that rule's check-in.
+                if let occurrence = payload["occurrenceId"] as? String, let cut = occurrence.lastIndex(of: ":") { store.notificationReminderRuleId = String(occurrence[..<cut]) }
             }
-        }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
-        .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 })) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
-        .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } })) {
-            if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
-        }
-        .sheet(item: Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } }), onDismiss: {
-            if let destination = store.publicCookDestination {
-                store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
-            } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
-        }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
-        .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
-            Button("OK", role: .cancel) { store.archiveMessage = nil }
-        } message: { Text(store.archiveMessage ?? "") }
-        .alert("Couldn't save", isPresented: Binding(
-            get: { store.saveError != nil },
-            set: { if !$0 { store.clearSaveError() } }
-        )) {
-            Button("OK", role: .cancel) { store.clearSaveError() }
-        } message: {
-            Text(store.saveError ?? "Please try again.")
-        }
+        } }
+        .modifier(RootPresentationModifier(telemetry: telemetry))
+    }
+}
+
+/// Every root sheet and alert, attached as one modifier so ContentView's
+/// own modifier chain stays inside the compiler's type-checking budget
+/// (the chain was already at the edge; Slice 9's additions tipped it over
+/// twice before this extraction).
+private struct RootPresentationModifier: ViewModifier {
+    @Environment(CookStore.self) private var store
+    @Environment(NativeRelayCoordinator.self) private var relay
+    @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(ProSubscriptionCoordinator.self) private var pro
+    let telemetry: NativeTelemetryRuntime
+
+    private var archiveIntakeBinding: Binding<NativeArchiveIntake?> {
+        Binding(get: { store.archiveIntake }, set: { if $0 == nil { store.discardArchiveIntake() } })
+    }
+
+    private var publicRecipeStartBinding: Binding<PublicRecipeStart?> {
+        Binding(get: { store.publicRecipeStart }, set: { store.publicRecipeStart = $0 })
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: Binding(get: { store.notificationCookId != nil }, set: { if !$0 { store.notificationCookId = nil } })) { if let id = store.notificationCookId { NavigationStack { CookDetailView(cookId: id) }.environment(telemetry) } }
+            .sheet(isPresented: Binding(get: { relay.showingImport && store.archiveIntake == nil }, set: { relay.showingImport = $0 }), onDismiss: {
+                if let file = relay.downloaded {
+                    relay.downloaded = nil
+                    Task { await store.receiveArchive(at: file, cookPackOnly: true); try? FileManager.default.removeItem(at: file) }
+                }
+            }) { NavigationStack { NativeRelayImportView() }.modifier(ScreenshotTextSize()) }
+            .sheet(isPresented: Binding(get: { account.showingAccount }, set: { account.showingAccount = $0 }), onDismiss: {
+                // Slice 8 (PL-15 / DD-10): the account sheet closing after a
+                // paywall sign-in detour — completed or cancelled — reopens
+                // the gate on the destination the user was headed to.
+                pro.resumeSignInDetour()
+            }) { NavigationStack { NativeAccountView() }.modifier(ScreenshotTextSize()) }
+            .sheet(isPresented: Binding(get: { pro.presentedEntry != nil }, set: { if !$0 { pro.closePaywall() } }), onDismiss: {
+                // Slice 8 (PL-15 / DD-10): a paywall dismissed for sign-in
+                // hands straight over to the account sheet.
+                if pro.consumeSignInDetour() { account.showingAccount = true }
+            }) {
+                if let entry = pro.presentedEntry { ProPaywallHost(entry: entry).modifier(ScreenshotTextSize()) }
+            }
+            .sheet(item: archiveIntakeBinding, onDismiss: {
+                if let start = store.pendingPublicRecipeStart {
+                    // PL-19: a "Cook this" save promotes to the Start Cook
+                    // review sheet instead of opening a live cook directly.
+                    store.pendingPublicRecipeStart = nil; store.publicRecipeStart = start; store.archiveCompletionMessage = nil
+                } else if let destination = store.publicCookDestination {
+                    store.publicCookDestination = nil; store.notificationCookId = destination; store.archiveCompletionMessage = nil
+                } else { store.archiveMessage = store.archiveCompletionMessage; store.archiveCompletionMessage = nil }
+            }) { source in NativeArchiveImportView(source: source).modifier(ScreenshotTextSize()) }
+            .sheet(item: publicRecipeStartBinding, onDismiss: {
+                if let id = store.pendingStartedCookId {
+                    store.pendingStartedCookId = nil; store.notificationCookId = id
+                }
+            }) { start in
+                // PL-10 (#172): the Cook Pack start lands on the same
+                // unified Start Cook review as every other start path.
+                StartCookSheet(
+                    initialSetup: (try? store.recipeStartSetup(title: start.title, revisionIds: start.revisionIds, sourceLabel: "From a shared Cook Pack · the recipes are saved in your Recipes"))
+                        ?? CookSetupDraft(sourceLabel: "From a shared Cook Pack · the recipes are saved in your Recipes", title: start.title),
+                    onStarted: { store.pendingStartedCookId = $0 }
+                ).modifier(ScreenshotTextSize())
+            }
+            .alert("Cook archive", isPresented: Binding(get: { store.archiveMessage != nil }, set: { if !$0 { store.archiveMessage = nil } })) {
+                Button("OK", role: .cancel) { store.archiveMessage = nil }
+            } message: { Text(store.archiveMessage ?? "") }
+            .alert("Couldn't save", isPresented: Binding(
+                get: { store.saveError != nil },
+                set: { if !$0 { store.clearSaveError() } }
+            )) {
+                Button("OK", role: .cancel) { store.clearSaveError() }
+            } message: {
+                Text(store.saveError ?? "Please try again.")
+            }
     }
 }
 
 struct CookListView: View {
     @Environment(CookStore.self) private var store
     @Environment(AdsConsentManager.self) private var adsConsent
-    @State private var showingStart = false
+    /// Set by the first-run welcome's "Restore from backup" (#187): opens the
+    /// same restore file importer as the empty-Meals entry below.
+    @Binding var restoreRequested: Bool
+    @State private var startSetup: CookSetupDraft?
+    @State private var showingRestore = false
     @State private var mealPath: [String] = []
+
+    private var isLibraryEmpty: Bool { store.activeCooks.isEmpty && store.completedCooks.isEmpty }
 
     var body: some View {
         NavigationStack(path: $mealPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    // DD-1 lockup (#172): a small header mark only — never a hero.
+                    HStack(spacing: 10) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(PitTechStyle.accent)
+                            .frame(width: 40, height: 40)
+                            .background(PitTechStyle.accentFill, in: RoundedRectangle(cornerRadius: 11))
+                            .accessibilityIdentifier("meals-lockup")
+                        Text("PitTech").font(.headline)
+                    }
+                    .frame(height: 40)
                     SectionTitle(title: "Meals", subtitle: "Keep each meal in one place.")
-                    if !store.activeCooks.isEmpty {
+                    if isLibraryEmpty {
+                        // First-run empty Meals (PL-13 parity with Android):
+                        // lockup → headline → promise → Start meal → Restore.
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("ACTIVE").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                            ForEach(store.activeCooks) { cook in
-                                NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
-                                    .buttonStyle(.plain)
+                            Text("Your cook log is ready").font(.title2.weight(.bold))
+                            Text("Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.")
+                            Text("Your cook records stay on this phone. No account is needed.")
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        // The card is its own accessibility container: without
+                        // this, SwiftUI combines the text-only stack into a
+                        // single static-text element and the card identifier
+                        // never surfaces as a distinct element (the flows-a
+                        // journal-removal test waits on exactly that element).
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("meals-empty-card")
+                    }
+                    if let lead = store.activeCooks.first {
+                        NavigationLink(value: lead.id) { LiveZoneCard(cook: lead) }
+                            .buttonStyle(.plain)
+                        if store.activeCooks.count > 1 {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("ALSO COOKING").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                                ForEach(store.activeCooks.dropFirst()) { cook in
+                                    NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
+                                        .buttonStyle(.plain)
+                                }
                             }
                         }
                     }
-                    Button { showingStart = true } label: {
+                    Button { startSetup = .blank(temperatureUnit: "°\(store.temperatureUnit)", weightUnit: store.weightUnit) } label: {
                         Label("Start meal", systemImage: "plus")
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 54)
                     }
                     .buttonStyle(.borderedProminent)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                        if store.completedCooks.isEmpty {
-                            ContentUnavailableView("No finished cooks yet", systemImage: "book.closed", description: Text("Your cook history will show up here when you finish a cook."))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
-                        } else {
-                            ForEach(Array(store.completedCooks.enumerated()), id: \.element.id) { index, cook in
-                                NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
-                                    .buttonStyle(.plain)
-                                if adsConsent.adsServingAllowed && index == min(2, store.completedCooks.count) - 1 {
-                                    NativeAdCard()
+                    if let draft = store.setupDraft {
+                        // PL-13: the kept setup is one tap from Meals,
+                        // never a surprise — same card as Android.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Cook setup draft").font(.headline)
+                            Text((draft.title.isEmpty ? "Untitled setup" : draft.title) + (draft.sourceLabel.map { " · \($0)" } ?? ""))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                Button("Resume setup") { startSetup = draft }
+                                    .buttonStyle(.borderedProminent)
+                                    .accessibilityIdentifier("resume-setup")
+                                Button("Discard setup", role: .destructive) { store.clearSetupDraft() }
+                                    .accessibilityIdentifier("discard-setup")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("setup-draft-card")
+                    }
+
+                    if isLibraryEmpty {
+                        Button { showingRestore = true } label: {
+                            Text("Restore from backup")
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("empty-restore-backup")
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            if store.completedCooks.isEmpty {
+                                ContentUnavailableView("No finished cooks yet", systemImage: "book.closed", description: Text("Your cook history will show up here when you finish a cook."))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 20)
+                            } else {
+                                ForEach(Array(store.completedCooks.enumerated()), id: \.element.id) { index, cook in
+                                    NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
+                                        .buttonStyle(.plain)
+                                    if adsConsent.adsServingAllowed && index == min(2, store.completedCooks.count) - 1 {
+                                        NativeAdCard()
+                                    }
                                 }
                             }
                         }
@@ -116,8 +288,76 @@ struct CookListView: View {
             }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
-            .sheet(isPresented: $showingStart) { StartCookSheet(onStarted: { mealPath.append($0) }) }
+            .sheet(item: $startSetup) { setup in StartCookSheet(initialSetup: setup, onStarted: { mealPath.append($0) }) }
+            .onChange(of: restoreRequested) { _, requested in
+                if requested { showingRestore = true; restoreRequested = false }
+            }
+            .fileImporter(isPresented: $showingRestore, allowedContentTypes: [.zip, .pittechCookPack], allowsMultipleSelection: false) { result in
+                if let url = try? result.get().first {
+                    Task { await store.receiveArchive(at: url) }
+                }
+            }
         }
+    }
+}
+
+/// The Night Service Live Zone on Meals (#172): a high-contrast poster card for
+/// the lead active cook — latest pit temperature (or elapsed) at poster size,
+/// food temperature, elapsed and setpoint in plain view. Nothing (ads
+/// included) ever renders inside or above it.
+struct LiveZoneCard: View {
+    @Environment(CookStore.self) private var store
+    let cook: CookRecord
+
+    private var readings: [TemperatureSample] { store.readings(for: cook.id) }
+    private var latestPit: TemperatureSample? {
+        readings.filter { ["pit", "pit_ambient", "ambient_temperature"].contains($0.measurementType) }.max { $0.measuredAt < $1.measuredAt }
+    }
+    private var latestFood: TemperatureSample? {
+        readings.filter { $0.measurementType == "food_probe" }.max { $0.measuredAt < $1.measuredAt }
+    }
+    private func elapsed(at date: Date) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince1970) - Int(cook.startedAtUtcMillis / 1000))
+        return String(format: "%d:%02d", seconds / 3600, (seconds % 3600) / 60)
+    }
+    private func tempText(_ sample: TemperatureSample) -> String {
+        let value = sample.value
+        return "\(value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value))\(sample.unit)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(cook.status == "paused" ? "PAUSED" : "LIVE COOK")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
+            Text(cook.title)
+                .font(.title3.weight(.semibold))
+            // Deliberately NOT ticking TimelineViews: a perpetual timer on the
+            // launch screen keeps the app from ever idling (it broke the UI-test
+            // shards and costs battery for a secondary readout). Values refresh
+            // whenever Meals re-renders on store changes; the ticking clock
+            // lives on the cook's Live screen, as before.
+            if let pit = latestPit {
+                Text(tempText(pit))
+                    .font(.system(size: 52, weight: .bold))
+            } else {
+                Text(elapsed(at: Date.now))
+                    .font(.system(size: 52, weight: .bold))
+            }
+            Text([
+                latestFood.map { "Food \(tempText($0))" },
+                "Elapsed \(elapsed(at: Date.now))",
+                cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
+                cook.smokerName,
+            ].compactMap { $0 }.joined(separator: " · "))
+            .font(.subheadline)
+            .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color(red: 0.949, green: 0.933, blue: 0.890), in: RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(Color(red: 0.063, green: 0.078, blue: 0.059))
+        .accessibilityIdentifier("meals-live-zone")
     }
 }
 
@@ -162,42 +402,141 @@ struct CookCard: View {
     }
 }
 
+/// PL-10 / PL-13 (#172): the one Start Cook review for every iOS start
+/// path — blank, Recipes, meal combinations, and shared Cook Packs all
+/// land here with the same fields in the same order as Android's Start
+/// Cook review (Source · Current stage · Cook name · Dishes · Smoker ·
+/// Starting setpoint · Cook notes · More cook details). Nothing is
+/// cooking until "Begin preparation" is tapped, and leaving a changed
+/// setup keeps it as a draft on this phone, exactly like Android.
 struct StartCookSheet: View {
     var onStarted: (String) -> Void = { _ in }
     @Environment(CookStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var firstDish = ""
-    @State private var alreadyCooking = false
-    @State private var foodOn = Date.now
+    @State private var setup: CookSetupDraft
+    @State private var initialSetup: CookSetupDraft
+    @State private var confirmLeave = false
+    @State private var error: String?
+    @State private var newDishName = ""
+    @State private var newDishFoodType = "Other"
+
+    init(initialSetup: CookSetupDraft, onStarted: @escaping (String) -> Void = { _ in }) {
+        self.onStarted = onStarted
+        _setup = State(initialValue: initialSetup)
+        _initialSetup = State(initialValue: initialSetup)
+    }
+
+    private var dirty: Bool { setup != initialSetup || !newDishName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         NavigationStack {
             Form {
+                if let label = setup.sourceLabel {
+                    Section("Source") {
+                        Text(label).accessibilityIdentifier("cook-source")
+                        Text("Nothing is cooking yet — review the setup, then begin preparation when you're ready.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section("Current stage") {
-                    Toggle("Already cooking", isOn: $alreadyCooking)
-                    if alreadyCooking { DatePicker("Actual Food on", selection: $foodOn, in: ...Date.now) }
+                    Toggle("Already cooking", isOn: $setup.alreadyCooking)
+                    if setup.alreadyCooking { DatePicker("Actual Food on", selection: $setup.foodOn, in: ...Date.now) }
                     else { Text("Preparing until you log Food on.") }
                 }
-                Section("Meal") {
-                    TextField("Meal name (optional)", text: $title).accessibilityIdentifier("meal-title")
-                    TextField("First dish (optional)", text: $firstDish).accessibilityIdentifier("meal-first-dish")
+                Section("Cook name") {
+                    TextField("Cook name", text: $setup.title).accessibilityIdentifier("meal-title")
+                }
+                Section("Dishes") {
+                    ForEach($setup.dishes) { $dish in
+                        if dish.revisionId != nil {
+                            // Sourced dishes are reviewed as they will be
+                            // attached — and removable — not re-typed.
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(dish.name)
+                                    if !dish.detailLine.isEmpty { Text(dish.detailLine).font(.footnote).foregroundStyle(.secondary) }
+                                }
+                            } icon: { Image(systemName: "book.closed") }
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(dish.name)
+                                if !dish.detailLine.isEmpty { Text(dish.detailLine).font(.footnote).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                    .onDelete { setup.dishes.remove(atOffsets: $0) }
+                    TextField("Dish name", text: $newDishName).accessibilityIdentifier("cook-dish-name")
+                    Picker("Food type", selection: $newDishFoodType) {
+                        ForEach(cookSetupFoodTypes, id: \.self) { Text($0).tag($0) }
+                    }.accessibilityIdentifier("cook-dish-food-type")
+                    Button("Add dish") {
+                        let name = newDishName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !name.isEmpty else { return }
+                        setup.dishes.append(CookSetupDish(name: name, foodType: newDishFoodType))
+                        newDishName = ""
+                    }.disabled(newDishName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("cook-add-dish")
+                }
+                Section("Smoker") {
+                    TextField("Smoker or grill (optional)", text: $setup.smokerName).accessibilityIdentifier("cook-smoker")
+                }
+                Section("Starting setpoint") {
+                    TextField("Starting setpoint (optional)", text: $setup.setpointText)
+                        .keyboardType(.decimalPad).accessibilityIdentifier("cook-setpoint")
+                    Picker("Unit", selection: $setup.setpointUnit) {
+                        Text("°F").tag("°F"); Text("°C").tag("°C")
+                    }.pickerStyle(.segmented)
+                }
+                Section("Cook notes") {
+                    TextField("Cook notes (optional)", text: $setup.notes, axis: .vertical).accessibilityIdentifier("cook-notes")
+                }
+                Section("More cook details") {
+                    TextField("Fuel type", text: $setup.fuelType).accessibilityIdentifier("cook-fuel")
+                    TextField("Wood or pellet blend", text: $setup.woodBlend).accessibilityIdentifier("cook-wood-blend")
+                    TextField("Outdoor temperature", text: $setup.outdoorTemperatureText)
+                        .keyboardType(.decimalPad).accessibilityIdentifier("cook-outdoor-temperature")
+                    Picker("Outdoor unit", selection: $setup.outdoorTemperatureUnit) {
+                        Text("°F").tag("°F"); Text("°C").tag("°C")
+                    }.pickerStyle(.segmented)
+                    TextField("Weather", text: $setup.weather).accessibilityIdentifier("cook-weather")
+                    TextField("Wind or exposure", text: $setup.wind).accessibilityIdentifier("cook-wind")
+                }
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
                 }
                 Section {
                     Text("You can start with manual logging and add temperature readings later.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Start meal")
+            .navigationTitle(setup.sourceLabel == nil ? "Start meal" : "Review meal setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { if dirty { confirmLeave = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") {
-                        store.startCook(title: title, firstDish: firstDish, alreadyCooking: alreadyCooking, foodOn: foodOn)
-                        if store.saveError == nil { if let id = store.activeCooks.first?.id { onStarted(id) }; dismiss() }
+                    Button("Begin preparation") {
+                        do {
+                            let id = try store.startCook(setup: setup)
+                            onStarted(id)
+                            dismiss()
+                        } catch { self.error = error.localizedDescription }
                     }.accessibilityIdentifier("start-meal-save")
                 }
+            }
+            // PL-13: edits are kept as a draft on this phone as they
+            // happen — the same autosave Android's review does — so
+            // leaving by any route never loses the setup.
+            .onChange(of: setup) { _, current in
+                if current != initialSetup { store.keepSetupDraft(current) }
+            }
+            .confirmationDialog("Leave this cook setup?", isPresented: $confirmLeave, titleVisibility: .visible) {
+                Button("Keep draft") { dismiss() }.accessibilityIdentifier("setup-keep-draft")
+                Button("Discard setup", role: .destructive) { store.clearSetupDraft(); dismiss() }.accessibilityIdentifier("setup-discard")
+                Button("Keep editing", role: .cancel) { }
+            } message: {
+                Text("Your setup is kept as a draft on this phone. Resume it any time from Meals.")
             }
         }
     }
@@ -211,32 +550,48 @@ struct InsightsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     SectionTitle(title: "Insights", subtitle: "Patterns from the cooks you record.")
-                    HStack(spacing: 12) {
-                        MetricCard(title: "Finished cooks", value: "\(store.completedCooks.count)", symbol: "checkmark.circle")
-                        MetricCard(title: "Active now", value: "\(store.activeCooks.count)", symbol: "flame")
-                    }
-                    HStack(spacing: 12) {
-                        MetricCard(title: "Temperature readings", value: "\(store.library.readings.count)", symbol: "thermometer.medium")
-                        MetricCard(title: "Timeline notes", value: "\(store.library.events.count)", symbol: "text.bubble")
-                    }
+                    // PL-21 (DD-3): the Focus List header is a compact stat
+                    // strip — the same five figures the card grid carried,
+                    // none dropped, at a fraction of the height.
                     let durations = store.completedCooks.compactMap { cook -> Double? in
                         guard let end = cook.endedAtUtcMillis, end >= cook.startedAtUtcMillis else { return nil }
                         return Double(end - cook.startedAtUtcMillis) / 3_600_000
                     }
-                    if let average = durations.average {
-                        MetricCard(title: "Average session time", value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", symbol: "clock")
+                    HStack(alignment: .top, spacing: 16) {
+                        InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
+                        InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
+                        InsightsStat(value: "\(store.library.readings.count)", label: "Temperature readings")
+                        InsightsStat(value: "\(store.library.events.count)", label: "Timeline notes")
+                        if let average = durations.average {
+                            InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Average session time")
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     if !store.completedCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("RECENTLY FINISHED").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            // PL-21: recently-finished cards open the cook,
+                            // like the Meals history cards do.
                             ForEach(store.completedCooks.prefix(5)) { cook in
-                                CookCard(cook: cook, dishes: store.dishes(for: cook.id))
+                                NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
+                                    .buttonStyle(.plain)
                             }
                         }
                     } else {
-                        ContentUnavailableView("Keep logging to build insights", systemImage: "chart.xyaxis.line", description: Text("Your cook totals and average duration are calculated from records saved on this device."))
+                        // PL-25: the Insights empty is the shared StateCopy wording.
+                        ContentUnavailableView(EmptyStateCopy.insightsTitle, systemImage: "chart.xyaxis.line", description: Text(EmptyStateCopy.insightsBody))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 18)
+                    }
+                    // PL-21 design half: the iOS Insights job set (search,
+                    // filters, comparisons, statistics) is parity issue
+                    // #185 — until it lands, the gap is stated honestly
+                    // instead of the surface pretending to be complete.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Search, filters, comparisons and statistics aren't available in Insights on iOS yet.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text("Your full cook history is in Meals.")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("DEEPER ANALYSIS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
@@ -249,24 +604,21 @@ struct InsightsView: View {
             }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("Insights")
+            .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
         }
     }
 }
 
-struct MetricCard: View {
-    let title: String
+/// One figure in the Insights Focus List header strip (PL-21 / DD-3).
+private struct InsightsStat: View {
     let value: String
-    let symbol: String
+    let label: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: symbol).foregroundStyle(PitTechStyle.accent)
-            Text(value).font(.largeTitle.bold())
-            Text(title).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -277,11 +629,26 @@ struct SettingsView: View {
     @State private var showingImport = false
     @State private var exportDocument = PitTechArchiveDocument(data: Data())
     @State private var archiveError: String?
+    @State private var notificationsAllowed = false
 
     var body: some View {
         Group {
             Form {
-                Section("Measurements") {
+                // PL-26 (#172): the Settings section order is the shared
+                // cross-platform order (SettingsCopy.sectionOrder):
+                // Appearance, Units, Cook notifications, Your data,
+                // Feedback, Ads and privacy, About — same contents per
+                // section on both platforms, platform mechanics aside.
+                Section("Appearance") {
+                    // #172 (DD-7 rejected, owner ruling 2026-10-24): Night Service is
+                    // the only appearance — stated honestly, not a dead picker.
+                    LabeledContent("Appearance", value: "Night Service (dark)")
+                        .accessibilityIdentifier("appearance-night-service")
+                    Text("PitTech uses the Night Service dark appearance on every screen — built to stay readable at the smoker, day or night.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Units") {
                     Picker("Temperature", selection: Binding(
                         get: { store.temperatureUnit },
                         set: { store.setPreference("temperatureUnit", value: $0) }
@@ -296,44 +663,57 @@ struct SettingsView: View {
                         Text("Pounds").tag("lb")
                         Text("Kilograms").tag("kg")
                     }
+                    Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                Section("Appearance") {
-                    Picker("Appearance", selection: Binding(get: { store.library.preferences?["themeMode"]?.stringValue ?? "SYSTEM" }, set: { store.setPreference("themeMode", value: $0) })) {
-                        Text("System").tag("SYSTEM"); Text("Light").tag("LIGHT"); Text("Dark").tag("DARK")
-                    }
+                Section("Cook notifications") {
+                    Text("Guidance reminders and monitoring alerts have separate sound settings. Turn on alerts from a cook when you want to use them.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(notificationsAllowed ? "Notifications allowed" : "Notifications are disabled")
+                    Link("Notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
                 }
                 Section("Your data") {
-                    Label("Cook data stays on this device unless you export or share it.", systemImage: "iphone.and.arrow.forward")
+                    Text(SettingsCopy.dataStaysLine)
                         .font(.subheadline)
+                    Text(SettingsCopy.fullBackupScope)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     Button("Export cook archive") {
                         do {
                             exportDocument = PitTechArchiveDocument(data: try store.exportArchive())
                             showingExport = true
                         } catch {
-                            archiveError = "PitTech couldn't create your backup. Check available storage and try again."
+                            archiveError = ErrorCopy.saveChangeFailed
                         }
                     }
                     Button("Restore cook archive") { showingImport = true }
                     NativeDataExportButtons()
-                    NavigationLink("Third-party telemetry notices") {
-                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
-                    }
-                    Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
-                    Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
                 }
-                if adsConsent.isPrivacyOptionsRequired {
-                    Section("Advertising") {
+                Section("Feedback") {
+                    Text("Tell us about a problem or suggest a feature without needing a GitHub account. Cook records and photos are never included.")
+                        .font(.subheadline)
+                    NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
+                }
+                Section("Ads and privacy") {
+                    Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
+                    if adsConsent.isPrivacyOptionsRequired {
                         Button("Privacy choices") {
                             Task { await adsConsent.presentPrivacyOptions() }
                         }
                     }
                 }
-                Section("PitTech") {
-                    NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
+                Section("About") {
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                    Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
+                    NavigationLink("Third-party telemetry notices") {
+                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
+                    }
                 }
             }
             .navigationTitle("Settings")
+            .task { notificationsAllowed = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized }
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }
             }

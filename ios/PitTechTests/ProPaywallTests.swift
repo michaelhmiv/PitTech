@@ -216,6 +216,40 @@ import XCTest
         coordinator.stop()
     }
 
+    func testPendingPurchaseReoffersTheFeatureOnceItConfirms() async throws {
+        let store = FakeStore()
+        let api = FakeAPI()
+        store.purchaseResult = .pending
+        let (coordinator, _, _) = makeCoordinator(store: store, api: api)
+        await coordinator.loadProduct()
+        await coordinator.refresh()
+        coordinator.openPro(.analysis)
+        await coordinator.subscribe()
+        XCTAssertEqual(coordinator.purchaseState, .pendingStore)
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        // The user closes the paywall while the purchase is still pending.
+        coordinator.closePaywall()
+        XCTAssertNil(coordinator.presentedEntry)
+        // The store later delivers the transaction; the backend verifies it.
+        // The plain cache read stays failing so only the verify path can unlock.
+        api.throwOnEntitlement = true
+        store.updatesToSend = [ProStoreTransaction(transactionId: "stub-transaction", signedTransaction: "stub-jws")]
+        coordinator.start()
+        let deadline = Date().addingTimeInterval(5)
+        while coordinator.presentedEntry != .analysis, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(coordinator.entitlement, .entitled)
+        // PL-17: the feature the purchase was for is re-offered, exactly once.
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        coordinator.closePaywall()
+        api.throwOnEntitlement = false
+        api.entitlementState = "active"
+        await coordinator.refresh()
+        XCTAssertNil(coordinator.presentedEntry)
+        coordinator.stop()
+    }
+
     func testLocalPurchaseCallbackAloneNeverUnlocks() async {
         let store = FakeStore()
         let api = FakeAPI()
@@ -516,6 +550,38 @@ import XCTest
         XCTAssertEqual(ProPaywallPresentation.recorded, [.analysis])
         XCTAssertEqual(coordinator.presentedEntry, .analysis)
         coordinator.closePaywall()
+        XCTAssertNil(coordinator.presentedEntry)
+    }
+
+    /// Slice 8 (PL-15 / DD-10): a paywall sign-in detour parks the entry
+    /// and reopens the gate on the same destination when the account
+    /// surface closes. The resume fires whether sign-in completed or
+    /// was cancelled — it never inspects the outcome — and without a
+    /// detour it is a no-op, so an ordinary account visit opens nothing.
+    func testSignInDetourReopensTheGateOnTheSameEntry() {
+        let (coordinator, _, _) = makeCoordinator()
+        coordinator.resumeSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+        XCTAssertFalse(coordinator.consumeSignInDetour())
+        coordinator.openPro(.analysis)
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        coordinator.beginSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+        XCTAssertEqual(coordinator.signInResumeEntry, .analysis)
+        // The host asks once, as the paywall sheet finishes dismissing.
+        XCTAssertTrue(coordinator.consumeSignInDetour())
+        XCTAssertFalse(coordinator.consumeSignInDetour())
+        coordinator.resumeSignInDetour()
+        XCTAssertEqual(coordinator.presentedEntry, .analysis)
+        XCTAssertNil(coordinator.signInResumeEntry)
+        // The parked entry is consumed: a second account close opens nothing.
+        coordinator.closePaywall()
+        coordinator.resumeSignInDetour()
+        XCTAssertNil(coordinator.presentedEntry)
+        // Beginning a detour with no gate open parks nothing.
+        coordinator.beginSignInDetour()
+        XCTAssertFalse(coordinator.consumeSignInDetour())
+        coordinator.resumeSignInDetour()
         XCTAssertNil(coordinator.presentedEntry)
     }
 }

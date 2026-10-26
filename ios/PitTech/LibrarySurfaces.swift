@@ -5,7 +5,15 @@ struct MoreView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePublicCoordinator.self) private var community
     @Environment(ProSubscriptionCoordinator.self) private var pro
+    @Environment(NativePrivateSyncCoordinator.self) private var sync
     let runtime: NativeTelemetryRuntime
+    /// PL-14 (#172): once signed in, the Account row carries the private
+    /// sync status so it is visible without opening the sheet.
+    private var accountSubtitle: String {
+        guard account.signedIn else { return "Optional email sign-in and this device’s session" }
+        let headline = SyncStatusCopy.row(status: sync.presentation.status, detail: sync.presentation.detail, lastSyncedAt: sync.presentation.lastSyncedAt, conflictCount: sync.presentation.conflicts.count, signedIn: true, enabled: sync.enabled).headline
+        return "Private sync — \(headline)"
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -22,8 +30,9 @@ struct MoreView: View {
                     }.accessibilityIdentifier("more-devices")
                     if account.enabled {
                         Button { account.showingAccount = true } label: {
-                            MoreDestinationLabel(title: "Account", subtitle: "Optional email sign-in and this device’s session", symbol: "person.crop.circle")
+                            MoreDestinationLabel(title: "Account", subtitle: accountSubtitle, symbol: "person.crop.circle")
                         }.accessibilityIdentifier("more-account")
+                        .onAppear { if account.signedIn { sync.refresh() } }
                     }
                     if community.enabled { NavigationLink { NativeCommunityControlsView() } label: { MoreDestinationLabel(title: "Community controls", subtitle: "Reports, saved requests and blocked publishers", symbol: "hand.raised") }.accessibilityIdentifier("more-community-controls") }
                     if account.enabled && community.enabled {
@@ -65,19 +74,42 @@ struct MoreDestinationLabel: View {
     }
 }
 
+/// PL-30 (#172): the one shared "not available yet" pattern — icon tile,
+/// title, message, an optional note about what works instead, and one
+/// route onward. Every not-available surface on both platforms renders
+/// through this shape with `NotAvailableCopy` strings.
+struct NotAvailablePlaceholderView<Onward: View>: View {
+    let systemImage: String
+    let title: String
+    let message: String
+    var note: String? = nil
+    let onwardLabel: String
+    @ViewBuilder let onward: () -> Onward
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Image(systemName: systemImage).font(.system(size: 32)).foregroundStyle(PitTechStyle.sage)
+                    .padding(18).background(PitTechStyle.sageFill, in: RoundedRectangle(cornerRadius: 18)).accessibilityHidden(true)
+                SectionTitle(title: title)
+                Text(message).foregroundStyle(PitTechStyle.supporting)
+                if let note { Text(note).foregroundStyle(PitTechStyle.supporting) }
+                NavigationLink(onwardLabel) { onward() }.buttonStyle(.bordered).frame(minHeight: 44)
+            }.padding(20)
+        }.background(PitTechStyle.canvas.ignoresSafeArea())
+    }
+}
+
 struct DiscoveryWelcomeView: View {
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Image(systemName: "safari").font(.system(size: 32)).foregroundStyle(PitTechStyle.sage)
-                        .padding(18).background(PitTechStyle.sageFill, in: RoundedRectangle(cornerRadius: 18)).accessibilityHidden(true)
-                    SectionTitle(title: "Find your next cook")
-                    Text("Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account.")
-                        .foregroundStyle(PitTechStyle.supporting)
-                    NavigationLink("Open your recipes") { SavedRecipesView() }.buttonStyle(.bordered).frame(minHeight: 44)
-                }.padding(20)
-            }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
+            NotAvailablePlaceholderView(
+                systemImage: "safari",
+                title: NotAvailableCopy.discoverTitle,
+                message: NotAvailableCopy.discoverMessage,
+                onwardLabel: NotAvailableCopy.discoverOnward,
+                onward: { SavedRecipesView() },
+            )
+            .navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
         }
     }
 }

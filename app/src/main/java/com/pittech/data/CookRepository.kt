@@ -2,6 +2,7 @@ package com.pittech.data
 
 import androidx.room.withTransaction
 import com.pittech.domain.CookEntryValidation
+import com.pittech.domain.CookPlaybook
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
 import kotlinx.coroutines.flow.Flow
@@ -83,7 +84,20 @@ class CookRepository(
         dao.observeConnectionGaps(),
     ) { cooks, readings, results, gaps -> InsightsSnapshot(cooks, readings, results, gaps) }, dao.observeAllIngredients()) { snapshot, ingredients -> snapshot.copy(ingredients = ingredients) }
 
-    suspend fun startCook(draft: NewCookDraft): String {
+    /**
+     * Starts a cook from a reviewed [NewCookDraft].
+     *
+     * PL-10 (#172): [transientPlaybook] carries a playbook that exists only
+     * as a preview (cook-again) and was never saved to the library; when
+     * present its steps attach to the new cook without persisting the book.
+     */
+    suspend fun startCook(draft: NewCookDraft, transientPlaybook: CookPlaybook? = null): String {
+        require(draft.recipeRevisionIds.isEmpty() || draft.recipeRevisionIds.size == draft.dishes.size) {
+            "Recipe sources must line up with the dishes they belong to."
+        }
+        require(draft.recipeAttemptSnapshots.isEmpty() || draft.recipeAttemptSnapshots.size == draft.dishes.size) {
+            "Recipe working copies must line up with the dishes they belong to."
+        }
         require(CookEntryValidation.isOptionalPositiveNumberValid(draft.setpointText)) {
             "Enter a positive setpoint or leave it blank."
         }
@@ -199,9 +213,24 @@ class CookRepository(
                 if (dishes.isNotEmpty()) dao.insertDishes(dishes)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
                 dao.insertTimelineEvents(events)
+                draft.recipeRevisionIds.forEachIndexed { index, revisionId ->
+                    if (revisionId == null) return@forEachIndexed
+                    val revision = recipes.revision(revisionId) ?: error("This recipe version is unavailable.")
+                    attachRecipe(dishes[index].id, revision)
+                    // PL-10: a preset's working copy is applied over the
+                    // attached revision, exactly as the direct preset start
+                    // did before presets were routed through the review.
+                    draft.recipeAttemptSnapshots.getOrNull(index)?.let { snapshot ->
+                        updateRecipeAttempt(dishes[index].id, com.pittech.domain.RecipeSnapshotCodec.decode(snapshot))
+                    }
+                }
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
                 val companion = CookCompanionRepository(database, photoStorage)
-                companion.applyToCook(cookId, draft, dishes.map { it.id })
+                if (transientPlaybook != null) {
+                    companion.applySnapshot(cookId, draft, transientPlaybook, null, dishes.map { it.id })
+                } else {
+                    companion.applyToCook(cookId, draft, dishes.map { it.id })
+                }
                 if (draft.alreadyCooking) {
                     val at = draft.foodOnAtUtcMillis ?: now
                     val foodOn = TimelineEventEntity(UUID.randomUUID().toString(), cookId, null, "note", "Food on", occurredAtUtcMillis = at,
@@ -459,6 +488,19 @@ class CookRepository(
         return cancelled
     }
 
+    /**
+     * PL-02 (issue #172): Dismiss ends a legacy reminder the same way it ends
+     * a unified rule — handled, with nothing recorded on the timeline. This is
+     * distinct from cancelling a reminder that has not fired yet.
+     */
+    suspend fun dismissCookReminder(reminderId: String): CookReminderEntity? {
+        val reminder = dao.getReminder(reminderId) ?: return null
+        if (reminder.status != CookReminderEntity.STATUS_PENDING) return reminder
+        val dismissed = reminder.copy(status = CookReminderEntity.STATUS_COMPLETED, completedAtUtcMillis = System.currentTimeMillis())
+        dao.updateReminder(dismissed)
+        return dismissed
+    }
+
     suspend fun snoozeCookReminder(reminderId: String, dueAtUtcMillis: Long): CookReminderEntity? {
         val reminder = dao.getReminder(reminderId) ?: return null
         if (reminder.status != CookReminderEntity.STATUS_PENDING) return reminder
@@ -581,6 +623,8 @@ class CookRepository(
         ratings: Map<String, String>,
         notes: String,
         finish: Boolean,
+        cookAgain: Boolean? = null,
+        updateCookAgain: Boolean = false,
     ) = database.withTransaction {
         require(CookEntryValidation.isOptionalPositiveNumberValid(finalTemperatureText)) { "Enter a positive final temperature or leave it blank." }
         require(CookEntryValidation.isOptionalPositiveNumberValid(restMinutesText)) { "Enter a positive rest time or leave it blank." }
@@ -618,7 +662,56 @@ class CookRepository(
                 ),
             ) else dao.deleteResult("$cookId:${dishId ?: "cook"}:$type")
         }
+        // PL-08: the unified results editor owns the per-dish "cook again?"
+        // verdict too — one writer for every results field of a scope.
+        if (updateCookAgain && dishId != null) {
+            val againId = "$cookId:$dishId:cook_again"
+            if (cookAgain == null) dao.deleteResult(againId) else dao.upsertResult(
+                CookResultEntity(
+                    id = againId, cookId = cookId, dishId = dishId,
+                    resultType = "cook_again", numericValue = if (cookAgain) 1.0 else 0.0, recordedAtUtcMillis = now,
+                ),
+            )
+        }
         if (finish) completeCook(cookId)
+    }
+
+    /**
+     * PL-08 quick verdict: writes ONLY the verdict rows of one scope (the
+     * overall rating, plus "cook again?" for a dish) so the finish sheet can
+     * record verdicts without touching final temperature, notes or any other
+     * saved result. A null rating deletes the row — "Not recorded" is a
+     * first-class state, distinct from a poor rating.
+     */
+    suspend fun saveVerdict(cookId: String, dishId: String?, rating: Double?, cookAgain: Boolean?) = database.withTransaction {
+        require(rating == null || rating.isFinite() && rating in 1.0..5.0) { "Ratings must be from 1 to 5." }
+        if (dishId != null) require(dao.getDish(dishId)?.cookId == cookId) { "This dish is unavailable." }
+        val now = System.currentTimeMillis()
+        val scope = dishId ?: "cook"
+        val ratingId = "$cookId:$scope:overall_rating"
+        if (rating == null) dao.deleteResult(ratingId) else dao.upsertResult(
+            CookResultEntity(ratingId, cookId, dishId, "overall_rating", numericValue = rating, unit = "stars", recordedAtUtcMillis = now),
+        )
+        if (dishId != null) {
+            val againId = "$cookId:$scope:cook_again"
+            if (cookAgain == null) dao.deleteResult(againId) else dao.upsertResult(
+                CookResultEntity(againId, cookId, dishId, "cook_again", numericValue = if (cookAgain) 1.0 else 0.0, recordedAtUtcMillis = now),
+            )
+        }
+    }
+
+    /**
+     * PL-08 "Undo finish": a finished cook returns to active from the
+     * finished cook itself, not only in the moment after finishing. Recorded
+     * facts stay exactly as recorded — results, readings and events are not
+     * touched; the reopen itself is a timeline event.
+     */
+    suspend fun reopenCook(cookId: String) = database.withTransaction {
+        val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
+        if (cook.status != CookStatus.COMPLETED) return@withTransaction
+        val now = System.currentTimeMillis()
+        dao.updateCook(cook.copy(status = CookStatus.ACTIVE, endedAtUtcMillis = null, updatedAtUtcMillis = now))
+        addTimelineEvent(cookId, null, "cook_reopened", "Cook reopened", null, now)
     }
 
     suspend fun completeCook(cookId: String) = database.withTransaction {
@@ -836,10 +929,49 @@ class CookRepository(
     suspend fun startRecipeMeal(title: String, revisionIds: List<String>, newDishes: List<DishDraft> = emptyList()): String = database.withTransaction {
         val selected = revisionIds.map { id -> recipes.revision(id) ?: error("This recipe version is unavailable.") }
         val setups = selected.map { com.pittech.domain.RecipeSnapshotCodec.decode(it.snapshotJson).dish } + newDishes
-        val cookId = startCook(NewCookDraft(title.trim().ifBlank { "New meal" }, dishes = setups))
-        val dishes = dao.getDishesForCook(cookId)
-        selected.forEachIndexed { index, revision -> attachRecipe(dishes[index].id, revision) }
-        cookId
+        startCook(NewCookDraft(title.trim().ifBlank { "New meal" }, dishes = setups, recipeRevisionIds = revisionIds.map { it as String? } + List(newDishes.size) { null }))
+    }
+
+    /** PL-19: the Start Cook review draft for recipes saved from a public
+     * Cook Pack. Nothing starts here — the meal is reviewed (and can be
+     * renamed or adjusted) in the ordinary Start Cook flow, and only
+     * "Begin preparation" creates the cook, with the recipes attached.
+     * PL-10 (#172): the same review serves every recipe start, so the source
+     * label is a parameter — the Cook Pack default stays for Discover. */
+    suspend fun recipeStartDraft(
+        title: String,
+        revisionIds: List<String>,
+        sourceLabel: String = "From a shared Cook Pack · the recipes are saved in your Recipes",
+    ): NewCookDraft {
+        val selected = revisionIds.map { id -> recipes.revision(id) ?: error("This recipe version is unavailable.") }
+        val setups = selected.map { com.pittech.domain.RecipeSnapshotCodec.decode(it.snapshotJson).dish }
+        return NewCookDraft(
+            title.trim().ifBlank { "New meal" },
+            dishes = setups,
+            recipeRevisionIds = revisionIds,
+            sourceLabel = sourceLabel,
+        )
+    }
+
+    /** PL-10 (#172): the Start Cook review draft for a saved meal
+     * combination. Mirrors [startMealPreset]'s fidelity exactly — each
+     * recipe dish keeps its revision attachment and its working-copy
+     * snapshot, which [startCook] applies over the attachment — but nothing
+     * starts here; the cook is created only from the review. */
+    suspend fun presetStartDraft(id: String): NewCookDraft {
+        val preset = database.recipeDao().presets().firstOrNull { it.id == id } ?: error("This meal combination is unavailable.")
+        val items = com.pittech.domain.MealPresetCodec.items(preset.itemsJson)
+        val selected = (0 until items.length()).map { index -> val item = items.getJSONObject(index)
+            if (item.isNull("recipeRevisionId")) null else recipes.revision(item.getString("recipeRevisionId")) ?: error("A saved version in this meal is unavailable.") }
+        val snapshots = (0 until items.length()).map { index -> val item = items.getJSONObject(index); com.pittech.domain.RecipeSnapshotCodec.decode(
+            if (!item.isNull("setupSnapshotJson")) item.getString("setupSnapshotJson") else selected[index]?.snapshotJson ?: item.getString("snapshotJson")) }
+        return com.pittech.domain.MealPresetCodec.setup(preset.itemsJson).copy(
+            title = preset.name,
+            dishes = snapshots.map { it.dish },
+            recipeRevisionIds = selected.map { it?.id },
+            recipeAttemptSnapshots = (0 until items.length()).map { index -> if (selected[index] == null) null else com.pittech.domain.RecipeSnapshotCodec.encode(snapshots[index]) },
+            sourceLabel = "From a saved meal combination · ${preset.name}",
+        )
     }
 
     suspend fun addRecipeToMeal(cookId: String, revisionId: String): String = database.withTransaction {

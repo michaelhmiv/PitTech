@@ -21,31 +21,9 @@ import SwiftUI
     }
 }
 
-struct DishVerdictSheet: View {
-    @Environment(CookStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    let cookId: String
-    let dish: NoteDishRecord
-    @State private var rating: Double?
-    @State private var again: Bool?
-    @State private var notes = ""
-    @State private var error: String?
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section { Text("Results are optional and can be edited later. Skipping a rating is different from a poor result.").font(.subheadline) }
-                Section("How did it turn out?") {
-                    Picker("Rating", selection: $rating) { Text("Not rated").tag(Double?.none); ForEach(1...5, id: \.self) { Text("\($0) / 5").tag(Double?.some(Double($0))) }; if let rating, rating.rounded() != rating { Text("\(rating.formatted()) / 5").tag(Double?.some(rating)) } }
-                    Picker("Cook again?", selection: $again) { Text("Not decided").tag(Bool?.none); Text("Yes").tag(Bool?.some(true)); Text("No").tag(Bool?.some(false)) }
-                    TextEditor(text: $notes).frame(minHeight: 100).accessibilityLabel("Result notes")
-                }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
-            }.navigationTitle(dish.name).navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("Save") { do { try store.saveDishVerdict(cookId: cookId, dishId: dish.id, rating: rating, again: again, notes: notes); dismiss() } catch { self.error = error.localizedDescription } } }
-                }
-                .onAppear { let saved = store.dishVerdict(cookId: cookId, dishId: dish.id); rating = saved.rating; again = saved.again; notes = saved.notes }
-        }
-    }
-}
+// PL-08: the per-dish DishVerdictSheet that used to live here was the light
+// half of iOS's split results handling. It is replaced by the one unified
+// results editor, CookResultsSheet in CookResults.swift — the dish card's
+// "Results & cook again" button opens that sheet focused on the dish. The
+// store functions above stay: they are the tested data-layer path the
+// Cook Pack and sharing writers use.

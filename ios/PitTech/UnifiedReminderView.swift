@@ -19,19 +19,25 @@ struct MealRemindersView: View {
     @Environment(CookStore.self) private var store
     let cookId: String
     var dishId: String?
+    /// PL-02: set when the view was opened from a notification tap — that
+    /// rule's check-in leads the list.
+    var checkInRuleId: String?
     @State private var request: NativeReminderRequest?
     @State private var error: String?
     @State private var confirming: String?
-    @State private var action = "wrap"
+    /// PL-01: no blanket default — preselected only to the action that fired.
+    @State private var action: String?
     private var rules: [[String: JSONValue]] { store.library.reminderRules.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && (dishId == nil || $0["dishId"]?.stringValue == dishId) } }
+    private var dueRules: [[String: JSONValue]] { rules.filter { $0["enabled"]?.boolValue == true && ($0["status"]?.stringValue == "due" || $0["id"]?.stringValue == checkInRuleId) } }
     private var active: Bool { store.library.cooks.contains { $0.id == cookId && $0.isActive } }
     var body: some View {
         List {
             Section {
-                Text("Dismiss, skip and snooze leave the cooking timeline unchanged.")
+                Text("One vocabulary everywhere: Log it records what you did, Snooze 10 min asks again soon, Dismiss ends a reminder without recording.")
                 if active { Button("Add reminder") { request = NativeReminderRequest(dishId: dishId) }.accessibilityIdentifier("reminder-rule-add") }
                 if let message = store.reminderMessage { Text(message).font(.caption) }
             }
+            ForEach(dueRules.indices, id: \.self) { index in checkInSection(dueRules[index]) }
             ForEach(rules.indices, id: \.self) { index in ruleSection(rules[index]) }
             if active { suggestions }
             if let error { Text(error).foregroundStyle(.red) }
@@ -40,11 +46,31 @@ struct MealRemindersView: View {
             .sheet(isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })) {
                 NavigationStack { Form {
                     Text("Only confirm an action you performed. This creates one current-cook entry.")
-                    Picker("Actual action", selection: $action) { ForEach(["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { Text(CookStore.actionLabel($0)).tag($0) } }
-                    Button("Record action") { act { if let id = confirming { _ = try store.confirmReminderAction(id, action: action); confirming = nil } } }
+                    Picker("Actual action", selection: $action) {
+                        Text("Choose action…").tag(Optional<String>.none)
+                        ForEach(["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { Text(CookStore.actionLabel($0)).tag(Optional($0)) }
+                    }
+                    Button("Record action") { act { if let id = confirming, let action { _ = try store.confirmReminderAction(id, action: action); confirming = nil } } }.disabled(action == nil)
                     Button("Cancel") { confirming = nil }
                 }.navigationTitle("Record an actual action") }
             }
+    }
+    /// PL-02: the one check-in a fired reminder offers — Log it / Snooze 10
+    /// min / Dismiss, the same words and meanings as Android and the
+    /// notification. PL-01: when the reminder announced an action, Log it
+    /// records exactly that action in one tap.
+    @ViewBuilder private func checkInSection(_ rule: [String: JSONValue]) -> some View {
+        if let id = rule["id"]?.stringValue {
+            Section("Check in · \(rule["title"]?.stringValue ?? "Reminder")") {
+                if let announced = store.announcedReminderAction(rule) {
+                    Button("Log it · Record \(CookStore.actionLabel(announced))") { act { _ = try store.confirmReminderAction(id, action: announced) } }.accessibilityIdentifier("reminder-checkin-logit")
+                } else {
+                    Button("Log it…") { action = nil; confirming = id }.accessibilityIdentifier("reminder-checkin-logit")
+                }
+                Button("Snooze 10 min") { act { try store.changeReminder(id, action: "snooze") } }
+                Button("Dismiss") { act { try store.changeReminder(id, action: "complete") } }
+            }
+        }
     }
     @ViewBuilder private func ruleSection(_ rule: [String: JSONValue]) -> some View {
         if let id = rule["id"]?.stringValue {
@@ -62,7 +88,7 @@ struct MealRemindersView: View {
                         Button("Snooze 10 min") { act { try store.changeReminder(id, action: "snooze") } }
                         Button("Skip") { act { try store.changeReminder(id, action: "skip") } }
                         Button("Dismiss") { act { try store.changeReminder(id, action: "complete") } }
-                        Button("Record an action…") { confirming = id }
+                        Button("Record an action…") { action = store.announcedReminderAction(rule); confirming = id }
                     }
                 }
                 Button("Remove", role: .destructive) { act { try store.changeReminder(id, action: "remove") } }

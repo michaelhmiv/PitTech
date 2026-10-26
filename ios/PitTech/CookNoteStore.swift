@@ -55,6 +55,18 @@ import UniformTypeIdentifiers
         }
         return draft
     }
+    /// PL-07 (issue #172): a standalone manual reading edits in the same
+    /// note composer as every other temperature job — the draft carries the
+    /// reading's own identity, and saving adopts the reading into the note
+    /// it creates. (Android's retired Temperature Entry dialog was this
+    /// job's separate editor; iOS readings had no editor at all.)
+    func readingDraft(_ reading: TemperatureSample) -> CookNoteDraft {
+        CookNoteDraft(cookId: reading.cookId, dishId: reading.dishId, metadata: CookNoteMetadata(category: "temperature"),
+                      occurredAt: reading.measuredAt.timeIntervalSince1970 * 1_000,
+                      temperatures: [NoteTemperatureDraft(id: reading.id, probeName: reading.probeName, measurementType: reading.measurementType,
+                                                          valueText: String(reading.value), unit: reading.unit, measuredAt: reading.measuredAt.timeIntervalSince1970 * 1_000,
+                                                          dishId: reading.dishId, probeId: reading.probeId)])
+    }
     func saveNote(_ draft: CookNoteDraft) throws {
         try draft.validate()
         guard let cook = library.cooks.first(where: { $0.id == draft.cookId }) else { throw CookNoteError.scope }
@@ -78,19 +90,30 @@ import UniformTypeIdentifiers
             try CookPhaseEngine.validate(next.actions(for: draft.cookId), dishIds: dishIds)
         }
         let owned = Set(next.logReadingLinks.filter { $0.objectValue?["eventId"]?.stringValue == draft.id }.compactMap { $0.objectValue?["readingId"]?.stringValue })
+        let linked = Set(next.logReadingLinks.compactMap { $0.objectValue?["readingId"]?.stringValue })
         // All owned rows are replaced below; IDs and original receipt times remain stable.
         let priorReadings = Dictionary(uniqueKeysWithValues: next.readings.compactMap { row -> (String, [String: JSONValue])? in guard let o = row.objectValue, let id = o["id"]?.stringValue else { return nil }; return (id, o) })
         next.readings.removeAll { owned.contains($0.objectValue?["id"]?.stringValue ?? "") }
         next.logReadingLinks.removeAll { $0.objectValue?["eventId"]?.stringValue == draft.id }
         for t in draft.temperatures {
             let old = priorReadings[t.id]
-            guard old == nil || owned.contains(t.id) && old?["cookId"]?.stringValue == draft.cookId && old?["source"]?.stringValue == "manual", t.dishId == nil || dishIds.contains(t.dishId!) else { throw CookNoteError.scope }
+            // A temperature may reference an existing reading only when it
+            // is manual, belongs to this cook, and is either already owned
+            // by this note or owned by no note at all — the unlinked case
+            // is the composer adopting a standalone manual reading (the
+            // retired Temperature Entry dialog's old job). A reading
+            // linked to another note can never be stolen.
+            guard old == nil || (old?["cookId"]?.stringValue == draft.cookId && old?["source"]?.stringValue == "manual" && (owned.contains(t.id) || !linked.contains(t.id))), t.dishId == nil || dishIds.contains(t.dishId!) else { throw CookNoteError.scope }
             let seed = "\(draft.cookId):manual:\(t.dishId ?? "whole"):\(t.measurementType):\(t.probeName.trimmingCharacters(in: .whitespacesAndNewlines))"
             let stableProbe = "manual-" + SHA256.hash(data: Data(seed.utf8)).map { String(format: "%02x", $0) }.joined()
             let probeId = old?["probeId"]?.stringValue ?? t.probeId ?? stableProbe
             if let probe = next.probes.first(where: { $0.objectValue?["id"]?.stringValue == probeId })?.objectValue {
                 guard probe["cookId"]?.stringValue == draft.cookId else { throw CookNoteError.scope }
             } else { next.probes.append(.object(["id": .string(probeId), "cookId": .string(draft.cookId), "name": .string(t.probeName), "measurementType": .string(t.measurementType), "source": .string("manual"), "createdAtUtcMillis": .number(now)])) }
+            // Replace by identity: an owned row was already removed above,
+            // but an adopted standalone row is still present — writing the
+            // draft's row must not leave a duplicate id behind.
+            next.readings.removeAll { $0.objectValue?["id"]?.stringValue == t.id }
             next.readings.append(.object(["id": .string(t.id), "cookId": .string(draft.cookId), "dishId": t.dishId.map(JSONValue.string) ?? .null, "probeId": .string(probeId), "probeName": .string(t.probeName), "measurementType": .string(t.measurementType), "value": .number(Double(t.valueText)!), "unit": .string(t.unit), "measuredAtUtcMillis": .number(t.measuredAt), "recordedAtUtcMillis": old?["recordedAtUtcMillis"] ?? .number(now), "timeZoneId": .string(TimeZone.current.identifier), "source": .string("manual"), "qualityStatus": .string("valid"), "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(0)]))
             next.logReadingLinks.append(.object(["readingId": .string(t.id), "eventId": .string(draft.id)]))
         }

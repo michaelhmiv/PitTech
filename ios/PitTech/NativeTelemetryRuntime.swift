@@ -4,6 +4,11 @@ import Observation
 @MainActor @Observable final class NativeTelemetryRuntime {
     var profiles: [NativeTelemetryProfile] = []
     var messages: [String: String] = [:]
+    /// PL-05 (#172): attach/assign drafts + discovery bookkeeping, mirroring
+    /// Android's TelemetryRuntime.
+    var assignmentDrafts: [String: NativeTelemetryAssignmentDraft] = [:]
+    var connectingProfiles: Set<String> = []
+    var discoverySettledProfiles: Set<String> = []
     private let vault = NativeTelemetryTokenVault()
     private let configuration: URL
     private var connectors: [String: any NativeReadOnlyTelemetry] = [:]
@@ -17,6 +22,8 @@ import Observation
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         configuration = folder.appendingPathComponent("telemetry-connections-v1.json")
         profiles = (try? JSONDecoder().decode([NativeTelemetryProfile].self, from: Data(contentsOf: configuration))) ?? []
+        // A persisted profile's discovery settled in a prior session.
+        discoverySettledProfiles = Set(profiles.map(\.id))
     }
     func foreground(_ active: Bool, store: CookStore) {
         self.store = store; visible = active
@@ -51,6 +58,8 @@ import Observation
         refreshLiveDevices()
     }
     func connect(_ profile: NativeTelemetryProfile, user: String, secret: String) async throws {
+        connectingProfiles.insert(profile.id)
+        defer { connectingProfiles.remove(profile.id) }
         if profile.provider == .home_assistant { _ = try NativeTelemetryEndpoint.homeAssistant(profile.endpoint) }
         if profile.provider == .flame_boss { _ = try NativeFlameBossBroker(profile.endpoint) }
         if profile.provider == .fireboard && !profile.deviceHint.isEmpty && profile.deviceHint.range(of: "^[0-9]{1,18}$", options: .regularExpression) == nil { throw NativeTelemetryError.configuration }
@@ -61,6 +70,7 @@ import Observation
         else { token = try await NativeTelemetryHTTP().authenticate(profile.provider, user: user, password: secret) }
         let connector = try factory(profile, token: token)
         let sources = try await connector.discover()
+        discoverySettledProfiles.insert(profile.id)
         if !token.isEmpty { try vault.save(profile.id, token) }
         connectors[profile.id]?.disconnect(); connectors[profile.id] = connector
         let old = profiles.first { $0.id == profile.id }
@@ -104,6 +114,7 @@ import Observation
         profiles[index].sources.removeAll { $0.id == source.id }; profiles[index].sources.append(source)
         if !profiles[index].selected.contains(source.id) { profiles[index].selected.append(source.id) }
         try persist()
+        assignmentDrafts[profile.id] = nil // PL-05: a successful attach consumes the draft.
         let readings = try await connector(profiles[index]).snapshot(source.id)
         try store.ingestTelemetry(source, cookId: cook, observations: readings, samplingInterval: profiles[index].onLogOnly ? 0 : max(profiles[index].interval, connector(profiles[index]).minimumInterval))
     }
@@ -121,6 +132,15 @@ import Observation
         profiles[index].selected.removeAll { $0 == source.id }; if profiles[index].selected.isEmpty { profiles[index].monitoring = false }
         messages[profile.id + ":" + source.id] = "Disconnected"; try persist()
     }
+    /// PL-05 (#172): the saved draft for a connection, seeded from its
+    /// current attach/assign state on first read.
+    func assignmentDraft(for profile: NativeTelemetryProfile, store: CookStore) -> NativeTelemetryAssignmentDraft {
+        if let existing = assignmentDrafts[profile.id] { return existing }
+        let seeded = NativeTelemetryAssignmentDraft.seed(profile: profile, store: store)
+        assignmentDrafts[profile.id] = seeded
+        return seeded
+    }
+    func updateAssignmentDraft(_ draft: NativeTelemetryAssignmentDraft, for profileID: String) { assignmentDrafts[profileID] = draft }
     func update(_ profile: NativeTelemetryProfile) throws {
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
             if profiles[index].monitoring != profile.monitoring, let cook = profile.cookId, let store {

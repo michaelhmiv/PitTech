@@ -66,7 +66,13 @@ class CookNoteRepository(private val database: PitTechDatabase, private val stor
             draft.temperatures.forEach { t ->
                 val old = experience.reading(t.id)
                 val link = experience.readingLink(t.id)
-                require(old == null || old.cookId == draft.cookId && old.source == "manual" && (link?.eventId == note.id || owned.any { it.id == old.id }))
+                // A temperature may reference an existing reading only when
+                // that reading is manual, belongs to this cook, and is either
+                // already owned by this note or owned by no note at all — the
+                // unlinked case is the composer adopting a standalone manual
+                // reading (the retired Temperature Entry dialog's old job).
+                // A reading linked to another note can never be stolen.
+                require(old == null || old.cookId == draft.cookId && old.source == "manual" && (link == null || link.eventId == note.id || owned.any { it.id == old.id }))
                 require(t.dishId == null || dao.getDish(t.dishId)?.cookId == draft.cookId)
                 val probeId = old?.probeId ?: t.probeId ?: UUID.nameUUIDFromBytes("${draft.cookId}:manual:${t.dishId}:${t.measurementType}:${t.probeName}".toByteArray()).toString()
                 dao.insertProbesIgnoringDuplicates(listOf(ProbeEntity(probeId, draft.cookId, name = t.probeName, measurementType = t.measurementType, source = "manual", createdAtUtcMillis = now)))

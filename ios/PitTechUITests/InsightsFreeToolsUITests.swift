@@ -53,7 +53,9 @@ final class InsightsFreeToolsUITests: XCTestCase {
             app.launchArguments = ["--ui-test-reset", "--ui-test-empty"] + (large ? ["--screenshot-large-text"] : [])
             app.launch()
             app.tabBars.buttons["Insights"].tap()
-            XCTAssertTrue(app.staticTexts["Keep logging to build insights"].waitForExistence(timeout: 10))
+            // PL-25 (#172 Slice 10): the Insights empty title is the shared
+            // StateCopy wording on both platforms now.
+            XCTAssertTrue(app.staticTexts["No cooks yet"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["Finished cooks"].waitForExistence(timeout: 10))
             app.terminate()
         }

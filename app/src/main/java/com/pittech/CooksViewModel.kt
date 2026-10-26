@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -46,6 +47,8 @@ class CooksViewModel(
         val prepared = withContext(Dispatchers.IO) { file.inputStream().buffered().use(dataTransfer::previewCookPack) }
         val source = prepared.cookPack?.optJSONObject("source")
         require(source != null && source.optString("itemId") == id && source.optString("revisionId") == revision) { "This download doesn't match the recipe preview." }
+        previewPublicItemId = id
+        _importHistoryAdded.value = false
         _importPreview.value = prepared.copy(publicCookOnSave = cook)
     }
     internal var publicDiscovery = com.pittech.data.PublicManager(context, viewModelScope, onPreview = ::previewPublicCookPack)
@@ -100,6 +103,8 @@ class CooksViewModel(
     }, preview = { file ->
         val prepared = file.inputStream().buffered().use(dataTransfer::previewImport)
         require(prepared.cookPack != null) { "This download is not a supported Cook Pack." }
+        previewPublicItemId = null
+        _importHistoryAdded.value = false
         _importPreview.value = prepared
     })
     internal val guide get() = repository.guide
@@ -109,12 +114,10 @@ class CooksViewModel(
         val working = repository.recipeAttempt(dishId)
         return if (working == null) recorded else recorded.copy(snapshot = com.pittech.data.RecipeExtraction.mergeAttempt(working, recorded.snapshot))
     }
-    internal suspend fun startRecipeMeal(title: String, revisions: List<String>) = repository.startRecipeMeal(title, revisions).also { openCook(it) }
     internal suspend fun addRecipeToMeal(cookId: String, revisionId: String) = repository.addRecipeToMeal(cookId, revisionId)
     internal suspend fun updateRecipeAttempt(dishId: String, snapshot: com.pittech.domain.RecipeSnapshot) = repository.updateRecipeAttempt(dishId, snapshot)
     internal suspend fun recipeAttempt(dishId: String) = repository.recipeAttempt(dishId)
     internal suspend fun saveMealPreset(cookId: String, name: String) = repository.saveMealPreset(cookId, name)
-    internal suspend fun startMealPreset(id: String) = repository.startMealPreset(id).also { openCook(it) }
     internal fun refreshReminderRules() { viewModelScope.launch { app.reminderRepository.reconcileAll(context) } }
     internal val reminders get() = app.reminderRepository
     internal suspend fun saveReminderRule(cookId: String, dishId: String?, title: String, trigger: com.pittech.domain.ReminderTrigger, id: String? = null, revisionId: String? = null, milestoneId: String? = null) = app.reminderRepository.save(cookId, dishId, title, trigger, id ?: java.util.UUID.randomUUID().toString(), revisionId, milestoneId).also { app.reminderRepository.cancelDisplayed(context, it); app.reminderRepository.reconcile(context, cookId) }
@@ -269,10 +272,11 @@ class CooksViewModel(
     fun saveServePlan(plan: com.pittech.domain.ServePlan) = perform {
         val id = app.servePlanRepository.save(plan, editingServePlanId)
         if (_setupPreview.value?.scheduledPlanId == id) _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
-        _servePlanEditor.value = null; _notice.value = "Cook saved for later. Recording starts only when you start the cook."
+        _servePlanEditor.value = null; _notice.value = "Plan saved — not started. Recording starts only when you start the cook."
     }
     fun previewScheduledCook(id: String) = perform {
         val plan = com.pittech.domain.ServeTimePlanner.decode(app.companionRepository.get(id)?.payload ?: error("Scheduled cook not found."))
+        _previewPlaybook.value = null
         _setupPreview.value = plan.book.draft.copy(scheduledPlanId = id)
         _selectedCookId.value = null
     }
@@ -326,25 +330,113 @@ class CooksViewModel(
         editingPlaybookId = id
         _playbookEditor.value = app.companionRepository.get(id)?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) }
     }
-    fun closePlaybookEditor() { _playbookEditor.value = null }
+    fun closePlaybookEditor() { _playbookEditor.value = null; adoptPreviewPlaybook = false }
     fun savePlaybook(book: com.pittech.domain.CookPlaybook, photos: Boolean) = perform {
         val newId = app.companionRepository.save(book, editingPlaybookId, photos)
-        if (_setupPreview.value?.playbookId == editingPlaybookId && editingPlaybookId != null) _setupPreview.value = book.draft.copy(playbookId = newId)
+        if (adoptPreviewPlaybook) {
+            // PL-10: the user explicitly saved the cook-again preview's steps
+            // from the editor — the reviewed setup now follows the saved book.
+            adoptPreviewPlaybook = false
+            _previewPlaybook.value = null
+            _setupPreview.value = book.draft.copy(playbookId = newId)
+        } else if (_setupPreview.value?.playbookId == editingPlaybookId && editingPlaybookId != null) {
+            _setupPreview.value = book.draft.copy(playbookId = newId)
+        }
         _playbookEditor.value = null
         _notice.value = "Playbook saved on this phone."
     }
     fun previewPlaybook(id: String) = perform {
         val book = app.companionRepository.get(id)?.let { com.pittech.domain.PlaybookCodec.decode(it.payload) } ?: error("Playbook not found.")
+        _previewPlaybook.value = null
         _setupPreview.value = book.draft.copy(title = book.name, playbookId = id)
         _selectedCookId.value = null
     }
+
+    /** PL-10 (#172): the playbook behind the open Start Cook review when it
+     * exists only as a preview (cook-again). It is deliberately NOT saved to
+     * the library: starting the cook attaches its steps as a snapshot, and
+     * it is saved only if the user edits the steps and saves from the
+     * playbook editor. */
+    private val _previewPlaybook = MutableStateFlow<com.pittech.domain.CookPlaybook?>(null)
+    val previewPlaybook: StateFlow<com.pittech.domain.CookPlaybook?> = _previewPlaybook.asStateFlow()
+    private var adoptPreviewPlaybook = false
     fun previewCookAgain(cookId: String) = perform {
         val book = app.companionRepository.suggest(cookId)
-        val id = app.companionRepository.save(book)
-        _setupPreview.value = book.draft.copy(playbookId = id)
+        _previewPlaybook.value = book
+        _setupPreview.value = book.draft.copy(playbookId = null, sourceLabel = "Cook again · copied from ${book.name}")
         _selectedCookId.value = null
     }
-    fun consumeSetupPreview() { _setupPreview.value = null }
+    /** PL-10: "Adjust playbook steps" on a cook-again review opens the editor
+     * on the transient book; saving there is the explicit save action. */
+    fun editPreviewPlaybook() {
+        val book = _previewPlaybook.value ?: return
+        editingPlaybookId = null
+        adoptPreviewPlaybook = true
+        _playbookEditor.value = book
+    }
+
+    /** PL-10 (#172): the Recipes library start lands on the same Start Cook
+     * review as every other start path — no cook exists until the review's
+     * "Begin preparation" is tapped. */
+    fun previewRecipeMeal(title: String, revisionIds: List<String>) = perform {
+        _previewPlaybook.value = null
+        _setupPreview.value = repository.recipeStartDraft(
+            title, revisionIds,
+            sourceLabel = "From your Recipes · saved recipes stay attached to their dishes",
+        )
+        _selectedCookId.value = null
+    }
+
+    /** PL-10 (#172): repeating a saved meal combination lands on the same
+     * Start Cook review; the preset's working copies ride along in the
+     * draft and are applied when the cook starts. */
+    fun previewMealPreset(id: String) = perform {
+        _previewPlaybook.value = null
+        _setupPreview.value = repository.presetStartDraft(id)
+        _selectedCookId.value = null
+    }
+    fun consumeSetupPreview() {
+        _setupPreview.value = null
+        // The transient cook-again book belongs to the open review only.
+        _previewPlaybook.value = null
+    }
+
+    // PL-13 (#172): the Start Cook setup kept on this device when a setup is
+    // left mid-edit. Meals offers "Resume setup" until the draft is discarded
+    // or a cook is started from it. Device-local only — never synced.
+    private val setupDraftKey = "start-cook-setup-draft"
+    private val setupDraftPlaybookKey = "start-cook-setup-draft-playbook"
+    private val _setupDraft = MutableStateFlow<NewCookDraft?>(loadSetupDraft())
+    val setupDraft: StateFlow<NewCookDraft?> = _setupDraft.asStateFlow()
+    private fun loadSetupDraft(): NewCookDraft? = runCatching {
+        context.getSharedPreferences("pittech-preferences", 0).getString(setupDraftKey, null)
+            ?.let { com.pittech.domain.SetupDraftCodec.decode(it) }
+    }.getOrNull()
+    fun keepSetupDraft(draft: NewCookDraft) {
+        _setupDraft.value = draft
+        val editor = context.getSharedPreferences("pittech-preferences", 0).edit()
+            .putString(setupDraftKey, com.pittech.domain.SetupDraftCodec.encode(draft))
+        // A cook-again preview's unsaved steps are part of the setup; keep
+        // them beside the draft so Resume restores the same review.
+        val book = _previewPlaybook.value
+        if (book != null) editor.putString(setupDraftPlaybookKey, com.pittech.domain.PlaybookCodec.encode(book))
+        else editor.remove(setupDraftPlaybookKey)
+        editor.apply()
+    }
+    fun discardSetupDraft() {
+        _setupDraft.value = null
+        context.getSharedPreferences("pittech-preferences", 0).edit()
+            .remove(setupDraftKey).remove(setupDraftPlaybookKey).apply()
+    }
+    fun resumeSetupDraft() {
+        val draft = _setupDraft.value ?: return
+        _previewPlaybook.value = runCatching {
+            context.getSharedPreferences("pittech-preferences", 0).getString(setupDraftPlaybookKey, null)
+                ?.let { com.pittech.domain.PlaybookCodec.decode(it) }
+        }.getOrNull()
+        _setupPreview.value = draft
+        _selectedCookId.value = null
+    }
     fun deletePlaybook(id: String) = perform { app.companionRepository.delete(id) }
 
     val cooks: StateFlow<List<CookWithDishes>> = repository.observeCooks()
@@ -352,6 +444,17 @@ class CooksViewModel(
 
     private val _selectedCookId = MutableStateFlow<String?>(null)
     val selectedCookId: StateFlow<String?> = _selectedCookId.asStateFlow()
+
+    init {
+        // PL-20 (#172): keep the diagnostics record of the open cook
+        // current so crash recovery can return to it. The initial value
+        // is dropped: at process start nothing has been selected yet,
+        // and the record from before a crash must survive until
+        // recovery reads it.
+        viewModelScope.launch {
+            _selectedCookId.drop(1).collect { CrashDiagnostics.recordOpenCook(context, it) }
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val selectedCook = _selectedCookId.filterNotNull()
@@ -384,6 +487,23 @@ class CooksViewModel(
     private val _importPreview = MutableStateFlow<PitTechDataTransfer.ImportDraft?>(null)
     val importPreview: StateFlow<PitTechDataTransfer.ImportDraft?> = _importPreview.asStateFlow()
 
+    /** PL-19: the recorded meal in the open Cook Pack preview was added to
+     * history. The preview itself stays open — the pending recipe save
+     * choice is not dropped — so this is tracked beside the draft rather
+     * than inside it (rewriting the draft would reset the selection). */
+    private val _importHistoryAdded = MutableStateFlow(false)
+    val importHistoryAdded: StateFlow<Boolean> = _importHistoryAdded.asStateFlow()
+
+    /** The public item the open Cook Pack preview came from, so a completed
+     * save can mark that Discover detail as saved (PL-19). */
+    private var previewPublicItemId: String? = null
+
+    /** PL-18: a completed publication asks the shell to open My Cookbook —
+     * the user lands where the thing went. */
+    private val _cookbookOpenRequests = MutableStateFlow(0)
+    val cookbookOpenRequests: StateFlow<Int> = _cookbookOpenRequests.asStateFlow()
+    fun requestCookbookOpen() { _cookbookOpenRequests.value += 1 }
+
     private val _restoredPreferences = MutableStateFlow<BackupPreferences?>(null)
     val restoredPreferences: StateFlow<BackupPreferences?> = _restoredPreferences.asStateFlow()
 
@@ -403,11 +523,53 @@ class CooksViewModel(
     fun requestReminderCheckIn(reminderId: String) { _pendingReminderId.value = reminderId }
     fun consumeReminderCheckIn() { _pendingReminderId.value = null }
 
+    // PL-02 (issue #172): a unified-reminder notification tap routes to THAT
+    // rule's check-in, not just the cook.
+    private val _pendingReminderRuleId = MutableStateFlow<String?>(null)
+    val pendingReminderRuleId: StateFlow<String?> = _pendingReminderRuleId.asStateFlow()
+    fun requestReminderRuleCheckIn(ruleId: String) { _pendingReminderRuleId.value = ruleId }
+    fun consumeReminderRuleCheckIn() { _pendingReminderRuleId.value = null }
+
+    // PL-03 (issue #172): a cook-alert notification tap routes to THAT rule —
+    // Cook Detail opens with the Alerts sheet up at the firing rule.
+    private val _pendingAlertId = MutableStateFlow<String?>(null)
+    val pendingAlertId: StateFlow<String?> = _pendingAlertId.asStateFlow()
+    fun requestAlertFocus(alertId: String) { _pendingAlertId.value = alertId }
+    fun consumeAlertFocus() { _pendingAlertId.value = null }
+
+    /** In-app feedback through the app's notice snackbar (PL-29 rider: test alerts land here, not in a real notification). */
+    fun showNotice(message: String) { _notice.value = message }
+
+    /** PL-01: the action a unified rule announced, for its check-in/record default. */
+    suspend fun reminderAnnouncedAction(ruleId: String): String? =
+        app.reminderRepository.rule(ruleId)?.let { app.reminderRepository.announcedAction(it) }
+
+    /**
+     * PL-01: the food-card phase actions record immediately in one tap (the
+     * guidance Done pattern), instead of opening a composer that records
+     * nothing until a second Save. The recorded event stays editable, so a
+     * note or photo can be added to it afterwards.
+     */
+    fun recordDishActionNow(cookId: String, dishId: String?, action: String, onRecorded: (String) -> Unit) = perform {
+        snapshotForCookLog(cookId)
+        val result = repository.notes.save(
+            com.pittech.domain.CookNoteDraft(
+                cookId = cookId, dishId = dishId, category = "action", action = action,
+                title = com.pittech.domain.PlaybookCodec.actions[action].orEmpty(),
+            ),
+        )
+        // No _notice here: the caller confirms with its own snackbar, which
+        // carries the "Add note" follow-up for the recorded entry.
+        onRecorded(result.event.id)
+    }
+
     fun startCook(draft: NewCookDraft) = perform {
         if (draft.recordGrill) require(app.grillMonitor.state.value.authenticated && app.grillMonitor.state.value.selectedDevice != null) { "Choose a connected grill in Devices before starting automatic recording." }
         val selected = app.grillMonitor.state.value.selectedDevice
         val resolved = if (draft.recordGrill && draft.smokerName.isBlank()) draft.copy(smokerName = selected?.name.orEmpty()) else draft
-        val cookId = repository.startCook(resolved)
+        val cookId = repository.startCook(resolved, transientPlaybook = _previewPlaybook.value)
+        _previewPlaybook.value = null
+        discardSetupDraft()
         _selectedCookId.value = cookId
         _savedCookId.value = cookId
         _notice.value = "Cook saved on this phone."
@@ -477,7 +639,7 @@ class CooksViewModel(
     suspend fun persistNoteDraft(draft: com.pittech.domain.CookNoteDraft) {
         try { repository.notes.persistDraft(draft) }
         catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (failure: Exception) { _error.value = failure.message ?: "This note draft could not be saved. Try again." }
+        catch (failure: Exception) { _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_NOTE_DRAFT_FAILED) }
     }
     suspend fun stageNotePhoto(id: String, uri: String) = repository.notes.stagePhoto(id, uri)
     fun discardNoteDraft(id: String) = perform { repository.notes.discardDraft(id) }
@@ -580,6 +742,14 @@ class CooksViewModel(
         _notice.value = "Reminder cancelled."
     }
 
+    /** PL-02: Dismiss — the legacy check-in's third explicit option; ends the
+     * reminder with nothing recorded (and replaces the hidden 1-hour snooze). */
+    fun dismissCookReminder(reminder: CookReminderEntity) = perform {
+        repository.dismissCookReminder(reminder.id)?.let { CookReminderNotifications.cancel(context, it.id, it.cookId) }
+        consumeReminderCheckIn()
+        _notice.value = "Reminder dismissed."
+    }
+
     fun snoozeCookReminder(reminder: CookReminderEntity, delayMillis: Long) = perform {
         val dueAt = System.currentTimeMillis() + delayMillis
         repository.snoozeCookReminder(reminder.id, dueAt)?.let { updated ->
@@ -621,7 +791,7 @@ class CooksViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = failure.message ?: "That check-in could not be saved. Try again."
+                _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_CHECK_IN_FAILED)
             } finally {
                 _busy.value = false
             }
@@ -645,15 +815,38 @@ class CooksViewModel(
         finish: Boolean,
         keepDoing: String = "",
         changeNextTime: String = "",
+        cookAgain: Boolean? = null,
         onFinished: ((Boolean) -> Unit)? = null,
     ) = perform({
         repository.saveLearning(cookId, dishId, keepDoing, changeNextTime)
-        repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish)
+        repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish, cookAgain = cookAgain, updateCookAgain = dishId != null)
         if (finish) reconcileRecording()
         if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }
         if (finish) cancelCompanionNotifications(cookId)
         _notice.value = if (finish) "Cook finished and results saved." else "Results saved."
     }, onFinished)
+
+    /**
+     * PL-08: the completion sheet's quick-verdict step — the whole-cook
+     * overall verdict plus one verdict (rating + cook again?) per dish,
+     * written through the one results model without touching other fields.
+     */
+    fun saveFinishVerdicts(
+        cookId: String,
+        overallRating: Double?,
+        dishVerdicts: Map<String, Pair<Double?, Boolean?>>,
+        onFinished: ((Boolean) -> Unit)? = null,
+    ) = perform({
+        repository.saveVerdict(cookId, null, overallRating, null)
+        dishVerdicts.forEach { (dishId, verdict) -> repository.saveVerdict(cookId, dishId, verdict.first, verdict.second) }
+        _notice.value = "Verdict saved."
+    }, onFinished)
+
+    fun reopenCook(cookId: String) = perform {
+        repository.reopenCook(cookId)
+        reconcileRecording()
+        _notice.value = "Cook reopened."
+    }
 
     fun completeCook(cookId: String) = perform {
         repository.completeCook(cookId)
@@ -752,6 +945,8 @@ class CooksViewModel(
     }
 
     fun previewImport(uri: Uri) = perform {
+        previewPublicItemId = null
+        _importHistoryAdded.value = false
         _importPreview.value = withContext(Dispatchers.IO) {
             val input = context.contentResolver.openInputStream(uri) ?: error("The selected backup could not be opened.")
             input.use(dataTransfer::previewImport)
@@ -774,6 +969,8 @@ class CooksViewModel(
             val pendingReminders = repository.getPendingCookReminders()
             pendingReminders.forEach { CookReminderNotifications.schedule(context, it) }
             _importPreview.value = null
+            _importHistoryAdded.value = false
+            previewPublicItemId = null
             val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
                 (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
             val reminderStatus = if (pendingReminders.isNotEmpty() && !notificationsEnabled) " Reminders are saved, but notifications are off so they may not alert." else ""
@@ -787,8 +984,19 @@ class CooksViewModel(
             val draft = source.selectCookPackRecipes(revisions)
             withContext(Dispatchers.IO) { dataTransfer.import(draft) }
             _importPreview.value = null
-            if (source.publicCookOnSave) openCook(repository.startRecipeMeal(source.snapshot.companionRecords.firstOrNull()?.title ?: "New meal", revisions.sorted()))
-            _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
+            _importHistoryAdded.value = false
+            if (source.publicCookOnSave) {
+                // PL-19: "Cook this" lands on the Start Cook review instead
+                // of teleporting into a live cook from a save dialog — the
+                // meal starts only when the user confirms the setup.
+                _previewPlaybook.value = null
+                _setupPreview.value = repository.recipeStartDraft(source.snapshot.companionRecords.firstOrNull()?.title ?: "New meal", revisions.sorted())
+                _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Review the meal setup to start cooking."
+            } else {
+                previewPublicItemId?.let { publicDiscovery.markSaved(it) }
+                _notice.value = "Saved ${revisions.size} ${if (revisions.size == 1) "recipe" else "recipes"}. Find them in Recipes."
+            }
+            previewPublicItemId = null
         }
     }
 
@@ -796,12 +1004,19 @@ class CooksViewModel(
         val source = _importPreview.value ?: return
         perform {
             val result = withContext(Dispatchers.IO) { dataTransfer.import(source.recordedCookOnly()) }
-            _importPreview.value = null
-            _notice.value = if (result.importedCooks == 0) "This recorded meal is already in your history." else "Added the recorded meal to history."
+            // PL-19: adding the recorded meal no longer closes the save
+            // dialog — the pending recipe selection survives, so the user
+            // can still save the recipes they picked.
+            _importHistoryAdded.value = true
+            _notice.value = if (result.importedCooks == 0) "This recorded meal is already in your history. You can still save the recipes below." else "Added the recorded meal to history. You can still save the recipes below."
         }
     }
 
-    fun cancelImport() { _importPreview.value = null }
+    fun cancelImport() {
+        _importPreview.value = null
+        _importHistoryAdded.value = false
+        previewPublicItemId = null
+    }
     fun consumeRestoredPreferences() { _restoredPreferences.value = null }
 
     fun clearSavedCookSignal() { _savedCookId.value = null }
@@ -824,7 +1039,7 @@ class CooksViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = failure.message ?: "That change could not be saved. Try again."
+                _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_CHANGE_FAILED)
             } finally {
                 _busy.value = false
                 onFinished?.invoke(succeeded)
@@ -848,7 +1063,7 @@ class CooksViewModel(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _error.value = failure.message ?: "That timeline entry could not be saved. Try again."
+                _error.value = com.pittech.ui.ErrorCopy.failureText(failure, com.pittech.ui.ErrorCopy.SAVE_TIMELINE_ENTRY_FAILED)
             } finally {
                 _busy.value = false
             }

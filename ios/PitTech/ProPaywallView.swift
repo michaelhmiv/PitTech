@@ -147,10 +147,19 @@ struct ProPaywallView: View {
                             .font(.caption)
                             .foregroundStyle(PitTechStyle.supporting)
                     } else {
-                        Text("PitTech Pro isn't available on this build yet.")
-                            .font(.subheadline)
-                            .foregroundStyle(PitTechStyle.supporting)
-                            .accessibilityIdentifier("pro-product-unavailable")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("PitTech Pro isn't available on this build yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(PitTechStyle.supporting)
+                                .accessibilityIdentifier("pro-product-unavailable")
+                            // PL-17: the unavailable state is not a dead
+                            // end — the user can re-check the store product
+                            // and their entitlement without leaving the gate.
+                            Button("Check again") { Task { await pro.loadProduct(); await pro.reconcile() } }
+                                .buttonStyle(.bordered)
+                                .frame(minHeight: 44)
+                                .accessibilityIdentifier("pro-check-again")
+                        }
                     }
 
                     if !pro.signedIn {
@@ -160,7 +169,11 @@ struct ProPaywallView: View {
                             .font(.subheadline)
                             .accessibilityIdentifier("pro-signin-required")
                         if pro.accountsEnabled {
-                            Button("Sign in") { account.showingAccount = true }
+                            // Slice 8 (PL-15 / DD-10): sign-in is a detour —
+                            // the gate parks this destination, the account
+                            // sheet takes over, and closing it (signed in
+                            // or cancelled) lands back here.
+                            Button("Sign in") { pro.beginSignInDetour() }
                                 .buttonStyle(.bordered)
                                 .frame(minHeight: 44)
                                 .accessibilityIdentifier("pro-signin")

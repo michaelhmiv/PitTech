@@ -108,6 +108,47 @@ final class PrivateSyncProtocolTests: XCTestCase {
         XCTAssertNil(try NativePrivateSyncProtocol.resolve(immutable, choice: "mine", deviceId: deviceA).restoreType)
     }
 
+    func testConflictViewPreviewsActualContentSideBySide() throws {
+        // PL-16: the review renders the conflicting content itself, not the
+        // one-line summaries — the note's title, type and time are fields on
+        // each side, so the two versions can be judged against each other.
+        func fullNote(_ title: String) -> [String: JSONValue] {
+            var payload = note(title); payload["eventType"] = .string("note"); payload["occurredAtUtcMillis"] = .number(1000); return payload
+        }
+        let base = [row("events", "note-1", 1, deviceA, fullNote("Base"))]
+        let mine = row("events", "note-1", 2, deviceA, fullNote("Mine"))
+        let theirs = row("events", "note-1", 2, deviceB, fullNote("Theirs"))
+        let conflict = try XCTUnwrap(NativePrivateSyncMerge.merge(base: base, local: [mine], remote: [theirs]).conflicts.first)
+        let view = NativePrivateSyncProtocol.conflictView(conflict, deviceId: deviceA)
+        XCTAssertEqual(view.recordType, "events"); XCTAssertEqual(view.recordLabel, "Note"); XCTAssertTrue(view.canKeepBoth)
+        func field(_ fields: [NativeConflictPreviewField], _ label: String) -> String? { fields.first { $0.label == label }?.value }
+        XCTAssertEqual(field(view.mineFields, "Title"), "Mine"); XCTAssertEqual(field(view.theirsFields, "Title"), "Theirs")
+        XCTAssertEqual(field(view.mineFields, "Type"), "note")
+        XCTAssertEqual(field(view.mineFields, "Occurred"), "Jan 1, 1970 · 12:00 AM UTC")
+        // Reference ids and bookkeeping timestamps carry no judging value.
+        XCTAssertTrue(view.mineFields.allSatisfy { !["Id", "Cook Id", "Created", "Updated", "Recorded"].contains($0.label) })
+        // A reading preview pairs the value with its unit as one field.
+        let reading = NativePrivateSyncProtocol.previewFields(row("readings", "r-1", 1, deviceA, ["id": .string("r-1"), "value": .number(74.1), "unit": .string("°C"), "probeName": .string("Pit"), "measuredAtUtcMillis": .number(1000)]))
+        XCTAssertEqual(field(reading, "Value"), "74.1 °C"); XCTAssertEqual(field(reading, "Probe"), "Pit")
+        XCTAssertTrue(reading.allSatisfy { $0.label != "Unit" })
+        // A tombstone side previews as deleted, with its entry named.
+        let tombstone = NativePrivateSyncProtocol.previewFields(row("events", "note-9", 1, deviceA, nil, deleted: true))
+        XCTAssertEqual(tombstone, [NativeConflictPreviewField(label: "Status", value: "Deleted"), NativeConflictPreviewField(label: "Entry", value: "Note note-9")])
+    }
+
+    func testKeepBothUnavailableKindsAreExactlyTheLinkAndSingletonKeys() throws {
+        // PL-16, from contracts/private-sync-projection-v1.json: of the 21
+        // projected kinds, only logReadingLinks (keyed by readingId) and
+        // lifecycles (keyed by cookId) cannot hold two versions at once.
+        XCTAssertEqual(NativePrivateSyncProtocol.keepBothUnavailableTypes(), ["logReadingLinks", "lifecycles"])
+        let lifecycle = try XCTUnwrap(NativePrivateSyncMerge.merge(base: [row("lifecycles", "cook-1", 1, deviceA, ["cookId": .string("cook-1"), "timingMode": .string("legacy_preserved")])],
+            local: [row("lifecycles", "cook-1", 2, deviceA, ["cookId": .string("cook-1"), "timingMode": .string("explicit_phases")])],
+            remote: [row("lifecycles", "cook-1", 2, deviceB, ["cookId": .string("cook-1"), "timingMode": .string("legacy_preserved")])]).conflicts.first)
+        let view = NativePrivateSyncProtocol.conflictView(lifecycle, deviceId: deviceA)
+        XCTAssertFalse(view.canKeepBoth)
+        XCTAssertEqual(view.mineFields.first { $0.label == "Timing mode" }?.value, "explicit_phases")
+    }
+
     func testSummariesDescribeCompetingVersionsAndKeepBothLimits() throws {
         let base = [row("lifecycles", "cook-1", 1, deviceA, ["cookId": .string("cook-1"), "timingMode": .string("legacy_preserved")])]
         let mine = row("lifecycles", "cook-1", 2, deviceA, ["cookId": .string("cook-1"), "timingMode": .string("explicit_phases")])

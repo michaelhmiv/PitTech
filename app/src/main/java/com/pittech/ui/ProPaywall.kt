@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -70,21 +71,26 @@ internal fun ProGateDialog(
     val destination = proDestination(state.signedIn, state.entitlement, state.serverState, previouslyEntitled)
     var showingRecap by remember(entry) { mutableStateOf(false) }
     val entitled = state.entitlement == AdEntitlement.ENTITLED
+    // Sign-in from the gate is a detour, not an exit (Slice 8, PL-15 /
+    // DD-10): park the entry and close the gate so the account surface is
+    // reachable; when the account surface closes, the host resumes the
+    // detour and this gate reopens on the same destination.
+    val detourSignIn = { subscription.beginSignInDetour(); onSignIn() }
     when (destination) {
         ProDestination.LOADING -> ProLoadingDialog(subscription, entry)
-        ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, onSignIn, activity)
+        ProDestination.PAYWALL -> ProPaywallDialog(subscription, entry, detourSignIn, activity)
         ProDestination.PRO -> if (showingRecap && (entry == ProPlacement.ANALYSIS || entry == ProPlacement.MORE)) {
             ProRecapDialog(subscription, personal, customization, entitled, onBack = { showingRecap = false })
         } else {
             when (entry) {
-                ProPlacement.BENCHMARKS -> CommunityBenchmarksDialog(subscription, entry, benchmarks, onSignIn, activity)
+                ProPlacement.BENCHMARKS -> CommunityBenchmarksDialog(subscription, entry, benchmarks, detourSignIn, activity)
                 ProPlacement.ANALYSIS -> ProPersonalAnalysisDialog(subscription, entry, personal, onRecap = { showingRecap = true })
                 ProPlacement.CURVES -> ProAdvancedCurvesDialog(subscription, entry, personal, customization, entitled)
                 ProPlacement.THEMES -> ProCustomizationDialog(subscription, entry, customization)
                 ProPlacement.MORE -> ProMoreHubDialog(subscription, entry, onRecap = { showingRecap = true })
             }
         }
-        ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, onSignIn, activity)
+        ProDestination.EXPIRED_FALLBACK -> ProExpiredFallbackDialog(subscription, entry, detourSignIn, activity)
     }
 }
 
@@ -117,29 +123,31 @@ internal fun ProEntryRow(entry: ProPlacement, onClick: (ProPlacement) -> Unit) {
 @Composable
 private fun ProLoadingDialog(subscription: SubscriptionManager, entry: ProPlacement) {
     val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    // PL-22 (DD-6): the Pro status wait is a status surface — full screen.
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(Modifier.fillMaxWidth().testTag("pro-loading"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator()
-                Text("Checking PitTech Pro status…", style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator()
+                    Text(LoadingCopy.CHECKING_PRO, style = MaterialTheme.typography.bodyLarge)
+                }
                 Text("Your cooks, exports, and free tools stay available while this loads.", style = MaterialTheme.typography.bodyMedium)
                 OutlinedButton(onClick = { scope.launch { subscription.reconcile() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Check again") }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 
 @Composable
 internal fun ProPaywallDialog(subscription: SubscriptionManager, entry: ProPlacement, onSignIn: () -> Unit, activity: Activity?) {
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text("PitTech Pro") },
-        text = { ProPaywallContent(subscription, entry, onSignIn, activity) },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-paywall-close")) { Text("Close") } },
-    )
+    // PL-22 (DD-6): the paywall is a full offer surface — full screen.
+    FullScreenSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = "PitTech Pro",
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-paywall-close")) { Text("Close") } },
+    ) { ProPaywallContent(subscription, entry, onSignIn, activity) }
 }
 
 @Composable
@@ -173,11 +181,20 @@ private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlace
                     style = MaterialTheme.typography.bodySmall,
                 )
             } else {
-                Text(
-                    "PitTech Pro isn't available on this build yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.testTag("pro-product-unavailable"),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "PitTech Pro isn't available on this build yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("pro-product-unavailable"),
+                    )
+                    // PL-17: the unavailable state is not a dead end — the
+                    // user can re-check the store product and their
+                    // entitlement without leaving the gate.
+                    OutlinedButton(
+                        onClick = { scope.launch { subscription.loadProduct(); subscription.reconcile() } },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("pro-check-again"),
+                    ) { Text("Check again") }
+                }
             }
         }
         if (!state.signedIn) {
@@ -256,10 +273,12 @@ private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: P
         return
     }
     val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = { subscription.closePaywall() },
-        title = { Text(entry.title) },
-        text = {
+    // PL-22 (DD-6): the expired-Pro fallback is a status surface — a sheet.
+    SheetSurface(
+        onDismiss = { subscription.closePaywall() },
+        title = entry.title,
+        actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
+    ) {
             Column(Modifier.fillMaxWidth().testTag("pro-expired-fallback"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
                 Text("PitTech Pro ended on this account.", style = MaterialTheme.typography.titleMedium)
@@ -272,8 +291,6 @@ private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: P
                 }
                 OutlinedButton(onClick = { scope.launch { subscription.reconcile() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Check again") }
             }
-        },
-        confirmButton = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },
-    )
+    }
 }
 

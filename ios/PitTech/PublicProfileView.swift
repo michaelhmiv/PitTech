@@ -22,7 +22,7 @@ struct NativePublicProfileView: View {
                             }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).padding(16).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                         }.buttonStyle(.plain)
                     }
-                    if items.isEmpty && !loading { Text("No named publications here yet.") }
+                    if items.isEmpty && !loading { Text(EmptyStateCopy.profilePublicationsTitle); Text(EmptyStateCopy.profilePublicationsBody).font(.footnote) }
                     if let cursor = profile.nextCursor { Button("More recipes") { Task { await load(cursor) } }.disabled(loading) }
                 }
                 if loading { ProgressView("Loading cookbook…") }

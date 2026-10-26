@@ -26,7 +26,16 @@ import XCTest
         await community.preview(detail, cook: true, store: store)
         let second = try XCTUnwrap(store.archiveIntake);XCTAssertTrue(second.publicCookOnSave)
         try await store.importSelectedRecipes(second, selected: Set(second.recipes.map(\.id)))
-        let meal = try XCTUnwrap(store.publicCookDestination)
+        // PL-19: "Cook this" no longer teleports into a live cook from the
+        // save. The save parks a reviewed meal start and creates nothing;
+        // confirming the review (what the sheet's Start button calls) is
+        // what creates the independent cook.
+        XCTAssertNil(store.publicCookDestination)
+        XCTAssertEqual(store.library.cooks.count, 1);XCTAssertEqual(store.activeCooks.first?.id, oldCook)
+        XCTAssertEqual(store.lastSavedPublicItemId, id)
+        let start = try XCTUnwrap(store.pendingPublicRecipeStart)
+        XCTAssertEqual(Set(start.revisionIds), Set(second.recipes.map(\.id)))
+        let meal = try store.startRecipeMeal(title: start.title, revisionIds: start.revisionIds)
         XCTAssertNotEqual(meal, oldCook);XCTAssertEqual(store.dishRecords(meal).count, 2);XCTAssertTrue(store.library.cooks.contains { $0.id == oldCook })
     }
     func testNativePublicationWriterRetainsPinnedFrozenStoryAndOnlySelectedOwnedContent() async throws {

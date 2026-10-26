@@ -162,6 +162,7 @@ final class ProPaywallUITests: XCTestCase {
             app.tabBars.buttons["Insights"].tap()
             openPaywall(from: "pro-entry-analysis", app: app)
             XCTAssertTrue(app.staticTexts["pro-product-unavailable"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["pro-check-again"].exists)
             XCTAssertFalse(app.staticTexts["pro-price"].exists)
             XCTAssertFalse(app.buttons["pro-subscribe"].exists)
             closePaywall(app: app)

@@ -13,11 +13,12 @@ struct NativeFeedbackSubmission: Codable {
 enum NativeFeedbackError: LocalizedError {
     case invalid, unavailable, limited, failed
     var errorDescription: String? {
+        // PL-25: the shared FeedbackCopy wording, same as Android.
         switch self {
-        case .invalid: "Shorten the report and try again."
-        case .unavailable: "Feedback is temporarily unavailable. Your draft is saved."
-        case .limited: "Too many reports were submitted recently. Please try later."
-        case .failed: "Couldn't submit feedback. Check your connection and try again."
+        case .invalid: FeedbackCopy.submitTooLong
+        case .unavailable: FeedbackCopy.submitUnavailable
+        case .limited: FeedbackCopy.submitRateLimited
+        case .failed: FeedbackCopy.submitFailed
         }
     }
 }

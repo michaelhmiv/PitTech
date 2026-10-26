@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
@@ -17,7 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.PublicManager
 import org.json.JSONObject
 
-@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null, controls:com.pittech.data.CommunityControls?=null) {
+@Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null, controls:com.pittech.data.CommunityControls?=null, onOpenRecipes: () -> Unit = {}) {
     val state by manager.state.collectAsStateWithLifecycle()
     val accountState=account?.presentation?.collectAsStateWithLifecycle()?.value
     var previousSignedIn by remember{mutableStateOf(accountState?.signedIn)}
@@ -29,10 +30,13 @@ import org.json.JSONObject
     LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery) }
     BackHandler(state.detailId != null || state.profileHandle != null) { manager.back() }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        // PL-23 (DD-8): Discover is a network surface — offline is stated,
+        // with the cached content below unchanged.
+        if(!rememberOnlineState())Text(OfflineCopy.CHANGES_WAIT,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.testTag("discover-offline"))
         if(controls!=null && account!=null)TextButton(onClick={managingControls=true}){Text("Community controls")}
         if(state.profileHandle != null) { PublicProfileContent(manager,state) } else if(state.detailId != null) {
             TextButton(onClick={ manager.back() }) { Text("Back to Discover") }
-            if(state.detailLoading) CircularProgressIndicator()
+            if(state.detailLoading) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.LOADING_RECIPE) }
             state.detail?.let { detail ->
                 state.image?.let { bytes ->
                     val bitmap=remember(bytes) { BitmapFactory.decodeByteArray(bytes,0,bytes.size) }
@@ -46,9 +50,16 @@ import org.json.JSONObject
                 if(account?.enabled==true && publicationWriter!=null)PublicLikeActions(detail.id,account,publicationWriter)
                 if(controls!=null && account!=null)CommunityActions(detail,controls,account,manager)
                 Text("Your saved version stays yours. Publishing a variation is a separate choice.")
-                Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
+                if(state.savedDetailId == detail.id) {
+                    // PL-19: after Save, the primary lands where the thing
+                    // went — the saved recipes in Recipes.
+                    Button(onClick=onOpenRecipes,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-open-recipes")) { Text("Open in Recipes") }
+                    OutlinedButton(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
+                } else {
+                    Button(onClick={ manager.preview(false) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-save")) { Text("Save recipes") }
+                }
                 OutlinedButton(onClick={ manager.preview(true) },enabled=!state.preparing,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("public-cook")) { Text("Cook this") }
-                if(state.preparing) { CircularProgressIndicator();TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
+                if(state.preparing) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.DOWNLOADING_COOK_PACK) }; TextButton(onClick={ manager.cancel() }) { Text("Cancel download") } }
                 detail.recipes.forEach { recipe ->
                     Text(recipe.getString("title"),style=MaterialTheme.typography.titleLarge)
                     recipe.optJSONObject("source")?.let { source->
@@ -77,11 +88,14 @@ import org.json.JSONObject
             OutlinedTextField(query,{query=it.take(80)},label={ Text("Search recipes") },modifier=Modifier.fillMaxWidth().testTag("discover-query"))
             OutlinedTextField(food,{food=it.take(80)},label={ Text("Food type (optional)") },modifier=Modifier.fillMaxWidth().testTag("discover-food"))
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                FilterChip(sort=="liked",{sort="liked"},{Text("Most liked")})
-                FilterChip(sort=="forked",{sort="forked"},{Text("Most forked")})
+                // PL-19: sort changes apply on tap — no separate Search tap
+                // stands between the choice and its result. (The text
+                // fields still apply with the Search button below.)
+                FilterChip(sort=="liked",{sort="liked";manager.refresh("liked",food,query)},{Text("Most liked")})
+                FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query)},{Text("Most forked")})
             }
             Button(onClick={ manager.refresh(sort,food,query) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("discover-search")) { Text("Search recipes") }
-            if(state.loading)CircularProgressIndicator()
+            if(state.loading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_RECIPES)}
             state.message?.let { Text(it,Modifier.testTag("discover-message")) }
             if(state.items.isEmpty() && !state.loading && state.message == null)Text("No recipes here yet. Try another food or search.",Modifier.testTag("discover-empty"))
             state.items.forEach { item ->

@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -55,11 +56,11 @@ import org.json.JSONObject
     }
     fun run(action: suspend () -> Unit) {
         if(busy)return; busy=true; message=null
-        scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=e.message ?: "Couldn't reconnect. Your saved request remains available."; try { pendingPreview() } catch(_: Exception) { } } finally { busy=false } }
+        scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect. Your saved request remains available."); try { pendingPreview() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) {
         loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; profileReviewStatus=null; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null
-        if(loadedUser!=null)try { reload() } catch(e: Exception) { message=e.message }
+        if(loadedUser!=null)try { reload() } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Your cookbook on this device is unchanged.") }
     }
     if(editingDraft==null)ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy && editingDraft==null)onClose() }) {
         val focus=androidx.compose.ui.platform.LocalFocusManager.current
@@ -125,13 +126,16 @@ import org.json.JSONObject
                     if(cursor!=null)Button(onClick={ submit { loadItems(true) } },enabled=!busy) { Text("More publications") }
                     Button(onClick={ submit { reload() } },enabled=!busy) { Text("Refresh cookbook") }
                 }
-                if(busy)CircularProgressIndicator(); message?.let { Text(it,Modifier.testTag("cookbook-message")) }; Spacer(Modifier.height(24.dp))
+                if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_COOKBOOK)}; message?.let { Text(it,Modifier.testTag("cookbook-message")) }; Spacer(Modifier.height(24.dp))
             }
         }
     }
     editingDraft?.let { draft -> SharingDraftEditor(draft,viewModel,account,writer,publishingEnabled=account.enabled) { editingDraft=null } }
     removing?.let { item -> AlertDialog(onDismissRequest={ removing=null },title={ Text("Remove this publication from public access?") },text={ Text("Other cooks keep independent copies they already saved.") },confirmButton={ TextButton(onClick={ removing=null; run { checkAccount(); writer.json("DELETE","/v1/recipes/"+item.getString("id"),expected=item.getString("revisionId")); reload() } },modifier=Modifier.testTag("cookbook-unpublish-confirm")) { Text("Remove publication") } },dismissButton={ TextButton(onClick={ removing=null }) { Text("Cancel") } }) }
-    if(signingIn)AlertDialog(onDismissRequest={ signingIn=false },title={ Text("Account") },text={ AccountContent(account) },confirmButton={ TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") } })
+    // Slice 8 (PL-15 / DD-10): sign-in completion returns to the cookbook
+    // automatically; cancelling the account dialog lands here too.
+    LaunchedEffect(state.signedIn) { if(state.signedIn) signingIn=false }
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=MaterialTheme.typography.titleLarge);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") }}}
 }
 @Composable private fun CookbookProfileSummary(profile: JSONObject) {
     Card { Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {

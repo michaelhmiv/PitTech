@@ -35,6 +35,9 @@ internal fun CrashRecoveryScreen(
     report: CrashDiagnosticReport,
     onCopyReport: () -> Unit,
     onContinue: () -> Unit,
+    // PL-20 (#172): attach the saved report to a problem report directly,
+    // instead of the copy-and-ferry clipboard step.
+    onAttachToProblemReport: () -> Unit = {},
 ) {
     var copied by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
     var showTechnicalDetails by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
@@ -80,6 +83,30 @@ internal fun CrashRecoveryScreen(
                 }
             }
 
+            // The primary action leads: Continue sits directly under the
+            // report card so it is always on screen (PL-20 also returns to
+            // the crashed cook from here); the share actions follow, and
+            // the technical-details expander comes last.
+            Button(
+                onClick = onContinue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .testTag("crash-report-continue"),
+            ) {
+                Text("Continue to PitTech")
+            }
+
+            OutlinedButton(
+                onClick = onAttachToProblemReport,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .testTag("crash-report-attach"),
+            ) {
+                Text("Attach to a problem report")
+            }
+
             OutlinedButton(
                 onClick = {
                     onCopyReport()
@@ -117,16 +144,6 @@ internal fun CrashRecoveryScreen(
                         fontFamily = FontFamily.Monospace,
                     )
                 }
-            }
-
-            Button(
-                onClick = onContinue,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .testTag("crash-report-continue"),
-            ) {
-                Text("Continue to PitTech")
             }
         }
     }

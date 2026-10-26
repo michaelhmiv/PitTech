@@ -1,11 +1,9 @@
 package com.pittech.ui
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
@@ -17,70 +15,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
-private val PitTechLightColors = lightColorScheme(
-    primary = Color(0xFFB04D2E),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFF2D9CC),
-    onPrimaryContainer = Color(0xFF3D2015),
-    secondary = Color(0xFF58665A),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDCE3DA),
-    onSecondaryContainer = Color(0xFF1E2B20),
-    tertiary = Color(0xFF416C8A),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFD8E7EF),
-    onTertiaryContainer = Color(0xFF102A3A),
-    background = Color(0xFFF5F0E7),
-    onBackground = Color(0xFF242622),
-    surface = Color(0xFFFFFCF6),
-    onSurface = Color(0xFF242622),
-    surfaceVariant = Color(0xFFEAE2D6),
-    onSurfaceVariant = Color(0xFF514C45),
-    surfaceDim = Color(0xFFE8E1D6),
-    surfaceBright = Color(0xFFFFFCF6),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFBF8F1),
-    surfaceContainer = Color(0xFFF5F0E7),
-    surfaceContainerHigh = Color(0xFFEFE8DE),
-    surfaceContainerHighest = Color(0xFFE7DED1),
-    surfaceTint = Color(0xFFB04D2E),
-    outline = Color(0xFF716A61),
-    outlineVariant = Color(0xFFE2D9CD),
-    error = Color(0xFF9B332B),
-    onError = Color.White,
-    errorContainer = Color(0xFFF4DAD7),
-    onErrorContainer = Color(0xFF410E0B),
-)
-
-private val PitTechDarkColors = darkColorScheme(
-    primary = Color(0xFFD77954),
-    onPrimary = Color(0xFF24150F),
-    primaryContainer = Color(0xFF65341F),
-    onPrimaryContainer = Color(0xFFF8DFD1),
-    secondary = Color(0xFF9BAC98),
-    onSecondary = Color(0xFF1B241D),
-    secondaryContainer = Color(0xFF37443A),
-    onSecondaryContainer = Color(0xFFDCE8D9),
-    tertiary = Color(0xFF83B6CE),
-    onTertiary = Color(0xFF12232D),
-    tertiaryContainer = Color(0xFF294958),
-    onTertiaryContainer = Color(0xFFD6ECF6),
-    background = Color(0xFF1B1E1B),
-    onBackground = Color(0xFFF5F0E7),
-    surface = Color(0xFF242824),
-    onSurface = Color(0xFFF5F0E7),
-    surfaceVariant = Color(0xFF292D28),
-    onSurfaceVariant = Color(0xFFB9B8B0),
-    surfaceDim = Color(0xFF151815),
-    surfaceBright = Color(0xFF393E38),
-    surfaceContainerLowest = Color(0xFF111411),
-    surfaceContainerLow = Color(0xFF1B1E1B),
-    surfaceContainer = Color(0xFF242824),
-    surfaceContainerHigh = Color(0xFF2B302B),
-    surfaceContainerHighest = Color(0xFF353A34),
-    surfaceTint = Color(0xFFD77954),
-    outline = Color(0xFF899186),
-    outlineVariant = Color(0xFF424840),
+/**
+ * Night Service — the single PitTech appearance (#172, owner-approved
+ * 2026-10-24; dark-only, DD-7 rejected). Near-black green-charcoal grounds,
+ * ember-orange primary, amber secondary, cream ink. There is deliberately
+ * no light scheme: the tokens below are the whole system.
+ */
+private val NightServiceColors = darkColorScheme(
+    primary = Color(0xFFFF7A45),
+    onPrimary = Color(0xFF1D0E05),
+    primaryContainer = Color(0xFF4A2A18),
+    onPrimaryContainer = Color(0xFFFFD9C7),
+    secondary = Color(0xFFFFC24B),
+    onSecondary = Color(0xFF241A02),
+    secondaryContainer = Color(0xFF3A2E12),
+    onSecondaryContainer = Color(0xFFFFE3A3),
+    tertiary = Color(0xFFA8B09E),
+    onTertiary = Color(0xFF161A14),
+    tertiaryContainer = Color(0xFF2C362A),
+    onTertiaryContainer = Color(0xFFDCE8D9),
+    background = Color(0xFF10140F),
+    onBackground = Color(0xFFF2EEE3),
+    surface = Color(0xFF1A201A),
+    onSurface = Color(0xFFF2EEE3),
+    surfaceVariant = Color(0xFF242C24),
+    onSurfaceVariant = Color(0xFFA8B09E),
+    surfaceDim = Color(0xFF0B0E0A),
+    surfaceBright = Color(0xFF2E362C),
+    surfaceContainerLowest = Color(0xFF0B0E0A),
+    surfaceContainerLow = Color(0xFF141814),
+    surfaceContainer = Color(0xFF1A201A),
+    surfaceContainerHigh = Color(0xFF242C24),
+    surfaceContainerHighest = Color(0xFF2E362C),
+    surfaceTint = Color(0xFFFF7A45),
+    outline = Color(0xFF5A6656),
+    outlineVariant = Color(0xFF333D31),
     error = Color(0xFFF2B8B5),
     onError = Color(0xFF601410),
     errorContainer = Color(0xFF8C1D18),
@@ -88,6 +57,12 @@ private val PitTechDarkColors = darkColorScheme(
 )
 
 private val PitTechTypography = Typography(
+    displayMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 45.sp,
+        lineHeight = 50.sp,
+    ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
@@ -115,9 +90,10 @@ fun PitTechTheme(
     themeMode: PitTechThemeMode = PitTechThemeMode.SYSTEM,
     content: @Composable () -> Unit,
 ) {
-    val systemDarkTheme = isSystemInDarkTheme()
-    val darkTheme = themeMode.usesDarkTheme(systemDarkTheme)
-    val colorScheme = if (darkTheme) PitTechDarkColors else PitTechLightColors
+    // Night Service is dark-only (owner ruling 2026-10-24); themeMode is kept
+    // in the signature for preference/restore plumbing and always resolves dark.
+    @Suppress("UNUSED_VARIABLE") val darkTheme = themeMode.usesDarkTheme(systemIsDark = true)
+    val colorScheme = NightServiceColors
     val view = LocalView.current
 
     if (!view.isInEditMode) {
@@ -127,8 +103,8 @@ fun PitTechTheme(
                 window.statusBarColor = colorScheme.surface.toArgb()
                 window.navigationBarColor = colorScheme.surface.toArgb()
                 WindowCompat.getInsetsController(window, view).apply {
-                    isAppearanceLightStatusBars = !darkTheme
-                    isAppearanceLightNavigationBars = !darkTheme
+                    isAppearanceLightStatusBars = false
+                    isAppearanceLightNavigationBars = false
                 }
             }
         }

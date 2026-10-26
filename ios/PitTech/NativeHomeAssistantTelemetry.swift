@@ -16,6 +16,10 @@ struct NativeHASession: Codable {
         return .init(accessToken: access, refreshToken: refresh, expiresAt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)) + (NativeTelemetryEndpoint.number(object["expires_in"]) ?? 1800) * 1000)
     }
 }
+/// PL-06 (#172): one decision per navigation. A foreign navigation is
+/// BLOCKED (and surfaced in the sheet by the caller) — never a silent or
+/// whole-flow failure.
+enum NativeHANavigationDecision: Equatable { case allow, code(String), blocked, failed }
 struct NativeHAAuthRequest {
     let origin: URL; let state: String; let url: URL
     init(server: String, state: String = UUID().uuidString + UUID().uuidString) throws {
@@ -33,12 +37,18 @@ struct NativeHAAuthRequest {
         return code
     }
     func allows(_ url: URL) -> Bool { url.scheme == "https" && url.host?.lowercased() == origin.host?.lowercased() && (url.port ?? 443) == (origin.port ?? 443) && url.user == nil && url.password == nil }
+    func navigationDecision(_ url: URL) -> NativeHANavigationDecision {
+        do { if let code = try code(url) { return .code(code) } } catch { return .failed }
+        return allows(url) ? .allow : .blocked
+    }
 }
 struct NativeHAOAuthView: UIViewRepresentable {
     let request: NativeHAAuthRequest
+    var onBlockedNavigation: (URL) -> Void = { _ in }
     let completion: (Result<String, Error>) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(request: request, completion: completion) }
     func makeUIView(context: Context) -> WKWebView {
+        context.coordinator.onBlockedNavigation = onBlockedNavigation
         let configuration = WKWebViewConfiguration(); configuration.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: configuration); view.navigationDelegate = context.coordinator
         view.load(URLRequest(url: request.url)); return view
@@ -46,17 +56,21 @@ struct NativeHAOAuthView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
     final class Coordinator: NSObject, WKNavigationDelegate {
         let request: NativeHAAuthRequest; let completion: (Result<String, Error>) -> Void; private var done = false
+        var onBlockedNavigation: (URL) -> Void = { _ in }
         init(request: NativeHAAuthRequest, completion: @escaping (Result<String, Error>) -> Void) { self.request = request; self.completion = completion }
         private func finish(_ result: Result<String, Error>) { guard !done else { return }; done = true; completion(result) }
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
-            do {
-                if let code = try request.code(url) { decisionHandler(.cancel); finish(.success(code)); return }
-                guard request.allows(url) else { decisionHandler(.cancel); finish(.failure(NativeTelemetryError.configuration)); return }
-                decisionHandler(.allow)
-            } catch { decisionHandler(.cancel); finish(.failure(error)) }
+            switch request.navigationDecision(url) {
+            case .allow: decisionHandler(.allow)
+            case .code(let code): decisionHandler(.cancel); finish(.success(code))
+            // PL-06: blocked and surfaced in place — the flow stays alive.
+            case .blocked: decisionHandler(.cancel); onBlockedNavigation(url)
+            case .failed: decisionHandler(.cancel); finish(.failure(NativeTelemetryError.authorization))
+            }
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(.failure(error)) }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(.failure(error)) }
     }
 }
 

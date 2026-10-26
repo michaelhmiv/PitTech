@@ -7,6 +7,7 @@ struct NativeArchiveImportView: View {
     @State private var selected: Set<String>
     @State private var saving = false
     @State private var error: String?
+    @State private var historyAdded = false
     init(source: NativeArchiveIntake) {
         self.source = source
         _selected = State(initialValue: Set(source.recipes.map(\.id)))
@@ -21,11 +22,19 @@ struct NativeArchiveImportView: View {
                         ForEach(source.recipes) { recipe in
                             NativeArchiveRecipeCard(recipe: recipe, selected: selection(recipe.id)).disabled(saving)
                         }
-                        Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")" + (source.publicCookOnSave ? " & start meal" : "")).frame(maxWidth: .infinity, minHeight: 44) }
+                        Button { saveRecipes() } label: { Text("Save \(selected.count) \(selected.count == 1 ? "recipe" : "recipes")" + (source.publicCookOnSave ? " & set up meal" : "")).frame(maxWidth: .infinity, minHeight: 44) }
                             .buttonStyle(.borderedProminent).disabled(selected.isEmpty || saving).accessibilityIdentifier("pack-save-recipes")
                         if source.preview.cookPack?.objectValue?["kind"]?.stringValue == "cook" {
                             Text("Add all \(source.preview.dishes) recorded dishes in this file. Recipe selections above apply when saving recipes.").font(.caption).foregroundStyle(PitTechStyle.supporting)
-                            Button("Add recorded meal to history") { saveHistory() }.buttonStyle(.bordered).frame(minHeight: 44).disabled(saving).accessibilityIdentifier("pack-add-history")
+                            if historyAdded {
+                                // PL-19: this sheet stays open after adding
+                                // history — the recipe selection above is
+                                // still the user's to save.
+                                Button("Added to history") {}.buttonStyle(.bordered).frame(minHeight: 44).disabled(true).accessibilityIdentifier("pack-add-history")
+                                Text("The recorded meal is in your history. Your recipe choices above are unchanged — save them whenever you're ready.").font(.caption).foregroundStyle(PitTechStyle.supporting).accessibilityIdentifier("pack-history-added")
+                            } else {
+                                Button("Add recorded meal to history") { saveHistory() }.buttonStyle(.bordered).frame(minHeight: 44).disabled(saving).accessibilityIdentifier("pack-add-history")
+                            }
                         }
                         Text("Guides stay separate from your own cooking history. Reminders are yours to choose when you cook.").font(.caption).foregroundStyle(PitTechStyle.supporting)
                     } else {
@@ -59,7 +68,12 @@ struct NativeArchiveImportView: View {
     private func saveHistory() {
         saving = true; error = nil
         Task { @MainActor in
-            do { try await store.importRecordedCook(source); if store.archiveIntake?.id == source.id { dismiss() } }
+            // PL-19: adding the recorded meal no longer dismisses this
+            // sheet — dismissing used to drop the pending recipe save
+            // choice. The history confirmation stays visible here, and
+            // the completion message still surfaces when the sheet is
+            // dismissed afterwards (ContentView moves it to the alert).
+            do { try await store.importRecordedCook(source); historyAdded = true }
             catch { self.error = error.localizedDescription }
             saving = false
         }

@@ -20,9 +20,7 @@ internal object FeedbackApi {
         Thread {
             val result = runCatching { submit(request) }
                 .getOrElse {
-                    FeedbackSubmitResult.Failure(
-                        "Couldn't submit feedback right now. Check your connection and try again.",
-                    )
+                    FeedbackSubmitResult.Failure(com.pittech.ui.FeedbackCopy.SUBMIT_FAILED)
                 }
             Handler(Looper.getMainLooper()).post { onResult(result) }
         }.apply {
@@ -57,18 +55,10 @@ internal object FeedbackApi {
                         ?.getOrNull(1)
                         ?.toIntOrNull(),
                 )
-                429 -> FeedbackSubmitResult.Failure(
-                    "Too many reports were submitted recently. Try again later.",
-                )
-                400, 413 -> FeedbackSubmitResult.Failure(
-                    "That report couldn't be submitted. Shorten it and try again.",
-                )
-                503 -> FeedbackSubmitResult.Failure(
-                    "Feedback service is temporarily unavailable. Try again later.",
-                )
-                else -> FeedbackSubmitResult.Failure(
-                    "Couldn't submit feedback right now. Try again later.",
-                )
+                429 -> FeedbackSubmitResult.Failure(com.pittech.ui.FeedbackCopy.SUBMIT_RATE_LIMITED)
+                400, 413 -> FeedbackSubmitResult.Failure(com.pittech.ui.FeedbackCopy.SUBMIT_TOO_LONG)
+                503 -> FeedbackSubmitResult.Failure(com.pittech.ui.FeedbackCopy.SUBMIT_UNAVAILABLE)
+                else -> FeedbackSubmitResult.Failure(com.pittech.ui.FeedbackCopy.SUBMIT_FAILED)
             }
         } finally {
             connection.disconnect()

@@ -19,9 +19,13 @@ import com.pittech.ads.AdEntitlementStore
 import com.pittech.ads.PitTechAdsConsentManager
 import com.pittech.ads.SharedPrefsAdEntitlementPrefs
 import com.pittech.ui.CrashRecoveryScreen
+import com.pittech.ui.LaunchSurface
 import com.pittech.ui.PitTechApp
 import com.pittech.ui.PitTechTheme
 import com.pittech.ui.PitTechThemeMode
+import com.pittech.ui.WelcomePreferences
+import com.pittech.ui.WelcomeScreen
+import com.pittech.ui.resolveLaunchSurface
 
 class MainActivity : ComponentActivity() {
     private val adsConsentManager by lazy { PitTechAdsConsentManager(this) }
@@ -55,6 +59,24 @@ class MainActivity : ComponentActivity() {
             var crashReport by remember {
                 mutableStateOf(CrashDiagnostics.pendingReport(this@MainActivity))
             }
+            // First-run welcome (#187): a crash pending at THIS launch keeps
+            // the welcome unseen for the whole session — it shows on the next
+            // clean launch instead of stacking behind crash recovery.
+            val crashPendingAtLaunch = remember { crashReport != null }
+            var welcomeSeen by remember(preferences) {
+                mutableStateOf(WelcomePreferences.hasSeen(preferences))
+            }
+            var welcomeRestoreBackup by remember { mutableStateOf(false) }
+            var welcomeConnectThermometer by remember { mutableStateOf(false) }
+            // PL-20 (#172): crash recovery returns to the cook that was
+            // open when the crash hit; its attach action also lands on
+            // Settings with the feedback form open.
+            var crashResumeCookId by remember { mutableStateOf<String?>(null) }
+            var crashAttachFeedback by remember { mutableStateOf(false) }
+            fun dismissWelcome() {
+                WelcomePreferences.markSeen(preferences)
+                welcomeSeen = true
+            }
             val canRequestAds by adsConsentManager.canRequestAds.collectAsStateWithLifecycle()
             val adsSdkReady by adsConsentManager.sdkReady.collectAsStateWithLifecycle()
             val entitlement by adEntitlementStore.entitlement.collectAsStateWithLifecycle()
@@ -76,21 +98,41 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                if (report != null) {
-                    CrashRecoveryScreen(
-                        report = report,
-                        onCopyReport = {
-                            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
-                                ClipData.newPlainText("PitTech diagnostic report", report.toPlainText()),
-                            )
+                when (resolveLaunchSurface(report != null, crashPendingAtLaunch, welcomeSeen)) {
+                    LaunchSurface.CRASH_RECOVERY -> {
+                        val pending = report!!
+                        CrashRecoveryScreen(
+                            report = pending,
+                            onCopyReport = {
+                                getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                                    ClipData.newPlainText("PitTech diagnostic report", pending.toPlainText()),
+                                )
+                            },
+                            onContinue = {
+                                crashResumeCookId = CrashDiagnostics.openCookAtCrash(this@MainActivity)
+                                CrashDiagnostics.acknowledgeReport(this@MainActivity, pending)
+                                crashReport = null
+                            },
+                            onAttachToProblemReport = {
+                                crashResumeCookId = CrashDiagnostics.openCookAtCrash(this@MainActivity)
+                                crashAttachFeedback = true
+                                CrashDiagnostics.acknowledgeReport(this@MainActivity, pending)
+                                crashReport = null
+                            },
+                        )
+                    }
+                    LaunchSurface.WELCOME -> WelcomeScreen(
+                        onStartCooking = { dismissWelcome() },
+                        onRestoreBackup = {
+                            dismissWelcome()
+                            welcomeRestoreBackup = true
                         },
-                        onContinue = {
-                            CrashDiagnostics.acknowledgeReport(this@MainActivity, report)
-                            crashReport = null
+                        onConnectThermometer = {
+                            dismissWelcome()
+                            welcomeConnectThermometer = true
                         },
                     )
-                } else {
-                    PitTechApp(
+                    LaunchSurface.APP -> PitTechApp(
                         viewModel = viewModel,
                         themeMode = themeMode,
                         onThemeModeChange = { newMode ->
@@ -102,6 +144,10 @@ class MainActivity : ComponentActivity() {
                         previouslyEntitled = previouslyEntitled,
                         privacyOptionsRequired = privacyOptionsRequired,
                         onShowPrivacyOptions = adsConsentManager::showPrivacyOptions,
+                        startWithRestoreBackup = welcomeRestoreBackup,
+                        startAtDevices = welcomeConnectThermometer,
+                        startCookId = crashResumeCookId,
+                        startAtFeedback = crashAttachFeedback,
                     )
                 }
             }
@@ -135,8 +181,15 @@ class MainActivity : ComponentActivity() {
     private fun handleReminderIntent(intent: android.content.Intent?) {
         val cookId = intent?.getStringExtra(CookReminderNotifications.EXTRA_COOK_ID) ?: return
         val reminderId = intent.getStringExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
+        val ruleId = intent.getStringExtra(UnifiedReminderNotifications.EXTRA_RULE_ID)
+        // PL-03 (#172): an alert tap carries the firing rule's id end-to-end.
+        val alertId = intent.getStringExtra(CookAlertNotifications.EXTRA_ALERT_ID)
         viewModel.openCook(cookId)
         reminderId?.let(viewModel::requestReminderCheckIn)
+        ruleId?.let(viewModel::requestReminderRuleCheckIn)
+        alertId?.let(viewModel::requestAlertFocus)
         intent.removeExtra(CookReminderNotifications.EXTRA_REMINDER_ID)
+        intent.removeExtra(UnifiedReminderNotifications.EXTRA_RULE_ID)
+        intent.removeExtra(CookAlertNotifications.EXTRA_ALERT_ID)
     }
 }

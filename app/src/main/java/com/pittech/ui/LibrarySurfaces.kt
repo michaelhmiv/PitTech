@@ -19,19 +19,45 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
-/** Native, honest interim surface while the community release is built. */
-@Composable internal fun DiscoveryWelcome(modifier: Modifier = Modifier, onRecipes: () -> Unit) {
+/**
+ * PL-30 (#172): the one shared "not available yet" pattern — icon tile,
+ * title, message, an optional note about what works instead, and one
+ * route onward. Every not-available surface on both platforms renders
+ * through this shape with [NotAvailableCopy] strings.
+ */
+@Composable internal fun NotAvailablePlaceholder(
+    icon: ImageVector,
+    title: String,
+    message: String,
+    note: String? = null,
+    onwardLabel: String,
+    onOnward: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(18.dp)) {
-            Icon(Icons.Filled.Explore, null, Modifier.padding(18.dp).size(32.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Icon(icon, null, Modifier.padding(18.dp).size(32.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
         }
-        Text("Find your next cook", style = MaterialTheme.typography.headlineMedium)
-        Text("Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = onRecipes, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Open your recipes") }
+        Text(title, style = MaterialTheme.typography.headlineMedium)
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (note != null) Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onOnward, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(onwardLabel) }
     }
 }
 
-@Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null, onCookbook: (() -> Unit)? = null, onCommunity: (() -> Unit)? = null, onPro: (() -> Unit)? = null) {
+/** Native, honest interim surface while the community release is built. */
+@Composable internal fun DiscoveryWelcome(modifier: Modifier = Modifier, onRecipes: () -> Unit) {
+    NotAvailablePlaceholder(
+        icon = Icons.Filled.Explore,
+        title = NotAvailableCopy.DISCOVER_TITLE,
+        message = NotAvailableCopy.DISCOVER_MESSAGE,
+        onwardLabel = NotAvailableCopy.DISCOVER_ONWARD,
+        onOnward = onRecipes,
+        modifier = modifier,
+    )
+}
+
+@Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null, onCookbook: (() -> Unit)? = null, onCommunity: (() -> Unit)? = null, onPro: (() -> Unit)? = null, accountSubtitle: String = "Optional email sign-in and this device’s session") {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -40,7 +66,9 @@ import androidx.compose.ui.unit.dp
             }
         }
         MoreDestination("Devices & connections", "Read-only monitoring and saved equipment", Icons.Filled.Thermostat, "more-devices", onDevices)
-        if (onAccount != null) MoreDestination("Account", "Optional email sign-in and this device’s session", Icons.Filled.Person, "more-account", onAccount)
+        // PL-14 (#172): once signed in, the Account row carries the private
+        // sync status so it is visible without opening the sheet.
+        if (onAccount != null) MoreDestination("Account", accountSubtitle, Icons.Filled.Person, "more-account", onAccount)
         if (onCommunity != null) MoreDestination("Community controls", "Reports, saved requests and blocked publishers", Icons.Filled.Person, "more-community-controls", onCommunity)
         if (onCookbook != null) MoreDestination("My cookbook", "Public identity, publications and interrupted changes", Icons.Filled.Person, "more-cookbook", onCookbook)
         MoreDestination("Settings & support", "Appearance, units, data and feedback", Icons.Filled.Settings, "more-settings", onSettings)

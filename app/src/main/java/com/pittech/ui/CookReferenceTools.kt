@@ -31,10 +31,13 @@ internal fun CookLearningTools(data: CookDetailData, viewModel: CooksViewModel) 
     if (editTags) {
         var method by remember { mutableStateOf(data.results.firstOrNull { it.resultType == "method" }?.textValue.orEmpty()) }
         var tags by remember { mutableStateOf(data.results.firstOrNull { it.resultType == "tags" }?.textValue.orEmpty()) }
-        AlertDialog(onDismissRequest = { editTags = false }, title = { Text("Find this cook again") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SheetSurface(onDismiss = { editTags = false }, title = "Find this cook again", actions = {
+            TextButton(onClick = { editTags = false }) { Text("Cancel") }
+            TextButton(onClick = { viewModel.saveCookTags(data.cook.id, method, tags); editTags = false }) { Text("Save") }
+        }) { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(method, { method = it }, label = { Text("Method (optional)") }, placeholder = { Text("No wrap, hot and fast, foil boat") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(tags, { tags = it }, label = { Text("Tags (optional)") }, modifier = Modifier.fillMaxWidth())
-        } }, confirmButton = { TextButton(onClick = { viewModel.saveCookTags(data.cook.id, method, tags); editTags = false }) { Text("Save") } }, dismissButton = { TextButton(onClick = { editTags = false }) { Text("Cancel") } })
+        } }
     }
 }
 

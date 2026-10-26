@@ -15,7 +15,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.pittech.CooksViewModel
 import com.pittech.domain.*
 import kotlinx.coroutines.Dispatchers
@@ -27,19 +26,93 @@ internal data class RecipeEdit(val snapshot: RecipeSnapshot, val assetIds: Set<S
 private data class InstructionEdit(val original: RecipeInstruction, val offset: String, val duration: String)
 private data class TargetEdit(val type: String, val value: String, val unit: String, val explanation: String)
 
+/** PL-24 (#172): the recipe editor's opened state as a storable draft. */
+private fun RecipeEditorRequest.initialDraft(): RecipeEditorDraft = RecipeEditorDraft(
+    name = snapshot.name, description = snapshot.description, servings = snapshot.servings,
+    resultNotes = snapshot.resultNotes, dish = snapshot.dish,
+    tags = snapshot.tags.joinToString(", "),
+    pit = snapshot.preferredPitTemperatureF?.toString().orEmpty(),
+    instructions = snapshot.instructions.map {
+        RecipeInstructionDraft(it.id, it.title, it.details, it.method, it.sourceEventId, it.action,
+            it.offsetMillis?.let { m -> (m / 60000.0).toString() }.orEmpty(),
+            it.durationMillis?.let { m -> (m / 60000.0).toString() }.orEmpty())
+    },
+    targets = snapshot.targets.map { RecipeTargetDraft(it.type, it.value.toString(), it.unit, it.explanation.orEmpty()) },
+    keptAssets = assets.map { it.id }.toSet(),
+    keptPhotos = selectedPhotoIds,
+    captions = assets.associate { it.id to it.caption },
+    addedPhotos = emptyList(),
+    contextIds = emptySet(),
+    keptFacts = snapshot.observations.map { it.sourceEventId }.toSet(),
+)
+
 @Composable internal fun RecipeEditorDialog(request: RecipeEditorRequest, viewModel: CooksViewModel, busy: Boolean, error: String?,
     onClose: () -> Unit, onSave: (RecipeEdit) -> Unit) {
-    var snapshot by remember(request) { mutableStateOf(request.snapshot) }
-    var tags by remember(request) { mutableStateOf(snapshot.tags.joinToString(", ")) }
-    var pit by remember(request) { mutableStateOf(snapshot.preferredPitTemperatureF?.toString().orEmpty()) }
-    var instructions by remember(request) { mutableStateOf(snapshot.instructions.map { InstructionEdit(it, it.offsetMillis?.let { m -> (m / 60000.0).toString() }.orEmpty(), it.durationMillis?.let { m -> (m / 60000.0).toString() }.orEmpty()) }) }
-    var targets by remember(request) { mutableStateOf(snapshot.targets.map { TargetEdit(it.type, it.value.toString(), it.unit, it.explanation.orEmpty()) }) }
-    var keptAssets by remember(request) { mutableStateOf(request.assets.map { it.id }.toSet()) }
-    var keptPhotos by remember(request) { mutableStateOf(request.selectedPhotoIds) }
-    var captions by remember(request) { mutableStateOf(request.assets.associate { it.id to it.caption }) }
-    var addedPhotos by remember(request) { mutableStateOf(emptyList<String>()) }
-    var contextIds by remember(request) { mutableStateOf(emptySet<String>()) }
-    var keptFacts by remember(request) { mutableStateOf(snapshot.observations.map { it.sourceEventId }.toSet()) }
+    // PL-24 (#172): autosave + resume, like every multi-field editor.
+    // The draft stores the working copies (instructions/targets with
+    // their raw numeric text) without validating — an in-progress
+    // recipe is allowed to be invalid; that is the point of the draft.
+    val draftStore = rememberEditorDraftStore()
+    val fullDraftKey = EditorDraftKeys.recipe(request.recipeId, request.attemptDishId)
+    val initialDraft = remember(request) { request.initialDraft() }
+    val storedDraft = remember(request) {
+        draftStore.load(fullDraftKey)?.let(RecipeEditorDraftCodec::decode)?.takeIf { it != initialDraft }
+    }
+    var openedDraft by remember(request) { mutableStateOf(storedDraft ?: initialDraft) }
+    var draftRestored by remember(request) { mutableStateOf(storedDraft != null) }
+    var snapshot by remember(request) { mutableStateOf(request.snapshot.copy(name = openedDraft.name, description = openedDraft.description, servings = openedDraft.servings, resultNotes = openedDraft.resultNotes, dish = openedDraft.dish)) }
+    var tags by remember(request) { mutableStateOf(openedDraft.tags) }
+    var pit by remember(request) { mutableStateOf(openedDraft.pit) }
+    var instructions by remember(request) { mutableStateOf(openedDraft.instructions.map { draft ->
+        InstructionEdit(
+            RecipeInstruction(draft.id, draft.title, draft.details, draft.method,
+                draft.offsetText.toDoubleOrNull()?.let { (it * 60000).toLong() },
+                draft.durationText.toDoubleOrNull()?.let { (it * 60000).toLong() },
+                draft.sourceEventId, draft.action),
+            draft.offsetText, draft.durationText,
+        )
+    }) }
+    var targets by remember(request) { mutableStateOf(openedDraft.targets.map { TargetEdit(it.type, it.valueText, it.unit, it.explanation) }) }
+    var keptAssets by remember(request) { mutableStateOf(openedDraft.keptAssets) }
+    var keptPhotos by remember(request) { mutableStateOf(openedDraft.keptPhotos) }
+    var captions by remember(request) { mutableStateOf(openedDraft.captions) }
+    var addedPhotos by remember(request) { mutableStateOf(openedDraft.addedPhotos) }
+    var contextIds by remember(request) { mutableStateOf(openedDraft.contextIds) }
+    var keptFacts by remember(request) { mutableStateOf(openedDraft.keptFacts) }
+    fun currentDraft() = RecipeEditorDraft(
+        name = snapshot.name, description = snapshot.description, servings = snapshot.servings,
+        resultNotes = snapshot.resultNotes, dish = snapshot.dish, tags = tags, pit = pit,
+        instructions = instructions.map {
+            RecipeInstructionDraft(it.original.id, it.original.title, it.original.details, it.original.method,
+                it.original.sourceEventId, it.original.action, it.offset, it.duration)
+        },
+        targets = targets.map { RecipeTargetDraft(it.type, it.value, it.unit, it.explanation) },
+        keptAssets = keptAssets, keptPhotos = keptPhotos, captions = captions,
+        addedPhotos = addedPhotos, contextIds = contextIds, keptFacts = keptFacts,
+    )
+    LaunchedEffect(snapshot, tags, pit, instructions, targets, keptAssets, keptPhotos, captions, addedPhotos, contextIds, keptFacts) {
+        val current = currentDraft()
+        if (current != openedDraft) draftStore.save(fullDraftKey, RecipeEditorDraftCodec.encode(current))
+        else draftStore.clear(fullDraftKey)
+    }
+    fun resetToInitialDraft() {
+        openedDraft = initialDraft
+        snapshot = request.snapshot.copy(name = initialDraft.name, description = initialDraft.description, servings = initialDraft.servings, resultNotes = initialDraft.resultNotes, dish = initialDraft.dish)
+        tags = initialDraft.tags; pit = initialDraft.pit
+        instructions = initialDraft.instructions.map { draft ->
+            InstructionEdit(
+                RecipeInstruction(draft.id, draft.title, draft.details, draft.method,
+                    draft.offsetText.toDoubleOrNull()?.let { (it * 60000).toLong() },
+                    draft.durationText.toDoubleOrNull()?.let { (it * 60000).toLong() },
+                    draft.sourceEventId, draft.action),
+                draft.offsetText, draft.durationText,
+            )
+        }
+        targets = initialDraft.targets.map { TargetEdit(it.type, it.valueText, it.unit, it.explanation) }
+        keptAssets = initialDraft.keptAssets; keptPhotos = initialDraft.keptPhotos
+        captions = initialDraft.captions; addedPhotos = initialDraft.addedPhotos
+        contextIds = initialDraft.contextIds; keptFacts = initialDraft.keptFacts
+    }
     var showSetup by remember { mutableStateOf(false) }
     var showInstructions by remember { mutableStateOf(false) }
     var showPhotos by remember { mutableStateOf(false) }
@@ -51,9 +124,19 @@ private data class TargetEdit(val type: String, val value: String, val unit: Str
         targets = targets.map { t -> PlaybookTarget(0, t.type, t.value.toDoubleOrNull() ?: Double.NaN, t.unit, t.explanation.ifBlank { null }) },
         observations = snapshot.observations.filter { it.sourceEventId in keptFacts })
     val valid = (pit.isBlank() || pit.toDoubleOrNull()?.isFinite() == true) && instructions.all { i -> (i.offset.isBlank() || minutes(i.offset) != null) && (i.duration.isBlank() || minutes(i.duration)?.let { it >= 0 } == true) } && runCatching { RecipeSnapshotCodec.validate(prepared()) }.isSuccess
-    AlertDialog(modifier = Modifier.systemBarsPadding().imePadding(), properties = DialogProperties(decorFitsSystemWindows = false),
-        onDismissRequest = { if (!busy) onClose() }, title = { Text(if (request.attemptDishId != null) "Adjust for this meal" else if (request.recipeId == null) "Save recipe" else "Edit a new version") }, text = {
-            Column(Modifier.heightIn(max = 580.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // PL-22 (DD-6): the recipe editor is the app's largest editor — full screen.
+    FullScreenSurface(onDismiss = { if (!busy) onClose() }, title = if (request.attemptDishId != null) "Adjust for this meal" else if (request.recipeId == null) "Save recipe" else "Edit a new version", dismissEnabled = !busy, actions = {
+        TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") }
+        TextButton(onClick = { draftStore.clear(fullDraftKey); onSave(RecipeEdit(prepared(), keptAssets, keptPhotos, captions, addedPhotos, contextIds)) }, enabled = valid && !busy, modifier = Modifier.testTag("recipe-save")) { Text(if (request.attemptDishId != null) "Apply to this meal" else "Save recipe") }
+    }) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (draftRestored) {
+                    ResumeDraftBanner(onDiscard = {
+                        draftStore.clear(fullDraftKey)
+                        draftRestored = false
+                        resetToInitialDraft()
+                    })
+                }
                 OutlinedTextField(snapshot.name, { value -> snapshot = snapshot.copy(name = value, dish = if (snapshot.dish.name == snapshot.name) snapshot.dish.copy(name = value) else snapshot.dish) }, label = { Text("Recipe name") }, modifier = Modifier.fillMaxWidth().testTag("recipe-name"))
                 OutlinedTextField(snapshot.description, { snapshot = snapshot.copy(description = it) }, label = { Text("Description (optional)") }, modifier = Modifier.fillMaxWidth().testTag("recipe-description"))
                 OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth())
@@ -111,8 +194,8 @@ private data class TargetEdit(val type: String, val value: String, val unit: Str
                 if (!valid) Text("Review the recipe name, instruction titles and numeric quantities.", color = MaterialTheme.colorScheme.error)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        }, confirmButton = { TextButton(onClick = { onSave(RecipeEdit(prepared(), keptAssets, keptPhotos, captions, addedPhotos, contextIds)) }, enabled = valid && !busy, modifier = Modifier.testTag("recipe-save")) { Text(if (request.attemptDishId != null) "Apply to this meal" else "Save recipe") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Cancel") } })
-    if (showSetup) DishEditorDialog(snapshot.dish, snapshot.dish.weightUnit, { showSetup = false }, { dish -> addedPhotos = addedPhotos + dish.photoUris; snapshot = snapshot.copy(dish = dish.copy(photoUris = emptyList())); showSetup = false })
+    }
+    if (showSetup) DishEditorDialog(snapshot.dish, snapshot.dish.weightUnit, draftKey = "recipe", onDismiss = { showSetup = false }, onSave = { dish -> addedPhotos = addedPhotos + dish.photoUris; snapshot = snapshot.copy(dish = dish.copy(photoUris = emptyList())); showSetup = false })
 }
 
 @Composable internal fun RecipePicture(uri: String) {

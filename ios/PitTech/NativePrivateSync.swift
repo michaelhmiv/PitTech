@@ -10,6 +10,13 @@ struct NativeConflictResolution: Equatable {
     var restoreAssetId: String?
     var newIdentity = false
 }
+/// One readable field of a conflicting version's content, for the PL-16
+/// side-by-side preview. Derived from the payload only — presentation, never
+/// a change to what sync stores or sends.
+struct NativeConflictPreviewField: Equatable {
+    var label: String
+    var value: String
+}
 struct NativePrivateSyncConflictView: Equatable, Identifiable {
     var id: String
     var mineSummary: String
@@ -17,6 +24,10 @@ struct NativePrivateSyncConflictView: Equatable, Identifiable {
     var reason: String
     var mineIsWinner: Bool
     var canKeepBoth: Bool
+    var recordType: String
+    var recordLabel: String
+    var mineFields: [NativeConflictPreviewField]
+    var theirsFields: [NativeConflictPreviewField]
 }
 
 /** Pure sync-envelope helpers. No storage, clock, account or network access. */
@@ -129,8 +140,152 @@ enum NativePrivateSyncProtocol {
     static func conflictView(_ conflict: NativeSyncConflict, deviceId: String) -> NativePrivateSyncConflictView {
         let sides = conflictSides(conflict, deviceId: deviceId)
         let reason = conflict.reason == "delete_edit" ? "Deleted on one device" : conflict.reason == "immutable_identity" ? "Measured history changed" : "Edited on two devices"
+        let type = conflict.winner.recordType
         return NativePrivateSyncConflictView(id: conflict.id, mineSummary: summarize(sides.mine), theirsSummary: summarize(sides.theirs), reason: reason,
-            mineIsWinner: sides.mine.sameContent(conflict.winner), canKeepBoth: !noKeepBoth.contains(conflict.winner.recordType))
+            mineIsWinner: sides.mine.sameContent(conflict.winner), canKeepBoth: !noKeepBoth.contains(type),
+            recordType: type, recordLabel: label(type), mineFields: previewFields(sides.mine), theirsFields: previewFields(sides.theirs))
+    }
+
+    /// Record kinds whose identity is a link or a singleton, so two versions
+    /// can never coexist: `logReadingLinks` is keyed by reading (a reading
+    /// links to one note) and `lifecycles` by cook (a meal has one timing
+    /// record). Every other projected kind is keyed by its own id and can
+    /// keep both versions (the loser restores under a fresh identity).
+    static func keepBothUnavailableTypes() -> Set<String> { noKeepBoth }
+
+    // PL-16: the content preview behind the side-by-side sheet. Fields render
+    // in a curated order with human labels; reference ids and bookkeeping
+    // timestamps are omitted because they carry no judging value, and the
+    // payload itself is never altered. Mirrors PrivateSyncProtocol.kt.
+    private static let previewOrder = [
+        "title", "name", "status", "eventType", "kind", "details", "description", "caption",
+        "value", "numericValue", "weightValue", "amountValue", "amountText", "targetType", "resultType", "textValue",
+        "changeNotes", "revisionNumber", "timingMode", "method", "targetTypeNote",
+        "foodType", "cut", "gradeOrSource", "thicknessNotes", "startingCondition", "boneIn", "placement", "pieceCount", "prepNotes",
+        "stage", "brand", "smokerName", "fuelType", "woodOrPelletBlend", "initialSetpointValue", "outdoorTemperatureValue",
+        "weatherNotes", "windNotes", "measurementType", "probeName", "scope", "explanation", "sourceReference",
+        "deviceName", "role", "firmwareVersion", "mimeType", "favorite", "tagsJson",
+        "occurredAtUtcMillis", "measuredAtUtcMillis", "startedAtUtcMillis", "endedAtUtcMillis", "appliedAtUtcMillis",
+        "capturedAtUtcMillis", "addedAtUtcMillis", "effectiveAt", "archivedAtUtcMillis",
+        "notes", "snapshotJson", "itemsJson", "payload", "triggerConfig", "noteMetadataJson", "temperatureContextJson",
+    ]
+    private static let previewLabels: [String: String] = [
+        "title": "Title", "name": "Name", "status": "Status", "eventType": "Type", "kind": "Kind",
+        "details": "Details", "description": "Description", "caption": "Caption", "value": "Value",
+        "numericValue": "Value", "weightValue": "Weight", "amountValue": "Amount", "amountText": "Amount",
+        "targetType": "Target", "resultType": "Result", "textValue": "Text", "changeNotes": "Change notes",
+        "revisionNumber": "Version", "timingMode": "Timing mode", "foodType": "Food", "cut": "Cut",
+        "gradeOrSource": "Grade / source", "thicknessNotes": "Thickness", "startingCondition": "Starting condition",
+        "boneIn": "Bone in", "placement": "Placement", "pieceCount": "Pieces", "prepNotes": "Prep notes",
+        "stage": "Stage", "brand": "Brand", "smokerName": "Smoker", "fuelType": "Fuel",
+        "woodOrPelletBlend": "Wood / pellets", "initialSetpointValue": "Starting setpoint",
+        "outdoorTemperatureValue": "Outdoor temperature", "weatherNotes": "Weather", "windNotes": "Wind",
+        "measurementType": "Measurement", "probeName": "Probe", "scope": "Scope", "explanation": "Why",
+        "sourceReference": "Source", "deviceName": "Device name", "role": "Role", "firmwareVersion": "Firmware",
+        "mimeType": "File type", "favorite": "Favorite", "tagsJson": "Tags",
+        "occurredAtUtcMillis": "Occurred", "measuredAtUtcMillis": "Measured", "startedAtUtcMillis": "Started",
+        "endedAtUtcMillis": "Ended", "appliedAtUtcMillis": "Applied", "capturedAtUtcMillis": "Captured",
+        "addedAtUtcMillis": "Added", "effectiveAt": "Effective", "archivedAtUtcMillis": "Archived",
+        "notes": "Notes", "snapshotJson": "Contents", "itemsJson": "Items", "payload": "Contents",
+        "triggerConfig": "Trigger", "noteMetadataJson": "Note details", "temperatureContextJson": "Temperature context",
+    ]
+    private static let previewSkip: Set<String> = [
+        "id", "cookId", "dishId", "recipeId", "recipeRevisionId", "parentRevisionId", "currentRevisionId",
+        "sourceCookId", "sourceDishId", "sourcePhotoId", "sourceMilestoneId", "sourceRecipeRevisionId",
+        "eventId", "readingId", "deviceId", "probeId", "recordId", "assetId",
+        "createdAtUtcMillis", "updatedAtUtcMillis", "recordedAtUtcMillis", "created", "updated",
+        "schemaVersion", "snapshotSchemaVersion", "source", "sourceDeviceId", "timeZoneId", "startedTimeZoneId", "timestampBasis",
+    ]
+    private static let previewTimestamps: Set<String> = [
+        "occurredAtUtcMillis", "measuredAtUtcMillis", "startedAtUtcMillis", "endedAtUtcMillis", "appliedAtUtcMillis",
+        "capturedAtUtcMillis", "addedAtUtcMillis", "effectiveAt", "archivedAtUtcMillis",
+    ]
+    private static let previewUnitFor: [String: String] = [
+        "value": "unit", "numericValue": "unit", "weightValue": "weightUnit",
+        "amountValue": "amountUnit", "initialSetpointValue": "initialSetpointUnit",
+        "outdoorTemperatureValue": "outdoorTemperatureUnit",
+    ]
+    private static let previewTimeFormat: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMM d, yyyy · h:mm a 'UTC'"
+        return formatter
+    }()
+
+    static func previewFields(_ row: NativeSyncRecord) -> [NativeConflictPreviewField] {
+        if row.deleted {
+            return [NativeConflictPreviewField(label: "Status", value: "Deleted"),
+                    NativeConflictPreviewField(label: "Entry", value: label(row.recordType) + " " + String(row.recordId.prefix(8)))]
+        }
+        let payload = row.payload ?? [:]
+        var consumed = Set<String>(), fields: [NativeConflictPreviewField] = []
+        func render(_ key: String) {
+            guard !consumed.contains(key), !previewSkip.contains(key), let raw = payload[key], raw != .null else { return }
+            if case .string(let text) = raw, text.trimmingCharacters(in: .whitespaces).isEmpty { return }
+            consumed.insert(key)
+            var unit = ""
+            if let unitKey = previewUnitFor[key], let unitValue = payload[unitKey]?.stringValue, !unitValue.isEmpty {
+                consumed.insert(unitKey); unit = unitValue.trimmingCharacters(in: .whitespaces)
+            }
+            let value = previewValue(key, raw, unit: unit)
+            if !value.isEmpty { fields.append(NativeConflictPreviewField(label: previewLabels[key] ?? previewLabel(key), value: value)) }
+        }
+        for key in previewOrder { render(key) }
+        for key in payload.keys.sorted() { render(key) }
+        if fields.isEmpty { fields.append(NativeConflictPreviewField(label: "Entry", value: label(row.recordType) + " " + String(row.recordId.prefix(8)))) }
+        return Array(fields.prefix(18))
+    }
+
+    private static func previewLabel(_ key: String) -> String {
+        var result = ""
+        for character in key {
+            if character.isUppercase { result += " " }
+            result.append(character)
+        }
+        return String(result.prefix(1)).uppercased() + String(result.dropFirst())
+    }
+
+    private static func previewValue(_ key: String, _ raw: JSONValue, unit: String) -> String {
+        if previewTimestamps.contains(key), let number = raw.numberValue {
+            return previewTimeFormat.string(from: Date(timeIntervalSince1970: number / 1000))
+        }
+        switch raw {
+        case .bool(let value): return value ? "Yes" : "No"
+        case .number(let value):
+            let base = key.hasSuffix("Millis") ? trimNumber(value) + " ms" : trimNumber(value)
+            return unit.isEmpty ? base : base + " " + unit
+        case .string(let value): return previewText(value)
+        case .array(let values): return previewArray(values)
+        case .object(let object): return previewObject(object)
+        case .null: return ""
+        }
+    }
+
+    private static func previewText(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("[") || trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8),
+           let value = try? JSONDecoder().decode(JSONValue.self, from: data) {
+            switch value {
+            case .array(let values): return previewArray(values)
+            case .object(let object): return previewObject(object)
+            default: break
+            }
+        }
+        return String(trimmed.prefix(200))
+    }
+
+    private static func previewArray(_ values: [JSONValue]) -> String {
+        let strings = values.compactMap(\.stringValue)
+        if !strings.isEmpty, strings.count == values.count { return String(strings.joined(separator: ", ").prefix(200)) }
+        return values.count == 1 ? "1 item" : "\(values.count) items"
+    }
+
+    private static func previewObject(_ object: [String: JSONValue]) -> String {
+        for key in ["title", "name"] {
+            if let value = object[key]?.stringValue?.trimmingCharacters(in: .whitespaces), !value.isEmpty { return String(value.prefix(200)) }
+        }
+        return object.count == 1 ? "1 detail" : "\(object.count) details"
     }
 
     static func summarize(_ row: NativeSyncRecord) -> String {

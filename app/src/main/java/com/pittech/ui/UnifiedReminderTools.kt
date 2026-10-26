@@ -14,9 +14,6 @@ import com.pittech.CooksViewModel
 import com.pittech.data.*
 import com.pittech.domain.*
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: String? = null, val title: String = "", val trigger: ReminderTrigger? = null, val revisionId: String? = null, val milestoneId: String? = null)
 
@@ -33,15 +30,16 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
     var show by remember { mutableStateOf(false) }
     var editor by remember { mutableStateOf<ReminderEdit?>(null) }
     var confirm by remember { mutableStateOf<ReminderRule?>(null) }
+    var checkIn by remember { mutableStateOf<ReminderRule?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = e.message } finally { busy = false } } }
+    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That reminder change couldn't be saved. Your reminders are unchanged — try again.") } finally { busy = false } } }
     OutlinedButton({ show = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (initialDishId == null) "meal-reminders" else "dish-reminders-$initialDishId")) { Text("Reminders${rules.count { it.enabled }.takeIf { it > 0 }?.let { " · $it enabled" }.orEmpty()}") }
     if (show) ModalBottomSheet(onDismissRequest = { show = false }) {
         Column(Modifier.heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Reminders", style = MaterialTheme.typography.titleLarge)
-            Text("Set a check for this meal or one dish. Dismiss, skip and snooze leave the cooking timeline unchanged.")
+            Text("Set a check for this meal or one dish. One vocabulary everywhere: Log it records what you did, Snooze 10 min asks again soon, Dismiss ends a reminder without recording.")
             if (!com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) {
                 Text("Notifications are disabled. Your reminders remain visible here.")
                 TextButton({ context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Notification settings") }
@@ -55,6 +53,7 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
                     receipt?.dueAtUtcMillis?.let { Text("Due ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it))}") }
                     if (rule.kind == "probe") Text(if (data.recording?.status == CookRecordingEntity.RECORDING && data.recording.samplingMode != "on_log") "Uses accepted readings from the selected channel" else "Monitoring unavailable · manual or on-log readings are evaluated only when recorded")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (rule.enabled && rule.status == "due") Button({ checkIn = rule }, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-" + rule.id)) { Text("Check in…") }
                         TextButton({ act { viewModel.changeReminderRule(rule.id, "toggle") } }, enabled = !busy && data.cook.status != CookStatus.COMPLETED) { Text(if (rule.enabled) "Disable" else "Enable") }
                         TextButton({ editor = ReminderEdit(rule = rule, trigger = ReminderTriggerCodec.decode(rule.triggerConfig)) }, enabled = !busy && data.cook.status != CookStatus.COMPLETED) { Text("Edit") }
                         if (rule.enabled) {
@@ -95,12 +94,64 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
         editor = null
     } }) }
     confirm?.let { rule ->
-        var action by remember(rule.id) { mutableStateOf("wrap") }
-        AlertDialog(onDismissRequest = { confirm = null }, title = { Text("Record what actually happened") }, text = { Column {
-            Text("Only confirm an action you performed. This creates one current-cook entry.")
-            ChoiceField("Actual action", PlaybookCodec.actions[action] ?: action, CookPhases.phaseActions.map { PlaybookCodec.actions[it] ?: it }) { label -> action = PlaybookCodec.actions.entries.first { it.value == label }.key }
-        } }, confirmButton = { TextButton({ act { viewModel.confirmReminderAction(rule.id, action); confirm = null } }, enabled = !busy) { Text("Record action") } }, dismissButton = { TextButton({ confirm = null }) { Text("Cancel") } })
+        ReminderRecordActionDialog(rule, announcedActionFor(rule, revisions), busy,
+            onConfirm = { action -> act { viewModel.confirmReminderAction(rule.id, action) }; confirm = null },
+            onClose = { confirm = null })
     }
+    checkIn?.let { rule ->
+        ReminderRuleCheckInDialog(rule, announcedActionFor(rule, revisions), busy,
+            onLogIt = { action -> act { viewModel.confirmReminderAction(rule.id, action) }; checkIn = null },
+            onLogOther = { checkIn = null; confirm = rule },
+            onSnooze = { act { viewModel.changeReminderRule(rule.id, "snooze") }; checkIn = null },
+            onDismiss = { act { viewModel.changeReminderRule(rule.id, "complete") }; checkIn = null },
+            onClose = { checkIn = null })
+    }
+}
+
+/** PL-01 (issue #172): the action a rule announced, resolved from its source snapshot milestone. */
+private fun announcedActionFor(rule: ReminderRule, revisions: List<RecipeRevision>): String? {
+    val trigger = runCatching { ReminderTriggerCodec.decode(rule.triggerConfig) }.getOrNull() ?: return null
+    val milestoneAction = rule.sourceMilestoneId?.let { milestone ->
+        revisions.firstOrNull { it.id == rule.sourceRecipeRevisionId }
+            ?.let { runCatching { RecipeSnapshotCodec.decode(it.snapshotJson) }.getOrNull() }
+            ?.observations?.firstOrNull { it.sourceEventId == milestone }?.action
+    }
+    return ReminderVocabulary.announcedAction(trigger, milestoneAction)
+}
+
+/**
+ * PL-01: record-an-action defaults to the action that actually fired. When
+ * the reminder announced no action there is NO preselection — the cook picks
+ * explicitly before Record arms. (The old blanket "wrap" default is gone.)
+ */
+@Composable internal fun ReminderRecordActionDialog(rule: ReminderRule, defaultAction: String?, busy: Boolean, onConfirm: (String) -> Unit, onClose: () -> Unit) {
+    var action by remember(rule.id, defaultAction) { mutableStateOf(defaultAction) }
+    SheetSurface(onDismiss = onClose, title = "Record what actually happened", actions = {
+        TextButton(onClose) { Text("Cancel") }
+        TextButton({ action?.let(onConfirm) }, enabled = !busy && action != null, modifier = Modifier.testTag("reminder-record-confirm")) { Text("Record action") }
+    }) { Column {
+        Text("Only confirm an action you performed. This creates one current-cook entry.")
+        ChoiceField("Actual action", action?.let { PlaybookCodec.actions[it] ?: it } ?: "Choose action…", CookPhases.phaseActions.map { PlaybookCodec.actions[it] ?: it }) { label -> action = PlaybookCodec.actions.entries.first { it.value == label }.key }
+    } }
+}
+
+/**
+ * PL-02: the one check-in every fired reminder offers — Log it / Snooze 10
+ * min / Dismiss, same words and meanings as the notification and the legacy
+ * timer check-in. Closing it (scrim/Back) changes nothing.
+ */
+@Composable internal fun ReminderRuleCheckInDialog(rule: ReminderRule, announcedAction: String?, busy: Boolean, onLogIt: (String) -> Unit, onLogOther: () -> Unit, onSnooze: () -> Unit, onDismiss: () -> Unit, onClose: () -> Unit) {
+    SheetSurface(onDismiss = onClose, title = rule.title, actions = {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onSnooze, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-snooze")) { Text(ReminderVocabulary.SNOOZE) }
+            TextButton(onDismiss, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(ReminderVocabulary.DISMISS) }
+        }
+        if (announcedAction != null) Button({ onLogIt(announcedAction) }, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-logit")) { Text("Log it · Record ${PlaybookCodec.actions[announcedAction] ?: announcedAction}") }
+        else Button(onLogOther, enabled = !busy, modifier = Modifier.testTag("reminder-checkin-logit")) { Text("Log it…") }
+    }) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("This reminder fired. What happened?")
+        if (announcedAction != null) Text("It announced: ${PlaybookCodec.actions[announcedAction] ?: announcedAction}.")
+    } }
 }
 
 @Composable private fun ReminderRuleEditor(data: CookDetailData, request: ReminderEdit, busy: Boolean, error: String?, onClose: () -> Unit, onSave: (String, String?, ReminderTrigger) -> Unit) {
@@ -109,7 +160,7 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
     var dishId by remember(request) { mutableStateOf(request.rule?.dishId ?: request.dishId) }
     var kind by remember(request) { mutableStateOf(initial?.let(ReminderTriggerCodec::kind) ?: "duration") }
     var minutes by remember(request) { mutableStateOf(when (initial) { is ReminderTrigger.Duration -> (initial.delayMillis / 60_000.0).toString(); is ReminderTrigger.Action -> (initial.offsetMillis / 60_000.0).toString(); is ReminderTrigger.Historical -> (initial.offsetMillis / 60_000.0).toString(); else -> "10" }) }
-    var clock by remember(request) { mutableStateOf(LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli((initial as? ReminderTrigger.Clock)?.at ?: System.currentTimeMillis() + 600_000), ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))) }
+    var clockMillis by remember(request) { mutableLongStateOf((initial as? ReminderTrigger.Clock)?.at ?: System.currentTimeMillis() + 600_000) }
     var action by remember(request) { mutableStateOf((initial as? ReminderTrigger.Action)?.action ?: (initial as? ReminderTrigger.Historical)?.anchorAction ?: "food_on") }
     var eventId by remember(request) { mutableStateOf((initial as? ReminderTrigger.Action)?.eventId) }
     val channels = data.readings.filter { it.measurementType in setOf("food", "food_probe", "internal_temperature", "pit", "pit_ambient", "ambient_temperature") && (dishId == null || it.dishId == dishId) }.groupBy { it.channelIdentity() }.mapValues { it.value.maxBy { r -> r.measuredAtUtcMillis } }
@@ -123,7 +174,7 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
         fun duration() = (minutes.toDouble() * 60_000).also { require(it.isFinite()) }.toLong()
         when (kind) {
             "duration" -> ReminderTrigger.Duration((initial as? ReminderTrigger.Duration)?.startedAt ?: System.currentTimeMillis(), duration())
-            "clock" -> ReminderTrigger.Clock(LocalDateTime.parse(clock, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            "clock" -> ReminderTrigger.Clock(clockMillis)
             "action" -> ReminderTrigger.Action(action, duration(), eventId)
             "historical" -> ReminderTrigger.Historical(action, duration())
             "probe" -> channels[seriesId]?.let { reading -> ReminderTrigger.Probe(seriesId, reading.probeId, reading.measurementType, direction, CookPlanEngine.fahrenheit(threshold.toDouble(), unit), (sustain.toDouble() * 60_000).also { require(it.isFinite()) }.toLong(), if (repeat) 900_000 else null) } ?: error("Choose a channel")
@@ -131,12 +182,17 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
         }.also { ReminderTriggerCodec.encode(it) }
     }.getOrNull()
     val labels = linkedMapOf("duration" to "After a duration", "clock" to "At a clock time", "probe" to "Probe temperature", "action" to "After an actual action", "historical" to "Previous cook milestone")
-    AlertDialog(onDismissRequest = onClose, title = { Text("Reminder") }, text = { Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // PL-22 (DD-6): the multi-field reminder-rule editor goes full screen.
+    FullScreenSurface(onDismiss = onClose, title = "Reminder", actions = {
+        TextButton(onClose, enabled = !busy) { Text("Cancel") }
+        TextButton({ trigger()?.let { onSave(title, dishId, it) } }, enabled = !busy && title.isNotBlank() && trigger() != null, modifier = Modifier.testTag("reminder-rule-save")) { Text("Save reminder") }
+    }) { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(title, { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth().testTag("reminder-rule-title"))
         ChoiceField("Scope", data.dishes.firstOrNull { it.id == dishId }?.name ?: "Meal", listOf("Meal") + data.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }) { label -> dishId = if (label == "Meal") null else data.dishes[label.substringBefore('.').toInt() - 1].id }
         ChoiceField("Type", labels[kind] ?: "Choose", labels.filterKeys { it != "historical" || initial is ReminderTrigger.Historical }.values.toList()) { kind = labels.entries.first { e -> e.value == it }.key }
         when (kind) {
-            "clock" -> OutlinedTextField(clock, { clock = it }, label = { Text("Local date and time · yyyy-MM-dd HH:mm") }, modifier = Modifier.fillMaxWidth())
+            // PL-02: pickers, not a free-text yyyy-MM-dd HH:mm field.
+            "clock" -> DateTimePickerField("Reminder time", clockMillis, { clockMillis = it }, "reminder-rule-clock")
             "probe" -> {
                 val channelLabels = channels.mapValues { (id, r) -> "${r.probeName} · ${r.measurementType.replace('_', ' ')} · ${id.hashCode().toUInt().toString(16).takeLast(4)}" }
                 ChoiceField("Channel", channelLabels[seriesId] ?: "Choose channel", channelLabels.values.toList()) { label -> seriesId = channelLabels.entries.first { it.value == label }.key }
@@ -162,5 +218,5 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    } }, confirmButton = { TextButton({ trigger()?.let { onSave(title, dishId, it) } }, enabled = !busy && title.isNotBlank() && trigger() != null, modifier = Modifier.testTag("reminder-rule-save")) { Text("Save reminder") } }, dismissButton = { TextButton(onClose, enabled = !busy) { Text("Cancel") } })
+    } }
 }
