@@ -64,7 +64,13 @@ internal fun SheetSurface(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleLarge)
-            content()
+            // The content region is weighted (not filling) so a tall body
+            // shrinks to the sheet's height instead of pushing the action
+            // row off the bottom of the sheet — at font scale 1.5 the
+            // report form and recipe details otherwise clipped their
+            // submit actions out of the window entirely (emulator gate,
+            // API 36 font 1.5, two deterministic failures).
+            Column(modifier = Modifier.weight(1f, fill = false)) { content() }
             if (actions != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
