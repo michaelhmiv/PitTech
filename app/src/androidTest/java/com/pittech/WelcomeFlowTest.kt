@@ -208,7 +208,10 @@ class WelcomeFlowTest {
             // acknowledging recovery does not delete — is attachable.
             composeRule.waitUntilExactlyOneExists(hasTestTag("feedback-kind-bug"), 15_000)
             composeRule.onNodeWithText("Include the saved crash report", substring = true).performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText(report.referenceCode, substring = true).performScrollTo().assertIsDisplayed()
+            // The form's own crash-report line ("Reference <code>; …") —
+            // the bare code also appears in the Settings saved-report
+            // notice behind the form, so match the in-form text.
+            composeRule.onNodeWithText("Reference ${report.referenceCode}", substring = true).performScrollTo().assertIsDisplayed()
         }
     }
 }
