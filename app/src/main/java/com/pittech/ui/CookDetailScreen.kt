@@ -129,6 +129,8 @@ import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TimelineEventEntity
 import com.pittech.domain.CookEntryValidation
 import com.pittech.domain.DishDraft
+import com.pittech.domain.DishDraftCodec
+import com.pittech.domain.EditorDraftKeys
 import com.pittech.domain.IngredientDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -168,8 +170,6 @@ fun CookDetailScreen(
     var editDish by remember { mutableStateOf<DishEntity?>(null) }
     var ingredientDish by remember { mutableStateOf<DishEntity?>(null) }
     var dishToDelete by remember { mutableStateOf<DishEntity?>(null) }
-    var editEvent by remember { mutableStateOf<TimelineEventEntity?>(null) }
-    var showNewEvent by remember { mutableStateOf(false) }
     var showTarget by remember { mutableStateOf(false) }
     var showResults by rememberSaveable(data.cook.id) { mutableStateOf(false) }
     val reminderRules by viewModel.reminders.observeRules().collectAsStateWithLifecycle(emptyList())
@@ -215,11 +215,6 @@ fun CookDetailScreen(
     var showExportCook by remember { mutableStateOf(false) }
     var showPhotoSource by rememberSaveable { mutableStateOf(false) }
     var preparingPhoto by remember { mutableStateOf(false) }
-    var photoSourceDestination by rememberSaveable { mutableStateOf("log") }
-    var photoEntryMode by rememberSaveable(data.cook.id) { mutableStateOf(false) }
-    var logComposerSession by rememberSaveable(data.cook.id) { mutableStateOf(0) }
-    var logPhotoUri by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
-    var logPhotoCaption by rememberSaveable(data.cook.id) { mutableStateOf("") }
     var reminderPhotoUri by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var reminderPhotoCaption by rememberSaveable(data.cook.id) { mutableStateOf("") }
     var showReminderComposer by rememberSaveable { mutableStateOf(false) }
@@ -248,33 +243,25 @@ fun CookDetailScreen(
     var ruleRecord by remember { mutableStateOf<com.pittech.data.ReminderRule?>(null) }
     var ruleRecordAnnounced by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    // PL-28 (#172): the photo source sheet only ever serves the reminder
+    // check-in (its one opener) — the legacy "log" destination wrote state
+    // nothing read (the retired TimelineEventDialog was its only
+    // consumer), so the callbacks take the reminder path directly.
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            if (photoSourceDestination == "reminder") {
-                reminderPhotoUri = uri.toString()
-                showReminderCheckIn = true
-            } else {
-                logPhotoUri = uri.toString()
-                showNewEvent = true
-            }
-        } else if (photoSourceDestination == "reminder") {
-            showReminderCheckIn = true
+            reminderPhotoUri = uri.toString()
         }
+        showReminderCheckIn = true
     }
     val addCameraPhoto = rememberCameraPhotoCapture(
         onPhotoCaptured = { uri ->
-            if (photoSourceDestination == "reminder") {
-                reminderPhotoUri = uri.toString()
-                showReminderCheckIn = true
-            } else {
-                logPhotoUri = uri.toString()
-                showNewEvent = true
-            }
+            reminderPhotoUri = uri.toString()
+            showReminderCheckIn = true
         },
         onCaptureCancelled = {
-            if (photoSourceDestination == "reminder") showReminderCheckIn = true
+            showReminderCheckIn = true
         },
     )
     val savePhoto = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/*")) { uri ->
@@ -409,7 +396,7 @@ fun CookDetailScreen(
         }
     }
     if (addDish) {
-        DishEditorDialog(preferredWeightUnit = preferredWeightUnit, onDismiss = { addDish = false }) { draft ->
+        DishEditorDialog(preferredWeightUnit = preferredWeightUnit, draftKey = "cook:${data.cook.id}", onDismiss = { addDish = false }) { draft ->
             viewModel.addDish(data.cook.id, draft)
             addDish = false
         }
@@ -536,7 +523,7 @@ fun CookDetailScreen(
         PhotoSourceDialog(
             onDismiss = {
                 showPhotoSource = false
-                if (photoSourceDestination == "reminder") showReminderCheckIn = true
+                showReminderCheckIn = true
             },
             onTakePhoto = {
                 showPhotoSource = false
@@ -613,7 +600,6 @@ fun CookDetailScreen(
             },
             onAddPhoto = {
                 showReminderCheckIn = false
-                photoSourceDestination = "reminder"
                 showPhotoSource = true
             },
             onRemovePhoto = {
@@ -2261,18 +2247,48 @@ private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave
 
 @Composable
 private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete: () -> Unit, onSave: (DishEntity) -> Unit) {
-    var name by rememberSaveable(dish.id) { mutableStateOf(dish.name) }
-    var foodType by rememberSaveable(dish.id) { mutableStateOf(dish.foodType) }
-    var cut by rememberSaveable(dish.id) { mutableStateOf(dish.cut.orEmpty()) }
-    var weight by rememberSaveable(dish.id) { mutableStateOf(dish.weightValue?.toString().orEmpty()) }
-    var weightUnit by rememberSaveable(dish.id) { mutableStateOf(dish.weightUnit ?: "lb") }
-    var condition by rememberSaveable(dish.id) { mutableStateOf(dish.startingCondition ?: "Not set") }
-    var boneIn by rememberSaveable(dish.id) { mutableStateOf(dish.boneIn) }
-    var placement by rememberSaveable(dish.id) { mutableStateOf(dish.placement.orEmpty()) }
-    var gradeOrSource by rememberSaveable(dish.id) { mutableStateOf(dish.gradeOrSource.orEmpty()) }
-    var thicknessNotes by rememberSaveable(dish.id) { mutableStateOf(dish.thicknessNotes.orEmpty()) }
-    var notes by rememberSaveable(dish.id) { mutableStateOf(dish.prepNotes.orEmpty()) }
-    var moreDetails by rememberSaveable(dish.id) { mutableStateOf(false) }
+    // PL-24 (#172): the dish-details editor autosaves like every other
+    // multi-field editor; the working fields are DishDraft-shaped.
+    val draftStore = rememberEditorDraftStore()
+    val fullDraftKey = EditorDraftKeys.dishDetails(dish.id)
+    val restored = remember(fullDraftKey) {
+        draftStore.load(fullDraftKey)?.let(DishDraftCodec::decode)?.takeIf { draft ->
+            draft.name != dish.name || draft.cut != dish.cut.orEmpty() || draft.weightText != dish.weightValue?.toString().orEmpty() ||
+                draft.placement != dish.placement.orEmpty() || draft.gradeOrSource != dish.gradeOrSource.orEmpty() ||
+                draft.thicknessNotes != dish.thicknessNotes.orEmpty() || draft.prepNotes != dish.prepNotes.orEmpty()
+        }
+    }
+    var draftRestored by rememberSaveable(dish.id) { mutableStateOf(restored != null) }
+    var name by rememberSaveable(dish.id) { mutableStateOf(restored?.name ?: dish.name) }
+    var foodType by rememberSaveable(dish.id) { mutableStateOf(restored?.foodType ?: dish.foodType) }
+    var cut by rememberSaveable(dish.id) { mutableStateOf(restored?.cut ?: dish.cut.orEmpty()) }
+    var weight by rememberSaveable(dish.id) { mutableStateOf(restored?.weightText ?: dish.weightValue?.toString().orEmpty()) }
+    var weightUnit by rememberSaveable(dish.id) { mutableStateOf(restored?.weightUnit ?: dish.weightUnit ?: "lb") }
+    var condition by rememberSaveable(dish.id) { mutableStateOf((if (restored != null) restored.startingCondition else dish.startingCondition) ?: "Not set") }
+    var boneIn by rememberSaveable(dish.id) { mutableStateOf(if (restored != null) restored.boneIn else dish.boneIn) }
+    var placement by rememberSaveable(dish.id) { mutableStateOf(restored?.placement ?: dish.placement.orEmpty()) }
+    var gradeOrSource by rememberSaveable(dish.id) { mutableStateOf(restored?.gradeOrSource ?: dish.gradeOrSource.orEmpty()) }
+    var thicknessNotes by rememberSaveable(dish.id) { mutableStateOf(restored?.thicknessNotes ?: dish.thicknessNotes.orEmpty()) }
+    var notes by rememberSaveable(dish.id) { mutableStateOf(restored?.prepNotes ?: dish.prepNotes.orEmpty()) }
+    var moreDetails by rememberSaveable(dish.id) { mutableStateOf(restored != null) }
+    LaunchedEffect(name, foodType, cut, weight, weightUnit, condition, boneIn, placement, gradeOrSource, thicknessNotes, notes) {
+        // Only a real divergence from the saved dish becomes a draft;
+        // reverting to the saved values clears it again.
+        val current = DishDraft(
+            name = name, foodType = foodType, cut = cut, weightText = weight, weightUnit = weightUnit,
+            startingCondition = condition.takeUnless { it == "Not set" }, boneIn = boneIn,
+            placement = placement, gradeOrSource = gradeOrSource, thicknessNotes = thicknessNotes, prepNotes = notes,
+        )
+        val saved = DishDraft(
+            name = dish.name, foodType = dish.foodType, cut = dish.cut.orEmpty(),
+            weightText = dish.weightValue?.toString().orEmpty(), weightUnit = dish.weightUnit ?: "lb",
+            startingCondition = dish.startingCondition, boneIn = dish.boneIn,
+            placement = dish.placement.orEmpty(), gradeOrSource = dish.gradeOrSource.orEmpty(),
+            thicknessNotes = dish.thicknessNotes.orEmpty(), prepNotes = dish.prepNotes.orEmpty(),
+        )
+        if (current != saved) draftStore.save(fullDraftKey, DishDraftCodec.encode(current))
+        else draftStore.clear(fullDraftKey)
+    }
     // PL-22 (DD-6): Dish Details is a multi-field editor — a full screen.
     FullScreenSurface(
         onDismiss = onDismiss,
@@ -2282,12 +2298,25 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
             TextButton(onClick = {
                 if (name.isNotBlank() && CookEntryValidation.isOptionalPositiveNumberValid(weight)) {
+                    draftStore.clear(fullDraftKey)
                     onSave(dish.copy(name=name.trim(), foodType=foodType, cut=cut.trim().ifBlank { null }, weightValue=CookEntryValidation.optionalPositiveNumber(weight), weightUnit=weightUnit.takeIf { weight.isNotBlank() }, startingCondition=condition.takeUnless { it == "Not set" }, boneIn=boneIn, placement=placement.trim().ifBlank { null }, gradeOrSource=gradeOrSource.trim().ifBlank { null }, thicknessNotes=thicknessNotes.trim().ifBlank { null }, prepNotes=notes.trim().ifBlank { null }))
                 }
             }) { Text("Save dish") }
         },
     ) {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (draftRestored) {
+                    ResumeDraftBanner(onDiscard = {
+                        draftStore.clear(fullDraftKey)
+                        draftRestored = false
+                        name = dish.name; foodType = dish.foodType; cut = dish.cut.orEmpty()
+                        weight = dish.weightValue?.toString().orEmpty(); weightUnit = dish.weightUnit ?: "lb"
+                        condition = dish.startingCondition ?: "Not set"; boneIn = dish.boneIn
+                        placement = dish.placement.orEmpty(); gradeOrSource = dish.gradeOrSource.orEmpty()
+                        thicknessNotes = dish.thicknessNotes.orEmpty(); notes = dish.prepNotes.orEmpty()
+                        moreDetails = false
+                    })
+                }
                 OutlinedTextField(name, { name = it }, label = { Text("Dish name") }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = { moreDetails = !moreDetails }, modifier = Modifier.testTag("food-details-toggle")) { Text(if (moreDetails) "Hide food details" else "More food details") }
                 if (moreDetails) {
@@ -2309,92 +2338,6 @@ private fun DishDetailsDialog(dish: DishEntity, onDismiss: () -> Unit, onDelete:
                 }
             }
     }
-}
-
-@Composable
-private fun TimelineEventDialog(
-    event: TimelineEventEntity?,
-    dishes: List<DishEntity>,
-    draftKey: Int,
-    photoEntryMode: Boolean,
-    initialType: String,
-    photoUri: String?,
-    photoCaption: String,
-    onChoosePhoto: () -> Unit,
-    onRemovePhoto: () -> Unit,
-    onPhotoCaptionChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onSave: (String, String, String?, Long, String?, Boolean) -> Unit,
-) {
-    val dialogFocusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    var type by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.eventType ?: if (photoEntryMode) "photo" else initialType) }
-    var title by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.title ?: if (photoEntryMode) "Photo added" else if (initialType == "note") "Cook note" else initialType.replace('_', ' ').replaceFirstChar { it.uppercase() }) }
-    var details by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.details.orEmpty()) }
-    var time by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.occurredAtUtcMillis ?: System.currentTimeMillis()) }
-    var timeWasChosen by rememberSaveable(draftKey, event?.id) { mutableStateOf(event != null) }
-    val defaultDishId = dishes.singleOrNull()?.id ?: "whole"
-    var dishId by rememberSaveable(draftKey, event?.id) { mutableStateOf(event?.dishId ?: defaultDishId) }
-    var showMoreDetails by rememberSaveable(draftKey, event?.id) { mutableStateOf(event != null) }
-    val choices = listOf("Meat on", "Spritz", "Wrap", "Flip", "Temperature check", "Fuel added", "Move", "Remove", "Rest", "Finish", "Photo", "Note", "Custom")
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (event == null) "Add to cook log" else "Edit timeline entry") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                if (event != null || showMoreDetails) {
-                    OutlinedTextField(title, { title = it }, label = { Text("Entry title") }, placeholder = { Text("Spritzed the meat, added fuel…") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("timeline-entry-title"))
-                }
-                OutlinedTextField(
-                    details,
-                    { details = it },
-                    label = { Text(if (event == null) "Write a note (optional)" else "Notes or details") },
-                    placeholder = { if (event == null) Text("What happened with the cook?") },
-                    minLines = if (event == null) 3 else 2,
-                    modifier = Modifier.fillMaxWidth().testTag("timeline-entry-details"),
-                )
-                if (event == null) {
-                    OutlinedButton(onClick = onChoosePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text(if (photoUri == null) "Attach a photo (optional)" else "Change attached photo")
-                    }
-                    if (photoUri != null) {
-                        Text("Photo will be saved with this log entry.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-                        OutlinedTextField(
-                            value = photoCaption,
-                            onValueChange = onPhotoCaptionChange,
-                            label = { Text("Photo caption (optional)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().testTag("timeline-photo-caption"),
-                        )
-                        TextButton(onClick = onRemovePhoto) { Text("Remove photo") }
-                    }
-                }
-                TextButton(onClick = { showMoreDetails = !showMoreDetails }, modifier = Modifier.testTag("timeline-entry-more-details")) {
-                    Text(if (showMoreDetails) "Hide entry details" else "Add date, dish, or entry type")
-                }
-                if (showMoreDetails) {
-                    SimpleDropdownField("Entry type", displayEventType(type), choices, { selected ->
-                        type = selected.lowercase().replace(' ', '_')
-                        if (title.isBlank() || title == event?.title || title == "Cook note" || title == "Photo added") {
-                            title = if (selected == "Photo") "Photo added" else selected
-                        }
-                    }, testTag = "timeline-entry-type")
-                    SimpleDropdownField("For", dishId.takeUnless { it == "whole" }?.let { id -> dishes.firstOrNull { it.id == id }?.name } ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { selected -> dishId = dishes.firstOrNull { it.name == selected }?.id ?: "whole" })
-                    DateTimePickerField("Occurred at", time, { time = it; timeWasChosen = true }, "timeline-entry-time")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (title.isNotBlank()) {
-                    dialogFocusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                    onSave(type, title.trim(), details.trim().ifBlank { null }, time, dishId.takeUnless { it == "whole" }, timeWasChosen)
-                }
-            }, enabled = event != null || type != "note" || details.isNotBlank() || photoUri != null, modifier = Modifier.testTag("timeline-entry-save")) { Text("Save entry") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
 }
 
 @Composable

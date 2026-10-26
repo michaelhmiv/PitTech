@@ -35,6 +35,9 @@ internal fun CrashRecoveryScreen(
     report: CrashDiagnosticReport,
     onCopyReport: () -> Unit,
     onContinue: () -> Unit,
+    // PL-20 (#172): attach the saved report to a problem report directly,
+    // instead of the copy-and-ferry clipboard step.
+    onAttachToProblemReport: () -> Unit = {},
 ) {
     var copied by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
     var showTechnicalDetails by rememberSaveable(report.referenceCode) { mutableStateOf(false) }
@@ -97,6 +100,16 @@ internal fun CrashRecoveryScreen(
                         "Copy diagnostic report"
                     },
                 )
+            }
+
+            OutlinedButton(
+                onClick = onAttachToProblemReport,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .testTag("crash-report-attach"),
+            ) {
+                Text("Attach to a problem report")
             }
 
             TextButton(

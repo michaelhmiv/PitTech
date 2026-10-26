@@ -160,7 +160,7 @@ import kotlinx.coroutines.launch
                 !mcpState.available->"Not available yet"
                 aiGate==com.pittech.data.McpProGate.NEEDS_PRO->"Needs PitTech Pro"
                 aiGate==com.pittech.data.McpProGate.CHECKING->"Checking Pro status"
-                mcpState.grants.count{it.active}>0->"${mcpState.grants.count{it.active}} connection${if(mcpState.grants.count{it.active}==1)"" else "s"}"
+                mcpState.grants.count{it.active(System.currentTimeMillis())}>0->"${mcpState.grants.count{it.active(System.currentTimeMillis())}} connection${if(mcpState.grants.count{it.active(System.currentTimeMillis())}==1)"" else "s"}"
                 else->"No connections"
             },
             tag="account-panel-ai",
@@ -232,11 +232,11 @@ import kotlinx.coroutines.launch
                     Text((grant.clientId?.let{"Connected app"} ?: "Personal access token")+" - "+grant.status(System.currentTimeMillis()),style=MaterialTheme.typography.bodySmall)
                     Text(grant.scopes.joinToString(", "){com.pittech.data.McpScopeCatalog.label(it)},style=MaterialTheme.typography.bodySmall)
                     grant.lastUsedAt?.let{Text("Last used ${java.time.Instant.ofEpochMilli(it)}",style=MaterialTheme.typography.bodySmall)}
-                    if(grant.active)TextButton(onClick={confirmRevoke=grant.id},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-${grant.id}")){Text("Disconnect")}
+                    if(grant.active(System.currentTimeMillis()))TextButton(onClick={confirmRevoke=grant.id},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-${grant.id}")){Text("Disconnect")}
                 }
             }
-            if(state.grants.none{it.active})Text("No AI connections yet.",style=MaterialTheme.typography.bodySmall)
-            if(state.grants.count{it.active}>1)TextButton(onClick={confirmRevokeAll=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-all")){Text("Disconnect all")}
+            if(state.grants.none{it.active(System.currentTimeMillis())})Text("No AI connections yet.",style=MaterialTheme.typography.bodySmall)
+            if(state.grants.count{it.active(System.currentTimeMillis())}>1)TextButton(onClick={confirmRevokeAll=true},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-all")){Text("Disconnect all")}
             when(gate){
                 com.pittech.data.McpProGate.CHECKING->Column(Modifier.testTag("mcp-pro-checking"),verticalArrangement=Arrangement.spacedBy(4.dp)){
                     Text("Checking PitTech Pro status…",style=MaterialTheme.typography.titleSmall)

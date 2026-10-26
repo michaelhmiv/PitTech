@@ -24,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -41,6 +42,9 @@ import com.pittech.FeedbackApi
 import com.pittech.FeedbackKind
 import com.pittech.FeedbackRequest
 import com.pittech.FeedbackSubmitResult
+import com.pittech.domain.EditorDraftKeys
+import com.pittech.domain.FeedbackDraft
+import com.pittech.domain.FeedbackDraftCodec
 
 @Composable
 fun SettingsScreen(
@@ -53,6 +57,10 @@ fun SettingsScreen(
     onWeightUnitChange: (String) -> Unit,
     privacyOptionsRequired: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
+    // PL-20 (#172): crash recovery's "Attach to a problem report" lands
+    // here with the feedback form already open (the saved report stays
+    // attached — acknowledging the recovery prompt does not delete it).
+    openFeedbackOnStart: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -63,14 +71,29 @@ fun SettingsScreen(
     var savedCrashReport by remember(context) { mutableStateOf(CrashDiagnostics.savedReport(context)) }
     var backupDetails by remember { mutableStateOf(false) }
     var noticesAsset by remember { mutableStateOf<String?>(null) }
-    var feedbackKindName by rememberSaveable { mutableStateOf<String?>(null) }
+    // PL-27 (#172): Feedback converges on the iOS shape — the kind is
+    // chosen in the form, a review step precedes submit, and the draft
+    // survives cancel in the device-local draft store (PL-24). Android
+    // keeps its crash-report attach. The old openFeedback ZEROED the
+    // form on every open; opening now restores the kept draft instead.
+    val feedbackDraftStore = rememberEditorDraftStore()
+    var feedbackOpen by rememberSaveable { mutableStateOf(false) }
+    var feedbackKindName by rememberSaveable { mutableStateOf(FeedbackKind.BUG.name) }
     var feedbackTitle by rememberSaveable { mutableStateOf("") }
     var feedbackDescription by rememberSaveable { mutableStateOf("") }
     var includeCrashReport by rememberSaveable { mutableStateOf(false) }
     var showCrashPreview by rememberSaveable { mutableStateOf(false) }
+    var feedbackReviewing by rememberSaveable { mutableStateOf(false) }
+    var feedbackRestored by rememberSaveable { mutableStateOf(false) }
     var feedbackSubmitting by remember { mutableStateOf(false) }
     var feedbackError by rememberSaveable { mutableStateOf<String?>(null) }
     var feedbackNotice by rememberSaveable { mutableStateOf<String?>(null) }
+    var hasFeedbackDraft by remember {
+        mutableStateOf(
+            feedbackDraftStore.load(EditorDraftKeys.FEEDBACK)?.let(FeedbackDraftCodec::decode)
+                ?.let { it.title.isNotBlank() || it.description.isNotBlank() } == true,
+        )
+    }
     val xlsx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
         if (uri != null) viewModel.export(uri, CooksViewModel.FORMAT_XLSX)
     }
@@ -84,65 +107,142 @@ fun SettingsScreen(
         if (uri != null) viewModel.previewImport(uri)
     }
 
-    fun openFeedback(kind: FeedbackKind) {
-        feedbackKindName = kind.name
-        feedbackTitle = ""
-        feedbackDescription = ""
-        includeCrashReport = kind == FeedbackKind.BUG && savedCrashReport != null
+    fun openFeedback(preferredKind: FeedbackKind) {
+        val draft = feedbackDraftStore.load(EditorDraftKeys.FEEDBACK)?.let(FeedbackDraftCodec::decode)
+        if (draft != null && (draft.title.isNotBlank() || draft.description.isNotBlank())) {
+            feedbackKindName = runCatching { FeedbackKind.valueOf(draft.kind) }.getOrDefault(preferredKind).name
+            feedbackTitle = draft.title
+            feedbackDescription = draft.description
+            includeCrashReport = draft.includeCrashReport && feedbackKindName == FeedbackKind.BUG.name && savedCrashReport != null
+            feedbackRestored = true
+        } else {
+            feedbackKindName = preferredKind.name
+            feedbackTitle = ""
+            feedbackDescription = ""
+            includeCrashReport = preferredKind == FeedbackKind.BUG && savedCrashReport != null
+            feedbackRestored = false
+        }
         showCrashPreview = false
+        feedbackReviewing = false
         feedbackSubmitting = false
         feedbackError = null
+        feedbackOpen = true
     }
 
-    val feedbackKind = feedbackKindName?.let { runCatching { FeedbackKind.valueOf(it) }.getOrNull() }
-    if (feedbackKind != null) {
+    // PL-20 (#172): crash recovery's attach action lands here with the
+    // form open; the saved (acknowledged) report still attaches.
+    LaunchedEffect(openFeedbackOnStart) {
+        if (openFeedbackOnStart) openFeedback(FeedbackKind.BUG)
+    }
+    // PL-24: autosave the working draft while the form is open, so
+    // leaving and returning restores it. A successful submit clears it.
+    LaunchedEffect(feedbackOpen, feedbackKindName, feedbackTitle, feedbackDescription, includeCrashReport) {
+        if (feedbackOpen) {
+            feedbackDraftStore.save(
+                EditorDraftKeys.FEEDBACK,
+                FeedbackDraftCodec.encode(FeedbackDraft(feedbackKindName, feedbackTitle, feedbackDescription, includeCrashReport)),
+            )
+            hasFeedbackDraft = feedbackTitle.isNotBlank() || feedbackDescription.isNotBlank()
+        }
+    }
+
+    val feedbackKind = FeedbackKind.valueOf(feedbackKindName)
+    if (feedbackOpen) {
         val reportToInclude = savedCrashReport.takeIf { feedbackKind == FeedbackKind.BUG && includeCrashReport }
+        val deviceLabel = listOf(Build.MANUFACTURER, Build.MODEL)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" ")
+            .ifBlank { "Unknown device" }
         // PL-22 (DD-6): the feedback form is a form — full screen.
-        // (Container only; the form's contents and flow are PL-27's slice.)
+        // PL-27 (#172): the flow inside is edit → review → submit, like iOS.
         FullScreenSurface(
-            onDismiss = { if (!feedbackSubmitting) feedbackKindName = null },
-            title = if (feedbackKind == FeedbackKind.BUG) "Report a problem" else "Request a feature",
+            onDismiss = { if (!feedbackSubmitting) feedbackOpen = false },
+            title = if (feedbackReviewing) "Review feedback" else "Send feedback",
             dismissEnabled = !feedbackSubmitting,
             actions = {
-                TextButton(
-                    onClick = { feedbackKindName = null },
-                    enabled = !feedbackSubmitting,
-                ) { Text("Cancel") }
-                TextButton(
-                    enabled = feedbackTitle.isNotBlank() && !feedbackSubmitting,
-                    onClick = {
-                        val device = listOf(Build.MANUFACTURER, Build.MODEL)
-                            .filter { it.isNotBlank() }
-                            .distinct()
-                            .joinToString(" ")
-                            .ifBlank { "Unknown device" }
-                        val request = FeedbackRequest(
-                            kind = feedbackKind,
-                            title = feedbackTitle,
-                            description = feedbackDescription,
-                            appVersion = BuildConfig.VERSION_NAME,
-                            androidVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-                            device = device,
-                            diagnosticReport = reportToInclude,
-                        )
-                        feedbackSubmitting = true
-                        feedbackError = null
-                        FeedbackApi.submitAsync(request) { result ->
-                            feedbackSubmitting = false
-                            when (result) {
-                                is FeedbackSubmitResult.Success -> {
-                                    feedbackKindName = null
-                                    feedbackNotice = result.issueNumber
-                                        ?.let { "Thanks — feedback submitted as GitHub issue #$it." }
-                                        ?: "Thanks — your feedback was submitted."
+                if (feedbackReviewing) {
+                    TextButton(
+                        onClick = { feedbackReviewing = false },
+                        enabled = !feedbackSubmitting,
+                    ) { Text("Back") }
+                    TextButton(
+                        enabled = feedbackTitle.isNotBlank() && !feedbackSubmitting,
+                        onClick = {
+                            val request = FeedbackRequest(
+                                kind = feedbackKind,
+                                title = feedbackTitle,
+                                description = feedbackDescription,
+                                appVersion = BuildConfig.VERSION_NAME,
+                                androidVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                                device = deviceLabel,
+                                diagnosticReport = reportToInclude,
+                            )
+                            feedbackSubmitting = true
+                            feedbackError = null
+                            FeedbackApi.submitAsync(request) { result ->
+                                feedbackSubmitting = false
+                                when (result) {
+                                    is FeedbackSubmitResult.Success -> {
+                                        // PL-24/PL-27: only a successful
+                                        // submit clears the kept draft.
+                                        feedbackDraftStore.clear(EditorDraftKeys.FEEDBACK)
+                                        hasFeedbackDraft = false
+                                        feedbackOpen = false
+                                        feedbackNotice = result.issueNumber
+                                            ?.let { "Thanks — feedback submitted as GitHub issue #$it." }
+                                            ?: "Thanks — your feedback was submitted."
+                                    }
+                                    is FeedbackSubmitResult.Failure -> feedbackError = result.message
                                 }
-                                is FeedbackSubmitResult.Failure -> feedbackError = result.message
                             }
-                        }
-                    },
-                ) { Text(if (feedbackSubmitting) "Submitting…" else "Submit feedback") }
+                        },
+                        modifier = Modifier.testTag("feedback-submit"),
+                    ) { Text(if (feedbackSubmitting) "Submitting…" else "Submit feedback") }
+                } else {
+                    TextButton(
+                        onClick = { feedbackOpen = false },
+                        enabled = !feedbackSubmitting,
+                    ) { Text("Cancel") }
+                    TextButton(
+                        enabled = feedbackTitle.isNotBlank() && !feedbackSubmitting,
+                        onClick = { feedbackError = null; feedbackReviewing = true },
+                        modifier = Modifier.testTag("feedback-review"),
+                    ) { Text("Review feedback") }
+                }
             },
         ) {
+                if (feedbackReviewing) {
+                    // PL-27: the review step — exactly what will be sent,
+                    // shown before anything is submitted (mirrors iOS).
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 560.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            if (feedbackKind == FeedbackKind.BUG) "Problem report" else "Feature idea",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(feedbackTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("feedback-review-title"))
+                        Text(feedbackDescription, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("feedback-review-description"))
+                        Text("Included app details", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "PitTech ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · $deviceLabel",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (reportToInclude != null) {
+                            Text(
+                                "The saved crash report (reference ${reportToInclude.referenceCode}) is included.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Text("This text will be public on GitHub.", style = MaterialTheme.typography.bodySmall)
+                        feedbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                } else {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -150,6 +250,30 @@ fun SettingsScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    if (feedbackRestored) {
+                        ResumeDraftBanner(onDiscard = {
+                            feedbackDraftStore.clear(EditorDraftKeys.FEEDBACK)
+                            hasFeedbackDraft = false
+                            feedbackRestored = false
+                            feedbackKindName = FeedbackKind.BUG.name
+                            feedbackTitle = ""
+                            feedbackDescription = ""
+                            includeCrashReport = savedCrashReport != null
+                        })
+                    }
+                    // PL-27: the kind is chosen in the form, not before it.
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (feedbackKind == FeedbackKind.BUG) {
+                            Button(onClick = { feedbackKindName = FeedbackKind.BUG.name }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-bug")) { Text("Problem") }
+                        } else {
+                            OutlinedButton(onClick = { feedbackKindName = FeedbackKind.BUG.name; includeCrashReport = savedCrashReport != null }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-bug")) { Text("Problem") }
+                        }
+                        if (feedbackKind == FeedbackKind.FEATURE) {
+                            Button(onClick = { feedbackKindName = FeedbackKind.FEATURE.name }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-feature")) { Text("Feature idea") }
+                        } else {
+                            OutlinedButton(onClick = { feedbackKindName = FeedbackKind.FEATURE.name }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-feature")) { Text("Feature idea") }
+                        }
+                    }
                     OutlinedTextField(
                         value = feedbackTitle,
                         onValueChange = { feedbackTitle = it.take(120) },
@@ -206,6 +330,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     feedbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
                 }
         }
     }
@@ -285,6 +410,18 @@ fun SettingsScreen(
                 onClick = { openFeedback(FeedbackKind.FEATURE) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text("Request a feature") }
+            if (hasFeedbackDraft) {
+                // PL-24/PL-27: the visible Resume affordance for a kept
+                // draft — opening restores it into the form.
+                Text(
+                    "You have an unsent feedback draft on this device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TextButton(
+                    onClick = { openFeedback(FeedbackKind.BUG) },
+                    modifier = Modifier.testTag("feedback-resume"),
+                ) { Text("Resume draft") }
+            }
             feedbackNotice?.let {
                 Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium)
             }

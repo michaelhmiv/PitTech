@@ -74,19 +74,42 @@ struct MoreDestinationLabel: View {
     }
 }
 
+/// PL-30 (#172): the one shared "not available yet" pattern — icon tile,
+/// title, message, an optional note about what works instead, and one
+/// route onward. Every not-available surface on both platforms renders
+/// through this shape with `NotAvailableCopy` strings.
+struct NotAvailablePlaceholderView<Onward: View>: View {
+    let systemImage: String
+    let title: String
+    let message: String
+    var note: String? = nil
+    let onwardLabel: String
+    @ViewBuilder let onward: () -> Onward
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Image(systemName: systemImage).font(.system(size: 32)).foregroundStyle(PitTechStyle.sage)
+                    .padding(18).background(PitTechStyle.sageFill, in: RoundedRectangle(cornerRadius: 18)).accessibilityHidden(true)
+                SectionTitle(title: title)
+                Text(message).foregroundStyle(PitTechStyle.supporting)
+                if let note { Text(note).foregroundStyle(PitTechStyle.supporting) }
+                NavigationLink(onwardLabel) { onward() }.buttonStyle(.bordered).frame(minHeight: 44)
+            }.padding(20)
+        }.background(PitTechStyle.canvas.ignoresSafeArea())
+    }
+}
+
 struct DiscoveryWelcomeView: View {
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Image(systemName: "safari").font(.system(size: 32)).foregroundStyle(PitTechStyle.sage)
-                        .padding(18).background(PitTechStyle.sageFill, in: RoundedRectangle(cornerRadius: 18)).accessibilityHidden(true)
-                    SectionTitle(title: "Find your next cook")
-                    Text("Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account.")
-                        .foregroundStyle(PitTechStyle.supporting)
-                    NavigationLink("Open your recipes") { SavedRecipesView() }.buttonStyle(.bordered).frame(minHeight: 44)
-                }.padding(20)
-            }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
+            NotAvailablePlaceholderView(
+                systemImage: "safari",
+                title: NotAvailableCopy.discoverTitle,
+                message: NotAvailableCopy.discoverMessage,
+                onwardLabel: NotAvailableCopy.discoverOnward,
+                onward: { SavedRecipesView() },
+            )
+            .navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
         }
     }
 }

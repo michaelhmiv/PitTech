@@ -4,6 +4,24 @@ import UIKit
 
 private struct AddedRecipePhoto: Identifiable { let id = UUID().uuidString; let data: Data; var caption = "" }
 
+/// PL-24 (#172): the recipe editor's kept draft — the same device-local
+/// autosave/resume standard as Android (UserDefaults, never exported or
+/// synced). Newly picked photos are NOT in the draft: iOS PhotosPicker
+/// yields in-memory data (Android's durable content URIs persist), so
+/// an unsaved photo still lives only until the editor closes.
+private struct RecipeEditorDraftState: Codable {
+    var snapshot: RecipeSnapshot
+    var tags: String
+    var numericText: [String: String]
+    var keptAssets: [String]
+    var keptPhotos: [String]
+    var captions: [String: String]
+    var contextIds: [String]
+    var keptFacts: [String]
+    var encoded: Data { (try? JSONEncoder().encode(self)) ?? Data() }
+    func same(as other: RecipeEditorDraftState) -> Bool { encoded == other.encoded }
+}
+
 struct NativeRecipeEditor: View {
     @Environment(CookStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -22,9 +40,60 @@ struct NativeRecipeEditor: View {
     @State private var saving = false
     @State private var initialized = false
     @State private var error: String?
+    // PL-24 (#172): draft persistence — the state the editor opened with
+    // (restored draft or the request's own values) is the baseline; only
+    // divergence from it is kept, and saving clears it.
+    private let draftKey: String
+    private let initialState: RecipeEditorDraftState
+    @State private var openedState: RecipeEditorDraftState
+    @State private var draftRestored: Bool
     init(request: NativeRecipeRequest) {
-        self.request = request; _snapshot = State(initialValue: request.snapshot); _tags = State(initialValue: request.snapshot.tags.joined(separator: ", "))
-        _keptPhotos = State(initialValue: request.photoIds); _keptFacts = State(initialValue: Set(request.snapshot.observations.compactMap { $0.objectValue?["sourceEventId"]?.stringValue }))
+        self.request = request
+        let key = "recipe-editor-draft:" + (request.recipeId ?? request.attemptDishId.map { "attempt:\($0)" } ?? "new")
+        draftKey = key
+        let initial = RecipeEditorDraftState(
+            snapshot: request.snapshot,
+            tags: request.snapshot.tags.joined(separator: ", "),
+            numericText: [:],
+            keptAssets: [],
+            keptPhotos: request.photoIds.sorted(),
+            captions: [:],
+            contextIds: [],
+            keptFacts: request.snapshot.observations.compactMap { $0.objectValue?["sourceEventId"]?.stringValue }.sorted(),
+        )
+        initialState = initial
+        let stored = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(RecipeEditorDraftState.self, from: $0) }
+        let restored = stored.flatMap { $0.same(as: initial) ? nil : $0 }
+        let opened = restored ?? initial
+        _openedState = State(initialValue: opened)
+        _draftRestored = State(initialValue: restored != nil)
+        _snapshot = State(initialValue: opened.snapshot)
+        _tags = State(initialValue: opened.tags)
+        _numericText = State(initialValue: opened.numericText)
+        _keptAssets = State(initialValue: Set(opened.keptAssets))
+        _keptPhotos = State(initialValue: Set(opened.keptPhotos))
+        _captions = State(initialValue: opened.captions)
+        _contextIds = State(initialValue: Set(opened.contextIds))
+        _keptFacts = State(initialValue: Set(opened.keptFacts))
+    }
+    private func currentDraftState() -> RecipeEditorDraftState {
+        RecipeEditorDraftState(
+            snapshot: snapshot, tags: tags, numericText: numericText,
+            keptAssets: keptAssets.sorted(), keptPhotos: keptPhotos.sorted(),
+            captions: captions, contextIds: contextIds.sorted(), keptFacts: keptFacts.sorted(),
+        )
+    }
+    private var draftFingerprint: String { String(decoding: currentDraftState().encoded, as: UTF8.self) }
+    private func persistDraft() {
+        let current = currentDraftState()
+        if current.same(as: openedState) { UserDefaults.standard.removeObject(forKey: draftKey) }
+        else { UserDefaults.standard.set(current.encoded, forKey: draftKey) }
+    }
+    private func resetToInitialDraft() {
+        openedState = initialState
+        snapshot = initialState.snapshot; tags = initialState.tags; numericText = initialState.numericText
+        keptAssets = Set(initialState.keptAssets); keptPhotos = Set(initialState.keptPhotos)
+        captions = initialState.captions; contextIds = Set(initialState.contextIds); keptFacts = Set(initialState.keptFacts)
     }
     private var dish: [String: JSONValue] { snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue ?? [:] }
     private var ingredients: [JSONValue] { dish["ingredients"]?.arrayValue ?? [] }
@@ -41,6 +110,19 @@ struct NativeRecipeEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                if draftRestored {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Resume draft").font(.headline)
+                            Text("Your unsaved changes were kept on this device.").font(.caption).foregroundStyle(.secondary)
+                            Button("Discard draft", role: .destructive) {
+                                UserDefaults.standard.removeObject(forKey: draftKey)
+                                draftRestored = false
+                                resetToInitialDraft()
+                            }.accessibilityIdentifier("editor-draft-discard")
+                        }
+                    }
+                }
                 Section("Recipe") {
                     TextField("Name", text: $snapshot.name)
                     TextField("Description (optional)", text: $snapshot.description, axis: .vertical)
@@ -140,7 +222,19 @@ struct NativeRecipeEditor: View {
                 if let error { Text(error).foregroundStyle(.red) }
             }.navigationTitle(request.attemptDishId == nil ? "Save recipe" : "Adjust for this meal")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!valid || loadingPhotos || saving) } }
-                .onAppear { if !initialized { keptAssets = Set(assets.compactMap { $0.objectValue?["id"]?.stringValue }); initialized = true } }
+                .onAppear {
+                    if !initialized {
+                        // PL-24: the asset seeding is the opened baseline,
+                        // not an edit — unless a draft was restored, in
+                        // which case the draft's kept set stands.
+                        if !draftRestored {
+                            keptAssets = Set(assets.compactMap { $0.objectValue?["id"]?.stringValue })
+                            openedState.keptAssets = keptAssets.sorted()
+                        }
+                        initialized = true
+                    }
+                }
+                .onChange(of: draftFingerprint) { _, _ in persistDraft() }
                 .onChange(of: pickerItems) { _, items in
                     loadingPhotos = true
                     Task { do { for item in items { if let data = try await item.loadTransferable(type: Data.self), let bytes = UIImage(data: data)?.jpegData(compressionQuality: 0.9) { addedPhotos.append(AddedRecipePhoto(data: bytes)) } else { throw CookNoteError.missingPhoto } }; pickerItems = [] } catch { self.error = error.localizedDescription }; loadingPhotos = false }
@@ -175,6 +269,8 @@ struct NativeRecipeEditor: View {
                 try store.saveRecipe(result, recipeId: request.recipeId, expectedRevisionId: request.expectedRevisionId, sourceCookId: request.sourceCookId, sourceDishId: request.sourceDishId,
                     assetRevisionId: request.assetRevisionId, keptAssetIds: keptAssets, photoIds: keptPhotos, captions: captions, addedPhotos: addedPhotos.map(\.data), addedPhotoCaptions: addedPhotos.map(\.caption))
             }
+            // PL-24: a successful save clears the kept draft (all paths).
+            UserDefaults.standard.removeObject(forKey: draftKey)
             dismiss()
         } catch { self.error = error.localizedDescription; saving = false }
     }

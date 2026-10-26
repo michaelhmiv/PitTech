@@ -235,7 +235,7 @@ private struct McpConnectionsSection: View {
         case .checking: return "Checking Pro status"
         case .needsPro: return "Needs PitTech Pro"
         case .entitled:
-            let active = mcp.grants.filter(\.active).count
+            let active = mcp.grants.filter { $0.active(now: Int64(Date().timeIntervalSince1970 * 1000)) }.count
             return active > 0 ? "\(active) connection\(active == 1 ? "" : "s")" : "No connections"
         }
     }
@@ -251,11 +251,11 @@ private struct McpConnectionsSection: View {
                         Text("\(grant.clientId != nil ? "Connected app" : "Personal access token") · \(grant.status(now: Int64(Date().timeIntervalSince1970 * 1000)))").font(.footnote)
                         Text(grant.scopes.map(McpScopeCatalog.label).joined(separator: ", ")).font(.footnote)
                         if let used = grant.lastUsedAt { Text("Last used \(Date(timeIntervalSince1970: Double(used) / 1000), format: .dateTime)").font(.footnote) }
-                        if grant.active { Button("Disconnect", role: .destructive) { confirmingRevoke = grant.id }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-\(grant.id)") }
+                        if grant.active(now: Int64(Date().timeIntervalSince1970 * 1000)) { Button("Disconnect", role: .destructive) { confirmingRevoke = grant.id }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-\(grant.id)") }
                     }.accessibilityIdentifier("mcp-grant-\(grant.id)")
                 }
-                if mcp.grants.allSatisfy({ !$0.active }) { Text("No AI connections yet.").font(.footnote) }
-                if mcp.grants.filter(\.active).count > 1 { Button("Disconnect all", role: .destructive) { confirmingRevokeAll = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-all") }
+                if mcp.grants.allSatisfy({ !$0.active(now: Int64(Date().timeIntervalSince1970 * 1000)) }) { Text("No AI connections yet.").font(.footnote) }
+                if mcp.grants.filter({ $0.active(now: Int64(Date().timeIntervalSince1970 * 1000)) }).count > 1 { Button("Disconnect all", role: .destructive) { confirmingRevokeAll = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-all") }
                 switch gate {
                 case .checking:
                     VStack(alignment: .leading, spacing: 4) {

@@ -122,6 +122,26 @@ final class McpConnectionsTests: XCTestCase {
         XCTAssertTrue((badMcp.message ?? "").contains("isn't valid"))
     }
 
+    /// PL-30 (#172): an expired grant renders "Expired" and is NOT
+    /// active — it must not offer Disconnect or inflate Disconnect-all.
+    /// Mirrors the Android McpGrantView test.
+    func testExpiredGrantsAreNotActiveAndRevokedGrantsAreNotActive() {
+        let now: Int64 = 1_700_000_000_000
+        func grant(revoked: Int64?, expires: Int64) -> McpGrant {
+            McpGrant(id: "g", nickname: "ChatGPT", scopes: [], createdAt: now - 10_000, expiresAt: expires, revokedAt: revoked, lastUsedAt: nil, clientId: nil)
+        }
+        let live = grant(revoked: nil, expires: now + 60_000)
+        XCTAssertTrue(live.active(now: now))
+        XCTAssertEqual(live.status(now: now), "Connected")
+        let expired = grant(revoked: nil, expires: now - 1)
+        XCTAssertFalse(expired.active(now: now))
+        XCTAssertEqual(expired.status(now: now), "Expired")
+        XCTAssertFalse(grant(revoked: nil, expires: now).active(now: now))
+        let revoked = grant(revoked: now - 1, expires: now + 60_000)
+        XCTAssertFalse(revoked.active(now: now))
+        XCTAssertEqual(revoked.status(now: now), "Disconnected")
+    }
+
     /// Slice 8 (PL-14): the connection gate maps the existing entitlement
     /// state — entitled passes, not-entitled gates, unknown checks.
     func testProGateMapsEntitlementStates() {

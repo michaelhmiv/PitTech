@@ -614,4 +614,16 @@ import XCTest
         XCTAssertEqual(LoadingCopy.checkingPro, "Checking PitTech Pro status…")
         XCTAssertEqual(FeedbackCopy.submitFailed, "Couldn't submit your feedback. What you wrote stays in the form — check your connection and try again.")
     }
+
+    /// PL-30 (#172): the shared "not available yet" pattern strings —
+    /// identical literals to Android's StateCopyTest pins.
+    func testNotAvailablePatternCopyIsPinned() {
+        XCTAssertEqual(NotAvailableCopy.devicesTitle, "Devices")
+        XCTAssertEqual(NotAvailableCopy.devicesMessage, "Grill connections aren't available yet.")
+        XCTAssertEqual(NotAvailableCopy.devicesNote, "You can add temperature readings by hand during a cook.")
+        XCTAssertEqual(NotAvailableCopy.devicesOnward, "Open Meals")
+        XCTAssertEqual(NotAvailableCopy.discoverTitle, "Find your next cook")
+        XCTAssertEqual(NotAvailableCopy.discoverMessage, "Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account.")
+        XCTAssertEqual(NotAvailableCopy.discoverOnward, "Open your recipes")
+    }
 }

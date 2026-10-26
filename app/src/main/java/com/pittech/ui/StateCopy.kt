@@ -201,6 +201,26 @@ internal object FeedbackCopy {
         "Couldn't submit your feedback — the feedback service is unavailable. What you wrote stays in the form — try again later."
 }
 
+/** PL-30 (#172): the ONE "not available yet" pattern. Every surface whose
+ * feature is not available on this build renders the same shape — icon,
+ * title, what-isn't-available message, an optional note about what works
+ * instead, and exactly one route onward — with these strings, identical
+ * on both platforms (pinned by unit tests on each side). Before PL-30,
+ * Devices used a bare text placeholder with no way onward and Discover
+ * used a bespoke layout. iOS has no Devices placeholder (its telemetry
+ * connections ship enabled); the pattern still governs its Discover
+ * surface. */
+internal object NotAvailableCopy {
+    const val DEVICES_TITLE: String = "Devices"
+    const val DEVICES_MESSAGE: String = "Grill connections aren't available yet."
+    const val DEVICES_NOTE: String = "You can add temperature readings by hand during a cook."
+    const val DEVICES_ONWARD: String = "Open Meals"
+    const val DISCOVER_TITLE: String = "Find your next cook"
+    const val DISCOVER_MESSAGE: String =
+        "Community recipes are being prepared for the next PitTech release. You'll be able to browse, save and cook them without an account."
+    const val DISCOVER_ONWARD: String = "Open your recipes"
+}
+
 /** PL-26 (Slice 10): Settings alignment. The section order is identical on
  * both platforms (pinned by unit tests on each side), backup/export lives
  * in "Your data" on both, and the backup scope is stated with these exact
