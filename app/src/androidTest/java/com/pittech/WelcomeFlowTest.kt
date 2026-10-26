@@ -7,8 +7,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
@@ -49,6 +47,10 @@ class WelcomeFlowTest {
     /** Reset to a true first run: no welcome flag, no crash report, no cooks. */
     private fun resetFirstRun() {
         CrashDiagnostics.clearPendingReport(targetContext)
+        // PL-20 (#172): the open-cook recovery record is diagnostics
+        // state too — a stale record from an earlier test in this
+        // process must not leak into the next launch.
+        CrashDiagnostics.recordOpenCook(targetContext, null)
         preferences().edit().remove(WelcomePreferences.PREFERENCE_KEY).commit()
         val application = targetContext.applicationContext as PitTechApplication
         runBlocking(Dispatchers.IO) { application.database.clearAllTables() }
@@ -204,14 +206,6 @@ class WelcomeFlowTest {
             // Settings opens with the feedback form up (PL-27 shape:
             // kind chosen in the form), and the saved report — which
             // acknowledging recovery does not delete — is attachable.
-            composeRule.waitForIdle()
-            Thread.sleep(2_000)
-            // TEMP DIAGNOSTIC (slice 11 gate): dump the semantics tree so
-            // a failed landing shows exactly which surface is up.
-            val tree = composeRule.onRoot(useUnmergedTree = true).printToString()
-            tree.chunked(3000).forEachIndexed { index, chunk ->
-                android.util.Log.e("S11DIAG", "chunk $index: $chunk")
-            }
             composeRule.waitUntilExactlyOneExists(hasTestTag("feedback-kind-bug"), 15_000)
             composeRule.onNodeWithText("Include the saved crash report", substring = true).performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText(report.referenceCode, substring = true).performScrollTo().assertIsDisplayed()

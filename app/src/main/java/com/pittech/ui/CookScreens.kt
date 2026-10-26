@@ -277,6 +277,17 @@ internal fun PitTechApp(
     if (selectedCookId != null) {
         val detail = selectedCook
         if (detail == null || detail.cook.id != selectedCookId) {
+            // PL-20 (#172): a selection whose detail never arrives is a
+            // cook that no longer exists (the crash-recovery record can
+            // outlive its cook — deleted, or replaced by a restore).
+            // Fall back home after a grace period instead of hanging on
+            // the interstitial forever; a real local cook loads in well
+            // under the grace period, and the effect is cancelled the
+            // moment the detail lands.
+            LaunchedEffect(selectedCookId) {
+                kotlinx.coroutines.delay(5_000)
+                viewModel.closeCook()
+            }
             Scaffold { padding ->
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text("Opening cook…", style = MaterialTheme.typography.bodyLarge)
