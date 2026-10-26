@@ -65,10 +65,10 @@ struct MealActivityTimers: View {
         DisclosureGroup("Task timers", isExpanded: $expanded) {
             ForEach(timers.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
                 if let o = timers.first(where: { $0.objectValue?["id"]?.stringValue == id })?.objectValue, let start = o["startedAtUtcMillis"]?.numberValue {
-                    Text(o["title"]?.stringValue ?? "Task").font(.headline)
+                    TurnInBannerText(o["title"]?.stringValue ?? "Task")
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         let elapsed = max(0, (o["stoppedAtUtcMillis"]?.numberValue ?? context.date.timeIntervalSince1970 * 1000) - start) / 1000
-                        Text("\(Int(elapsed) / 60)m \(Int(elapsed) % 60)s")
+                        Text("\(Int(elapsed) / 60)m \(Int(elapsed) % 60)s").font(PitTechFont.monoReadout)
                     }
                     HStack {
                         Button(o["status"]?.stringValue == "running" ? "Stop & save duration" : "Save duration") { do { draft = try store.stopActivityTimer(id) } catch { self.error = error.localizedDescription } }

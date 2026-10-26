@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,7 +22,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,8 +56,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -60,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
@@ -289,8 +297,13 @@ internal fun PitTechApp(
                 viewModel.closeCook()
             }
             Scaffold { padding ->
+                // TURN-IN labelled loader (§4, `d07-loading-opening`): the
+                // wait is named, never a bare spinner.
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    Text("Opening cook…", style = MaterialTheme.typography.bodyLarge)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        CircularProgressIndicator(color = pitTechTokens().ember, modifier = Modifier.size(28.dp))
+                        TurnInBannerText("Opening cook…", style = PitTechTextStyles.bannerTitle)
+                    }
                 }
             }
         } else {
@@ -336,24 +349,32 @@ internal fun PitTechApp(
     BackHandler(enabled = section == MainSection.MORE && moreDestination != null) { moreDestination = null }
     Scaffold(
         topBar = {
+            // TURN-IN tab-bar treatment (§4): tab roots carry NO title bar —
+            // the selected bottom tab says where you are. Only a More
+            // sub-destination keeps a slim back row, so its way back is
+            // never lost. The offline banner rides above every tab (Q1).
             Column {
-                TopAppBar(
-                    title = { Text(if (section == MainSection.MORE) moreDestination ?: section.title else section.title, fontWeight = FontWeight.SemiBold) },
-                    navigationIcon = {
-                        if (section == MainSection.MORE && moreDestination != null) {
-                            IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
-                        }
-                    },
-                )
+                if (section == MainSection.MORE && moreDestination != null) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
+                        TurnInBannerText(moreDestination, style = PitTechTextStyles.bannerTitle)
+                    }
+                }
                 OfflineBanner()
             }
         },
         bottomBar = {
-            // Night Service shell (#172): the bar sits as a rounded "pill" tray
-            // on the charcoal ground, ember marking the active tab.
+            // TURN-IN shell (§4, `d01`): the bar is a flat surface tray; the
+            // selected tab is ember with a small ember tick above it — no
+            // pill background behind the icon.
+            val tokens = pitTechTokens()
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = tokens.surface,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                border = BorderStroke(1.dp, tokens.ruling),
             ) {
                 NavigationBar(containerColor = androidx.compose.ui.graphics.Color.Transparent) {
                     MainSection.entries.forEach { item ->
@@ -363,8 +384,24 @@ internal fun PitTechApp(
                                 if (item == MainSection.MORE && section == item) moreDestination = null
                                 selectedSection = item.name
                             },
-                            icon = { Icon(item.icon, contentDescription = null) },
+                            icon = {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Box(
+                                        Modifier.size(width = 18.dp, height = 3.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(if (section == item) tokens.ember else androidx.compose.ui.graphics.Color.Transparent),
+                                    )
+                                    Icon(item.icon, contentDescription = null)
+                                }
+                            },
                             label = { Text(item.title) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = tokens.emberText,
+                                selectedTextColor = tokens.emberText,
+                                unselectedIconColor = tokens.inkMuted,
+                                unselectedTextColor = tokens.inkMuted,
+                                indicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            ),
                             modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
                         )
                     }
@@ -504,22 +541,22 @@ private fun CooksHome(
                     )
                     Text("PitTech", style = MaterialTheme.typography.titleLarge)
                 }
-                Text("Your cook log is ready", style = MaterialTheme.typography.titleLarge)
+                TurnInBannerText("Your cook log is ready", style = PitTechTextStyles.bannerTitle)
                 Text(
                     "Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.",
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = PitTechTextStyles.body,
                 )
                 Text(
                     "Your cook records stay on this phone. No account is needed.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = PitTechTextStyles.body,
+                    color = pitTechTokens().inkMuted,
                 )
             }
         }
 
         if (activeCooks.isNotEmpty()) {
-            // Night Service Live Zone: the first active cook leads the tab as a
-            // poster readout; the rest stay one tap away below it.
+            // TURN-IN lane (`d01`): the first active cook leads the tab as
+            // the On-the-fire lane; the rest stay one tap away below it.
             LiveZoneCard(activeCooks.first(), nowMillis = nowMillis, onClick = { onOpenCook(activeCooks.first().cook.id) })
             if (activeCooks.size > 1) {
                 SectionHeading("Also cooking")
@@ -540,12 +577,13 @@ private fun CooksHome(
         if (setupDraft != null) {
             // PL-13: the kept setup is one tap from Meals, never a surprise.
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
                 shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, pitTechTokens().ruling),
                 modifier = Modifier.fillMaxWidth().testTag("setup-draft-card"),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Cook setup draft", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("Cook setup draft")
                     Text(
                         setupDraft.title.ifBlank { "Untitled setup" } + setupDraft.sourceLabel?.let { " · $it" }.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
@@ -573,8 +611,9 @@ private fun CooksHome(
         // Planning becomes a panel whose header carries its state (DD-2):
         // collapsed never means invisible.
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
             shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, pitTechTokens().ruling),
             modifier = Modifier.fillMaxWidth().clickable { showPlanning = !showPlanning }.testTag("home-planning-toggle"),
         ) {
             Row(
@@ -582,7 +621,7 @@ private fun CooksHome(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Planning and playbooks", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("Planning and playbooks")
                     if (!showPlanning) {
                         Text(
                             "Playbooks, serve plans and upcoming cooks",
@@ -610,49 +649,61 @@ private fun CooksHome(
 }
 
 /**
- * The Night Service Live Zone on Meals (#172): a high-contrast poster card for
- * the lead active cook — elapsed time at poster size, pit setpoint and dishes
- * in plain view. Nothing (ads included) ever renders inside or above it.
+ * The TURN-IN On-the-fire lane on Meals (`d01`): the lead active cook as a
+ * lane row — ember edge bar, banner name, a LIVE (or PAUSED) pill, the
+ * setpoint/smoker/dishes in mono, and the elapsed clock. Nothing (ads
+ * included) ever renders inside or above it. Same card contract as every
+ * cook card ("cook-card-<id>" opens the cook); the lane is presentation,
+ * not a new destination.
  */
 @Composable
 private fun LiveZoneCard(cook: CookWithDishes, nowMillis: Long, onClick: () -> Unit) {
-    val ground = androidx.compose.ui.graphics.Color(0xFF10140F)
-    val ink = androidx.compose.ui.graphics.Color(0xFFF2EEE3)
-    val muted = androidx.compose.ui.graphics.Color(0xFF4A5245)
+    val tokens = pitTechTokens()
+    val paused = cook.cook.status == CookStatus.PAUSED
     Card(
-        // Same card contract as every cook card ("cook-card-<id>" opens the cook);
-        // the Live Zone is presentation, not a new destination.
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
-        colors = CardDefaults.cardColors(containerColor = ink, contentColor = ground),
+        colors = CardDefaults.cardColors(containerColor = tokens.surface, contentColor = tokens.ink),
         shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, tokens.ruling),
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                if (cook.cook.status == CookStatus.PAUSED) "PAUSED" else "LIVE COOK",
-                style = MaterialTheme.typography.labelLarge,
-                color = muted,
-            )
-            Text(
-                cook.cook.title,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                formatElapsed(nowMillis - cook.cook.startedAtUtcMillis),
-                style = MaterialTheme.typography.displayMedium,
-            )
-            val setpoint = cook.cook.initialSetpointValue
-            val detail = buildList {
-                if (setpoint != null) add("Pit set ${formatPosterValue(setpoint)}${cook.cook.initialSetpointUnit ?: ""}")
-                cook.cook.smokerName?.takeIf { it.isNotBlank() }?.let { add(it) }
-                if (cook.dishes.isNotEmpty()) add(cook.dishes.joinToString { dish -> dish.cut?.takeIf(String::isNotBlank) ?: dish.name })
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(Modifier.width(4.dp).fillMaxHeight().background(tokens.ember))
+            Column(
+                modifier = Modifier.padding(16.dp).weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInBannerText(cook.cook.title, modifier = Modifier.weight(1f))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (paused) tokens.marigold else tokens.ember,
+                        contentColor = tokens.onAccent,
+                    ) {
+                        Text(
+                            if (paused) "PAUSED" else "LIVE",
+                            style = PitTechTextStyles.monoMeta,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+                val setpoint = cook.cook.initialSetpointValue
+                val detail = buildList {
+                    if (setpoint != null) add("Pit set ${formatPosterValue(setpoint)}${cook.cook.initialSetpointUnit ?: ""}")
+                    cook.cook.smokerName?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    if (cook.dishes.isNotEmpty()) add(cook.dishes.joinToString { dish -> dish.cut?.takeIf(String::isNotBlank) ?: dish.name })
+                }
+                if (detail.isNotEmpty()) {
+                    Text(detail.joinToString(" · "), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        formatElapsed(nowMillis - cook.cook.startedAtUtcMillis),
+                        style = PitTechTextStyles.monoReadout,
+                        color = tokens.ink,
+                    )
+                    Text(cookStatusLine(cook), style = PitTechTextStyles.body, color = tokens.inkMuted)
+                }
             }
-            if (detail.isNotEmpty()) {
-                Text(detail.joinToString(" · "), style = MaterialTheme.typography.bodyLarge, color = muted)
-            }
-            Text(cookStatusLine(cook), style = MaterialTheme.typography.bodyMedium, color = muted)
         }
     }
 }
@@ -681,18 +732,21 @@ private fun cookStatusLine(cook: CookWithDishes): String {
 
 @Composable
 private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
+    // TURN-IN lane row (§4, `d01`): banner name over a quiet status line.
+    val tokens = pitTechTokens()
     val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
         .format(Date(cook.cook.startedAtUtcMillis))
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = tokens.surface, contentColor = tokens.ink),
         shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, tokens.ruling),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(cook.cook.title, style = MaterialTheme.typography.titleLarge)
+            TurnInBannerText(cook.cook.title)
             Text(
                 when (cook.cook.status) {
                     CookStatus.PAUSED -> "Recording and guidance paused · $time"
@@ -701,13 +755,13 @@ private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
                         com.pittech.domain.CookPhases.summary(com.pittech.domain.CookPhases.all(com.pittech.data.notePlanEvents(cook.events), cook.dishes.map { it.id }, cook.cook.startedAtUtcMillis, System.currentTimeMillis())) + " · $time"
                     else "Active session · legacy timer · $time"
                 },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = PitTechTextStyles.body,
+                color = tokens.inkMuted,
             )
             if (cook.dishes.isNotEmpty()) {
                 Text(
                     cook.dishes.joinToString { dish -> dish.cut?.takeIf(String::isNotBlank) ?: dish.name },
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = PitTechTextStyles.body,
                 )
             }
         }
@@ -716,7 +770,9 @@ private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
 
 @Composable
 private fun SectionHeading(text: String) {
-    Text(text, style = MaterialTheme.typography.titleLarge)
+    // TURN-IN: section heads are tracked-caps meta labels (§3.2), not
+    // title bars — the tab already says where you are.
+    TurnInMetaLabel(text)
 }
 
 private fun formatBackupDate(value: String): String = runCatching {
@@ -873,16 +929,17 @@ private fun StartCookScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Start meal") },
+                title = { TurnInBannerText("Start meal", style = PitTechTextStyles.bannerTitle) },
                 navigationIcon = {
                     IconButton(onClick = requestBack, enabled = !saving) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Go back")
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = pitTechTokens().ground),
             )
         },
         bottomBar = {
-            Surface(shadowElevation = 6.dp) {
+            Surface(shadowElevation = 6.dp, color = pitTechTokens().surface) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                     if (saveError != null) {
                         Text(saveError, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
@@ -908,18 +965,30 @@ private fun StartCookScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             initialDraft?.sourceLabel?.let { label ->
-                Card(Modifier.fillMaxWidth().testTag("cook-source")) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Source", style = MaterialTheme.typography.titleMedium)
-                        Text(label, style = MaterialTheme.typography.bodyMedium)
-                        Text("Nothing is cooking yet — review the setup, then begin preparation when you're ready.", style = MaterialTheme.typography.bodySmall)
+                // The one review's source card (`d10`): where this setup
+                // came from, stated before any field.
+                Card(
+                    Modifier.fillMaxWidth().testTag("cook-source"),
+                    colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
+                    border = BorderStroke(1.dp, pitTechTokens().ruling),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TurnInMetaLabel("Source")
+                        Text(label, style = PitTechTextStyles.bodyEmphasis)
+                        Text("Nothing is cooking yet — review the setup, then begin preparation when you're ready.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
                     }
                 }
             }
             if (initialPlaybook != null) {
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
+                    border = BorderStroke(1.dp, pitTechTokens().ruling),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("${initialPlaybook.name} · revision ${initialPlaybook.revision}", style = MaterialTheme.typography.titleMedium)
+                        TurnInBannerText("${initialPlaybook.name} · revision ${initialPlaybook.revision}")
                         ChoiceField("Reuse", if (followPlaybook) "Setup and guided steps" else "Setup only", listOf("Setup and guided steps", "Setup only")) { followPlaybook = it == "Setup and guided steps" }
                         TextButton(onClick = { showSteps = !showSteps }) { Text(if (showSteps) "Hide steps" else "Review ${initialPlaybook.steps.size} steps") }
                         if (showSteps) initialPlaybook.steps.forEach { Text("${it.title} · ${stepDescription(it)}\n${it.instructions}") }
@@ -930,18 +999,28 @@ private fun StartCookScreen(
                 }
                 dishes.forEachIndexed { index, dish -> OutlinedButton(onClick = { editPreviewDish = index }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Adjust ${dish.name}") } }
             }
-            ChoiceField("Current stage", if (alreadyCooking) "Already cooking" else "Preparing", listOf("Preparing", "Already cooking")) { alreadyCooking = it == "Already cooking" }
+            // `d08`: the stage is a segmented control, not a dropdown.
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TurnInMetaLabel("Current stage")
+                TurnInSegmentedControl(
+                    options = listOf("Preparing", "Already cooking"),
+                    selectedIndex = if (alreadyCooking) 1 else 0,
+                    onSelect = { alreadyCooking = it == 1 },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (alreadyCooking) DateTimePickerField("Actual Food on", foodOnTime, { foodOnTime = it }, "cook-initial-food-on-time")
-            Text("Add the basics now. You can fill in the rest during or after the cook.", style = MaterialTheme.typography.bodyLarge)
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text("Cook name") },
-                placeholder = { Text("Saturday brisket") },
-                supportingText = { Text("Defaults to today. You can rename this cook any time.") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("cook-title"),
-            )
+            Text("Add the basics now. You can fill in the rest during or after the cook.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
+            TurnInBoxedField("Cook name") {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    placeholder = { Text("Saturday brisket") },
+                    supportingText = { Text("Defaults to today. You can rename this cook any time.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("cook-title"),
+                )
+            }
 
             if (BuildConfig.CONTROLLER_TESTING_ENABLED) StartGrillRecordingPanel(
                 grillState, recordGrill, { recordGrill = it }, dishes.mapIndexed { index, dish -> index.toString() to dish.name },
@@ -981,30 +1060,32 @@ private fun StartCookScreen(
             if (equipmentProfiles.isNotEmpty()) ChoiceField("Saved equipment", "Choose equipment", equipmentProfiles.map { it.name }) { name ->
                 equipmentProfiles.firstOrNull { it.name == name }?.let { profile -> smoker = profile.name; fuelType = profile.fuelType; woodBlend = profile.hopperBlend }
             }
-            OutlinedTextField(
-                value = smoker,
-                onValueChange = { smoker = it },
-                label = { Text("Smoker or grill (optional)") },
-                placeholder = { Text("Pit Boss Austin XL") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("cook-smoker"),
-            )
-            maintenanceNote?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TurnInBoxedField("Smoker or grill (optional)") {
                 OutlinedTextField(
-                    value = setpoint,
-                    onValueChange = { setpoint = it },
-                    label = { Text("Starting setpoint (optional)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    value = smoker,
+                    onValueChange = { smoker = it },
+                    placeholder = { Text("Pit Boss Austin XL") },
                     singleLine = true,
-                    isError = !CookEntryValidation.isOptionalPositiveNumberValid(setpoint),
-                    supportingText = {
-                        if (!CookEntryValidation.isOptionalPositiveNumberValid(setpoint)) {
-                            Text("Enter a positive number, or leave it blank.")
-                        }
-                    },
-                    modifier = Modifier.weight(1f).testTag("cook-setpoint"),
+                    modifier = Modifier.fillMaxWidth().testTag("cook-smoker"),
                 )
+            }
+            maintenanceNote?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+                TurnInBoxedField("Starting setpoint (optional)", modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = setpoint,
+                        onValueChange = { setpoint = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        isError = !CookEntryValidation.isOptionalPositiveNumberValid(setpoint),
+                        supportingText = {
+                            if (!CookEntryValidation.isOptionalPositiveNumberValid(setpoint)) {
+                                Text("Enter a positive number, or leave it blank.")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("cook-setpoint"),
+                    )
+                }
                 SimpleDropdownField(
                     label = "Unit",
                     value = setpointUnit,
@@ -1014,14 +1095,15 @@ private fun StartCookScreen(
                     modifier = Modifier.width(96.dp),
                 )
             }
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Cook notes (optional)") },
-                placeholder = { Text("Weather, timing, changes, or anything to remember") },
-                minLines = 2,
-                modifier = Modifier.fillMaxWidth().testTag("cook-notes"),
-            )
+            TurnInBoxedField("Cook notes (optional)") {
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    placeholder = { Text("Weather, timing, changes, or anything to remember") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth().testTag("cook-notes"),
+                )
+            }
             TextButton(onClick = { moreCookDetails = !moreCookDetails }, modifier = Modifier.testTag("cook-more-details")) {
                 Text(if (moreCookDetails) "Hide more cook details" else "More cook details (optional)")
             }
@@ -1052,7 +1134,7 @@ private fun DishDraftCard(dish: DishDraft, onRemove: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(dish.name, style = MaterialTheme.typography.titleLarge)
+                TurnInBannerText(dish.name)
                 val detail = buildList {
                     add(dish.foodType)
                     if (dish.weightText.isNotBlank()) add("${dish.weightText} ${dish.weightUnit}")
@@ -1192,16 +1274,17 @@ internal fun DishEditorDialog(
                         resetToInitial()
                     })
                 }
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it; nameError = false },
-                    label = { Text("Dish name") },
-                    placeholder = { Text("Brisket, ribs, pork loin") },
-                    singleLine = true,
-                    isError = nameError,
-                    supportingText = { if (nameError) Text("Enter a dish name or cut.") },
-                    modifier = Modifier.fillMaxWidth().testTag("dish-name"),
-                )
+                TurnInBoxedField("Dish name") {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it; nameError = false },
+                        placeholder = { Text("Brisket, ribs, pork loin") },
+                        singleLine = true,
+                        isError = nameError,
+                        supportingText = { if (nameError) Text("Enter a dish name or cut.") },
+                        modifier = Modifier.fillMaxWidth().testTag("dish-name"),
+                    )
+                }
                 TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.testTag("dish-details-toggle")) {
                     Text(if (detailsExpanded) "Hide food details" else "More food details")
                 }

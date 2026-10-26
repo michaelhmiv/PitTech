@@ -40,20 +40,21 @@ struct WelcomeView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 190)
                     .accessibilityIdentifier("welcome-mascot")
-                Text("Welcome to PitTech")
-                    .font(.largeTitle.weight(.semibold))
+                TurnInBannerText("Welcome to PitTech", font: PitTechFont.bannerTitle)
                 Text("Log your cooks with live temps, notes and photos — no account needed to start.")
-                    .font(.body)
+                    .font(PitTechFont.body)
                     .foregroundStyle(PitTechStyle.supporting)
                 WelcomeRow(symbol: "thermometer", title: "Live cook tracking", subtitle: "Connect a thermometer or log temps by hand.")
                 WelcomeRow(symbol: "book", title: "Recipes, playbooks & reminders", subtitle: "Plan the cook and get nudged at the right moments.")
                 WelcomeRow(symbol: "safari", title: "Share & Discover", subtitle: "Cook Packs, codes and community recipes.")
                 Button(action: onStartCooking) {
                     Text("Start cooking")
-                        .font(.headline)
+                        .font(PitTechFont.bodyEmphasis)
+                        .foregroundStyle(PitTechStyle.onAccent)
                         .frame(maxWidth: .infinity, minHeight: 54)
+                        .background(PitTechStyle.primaryFill, in: RoundedRectangle(cornerRadius: 12))
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("welcome-start-cooking")
                 // Quiet secondaries: the existing first-run jobs, same
                 // destinations as the empty-Meals entries.
@@ -81,15 +82,16 @@ private struct WelcomeRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .foregroundStyle(PitTechStyle.accent)
+                .foregroundStyle(PitTechStyle.emberText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline).foregroundStyle(PitTechStyle.ink)
+                TurnInBannerText(title)
                 Text(subtitle).font(.subheadline).foregroundStyle(PitTechStyle.supporting)
             }
             Spacer(minLength: 0)
         }
         .padding(16)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
 }

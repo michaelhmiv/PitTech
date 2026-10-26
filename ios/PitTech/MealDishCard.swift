@@ -51,17 +51,17 @@ struct MealDishCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Button { expanded.toggle() } label: {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(dish.name).font(.headline)
+                    TurnInBannerText(dish.name)
                     Text((store.library.cooks.first { $0.id == cookId }?.isActive == false ? "Last recorded: " : "") + (phase.map { CookPhaseEngine.label($0.phase) } ?? "Status not recorded")).font(.subheadline)
                     if let method { Text("Method · " + (CookingMethod.labels[method] ?? method)).font(.caption) }
                     if let phase, phase.cooking > 0 { Text("Cooking \(Int(phase.cooking / 3_600_000))h \(Int(phase.cooking / 60_000) % 60)m").font(.caption.monospacedDigit()) }
                     if !telemetryReadings.isEmpty {
                         ForEach(telemetryReadings) { sample in
-                            Text("\(isLive(sample) ? "Live" : "Last check") · \(CookChartMath.value(sample, unit: store.temperatureUnit), specifier: "%.1f") °\(store.temperatureUnit)").font(.title3)
+                            Text("\(isLive(sample) ? "Live" : "Last check") · \(CookChartMath.value(sample, unit: store.temperatureUnit), specifier: "%.1f") °\(store.temperatureUnit)").font(PitTechFont.monoReadout)
                             Text("\(sample.probeName) · \(sample.measuredAt.formatted(date: .omitted, time: .shortened))").font(.caption)
                         }
                     } else if let reading {
-                        Text("Last check · \(CookChartMath.value(reading, unit: store.temperatureUnit), specifier: "%.1f") °\(store.temperatureUnit)").font(.title3)
+                        Text("Last check · \(CookChartMath.value(reading, unit: store.temperatureUnit), specifier: "%.1f") °\(store.temperatureUnit)").font(PitTechFont.monoReadout)
                         Text("\(reading.probeName) · \(reading.measuredAt.formatted(date: .omitted, time: .shortened))").font(.caption)
                     }
                     if let last { Text("\(last.title) · \(last.occurredAt.formatted(date: .omitted, time: .shortened))").font(.caption).lineLimit(2) }
@@ -92,7 +92,7 @@ struct MealDishCard: View {
                     if store.library.cooks.contains(where: { $0.id == cookId && $0.isActive }) { ForEach(["food_on", "spritz", "wrap", "remove", "rest_start", "hold_start", "dish_done"], id: \.self) { action in Button(CookStore.actionLabel(action)) { recordDirect(action) } } }
                 }
             }
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
             .sheet(isPresented: $showingVerdict) { CookResultsSheet(cookId: cookId, focusedDishId: dish.id) }
     }
 }

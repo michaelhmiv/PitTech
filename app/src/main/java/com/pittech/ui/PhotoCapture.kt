@@ -5,9 +5,14 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +32,9 @@ internal fun PhotoSourceDialog(
     onChooseFromLibrary: () -> Unit,
 ) {
     // PL-22 (DD-6): picking a photo source is contextual capture — a sheet.
+    // TURN-IN gap disposition (§5.12.1): no frame exists for this chooser;
+    // it is styled from the §4 placard language under its parent frames —
+    // two large tappable rows, camera first. Flagged in the Slice 1 PR.
     SheetSurface(
         onDismiss = onDismiss,
         title = "Add a photo",
@@ -37,11 +45,11 @@ internal fun PhotoSourceDialog(
         },
     ) {
         Text("Take a new photo or choose one from your library.")
-        Column {
-            TextButton(onClick = onTakePhoto, modifier = Modifier.testTag("photo-source-camera")) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onTakePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("photo-source-camera")) {
                 Text("Take a photo")
             }
-            TextButton(onClick = onChooseFromLibrary, modifier = Modifier.testTag("photo-source-library")) {
+            OutlinedButton(onClick = onChooseFromLibrary, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("photo-source-library")) {
                 Text("Choose from library")
             }
         }

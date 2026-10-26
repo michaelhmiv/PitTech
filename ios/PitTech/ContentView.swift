@@ -66,7 +66,7 @@ struct ContentView: View {
         .onChange(of: community.linkSequence) { _, _ in selectedTab = "discover" }
         .onChange(of: store.recipesTabRequest) { _, _ in selectedTab = "recipes" }
         .environment(telemetry)
-        .tint(PitTechStyle.accent)
+        .tint(PitTechStyle.emberText)
         .task {
             telemetry.foreground(scenePhase == .active, store: store)
         }
@@ -195,12 +195,14 @@ struct CookListView: View {
                         Text("PitTech").font(.headline)
                     }
                     .frame(height: 40)
-                    SectionTitle(title: "Meals", subtitle: "Keep each meal in one place.")
+                    // TURN-IN (Slice 1): no page-title header — the
+                    // selected Meals tab carries location (BRIEF: headers
+                    // are wasted space). The DD-1 lockup above stays.
                     if isLibraryEmpty {
                         // First-run empty Meals (PL-13 parity with Android):
                         // lockup → headline → promise → Start meal → Restore.
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Your cook log is ready").font(.title2.weight(.bold))
+                            TurnInBannerText("Your cook log is ready", font: PitTechFont.bannerTitle)
                             Text("Add the meat, preparation, photos, and notes you want to remember. You can log a cook with or without a connected grill.")
                             Text("Your cook records stay on this phone. No account is needed.")
                                 .foregroundStyle(.secondary)
@@ -221,7 +223,7 @@ struct CookListView: View {
                             .buttonStyle(.plain)
                         if store.activeCooks.count > 1 {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("ALSO COOKING").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                                TurnInMetaLabel("Also cooking")
                                 ForEach(store.activeCooks.dropFirst()) { cook in
                                     NavigationLink(value: cook.id) { CookCard(cook: cook, dishes: store.dishes(for: cook.id)) }
                                         .buttonStyle(.plain)
@@ -231,16 +233,18 @@ struct CookListView: View {
                     }
                     Button { startSetup = .blank(temperatureUnit: "°\(store.temperatureUnit)", weightUnit: store.weightUnit) } label: {
                         Label("Start meal", systemImage: "plus")
-                            .font(.headline)
+                            .font(PitTechFont.bodyEmphasis)
+                            .foregroundStyle(PitTechStyle.onAccent)
                             .frame(maxWidth: .infinity, minHeight: 54)
+                            .background(PitTechStyle.primaryFill, in: RoundedRectangle(cornerRadius: 12))
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
 
                     if let draft = store.setupDraft {
                         // PL-13: the kept setup is one tap from Meals,
                         // never a surprise — same card as Android.
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Cook setup draft").font(.headline)
+                            TurnInBannerText("Cook setup draft")
                             Text((draft.title.isEmpty ? "Untitled setup" : draft.title) + (draft.sourceLabel.map { " · \($0)" } ?? ""))
                                 .font(.subheadline).foregroundStyle(.secondary)
                             HStack(spacing: 8) {
@@ -267,7 +271,7 @@ struct CookListView: View {
                         .accessibilityIdentifier("empty-restore-backup")
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("COMPLETED MEALS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            TurnInMetaLabel("Cook log")
                             if store.completedCooks.isEmpty {
                                 ContentUnavailableView("No finished cooks yet", systemImage: "book.closed", description: Text("Your cook history will show up here when you finish a cook."))
                                     .frame(maxWidth: .infinity)
@@ -326,37 +330,54 @@ struct LiveZoneCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(cook.status == "paused" ? "PAUSED" : "LIVE COOK")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
-            Text(cook.title)
-                .font(.title3.weight(.semibold))
-            // Deliberately NOT ticking TimelineViews: a perpetual timer on the
-            // launch screen keeps the app from ever idling (it broke the UI-test
-            // shards and costs battery for a secondary readout). Values refresh
-            // whenever Meals re-renders on store changes; the ticking clock
-            // lives on the cook's Live screen, as before.
-            if let pit = latestPit {
-                Text(tempText(pit))
-                    .font(.system(size: 52, weight: .bold))
-            } else {
-                Text(elapsed(at: Date.now))
-                    .font(.system(size: 52, weight: .bold))
+        // TURN-IN (Slice 1): the d01 live lane — token surface with ruling
+        // border and an ember edge bar, banner cook name, a filled
+        // LIVE/PAUSED pill, the big reading in the scoreboard face, and
+        // the detail line in mono. Replaces the hardcoded Night Service
+        // cream/ink treatment.
+        HStack(spacing: 0) {
+            Rectangle().fill(PitTechStyle.ember).frame(width: 4)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top) {
+                    TurnInBannerText(cook.title)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Text(cook.status == "paused" ? "PAUSED" : "LIVE")
+                        .font(PitTechFont.monoMeta)
+                        .foregroundStyle(PitTechStyle.onAccent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(cook.status == "paused" ? PitTechStyle.marigold : PitTechStyle.ember, in: RoundedRectangle(cornerRadius: 8))
+                }
+                // Deliberately NOT ticking TimelineViews: a perpetual timer on the
+                // launch screen keeps the app from ever idling (it broke the UI-test
+                // shards and costs battery for a secondary readout). Values refresh
+                // whenever Meals re-renders on store changes; the ticking clock
+                // lives on the cook's Live screen, as before.
+                if let pit = latestPit {
+                    Text(tempText(pit))
+                        .font(PitTechFont.scoreboard)
+                        .foregroundStyle(PitTechStyle.ink)
+                } else {
+                    Text(elapsed(at: Date.now))
+                        .font(PitTechFont.scoreboard)
+                        .foregroundStyle(PitTechStyle.ink)
+                }
+                Text([
+                    latestFood.map { "Food \(tempText($0))" },
+                    "Elapsed \(elapsed(at: Date.now))",
+                    cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
+                    cook.smokerName,
+                ].compactMap { $0 }.joined(separator: " · "))
+                .font(PitTechFont.monoMeta)
+                .foregroundStyle(PitTechStyle.inkMuted)
             }
-            Text([
-                latestFood.map { "Food \(tempText($0))" },
-                "Elapsed \(elapsed(at: Date.now))",
-                cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
-                cook.smokerName,
-            ].compactMap { $0 }.joined(separator: " · "))
-            .font(.subheadline)
-            .foregroundStyle(Color(red: 0.29, green: 0.32, blue: 0.27))
+            .padding(16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color(red: 0.949, green: 0.933, blue: 0.890), in: RoundedRectangle(cornerRadius: 16))
-        .foregroundStyle(Color(red: 0.063, green: 0.078, blue: 0.059))
+        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .accessibilityIdentifier("meals-live-zone")
     }
 }
@@ -380,11 +401,17 @@ struct CookCard: View {
                 .background(cook.isActive ? PitTechStyle.accentFill : PitTechStyle.sageFill, in: RoundedRectangle(cornerRadius: 13))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(cook.title).font(.headline).foregroundStyle(.primary)
+                TurnInBannerText(cook.title)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(dishes.isEmpty ? cook.startedAt.formatted(date: .abbreviated, time: .shortened) : dishes.joined(separator: " · "))
                     .font(.subheadline).foregroundStyle(.secondary)
                     .lineLimit(textSize.isAccessibilitySize ? nil : 2)
+                // TURN-IN d01: completed lanes carry the verdict stars.
+                // (Android's home data has no results relation yet — the
+                // lane stars are the one platform delta, flagged in the PR.)
+                if !cook.isActive, let rating = store.cookResults(cookId: cook.id, dishId: nil).overallRating {
+                    TurnInStars(rating: rating)
+                }
                 if cook.isActive && textSize.isAccessibilitySize {
                     Text(statusText).font(.caption2.weight(.bold)).foregroundStyle(PitTechStyle.accent)
                 }
@@ -509,6 +536,8 @@ struct StartCookSheet: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle(setup.sourceLabel == nil ? "Start meal" : "Review meal setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

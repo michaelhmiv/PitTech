@@ -63,7 +63,9 @@ internal fun SheetSurface(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (title != null) Text(title, style = MaterialTheme.typography.titleLarge)
+            // TURN-IN sheet chrome (§4): the title is the content name, set
+            // in the banner face — the same treatment every sheet frame uses.
+            if (title != null) TurnInBannerText(title, style = PitTechTextStyles.bannerTitle)
             // The content region is weighted (not filling) so a tall body
             // shrinks to the sheet's height instead of pushing the action
             // row off the bottom of the sheet — at font scale 1.5 the
@@ -111,7 +113,7 @@ internal fun FullScreenSurface(
                     .padding(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text(title, style = MaterialTheme.typography.headlineSmall)
+                TurnInBannerText(title, style = PitTechTextStyles.bannerTitle)
                 Column(modifier = Modifier.weight(1f)) { content() }
                 if (actions != null) {
                     Row(
