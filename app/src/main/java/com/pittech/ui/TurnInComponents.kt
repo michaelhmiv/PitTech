@@ -29,6 +29,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -347,6 +351,44 @@ internal fun TurnInBoxedField(
         TurnInMetaLabel(label)
         content()
     }
+}
+
+/** Boxed field with a literal-case label (§4): the field names on the
+ * connect and equipment forms are the app's own words — tests name them
+ * exactly — so the label takes the metaLabel style (the §3.2 floor)
+ * without the caps transform [TurnInMetaLabel] applies. Added in Slice 4. */
+@Composable
+internal fun TurnInLiteralBoxedField(
+    label: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = PitTechTextStyles.metaLabel, color = pitTechTokens().inkMuted)
+        content()
+    }
+}
+
+/** Dashed explanatory card (area-04 `d02`/`d22`): an empty state that
+ * teaches — a dashed ruling outline on the ground, its copy centered.
+ * Added in Slice 4 for the equipment-empty and attach-empty states. */
+@Composable
+internal fun TurnInDashedCard(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val tokens = pitTechTokens()
+    Box(
+        modifier
+            .drawBehind {
+                drawRoundRect(
+                    color = tokens.ruling,
+                    style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))),
+                    cornerRadius = CornerRadius(16.dp.toPx()),
+                )
+            }
+            .padding(20.dp),
+    ) { content() }
 }
 
 /** Boxed score cell (§4): one rated/scored/status value in a raised box —

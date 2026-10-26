@@ -172,27 +172,61 @@ internal fun EquipmentTools(viewModel: CooksViewModel) {
     var fuel by remember { mutableStateOf<EquipmentSummary?>(null) }
     val records by viewModel.companionRecords.collectAsStateWithLifecycle()
     LaunchedEffect(records, cooks) { if (open) viewModel.refreshEquipment() }
-    OutlinedButton(onClick = { viewModel.refreshEquipment(); open = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 48.dp).testTag("equipment-open")) { Text("My equipment") }
+    OutlinedButton(onClick = { viewModel.refreshEquipment(); open = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 56.dp).testTag("equipment-open")) { TurnInBannerText("My equipment", color = MaterialTheme.colorScheme.primary) }
     // PL-22 (DD-6): the equipment list is a management surface — a sheet;
     // its profile editor below is multi-field and goes full screen.
     if (open) SheetSurface(onDismiss = { open = false }, title = "My equipment", actions = { TextButton(onClick = { open = false }) { Text("Close") } }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Save smoker details for setup, fuel notes, and cleaning reminders based on recorded cooking hours.")
+            Text("Save smoker details for setup, fuel notes, and cleaning reminders based on recorded cooking hours.", style = PitTechTextStyles.body)
             summaries.forEach { s ->
-                Text(s.profile.name, style = MaterialTheme.typography.titleMedium)
-                Text(listOf(s.profile.fuelType, s.profile.hopperBlend).filter { it.isNotBlank() }.joinToString(" · "))
-                Text("${decimal(s.cookingHours)} recorded cooking hours" + if (s.maintenanceDue) " · cleaning due" else "")
-                s.profile.cleanEveryHours?.let { Text("${decimal((s.cookingHours - s.profile.maintainedAtCookingHours).coerceAtLeast(0.0))} hours since maintenance · interval ${decimal(it)} hours") }
-                s.burnRangeKgPerHour?.let { Text("Recorded fuel use: ${decimal(it.first)}–${decimal(it.second)} kg/hour across ${s.recordedFuelCooks} cooks. Conditions can change consumption.") }
-                val entries = records.filter { it.kind == "fuel" }.map { CookPreparation.decodeFuel(it.payload) }.filter { it.equipmentName.equals(s.profile.name, true) }
-                entries.sortedByDescending { it.at }.take(3).forEach { Text("${it.type.replaceFirstChar { c -> c.uppercase() }} ${decimal(it.kilograms)} kg · ${java.text.DateFormat.getDateInstance().format(java.util.Date(it.at))}", style = MaterialTheme.typography.bodySmall) }
-                TextButton(onClick = { edit = s.id to s.profile }) { Text("Edit profile") }
-                TextButton(onClick = { fuel = s }) { Text("Record fuel") }
-                TextButton(enabled = !busy, onClick = { viewModel.completeMaintenance(s.id) }) { Text("Mark maintained") }
-                HorizontalDivider()
+                // TURN-IN (`d01`/`d03`): the profile is a laminated card —
+                // banner name, its fuel facts as score cells, the recent
+                // fuel entries as log rows, then its three actions.
+                TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInBannerText(s.profile.name, style = PitTechTextStyles.bannerTitle)
+                        val fuelLine = listOf(s.profile.fuelType, s.profile.hopperBlend).filter { it.isNotBlank() }.joinToString(" · ")
+                        if (fuelLine.isNotBlank()) Text(fuelLine, style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInScoreCell("Cooking hours", "${decimal(s.cookingHours)} h", Modifier.weight(1f))
+                            TurnInScoreCell("Fuel", s.profile.fuelType.ifBlank { "—" }, Modifier.weight(1f))
+                            TurnInScoreCell("Cleaning", when {
+                                s.maintenanceDue -> "Due"
+                                s.profile.cleanEveryHours != null -> "In ${decimal((s.profile.cleanEveryHours - (s.cookingHours - s.profile.maintainedAtCookingHours)).coerceAtLeast(0.0))} h"
+                                else -> "—"
+                            }, Modifier.weight(1f))
+                        }
+                        s.profile.cleanEveryHours?.let { Text("${decimal((s.cookingHours - s.profile.maintainedAtCookingHours).coerceAtLeast(0.0))} hours since maintenance · interval ${decimal(it)} hours", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted) }
+                        s.burnRangeKgPerHour?.let { Text("Recorded fuel use: ${decimal(it.first)}–${decimal(it.second)} kg/hour across ${s.recordedFuelCooks} cooks. Conditions can change consumption.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted) }
+                        val entries = records.filter { it.kind == "fuel" }.map { CookPreparation.decodeFuel(it.payload) }.filter { it.equipmentName.equals(s.profile.name, true) }
+                        entries.sortedByDescending { it.at }.take(3).forEach { entry ->
+                            HorizontalDivider(color = pitTechTokens().ruling)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${java.text.DateFormat.getDateInstance().format(java.util.Date(entry.at))} · ${entry.type.replaceFirstChar { c -> c.uppercase() }}", style = PitTechTextStyles.body, modifier = Modifier.weight(1f))
+                                Text((if (entry.type.equals("used", true)) "-" else "+") + "${decimal(entry.kilograms)} kg", style = PitTechTextStyles.monoReadout)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { fuel = s }) { Text("Record fuel") }
+                            TextButton(enabled = !busy, onClick = { viewModel.completeMaintenance(s.id) }) { Text("Mark maintained") }
+                            TextButton(onClick = { edit = s.id to s.profile }) { Text("Edit profile") }
+                        }
+                    }
+                }
             }
-            OutlinedButton(onClick = { edit = null to EquipmentProfile("") }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("equipment-add")) { Text("Add equipment") }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (summaries.isEmpty()) {
+                // TURN-IN (`d02`): the empty equipment state is a dashed
+                // explanatory card with the add action inside it.
+                TurnInDashedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Add the smoker you cook on and PitTech will track its fuel, cooking hours, and cleaning.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
+                        Button(onClick = { edit = null to EquipmentProfile("") }, modifier = Modifier.heightIn(min = 48.dp).testTag("equipment-add")) { Text("Add equipment") }
+                    }
+                }
+            } else {
+                OutlinedButton(onClick = { edit = null to EquipmentProfile("") }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("equipment-add")) { Text("Add equipment") }
+            }
+            error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
         }
     }
     edit?.let { (id, initial) -> EquipmentEditor(initial, busy, error, { edit = null }) { profile -> viewModel.saveEquipment(profile, id) { if (it) edit = null } } }
@@ -215,12 +249,22 @@ private fun EquipmentEditor(initial: EquipmentProfile, busy: Boolean, error: Str
             }.onFailure { localError = ErrorCopy.failureText(it, "That profile couldn't be saved. The saved profile is unchanged — check the details and try again.") }
         }, modifier = Modifier.testTag("equipment-save")) { Text("Save profile") }
     }) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it }, label = { Text("Smoker name") }, enabled = initial.name.isBlank(), supportingText = { if (initial.name.isNotBlank()) Text("This name connects your recorded cooks to this profile.") }, modifier = Modifier.fillMaxWidth().testTag("equipment-name"))
-            OutlinedTextField(fuel, { fuel = it }, label = { Text("Fuel type") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(blend, { blend = it }, label = { Text("Wood or pellet blend") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(interval, { interval = it }, label = { Text("Clean every cooking hours (optional)") }, modifier = Modifier.fillMaxWidth())
-            (localError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // TURN-IN (`d04`/`d05`): boxed fields — the label rides above
+            // the box as a caps meta label; the error is a flag strip.
+            TurnInLiteralBoxedField("Smoker name") {
+                OutlinedTextField(name, { name = it }, enabled = initial.name.isBlank(), supportingText = { if (initial.name.isNotBlank()) Text("This name connects your recorded cooks to this profile.") }, modifier = Modifier.fillMaxWidth().testTag("equipment-name"))
+            }
+            TurnInLiteralBoxedField("Fuel type") {
+                OutlinedTextField(fuel, { fuel = it }, modifier = Modifier.fillMaxWidth())
+            }
+            TurnInLiteralBoxedField("Wood or pellet blend") {
+                OutlinedTextField(blend, { blend = it }, modifier = Modifier.fillMaxWidth())
+            }
+            TurnInLiteralBoxedField("Clean every cooking hours (optional)") {
+                OutlinedTextField(interval, { interval = it }, modifier = Modifier.fillMaxWidth())
+            }
+            (localError ?: error)?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
         }
     }
 }
@@ -245,11 +289,15 @@ private fun FuelEditor(equipment: String, cooks: List<CookEntity>, busy: Boolean
     }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 430.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceField("Fuel", type, listOf("Added", "Used")) { type = it }
-            OutlinedTextField(amount, { amount = it }, label = { Text("Quantity") }, modifier = Modifier.fillMaxWidth())
+            // TURN-IN (`d07`/`d07b`): the quantity is a boxed field; the
+            // used-without-a-cook error is a flag strip, not a red line.
+            TurnInLiteralBoxedField("Quantity") {
+                OutlinedTextField(amount, { amount = it }, modifier = Modifier.fillMaxWidth())
+            }
             ChoiceField("Unit", unit, listOf("lb", "kg")) { unit = it }
             ChoiceField("Cook", cooks.firstOrNull { it.id == cookId }?.let { labels[cooks.indexOf(it)] } ?: "Choose cook", listOf("Choose cook") + labels) { label -> cookId = labels.indexOf(label).takeIf { it >= 0 }?.let { cooks[it].id } }
-            Text("Added fuel records refills. Used fuel records a measured amount consumed by a cook. Two completed cooks with measured use are needed for an estimate.")
-            (localError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Text("Added fuel records refills. Used fuel records a measured amount consumed by a cook. Two completed cooks with measured use are needed for an estimate.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
+            (localError ?: error)?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
         }
     }
 }

@@ -195,10 +195,13 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                 { name -> probeId = probeChoices.firstOrNull { it.second == name }?.first }, testTag = "probe-move-probe")
             SimpleDropdownField("Food", foods.firstOrNull { it.first == dishId }?.second ?: "Unassigned", listOf("Unassigned") + foods.map { it.second },
                 { name -> dishId = foods.firstOrNull { it.second == name }?.first }, testTag = "probe-move-food")
-            Text("Earlier readings stay with their food.", style = MaterialTheme.typography.bodySmall)
+            // TURN-IN (`d24`): the move keeps its story straight — the
+            // earlier-readings note and the now/earlier time choice ride
+            // under the two selectors, the error as a flag strip.
+            Text("Earlier readings stay with their food.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
             TextButton(onClick = { changeTime = !changeTime }, modifier = Modifier.testTag("probe-move-time-toggle")) { Text(if (changeTime) "Use the current time" else "I moved it earlier") }
             if (changeTime) DateTimePickerField("Actual move time", movedAt, { movedAt = it }, "probe-move-time")
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
         }
     }
 }

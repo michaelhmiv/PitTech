@@ -35,49 +35,59 @@ struct NativeTelemetryConnectionsView: View {
     private var connectionsContent: some View {
             List {
                 Section {
-                    Text("Optional, read-only connections. Credentials stay in this device's Keychain and cooking telemetry stays in your local library.")
-                    Text("Cloud monitoring runs while PitTech is open. iOS may suspend it when locked; supported Home Assistant history is recovered after returning.").font(.caption).foregroundStyle(.secondary)
-                }
+                    // TURN-IN (`d08`): the board head — the app's own
+                    // read-only intro plus the §1.1.3 contract line.
+                    Text("Optional, read-only connections. Credentials stay in this device's Keychain and cooking telemetry stays in your local library.").font(PitTechFont.body)
+                    Text("PitTech watches — it never changes a setting.").font(PitTechFont.body)
+                    Text("Cloud monitoring runs while PitTech is open. iOS may suspend it when locked; supported Home Assistant history is recovered after returning.").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                }.listRowBackground(PitTechStyle.surface)
                 Section {
                     Picker("Setup step", selection: Binding(get: { step }, set: { step = $0; stepTouched = true })) {
                         Text("Connect").tag(1); Text("Attach").tag(2); Text("Assign").tag(3)
                     }.pickerStyle(.segmented).accessibilityIdentifier("telemetry-stepper")
-                }
+                }.listRowBackground(PitTechStyle.surface)
                 if step == 1 {
                     ForEach(runtime.profiles) { profile in
-                        Section(profile.provider.label + " · Beta") {
-                            Text(runtime.messages[profile.id] ?? "Saved connection")
+                        // TURN-IN (`d08`): banner name over a mono state line.
+                        Section {
+                            Text(runtime.messages[profile.id] ?? "Saved connection").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                             Button("Forget connection", role: .destructive) { Task { do { try await runtime.remove(profile, store: store) } catch { self.error = error.localizedDescription } } }
-                        }
+                        } header: { TurnInBannerText(profile.provider.label + " · Beta") }
+                            .listRowBackground(PitTechStyle.surface)
                     }
-                    if runtime.profiles.isEmpty { Section { Text(EmptyStateCopy.connectionsEmpty) } }
+                    if runtime.profiles.isEmpty { Section { Text(EmptyStateCopy.connectionsEmpty).font(PitTechFont.body) }.listRowBackground(PitTechStyle.surface) }
                 }
                 if step == 2 {
-                    if runtime.profiles.isEmpty { Section { Text("Connect a connection first (step 1), then attach it here.") } }
+                    if runtime.profiles.isEmpty { Section { Text("Connect a connection first (step 1), then attach it here.") }.listRowBackground(PitTechStyle.surface) }
                     ForEach(runtime.profiles) { profile in
-                        Section(profile.provider.label + " · Beta") {
-                            Text(runtime.messages[profile.id] ?? "Saved connection")
-                            ForEach(profile.sources.filter { profile.selected.contains($0.id) }) { source in VStack(alignment: .leading) { Text(source.label); Button("Detach from meal") { do { try runtime.detach(profile, source: source, store: store) } catch { self.error = error.localizedDescription } }; Text(runtime.messages[profile.id + ":" + source.id] ?? "Waiting for a reading").font(.caption).foregroundStyle(.secondary) } }
+                        // TURN-IN (`d21` + `d11`): banner name, mono state,
+                        // the watching switches and sampling in one section.
+                        Section {
+                            Text(runtime.messages[profile.id] ?? "Saved connection").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                            ForEach(profile.sources.filter { profile.selected.contains($0.id) }) { source in VStack(alignment: .leading) { Text(source.label).font(PitTechFont.bodyEmphasis); Button("Detach from meal") { do { try runtime.detach(profile, source: source, store: store) } catch { self.error = error.localizedDescription } }; Text(runtime.messages[profile.id + ":" + source.id] ?? "Waiting for a reading").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) } }
                             Toggle("Monitor temperatures", isOn: Binding(get: { profile.monitoring }, set: { value in var p = profile; p.monitoring = value; try? runtime.update(p) })).disabled(profile.cookId == nil || profile.selected.isEmpty)
                             // PL-05: the dead toggle explains itself.
-                            if profile.cookId == nil || profile.selected.isEmpty { Text("Attach this connection to the cook first").font(.caption).foregroundStyle(.secondary) }
+                            if profile.cookId == nil || profile.selected.isEmpty { Text("Attach this connection to the cook first").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                             Toggle("Only collect when I log", isOn: Binding(get: { profile.onLogOnly }, set: { value in var p = profile; p.onLogOnly = value; try? runtime.update(p) }))
                             Picker("Sampling", selection: Binding(get: { profile.interval }, set: { value in var p = profile; p.interval = value; try? runtime.update(p) })) {
                                 Text("15 seconds").tag(15_000.0); Text("30 seconds").tag(30_000.0); Text("1 minute").tag(60_000.0); Text("5 minutes").tag(300_000.0)
                             }
-                        }
+                        } header: { TurnInBannerText(profile.provider.label + " · Beta") }
+                            .listRowBackground(PitTechStyle.surface)
                     }
                 }
                 if step == 3 {
                     if runtime.profiles.filter({ !$0.sources.isEmpty }).isEmpty {
-                        Section { Text(emptyDevicesText) }
+                        Section { Text(emptyDevicesText).font(PitTechFont.body) }.listRowBackground(PitTechStyle.surface)
                     } else {
                         NativeTelemetryAssignSections(runtime: runtime)
                     }
                 }
-                Section { Button("Add temperature connection") { adding = true }.accessibilityIdentifier("telemetry-add") }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                Section { Button("Add temperature connection") { adding = true }.accessibilityIdentifier("telemetry-add") }.listRowBackground(PitTechStyle.surface)
+                if let error { Section { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }.listRowBackground(PitTechStyle.surface) }
             }
+            .scrollContentBackground(.hidden)
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .onAppear { if !stepTouched { step = NativeTelemetryDevicesPresentation.initialStep(hasProfiles: !runtime.profiles.isEmpty) } }
             .navigationTitle("Connections · Beta")
             .sheet(isPresented: $adding) { addView }
@@ -118,17 +128,21 @@ struct NativeTelemetryConnectionsView: View {
                     let p = NativeTelemetryProfile(provider: provider, endpoint: endpoint, deviceHint: deviceHint)
                     Task { do { try await runtime.connect(p, user: user, secret: entered); adding = false; error = nil } catch { self.error = error.localizedDescription }; busy = false }
                 }.disabled(busy || provider != .combustion && secret.isEmpty).accessibilityIdentifier("telemetry-connect")
-                // PL-06: visible progress during the token exchange.
-                if busy && provider == .home_assistant { HStack { ProgressView(); Text("Connecting to Home Assistant…") } }
-                if let error { Text(error).foregroundStyle(.red) }
+                // PL-06: visible progress during the token exchange (`d15`).
+                if busy && provider == .home_assistant { HStack { ProgressView(); Text("Connecting to Home Assistant…").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) } }
+                // TURN-IN (`d16`): the failure renders in place as a flag
+                // strip — the form, URL included, stays as it was.
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
             }
+            .scrollContentBackground(.hidden)
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .sheet(isPresented: $authorizing) {
                 if let request = authRequest {
                     NavigationStack {
                         VStack(spacing: 0) {
                             // PL-06: a blocked foreign navigation is
                             // surfaced here — the flow stays alive.
-                            if let authNotice { Text(authNotice).font(.callout).foregroundStyle(.orange).padding() }
+                            if let authNotice { TurnInStatusStrip(text: authNotice, accent: PitTechStyle.marigold).padding() }
                             NativeHAOAuthView(request: request, onBlockedNavigation: { url in
                                 authNotice = "This sign-in only continues on your Home Assistant server. Navigation to \(url.host ?? "another site") was blocked."
                             }) { result in
@@ -171,7 +185,7 @@ struct NativeTelemetryAssignSections: View {
         if let profile = assignable.first(where: { $0.id == profileID }) ?? assignable.first {
             let draft = runtime.assignmentDrafts[profile.id] ?? NativeTelemetryAssignmentDraft.seed(profile: profile, store: store)
             if assignable.count > 1 {
-                Section { Picker("Connection", selection: $profileID) { ForEach(assignable) { Text($0.provider.label).tag($0.id) } } }
+                Section { Picker("Connection", selection: $profileID) { ForEach(assignable) { Text($0.provider.label).tag($0.id) } } }.listRowBackground(PitTechStyle.surface)
             }
             Section {
                 Picker("Device", selection: Binding(get: { draft.sourceID }, set: { id in
@@ -184,18 +198,22 @@ struct NativeTelemetryAssignSections: View {
                     if let source = profile.sources.first(where: { $0.id == draft.sourceID }) { d.select(source: source, cookID: id, store: store) } else { d.cookID = id }
                     runtime.updateAssignmentDraft(d, for: profile.id)
                 })) { Text("Choose meal").tag(""); ForEach(store.activeCooks.filter { $0.status == "active" }) { Text($0.title).tag($0.id) } }
-            }
+            }.listRowBackground(PitTechStyle.surface)
             if let source = profile.sources.first(where: { $0.id == draft.sourceID }) {
                 ForEach(source.channels) { channel in
-                    Section(channel.name) {
+                    // TURN-IN (`d23`): one section per channel under its
+                    // banner name; the setpoint stays a locked read-only
+                    // row — displayed, never editable.
+                    Section {
                         if channel.kind != .setpoint { Picker("Use", selection: Binding(get: { draft.roles[channel.id] ?? channel.kind }, set: { role in var d = draft; d.roles[channel.id] = role; runtime.updateAssignmentDraft(d, for: profile.id) })) { ForEach([NativeTelemetryKind.food, .chamber, .ambient, .other], id: \.self) { Text($0.label).tag($0) } } }
-                        else { Text("Observed target · read-only") }
+                        else { HStack(spacing: 6) { Text("🔒"); Text("Observed target · read-only").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) } }
                         if (draft.roles[channel.id] ?? channel.kind) == .food { Picker("Food", selection: Binding(get: { draft.assignments[channel.id] ?? "" }, set: { dish in var d = draft; d.assignments[channel.id] = dish; runtime.updateAssignmentDraft(d, for: profile.id) })) { Text("Unassigned").tag(""); ForEach(store.dishRecords(draft.cookID)) { Text($0.name).tag($0.id) } } }
-                    }
+                    } header: { TurnInBannerText(channel.name) }
+                        .listRowBackground(PitTechStyle.surface)
                 }
             }
             Section {
-                Text("Edits are kept as a draft if you leave — they apply when you attach.").font(.caption).foregroundStyle(.secondary)
+                Text("Edits are kept as a draft if you leave — they apply when you attach.").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                 Button("Attach to meal") {
                     guard let source = profile.sources.first(where: { $0.id == draft.sourceID }) else { return }
                     var mapped = source; mapped.channels = mapped.channels.map { ch in var c = ch; c.kind = draft.roles[ch.id] ?? ch.kind; return c }
@@ -203,9 +221,9 @@ struct NativeTelemetryAssignSections: View {
                     busy = true
                     Task { do { try await runtime.attach(profile, source: mapped, cook: draft.cookID, assignments: foods, store: store); applied = true } catch { self.error = error.localizedDescription }; busy = false }
                 }.disabled(draft.sourceID.isEmpty || draft.cookID.isEmpty || busy)
-                if applied { Text("Attached. Readings from this device will be saved with the meal.") }
-                if let error { Text(error).foregroundStyle(.red) }
-            }
+                if applied { Text("Attached. Readings from this device will be saved with the meal.").font(PitTechFont.body) }
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
+            }.listRowBackground(PitTechStyle.surface)
             .onAppear { _ = runtime.assignmentDraft(for: profile, store: store) }
         }
     }
