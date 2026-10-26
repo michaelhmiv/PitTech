@@ -360,7 +360,7 @@ internal fun PitTechApp(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
-                        TurnInBannerText(moreDestination, style = PitTechTextStyles.bannerTitle)
+                        TurnInBannerText(moreDestination ?: "", style = PitTechTextStyles.bannerTitle)
                     }
                 }
                 OfflineBanner()

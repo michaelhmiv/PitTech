@@ -76,7 +76,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilledTonalButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -931,7 +930,7 @@ private fun CookQuickActionsBar(
                     onClick = onTemperature,
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, pitTechTokens().ruling),
-                    colors = FilledTonalButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-temperature"),
                 ) {
@@ -944,7 +943,7 @@ private fun CookQuickActionsBar(
                     onClick = onPhoto,
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, pitTechTokens().ruling),
-                    colors = FilledTonalButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-photo"),
                 ) {
@@ -957,7 +956,7 @@ private fun CookQuickActionsBar(
                     onClick = onReminder,
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, pitTechTokens().ruling),
-                    colors = FilledTonalButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("cook-add-reminder"),
                 ) {

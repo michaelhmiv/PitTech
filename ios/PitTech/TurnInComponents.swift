@@ -14,6 +14,11 @@ struct TurnInMetaLabel: View {
     let text: String
     var color: Color = PitTechStyle.inkMuted
 
+    init(_ text: String, color: Color = PitTechStyle.inkMuted) {
+        self.text = text
+        self.color = color
+    }
+
     var body: some View {
         Text(text.uppercased())
             .font(PitTechFont.metaLabel)
@@ -28,6 +33,12 @@ struct TurnInBannerText: View {
     let text: String
     var font: Font = PitTechFont.bannerCard
     var color: Color = PitTechStyle.ink
+
+    init(_ text: String, font: Font = PitTechFont.bannerCard, color: Color = PitTechStyle.ink) {
+        self.text = text
+        self.font = font
+        self.color = color
+    }
 
     var body: some View {
         Text(text).font(font).foregroundStyle(color)
