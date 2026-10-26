@@ -203,8 +203,8 @@ class WelcomeFlowTest {
             // kind chosen in the form), and the saved report — which
             // acknowledging recovery does not delete — is attachable.
             composeRule.waitUntilExactlyOneExists(hasTestTag("feedback-kind-bug"), 15_000)
-            composeRule.onNodeWithText("Include the saved crash report", substring = true).assertIsDisplayed()
-            composeRule.onNodeWithText(report.referenceCode, substring = true).assertIsDisplayed()
+            composeRule.onNodeWithText("Include the saved crash report", substring = true).performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText(report.referenceCode, substring = true).performScrollTo().assertIsDisplayed()
         }
     }
 }
