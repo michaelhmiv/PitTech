@@ -57,7 +57,7 @@ class DialogGrammarTest {
         "CookScreens.kt" to listOf(
             "Text(\"Review backup cont",
             "Text(\"Leave this cook se",
-            "Text(\"Leave this dish?\"",
+            "Text(\"Leave this dish?\")",
         ),
         // Unpublish guard.
         "MyCookbookScreen.kt" to listOf(
