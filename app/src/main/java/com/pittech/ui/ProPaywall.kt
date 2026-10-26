@@ -9,13 +9,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -95,11 +95,17 @@ internal fun ProGateDialog(
 }
 
 /** Contextual Pro entry rows for Insights. Rendered only when the caller
- * passes a handler; the free tools above are untouched. */
+ * passes a handler; the free tools above are untouched.
+ *
+ * TURN-IN (Slice 2, Area 02 `history-populated` "Go deeper" lane; the same
+ * rows are Area 07's canonical entries and Slice 7 reconciles their
+ * destinations): each row is a laminated card with the marigold ◆ marker,
+ * the destination's name in the banner face, a PRO tag chip, and its
+ * factual preview line. */
 @Composable
 internal fun ProInsightsEntries(onEntry: (ProPlacement) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Deeper analysis", style = MaterialTheme.typography.titleMedium)
+        TurnInMetaLabel("Deeper analysis")
         ProEntryRow(ProPlacement.ANALYSIS, onEntry)
         ProEntryRow(ProPlacement.CURVES, onEntry)
         ProEntryRow(ProPlacement.BENCHMARKS, onEntry)
@@ -108,15 +114,39 @@ internal fun ProInsightsEntries(onEntry: (ProPlacement) -> Unit) {
 
 @Composable
 internal fun ProEntryRow(entry: ProPlacement, onClick: (ProPlacement) -> Unit) {
-    Card(
-        onClick = { onClick(entry) },
+    TurnInCard(
         modifier = Modifier.fillMaxWidth().testTag(entry.entryTag),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        onClick = { onClick(entry) },
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(entry.title + " · Pro", style = MaterialTheme.typography.titleMedium)
-            Text(entry.preview, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            Text("◆", style = PitTechTextStyles.body, color = pitTechTokens().marigold)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInBannerText(entry.title)
+                    ProTagChip()
+                }
+                Text(entry.preview, style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
+            }
         }
+    }
+}
+
+/** The marigold PRO tag (§3.1): a fill, so its text is navy on-accent,
+ * never white. Shared by the entry rows here and the Pro hub (Slice 2);
+ * Slice 7 reconciles the remaining Pro surfaces to it. */
+@Composable
+internal fun ProTagChip() {
+    val tokens = pitTechTokens()
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = tokens.marigold,
+        contentColor = tokens.onAccent,
+    ) {
+        Text(
+            "PRO",
+            style = PitTechTextStyles.monoMeta,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -162,8 +192,11 @@ private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlace
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // TURN-IN (Slice 2, Area 02 `pro-gate`): the opens-with-Pro card —
+        // the frame's eyebrow over the destination's own preview bullets.
+        TurnInCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TurnInMetaLabel("With Pro, this opens")
                 proPreviewBullets(entry).forEach { Text("✓ $it", style = MaterialTheme.typography.bodyMedium) }
             }
         }
@@ -175,7 +208,7 @@ private fun ProPaywallContent(subscription: SubscriptionManager, entry: ProPlace
         } else {
             val billing = proBillingText(product)
             if (billing != null) {
-                Text(billing, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("pro-price"))
+                Text(billing, style = PitTechTextStyles.bannerTitle, modifier = Modifier.testTag("pro-price"))
                 Text(
                     "Payment is charged through Google Play after PitTech verifies the purchase. Subscriptions are managed in the store, not in PitTech.",
                     style = MaterialTheme.typography.bodySmall,
@@ -281,7 +314,7 @@ private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: P
     ) {
             Column(Modifier.fillMaxWidth().testTag("pro-expired-fallback"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
-                Text("PitTech Pro ended on this account.", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("PitTech Pro ended on this account.")
                 Text(
                     "Your recorded cooks, exported files, and free tools keep working. Previously saved exports stay where you left them — nothing was deleted.",
                     style = MaterialTheme.typography.bodyMedium,

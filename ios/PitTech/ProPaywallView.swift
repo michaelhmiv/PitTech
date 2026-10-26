@@ -48,14 +48,21 @@ struct ProEntryRow: View {
     let entry: ProPlacement
 
     var body: some View {
+        // TURN-IN (Slice 2, Area 02 "Go deeper" lane; the same rows are
+        // Area 07's canonical entries and Slice 7 reconciles their
+        // destinations): marigold ◆ marker, banner-face name, PRO tag
+        // chip, factual preview — on the laminated card.
         Button {
             pro.openPro(entry)
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: "sparkles").foregroundStyle(PitTechStyle.accent).accessibilityHidden(true)
+                Text("◆").font(PitTechFont.body).foregroundStyle(PitTechStyle.marigold).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.title + " · Pro").font(.headline).foregroundStyle(PitTechStyle.ink)
-                    Text(entry.preview).font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+                    HStack(spacing: 8) {
+                        TurnInBannerText(entry.title)
+                        TurnInProTag()
+                    }
+                    Text(entry.preview).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(PitTechStyle.supporting).accessibilityHidden(true)
@@ -63,6 +70,7 @@ struct ProEntryRow: View {
             .frame(minHeight: 44)
             .padding(18)
             .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         }
         .accessibilityIdentifier("pro-entry-\(entry.rawValue)")
     }

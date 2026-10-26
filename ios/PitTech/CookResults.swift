@@ -179,51 +179,114 @@ private func resultsRatingText(_ value: Double?) -> String {
     return "\(resultsNumberText(value)) / 5"
 }
 
+/// The recorded rest as the scorecard's mono duration (`1H 20M`).
+private func resultsRestText(_ minutes: Double) -> String {
+    let total = Int(minutes)
+    return total >= 60 ? "\(total / 60)H \(total % 60)M" : "\(total)M"
+}
+
 /// Read-only display of one scope's saved facts, shared by the results card.
+/// TURN-IN (Slice 2, Area 02 `results-card`): the detail ratings ride as
+/// boxed cells and the final/rest facts as one mono line; the prose lines
+/// (notes, keep doing, change next time) keep the app's words.
 private struct CookResultsFacts: View {
     let values: CookResultsValues
     let includeCookAgain: Bool
     var body: some View {
         let details = [("Bark", values.bark), ("Tenderness", values.tenderness), ("Juiciness", values.juiciness), ("Smoke", values.smoke), ("Seasoning", values.seasoning)]
-            .compactMap { (label, value) in value.map { "\(label) \(resultsRatingText($0))" } }
-        VStack(alignment: .leading, spacing: 2) {
-            if !details.isEmpty { Text(details.joined(separator: " · ")).font(.subheadline) }
-            if let temp = values.finalTemperature { Text("Final temperature: \(resultsNumberText(temp)) \(values.finalTemperatureUnit)").font(.subheadline) }
-            if let rest = values.restMinutes { Text("Rest: \(resultsNumberText(rest)) min").font(.subheadline) }
-            if includeCookAgain, let again = values.cookAgain { Text("Cook again: \(again ? "Yes" : "No")").font(.subheadline) }
-            if !values.notes.isEmpty { Text("Notes: \(values.notes)").font(.subheadline) }
-            if !values.keepDoing.isEmpty { Text("Keep doing: \(values.keepDoing)").font(.subheadline) }
-            if !values.changeNextTime.isEmpty { Text("Change next time: \(values.changeNextTime)").font(.subheadline) }
+            .compactMap { (label, value) in value.map { (label, $0) } }
+        VStack(alignment: .leading, spacing: 8) {
+            if !details.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(Array(details.enumerated()), id: \.offset) { _, detail in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(detail.0.uppercased()).font(PitTechFont.metaLabel).tracking(PitTechFont.metaLabelTracking).foregroundStyle(PitTechStyle.inkMuted)
+                            Text(resultsRatingText(detail.1)).font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+            }
+            if values.finalTemperature != nil || values.restMinutes != nil {
+                Text([
+                    values.finalTemperature.map { "FINAL \(resultsNumberText($0))°" },
+                    values.restMinutes.map { "REST \(resultsRestText($0))" },
+                ].compactMap { $0 }.joined(separator: " · "))
+                    .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            }
+            if includeCookAgain, let again = values.cookAgain { Text("Cook again: \(again ? "Yes" : "No")").font(PitTechFont.body) }
+            if !values.notes.isEmpty { Text("Notes: \(values.notes)").font(PitTechFont.body) }
+            if !values.keepDoing.isEmpty { Text("Keep doing: \(values.keepDoing)").font(PitTechFont.body) }
+            if !values.changeNextTime.isEmpty { Text("Change next time: \(values.changeNextTime)").font(PitTechFont.body) }
         }
     }
 }
 
 /// PL-08: saved results render read-only where the cook is reviewed — the
 /// Timeline summary. One card: the overall verdict, then one block per dish.
+///
+/// TURN-IN (Slice 2, Area 02 `results-card`): the card is composed as the
+/// frame's scorecard — a marigold header band with the cook's name and
+/// date, the overall verdict cell with its stars, the recorded detail
+/// ratings as boxed cells, and the Edit results chip opening the one
+/// results editor. (The frame's Favorite / Method & tags / Export chips
+/// are Android homes today; iOS has no cook-favorite, method/tags editor,
+/// or per-cook export — pre-existing parity gaps, not invented here.)
 struct CookResultsCard: View {
     @Environment(CookStore.self) private var store
     let cookId: String
+    @State private var showingResults = false
     var body: some View {
         let whole = store.cookResults(cookId: cookId, dishId: nil)
+        let cook = store.library.cooks.first { $0.id == cookId }
         VStack(alignment: .leading, spacing: 10) {
-            TurnInBannerText("Cook results", font: PitTechFont.bannerTitle)
-            Text("Overall verdict: \(resultsRatingText(whole.overallRating))").font(.subheadline.weight(.semibold))
+            Text("Cook results").font(PitTechFont.metaLabel).tracking(PitTechFont.metaLabelTracking).foregroundStyle(PitTechStyle.inkMuted)
+            // The header band: marigold fill, navy ink (never white on
+            // marigold, §3.1), the cook's name and its date.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cook?.title ?? "").font(PitTechFont.bannerCard).foregroundStyle(PitTechStyle.onAccent)
+                if let cook {
+                    Text(cook.startedAt.formatted(date: .abbreviated, time: .omitted).uppercased()).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.onAccent)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(PitTechStyle.marigold, in: RoundedRectangle(cornerRadius: 10))
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    TurnInMetaLabel("Overall")
+                    Text("Overall verdict: \(resultsRatingText(whole.overallRating))").font(PitTechFont.bodyEmphasis).foregroundStyle(PitTechStyle.ink)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let rating = whole.overallRating { TurnInStars(rating: rating) }
+            }
             CookResultsFacts(values: whole, includeCookAgain: false)
             ForEach(store.dishRecords(cookId), id: \.id) { dish in
                 if store.hasDisplayableResults(cookId: cookId, dishId: dish.id) {
                     let values = store.cookResults(cookId: cookId, dishId: dish.id)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(dish.name).font(.subheadline.weight(.semibold))
-                        Text("Verdict: \(resultsRatingText(values.overallRating))").font(.subheadline)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TurnInBannerText(dish.name)
+                        Text("Verdict: \(resultsRatingText(values.overallRating))").font(PitTechFont.body)
                         CookResultsFacts(values: values, includeCookAgain: true)
                     }.accessibilityIdentifier("cook-results-dish-" + dish.id)
                 }
             }
+            Button { showingResults = true } label: {
+                Text("Edit results")
+                    .font(PitTechFont.bodyEmphasis).foregroundStyle(PitTechStyle.ink)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(PitTechStyle.surface, in: Capsule())
+                    .overlay(Capsule().stroke(PitTechStyle.ruling, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         .accessibilityIdentifier("cook-results-card")
+        .sheet(isPresented: $showingResults) { CookResultsSheet(cookId: cookId) }
     }
 }
 
@@ -306,32 +369,46 @@ private struct RatingPickerRow: View {
     }
 }
 
+/// One boxed field (§4) for the results editor: the field keeps its own
+/// title (placeholder and accessibility label, unchanged) and gains the
+/// boxed treatment — raised surface, ruling border, rounded corners.
+private struct ResultsBoxedFieldModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(PitTechFont.body)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+    }
+}
+
 private struct ResultsScopeFields: View {
     @Binding var values: CookResultsValues
     let showCookAgain: Bool
     @State private var finalTempText = ""
     @State private var restText = ""
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 12) {
             RatingPickerRow(label: "Verdict", selection: $values.overallRating)
             if showCookAgain {
                 Picker("Cook again?", selection: $values.cookAgain) {
                     Text("Not decided").tag(Bool?.none); Text("Yes").tag(Bool?.some(true)); Text("No").tag(Bool?.some(false))
-                }
+                }.pickerStyle(.segmented)
             }
-            HStack {
-                TextField("Final temperature", text: $finalTempText).keyboardType(.decimalPad)
+            HStack(spacing: 10) {
+                TextField("Final temperature", text: $finalTempText).keyboardType(.decimalPad).modifier(ResultsBoxedFieldModifier())
                 Picker("Unit", selection: $values.finalTemperatureUnit) { Text("°F").tag("°F"); Text("°C").tag("°C") }.pickerStyle(.segmented).frame(width: 110)
             }
-            TextField("Rest time in minutes", text: $restText).keyboardType(.decimalPad)
+            TextField("Rest time in minutes", text: $restText).keyboardType(.decimalPad).modifier(ResultsBoxedFieldModifier())
             RatingPickerRow(label: "Bark", selection: $values.bark)
             RatingPickerRow(label: "Tenderness", selection: $values.tenderness)
             RatingPickerRow(label: "Juiciness", selection: $values.juiciness)
             RatingPickerRow(label: "Smoke", selection: $values.smoke)
             RatingPickerRow(label: "Seasoning", selection: $values.seasoning)
-            TextField("Cook notes", text: $values.notes, axis: .vertical).lineLimit(2...6)
-            TextField("Keep doing", text: $values.keepDoing)
-            TextField("Change next time", text: $values.changeNextTime)
+            TextField("Cook notes", text: $values.notes, axis: .vertical).lineLimit(2...6).modifier(ResultsBoxedFieldModifier())
+            TextField("Keep doing", text: $values.keepDoing).modifier(ResultsBoxedFieldModifier())
+            TextField("Change next time", text: $values.changeNextTime).modifier(ResultsBoxedFieldModifier())
         }
         .onAppear {
             finalTempText = values.finalTemperature.map(resultsNumberText) ?? ""
@@ -361,17 +438,37 @@ struct CookResultsSheet: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Whole cook") {
-                    ResultsScopeFields(values: $whole, showCookAgain: false)
-                }
-                ForEach(orderedDishes, id: \.id) { dish in
-                    Section(dish.name) {
-                        ResultsScopeFields(values: dishBinding(dish.id), showCookAgain: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // TURN-IN (Slice 2, Area 02 `results-editor`): the
+                    // sheet kicker names the cook; each scope is its own
+                    // laminated card — whole cook first, then one per dish
+                    // (the per-dish verdict editor is this same sheet,
+                    // focused). Fields and order are the app's own.
+                    TurnInSheetKicker("Results · \(store.library.cooks.first { $0.id == cookId }?.title ?? "")")
+                    if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
+                    VStack(alignment: .leading, spacing: 12) {
+                        TurnInBannerText("Whole cook")
+                        ResultsScopeFields(values: $whole, showCookAgain: false)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
+                    ForEach(orderedDishes, id: \.id) { dish in
+                        VStack(alignment: .leading, spacing: 12) {
+                            TurnInBannerText(dish.name)
+                            ResultsScopeFields(values: dishBinding(dish.id), showCookAgain: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                     }
                 }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                .padding(20)
             }
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("Cook results").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

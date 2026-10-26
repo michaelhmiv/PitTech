@@ -578,27 +578,30 @@ struct InsightsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    SectionTitle(title: "Insights", subtitle: "Patterns from the cooks you record.")
-                    // PL-21 (DD-3): the Focus List header is a compact stat
-                    // strip — the same five figures the card grid carried,
-                    // none dropped, at a fraction of the height.
+                    // TURN-IN (Slice 2, Area 02 `history-populated`): the
+                    // totals band leads — the in-content title header goes
+                    // (the navigation title already says Insights, §3.1).
+                    // PL-21 (DD-3): the band carries the same five figures
+                    // the stat strip carried, none dropped.
                     let durations = store.completedCooks.compactMap { cook -> Double? in
                         guard let end = cook.endedAtUtcMillis, end >= cook.startedAtUtcMillis else { return nil }
                         return Double(end - cook.startedAtUtcMillis) / 3_600_000
                     }
-                    HStack(alignment: .top, spacing: 16) {
-                        InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
-                        InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
-                        InsightsStat(value: "\(store.library.readings.count)", label: "Temperature readings")
-                        InsightsStat(value: "\(store.library.events.count)", label: "Timeline notes")
-                        if let average = durations.average {
-                            InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Average session time")
+                    TurnInCard {
+                        HStack(alignment: .top, spacing: 16) {
+                            InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
+                            InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
+                            InsightsStat(value: "\(store.library.readings.count)", label: "Temperature readings")
+                            InsightsStat(value: "\(store.library.events.count)", label: "Timeline notes")
+                            if let average = durations.average {
+                                InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Average session time")
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     if !store.completedCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("RECENTLY FINISHED").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            TurnInMetaLabel("Recently finished")
                             // PL-21: recently-finished cards open the cook,
                             // like the Meals history cards do.
                             ForEach(store.completedCooks.prefix(5)) { cook in
@@ -623,7 +626,7 @@ struct InsightsView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("DEEPER ANALYSIS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        TurnInMetaLabel("Deeper analysis")
                         ProEntryRow(entry: .analysis)
                         ProEntryRow(entry: .curves)
                         ProEntryRow(entry: .benchmarks)
@@ -638,15 +641,17 @@ struct InsightsView: View {
     }
 }
 
-/// One figure in the Insights Focus List header strip (PL-21 / DD-3).
+/// One figure in the Insights totals band (PL-21 / DD-3; TURN-IN Slice 2:
+/// the value rides the mono readout token, the label the meta-label face —
+/// the label's words stay literal, they are asserted by name).
 private struct InsightsStat: View {
     let value: String
     let label: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink)
+            Text(label).font(PitTechFont.metaLabel).tracking(PitTechFont.metaLabelTracking).foregroundStyle(PitTechStyle.inkMuted)
         }
     }
 }

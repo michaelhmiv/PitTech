@@ -28,18 +28,25 @@ struct ProPersonalAnalysisView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    SectionTitle(title: entry.title, subtitle: entry.preview)
+                    // TURN-IN (Slice 2, Area 02 `analysis`): the kicker
+                    // names the destination; the preview line follows in
+                    // the text face. Section headers and cards below take
+                    // the banner face and the laminated card.
+                    VStack(alignment: .leading, spacing: 6) {
+                        TurnInMetaLabel("\(entry.title) · Pro")
+                        Text(entry.preview)
+                            .font(PitTechFont.body)
+                            .foregroundStyle(PitTechStyle.inkMuted)
+                    }
                     if snapshot.state == .empty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(snapshot.emptyTitle ?? ProPersonalAnalysis.emptyTitle)
-                                .font(.headline)
-                            Text(snapshot.emptyBody ?? ProPersonalAnalysis.emptyBody)
-                                .font(.subheadline)
-                                .foregroundStyle(PitTechStyle.supporting)
+                        TurnInCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TurnInBannerText(snapshot.emptyTitle ?? ProPersonalAnalysis.emptyTitle)
+                                Text(snapshot.emptyBody ?? ProPersonalAnalysis.emptyBody)
+                                    .font(PitTechFont.body)
+                                    .foregroundStyle(PitTechStyle.inkMuted)
+                            }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(18)
-                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                         .accessibilityIdentifier("pro-analysis-empty")
                     } else {
                         if let body = snapshot.emptyBody {
@@ -49,17 +56,15 @@ struct ProPersonalAnalysisView: View {
                                 .accessibilityIdentifier("pro-analysis-sparse-note")
                         }
                         if let note = snapshot.comparisonNote {
-                            Text(note)
-                                .font(.subheadline)
-                                .foregroundStyle(PitTechStyle.supporting)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
-                                .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                                .accessibilityIdentifier("pro-analysis-comparison-note")
+                            TurnInCard {
+                                Text(note)
+                                    .font(PitTechFont.body)
+                                    .foregroundStyle(PitTechStyle.ink)
+                            }
+                            .accessibilityIdentifier("pro-analysis-comparison-note")
                         } else {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("How your cooks of a cut compare")
-                                    .font(.headline)
+                                TurnInBannerText("How your cooks of a cut compare", font: PitTechFont.bannerTitle)
                                 ForEach(snapshot.cutGroups, id: \.cut) { group in
                                     ProAnalysisCard(
                                         title: group.header,
@@ -73,8 +78,7 @@ struct ProPersonalAnalysisView: View {
                         }
                         if let best = snapshot.best {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Your best-rated recorded attempt")
-                                    .font(.headline)
+                                TurnInBannerText("Your best-rated recorded attempt", font: PitTechFont.bannerTitle)
                                 ProAnalysisCard(
                                     title: "Your declared ratings decide",
                                     lines: best.lines,
@@ -86,8 +90,7 @@ struct ProPersonalAnalysisView: View {
                         }
                         if let timing = snapshot.timing {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Timing across recorded cuts and weights")
-                                    .font(.headline)
+                                TurnInBannerText("Timing across recorded cuts and weights", font: PitTechFont.bannerTitle)
                                 ProAnalysisCard(
                                     title: "Recorded heating time by cut",
                                     lines: timing.lines,
@@ -99,8 +102,7 @@ struct ProPersonalAnalysisView: View {
                         }
                         if let methods = snapshot.methods {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Wrap and rest differences")
-                                    .font(.headline)
+                                TurnInBannerText("Wrap and rest differences", font: PitTechFont.bannerTitle)
                                 ProAnalysisCard(
                                     title: "What each cook recorded",
                                     lines: methods.lines,
@@ -113,24 +115,23 @@ struct ProPersonalAnalysisView: View {
                         NavigationLink {
                             ProRecapBuilderView()
                         } label: {
-                            HStack(spacing: 14) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Year in Smoke")
-                                        .font(.headline)
-                                        .foregroundStyle(PitTechStyle.ink)
-                                    Text("Build a scoped, shareable recap from this library.")
-                                        .font(.subheadline)
+                            TurnInCard {
+                                HStack(spacing: 14) {
+                                    Text("◆").font(PitTechFont.body).foregroundStyle(PitTechStyle.marigold).accessibilityHidden(true)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        TurnInBannerText("Year in Smoke")
+                                        Text("Build a scoped, shareable recap from this library.")
+                                            .font(PitTechFont.body)
+                                            .foregroundStyle(PitTechStyle.inkMuted)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
                                         .foregroundStyle(PitTechStyle.supporting)
+                                        .accessibilityHidden(true)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(PitTechStyle.supporting)
-                                    .accessibilityHidden(true)
+                                .frame(minHeight: 44)
                             }
-                            .frame(minHeight: 44)
-                            .padding(18)
-                            .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                         }
                         .accessibilityIdentifier("pro-recap-entry")
                     }
@@ -158,27 +159,24 @@ struct ProAnalysisCard: View {
     let testTag: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(PitTechStyle.ink)
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.subheadline)
-                    .foregroundStyle(PitTechStyle.ink)
-            }
-            ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
-                Text(note)
+        TurnInCard {
+            VStack(alignment: .leading, spacing: 8) {
+                TurnInBannerText(title)
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(PitTechFont.body)
+                        .foregroundStyle(PitTechStyle.ink)
+                }
+                ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(PitTechStyle.supporting)
+                }
+                Text(coverage)
                     .font(.caption)
                     .foregroundStyle(PitTechStyle.supporting)
             }
-            Text(coverage)
-                .font(.caption)
-                .foregroundStyle(PitTechStyle.supporting)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
         .accessibilityIdentifier(testTag)
     }
 }
@@ -219,23 +217,25 @@ struct ProAdvancedCurvesView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    SectionTitle(title: entry.title, subtitle: entry.preview)
+                    VStack(alignment: .leading, spacing: 6) {
+                        TurnInMetaLabel("\(entry.title) · Pro")
+                        Text(entry.preview)
+                            .font(PitTechFont.body)
+                            .foregroundStyle(PitTechStyle.inkMuted)
+                    }
                     if options.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("No measured channels yet")
-                                .font(.headline)
-                            Text("Record temperatures with a cook to compare aligned curves here. Gaps stay visible; nothing is estimated.")
-                                .font(.subheadline)
-                                .foregroundStyle(PitTechStyle.supporting)
+                        TurnInCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TurnInBannerText("No measured channels yet")
+                                Text("Record temperatures with a cook to compare aligned curves here. Gaps stay visible; nothing is estimated.")
+                                    .font(PitTechFont.body)
+                                    .foregroundStyle(PitTechStyle.inkMuted)
+                            }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(18)
-                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                         .accessibilityIdentifier("pro-curves-empty")
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Align at")
-                                .font(.headline)
+                            TurnInBannerText("Align at", font: PitTechFont.bannerTitle)
                             Picker("Align at", selection: $anchor) {
                                 ForEach(ProAdvancedCurves.Anchor.allCases, id: \.self) { option in
                                     Text(option.title).tag(option)
@@ -246,8 +246,7 @@ struct ProAdvancedCurvesView: View {
                             .accessibilityIdentifier("pro-curves-anchor")
                         }
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Measured sources")
-                                .font(.headline)
+                            TurnInBannerText("Measured sources", font: PitTechFont.bannerTitle)
                             Text("Only real measurements — gaps stay visible.")
                                 .font(.caption)
                                 .foregroundStyle(PitTechStyle.supporting)
@@ -272,6 +271,7 @@ struct ProAdvancedCurvesView: View {
                                     .padding(.horizontal, 18)
                                     .padding(.vertical, 8)
                                     .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                                 }
                                 .accessibilityIdentifier(option.testTag)
                             }
@@ -283,27 +283,24 @@ struct ProAdvancedCurvesView: View {
                                 .accessibilityIdentifier("pro-curves-unselected")
                         } else {
                             ForEach(Array(aligned.series.enumerated()), id: \.element.channelId) { index, series in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(series.label)
-                                        .font(.headline)
-                                        .foregroundStyle(Color(proHex: paletteColors[index % paletteColors.count]))
-                                    ForEach(Array(series.points.prefix(40).enumerated()), id: \.offset) { _, point in
-                                        Text(point.line)
-                                            .font(.subheadline)
-                                            .foregroundStyle(PitTechStyle.ink)
-                                    }
-                                    if series.points.count > 40 {
-                                        Text("+\(series.points.count - 40) more recorded points")
+                                TurnInCard {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        TurnInBannerText(series.label, color: Color(proHex: paletteColors[index % paletteColors.count]))
+                                        ForEach(Array(series.points.prefix(40).enumerated()), id: \.offset) { _, point in
+                                            Text(point.line)
+                                                .font(PitTechFont.body)
+                                                .foregroundStyle(PitTechStyle.ink)
+                                        }
+                                        if series.points.count > 40 {
+                                            Text("+\(series.points.count - 40) more recorded points")
+                                                .font(.caption)
+                                                .foregroundStyle(PitTechStyle.supporting)
+                                        }
+                                        Text(series.coverage)
                                             .font(.caption)
                                             .foregroundStyle(PitTechStyle.supporting)
                                     }
-                                    Text(series.coverage)
-                                        .font(.caption)
-                                        .foregroundStyle(PitTechStyle.supporting)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
-                                .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                                 .accessibilityIdentifier(series.testTag)
                             }
                             ForEach(Array(aligned.excluded.enumerated()), id: \.offset) { _, note in
@@ -313,6 +310,7 @@ struct ProAdvancedCurvesView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(18)
                                     .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                                     .accessibilityIdentifier("pro-curves-excluded")
                             }
                         }
@@ -389,10 +387,17 @@ struct ProRecapBuilderView: View {
     private var recapScope: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SectionTitle(title: "Year in Smoke", subtitle: "Choose the period, cooks, and sections. Nothing is shared until you say so.")
+                // TURN-IN (Slice 2, Area 02 `recap-scope`): kicker +
+                // instruction line, banner section headers, laminated
+                // cook rows; the scope controls themselves are unchanged.
+                VStack(alignment: .leading, spacing: 6) {
+                    TurnInMetaLabel("Year in Smoke")
+                    Text("Choose the period, cooks, and sections. Nothing is shared until you say so.")
+                        .font(PitTechFont.body)
+                        .foregroundStyle(PitTechStyle.inkMuted)
+                }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Period")
-                        .font(.headline)
+                    TurnInBannerText("Period", font: PitTechFont.bannerTitle)
                     Picker("Period", selection: Binding(
                         get: { scope.period },
                         set: { period in
@@ -409,8 +414,7 @@ struct ProRecapBuilderView: View {
                     .accessibilityIdentifier("pro-recap-period")
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Cooks in this recap")
-                        .font(.headline)
+                    TurnInBannerText("Cooks in this recap", font: PitTechFont.bannerTitle)
                     if periodCooks.isEmpty {
                         Text("No recorded cooks in this period.")
                             .font(.subheadline)
@@ -428,22 +432,20 @@ struct ProRecapBuilderView: View {
                                 Image(systemName: scope.includedCookIds.contains(cookId) ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(PitTechStyle.accent)
                                     .accessibilityHidden(true)
-                                Text(titles[cookId] ?? cookId)
-                                    .font(.subheadline)
-                                    .foregroundStyle(PitTechStyle.ink)
+                                TurnInBannerText(titles[cookId] ?? cookId)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .frame(minHeight: 44)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 8)
                             .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                         }
                         .accessibilityIdentifier("pro-recap-cook")
                     }
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Sections")
-                        .font(.headline)
+                    TurnInBannerText("Sections", font: PitTechFont.bannerTitle)
                     Toggle("Recorded totals", isOn: Binding(get: { scope.showStats }, set: { scope.showStats = $0 }))
                         .frame(minHeight: 44)
                         .accessibilityIdentifier("pro-recap-section-stats")
@@ -454,6 +456,11 @@ struct ProRecapBuilderView: View {
                         .frame(minHeight: 44)
                         .accessibilityIdentifier("pro-recap-section-best")
                     TextField("Recap note (optional)", text: Binding(get: { scope.note }, set: { scope.note = String($0.prefix(2000)) }), axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(PitTechFont.body)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
                         .frame(minHeight: 44)
                         .accessibilityIdentifier("pro-recap-note")
                 }
@@ -485,7 +492,12 @@ struct ProRecapBuilderView: View {
     private var recapPreview: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SectionTitle(title: "Recap preview", subtitle: "This is exactly what sharing sends. Review it before anything leaves this device.")
+                VStack(alignment: .leading, spacing: 6) {
+                    TurnInMetaLabel("Recap preview")
+                    Text("This is exactly what sharing sends. Review it before anything leaves this device.")
+                        .font(PitTechFont.body)
+                        .foregroundStyle(PitTechStyle.inkMuted)
+                }
                 if let card {
                     if let rendered, let image = UIImage(data: rendered) {
                         Image(uiImage: image)
@@ -512,30 +524,29 @@ struct ProRecapBuilderView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(minHeight: 44)
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(card.title).font(.headline)
-                        ForEach(card.dishes, id: \.self) { dish in
-                            Text(dish).font(.subheadline)
+                    TurnInCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TurnInBannerText(card.title)
+                            ForEach(card.dishes, id: \.self) { dish in
+                                Text(dish).font(PitTechFont.body)
+                            }
+                            ForEach(Array(card.stats.enumerated()), id: \.offset) { _, stat in
+                                Text("\(stat.label): \(stat.value)").font(PitTechFont.monoReadout)
+                            }
+                            ForEach(Array(card.milestones.enumerated()), id: \.offset) { _, milestone in
+                                Text("\(milestone.dish) · \(milestone.title)").font(PitTechFont.body)
+                            }
+                            if !card.note.isEmpty {
+                                Text("“\(card.note)”").font(PitTechFont.body)
+                            }
+                            Text(card.coverageNote)
+                                .font(.caption)
+                                .foregroundStyle(PitTechStyle.supporting)
+                            Text(card.privacyNote)
+                                .font(.caption)
+                                .foregroundStyle(PitTechStyle.supporting)
                         }
-                        ForEach(Array(card.stats.enumerated()), id: \.offset) { _, stat in
-                            Text("\(stat.label): \(stat.value)").font(.subheadline)
-                        }
-                        ForEach(Array(card.milestones.enumerated()), id: \.offset) { _, milestone in
-                            Text("\(milestone.dish) · \(milestone.title)").font(.subheadline)
-                        }
-                        if !card.note.isEmpty {
-                            Text("“\(card.note)”").font(.subheadline)
-                        }
-                        Text(card.coverageNote)
-                            .font(.caption)
-                            .foregroundStyle(PitTechStyle.supporting)
-                        Text(card.privacyNote)
-                            .font(.caption)
-                            .foregroundStyle(PitTechStyle.supporting)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
-                    .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
                     .accessibilityIdentifier("pro-recap-card")
                     if let rendered {
                         ShareLink(item: recapFile(rendered), preview: SharePreview(card.title))
@@ -884,20 +895,30 @@ struct ProMoreHubView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    SectionTitle(title: "PitTech Pro", subtitle: entry.preview)
+                    // TURN-IN (Slice 2, Area 02 `pro-hub`): the hub rows
+                    // take the entry-row composition — ◆, banner name,
+                    // PRO tag, preview, chevron — on laminated cards.
+                    VStack(alignment: .leading, spacing: 6) {
+                        TurnInMetaLabel("PitTech Pro")
+                        Text(entry.preview)
+                            .font(PitTechFont.body)
+                            .foregroundStyle(PitTechStyle.inkMuted)
+                    }
                     Text("Your Pro library: personal analysis, advanced curves, recaps, and customization — all from cooks recorded on this device.")
                         .font(.subheadline)
                         .foregroundStyle(PitTechStyle.supporting)
                     ForEach(proHubEntries, id: \.entry) { item in
                         Button { pro.openPro(item.entry) } label: {
                             HStack(spacing: 14) {
+                                Text("◆").font(PitTechFont.body).foregroundStyle(PitTechStyle.marigold).accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.entry.title)
-                                        .font(.headline)
-                                        .foregroundStyle(PitTechStyle.ink)
+                                    HStack(spacing: 8) {
+                                        TurnInBannerText(item.entry.title)
+                                        TurnInProTag()
+                                    }
                                     Text(item.entry.preview)
-                                        .font(.subheadline)
-                                        .foregroundStyle(PitTechStyle.supporting)
+                                        .font(PitTechFont.body)
+                                        .foregroundStyle(PitTechStyle.inkMuted)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 Image(systemName: "chevron.right")
@@ -908,6 +929,7 @@ struct ProMoreHubView: View {
                             .frame(minHeight: 44)
                             .padding(18)
                             .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                         }
                         .accessibilityIdentifier("pro-hub-\(item.entry.rawValue)")
                     }
@@ -915,13 +937,12 @@ struct ProMoreHubView: View {
                         ProRecapBuilderView()
                     } label: {
                         HStack(spacing: 14) {
+                            Text("◆").font(PitTechFont.body).foregroundStyle(PitTechStyle.marigold).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Year in Smoke")
-                                    .font(.headline)
-                                    .foregroundStyle(PitTechStyle.ink)
+                                TurnInBannerText("Year in Smoke")
                                 Text("Build a scoped, shareable recap from this library.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(PitTechStyle.supporting)
+                                    .font(PitTechFont.body)
+                                    .foregroundStyle(PitTechStyle.inkMuted)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.right")
@@ -932,6 +953,7 @@ struct ProMoreHubView: View {
                         .frame(minHeight: 44)
                         .padding(18)
                         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                     }
                     .accessibilityIdentifier("pro-hub-recap")
                 }

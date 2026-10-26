@@ -201,3 +201,58 @@ struct TurnInStars: View {
         .accessibilityLabel("Rated \(Int(rating)) of 5")
     }
 }
+
+/// Sheet chrome (§4): a small mono context kicker above a sheet's title —
+/// the content name stays the title; the kicker names where you are.
+/// Added in Slice 2, the first slice whose iOS sheets carry one (the
+/// results editor and the reference surfaces); Android's kit has carried
+/// it since Slice 1.
+struct TurnInSheetKicker: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(PitTechFont.monoMeta)
+            .foregroundStyle(PitTechStyle.inkMuted)
+    }
+}
+
+/// A state strip (paused / stale / mismatch): raised surface with an
+/// accent edge and a plain factual line (§4). Added in Slice 2 for the
+/// reference surfaces' mismatch states; Android's kit has carried it
+/// since Slice 1.
+struct TurnInStatusStrip: View {
+    let text: String
+    let accent: Color
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(accent).frame(width: 4)
+            Text(text)
+                .font(PitTechFont.body)
+                .foregroundStyle(PitTechStyle.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+        }
+        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// The marigold PRO tag (§3.1): a fill, so its text is navy on-accent,
+/// never white. Added in Slice 2 for the Pro entry rows and hub; Slice 7
+/// reconciles the remaining Pro surfaces to it.
+struct TurnInProTag: View {
+    var body: some View {
+        Text("PRO")
+            .font(PitTechFont.monoMeta)
+            .foregroundStyle(PitTechStyle.onAccent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(PitTechStyle.marigold, in: RoundedRectangle(cornerRadius: 6))
+    }
+}
