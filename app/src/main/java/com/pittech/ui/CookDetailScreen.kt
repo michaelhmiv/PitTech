@@ -1384,9 +1384,13 @@ private fun LiveCookTab(
                             if (recent != null) {
                                 Text(CookFeedPresentation.title(recent), style = PitTechTextStyles.bodyEmphasis, maxLines = 2)
                                 Text(formatTimeOfDay(recent.occurredAtUtcMillis), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
-                            } else {
-                                latestPhoto?.caption?.takeIf { it.isNotBlank() }?.let { Text(it, style = PitTechTextStyles.bodyEmphasis, maxLines = 2) }
                             }
+                            // The latest photo's caption rides with its
+                            // thumbnail regardless of the recent event —
+                            // the pre-redesign board showed both, and the
+                            // merged card must not drop it when a cook has
+                            // activity AND a captioned photo (flows test03).
+                            latestPhoto?.caption?.takeIf { it.isNotBlank() }?.let { Text(it, style = PitTechTextStyles.bodyEmphasis, maxLines = 2) }
                         }
                         TextButton(onClick = onViewTimeline) { Text("Timeline") }
                     }
