@@ -32,6 +32,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
@@ -455,28 +457,25 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("Show 6 readings").assertIsDisplayed()
         // DIAG v2 (throwaway): isolate which micro-step loses the expansion.
         fun diagState(tag: String) {
-            val node = composeRule.onNodeWithTag("timeline-list").fetchSemanticsNode()
-            @Suppress("UNCHECKED_CAST")
-            val range = node?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)
             val expanded = composeRule.onAllNodesWithTag("timeline-group-readings-pit-sample-0", useUnmergedTree = true).fetchSemanticsNodes().size
-            android.util.Log.d("DIAG", tag + " scrollValue=" + range?.value + " scrollMax=" + range?.maxValue + " expandedTagCount=" + expanded)
+            android.util.Log.d("DIAG", tag + " expandedTagCount=" + expanded)
+            composeRule.onNodeWithTag("timeline-list", useUnmergedTree = true).printToLog(tag)
         }
-        diagState("beforeScrollTo")
+        diagState("S0before")
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo()
         composeRule.waitForIdle()
-        diagState("afterScrollTo")
+        diagState("S1afterScrollTo")
         composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performClick()
         composeRule.waitForIdle()
-        diagState("afterTouchClick")
+        diagState("S2afterTouchClick")
         if (composeRule.onAllNodesWithTag("timeline-group-readings-pit-sample-0", useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
             // Touch click did not expand: scroll the button back into view and
             // invoke its semantics OnClick action directly.
             composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
-            val btn = composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").fetchSemanticsNode()
-            android.util.Log.d("DIAG", "semanticsClickNodeFound=" + (btn != null))
-            btn?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick)?.action?.invoke()
+            composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0")
+                .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
             composeRule.waitForIdle()
-            diagState("afterSemanticsClick")
+            diagState("S3afterSemanticsClick")
         }
         try {
             composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
