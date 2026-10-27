@@ -84,7 +84,10 @@ import android.graphics.Bitmap
             // gate stood; the type-DELETE gate is unchanged on step 2.
             compose.onNodeWithTag("account-deletion-continue").assertIsNotEnabled();assertEquals(0,requests)
             compose.onNodeWithTag("account-deletion-acknowledge").performScrollTo().performClick()
-            compose.onNodeWithTag("account-deletion-continue").performScrollTo().performClick()
+            // The Continue control is the dialog's confirm button — outside
+            // the scrollable text column, so it is clicked directly (the
+            // same treatment the submit button always had).
+            compose.onNodeWithTag("account-deletion-continue").performClick()
             compose.onNodeWithTag("account-deletion-submit").assertIsNotEnabled()
             compose.onNodeWithTag("account-deletion-confirmation").performScrollTo().performTextReplacement("DELETE")
             screenshot("account-deletion-review")
