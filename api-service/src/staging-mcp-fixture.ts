@@ -88,7 +88,13 @@ async function checkOwner(runtime: Runtime, pool: Pool) {
 }
 
 async function residue(pool: Pool, userId: string) {
-  const count = async (sql: string) => Number(((await pool.query<{ n: string }>(sql, [userId])).rows[0] ?? { n: '0' }).n);
+  // The API runtime role cannot read every schema (private_sync is fenced to
+  // its own pool); count what this role may see and mark the rest, rather
+  // than failing the whole deletion check on a permission boundary.
+  const count = async (sql: string) => {
+    try { return Number(((await pool.query<{ n: string }>(sql, [userId])).rows[0] ?? { n: '0' }).n); }
+    catch { return 'n/a-role'; }
+  };
   return {
     users: await count('SELECT count(*)::text AS n FROM auth.users WHERE id=$1'),
     grants: await count('SELECT count(*)::text AS n FROM auth.mcp_grants WHERE user_id=$1'),
