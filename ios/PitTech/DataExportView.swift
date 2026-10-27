@@ -27,7 +27,9 @@ struct NativeDataExportButtons: View {
             Button("Export readings CSV") { prepare(workbook: false) }.disabled(preparing).frame(minHeight: 44).accessibilityIdentifier("export-readings-csv")
             Button("Export workbook") { prepare(workbook: true) }.disabled(preparing).frame(minHeight: 44).accessibilityIdentifier("export-workbook")
             if preparing { ProgressView("Preparing export…") }
-            if let error { Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            // Area-06 `f03`: an export failure reads as a flag status
+            // strip, not red prose.
+            if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag).fixedSize(horizontal: false, vertical: true) }
         }.buttonStyle(.borderless).fileExporter(isPresented: $exporting, document: document, contentType: contentType, defaultFilename: "PitTech-data") { result in
             if case .failure(let failure) = result { error = failure.localizedDescription }
             cleanup()

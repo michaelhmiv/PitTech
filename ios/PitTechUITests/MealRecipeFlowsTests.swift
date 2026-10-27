@@ -323,6 +323,10 @@ final class MealRecipeFlowsTests: XCTestCase {
             let deletion = app.buttons["account-delete"]; reveal(deletion, app: app); deletion.tap()
             let acknowledgment = app.switches["account-deletion-acknowledge"].firstMatch
             setSwitch(acknowledgment, on: true, app: app)
+            // TURN-IN two-step review (BUILD-SPEC §7): acknowledgement
+            // unlocks Continue to the type-DELETE step; both gates keep
+            // their original order.
+            let proceed = app.buttons["account-deletion-continue"]; reveal(proceed, app: app); proceed.tap()
             let typed = app.textFields["account-deletion-confirmation"]; reveal(typed, app: app); typed.tap(); typed.typeText("DELETE")
             app.buttons["Hide keyboard"].tap()
             let submit = app.buttons["account-deletion-submit"]; reveal(submit, app: app)

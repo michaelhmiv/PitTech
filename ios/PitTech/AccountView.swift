@@ -10,8 +10,10 @@ private struct AccountSectionHeader: View {
     let statusId: String
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            Text(status).font(.footnote).textCase(nil).accessibilityIdentifier(statusId)
+            // TURN-IN (area-06 `a02`): the section name rides the banner
+            // face, its live status the mono face — literal text both.
+            TurnInBannerText(title)
+            Text(status).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted).textCase(nil).accessibilityIdentifier(statusId)
         }
     }
 }
@@ -74,9 +76,9 @@ struct NativeAccountView: View {
                             if deletion.receipt == nil && account.signedIn { Button("Review and retry the same request") { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-deletion-retry") }
                         }
                     } else if account.signedIn {
-                        Text("Signed in").accessibilityIdentifier("account-signed-in")
+                        TurnInBannerText("Signed in").accessibilityIdentifier("account-signed-in")
                         if let email = account.accountEmail {
-                            Text("Email sign-in: \(email)").privacySensitive().accessibilityIdentifier("account-auth-email")
+                            Text("Email sign-in: \(email)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted).privacySensitive().accessibilityIdentifier("account-auth-email")
                         }
                         if account.appleLinked {
                             Text("Apple sign-in is linked.").accessibilityIdentifier("account-auth-apple")
@@ -111,7 +113,8 @@ struct NativeAccountView: View {
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(PitTechStyle.accentFill, in: RoundedRectangle(cornerRadius: 12))
+                    .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("sync-turn-on-card")
                 }
@@ -136,6 +139,20 @@ struct NativeAccountView: View {
                 // only repeat it as the message line where the row's body is the
                 // fixed copy.
                 if !syncDetailInRow, let detail = sync.presentation.detail { Text(detail).font(.footnote).accessibilityIdentifier("sync-message") }
+                // Area-06 `b01`: the sync facts ride as status cells under
+                // the row — last-sync time in mono, waiting conflicts when
+                // there are any. (The frame's per-device rows have no iOS
+                // counterpart; the coordinator carries no device list.)
+                if sync.presentation.lastSyncedAt > 0 || !sync.presentation.conflicts.isEmpty {
+                    HStack(spacing: 8) {
+                        if sync.presentation.lastSyncedAt > 0 {
+                            TurnInScoreCell(label: "Last sync", value: Date(timeIntervalSince1970: Double(sync.presentation.lastSyncedAt) / 1000).formatted(date: .omitted, time: .shortened))
+                        }
+                        if !sync.presentation.conflicts.isEmpty {
+                            TurnInScoreCell(label: "Conflicts", value: "\(sync.presentation.conflicts.count)")
+                        }
+                    }
+                }
                 if sync.presentation.lastSyncedAt > 0 && account.signedIn && sync.enabled {
                     Toggle("Keep this library in sync while the app is open", isOn: Binding(get: { sync.presentation.automatic }, set: { sync.setAutomatic($0) })).disabled(sync.presentation.busy).accessibilityIdentifier("sync-automatic")
                     Text("Checks when you return to the app and after saved changes. Offline changes wait for a connection.").font(.footnote)
@@ -167,11 +184,11 @@ struct NativeAccountView: View {
             }
             Section {
                 if account.signedIn && account.deletionRecord == nil {
-                    Text("Delete account and server data").font(.headline)
+                    TurnInBannerText("Delete account and server data")
                     Text("Deletes your account identity, profile, sessions, likes, private server sync and original public publications. Your local journal stays on this device unless you remove it below.").font(.footnote)
                     Button("Delete account and server data", role: .destructive) { reviewingDeletion = true }.disabled(account.busy).accessibilityIdentifier("account-delete")
                 }
-                Text("Remove local journal").font(.headline)
+                TurnInBannerText("Remove local journal")
                 Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
                 Button("Remove local journal", role: .destructive) { reviewingJournal = true }.disabled(account.busy).accessibilityIdentifier("local-journal-remove")
             } header: {
@@ -186,6 +203,10 @@ struct NativeAccountView: View {
             ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { focused = nil } }
         }
         .scrollDismissesKeyboard(.interactively)
+        // TURN-IN: the Account form rides the token canvas (Slice 4's iOS
+        // form pattern) instead of the system grouped ground.
+        .scrollContentBackground(.hidden)
+        .background(PitTechStyle.canvas.ignoresSafeArea())
         .sheet(isPresented: $reviewingDeletion) { NavigationStack { NativeDeletionReviewView { reviewingDeletion = false; Task { await account.requestDeletion() } } } }
         .sheet(isPresented: $creatingConnection) { NavigationStack { McpCreateView(mcp: mcp) { creatingConnection = false } } }
         .sheet(isPresented: $reviewingSync) { NavigationStack { NativeSyncConflictReviewView() } }
@@ -246,13 +267,23 @@ private struct McpConnectionsSection: View {
                 Text("AI connections aren't available yet.").accessibilityIdentifier("mcp-unavailable")
             } else {
                 ForEach(mcp.grants) { grant in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(grant.nickname).font(.headline)
-                        Text("\(grant.clientId != nil ? "Connected app" : "Personal access token") · \(grant.status(now: Int64(Date().timeIntervalSince1970 * 1000)))").font(.footnote)
-                        Text(grant.scopes.map(McpScopeCatalog.label).joined(separator: ", ")).font(.footnote)
-                        if let used = grant.lastUsedAt { Text("Last used \(Date(timeIntervalSince1970: Double(used) / 1000), format: .dateTime)").font(.footnote) }
+                    // Area-06 `c01`: each grant is its own laminated card —
+                    // banner nickname, a mono state line, its scopes as
+                    // chips, last use in mono, then Disconnect.
+                    VStack(alignment: .leading, spacing: 4) {
+                        TurnInBannerText(grant.nickname)
+                        Text("\(grant.clientId != nil ? "Connected app" : "Personal access token") · \(grant.status(now: Int64(Date().timeIntervalSince1970 * 1000)))").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                        TurnInFlowLayout(spacing: 6) {
+                            ForEach(grant.scopes, id: \.self) { scope in TurnInScopeChip(text: McpScopeCatalog.label(scope)) }
+                        }
+                        if let used = grant.lastUsedAt { Text("Last used \(Date(timeIntervalSince1970: Double(used) / 1000), format: .dateTime)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                         if grant.active(now: Int64(Date().timeIntervalSince1970 * 1000)) { Button("Disconnect", role: .destructive) { confirmingRevoke = grant.id }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-\(grant.id)") }
-                    }.accessibilityIdentifier("mcp-grant-\(grant.id)")
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+                    .accessibilityIdentifier("mcp-grant-\(grant.id)")
                 }
                 if mcp.grants.allSatisfy({ !$0.active(now: Int64(Date().timeIntervalSince1970 * 1000)) }) { Text("No AI connections yet.").font(.footnote) }
                 if mcp.grants.filter({ $0.active(now: Int64(Date().timeIntervalSince1970 * 1000)) }).count > 1 { Button("Disconnect all", role: .destructive) { confirmingRevokeAll = true }.disabled(mcp.busy).accessibilityIdentifier("mcp-revoke-all") }
@@ -282,14 +313,19 @@ private struct McpConnectionsSection: View {
                         // Approve does not exist until the client and its
                         // full scope list have been shown for this code.
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Connect \(preview.clientName)?").font(.headline)
+                            TurnInBannerText("Connect \(preview.clientName)?")
                             Text("\(preview.clientName) will be able to:").font(.footnote)
                             ForEach(preview.scopes, id: \.self) { Text("• \(McpScopeCatalog.label($0))").font(.footnote) }
                             Text("PitTech Pro: active on this account.").font(.footnote)
                             Text("This code expires \(Date(timeIntervalSince1970: Double(preview.expiresAt) / 1000), format: .dateTime). Nothing is connected until you approve.").font(.footnote)
                             Button("Approve") { let reviewed = preview.code; code = ""; Task { await mcp.approve(userCode: reviewed) } }.disabled(mcp.busy).accessibilityIdentifier("mcp-approve")
                             Button("Not now") { mcp.dismissApprovalPreview() }.disabled(mcp.busy).accessibilityIdentifier("mcp-approve-cancel")
-                        }.accessibilityIdentifier("mcp-approval-preview")
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+                        .accessibilityIdentifier("mcp-approval-preview")
                     } else {
                         Button("Review connection") { Task { await mcp.reviewCode(code) } }.disabled(mcp.busy || code.isEmpty).accessibilityIdentifier("mcp-review-code")
                     }
@@ -311,9 +347,16 @@ private struct McpConnectionsSection: View {
         .sheet(isPresented: Binding(get: { mcp.createdToken != nil }, set: { if !$0 { mcp.dismissCreatedToken() } })) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("For \(mcp.createdNickname ?? "the new connection")").font(.headline)
+                    TurnInBannerText("For \(mcp.createdNickname ?? "the new connection")")
                     Text("Copy it into the assistant now. It is shown only once and is not saved on this device.").font(.footnote)
-                    Text(mcp.createdToken ?? "").textSelection(.enabled).accessibilityIdentifier("mcp-token-value")
+                    // Area-06 `c05`: the once-shown token rides in a raised
+                    // mono box — a measurement-class string, not prose.
+                    Text(mcp.createdToken ?? "").font(PitTechFont.monoMeta).textSelection(.enabled)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(PitTechStyle.ruling, lineWidth: 1))
+                        .accessibilityIdentifier("mcp-token-value")
                     Button(tokenCopied ? "Copied" : "Copy token") {
                         if let token = mcp.createdToken { UIPasteboard.general.string = token }
                         tokenCopied = true
@@ -355,10 +398,12 @@ private struct McpCreateView: View {
                         VStack(alignment: .leading) { Text(entry.label); Text(entry.detail).font(.footnote) }
                     }.accessibilityIdentifier("mcp-scope-\(entry.id)")
                 }
+                // The frame's never-allowed row (`c04`), carrying the app's
+                // own sentence verbatim — no frame copy is adopted (§1).
+                TurnInStatusStrip(text: "You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.", accent: PitTechStyle.flag)
             }
             Section("Disconnect automatically after") {
                 Picker("Expiry", selection: $days) { Text("30 days").tag(30); Text("90 days").tag(90); Text("365 days").tag(365) }.pickerStyle(.segmented).accessibilityIdentifier("mcp-days")
-                Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.").font(.footnote)
             }
             Section {
                 // Slice 8 (PL-16): the form stays open until the create
@@ -379,6 +424,8 @@ private struct McpCreateView: View {
                 }
             }
         }.navigationTitle("New AI connection").navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .background(PitTechStyle.canvas.ignoresSafeArea())
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
     }
 }
@@ -411,25 +458,46 @@ private struct NativeDeletionReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var acknowledged = false
     @State private var typed = ""
+    // TURN-IN (BUILD-SPEC §7, area-06 `d03`→`d04`): the deletion review is
+    // two steps — scope + acknowledgement, then type-DELETE — with a step
+    // rail. Both gates, in their original order; only the pagination is
+    // new presentation.
+    @State private var step = 0
     @FocusState private var typing: Bool
     var body: some View {
         Form {
-            Section("Server account and originals") {
-                Text("Delete your account identity, profile, sessions, likes, private server sync, original public publications and original media.")
-                Text("Other cooks keep independently owned copies and variations they already saved. Those copies show a removed source without your identity.")
-                Text("This request signs you out immediately. Cleanup can take time; keep this device’s recovery record until it completes.")
-            }
-            Section("Local journal") { Text("Your journal stays on this device, including an active local cook. Keeping it does not retain your server account data. Local data removal is a separate choice.") }
-            Section("Subscriptions") {
-                Text("Apple manages subscriptions separately. You can delete your account immediately without changing billing first.")
-                Link("Manage Apple subscriptions", destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
-            }
             Section {
-                Toggle("I understand what is deleted and what other cooks keep", isOn: $acknowledged).accessibilityIdentifier("account-deletion-acknowledge")
-                TextField("Type DELETE", text: $typed).textInputAutocapitalization(.characters).autocorrectionDisabled().focused($typing).accessibilityIdentifier("account-deletion-confirmation")
-                Button("Delete account and server data", role: .destructive) { typing = false; confirm() }.disabled(!acknowledged || typed != "DELETE").accessibilityIdentifier("account-deletion-submit")
+                TurnInMilestoneRail(steps: [
+                    TurnInRailStep(label: "Scope", sublabel: nil, state: step == 0 ? .current : .done),
+                    TurnInRailStep(label: "Confirm", sublabel: nil, state: step == 1 ? .current : .upcoming),
+                ])
+            }
+            if step == 0 {
+                Section("Server account and originals") {
+                    Text("Delete your account identity, profile, sessions, likes, private server sync, original public publications and original media.")
+                    Text("Other cooks keep independently owned copies and variations they already saved. Those copies show a removed source without your identity.")
+                    Text("This request signs you out immediately. Cleanup can take time; keep this device’s recovery record until it completes.")
+                }
+                Section("Local journal") { Text("Your journal stays on this device, including an active local cook. Keeping it does not retain your server account data. Local data removal is a separate choice.") }
+                Section("Subscriptions") {
+                    Text("Apple manages subscriptions separately. You can delete your account immediately without changing billing first.")
+                    Link("Manage Apple subscriptions", destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
+                }
+                Section {
+                    Toggle("I understand what is deleted and what other cooks keep", isOn: $acknowledged).accessibilityIdentifier("account-deletion-acknowledge")
+                    Button("Continue") { step = 1 }.disabled(!acknowledged).accessibilityIdentifier("account-deletion-continue")
+                }
+            } else {
+                Section {
+                    Text("Delete your account identity, profile, sessions, likes, private server sync, original public publications and original media.")
+                    TextField("Type DELETE", text: $typed).textInputAutocapitalization(.characters).autocorrectionDisabled().focused($typing).accessibilityIdentifier("account-deletion-confirmation")
+                    Button("Delete account and server data", role: .destructive) { typing = false; confirm() }.disabled(!acknowledged || typed != "DELETE").accessibilityIdentifier("account-deletion-submit")
+                    Button("Back") { step = 0 }
+                }
             }
         }.navigationTitle("Delete account").navigationBarTitleDisplayMode(.inline).scrollDismissesKeyboard(.interactively)
+        .scrollContentBackground(.hidden)
+        .background(PitTechStyle.canvas.ignoresSafeArea())
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
     }
 }
@@ -453,8 +521,13 @@ struct NativeSyncConflictReviewView: View {
             }
             ForEach(sync.presentation.conflicts) { conflict in
                 Section {
-                    NativeSyncConflictSide(title: "Yours", fields: conflict.mineFields).accessibilityIdentifier("sync-conflict-mine-\(conflict.id)")
-                    NativeSyncConflictSide(title: "Other device", fields: conflict.theirsFields).accessibilityIdentifier("sync-conflict-theirs-\(conflict.id)")
+                    // Area-06 `b04`: the two versions stand side by side —
+                    // the comparison's two-column structure is the landed
+                    // behavior and is not negotiable in the build (§6).
+                    HStack(alignment: .top, spacing: 8) {
+                        NativeSyncConflictSide(title: "Yours", fields: conflict.mineFields).accessibilityIdentifier("sync-conflict-mine-\(conflict.id)")
+                        NativeSyncConflictSide(title: "Other device", fields: conflict.theirsFields).accessibilityIdentifier("sync-conflict-theirs-\(conflict.id)")
+                    }
                     // Each choice carries its own consequence, printed before
                     // the tap: immediate on this device, uploaded next sync.
                     NativeSyncConflictChoice(choice: "mine", label: "Keep mine", conflictId: conflict.id, busy: sync.presentation.busy) { await sync.resolve(conflict.id, choice: "mine") }
@@ -472,24 +545,36 @@ struct NativeSyncConflictReviewView: View {
                 }
             }
         }.navigationTitle("Review synced edits").navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .background(PitTechStyle.canvas.ignoresSafeArea())
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("sync-review-done") } }
     }
 }
 
 /// One side of the PL-16 comparison: the version's actual content fields.
+/// TURN-IN (area-06 `b04`): a laminated mini-card — banner side name,
+/// literal meta field names, and a deleted side's status in flag.
 private struct NativeSyncConflictSide: View {
     let title: String
     let fields: [NativeConflictPreviewField]
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
+            TurnInBannerText(title)
             ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(field.label).font(.caption).foregroundStyle(.secondary)
-                    Text(field.value)
+                    TurnInMetaLabel(field.label)
+                    if field.label == "Status" && field.value == "Deleted" {
+                        Text(field.value).font(PitTechFont.bodyEmphasis).foregroundStyle(PitTechStyle.flag)
+                    } else {
+                        Text(field.value).font(PitTechFont.body)
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
 }
 
@@ -528,6 +613,8 @@ private struct NativeLocalJournalReviewView: View {
                 Button("Remove local journal", role: .destructive) { typing = false; confirm() }.disabled(!acknowledged || typed != "REMOVE").accessibilityIdentifier("local-journal-submit")
             }
         }.navigationTitle("Remove local journal").navigationBarTitleDisplayMode(.inline).scrollDismissesKeyboard(.interactively)
+        .scrollContentBackground(.hidden)
+        .background(PitTechStyle.canvas.ignoresSafeArea())
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { typing = false } } }
     }
 }

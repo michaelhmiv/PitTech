@@ -16,8 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -341,30 +339,21 @@ fun SettingsScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        // No in-page title (Brief v2 §3): the shell's top bar already names
+        // the destination; the old "Settings" headline duplicated it.
         SectionCard("Appearance") {
             // TURN-IN (BUILD-SPEC §3.4): the working Dark / Light / System
             // control designed in Area 06 frame f01 replaces the #172
-            // informational row. Dark is the fresh-install default.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    PitTechThemeMode.DARK to "Dark",
-                    PitTechThemeMode.LIGHT to "Light",
-                    PitTechThemeMode.SYSTEM to "System",
-                ).forEach { (mode, label) ->
-                    FilterChip(
-                        selected = themeMode == mode,
-                        onClick = { onThemeModeChange(mode) },
-                        label = { Text(label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                            .testTag("theme-mode-${mode.name.lowercase()}"),
-                    )
-                }
-            }
+            // informational row. Dark is the fresh-install default. Slice 6:
+            // the control takes the kit's segmented form (f01) — same tags,
+            // same selected semantics, same change handler.
+            val modes = listOf(PitTechThemeMode.DARK, PitTechThemeMode.LIGHT, PitTechThemeMode.SYSTEM)
+            TurnInSegmentedControl(
+                options = listOf("Dark", "Light", "System"),
+                selectedIndex = modes.indexOf(themeMode).coerceAtLeast(0),
+                onSelect = { onThemeModeChange(modes[it]) },
+                tags = modes.map { "theme-mode-${it.name.lowercase()}" },
+            )
             Text(
                 "Dark is the default — light is the same layout.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -372,27 +361,27 @@ fun SettingsScreen(
         }
 
         SectionCard("Units") {
-            Text("Temperature", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("°F", "°C").forEach { unit ->
-                    if (temperatureUnit == unit) Button(onClick = { onTemperatureUnitChange(unit) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(unit) }
-                    else OutlinedButton(onClick = { onTemperatureUnitChange(unit) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(unit) }
-                }
-            }
-            Text("Weight", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("lb", "kg").forEach { unit ->
-                    if (weightUnit == unit) Button(onClick = { onWeightUnitChange(unit) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(unit) }
-                    else OutlinedButton(onClick = { onWeightUnitChange(unit) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(unit) }
-                }
-            }
+            // Area-06 `f01`: units ride the same segmented form as the
+            // appearance control — °F/°C and lb/kg pairs.
+            TurnInLiteralMetaLabel("Temperature")
+            TurnInSegmentedControl(
+                options = listOf("°F", "°C"),
+                selectedIndex = listOf("°F", "°C").indexOf(temperatureUnit).coerceAtLeast(0),
+                onSelect = { onTemperatureUnitChange(listOf("°F", "°C")[it]) },
+            )
+            TurnInLiteralMetaLabel("Weight")
+            TurnInSegmentedControl(
+                options = listOf("lb", "kg"),
+                selectedIndex = listOf("lb", "kg").indexOf(weightUnit).coerceAtLeast(0),
+                onSelect = { onWeightUnitChange(listOf("lb", "kg")[it]) },
+            )
             Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.", style = MaterialTheme.typography.bodyMedium)
         }
 
         SectionCard("Cook notifications") {
             Text("Guidance reminders and monitoring alerts have separate sound settings. Turn on alerts from a cook when you want to use them.")
-            Text(if (com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) "Notifications allowed" else "Notifications are disabled", style = MaterialTheme.typography.bodyMedium)
-            Text(if (com.pittech.CookGuidanceNotifications.preciseAvailable(context) && context.getSharedPreferences("pittech-preferences", 0).getBoolean("precise-cook-timers", false)) "Precise cook timers enabled" else "Cook timers may be delayed by Android", style = MaterialTheme.typography.bodyMedium)
+            Text(if (com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) "Notifications allowed" else "Notifications are disabled", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+            Text(if (com.pittech.CookGuidanceNotifications.preciseAvailable(context) && context.getSharedPreferences("pittech-preferences", 0).getBoolean("precise-cook-timers", false)) "Precise cook timers enabled" else "Cook timers may be delayed by Android", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
             OutlinedButton(onClick = { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Notification settings") }
             // PL-29 rider (#172): test feedback stays in-app — no real notification is posted for a test.
             TextButton(onClick = { viewModel.showNotice("Test alert — alert feedback appears here in the app. Real alerts post a notification when they fire.") }) { Text("Send test alert") }
@@ -409,8 +398,10 @@ fun SettingsScreen(
             OutlinedButton(onClick = { csv.launch("PitTech_Readings.csv") }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Export temperature readings (CSV)") }
             OutlinedButton(onClick = { restore.launch(arrayOf("application/zip", "application/x-zip-compressed")) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Restore from ZIP backup") }
             if (busy) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.WORKING_WITH_DATA, style = MaterialTheme.typography.bodyLarge) }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
-            notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyLarge) }
+            // Area-06 `f03`: an export failure reads as a flag strip — what
+            // failed, on the danger accent — not a line of red prose.
+            error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
+            notice?.let { TurnInStatusStrip(it, pitTechTokens().cobalt) }
         }
 
         SectionCard("Feedback") {
@@ -481,7 +472,8 @@ fun SettingsScreen(
         // (SettingsCopy.SECTION_ORDER) — Version, Contact support, and the
         // bundled third-party notices iOS already showed.
         SectionCard("About") {
-            Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("settings-version"))
+            // Area-06 `f01`: the version/build line rides the mono face.
+            Text("Version ${BuildConfig.VERSION_NAME}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted, modifier = Modifier.testTag("settings-version"))
             TextButton(
                 onClick = { uriHandler.openUri("mailto:sportfolioholdings@gmail.com") },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

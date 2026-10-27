@@ -244,39 +244,65 @@ internal fun PitTechApp(
     if (importPreview != null) {
         val draft = importPreview!!
         if (draft.cookPack != null) CookPackImportDialog(draft, saving, saveError, viewModel::cancelImport, viewModel::confirmCookPackImport, viewModel::confirmCookPackHistoryImport, importHistoryAdded)
-        else AlertDialog(
+        else {
+            // TURN-IN (area-06 `e04`→`e05`): the restore review is two steps
+            // inside the same guard dialog — contents preview (counts as
+            // status cells), then the separate confirmed step. The restore
+            // itself is unchanged: one confirmImport, duplicates skipped,
+            // preferences ride along when the backup carries them.
+            var restoreStep by remember(draft) { mutableStateOf(0) }
+            AlertDialog(
             onDismissRequest = viewModel::cancelImport,
             title = { Text("Review backup contents") },
             text = {
                 Column(
-                    Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
-                    // TURN-IN (slice 5, frame s18): the counts read as a
-                    // grid of score cells, not one long sentence.
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TurnInScoreCell("Cooks", "${draft.cookCount}", Modifier.weight(1f))
-                        TurnInScoreCell("Dishes", "${draft.dishCount}", Modifier.weight(1f))
-                        TurnInScoreCell("Log entries", "${draft.eventCount}", Modifier.weight(1f))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TurnInScoreCell("Readings", "${draft.readingCount}", Modifier.weight(1f))
-                        TurnInScoreCell("Results", "${draft.resultCount}", Modifier.weight(1f))
-                        TurnInScoreCell("Photos", "${draft.photoCount}", Modifier.weight(1f))
-                    }
-                    if (draft.savedToolsCount > 0) Text("${draft.savedToolsCount} saved playbooks, plans, alerts, checklists or equipment records")
-                    Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.", color = pitTechTokens().inkMuted)
-                    if (draft.preferences != null) {
-                        Text("This full backup also restores temperature, weight, and appearance preferences.")
+                    TurnInMilestoneRail(listOf(
+                        TurnInRailStep("Preview", null, if (restoreStep == 0) TurnInRailState.CURRENT else TurnInRailState.DONE),
+                        TurnInRailStep("Confirm", null, if (restoreStep == 1) TurnInRailState.CURRENT else TurnInRailState.UPCOMING),
+                    ))
+                    if (restoreStep == 0) {
+                        Text("Exported ${draft.exportedAtUtc?.let(::formatBackupDate) ?: "date unavailable"} · archive v${draft.archiveVersion}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                        // Counts as a grid of score cells (slice 5, frame
+                        // s18) — kept as the preview step's body here.
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInScoreCell("Cooks", "${draft.cookCount}", Modifier.weight(1f))
+                            TurnInScoreCell("Dishes", "${draft.dishCount}", Modifier.weight(1f))
+                            TurnInScoreCell("Log entries", "${draft.eventCount}", Modifier.weight(1f))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInScoreCell("Readings", "${draft.readingCount}", Modifier.weight(1f))
+                            TurnInScoreCell("Results", "${draft.resultCount}", Modifier.weight(1f))
+                            TurnInScoreCell("Photos", "${draft.photoCount}", Modifier.weight(1f))
+                        }
+                        if (draft.savedToolsCount > 0) Text("${draft.savedToolsCount} saved playbooks, plans, alerts, checklists or equipment records")
+                        if (draft.preferences != null) {
+                            Text("This full backup also restores temperature, weight, and appearance preferences.")
+                        } else {
+                            Text("This cook-only or older backup does not include app preferences.")
+                        }
                     } else {
-                        Text("This cook-only or older backup does not include app preferences.")
+                        Text("PitTech adds cooks that are not already on this phone and skips duplicate cook IDs. Existing cooks are not overwritten.")
+                        if (draft.preferences != null) {
+                            Text("This full backup also restores temperature, weight, and appearance preferences.")
+                        } else {
+                            Text("This cook-only or older backup does not include app preferences.")
+                        }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = viewModel::confirmImport, enabled = !saving) { Text("Restore backup") } },
-            dismissButton = { TextButton(onClick = viewModel::cancelImport) { Text("Cancel") } },
-        )
+            confirmButton = {
+                if (restoreStep == 0) TextButton(onClick = { restoreStep = 1 }) { Text("Continue") }
+                else TextButton(onClick = viewModel::confirmImport, enabled = !saving) { Text("Restore backup") }
+            },
+            dismissButton = {
+                if (restoreStep == 0) TextButton(onClick = viewModel::cancelImport) { Text("Cancel") }
+                else TextButton(onClick = { restoreStep = 0 }) { Text("Back") }
+            },
+            )
+        }
     }
 
     LaunchedEffect(savedCookId) {

@@ -673,7 +673,7 @@ struct SettingsView: View {
                 // Appearance, Units, Cook notifications, Your data,
                 // Feedback, Ads and privacy, About — same contents per
                 // section on both platforms, platform mechanics aside.
-                Section("Appearance") {
+                Section {
                     // TURN-IN (BUILD-SPEC §3.4, copy delta §1.1.1): the working
                     // Dark / Light / System control designed in Area 06 frame
                     // f01 replaces the #172 informational row. The selection
@@ -692,34 +692,39 @@ struct SettingsView: View {
                     Text("Dark is the default — light is the same layout.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
-                Section("Units") {
+                } header: { TurnInBannerText("Appearance") }
+                Section {
+                    // Area-06 `f01`: units ride segmented controls with the
+                    // short unit labels, like the appearance control above
+                    // (preference tags and values unchanged).
                     Picker("Temperature", selection: Binding(
                         get: { store.temperatureUnit },
                         set: { store.setPreference("temperatureUnit", value: $0) }
                     )) {
-                        Text("Fahrenheit").tag("F")
-                        Text("Celsius").tag("C")
+                        Text("°F").tag("F")
+                        Text("°C").tag("C")
                     }
+                    .pickerStyle(.segmented)
                     Picker("Weight", selection: Binding(
                         get: { store.weightUnit },
                         set: { store.setPreference("weightUnit", value: $0) }
                     )) {
-                        Text("Pounds").tag("lb")
-                        Text("Kilograms").tag("kg")
+                        Text("lb").tag("lb")
+                        Text("kg").tag("kg")
                     }
+                    .pickerStyle(.segmented)
                     Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
-                Section("Cook notifications") {
+                } header: { TurnInBannerText("Units") }
+                Section {
                     Text("Guidance reminders and monitoring alerts have separate sound settings. Turn on alerts from a cook when you want to use them.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(notificationsAllowed ? "Notifications allowed" : "Notifications are disabled")
                     Link("Notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
-                }
-                Section("Your data") {
+                } header: { TurnInBannerText("Cook notifications") }
+                Section {
                     Text(SettingsCopy.dataStaysLine)
                         .font(.subheadline)
                     Text(SettingsCopy.fullBackupScope)
@@ -735,29 +740,38 @@ struct SettingsView: View {
                     }
                     Button("Restore cook archive") { showingImport = true }
                     NativeDataExportButtons()
-                }
-                Section("Feedback") {
+                } header: { TurnInBannerText("Your data") }
+                Section {
                     Text("Tell us about a problem or suggest a feature without needing a GitHub account. Cook records and photos are never included.")
                         .font(.subheadline)
                     NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
-                }
-                Section("Ads and privacy") {
+                } header: { TurnInBannerText("Feedback") }
+                Section {
                     Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
                     if adsConsent.isPrivacyOptionsRequired {
                         Button("Privacy choices") {
                             Task { await adsConsent.presentPrivacyOptions() }
                         }
                     }
-                }
-                Section("About") {
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                } header: { TurnInBannerText("Ads and privacy") }
+                Section {
+                    // Area-06 `f01`: the version line rides the mono face.
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                            .font(PitTechFont.monoMeta)
+                            .foregroundStyle(PitTechStyle.inkMuted)
+                    }
                     Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
                     NavigationLink("Third-party telemetry notices") {
-                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
+                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(PitTechFont.bodySmall).padding() }.navigationTitle("Third-party notices")
                     }
-                }
+                } header: { TurnInBannerText("About") }
             }
             .navigationTitle("Settings")
+            .scrollContentBackground(.hidden)
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .task { notificationsAllowed = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized }
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }

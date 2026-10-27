@@ -114,6 +114,9 @@ enum PitTechFont {
     static let monoMeta = Font.custom("IBMPlexMono-Regular", size: 12, relativeTo: .caption)
     static let body = Font.custom("Inter-Regular", size: 15, relativeTo: .body)
     static let bodyEmphasis = Font.custom("Inter-Medium", size: 15, relativeTo: .body)
+    /// Small text for chips and dense rows (Slice 6, area-06 `c01` scope
+    /// chips) — the Android kit's `bodySmall` counterpart.
+    static let bodySmall = Font.custom("Inter-Regular", size: 13, relativeTo: .footnote)
     static let metaLabel = Font.custom("Inter-Medium", size: 11, relativeTo: .caption2)
     static let metaLabelTracking: CGFloat = 1.4
 }

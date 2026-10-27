@@ -452,3 +452,64 @@ internal fun TurnInSheetKicker(text: String, modifier: Modifier = Modifier) {
         modifier = modifier,
     )
 }
+
+/** Literal-case meta label (Slice 6): the §3.2-floor type style without the
+ * caps transform — for labels that carry data or are asserted verbatim by
+ * tests (account statuses, field names, scope names). The tracked style
+ * carries the look; the words stay the app's own. */
+@Composable
+internal fun TurnInLiteralMetaLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = pitTechTokens().inkMuted,
+) {
+    Text(text, style = PitTechTextStyles.metaLabel, color = color, modifier = modifier)
+}
+
+/** Status cell (§4, area-06 `a02`/`b01`/`e01`): one live status fact in a
+ * raised box — a literal meta label over a mono value. The Account sheet's
+ * five sections and the sync/data surfaces carry their state in these. */
+@Composable
+internal fun TurnInStatusCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = pitTechTokens().ink,
+) {
+    val tokens = pitTechTokens()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = tokens.surfaceRaised,
+        contentColor = tokens.ink,
+        border = BorderStroke(1.dp, tokens.ruling),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            TurnInLiteralMetaLabel(label)
+            Text(value, style = PitTechTextStyles.monoMeta, color = valueColor)
+        }
+    }
+}
+
+/** Scope chip (area-06 `c01`): one granted scope as a small bordered pill —
+ * the label renders verbatim (scope names are the app's own words). */
+@Composable
+internal fun TurnInScopeChip(text: String, modifier: Modifier = Modifier) {
+    val tokens = pitTechTokens()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = tokens.surfaceRaised,
+        contentColor = tokens.ink,
+        border = BorderStroke(1.dp, tokens.ruling),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
