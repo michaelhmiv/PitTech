@@ -31,8 +31,8 @@ struct CookDetailView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
-                            Text(cook.title).font(.title.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                            Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(.headline).foregroundStyle(PitTechStyle.accent)
+                            TurnInBannerText(cook.title, font: PitTechFont.bannerTitle).fixedSize(horizontal: false, vertical: true)
+                            Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(PitTechFont.bodyEmphasis).foregroundStyle(PitTechStyle.emberText)
                             MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
                             if !store.dishRecords(cookId).isEmpty {
                                 Button("Share meal") { do { sharingDraftId = try store.createSharingDraft(cookId: cookId, dishIds: Set(store.dishRecords(cookId).map(\.id))) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("meal-sharing-draft")
@@ -87,12 +87,37 @@ struct CookDetailView: View {
                     Button("Cancel", role: .cancel) { }
                 } message: {
                     let incomplete = store.phases(cookId).filter { $0.phase != "done" }.map(\.name)
-                    Text(incomplete.isEmpty ? "Finish this meal? You can add notes and results afterward." : "No completion action recorded for \(incomplete.joined(separator: ", ")). You can still finish; physical actions stay as recorded.")
+                    // §1.1 permitted copy delta 2 (BUILD-SPEC): the reopen
+                    // line joins the finish confirmation, both platforms.
+                    Text((incomplete.isEmpty ? "Finish this meal? You can add notes and results afterward." : "No completion action recorded for \(incomplete.joined(separator: ", ")). You can still finish; physical actions stay as recorded.") + " Finishing files the cook to your log — you can reopen it later if you need to.")
                 }
                 .sheet(isPresented: $completionChoices) {
                     NavigationStack { ScrollView { VStack(alignment: .leading, spacing: 18) {
-                        Text("Meal finished").font(.title2.weight(.semibold))
+                        TurnInBannerText("Meal finished", font: PitTechFont.bannerTitle)
                         Text("Your recorded actions and readings are saved. Results and recipe saves are optional.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+                        // TURN-IN d32: the sheet leads with stat cells —
+                        // total time and the recorded verdict — above the
+                        // choices.
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                TurnInMetaLabel("Total time")
+                                Text(duration(max(0, (cook.endedAtUtcMillis.map { Double($0) } ?? Date.now.timeIntervalSince1970 * 1_000) - Double(cook.startedAtUtcMillis)))).font(PitTechFont.monoReadout)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+                            if let rating = store.cookResults(cookId: cookId, dishId: nil).overallRating {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    TurnInMetaLabel("Verdict")
+                                    TurnInStars(rating: rating)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+                            }
+                        }
                         // PL-08 / DD-5: the sheet finish creates LEADS with
                         // the quick verdict, then the recipe saves, then
                         // Leave — the same order as Android.
@@ -135,6 +160,7 @@ struct CookDetailView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
                 liveZone(cook, now: context.date)
+                milestoneRailCard(cook)
                 nextActionStrip
                 if store.timingMode(cookId) == "legacy_preserved" {
                     Text("Legacy timer · original session start retained").font(.caption)
@@ -169,38 +195,124 @@ struct CookDetailView: View {
                         Text("Session created \(cook.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                // Pause lives on Live now (PL-04) — a visible meal action,
-                // not part of the below-switch bucket shared by all sections.
+                // TURN-IN (Slice 1): the board's action placards — Log
+                // note is the primary placard (d12); Pause/Resume keeps
+                // its Live home (PL-04) as the second placard. The bottom
+                // shortcut bar keeps Log/Temp/Photo/Reminders.
                 if cook.isActive {
-                    Button(cook.status == "paused" ? "Resume meal" : "Pause meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }.buttonStyle(.bordered).accessibilityIdentifier("pause-meal")
+                    HStack(spacing: 10) {
+                        TurnInPlacard(systemImage: "note.text", label: "Log note", primary: true) { open() }
+                        TurnInPlacard(systemImage: cook.status == "paused" ? "play.fill" : "pause.fill", label: cook.status == "paused" ? "Resume meal" : "Pause meal", identifier: "pause-meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }
+                    }
                 }
             }
         }
     }
-    /// Live Zone poster (PL-04): elapsed, pit and setpoint, the latest
-    /// temperature for every dish, and cook targets — the cook at a glance.
+    /// Live board scoreboard (PL-04, TURN-IN Slice 1 — the d12 flagship
+    /// composition): elapsed in mono, the pit reading at scoreboard size
+    /// with an honest trend chip from the last two readings, the setpoint
+    /// as a mono SET line, a probe block per dish (the lead dish carries
+    /// its finish-target progress), and the cook targets at the foot. The
+    /// paused state leads the card as a marigold status strip (d14).
     private func liveZone(_ cook: CookRecord, now: Date) -> some View {
-        let pit = readings.filter { ["pit", "pit_ambient", "ambient_temperature"].contains($0.measurementType) }.max { $0.measuredAt < $1.measuredAt }
+        let pitHistory = readings.filter { ["pit", "pit_ambient", "ambient_temperature"].contains($0.measurementType) }.sorted { $0.measuredAt < $1.measuredAt }
+        let pit = pitHistory.last
         let setpoint = readings.filter { $0.measurementType == "setpoint" }.max { $0.measuredAt < $1.measuredAt }
         let targets = store.library.targets.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && $0["dishId"] == nil }
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(cook.status == "paused" ? "PAUSED" : "LIVE COOK").font(.subheadline.weight(.semibold)).foregroundStyle(PitTechStyle.supporting)
-            Text("Elapsed \(duration(max(0, now.timeIntervalSince(cook.startedAt)) * 1_000))").font(.title2.bold()).accessibilityIdentifier("live-cook-elapsed")
-            if let pit { HStack { Text("Pit").font(.headline); Spacer(); Text(tempText(pit)).font(.title3.monospacedDigit()) } }
-            if let setpoint { HStack { Text("Setpoint").font(.headline); Spacer(); Text(tempText(setpoint)).font(.title3.monospacedDigit()) } }
-            ForEach(store.dishRecords(cookId)) { dish in
+        let trend: (String, Color)? = pitHistory.count >= 2 ? {
+            let delta = pitHistory[pitHistory.count - 1].value - pitHistory[pitHistory.count - 2].value
+            if delta > 1 { return ("▲ Climb", PitTechStyle.marigold) }
+            if delta < -1 { return ("▼ Drop", PitTechStyle.cobalt) }
+            return ("Hold", PitTechStyle.ember)
+        }() : nil
+        let dishes = store.dishRecords(cookId)
+        return VStack(alignment: .leading, spacing: 10) {
+            if cook.status == "paused" {
+                HStack(spacing: 10) {
+                    Rectangle().fill(PitTechStyle.marigold).frame(width: 4)
+                    let pausedAt = events.filter { $0.eventType.contains("paus") }.max { $0.occurredAt < $1.occurredAt }
+                    Text(pausedAt.map { "Paused at \($0.occurredAt.formatted(date: .omitted, time: .shortened)). Timers are held; readings still show." } ?? "Paused. Timers are held; readings still show.")
+                        .font(PitTechFont.body)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+            }
+            HStack {
+                TurnInMetaLabel("Elapsed")
+                Spacer()
+                Text(duration(max(0, now.timeIntervalSince(cook.startedAt)) * 1_000)).font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink).accessibilityIdentifier("live-cook-elapsed")
+            }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    TurnInMetaLabel("Pit")
+                    if let pit {
+                        Text(tempText(pit)).font(PitTechFont.scoreboard).foregroundStyle(PitTechStyle.ink)
+                    } else {
+                        Text("No reading yet").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                    }
+                }
+                Spacer()
+                if let trend { TurnInTrendChip(text: trend.0, fill: trend.1) }
+            }
+            if let setpoint {
+                Text("SET \(tempText(setpoint))").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            } else if let initial = cook.initialSetpointValue {
+                Text("SET \(initial.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(initial)) : String(format: "%.1f", initial))\(cook.initialSetpointUnit ?? "")").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            }
+            ForEach(Array(dishes.enumerated()), id: \.element.id) { index, dish in
                 let latest = readings.filter { $0.dishId == dish.id }.max { $0.measuredAt < $1.measuredAt }
-                HStack { Text(dish.name).font(.headline); Spacer(); Text(latest.map(tempText) ?? "No reading yet").font(.title3.monospacedDigit()) }
+                let dishTarget = store.library.targets.compactMap(\.objectValue).first { $0["cookId"]?.stringValue == cookId && $0["dishId"]?.stringValue == dish.id && $0["targetType"]?.stringValue == "personal_finish" }
+                    ?? targets.first { $0["targetType"]?.stringValue == "personal_finish" }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        TurnInBannerText(dish.name)
+                        Spacer()
+                        Text(latest.map(tempText) ?? "No reading yet").font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink)
+                    }
+                    // The lead dish carries the probe progress (d12): bar
+                    // toward its finish target with the degrees to go.
+                    if index == 0, let latest, let dishTarget, let targetValue = dishTarget["value"]?.numberValue, targetValue > 0 {
+                        ProgressView(value: min(latest.value, targetValue), total: targetValue).tint(PitTechStyle.ember)
+                        Text("TARGET \(targetValue.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(targetValue)) : String(format: "%.1f", targetValue))\(dishTarget["unit"]?.stringValue ?? latest.unit) · \(Int(max(0, targetValue - latest.value).rounded()))° TO GO")
+                            .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    }
+                }
             }
             ForEach(Array(targets.enumerated()), id: \.offset) { _, target in
                 let value = target["value"]?.numberValue ?? 0
-                Text("Target · \((target["targetType"]?.stringValue ?? "").replacingOccurrences(of: "_", with: " ")): \(value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value)) \(target["unit"]?.stringValue ?? "")").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                Text("Target · \((target["targetType"]?.stringValue ?? "").replacingOccurrences(of: "_", with: " ")): \(value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value)) \(target["unit"]?.stringValue ?? "")").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             }
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         .accessibilityIdentifier("live-zone")
+    }
+
+    /// Milestone rail card (d12): the cook's recorded phase actions in
+    /// order — done in ember, the next one current in marigold. Shown only
+    /// once at least one milestone is on the record.
+    @ViewBuilder private func milestoneRailCard(_ cook: CookRecord) -> some View {
+        let actions = store.library.actions(for: cookId)
+        let milestones: [(label: String, key: String)] = [("Food on", "food_on"), ("Wrap", "wrap"), ("Rest", "rest_start"), ("Serve", "dish_done")]
+        let firstPending = milestones.first { m in !actions.contains { $0.action == m.key } }
+        if milestones.contains(where: { m in actions.contains { $0.action == m.key } }) {
+            TurnInCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    TurnInMetaLabel("The cook, in order")
+                    TurnInMilestoneRail(steps: milestones.map { m in
+                        let at = actions.first { $0.action == m.key }?.at
+                        return TurnInRailStep(
+                            label: m.label,
+                            sublabel: at.map { Date(timeIntervalSince1970: $0 / 1_000).formatted(date: .omitted, time: .shortened) },
+                            state: at != nil ? .done : (m.key == firstPending?.key ? .current : .upcoming)
+                        )
+                    })
+                }
+            }
+        }
     }
     private func tempText(_ sample: TemperatureSample) -> String {
         sample.value.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(sample.value))\(sample.unit)" : String(format: "%.1f%@", sample.value, sample.unit)
@@ -232,12 +344,15 @@ struct CookDetailView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(PitTechStyle.ruling, lineWidth: 1))
         }
     }
     private var timelineContent: some View {
         let linked = Set(store.library.logReadingLinks.compactMap { $0.objectValue?["readingId"]?.stringValue })
         return VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Timeline", subtitle: "Complete notes, newest activity first.")
+            // TURN-IN (Slice 1): no in-tab title header — the segmented
+            // control already says Timeline (same call as Android's kept
+            // "Cook timeline" line, which is test-asserted there only).
             // PL-08: saved results render read-only on the cook's summary.
             if store.hasAnyDisplayableResults(cookId: cookId) { CookResultsCard(cookId: cookId) }
             RecipeGuideMilestones(cookId: cookId)
@@ -247,7 +362,7 @@ struct CookDetailView: View {
             // timeline filters.)
             if events.isEmpty && readings.filter({ !linked.contains($0.id) }).isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(EmptyStateCopy.timelineTitle).font(.title3.weight(.semibold))
+                    TurnInBannerText(EmptyStateCopy.timelineTitle, font: PitTechFont.bannerTitle)
                     Text(EmptyStateCopy.timelineBody).foregroundStyle(PitTechStyle.supporting)
                     Button("Add a note") { open() }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("timeline-empty-add-note")
                 }
@@ -306,8 +421,8 @@ private struct CookNoteCard: View {
                 }
             }
             Text(event.occurredAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-        }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(focused ? PitTechStyle.accent : .clear, lineWidth: 2))
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(focused ? PitTechStyle.emberText : PitTechStyle.ruling, lineWidth: focused ? 2 : 1))
     }
 }
 
@@ -321,7 +436,8 @@ struct ReadingCard: View {
         }; Spacer(); Text("\(reading.value.formatted()) \(reading.unit)").font(.title3.monospacedDigit())
             if let onEdit { Menu { Button("Edit reading", action: onEdit) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) } }
         }
-            .padding(14).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .padding(14).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
 }
 
@@ -330,7 +446,7 @@ struct AddDishSheet: View {
     @Environment(\.dismiss) private var dismiss
     let cookId: String
     @State private var name = ""
-    var body: some View { NavigationStack { Form { TextField("Dish name", text: $name) }.navigationTitle("Add dish").toolbar {
+    var body: some View { NavigationStack { Form { TextField("Dish name", text: $name) }.scrollContentBackground(.hidden).background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Add dish").toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) { Button("Add") { store.addDish(cookId: cookId, name: name); dismiss() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
     } } }
@@ -341,7 +457,7 @@ struct EditCookSheet: View {
     let cook: CookRecord
     @State private var title: String; @State private var notes: String
     init(cook: CookRecord) { self.cook = cook; _title = State(initialValue: cook.title); _notes = State(initialValue: cook.notes ?? "") }
-    var body: some View { NavigationStack { Form { TextField("Cook name", text: $title); TextField("Notes", text: $notes, axis: .vertical).lineLimit(2...8) }.navigationTitle("Edit cook").toolbar {
+    var body: some View { NavigationStack { Form { TextField("Cook name", text: $title); TextField("Notes", text: $notes, axis: .vertical).lineLimit(2...8) }.scrollContentBackground(.hidden).background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Edit cook").toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) { Button("Save") { store.updateCook(cook.id, title: title, notes: notes); dismiss() } }
     } } }
@@ -368,7 +484,7 @@ private struct LivePanel<Content: View>: View {
             Button { withAnimation { expanded.toggle() } } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.headline).foregroundStyle(PitTechStyle.ink)
+                        TurnInBannerText(title)
                         if let summary { Text(summary).font(.caption).foregroundStyle(PitTechStyle.supporting) }
                     }
                     Spacer()
@@ -383,5 +499,6 @@ private struct LivePanel<Content: View>: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
 }

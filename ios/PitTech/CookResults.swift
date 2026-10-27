@@ -206,7 +206,7 @@ struct CookResultsCard: View {
     var body: some View {
         let whole = store.cookResults(cookId: cookId, dishId: nil)
         VStack(alignment: .leading, spacing: 10) {
-            Text("Cook results").font(.headline)
+            TurnInBannerText("Cook results", font: PitTechFont.bannerTitle)
             Text("Overall verdict: \(resultsRatingText(whole.overallRating))").font(.subheadline.weight(.semibold))
             CookResultsFacts(values: whole, includeCookAgain: false)
             ForEach(store.dishRecords(cookId), id: \.id) { dish in
@@ -222,6 +222,7 @@ struct CookResultsCard: View {
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         .accessibilityIdentifier("cook-results-card")
     }
 }
@@ -240,7 +241,7 @@ struct CompletionVerdictSection: View {
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Quick verdict").font(.headline)
+            TurnInBannerText("Quick verdict", font: PitTechFont.bannerTitle)
             Text("How did it turn out? Anything you skip stays Not recorded — results can be edited any time from the cook.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
             RatingPickerRow(label: "Overall", selection: $overall)
             ForEach(store.dishRecords(cookId), id: \.id) { dish in
@@ -277,15 +278,31 @@ struct CompletionVerdictSection: View {
     }
 }
 
+/// TURN-IN (Slice 1): the d31 boxed score cells replace the rating
+/// picker — the label above, five tappable 1–5 boxes, "Not recorded" as
+/// the unrecorded state. Fractional saved values select no cell and keep
+/// their note, exactly as the Android `TurnInScoreCells` adapter does.
 private struct RatingPickerRow: View {
     let label: String
     @Binding var selection: Double?
     var body: some View {
-        Picker(label, selection: $selection) {
-            Text("Not recorded").tag(Double?.none)
-            ForEach(1...5, id: \.self) { Text("\($0) / 5").tag(Double?.some(Double($0))) }
-            if let selection, selection.rounded() != selection { Text("\(selection.formatted()) / 5").tag(Double?.some(selection)) }
+        let whole = selection.flatMap { $0 == $0.rounded() ? Int($0) : nil }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TurnInBannerText(label, font: PitTechFont.bodyEmphasis)
+                Spacer()
+                if selection == nil {
+                    Text("Not recorded").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                }
+            }
+            TurnInScoreCells(value: whole, tagPrefix: "rating-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))") { picked in
+                selection = picked.map(Double.init)
+            }
+            if let selection, selection.rounded() != selection {
+                Text("Saved rating: \(selection.formatted()) / 5").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+            }
         }
+        .padding(.vertical, 4)
     }
 }
 

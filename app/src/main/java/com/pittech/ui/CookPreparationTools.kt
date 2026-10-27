@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -104,6 +105,13 @@ internal fun CookChecklistTools(data: CookDetailData, viewModel: CooksViewModel)
     // PL-22 (DD-6): the checklist and its editor are list surfaces — sheets.
     if (open) SheetSurface(onDismiss = { open = false }, title = "Prep checklist", actions = { TextButton(onClick = { open = false }) { Text("Close") } }) {
         Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // `d27`: the ready count rides the top of the sheet in mono.
+            if (items.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInMetaLabel("Ready")
+                    Text("${items.count { it.done }} / ${items.size}", style = PitTechTextStyles.monoReadout)
+                }
+            }
             Text("Ingredients, supplies, and preparation notes for this cook.")
             items.forEach { item -> Row {
                 Checkbox(item.done, enabled = !busy, onCheckedChange = { viewModel.checkPrepItem(data.cook.id, item.id, it) }, modifier = Modifier.semantics { contentDescription = item.text })

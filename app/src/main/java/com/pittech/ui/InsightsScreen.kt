@@ -206,9 +206,14 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 
 @Composable
 fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+    // TURN-IN card (§4): token surface, ruling border, banner-face title.
+    Card(
+        colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            TurnInBannerText(title)
             content()
         }
     }

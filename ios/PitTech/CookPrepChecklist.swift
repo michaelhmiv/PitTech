@@ -43,7 +43,17 @@ struct CookPrepChecklist: View {
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Preparation checklist").font(.headline)
+            // TURN-IN d27: the ready count leads the checklist.
+            HStack {
+                TurnInBannerText("Preparation checklist")
+                Spacer()
+                if let checklist = store.prepChecklist(cookId) {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        TurnInMetaLabel("Ready")
+                        Text("\(checklist.items.filter(\.done).count) / \(checklist.items.count)").font(PitTechFont.monoReadout)
+                    }
+                }
+            }
             if let checklist = store.prepChecklist(cookId) {
                 ForEach(checklist.items) { item in
                     Toggle(item.text, isOn: Binding(get: { item.done }, set: { value in
@@ -54,7 +64,7 @@ struct CookPrepChecklist: View {
                 HStack { TextField("Add preparation item", text: $text); Button("Add") { var next = checklist; next.items.append(NativeChecklistItem(text: text)); save(next); text = "" }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
-        }.padding(14).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)).onAppear { store.createPrepChecklist(cookId) }
+        }.padding(14).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(PitTechStyle.ruling, lineWidth: 1)).onAppear { store.createPrepChecklist(cookId) }
     }
     private func save(_ checklist: NativePrepChecklist) { do { try store.savePrepChecklist(cookId, checklist) } catch { self.error = error.localizedDescription } }
 }

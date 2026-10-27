@@ -47,6 +47,10 @@ enum PitTechStyle {
     static let cobalt = adaptive(PitTechPalette.cobalt)
     static let flag = adaptive(PitTechPalette.flag)
     static let onAccent = adaptive(PitTechPalette.onAccent)
+    /// The primary-action fill (§3.1, the Slice 0 build-time fix): ember in
+    /// dark, marigold in light, always with `onAccent` text — never white
+    /// on either fill.
+    static let primaryFill = adaptive((light: 0xDFA408, dark: 0xF07D2E))
 
     // Legacy aliases (pre-TURN-IN names) onto the tokens above.
     static let canvas = ground

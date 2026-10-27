@@ -84,7 +84,8 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
         actions = {
             TextButton(onClick = { viewModel.discardNoteDraft(draft.id); onClose() }, enabled = !busy && !staging) { Text("Discard") }
             TextButton(onClick = { keepDraft() }, enabled = !busy && !staging) { Text("Keep draft") }
-            TextButton(onClick = { viewModel.saveNote(draft, editing, onSaved) }, enabled = valid && !busy && !staging,
+            // `d21`: Save is the one filled action in the row.
+            Button(onClick = { viewModel.saveNote(draft, editing, onSaved) }, enabled = valid && !busy && !staging,
                 modifier = Modifier.testTag(if (draft.category == "temperature") "temperature-save" else "timeline-entry-save")) { Text("Save entry") }
         },
     ) {
@@ -102,12 +103,18 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                         }))
                     }
                 }, testTag = "note-food-scope")
-                OutlinedTextField(draft.description, { onChange(draft.copy(description = it)) }, label = { Text("Observation") }, minLines = 2,
-                    modifier = Modifier.fillMaxWidth().testTag("timeline-entry-details"))
+                TurnInBoxedField("Observation") {
+                    OutlinedTextField(draft.description, { onChange(draft.copy(description = it)) }, minLines = 2,
+                        modifier = Modifier.fillMaxWidth().testTag("timeline-entry-details"))
+                }
                 draft.temperatures.forEachIndexed { index, t ->
                     fun change(next: NoteTemperature) { onChange(draft.copy(temperatures = draft.temperatures.map { if (it.id == t.id) next else it })) }
-                    OutlinedTextField(t.valueText, { change(t.copy(valueText = it)) }, label = { Text("Temperature (" + t.unit + ")") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-value" else "temperature-value-" + t.id))
+                    // `d22`: the reading itself is set in the mono readout.
+                    TurnInBoxedField("Temperature (" + t.unit + ")") {
+                        OutlinedTextField(t.valueText, { change(t.copy(valueText = it)) }, singleLine = true,
+                            textStyle = PitTechTextStyles.monoReadout,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag(if (index == 0) "temperature-value" else "temperature-value-" + t.id))
+                    }
                     // PL-07 (issue #172): probe / measurement / unit /
                     // measured-at live on the temperature row itself, not
                     // behind "More details" — a quick temp must not silently
@@ -168,7 +175,7 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                         mapOf("Preheat" to "preheat_start", "Season" to "season", "Trim" to "trim", "Marinate" to "marinate", "Add fuel" to "add_fuel")
                     SimpleDropdownField("Action", actions.entries.firstOrNull { it.value == draft.action }?.key ?: "None", actions.keys.toList(),
                         { label -> onChange(draft.copy(action = actions[label], category = if (actions[label] != null) "action" else draft.category)) }, testTag = "timeline-entry-type")
-                    Text("Foods in this note", style = MaterialTheme.typography.labelLarge)
+                    TurnInMetaLabel("Foods in this note")
                     dishes.forEach { dish ->
                         val selected = dish.id == draft.dishId || dish.id in draft.dishIds
                         FilterChip(selected, onClick = {

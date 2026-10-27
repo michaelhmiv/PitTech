@@ -130,7 +130,7 @@ struct CookTemperatureChart: View {
     private func normalized(_ value: Double, _ rawUnit: String) -> Double { let f = rawUnit.contains("C") ? value * 9 / 5 + 32 : value; return unit == "C" ? (f - 32) * 5 / 9 : f }
     private func color(_ id: String) -> Color {
         let key = referenceSeriesMatches[id] ?? id
-        let colors: [Color] = [.orange, .blue, .purple, .green, .pink, .teal]; return colors[key.utf8.reduce(0) { ($0 * 31 + Int($1)) % 997 } % colors.count]
+        let colors: [Color] = [PitTechStyle.ember, PitTechStyle.cobalt, .purple, .green, .pink, .teal]; return colors[key.utf8.reduce(0) { ($0 * 31 + Int($1)) % 997 } % colors.count]
     }
     private func channelLabel(_ id: String, rows: [TemperatureSample]) -> String {
         guard let r = rows.last(where: { $0.seriesId == id }) else { return "Choose channel" }
@@ -139,7 +139,7 @@ struct CookTemperatureChart: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Temperature (°\(unit))").font(.title2.bold()).accessibilityIdentifier("chart-y-axis")
+            TurnInBannerText("Temperature (°\(unit))", font: PitTechFont.bannerTitle).accessibilityIdentifier("chart-y-axis")
             controls
             if store.guideState(cookId).visible && guideData.flatMap(\.readings).isEmpty { Text("Guide curves wait for actual Food on. Sources without temperatures show instructions only.").font(.caption) }
             temperaturePlot
@@ -237,7 +237,7 @@ struct CookTemperatureChart: View {
                     if ["receipt_time", "receipt", "cloud_receipt"].contains(r.timestampBasis) { Text("Receipt time · device sample age unknown").font(.caption).foregroundStyle(.secondary) }
                 }
             }
-        }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }.padding(10).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
     private var phaseBands: some View {
         VStack(alignment: .leading) {

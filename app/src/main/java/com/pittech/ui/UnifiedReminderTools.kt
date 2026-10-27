@@ -38,7 +38,7 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
     OutlinedButton({ show = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (initialDishId == null) "meal-reminders" else "dish-reminders-$initialDishId")) { Text("Reminders${rules.count { it.enabled }.takeIf { it > 0 }?.let { " · $it enabled" }.orEmpty()}") }
     if (show) ModalBottomSheet(onDismissRequest = { show = false }) {
         Column(Modifier.heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Reminders", style = MaterialTheme.typography.titleLarge)
+            TurnInBannerText("Reminders", style = PitTechTextStyles.bannerTitle)
             Text("Set a check for this meal or one dish. One vocabulary everywhere: Log it records what you did, Snooze 10 min asks again soon, Dismiss ends a reminder without recording.")
             if (!com.pittech.CookGuidanceNotifications.notificationsAvailable(context)) {
                 Text("Notifications are disabled. Your reminders remain visible here.")
@@ -47,8 +47,8 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
             if (data.cook.status != CookStatus.COMPLETED) Button({ editor = ReminderEdit(dishId = initialDishId) }, Modifier.testTag("reminder-rule-add")) { Text("Add reminder") }
             rules.forEach { rule ->
                 val receipt = occurrences.firstOrNull { it.ruleId == rule.id && it.sequence == 0 }
-                OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(rule.title, style = MaterialTheme.typography.titleMedium)
+                OutlinedCard(Modifier.fillMaxWidth(), border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling), colors = CardDefaults.outlinedCardColors(containerColor = pitTechTokens().surface)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    TurnInBannerText(rule.title)
                     Text("${data.dishes.firstOrNull { it.id == rule.dishId }?.name ?: "Meal"} · ${if (!rule.enabled) rule.status else rule.status.replace('_', ' ')}")
                     receipt?.dueAtUtcMillis?.let { Text("Due ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it))}") }
                     if (rule.kind == "probe") Text(if (data.recording?.status == CookRecordingEntity.RECORDING && data.recording.samplingMode != "on_log") "Uses accepted readings from the selected channel" else "Monitoring unavailable · manual or on-log readings are evaluated only when recorded")
@@ -67,14 +67,14 @@ private data class ReminderEdit(val rule: ReminderRule? = null, val dishId: Stri
                 } }
             }
             if (data.reminders.isNotEmpty()) {
-                Text("Earlier timers", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Earlier timers")
                 data.reminders.forEach { timer ->
                     Text("${timer.title} · ${timer.status} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(timer.dueAtUtcMillis))}")
                     if (data.cook.status != CookStatus.COMPLETED && timer.status != CookReminderEntity.STATUS_PENDING) TextButton({ editor = ReminderEdit(title = timer.title, trigger = ReminderTrigger.Clock(System.currentTimeMillis() + 600_000)) }) { Text("Reuse as reminder…") }
                 }
             }
             if (data.cook.status != CookStatus.COMPLETED) {
-                Text("Previous cook suggestions", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Previous cook suggestions")
                 data.dishes.filter { initialDishId == null || it.id == initialDishId }.forEach { dish ->
                     val source = sources.firstOrNull { it.dishId == dish.id }
                     val revision = revisions.firstOrNull { it.id == source?.recipeRevisionId }
@@ -187,7 +187,12 @@ private fun announcedActionFor(rule: ReminderRule, revisions: List<RecipeRevisio
         TextButton(onClose, enabled = !busy) { Text("Cancel") }
         TextButton({ trigger()?.let { onSave(title, dishId, it) } }, enabled = !busy && title.isNotBlank() && trigger() != null, modifier = Modifier.testTag("reminder-rule-save")) { Text("Save reminder") }
     }) { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(title, { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth().testTag("reminder-rule-title"))
+        // TURN-IN gap disposition (§5.12.4): the rule editor form is
+        // unframed; it is styled from the §4 boxed-field component under
+        // the d25/d23 language. Flagged in the Slice 1 PR.
+        TurnInBoxedField("Title") {
+            OutlinedTextField(title, { title = it }, modifier = Modifier.fillMaxWidth().testTag("reminder-rule-title"))
+        }
         ChoiceField("Scope", data.dishes.firstOrNull { it.id == dishId }?.name ?: "Meal", listOf("Meal") + data.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }) { label -> dishId = if (label == "Meal") null else data.dishes[label.substringBefore('.').toInt() - 1].id }
         ChoiceField("Type", labels[kind] ?: "Choose", labels.filterKeys { it != "historical" || initial is ReminderTrigger.Historical }.values.toList()) { kind = labels.entries.first { e -> e.value == it }.key }
         when (kind) {

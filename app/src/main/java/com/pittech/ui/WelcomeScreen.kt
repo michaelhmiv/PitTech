@@ -102,15 +102,16 @@ internal fun WelcomeScreen(
                 .height(190.dp)
                 .testTag("welcome-mascot"),
         )
-        Text(
+        // TURN-IN (`d03`): the wordmark and promise in the banner face —
+        // the app's own words, unchanged (§1.1).
+        TurnInBannerText(
             "Welcome to PitTech",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = PitTechTextStyles.bannerTitle,
         )
         Text(
             "Log your cooks with live temps, notes and photos — no account needed to start.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = PitTechTextStyles.body,
+            color = pitTechTokens().inkMuted,
         )
         WelcomeRow(
             icon = Icons.Filled.Thermostat,
@@ -155,8 +156,9 @@ internal fun WelcomeScreen(
 @Composable
 private fun WelcomeRow(icon: ImageVector, title: String, subtitle: String) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
         shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -164,13 +166,13 @@ private fun WelcomeRow(icon: ImageVector, title: String, subtitle: String) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, contentDescription = null, tint = pitTechTokens().emberText)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText(title)
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = PitTechTextStyles.body,
+                    color = pitTechTokens().inkMuted,
                 )
             }
         }
