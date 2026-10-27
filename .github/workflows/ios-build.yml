@@ -382,6 +382,47 @@ jobs:
               call("DELETE", f"/certificates/{cert_id}")
               print(f"Revoked previous CI certificate {cert_id}")
 
+          # A run that dies between minting its certificate and creating its
+          # profile leaves that certificate orphaned: no profile references
+          # it, so the pass above cannot find it, and it holds the
+          # distribution slot against every later POST /certificates (run
+          # #512 left certificate BKLX257346 in exactly that state). Sweep
+          # for it: revoke distribution-family certificates that NO
+          # provisioning profile references. A certificate any profile
+          # references is never touched, whatever its type or owner, and no
+          # profile is modified here. On a healthy run this finds nothing.
+          def get_all(path):
+              items = []
+              while path is not None:
+                  page = call("GET", path)
+                  items.extend(page.get("data", []))
+                  next_link = page.get("links", {}).get("next")
+                  path = next_link[len(api):] if next_link else None
+              return items
+
+          referenced_cert_ids = set()
+          for any_profile in get_all("/profiles?limit=200"):
+              linked = call("GET", f"/profiles/{any_profile['id']}/certificates").get("data", [])
+              referenced_cert_ids.update(cert["id"] for cert in linked)
+          distribution_types = {"DISTRIBUTION", "IOS_DISTRIBUTION", "MAC_APP_DISTRIBUTION"}
+          orphan_candidates = []
+          for certificate in get_all("/certificates?limit=200"):
+              cert_type = certificate.get("attributes", {}).get("certificateType")
+              if cert_type not in distribution_types:
+                  continue
+              if certificate["id"] in referenced_cert_ids:
+                  print(f"Distribution certificate {certificate['id']} ({cert_type}) is referenced "
+                        "by a profile; leaving it alone")
+              else:
+                  orphan_candidates.append(certificate)
+                  print(f"Orphan candidate: distribution certificate {certificate['id']} "
+                        f"({cert_type}) is referenced by no profile")
+          for orphan in orphan_candidates:
+              call("DELETE", f"/certificates/{orphan['id']}")
+              print(f"Revoked orphaned distribution certificate {orphan['id']}")
+          if not orphan_candidates:
+              print("No orphaned distribution certificates found")
+
           # Fresh key + CSR on this runner; the private key never leaves it.
           subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
           subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
@@ -403,15 +444,39 @@ jobs:
                   "Expected exactly one bundle ID record with identifier com.pittech; "
                   f"the identifier filter returned {len(bundle_records)} record(s): {returned}")
           bundle_id = exact_matches[0]["id"]
-          capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
-          if not any(c.get("attributes", {}).get("capabilityType") == "ASSOCIATED_DOMAINS" for c in capabilities):
-              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
-                  "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
-                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
-          if not any(c.get("attributes", {}).get("capabilityType") == "APPLE_ID_AUTH" for c in capabilities):
-              call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
-                  "attributes": {"capabilityType": "APPLE_ID_AUTH"},
-                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+
+          def ensure_capability(capability_type, settings=None):
+              def is_present():
+                  current = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
+                  return any(c.get("attributes", {}).get("capabilityType") == capability_type for c in current)
+              if is_present():
+                  return
+              attributes = {"capabilityType": capability_type}
+              if settings is not None:
+                  attributes["settings"] = settings
+              try:
+                  created = call("POST", "/bundleIdCapabilities", payload={"data": {"type": "bundleIdCapabilities",
+                      "attributes": attributes,
+                      "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+                  print(f"Enabled capability {capability_type} on {bundle_id}: "
+                        f"{json.dumps(created.get('data', {}).get('attributes', {}))}")
+              except SystemExit:
+                  # A concurrent or earlier run may have created the capability
+                  # between the presence check and this create; only a create
+                  # that still leaves the capability missing is a real failure.
+                  if not is_present():
+                      raise
+                  print(f"Capability {capability_type} on {bundle_id} was created concurrently; continuing.")
+
+          ensure_capability("ASSOCIATED_DOMAINS")
+          # Sign in with Apple has no default configuration: a bare create is
+          # rejected with 409 ENTITY_ERROR ("Please select at least one
+          # configuration for Sign In with Apple."). This app is its own
+          # Primary App ID, expressed with the APPLE_ID_AUTH_APP_CONSENT
+          # setting and its PRIMARY_APP_CONSENT option (the settings shape
+          # Apple's API defines for this capability).
+          ensure_capability("APPLE_ID_AUTH", settings=[{"key": "APPLE_ID_AUTH_APP_CONSENT",
+              "options": [{"key": "PRIMARY_APP_CONSENT"}]}])
 
           profiles = call("GET", "/profiles?filter[name]=PitTech%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:
