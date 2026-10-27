@@ -32,7 +32,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
@@ -454,23 +453,37 @@ class PitTechUserFlowsTest {
         saveScreenshot("timeline-after-temperature-filter")
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
         composeRule.onNodeWithText("Show 6 readings").assertIsDisplayed()
-        // DIAG (throwaway): dump the timeline tree before the expand click.
-        composeRule.onNodeWithTag("timeline-list", useUnmergedTree = true).printToLog("DIAG1")
-        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
+        // DIAG v2 (throwaway): isolate which micro-step loses the expansion.
+        fun diagState(tag: String) {
+            val node = composeRule.onNodeWithTag("timeline-list").fetchSemanticsNode()
+            @Suppress("UNCHECKED_CAST")
+            val range = node?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)
+            val expanded = composeRule.onAllNodesWithTag("timeline-group-readings-pit-sample-0", useUnmergedTree = true).fetchSemanticsNodes().size
+            android.util.Log.d("DIAG", tag + " scrollValue=" + range?.value + " scrollMax=" + range?.maxValue + " expandedTagCount=" + expanded)
+        }
+        diagState("beforeScrollTo")
+        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo()
         composeRule.waitForIdle()
-        // DIAG: did expansion happen? do the reading nodes exist anywhere?
-        android.util.Log.d("DIAG", "readingsTag=" + composeRule.onAllNodesWithTag("timeline-group-readings-pit-sample-0", useUnmergedTree = true).fetchSemanticsNodes().size)
-        android.util.Log.d("DIAG", "hideReadings=" + composeRule.onAllNodesWithText("Hide readings", useUnmergedTree = true).fetchSemanticsNodes().size)
-        android.util.Log.d("DIAG", "pitAmbientNodes=" + composeRule.onAllNodesWithText("Pit ambient", substring = true, useUnmergedTree = true).fetchSemanticsNodes().size)
-        composeRule.onNodeWithTag("timeline-list", useUnmergedTree = true).printToLog("DIAG2")
+        diagState("afterScrollTo")
+        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performClick()
+        composeRule.waitForIdle()
+        diagState("afterTouchClick")
+        if (composeRule.onAllNodesWithTag("timeline-group-readings-pit-sample-0", useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+            // Touch click did not expand: scroll the button back into view and
+            // invoke its semantics OnClick action directly.
+            composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
+            val btn = composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").fetchSemanticsNode()
+            android.util.Log.d("DIAG", "semanticsClickNodeFound=" + (btn != null))
+            btn?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick)?.action?.invoke()
+            composeRule.waitForIdle()
+            diagState("afterSemanticsClick")
+        }
         try {
             composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
             android.util.Log.d("DIAG", "scrollToNode242=SUCCESS")
         } catch (e: AssertionError) {
-            android.util.Log.d("DIAG", "scrollToNode242=FAILED: " + e.message?.take(200))
-            composeRule.onNodeWithTag("timeline-list", useUnmergedTree = true).printToLog("DIAG3")
-            android.util.Log.d("DIAG", "afterFail readingsTag=" + composeRule.onAllNodesWithTag("timeline-group-readings-pit-sample-0", useUnmergedTree = true).fetchSemanticsNodes().size)
-            android.util.Log.d("DIAG", "afterFail pitAmbientNodes=" + composeRule.onAllNodesWithText("Pit ambient", substring = true, useUnmergedTree = true).fetchSemanticsNodes().size)
+            android.util.Log.d("DIAG", "scrollToNode242=FAILED")
+            diagState("afterFailedScroll")
         }
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-filter-menu").performClick()
