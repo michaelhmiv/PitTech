@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -222,13 +221,16 @@ fun SettingsScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(
-                            if (feedbackKind == FeedbackKind.BUG) "Problem report" else "Feature idea",
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(feedbackTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("feedback-review-title"))
-                        Text(feedbackDescription, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("feedback-review-description"))
-                        Text("Included app details", style = MaterialTheme.typography.titleSmall)
+                        // TURN-IN (Slice 7, frame `25-feedback-review`): the
+                        // exact public text rides one laminated card.
+                        TurnInCard(Modifier.fillMaxWidth()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TurnInBannerText(if (feedbackKind == FeedbackKind.BUG) "Problem report" else "Feature idea")
+                                TurnInBannerText(feedbackTitle, modifier = Modifier.testTag("feedback-review-title"))
+                                Text(feedbackDescription, style = PitTechTextStyles.body, modifier = Modifier.testTag("feedback-review-description"))
+                            }
+                        }
+                        TurnInBannerText("Included app details")
                         Text(
                             "PitTech ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · $deviceLabel",
                             style = MaterialTheme.typography.bodyMedium,
@@ -240,7 +242,8 @@ fun SettingsScreen(
                             )
                         }
                         Text("This text will be public on GitHub.", style = MaterialTheme.typography.bodySmall)
-                        feedbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        // TURN-IN (frame `26-feedback-error`): the failure rides a flag strip; the draft and preview stay put.
+                        feedbackError?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
                     }
                 } else {
                 Column(
@@ -262,35 +265,45 @@ fun SettingsScreen(
                         })
                     }
                     // PL-27: the kind is chosen in the form, not before it.
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (feedbackKind == FeedbackKind.BUG) {
-                            Button(onClick = { feedbackKindName = FeedbackKind.BUG.name }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-bug")) { Text("Problem") }
-                        } else {
-                            OutlinedButton(onClick = { feedbackKindName = FeedbackKind.BUG.name; includeCrashReport = savedCrashReport != null }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-bug")) { Text("Problem") }
-                        }
-                        if (feedbackKind == FeedbackKind.FEATURE) {
-                            Button(onClick = { feedbackKindName = FeedbackKind.FEATURE.name }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-feature")) { Text("Feature idea") }
-                        } else {
-                            OutlinedButton(onClick = { feedbackKindName = FeedbackKind.FEATURE.name }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("feedback-kind-feature")) { Text("Feature idea") }
-                        }
+                    // TURN-IN (Slice 7, frame `24-feedback`): the kind is an
+                    // in-content switch — the §4 segmented control carrying
+                    // the same tags the button pair carried; switching to
+                    // Problem keeps the crash-attach default the buttons had.
+                    TurnInSegmentedControl(
+                        options = listOf("Problem", "Feature idea"),
+                        selectedIndex = if (feedbackKind == FeedbackKind.BUG) 0 else 1,
+                        onSelect = { index ->
+                            if (index == 0) {
+                                if (feedbackKind != FeedbackKind.BUG) includeCrashReport = savedCrashReport != null
+                                feedbackKindName = FeedbackKind.BUG.name
+                            } else {
+                                feedbackKindName = FeedbackKind.FEATURE.name
+                            }
+                        },
+                        tags = listOf("feedback-kind-bug", "feedback-kind-feature"),
+                    )
+                    // TURN-IN (§4 boxed fields): the label sits above the
+                    // box in the tracked meta face, spelled exactly as the
+                    // form has always spelled it (TurnInLiteralBoxedField).
+                    TurnInLiteralBoxedField(label = "Title") {
+                        OutlinedTextField(
+                            value = feedbackTitle,
+                            onValueChange = { feedbackTitle = it.take(120) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            supportingText = { Text("${feedbackTitle.length}/120") },
+                        )
                     }
-                    OutlinedTextField(
-                        value = feedbackTitle,
-                        onValueChange = { feedbackTitle = it.take(120) },
-                        label = { Text("Title") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        supportingText = { Text("${feedbackTitle.length}/120") },
-                    )
-                    OutlinedTextField(
-                        value = feedbackDescription,
-                        onValueChange = { feedbackDescription = it.take(1_500) },
-                        label = { Text(if (feedbackKind == FeedbackKind.BUG) "What happened?" else "What would you like PitTech to do?") },
-                        minLines = 3,
-                        maxLines = 6,
-                        modifier = Modifier.fillMaxWidth(),
-                        supportingText = { Text("${feedbackDescription.length}/1500") },
-                    )
+                    TurnInLiteralBoxedField(label = if (feedbackKind == FeedbackKind.BUG) "What happened?" else "What would you like PitTech to do?") {
+                        OutlinedTextField(
+                            value = feedbackDescription,
+                            onValueChange = { feedbackDescription = it.take(1_500) },
+                            minLines = 3,
+                            maxLines = 6,
+                            modifier = Modifier.fillMaxWidth(),
+                            supportingText = { Text("${feedbackDescription.length}/1500") },
+                        )
+                    }
                     if (feedbackKind == FeedbackKind.BUG && savedCrashReport != null) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Checkbox(
@@ -310,14 +323,13 @@ fun SettingsScreen(
                                 Text(if (showCrashPreview) "Hide crash report preview" else "Preview crash report")
                             }
                             if (showCrashPreview) {
-                                Card {
+                                TurnInCard(Modifier.fillMaxWidth()) {
                                     Text(
                                         savedCrashReport!!.toPlainText(),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .heightIn(max = 180.dp)
-                                            .verticalScroll(rememberScrollState())
-                                            .padding(12.dp),
+                                            .verticalScroll(rememberScrollState()),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontFamily = FontFamily.Monospace,
                                     )
@@ -329,7 +341,7 @@ fun SettingsScreen(
                         "Submitting creates a public issue in the PitTech GitHub repository through PitTech's feedback relay. No GitHub account is required. Review what you entered before sending, and do not include personal information. A saved crash report is sent only when you choose to include it.",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    feedbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    feedbackError?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
                 }
                 }
         }

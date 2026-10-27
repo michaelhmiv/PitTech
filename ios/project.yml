@@ -74,6 +74,12 @@ targets:
         PITTECH_LINK_SCHEME: "pittech"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: PitTech/PitTech.entitlements
+        # Slice 7 (TURN-IN, Area 07): the Pro alternate app icons declared in
+        # Info.plist's CFBundleAlternateIcons ship as asset-catalog icon
+        # sets; actool only compiles them when they are named here.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES:
+          - ProEmber
+          - ProMidnight
       configs:
         Staging:
           PRODUCT_BUNDLE_IDENTIFIER: com.pittech.staging

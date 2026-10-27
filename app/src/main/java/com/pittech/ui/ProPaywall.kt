@@ -306,8 +306,10 @@ private fun ProExpiredFallbackDialog(subscription: SubscriptionManager, entry: P
         return
     }
     val scope = rememberCoroutineScope()
-    // PL-22 (DD-6): the expired-Pro fallback is a status surface — a sheet.
-    SheetSurface(
+    // TURN-IN (§5.11/§7 disposition): the expired-Pro fallback is a full
+    // gate screen on both platforms — the same FullScreenSurface the Pro
+    // loading state uses, not a sheet. Copy, tags, and actions unchanged.
+    FullScreenSurface(
         onDismiss = { subscription.closePaywall() },
         title = entry.title,
         actions = { TextButton(onClick = { subscription.closePaywall() }, modifier = Modifier.testTag("pro-close")) { Text("Close") } },

@@ -138,13 +138,12 @@ internal fun CrashRecoveryScreen(
             }
 
             if (showTechnicalDetails) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                // The technical details take the same laminated card as
+                // the report above them (Slice 7 reconciliation).
+                TurnInCard(Modifier.fillMaxWidth()) {
                     Text(
                         report.details,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = PitTechTextStyles.body,
                         fontFamily = FontFamily.Monospace,
                     )
                 }

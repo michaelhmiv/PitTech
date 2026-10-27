@@ -589,6 +589,16 @@ struct ProRecapBuilderView: View {
 
 // MARK: - Pro customization (share-card entry)
 
+/// The customization tiles' icon previews: one imageset per variant,
+/// rendered from the same masters as the launcher icons themselves.
+func iconPreviewName(_ variantId: String) -> String {
+    switch variantId {
+    case "ember": return "ProIconEmber"
+    case "midnight": return "ProIconMidnight"
+    default: return "ProIconClassic"
+    }
+}
+
 struct ProCustomizationView: View {
     @Environment(ProSubscriptionCoordinator.self) private var pro
     @Environment(ProCustomizationStore.self) private var customization
@@ -623,8 +633,7 @@ struct ProCustomizationView: View {
 
     private var themeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Share-card themes")
-                .font(.headline)
+            TurnInBannerText("Share-card themes")
             ForEach(ProCustomization.cardThemes, id: \.id) { theme in
                 let previewed = customization.previewThemeId ?? customization.themeId
                 VStack(alignment: .leading, spacing: 8) {
@@ -642,16 +651,14 @@ struct ProCustomizationView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(PitTechStyle.ink)
                                 if theme.isPro {
-                                    Text("Pro")
-                                        .font(.caption)
-                                        .foregroundStyle(PitTechStyle.supporting)
+                                    TurnInProTag()
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             if customization.themeId == theme.id {
                                 Text("Applied")
-                                    .font(.caption)
-                                    .foregroundStyle(PitTechStyle.supporting)
+                                    .font(PitTechFont.monoMeta)
+                                    .foregroundStyle(PitTechStyle.attentionText)
                                     .accessibilityIdentifier("pro-theme-applied-\(theme.id)")
                             }
                         }
@@ -681,16 +688,16 @@ struct ProCustomizationView: View {
                         }
                     }
                 }
-                .padding(18)
+                .padding(16)
                 .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
             }
         }
     }
 
     private var paletteSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Chart palettes")
-                .font(.headline)
+            TurnInBannerText("Chart palettes")
             Text("Every palette is contrast-verified against its background.")
                 .font(.caption)
                 .foregroundStyle(PitTechStyle.supporting)
@@ -714,16 +721,14 @@ struct ProCustomizationView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(PitTechStyle.ink)
                                 if palette.isPro {
-                                    Text("Pro")
-                                        .font(.caption)
-                                        .foregroundStyle(PitTechStyle.supporting)
+                                    TurnInProTag()
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             if customization.paletteId == palette.id {
                                 Text("Applied")
-                                    .font(.caption)
-                                    .foregroundStyle(PitTechStyle.supporting)
+                                    .font(PitTechFont.monoMeta)
+                                    .foregroundStyle(PitTechStyle.attentionText)
                                     .accessibilityIdentifier("pro-palette-applied-\(palette.id)")
                             }
                         }
@@ -737,16 +742,16 @@ struct ProCustomizationView: View {
                             .accessibilityIdentifier("pro-palette-apply-\(palette.id)")
                     }
                 }
-                .padding(18)
+                .padding(16)
                 .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
             }
         }
     }
 
     private var profileSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Public profile presentation")
-                .font(.headline)
+            TurnInBannerText("Public profile presentation")
             Text("Restrained styling for named public cookbooks only. Anonymous publications never carry Pro styling or identity.")
                 .font(.caption)
                 .foregroundStyle(PitTechStyle.supporting)
@@ -767,8 +772,8 @@ struct ProCustomizationView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if customization.profileAccentId == accent.id {
                                 Text("Applied")
-                                    .font(.caption)
-                                    .foregroundStyle(PitTechStyle.supporting)
+                                    .font(PitTechFont.monoMeta)
+                                    .foregroundStyle(PitTechStyle.attentionText)
                                     .accessibilityIdentifier("pro-profile-applied-\(accent.id)")
                             }
                         }
@@ -784,12 +789,12 @@ struct ProCustomizationView: View {
                         .accessibilityIdentifier("pro-profile-apply-\(accent.id)")
                     }
                 }
-                .padding(18)
+                .padding(16)
                 .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("Cookbook layout")
-                    .font(.subheadline)
+                TurnInBannerText("Cookbook layout")
                 Picker("Cookbook layout", selection: Binding(
                     get: { customization.previewProfileLayout ?? customization.profileLayout },
                     set: { customization.previewProfileLayout = $0 }
@@ -807,15 +812,15 @@ struct ProCustomizationView: View {
                 .frame(minHeight: 44)
                 .accessibilityIdentifier("pro-profile-apply-layout")
             }
-            .padding(18)
+            .padding(16)
             .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         }
     }
 
     private var iconSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("App icons")
-                .font(.headline)
+            TurnInBannerText("App icons")
             ForEach(ProCustomization.iconVariants, id: \.id) { variant in
                 let previewed = customization.previewIconId ?? customization.iconId
                 VStack(alignment: .leading, spacing: 8) {
@@ -823,30 +828,27 @@ struct ProCustomizationView: View {
                         customization.previewIconId = variant.id
                     } label: {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(PitTechStyle.surface)
+                            // Slice 7: the tiles show the real icon art —
+                            // the same compositions the launcher ships
+                            // (primary + the two Pro alternate icon sets).
+                            Image(iconPreviewName(variant.id))
+                                .resizable()
                                 .frame(width: 44, height: 44)
-                                .overlay(
-                                    Text(String(variant.name.prefix(1)))
-                                        .font(.headline)
-                                        .foregroundStyle(PitTechStyle.accent)
-                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(variant.name)
                                     .font(.subheadline)
                                     .foregroundStyle(PitTechStyle.ink)
                                 if variant.isPro {
-                                    Text("Pro")
-                                        .font(.caption)
-                                        .foregroundStyle(PitTechStyle.supporting)
+                                    TurnInProTag()
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             if customization.iconId == variant.id {
                                 Text("Applied")
-                                    .font(.caption)
-                                    .foregroundStyle(PitTechStyle.supporting)
+                                    .font(PitTechFont.monoMeta)
+                                    .foregroundStyle(PitTechStyle.attentionText)
                                     .accessibilityIdentifier("pro-icon-applied-\(variant.id)")
                             }
                         }
@@ -860,13 +862,14 @@ struct ProCustomizationView: View {
                             .accessibilityIdentifier("pro-icon-apply-\(variant.id)")
                     }
                 }
-                .padding(18)
+                .padding(16)
                 .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
             }
             if let notice = customization.iconNotice {
-                Text(notice)
-                    .font(.subheadline)
-                    .foregroundStyle(PitTechStyle.supporting)
+                // Frame `23-customization`: an icon-apply result rides
+                // the shell as a flag strip, not a loose line of text.
+                TurnInStatusStrip(text: notice, accent: PitTechStyle.flag)
                     .accessibilityIdentifier("pro-icon-notice")
             }
         }
@@ -907,6 +910,24 @@ struct ProMoreHubView: View {
                     Text("Your Pro library: personal analysis, advanced curves, recaps, and customization — all from cooks recorded on this device.")
                         .font(.subheadline)
                         .foregroundStyle(PitTechStyle.supporting)
+                    // TURN-IN (Slice 7, Area 07 frame `10-pro-hub` — A7 is
+                    // canonical for Pro): the hub carries the subscription
+                    // itself — status plus the same App Store manage
+                    // destination the paywall's `pro-manage` opens. The hub
+                    // only renders for an entitled account (the gate routes
+                    // it), so the status line is a fact, not a promise.
+                    TurnInCard {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TurnInBannerText("Subscription")
+                            Text("Active on this account")
+                                .font(PitTechFont.metaLabel)
+                                .tracking(PitTechFont.metaLabelTracking)
+                                .foregroundStyle(PitTechStyle.inkMuted)
+                            Link("Manage subscription", destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
+                                .frame(minHeight: 44)
+                                .accessibilityIdentifier("pro-hub-manage")
+                        }
+                    }
                     ForEach(proHubEntries, id: \.entry) { item in
                         Button { pro.openPro(item.entry) } label: {
                             HStack(spacing: 14) {
