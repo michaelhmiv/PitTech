@@ -203,7 +203,13 @@ final class ProPaywallUITests: XCTestCase {
             let finish = app.buttons["finish-meal"]
             reveal(finish, app: app)
             finish.tap()
-            XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 5))
+            // 20s, matching CommunityBenchmarksUITests' wait for this same
+            // alert: at large text on a loaded runner the alert's
+            // presentation outlasted a 5s wait (PR #222 ui-3: the tap
+            // synthesized and the app idled, but the alert had not
+            // presented within 5.25s; the sibling test's 20s wait for the
+            // identical alert passed in the same job).
+            XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 20))
             app.alerts.buttons["Finish meal"].tap()
             XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15))
             assertNoProSurface(app: app)
