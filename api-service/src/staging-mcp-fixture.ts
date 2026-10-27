@@ -121,7 +121,7 @@ async function deleteB(runtime: Runtime, pool: Pool) {
   });
   assert(write && !('error' in write), 'fixture MCP write failed: ' + JSON.stringify(write).slice(0, 300));
   const result = (write as { result?: { isError?: boolean } }).result;
-  assert(!result?.isError, 'fixture MCP write returned an error');
+  assert(!result?.isError, 'fixture MCP write returned an error: ' + JSON.stringify(write).slice(0, 400));
   step('b_write_applied');
   const before = await residue(pool, userB);
   console.info('FIXTURE_B_RESIDUE_BEFORE=' + JSON.stringify(before));
