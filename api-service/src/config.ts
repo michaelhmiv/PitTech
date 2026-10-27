@@ -21,7 +21,8 @@ import { PrivateSnapshots, type SyncStorageLimits } from './sync-snapshots.ts';
 import { PrivatePhotos } from './sync-photos.ts';
 import { privateLibraryEnvelope } from './sync-projection.ts';
 import { CommunityAggregates, PostgresCommunityStore } from './community-aggregation.ts';
-import { McpGrants, PostgresMcpGrantStore, PostgresMcpOperationJournal, SubscriptionsEntitlementLookup } from './mcp-grants.ts';
+import { McpGrants, PostgresMcpGrantStore, PostgresMcpOperationJournal, SubscriptionsEntitlementLookup, type McpEntitlementLookup } from './mcp-grants.ts';
+import { parseMcpTestProEmails, TestProEntitlementLookup } from './mcp-test-entitlement.ts';
 import { PostgresMcpPortabilityStore } from './mcp-portability.ts';
 import { PostgresMcpDeviceStore } from './mcp-device.ts';
 import { McpOAuth, PostgresMcpOAuthStore, type McpOAuthClient } from './mcp-oauth.ts';
@@ -172,7 +173,17 @@ export function createRuntime() {
   const mcpEnabled=process.env.MCP_ENABLED==='true';
   if(mcpEnabled&&(!auth||!subscriptions||!sync))throw new Error('MCP requires accounts, subscriptions and private sync');
   const mcpWritesEnabled=mcpEnabled&&process.env.MCP_WRITES_ENABLED==='true';
-  const mcp=mcpEnabled?new McpGrants(new PostgresMcpGrantStore(pool),authSecrets!,new SubscriptionsEntitlementLookup(subscriptions!),Date.now):undefined;
+  // The MCP entitlement lookup reads the store environment the deployment's
+  // own purchases can produce: staging clients buy through the stores'
+  // sandbox, production clients through production. (Before #114 acceptance,
+  // the lookup was hardcoded to 'production', which no staging purchase can
+  // ever satisfy.) MCP_TEST_PRO_EMAILS additionally marks named staging
+  // accounts as Pro for acceptance testing; parseMcpTestProEmails refuses
+  // the boot when it is set outside staging.
+  const testProEmails = parseMcpTestProEmails(process.env.MCP_TEST_PRO_EMAILS, online.environment);
+  let mcpEntitlement: McpEntitlementLookup = new SubscriptionsEntitlementLookup(subscriptions!, online.environment === 'staging' ? 'sandbox' : 'production');
+  if (testProEmails.length) mcpEntitlement = new TestProEntitlementLookup(pool, testProEmails, mcpEntitlement);
+  const mcp=mcpEnabled?new McpGrants(new PostgresMcpGrantStore(pool),authSecrets!,mcpEntitlement,Date.now):undefined;
   // OAuth clients are deployment configuration only: no dynamic client
   // registration exists, and a malformed registry fails the boot rather
   // than authorizing an unintended client. No clients configured → the
