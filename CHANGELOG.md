@@ -4,6 +4,9 @@ Important, user-visible changes to PitTech are recorded here. GitHub Releases pr
 
 This file begins with a truthful **development baseline** rather than inventing releases or historical version tags.
 
+### Fixed
+- The PitTech Pro alternate app icons (Ember and Midnight) now ship in the iPhone app. The app declared the icons without including the artwork, and App Store Connect rejected the upload (build 540, ITMS-90032); the icon sets and the build setting that bundles them are now in place.
+
 ## [Unreleased]
 
 ### Added

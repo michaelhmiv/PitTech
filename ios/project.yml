@@ -74,9 +74,12 @@ targets:
         PITTECH_LINK_SCHEME: "pittech"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: PitTech/PitTech.entitlements
-        # Slice 7 (TURN-IN, Area 07): the Pro alternate app icons declared in
-        # Info.plist's CFBundleAlternateIcons ship as asset-catalog icon
-        # sets; actool only compiles them when they are named here.
+        # The Pro alternate app icons declared in Info.plist's
+        # CFBundleAlternateIcons ship as asset-catalog icon sets; actool
+        # only compiles them when they are named here. Brought to main
+        # ahead of the TURN-IN merge: build 540 was rejected by App Store
+        # Connect with ITMS-90032 because the declaration shipped without
+        # the icon sets or this setting.
         ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES:
           - ProEmber
           - ProMidnight
