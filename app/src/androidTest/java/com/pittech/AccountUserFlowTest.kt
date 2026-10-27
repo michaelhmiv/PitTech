@@ -79,8 +79,16 @@ import android.graphics.Bitmap
         try{
             compose.setContent{PitTechTheme{AccountContent(account)}}
             compose.onNodeWithTag("account-delete").performScrollTo().performClick()
-            compose.onNodeWithTag("account-deletion-submit").assertIsNotEnabled();assertEquals(0,requests)
+            // TURN-IN two-step review (BUILD-SPEC §7): step 1 is scope +
+            // acknowledgement — the Continue gate stands where the submit
+            // gate stood; the type-DELETE gate is unchanged on step 2.
+            compose.onNodeWithTag("account-deletion-continue").assertIsNotEnabled();assertEquals(0,requests)
             compose.onNodeWithTag("account-deletion-acknowledge").performScrollTo().performClick()
+            // The Continue control is the dialog's confirm button — outside
+            // the scrollable text column, so it is clicked directly (the
+            // same treatment the submit button always had).
+            compose.onNodeWithTag("account-deletion-continue").performClick()
+            compose.onNodeWithTag("account-deletion-submit").assertIsNotEnabled()
             compose.onNodeWithTag("account-deletion-confirmation").performScrollTo().performTextReplacement("DELETE")
             screenshot("account-deletion-review")
             compose.onNodeWithTag("account-deletion-submit").performClick()

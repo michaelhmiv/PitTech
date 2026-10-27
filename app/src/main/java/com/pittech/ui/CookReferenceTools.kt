@@ -29,16 +29,36 @@ internal fun CookLearningTools(data: CookDetailData, viewModel: CooksViewModel) 
         data.results.filter { it.resultType in setOf("keep_doing", "change_next_time") }.forEach { result -> Text("${if (result.resultType == "keep_doing") "Keep doing" else "Change next time"}: ${result.textValue.orEmpty()}") }
     }
     if (editTags) {
-        var method by remember { mutableStateOf(data.results.firstOrNull { it.resultType == "method" }?.textValue.orEmpty()) }
-        var tags by remember { mutableStateOf(data.results.firstOrNull { it.resultType == "tags" }?.textValue.orEmpty()) }
-        SheetSurface(onDismiss = { editTags = false }, title = "Find this cook again", actions = {
-            TextButton(onClick = { editTags = false }) { Text("Cancel") }
-            TextButton(onClick = { viewModel.saveCookTags(data.cook.id, method, tags); editTags = false }) { Text("Save") }
-        }) { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(method, { method = it }, label = { Text("Method (optional)") }, placeholder = { Text("No wrap, hot and fast, foil boat") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(tags, { tags = it }, label = { Text("Tags (optional)") }, modifier = Modifier.fillMaxWidth())
-        } }
+        MethodTagsSheet(data, viewModel) { editTags = false }
     }
+}
+
+/**
+ * The Method & Tags editor (A2 `method-tags`): one sheet, opened from the
+ * Live tab's learning tools and from the finished cook's results card —
+ * the same fields and the same save either way. TURN-IN composition: the
+ * cook's name as the sheet kicker, the fields as boxed fields (§4) with
+ * their labels riding above the box. The favorite toggle and the
+ * keep/change lessons keep their existing homes (the tools row and the
+ * results editor); this sheet edits method and tags only, exactly as the
+ * save it calls has always done.
+ */
+@Composable
+internal fun MethodTagsSheet(data: CookDetailData, viewModel: CooksViewModel, onDismiss: () -> Unit) {
+    var method by remember { mutableStateOf(data.results.firstOrNull { it.resultType == "method" }?.textValue.orEmpty()) }
+    var tags by remember { mutableStateOf(data.results.firstOrNull { it.resultType == "tags" }?.textValue.orEmpty()) }
+    SheetSurface(onDismiss = onDismiss, title = "Find this cook again", actions = {
+        TextButton(onClick = onDismiss) { Text("Cancel") }
+        TextButton(onClick = { viewModel.saveCookTags(data.cook.id, method, tags); onDismiss() }) { Text("Save") }
+    }) { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        TurnInSheetKicker(data.cook.title)
+        TurnInBoxedField("Method") {
+            OutlinedTextField(method, { method = it }, placeholder = { Text("No wrap, hot and fast, foil boat") }, modifier = Modifier.fillMaxWidth())
+        }
+        TurnInBoxedField("Tags · feed history search") {
+            OutlinedTextField(tags, { tags = it }, modifier = Modifier.fillMaxWidth())
+        }
+    } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,7 +84,8 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
     OutlinedButton(onClick = { show = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Compare with a previous cook") }
     if (show) ModalBottomSheet(onDismissRequest = { show = false }) {
         Column(Modifier.heightIn(max = 650.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Reference cook", style = MaterialTheme.typography.titleLarge)
+            TurnInSheetKicker("Compare · ${data.cook.title}")
+            TurnInBannerText("Reference cook", style = PitTechTextStyles.bannerTitle)
             Text("Choose one dish and one recorded channel from each cook. Curves show what was recorded, not a promise about when this cook will finish.")
             val dishLabels = data.dishes.mapIndexed { i, d -> "${i + 1}. ${d.name}" }
             ChoiceField("Current dish", data.dishes.indexOfFirst { it.id == dishId }.takeIf { it >= 0 }?.let { dishLabels[it] } ?: "Choose dish", dishLabels) { label -> dishId = data.dishes[dishLabels.indexOf(label)].id }
@@ -88,26 +109,37 @@ internal fun ReferenceComparisonTools(data: CookDetailData, viewModel: CooksView
                 val sourceEvents = history.events.let { com.pittech.data.notePlanEvents(it) }
                 val currentAnchor = CookReferenceCodec.anchor(currentEvents, dishId, anchor)
                 val sourceAnchor = CookReferenceCodec.anchor(sourceEvents, sourceDishId, anchor)
-                if (currentAnchor == null || sourceAnchor == null) Text("Log ${PlaybookCodec.actions[anchor]} for both dishes to align their curves.")
-                else if (currentKey == null || sourceKey == null) Text("Choose both channels to compare temperatures.")
-                else if ((currentChannels.getValue(currentKey).last().measurementType in setOf("pit", "pit_ambient", "ambient_temperature")) != (sourceChannels.getValue(sourceKey).last().measurementType in setOf("pit", "pit_ambient", "ambient_temperature"))) Text("Choose two food channels or two pit channels for a like-for-like comparison.")
+                // The anchor-mismatch state (A2 `reference-error`): when
+                // either dish is missing the alignment action, the sheet
+                // says so on a flag strip instead of drawing curves.
+                if (currentAnchor == null || sourceAnchor == null) TurnInStatusStrip("Log ${PlaybookCodec.actions[anchor]} for both dishes to align their curves.", pitTechTokens().flag)
+                else if (currentKey == null || sourceKey == null) TurnInStatusStrip("Choose both channels to compare temperatures.", pitTechTokens().marigold)
+                else if ((currentChannels.getValue(currentKey).last().measurementType in setOf("pit", "pit_ambient", "ambient_temperature")) != (sourceChannels.getValue(sourceKey).last().measurementType in setOf("pit", "pit_ambient", "ambient_temperature"))) TurnInStatusStrip("Choose two food channels or two pit channels for a like-for-like comparison.", pitTechTokens().flag)
                 else {
                     val currentReadings = currentChannels.getValue(currentKey)
                     val referenceReadings = sourceChannels.getValue(sourceKey)
                     fun scoped(events: List<TimelineEventEntity>, id: String) = events.filter { it.dishId == id || id in CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.orEmpty() || it.dishId == null && CookNoteMetadata.decode(it.noteMetadataJson)?.dishIds.isNullOrEmpty() && PlaybookCodec.action(it.eventType, it.noteMetadataJson) in CookPhases.phaseActions }
-                    TemperatureChart(currentReadings + referenceReadings, cookNames = mapOf(data.cook.id to "This cook", history.cook.id to "Previous cook"), cookStartTimes = mapOf(data.cook.id to currentAnchor, history.cook.id to sourceAnchor), displayUnit = displayUnit,
-                        markers = scoped(data.events, dishId) + scoped(history.events, sourceDishId), onMarker = { event -> show = false; viewModel.openCook(event.cookId) },
-                        targets = data.targets.filter { it.dishId == dishId } + history.targets.filter { it.dishId == sourceDishId },
-                        targetHistory = data.targetHistory.filter { it.dishId == dishId } + history.targetHistory.filter { it.dishId == sourceDishId },
-                        photos = data.photos.filter { it.dishId == dishId } + history.photos.filter { it.dishId == sourceDishId },
-                        connectionGaps = data.events.filter { it.eventType == "connection_gap" } + history.events.filter { it.eventType == "connection_gap" })
-                    Text("Minutes since ${PlaybookCodec.actions[anchor]} · units normalized · gaps remain empty")
-                    PlaybookCodec.actions.keys.forEach { action ->
-                        val current = currentEvents.firstOrNull { (it.dishId == dishId || it.dishId == null) && it.action == action }
-                        val reference = sourceEvents.firstOrNull { (it.dishId == sourceDishId || it.dishId == null) && it.action == action }
-                        if (current != null || reference != null) Text("${PlaybookCodec.actions[action]} · current ${current?.let { "${(it.at - currentAnchor) / 60_000}m" } ?: "—"} · reference ${reference?.let { "${(it.at - sourceAnchor) / 60_000}m" } ?: "—"}")
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TemperatureChart(currentReadings + referenceReadings, cookNames = mapOf(data.cook.id to "This cook", history.cook.id to "Previous cook"), cookStartTimes = mapOf(data.cook.id to currentAnchor, history.cook.id to sourceAnchor), displayUnit = displayUnit,
+                                markers = scoped(data.events, dishId) + scoped(history.events, sourceDishId), onMarker = { event -> show = false; viewModel.openCook(event.cookId) },
+                                targets = data.targets.filter { it.dishId == dishId } + history.targets.filter { it.dishId == sourceDishId },
+                                targetHistory = data.targetHistory.filter { it.dishId == dishId } + history.targetHistory.filter { it.dishId == sourceDishId },
+                                photos = data.photos.filter { it.dishId == dishId } + history.photos.filter { it.dishId == sourceDishId },
+                                connectionGaps = data.events.filter { it.eventType == "connection_gap" } + history.events.filter { it.eventType == "connection_gap" })
+                            Text("Minutes since ${PlaybookCodec.actions[anchor]} · units normalized · gaps remain empty", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                            PlaybookCodec.actions.keys.forEach { action ->
+                                val current = currentEvents.firstOrNull { (it.dishId == dishId || it.dishId == null) && it.action == action }
+                                val reference = sourceEvents.firstOrNull { (it.dishId == sourceDishId || it.dishId == null) && it.action == action }
+                                if (current != null || reference != null) Text("${PlaybookCodec.actions[action]} · current ${current?.let { "${(it.at - currentAnchor) / 60_000}m" } ?: "—"} · reference ${reference?.let { "${(it.at - sourceAnchor) / 60_000}m" } ?: "—"}", style = PitTechTextStyles.monoMeta)
+                            }
+                        }
                     }
-                    history.results.filter { it.dishId == sourceDishId && it.resultType in setOf("keep_doing", "change_next_time", "result_notes") }.forEach { Text(it.textValue.orEmpty()) }
+                    val previousResults = history.results.filter { it.dishId == sourceDishId && it.resultType in setOf("keep_doing", "change_next_time", "result_notes") }
+                    if (previousResults.isNotEmpty()) {
+                        TurnInMetaLabel("Previous result")
+                        previousResults.forEach { Text(it.textValue.orEmpty()) }
+                    }
                     Button(onClick = { viewModel.saveCookReference(data.cook.id, CookReference(dishId, sourceCookId, sourceDishId, currentProbe, sourceProbe, anchor, currentKey, sourceKey)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use this reference") }
                 }
                 TextButton(onClick = { show = false; viewModel.openCook(history.cook.id) }) { Text("Open reference timeline, notes and photos") }

@@ -578,27 +578,30 @@ struct InsightsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    SectionTitle(title: "Insights", subtitle: "Patterns from the cooks you record.")
-                    // PL-21 (DD-3): the Focus List header is a compact stat
-                    // strip — the same five figures the card grid carried,
-                    // none dropped, at a fraction of the height.
+                    // TURN-IN (Slice 2, Area 02 `history-populated`): the
+                    // totals band leads — the in-content title header goes
+                    // (the navigation title already says Insights, §3.1).
+                    // PL-21 (DD-3): the band carries the same five figures
+                    // the stat strip carried, none dropped.
                     let durations = store.completedCooks.compactMap { cook -> Double? in
                         guard let end = cook.endedAtUtcMillis, end >= cook.startedAtUtcMillis else { return nil }
                         return Double(end - cook.startedAtUtcMillis) / 3_600_000
                     }
-                    HStack(alignment: .top, spacing: 16) {
-                        InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
-                        InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
-                        InsightsStat(value: "\(store.library.readings.count)", label: "Temperature readings")
-                        InsightsStat(value: "\(store.library.events.count)", label: "Timeline notes")
-                        if let average = durations.average {
-                            InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Average session time")
+                    TurnInCard {
+                        HStack(alignment: .top, spacing: 16) {
+                            InsightsStat(value: "\(store.completedCooks.count)", label: "Finished cooks")
+                            InsightsStat(value: "\(store.activeCooks.count)", label: "Active now")
+                            InsightsStat(value: "\(store.library.readings.count)", label: "Temperature readings")
+                            InsightsStat(value: "\(store.library.events.count)", label: "Timeline notes")
+                            if let average = durations.average {
+                                InsightsStat(value: average < 24 ? "\(average.formatted(.number.precision(.fractionLength(1)))) hr" : "\((average / 24).formatted(.number.precision(.fractionLength(1)))) days", label: "Average session time")
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     if !store.completedCooks.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("RECENTLY FINISHED").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            TurnInMetaLabel("Recently finished")
                             // PL-21: recently-finished cards open the cook,
                             // like the Meals history cards do.
                             ForEach(store.completedCooks.prefix(5)) { cook in
@@ -623,7 +626,7 @@ struct InsightsView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("DEEPER ANALYSIS").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        TurnInMetaLabel("Deeper analysis")
                         ProEntryRow(entry: .analysis)
                         ProEntryRow(entry: .curves)
                         ProEntryRow(entry: .benchmarks)
@@ -638,15 +641,17 @@ struct InsightsView: View {
     }
 }
 
-/// One figure in the Insights Focus List header strip (PL-21 / DD-3).
+/// One figure in the Insights totals band (PL-21 / DD-3; TURN-IN Slice 2:
+/// the value rides the mono readout token, the label the meta-label face —
+/// the label's words stay literal, they are asserted by name).
 private struct InsightsStat: View {
     let value: String
     let label: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink)
+            Text(label).font(PitTechFont.metaLabel).tracking(PitTechFont.metaLabelTracking).foregroundStyle(PitTechStyle.inkMuted)
         }
     }
 }
@@ -668,7 +673,7 @@ struct SettingsView: View {
                 // Appearance, Units, Cook notifications, Your data,
                 // Feedback, Ads and privacy, About — same contents per
                 // section on both platforms, platform mechanics aside.
-                Section("Appearance") {
+                Section {
                     // TURN-IN (BUILD-SPEC §3.4, copy delta §1.1.1): the working
                     // Dark / Light / System control designed in Area 06 frame
                     // f01 replaces the #172 informational row. The selection
@@ -687,34 +692,39 @@ struct SettingsView: View {
                     Text("Dark is the default — light is the same layout.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
-                Section("Units") {
+                } header: { TurnInBannerText("Appearance") }
+                Section {
+                    // Area-06 `f01`: units ride segmented controls with the
+                    // short unit labels, like the appearance control above
+                    // (preference tags and values unchanged).
                     Picker("Temperature", selection: Binding(
                         get: { store.temperatureUnit },
                         set: { store.setPreference("temperatureUnit", value: $0) }
                     )) {
-                        Text("Fahrenheit").tag("F")
-                        Text("Celsius").tag("C")
+                        Text("°F").tag("F")
+                        Text("°C").tag("C")
                     }
+                    .pickerStyle(.segmented)
                     Picker("Weight", selection: Binding(
                         get: { store.weightUnit },
                         set: { store.setPreference("weightUnit", value: $0) }
                     )) {
-                        Text("Pounds").tag("lb")
-                        Text("Kilograms").tag("kg")
+                        Text("lb").tag("lb")
+                        Text("kg").tag("kg")
                     }
+                    .pickerStyle(.segmented)
                     Text("Changing a preferred unit affects new entries. Existing records keep the unit in which you entered them.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
-                Section("Cook notifications") {
+                } header: { TurnInBannerText("Units") }
+                Section {
                     Text("Guidance reminders and monitoring alerts have separate sound settings. Turn on alerts from a cook when you want to use them.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(notificationsAllowed ? "Notifications allowed" : "Notifications are disabled")
                     Link("Notification settings", destination: URL(string: UIApplication.openSettingsURLString)!)
-                }
-                Section("Your data") {
+                } header: { TurnInBannerText("Cook notifications") }
+                Section {
                     Text(SettingsCopy.dataStaysLine)
                         .font(.subheadline)
                     Text(SettingsCopy.fullBackupScope)
@@ -730,29 +740,38 @@ struct SettingsView: View {
                     }
                     Button("Restore cook archive") { showingImport = true }
                     NativeDataExportButtons()
-                }
-                Section("Feedback") {
+                } header: { TurnInBannerText("Your data") }
+                Section {
                     Text("Tell us about a problem or suggest a feature without needing a GitHub account. Cook records and photos are never included.")
                         .font(.subheadline)
                     NavigationLink("Feedback & feature ideas") { NativeFeedbackView() }
-                }
-                Section("Ads and privacy") {
+                } header: { TurnInBannerText("Feedback") }
+                Section {
                     Link("Privacy policy", destination: URL(string: "https://pittech-privacy-production.up.railway.app")!)
                     if adsConsent.isPrivacyOptionsRequired {
                         Button("Privacy choices") {
                             Task { await adsConsent.presentPrivacyOptions() }
                         }
                     }
-                }
-                Section("About") {
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                } header: { TurnInBannerText("Ads and privacy") }
+                Section {
+                    // Area-06 `f01`: the version line rides the mono face.
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                            .font(PitTechFont.monoMeta)
+                            .foregroundStyle(PitTechStyle.inkMuted)
+                    }
                     Link("Contact support", destination: URL(string: "mailto:sportfolioholdings@gmail.com")!)
                     NavigationLink("Third-party telemetry notices") {
-                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(.caption).padding() }.navigationTitle("Third-party notices")
+                        ScrollView { Text((Bundle.main.url(forResource: "TelemetryNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "No telemetry dependency notices in this build.").font(PitTechFont.bodySmall).padding() }.navigationTitle("Third-party notices")
                     }
-                }
+                } header: { TurnInBannerText("About") }
             }
             .navigationTitle("Settings")
+            .scrollContentBackground(.hidden)
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .task { notificationsAllowed = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized }
             .fileExporter(isPresented: $showingExport, document: exportDocument, contentType: .zip, defaultFilename: "PitTech-Cooks") { result in
                 if case .failure = result { archiveError = "PitTech couldn't save the backup to that location." }

@@ -201,3 +201,166 @@ struct TurnInStars: View {
         .accessibilityLabel("Rated \(Int(rating)) of 5")
     }
 }
+
+/// Sheet chrome (§4): a small mono context kicker above a sheet's title —
+/// the content name stays the title; the kicker names where you are.
+/// Added in Slice 2, the first slice whose iOS sheets carry one (the
+/// results editor and the reference surfaces); Android's kit has carried
+/// it since Slice 1.
+struct TurnInSheetKicker: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(PitTechFont.monoMeta)
+            .foregroundStyle(PitTechStyle.inkMuted)
+    }
+}
+
+/// A state strip (paused / stale / mismatch): raised surface with an
+/// accent edge and a plain factual line (§4). Added in Slice 2 for the
+/// reference surfaces' mismatch states; Android's kit has carried it
+/// since Slice 1.
+struct TurnInStatusStrip: View {
+    let text: String
+    let accent: Color
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(accent).frame(width: 4)
+            Text(text)
+                .font(PitTechFont.body)
+                .foregroundStyle(PitTechStyle.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+        }
+        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// A single raised fact cell: mono value under a meta label. Added in
+/// Slice 3 for the recipe detail scoreboard (pit temperature, serves,
+/// target) — the same cell Android carries as `TurnInScoreCell`.
+struct TurnInScoreCell: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TurnInMetaLabel(label)
+            Text(value)
+                .font(PitTechFont.monoReadout)
+                .foregroundStyle(PitTechStyle.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(PitTechStyle.ruling, lineWidth: 1))
+    }
+}
+
+/// Scope chip (area-06 `c01`): one granted scope as a small bordered pill —
+/// the label renders verbatim (scope names are the app's own words; this
+/// component never transforms its string). Added in Slice 6.
+struct TurnInScopeChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(PitTechFont.bodySmall)
+            .foregroundStyle(PitTechStyle.ink)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(PitTechStyle.ruling, lineWidth: 1))
+    }
+}
+
+/// Wrapping row layout for chips (Slice 6): lays subviews left-to-right,
+/// wrapping to the next line at the proposed width — the scope chips on a
+/// grant card flow instead of truncating.
+struct TurnInFlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth == .infinity ? x : maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + size.width > bounds.maxX { x = bounds.minX; y += rowHeight + spacing; rowHeight = 0 }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+/// The marigold PRO tag (§3.1): a fill, so its text is navy on-accent,
+/// never white. Added in Slice 2 for the Pro entry rows and hub; Slice 7
+/// reconciles the remaining Pro surfaces to it.
+struct TurnInProTag: View {
+    var body: some View {
+        Text("PRO")
+            .font(PitTechFont.monoMeta)
+            .foregroundStyle(PitTechStyle.onAccent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(PitTechStyle.marigold, in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// One boxed field (§4) for form surfaces: the field keeps its own title
+/// (placeholder and accessibility label, unchanged) and gains the boxed
+/// treatment — raised surface, ruling border, rounded corners. The same
+/// recipe Slice 2 applied privately in the results editor, shared from
+/// Slice 5 for the community and sharing forms. Renders its label text
+/// verbatim — no transforms, per the kit law.
+struct TurnInBoxedFieldModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(PitTechFont.body)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
+    }
+}
+
+extension View {
+    func turnInBoxedField() -> some View { modifier(TurnInBoxedFieldModifier()) }
+}
+
+/// Dashed explanatory card (§4): an empty state that teaches — a dashed
+/// ruling outline on the ground. Android's kit has carried it since
+/// Slice 4; added here in Slice 5 for the community and sharing empties.
+struct TurnInDashedCard<Content: View>: View {
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(PitTechStyle.ruling, style: StrokeStyle(lineWidth: 1, dash: [8, 6]))
+            )
+    }
+}

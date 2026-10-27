@@ -29,6 +29,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -349,6 +353,94 @@ internal fun TurnInBoxedField(
     }
 }
 
+/** Boxed field with a literal-case label (§4): the field names on the
+ * connect and equipment forms are the app's own words — tests name them
+ * exactly — so the label takes the metaLabel style (the §3.2 floor)
+ * without the caps transform [TurnInMetaLabel] applies. Added in Slice 4. */
+@Composable
+internal fun TurnInLiteralBoxedField(
+    label: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = PitTechTextStyles.metaLabel, color = pitTechTokens().inkMuted)
+        content()
+    }
+}
+
+/** Dashed explanatory card (area-04 `d02`/`d22`): an empty state that
+ * teaches — a dashed ruling outline on the ground, its copy centered.
+ * Added in Slice 4 for the equipment-empty and attach-empty states. */
+@Composable
+internal fun TurnInDashedCard(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val tokens = pitTechTokens()
+    Box(
+        modifier
+            .drawBehind {
+                drawRoundRect(
+                    color = tokens.ruling,
+                    style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))),
+                    cornerRadius = CornerRadius(16.dp.toPx()),
+                )
+            }
+            .padding(20.dp),
+    ) { content() }
+}
+
+/** Boxed score cell (§4): one rated/scored/status value in a raised box —
+ * a caps meta label over a mono readout. Canonical: area-02 `stats`,
+ * area-03 `dark-15-playbook-detail` (setpoint / smoker / dishes / steps)
+ * and `dark-04-recipe-detail` (pit / cook / serves / target). */
+@Composable
+internal fun TurnInScoreCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = pitTechTokens()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = tokens.surfaceRaised,
+        contentColor = tokens.ink,
+        border = BorderStroke(1.dp, tokens.ruling),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            TurnInMetaLabel(label)
+            Text(value, style = PitTechTextStyles.monoReadout, color = tokens.ink)
+        }
+    }
+}
+
+/** The "Not started" stamp (area-03 `dark-27-upcoming`): a marigold
+ * outline with attention-text wording — a saved plan is visibly a plan,
+ * never a cook in progress (PL-10). */
+@Composable
+internal fun TurnInStamp(text: String, modifier: Modifier = Modifier) {
+    val tokens = pitTechTokens()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = Color.Transparent,
+        contentColor = tokens.attentionText,
+        border = BorderStroke(1.5.dp, tokens.marigold),
+    ) {
+        Text(
+            text,
+            style = PitTechTextStyles.monoMeta,
+            color = tokens.attentionText,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
 /** Sheet chrome (§4): a small mono context kicker above a sheet's title —
  * the content name stays the title; the kicker names where you are. */
 @Composable
@@ -359,4 +451,65 @@ internal fun TurnInSheetKicker(text: String, modifier: Modifier = Modifier) {
         color = pitTechTokens().inkMuted,
         modifier = modifier,
     )
+}
+
+/** Literal-case meta label (Slice 6): the §3.2-floor type style without the
+ * caps transform — for labels that carry data or are asserted verbatim by
+ * tests (account statuses, field names, scope names). The tracked style
+ * carries the look; the words stay the app's own. */
+@Composable
+internal fun TurnInLiteralMetaLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = pitTechTokens().inkMuted,
+) {
+    Text(text, style = PitTechTextStyles.metaLabel, color = color, modifier = modifier)
+}
+
+/** Status cell (§4, area-06 `a02`/`b01`/`e01`): one live status fact in a
+ * raised box — a literal meta label over a mono value. The Account sheet's
+ * five sections and the sync/data surfaces carry their state in these. */
+@Composable
+internal fun TurnInStatusCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = pitTechTokens().ink,
+) {
+    val tokens = pitTechTokens()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = tokens.surfaceRaised,
+        contentColor = tokens.ink,
+        border = BorderStroke(1.dp, tokens.ruling),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            TurnInLiteralMetaLabel(label)
+            Text(value, style = PitTechTextStyles.monoMeta, color = valueColor)
+        }
+    }
+}
+
+/** Scope chip (area-06 `c01`): one granted scope as a small bordered pill —
+ * the label renders verbatim (scope names are the app's own words). */
+@Composable
+internal fun TurnInScopeChip(text: String, modifier: Modifier = Modifier) {
+    val tokens = pitTechTokens()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = tokens.surfaceRaised,
+        contentColor = tokens.ink,
+        border = BorderStroke(1.dp, tokens.ruling),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
 }

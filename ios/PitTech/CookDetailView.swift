@@ -33,6 +33,23 @@ struct CookDetailView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             TurnInBannerText(cook.title, font: PitTechFont.bannerTitle).fixedSize(horizontal: false, vertical: true)
                             Text(cook.isActive ? (store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Active · legacy timing") : "Finished").font(PitTechFont.bodyEmphasis).foregroundStyle(PitTechStyle.emberText)
+                            // TURN-IN (Slice 2, Area 02 `cook-timeline`): a
+                            // finished cook's identity line — smoker, date,
+                            // and time on in mono, with its verdict stars.
+                            if !cook.isActive && cook.status == "completed" {
+                                HStack(spacing: 10) {
+                                    Text([
+                                        cook.smokerName.flatMap { $0.isEmpty ? nil : $0 },
+                                        cook.startedAt.formatted(date: .abbreviated, time: .omitted),
+                                        cook.endedAtUtcMillis.map { duration(Double($0 - cook.startedAtUtcMillis)) },
+                                    ].compactMap { $0 }.joined(separator: " · ").uppercased())
+                                        .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                                    Spacer()
+                                    if let rating = store.cookResults(cookId: cookId, dishId: nil).overallRating {
+                                        TurnInStars(rating: rating)
+                                    }
+                                }
+                            }
                             MealActionRow { Button("Edit cook") { showingEditCook = true }; Button("Add dish") { showingDish = true } }.buttonStyle(.bordered)
                             if !store.dishRecords(cookId).isEmpty {
                                 Button("Share meal") { do { sharingDraftId = try store.createSharingDraft(cookId: cookId, dishIds: Set(store.dishRecords(cookId).map(\.id))) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("meal-sharing-draft")
@@ -404,7 +421,14 @@ private struct CookNoteCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(event.metadata == nil ? event.eventType.replacingOccurrences(of: "_", with: " ").capitalized : "Note").font(.caption.bold())
+                // TURN-IN (Slice 2, Area 02 `cook-timeline`): the entry's
+                // kind rides as a chip — ember for recorded actions,
+                // cobalt for readings, the raised surface otherwise.
+                Text(event.metadata == nil ? event.eventType.replacingOccurrences(of: "_", with: " ").capitalized : "Note")
+                    .font(PitTechFont.monoMeta)
+                    .foregroundStyle(event.metadata?.action != nil ? PitTechStyle.onAccent : PitTechStyle.ink)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(event.metadata?.action != nil ? PitTechStyle.ember : PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 6))
                 Spacer()
                 if event.source == "manual" { Menu { Button("Edit note", action: onEdit); Button("Delete note", role: .destructive, action: onDelete) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) } }
             }
@@ -433,7 +457,7 @@ struct ReadingCard: View {
         HStack { VStack(alignment: .leading, spacing: 4) {
             Text(reading.probeName).font(.headline)
             Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-        }; Spacer(); Text("\(reading.value.formatted()) \(reading.unit)").font(.title3.monospacedDigit())
+        }; Spacer(); Text("\(reading.value.formatted()) \(reading.unit)").font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink)
             if let onEdit { Menu { Button("Edit reading", action: onEdit) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) } }
         }
             .padding(14).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 14))

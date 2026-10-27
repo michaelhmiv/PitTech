@@ -30,8 +30,8 @@ import java.time.format.DateTimeFormatter
     loaded.forEach { dish -> TextButton({ dishId = dish.id }, Modifier.testTag("recipe-history-${dish.id}")) { Text("Previous cook · ${dish.name}") } }
     if (dishId != null) ModalBottomSheet(onDismissRequest = { dishId = null }) {
         Column(Modifier.heightIn(max = 720.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Previous cook and this cook", style = MaterialTheme.typography.titleLarge)
-            Text(data.dishes.firstOrNull { it.id == dishId }?.name.orEmpty())
+            TurnInSheetKicker(data.dishes.firstOrNull { it.id == dishId }?.name.orEmpty())
+            TurnInBannerText("Previous cook and this cook", style = PitTechTextStyles.bannerTitle)
             val versions = revisions.filter { it.recipeId == source?.recipeId }.sortedWith(compareByDescending<RecipeRevision> { it.revisionNumber }.thenBy { it.id })
             val labels = versions.map { recipeVersionLabel(it, versions) + "${if (it.id == source?.recipeRevisionId) " · used in this meal" else ""}${if (headers.firstOrNull { h -> h.id == it.recipeId }?.currentRevisionId == it.id) " · preferred" else ""}" }
             ChoiceField("Historical version", versions.indexOfFirst { it.id == revisionId }.takeIf { it >= 0 }?.let { labels[it] } ?: "Choose version", labels) { revisionId = versions[labels.indexOf(it)].id }
@@ -40,13 +40,13 @@ import java.time.format.DateTimeFormatter
             var assets by remember(revisionId) { mutableStateOf(emptyList<RecipeAsset>()) }
             LaunchedEffect(revisionId) { assets = revisionId?.let { viewModel.recipes.assets(it) }.orEmpty() }
             if (snapshot != null) {
-                Text("Previous cook · saved observations", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Previous cook · saved observations")
                 Text("${if (snapshot.publicSource?.relativeTiming == true) "Original date not shared" else historyTime(snapshot.smokingAnchorUtcMillis ?: snapshot.observations.minOfOrNull { it.occurredAtUtcMillis }, snapshot.observations.firstOrNull()?.timeZoneId)} · ${revision.changeNotes}")
                 snapshot.rating?.let { Text("Recorded rating: $it") }
                 if (snapshot.resultNotes.isNotBlank()) Text(snapshot.resultNotes)
                 snapshot.targets.forEach { Text("Previous target · ${it.type.replace('_', ' ')}: ${it.value} ${it.unit}") }
                 RecipeReferenceTimeline.heating(snapshot).forEachIndexed { index, interval ->
-                    Text("Heating interval ${index + 1} · ${if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { interval.startedAt - it }) else historyTime(interval.startedAt, null)} → ${interval.endedAt?.let { if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { anchor -> it - anchor }) else historyTime(it, null) } ?: "end not recorded"}")
+                    Text("Heating interval ${index + 1} · ${if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { interval.startedAt - it }) else historyTime(interval.startedAt, null)} → ${interval.endedAt?.let { if (snapshot.publicSource?.relativeTiming == true) RecipeReferenceTimeline.relativeLabel(snapshot.smokingAnchorUtcMillis?.let { anchor -> it - anchor }) else historyTime(it, null) } ?: "end not recorded"}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
                 }
                 var actionsOnly by remember { mutableStateOf(true) }
                 FilterChip(actionsOnly, { actionsOnly = !actionsOnly }, { Text(if (actionsOnly) "Major actions" else "All saved notes") })
@@ -54,7 +54,7 @@ import java.time.format.DateTimeFormatter
                 if (observations.isEmpty()) Text("No ${if (actionsOnly) "major actions" else "observations"} saved. Switch filters to view available history.")
                 observations.forEach { event ->
                     var expanded by remember(event.sourceEventId) { mutableStateOf(false) }
-                    OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
+                    TurnInCard(Modifier.fillMaxWidth()) { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         TextButton({ expanded = !expanded }) { Text("${RecipeReferenceTimeline.relativeLabel(event.offsetMillis)} · ${event.title}") }
                         if (expanded) {
                             Text(if (snapshot.publicSource?.relativeTiming == true) "Original date not shared" else historyTime(event.occurredAtUtcMillis, event.timeZoneId))
@@ -76,13 +76,13 @@ import java.time.format.DateTimeFormatter
                 val original = cooks.firstOrNull { it.cook.id == revision.sourceCookId }
                 if (original != null) TextButton({ dishId = null; viewModel.openCook(original.cook.id) }) { Text("Open original meal context") }
                 else Text("Original meal unavailable. Saved reference content remains available.")
-                Text("This cook · actual actions", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("This cook · actual actions")
                 val current = notePlanEvents(data.events).filter { (it.dishId == dishId || it.dishId == null) && it.action in CookNoteMetadata.actions }.sortedBy { it.at }
                 val currentAnchor = CookReferenceCodec.anchor(current, dishId.orEmpty(), "food_on")
                 if (current.isEmpty()) Text("No actions recorded for this dish yet.")
                 current.distinctBy { it.id }.forEach { Text("${PlaybookCodec.actions[it.action] ?: it.action} · ${RecipeReferenceTimeline.relativeLabel(currentAnchor?.let { anchor -> it.at - anchor })}") }
                 data.targets.filter { it.dishId == dishId }.forEach { Text("This cook target · ${it.targetType.replace('_', ' ')}: ${it.value} ${it.unit}") }
-                Text("Other attempts", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Other attempts")
                 cooks.filter { meal -> meal.cook.id != data.cook.id && meal.dishes.any { dish -> sources.any { it.dishId == dish.id && it.recipeId == source?.recipeId } } }.forEach { meal ->
                     TextButton({ dishId = null; viewModel.openCook(meal.cook.id) }) { Text("${meal.cook.title} · ${historyTime(meal.cook.startedAtUtcMillis, meal.cook.startedTimeZoneId)}") }
                 }

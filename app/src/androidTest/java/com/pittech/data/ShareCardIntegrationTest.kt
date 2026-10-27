@@ -28,7 +28,7 @@ class ShareCardIntegrationTest {
             if (mode == "relay") content.put("relay",JSONObject().put("code","EMBER-OAK-7").put("url","https://pittech.app/s/EMBER-OAK-7")).put("title","🌶".repeat(150)).put("note","椒🌶 ".repeat(600))
             val bytes = ShareCardRenderer.render(PreparedShareCard(content.toString(),if (mode == "photo") photo else null))
             val image = BitmapFactory.decodeByteArray(bytes,0,bytes.size)
-            assertEquals(1080,image.width);assertEquals(1350,image.height);assertEquals(Color.rgb(245,240,231),image.getPixel(0,0));image.recycle()
+            assertEquals(1080,image.width);assertEquals(1350,image.height);assertEquals(Color.rgb(251,249,244),image.getPixel(0,0));image.recycle()
             File(context.filesDir,"pittech-ui-test/share-card-$mode.png").apply { parentFile!!.mkdirs();writeBytes(bytes) }
             val shared = ShareCardFiles.create(context,bytes);ShareCardFiles.prune(context,shared.lastModified()+25*3600000L);assertFalse(shared.exists())
         }

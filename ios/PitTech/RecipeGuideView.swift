@@ -14,9 +14,11 @@ struct RecipeGuideControl: View {
                     var copy = state; copy.visible = value
                     do { try store.saveGuideState(cookId, copy) } catch { self.error = error.localizedDescription }
                 })).frame(minHeight: 44).accessibilityIdentifier("show-guide")
-                if !state.visible && activeReminders { Text("Reminders active · use Reminders to change them").font(.caption).accessibilityIdentifier("guide-reminders-active") }
+                if !state.visible && activeReminders { Text("Reminders active · use Reminders to change them").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("guide-reminders-active") }
                 if state.visible { Button("Guide dishes & channels") { choosing = true }.accessibilityIdentifier("guide-scope") }
-                if let error { Text(error).foregroundStyle(.red) }
+                // TURN-IN (Slice 3, Area 03 `dark-26`): a failed guide
+                // refresh is a flag strip; the saved setup stays in place.
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
             }.task { do { try store.ensureGuides(cookId) } catch { self.error = error.localizedDescription } }
                 .sheet(isPresented: $choosing) { NavigationStack { RecipeGuideScope(cookId: cookId) }.modifier(ScreenshotTextSize()) }
         }
@@ -39,7 +41,7 @@ private struct RecipeGuideScope: View {
     }
     var body: some View {
         Form {
-            Text("Recorded facts and instructions stay separate from your actual log. Different weights or methods are not used to predict finish time.")
+            Text("Recorded facts and instructions stay separate from your actual log. Different weights or methods are not used to predict finish time.").font(PitTechFont.body)
             ForEach(store.guides(cookId)) { item in
                 Section(item.name) {
                     Toggle("Include " + item.name, isOn: Binding(get: { state.dishIds == nil || state.dishIds!.contains(item.id) }, set: { value in
@@ -59,7 +61,7 @@ private struct RecipeGuideScope: View {
                     }
                 }
             }
-            if let error { Text(error).foregroundStyle(.red) }
+            if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
         }.navigationTitle("Guide dishes & channels").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }
 }
@@ -95,27 +97,33 @@ private struct RecipeDishGuide: View {
         return "Your cook · \(CookStore.actionLabel(action)) · \(RecipeReferenceTimeline.relative(anchor.map { actual[ordinal].at - $0 }))"
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Guide · " + item.name).font(.headline).accessibilityIdentifier("guide-heading-" + item.id)
-            if differs { Text("Your setup or instructions differ from the source. Recorded timing is context, not a finish prediction.").font(.caption) }
-            DisclosureGroup("Instructions · \(item.working.instructions.count)") {
-                ForEach(item.working.instructions.indices, id: \.self) { index in
-                    let step = item.working.instructions[index].objectValue ?? [:]
-                    Text("Instruction · \(step["title"]?.stringValue ?? "")\((step["details"]?.stringValue ?? "").isEmpty ? "" : ": " + (step["details"]?.stringValue ?? ""))").font(.subheadline)
+        // TURN-IN (Slice 3, Area 03 `dark-25-guide`): the guide is a
+        // laminated card — banner title first ("Guide · <name>" stays the
+        // card's first text), the mismatch as a cobalt strip, milestones
+        // as author/your-cook pairs in mono.
+        TurnInCard {
+            VStack(alignment: .leading, spacing: 10) {
+                TurnInBannerText("Guide · " + item.name).accessibilityIdentifier("guide-heading-" + item.id)
+                if differs { TurnInStatusStrip(text: "Your setup or instructions differ from the source. Recorded timing is context, not a finish prediction.", accent: PitTechStyle.cobalt) }
+                DisclosureGroup("Instructions · \(item.working.instructions.count)") {
+                    ForEach(item.working.instructions.indices, id: \.self) { index in
+                        let step = item.working.instructions[index].objectValue ?? [:]
+                        Text("Instruction · \(step["title"]?.stringValue ?? "")\((step["details"]?.stringValue ?? "").isEmpty ? "" : ": " + (step["details"]?.stringValue ?? ""))").font(PitTechFont.body)
+                    }
                 }
+                if anchor == nil { Text("Record actual Food on for this dish to align the guide. Preparation offsets are retained.").font(PitTechFont.body) }
+                ForEach(Array(events.prefix(compact ? 3 : count).enumerated()), id: \.offset) { index, event in
+                    let row = event.objectValue ?? [:]
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Author · \(row["title"]?.stringValue ?? "Note") · \(RecipeReferenceTimeline.relative(row["offsetMillis"]?.numberValue))").font(PitTechFont.bodyEmphasis)
+                        Text(paired(event, index: index)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if compact && events.count > 3 { Button("View all \(events.count) milestones in Timeline", action: onFullGuide) }
+                if !compact && events.count > count { Button("Show more recorded milestones (\(events.count - count) remaining)") { count += 50 } }
+                if events.isEmpty { Text("No recorded milestones. Available instructions still work.").font(PitTechFont.body) }
+                if (item.guide.story.objectValue?["readings"]?.arrayValue ?? []).isEmpty { Text("No source temperatures recorded. No reference curve is drawn.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
             }
-            if anchor == nil { Text("Record actual Food on for this dish to align the guide. Preparation offsets are retained.").font(.caption) }
-            ForEach(Array(events.prefix(compact ? 3 : count).enumerated()), id: \.offset) { index, event in
-                let row = event.objectValue ?? [:]
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Author · \(row["title"]?.stringValue ?? "Note") · \(RecipeReferenceTimeline.relative(row["offsetMillis"]?.numberValue))").font(.subheadline)
-                    Text(paired(event, index: index)).font(.caption)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if compact && events.count > 3 { Button("View all \(events.count) milestones in Timeline", action: onFullGuide) }
-            if !compact && events.count > count { Button("Show more recorded milestones (\(events.count - count) remaining)") { count += 50 } }
-            if events.isEmpty { Text("No recorded milestones. Available instructions still work.").font(.caption) }
-            if (item.guide.story.objectValue?["readings"]?.arrayValue ?? []).isEmpty { Text("No source temperatures recorded. No reference curve is drawn.").font(.caption) }
-        }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12)).accessibilityIdentifier("guide-reference-" + item.id)
+        }.accessibilityIdentifier("guide-reference-" + item.id)
     }
 }

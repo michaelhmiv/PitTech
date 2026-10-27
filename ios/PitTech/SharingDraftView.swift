@@ -27,15 +27,16 @@ struct SharingDraftView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text(saved ? "Saved on this device" : "Saving edits…").font(.caption).foregroundStyle(PitTechStyle.sage)
-                Text("Choose exactly what you want to share. Your original meal stays unchanged.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+                Text(saved ? "Saved on this device" : "Saving edits…").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                Text("Choose exactly what you want to share. Your original meal stays unchanged.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 if let current = document {
-                    TextField("Title", text: Binding(get: { document?.title ?? "" }, set: { value in change { $0.title = String(value.prefix(160)) } })).textFieldStyle(.roundedBorder).accessibilityIdentifier("sharing-title")
+                    TextField("Title", text: Binding(get: { document?.title ?? "" }, set: { value in change { $0.title = String(value.prefix(160)) } })).turnInBoxedField().accessibilityIdentifier("sharing-title")
                     ForEach(current.entries) { entry in
+                        TurnInCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Toggle((try? entry.snapshot.name) ?? "Dish", isOn: Binding(get: { document?.entries.first { $0.id == entry.id }?.included ?? false }, set: { value in change { doc in
                                 if let index = doc.entries.firstIndex(where: { $0.id == entry.id }) { doc.entries[index].included = value; if !value && doc.entries[index].photoIds.contains(doc.heroPhotoId ?? "") { doc.heroPhotoId = nil } }
-                            } })).font(.headline).accessibilityIdentifier("sharing-include-" + entry.id)
+                            } })).font(PitTechFont.bannerCard).accessibilityIdentifier("sharing-include-" + entry.id)
                             Button("Edit recipe, ingredients & instructions") {
                                 act {
                                     try persist(); saveTask?.cancel()
@@ -45,7 +46,7 @@ struct SharingDraftView: View {
                                 }
                             }.frame(minHeight: 44)
                             Toggle("Include recorded cook story", isOn: entryBinding(entry.id, key: "story"))
-                            if entry.includeStory { Text("Recorded milestones, readings and results remain source facts.").font(.caption).foregroundStyle(PitTechStyle.supporting) }
+                            if entry.includeStory { Text("Recorded milestones, readings and results remain source facts.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
                             ForEach(store.sharingPhotos(id).filter { $0["action"]?.stringValue == entry.id }.compactMap { $0["id"]?.stringValue }, id: \.self) { assetId in
                                 if let asset = store.sharingPhotos(id).first(where: { $0["id"]?.stringValue == assetId }) {
                                     Toggle(asset["caption"]?.stringValue?.isEmpty == false ? asset["caption"]!.stringValue! : "Reference photo", isOn: Binding(get: { document?.entries.first { $0.id == entry.id }?.photoIds.contains(assetId) ?? false }, set: { value in change { doc in
@@ -60,13 +61,14 @@ struct SharingDraftView: View {
                                 Button("Move up") { move(entry.id, by: -1) }.disabled(current.entries.first?.id == entry.id)
                                 Button("Move down") { move(entry.id, by: 1) }.disabled(current.entries.last?.id == entry.id)
                             }.buttonStyle(.bordered)
-                        }.padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        }
                     }
                     Button("Add a saved recipe") { act { try persist(); choosingRecipe = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(current.entries.count >= 20)
-                    Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                    Text("Identity is chosen when you publish. File sharing and saved collections do not require an account.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     if current.sourceHistory != nil {
                         Toggle("Include this recorded meal", isOn: $includeRecordedCook).disabled(!canIncludeHistory(current) || preparingExport).accessibilityIdentifier("sharing-include-history")
-                        Text(canIncludeHistory(current) ? "Recipients can choose to add this finished meal to history." : "Enable the recorded story for each selected original dish first.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                        Text(canIncludeHistory(current) ? "Recipients can choose to add this finished meal to history." : "Enable the recorded story for each selected original dish first.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     }
                     if preparingExport { ProgressView("Preparing Cook Pack…") }
                     Button("Card appearance & note") { cardSettings.toggle() }.frame(minHeight:44)
@@ -82,17 +84,19 @@ struct SharingDraftView: View {
                     Button("Preview share card") { act { try persist();cardPreview = true } }.buttonStyle(.bordered).frame(minHeight:44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-preview-card")
                     Button("Share by code") { act { try persist(); relayShare = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(preparingExport || !current.entries.contains { $0.included }).accessibilityIdentifier("sharing-relay")
                     if community.enabled && account.enabled {
+                        TurnInCard {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Publish").font(.headline)
-                            Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                            TurnInBannerText("Publish")
+                            Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                             Button("Preview public publication") { act { try persist(); publishing = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-publish")
-                        }.padding(18).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        }
                     }
                     Button("Save meal collection") { act { try persist(); _ = try store.copySharingDocument(id, asCollection: true); try store.discardSharingDraft(id); document = nil; dismiss() } }
                         .buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included })
                     Button("Discard draft", role: .destructive) { act { saveTask?.cancel(); try store.discardSharingDraft(id); document = nil; dismiss() } }.frame(minHeight: 44)
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
             }.padding(20)
         }.accessibilityIdentifier("sharing-draft-content").background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Sharing draft").navigationBarTitleDisplayMode(.inline)
             .onAppear { act { try reload() } }
@@ -165,11 +169,11 @@ struct SharingLibrarySection: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !drafts.isEmpty { Text("Sharing drafts").font(.headline) }
+            if !drafts.isEmpty { TurnInBannerText("Sharing drafts") }
             ForEach(drafts.compactMap { $0["id"]?.stringValue }, id: \.self) { id in if let row = store.sharingRecord(id) { NavigationLink("Resume " + (row["title"]?.stringValue ?? "draft")) { SharingDraftView(id: id) }.frame(minHeight: 44) } }
-            if !collections.isEmpty { Text("Meal collections").font(.headline) }
+            if !collections.isEmpty { TurnInBannerText("Meal collections") }
             ForEach(collections.compactMap { $0["id"]?.stringValue }, id: \.self) { id in if let row = store.sharingRecord(id) { Button("Copy & customize " + (row["title"]?.stringValue ?? "collection")) { do { destination = try store.copySharingDocument(id) } catch { self.error = error.localizedDescription } }.frame(minHeight: 44) } }
-            if let error { Text(error).foregroundStyle(.red) }
+            if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
         }.navigationDestination(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) { if let destination { SharingDraftView(id: destination) } }
     }
 }

@@ -124,7 +124,7 @@ struct ShareCardRenderTheme {
         case "ember": "#DECFBB"
         case "sage-night": "#3A3F33"
         case "parchment": "#E6DFCE"
-        default: "#E2D9CD"
+        default: "#D8D2C4"
         }
         return ShareCardRenderTheme(
             background: Color(shareHex: theme.background),

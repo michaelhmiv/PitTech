@@ -102,13 +102,23 @@ struct NotAvailablePlaceholderView<Onward: View>: View {
 struct DiscoveryWelcomeView: View {
     var body: some View {
         NavigationStack {
-            NotAvailablePlaceholderView(
-                systemImage: "safari",
-                title: NotAvailableCopy.discoverTitle,
-                message: NotAvailableCopy.discoverMessage,
-                onwardLabel: NotAvailableCopy.discoverOnward,
-                onward: { SavedRecipesView() },
-            )
+            // TURN-IN (slice 5, frame c05): the Discover placeholder wears
+            // the dashed-card composition; the shared
+            // NotAvailablePlaceholderView pattern is unchanged for its
+            // other homes. Copy stays the NotAvailableCopy constants.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    TurnInDashedCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Image(systemName: "safari").font(.system(size: 32)).foregroundStyle(PitTechStyle.emberText)
+                                .padding(18).background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 18)).accessibilityHidden(true)
+                            TurnInBannerText(NotAvailableCopy.discoverTitle, font: PitTechFont.bannerTitle)
+                            Text(NotAvailableCopy.discoverMessage).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                    }
+                    NavigationLink(NotAvailableCopy.discoverOnward) { SavedRecipesView() }.buttonStyle(.bordered).frame(minHeight: 44)
+                }.padding(20)
+            }.background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
         }
     }

@@ -39,7 +39,12 @@ function one(params: URLSearchParams, name: string): string {
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 function page(nonce: string, title: string, bodyHtml: string): string {
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style nonce="${nonce}">body{font-family:system-ui,sans-serif;margin:2rem auto;max-width:34rem;padding:0 1rem;line-height:1.5}code{font-size:1.6rem;letter-spacing:.15em;display:block;margin:1rem 0}li{margin:.3rem 0}</style><h1>${escapeHtml(title)}</h1>${bodyHtml}</html>`;
+  // TURN-IN (area-06 `c11`/`c12`): the authorize page wears the app's theme —
+  // dark ground first, light as a full sibling via prefers-color-scheme;
+  // the approval code is a mono readout on a raised card face. Presentation
+  // only: copy, structure, polling and the CSP nonce are unchanged.
+  const css = `:root{color-scheme:dark light}*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#10151C;color:#F5EFE3;margin:0;padding:2rem 1rem;line-height:1.55}main{max-width:34rem;margin:0 auto;background:#1D2733;border:1px solid #33404F;border-radius:14px;padding:1.5rem 1.4rem}h1{font-size:1.45rem;line-height:1.25;margin:0 0 1rem}strong{color:#F5EFE3}ul{padding-left:1.25rem}li{margin:.3rem 0}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1.9rem;letter-spacing:.18em;display:block;text-align:center;margin:1.1rem 0;padding:.9rem .5rem;background:#10151C;border:1px solid #33404F;border-radius:10px;color:#F07D2E}#status{color:#9AA7B4}@media (prefers-color-scheme:light){body{background:#FBF9F4;color:#1D2733}main{background:#FFFFFF;border-color:#D8D2C4}strong{color:#1D2733}code{background:#FBF9F4;border-color:#D8D2C4;color:#A84A0C}#status{color:#5C6B7A}}`;
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style nonce="${nonce}">${css}</style><main><h1>${escapeHtml(title)}</h1>${bodyHtml}</main></html>`;
 }
 
 export async function handleMcpOAuth(req: IncomingMessage, res: ServerResponse, route: McpOAuthRoute,

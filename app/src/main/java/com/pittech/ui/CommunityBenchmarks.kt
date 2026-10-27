@@ -83,7 +83,7 @@ internal fun CommunityBenchmarksDialog(
                     Modifier.fillMaxWidth().testTag("community-empty"),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("No community figures yet", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("No community figures yet")
                     Text(
                         "Benchmarks appear here when eligible published cooks are recorded. Your personal tools and Pro entries are unchanged.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -94,7 +94,7 @@ internal fun CommunityBenchmarksDialog(
                         Modifier.fillMaxWidth().testTag("community-unavailable"),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text("Community benchmarks are unavailable right now.", style = MaterialTheme.typography.titleMedium)
+                        TurnInBannerText("Community benchmarks are unavailable right now.")
                         Text(
                             "Your cooks, exports, and free tools are unchanged.",
                             style = MaterialTheme.typography.bodyMedium,

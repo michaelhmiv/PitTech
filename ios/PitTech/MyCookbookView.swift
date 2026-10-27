@@ -38,7 +38,7 @@ struct NativeMyCookbookView: View {
                     Button("Sign in") { signingIn = true }
                 } else {
                     if let pending {
-                        Text(pending.rejected ? "Rejected change" : "Saved interrupted change").font(.headline)
+                        TurnInBannerText(pending.rejected ? "Rejected change" : "Saved interrupted change")
                         if let pendingArchive { NativePublicationContent(prepared: pendingArchive) }
                         else if let pendingProfile { profileSummary(pendingProfile) }
                         else {
@@ -50,12 +50,12 @@ struct NativeMyCookbookView: View {
                         else { Button("Discard rejected change", role: .destructive) { run { try checkAccount(); if let loadedUser { try writer?.store.discardRejected(loadedUser) }; try await reload() } }.disabled(busy) }
                     }
                     ownerEditingPreview
-                    Text("Cookbook identity").font(.title2.bold())
-                    TextField("Display name", text: $name).textFieldStyle(.roundedBorder).accessibilityIdentifier("cookbook-name")
-                    TextField("Handle (3–24 letters, numbers or underscores)", text: $handle).textFieldStyle(.roundedBorder).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("cookbook-handle")
-                    if profileReviewStatus == "pending" { Text("Identity changes are awaiting review and are not yet public.") }
+                    TurnInBannerText("Cookbook identity")
+                    TextField("Display name", text: $name).turnInBoxedField().accessibilityIdentifier("cookbook-name")
+                    TextField("Handle (3–24 letters, numbers or underscores)", text: $handle).turnInBoxedField().textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("cookbook-handle")
+                    if profileReviewStatus == "pending" { TurnInStatusStrip(text: "Identity changes are awaiting review and are not yet public.", accent: PitTechStyle.marigold) }
                     Toggle("Enable my public cookbook", isOn: $isPublic).accessibilityIdentifier("cookbook-public")
-                    Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.").font(.subheadline)
+                    Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     Button("Preview cookbook changes") { run {
                         guard handle.isEmpty || handle.range(of: "^[A-Za-z0-9_]{3,24}$", options: .regularExpression) != nil, name.utf16.count <= 160, !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }), !isPublic || !handle.isEmpty && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativePublicationError.invalid }
                         profilePreview = NativeCookbookProfile(handle: handle.isEmpty ? nil : handle.lowercased(), displayName: name.trimmingCharacters(in: .whitespacesAndNewlines), isPublic: isPublic)
@@ -64,8 +64,8 @@ struct NativeMyCookbookView: View {
                         profileSummary(profilePreview)
                         Button("Save previewed changes") { run { try checkAccount(); _ = try await writer?.json(method: "PUT", path: "/v1/me/profile", body: JSONEncoder().encode(profilePreview)); self.profilePreview = nil; try await reload() } }.disabled(busy || pending != nil).accessibilityIdentifier("cookbook-save")
                     }
-                    Text("My publications").font(.title2.bold())
-                    Text("Removing a publication hides its public link. Other cooks keep independent copies they already saved.").font(.subheadline)
+                    TurnInBannerText("My publications")
+                    Text("Removing a publication hides its public link. Other cooks keep independent copies they already saved.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     publicationCards
                     if cursor != nil { Button("More publications") { run { try await loadItems(more: true) } }.disabled(busy) }
                     Button("Refresh cookbook") { run { try await reload() } }.disabled(busy)
@@ -92,8 +92,8 @@ struct NativeMyCookbookView: View {
     }
     @ViewBuilder private var ownerEditingPreview: some View {
                     if let ownerPreview, let ownerReceipt {
-                        Text("Private editing preview").font(.title2.bold())
-                        Text("This creates an editable sharing draft on this device. It does not publish or change your meal history.")
+                        TurnInBannerText("Private editing preview", font: PitTechFont.bannerTitle)
+                        Text("This creates an editable sharing draft on this device. It does not publish or change your meal history.").foregroundStyle(PitTechStyle.inkMuted)
                         NativePublicationContent(prepared: ownerPreview)
                         Button("Create private editing draft") { run {
                             guard let writer, let user = ownerUser, user == account.stateUserId else { throw NativePublicationError.accountChanged }
@@ -109,9 +109,10 @@ struct NativeMyCookbookView: View {
     }
     private var publicationCards: some View {
                     ForEach(items) { item in
+                        TurnInCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(item.title).font(.headline)
-                            Text(item.status == "active" ? "Public · revision \(item.revision) · \(item.identityMode == "named" ? "named" : "anonymous")" : item.status == "pending_review" ? "Submitted for review · not public" : item.status == "unpublished" ? "Removed from public access" : "Unavailable after moderation").font(.caption)
+                            TurnInBannerText(item.title)
+                            Text(item.status == "active" ? "Public · revision \(item.revision) · \(item.identityMode == "named" ? "named" : "anonymous")" : item.status == "pending_review" ? "Submitted for review · not public" : item.status == "unpublished" ? "Removed from public access" : "Unavailable after moderation").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                             if ["active", "pending_review", "unpublished"].contains(item.status) {
                                 Button("Preview an editable private copy") { run {
                                     try checkAccount(); guard let writer, let user = loadedUser else { throw NativePublicationError.accountChanged }
@@ -127,15 +128,18 @@ struct NativeMyCookbookView: View {
                             if ["active", "pending_review"].contains(item.status) {
                                 Button(item.status == "pending_review" ? "Withdraw review request" : "Remove from public access", role: .destructive) { removing = item }.disabled(busy || pending != nil)
                             }
-                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        }
                     }
     }
     @ViewBuilder private func profileSummary(_ profile: NativeCookbookProfile) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if profile.reviewStatus == "pending" { Text("Identity changes are awaiting review and are not yet public.") }
-            Text("Public display name · " + (profile.displayName.isEmpty ? "a PitTech cook" : profile.displayName)).font(.headline)
-            Text(profile.isPublic ? "Public cookbook: https://pittech.app/p/" + (profile.handle ?? "Choose a handle") : "Public cookbook disabled. Your named recipe credit remains visible.")
-        }.padding(12).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+        TurnInCard {
+            VStack(alignment: .leading, spacing: 8) {
+                if profile.reviewStatus == "pending" { TurnInStatusStrip(text: "Identity changes are awaiting review and are not yet public.", accent: PitTechStyle.marigold) }
+                TurnInBannerText("Public display name · " + (profile.displayName.isEmpty ? "a PitTech cook" : profile.displayName))
+                Text(profile.isPublic ? "Public cookbook: https://pittech.app/p/" + (profile.handle ?? "Choose a handle") : "Public cookbook disabled. Your named recipe credit remains visible.").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            }
+        }
     }
     private func checkAccount() throws { guard loadedUser != nil, loadedUser == account.stateUserId else { throw NativePublicationError.accountChanged } }
     private func pendingPreview() throws {

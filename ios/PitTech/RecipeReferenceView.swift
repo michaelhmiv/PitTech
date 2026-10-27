@@ -27,13 +27,24 @@ struct RecipeReferenceView: View {
             }
             if let snapshot {
                 Section("Previous cook · saved observations") {
-                    if let rating = snapshot.rating { Text("Recorded rating: \(rating)") }
+                    // TURN-IN (Slice 2, Area 02 `prevcook-reference`): the
+                    // recorded rating carries its stars, and the previous
+                    // targets and heating intervals ride in mono — the
+                    // words and rows are the app's own.
+                    if let rating = snapshot.rating {
+                        HStack(spacing: 10) {
+                            Text("Recorded rating: \(rating)")
+                            TurnInStars(rating: rating)
+                        }
+                    }
                     if !snapshot.resultNotes.isEmpty { Text(snapshot.resultNotes) }
                     ForEach(snapshot.targets.indices, id: \.self) { index in let target = snapshot.targets[index].objectValue ?? [:]
                         Text("Previous target · \(target["type"]?.stringValue ?? ""): \(target["value"]?.numberValue ?? 0) \(target["unit"]?.stringValue ?? "")")
+                            .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     }
                     ForEach(RecipeReferenceTimeline.heating(snapshot).indices, id: \.self) { index in let interval = RecipeReferenceTimeline.heating(snapshot)[index]
                         Text("Heating interval \(index + 1) · \(referenceTime(interval.startedAt, snapshot: snapshot)) → \(interval.endedAt.map { referenceTime($0, snapshot: snapshot) } ?? "end not recorded")")
+                            .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     }
                     Toggle("Major actions only", isOn: $actionsOnly)
                     let events = RecipeReferenceTimeline.events(snapshot).filter { !actionsOnly || CookNoteMetadata.actions.contains($0.objectValue?["action"]?.stringValue ?? "") }
@@ -59,7 +70,11 @@ struct RecipeReferenceView: View {
                     }
                 }
             }
-        }.navigationTitle("Previous and this cook").onAppear { if revisionId.isEmpty { revisionId = source?["recipeRevisionId"]?.stringValue ?? "" } }
+        }
+        .scrollContentBackground(.hidden)
+        .background(PitTechStyle.canvas.ignoresSafeArea())
+        .listRowBackground(PitTechStyle.surface)
+        .navigationTitle("Previous and this cook").onAppear { if revisionId.isEmpty { revisionId = source?["recipeRevisionId"]?.stringValue ?? "" } }
     }
 }
 private func referenceTime(_ at: Double, snapshot: RecipeSnapshot) -> String {
@@ -85,6 +100,7 @@ private struct HistoricalObservationView: View {
             let readings = o["recordedTemperatures"]?.arrayValue ?? []
             ForEach(readings.indices, id: \.self) { index in let r = readings[index].objectValue ?? [:]
                 Text("\(r["probeName"]?.stringValue ?? "") · \(r["measurementType"]?.stringValue ?? "") · \(r["value"]?.numberValue ?? 0) \(r["unit"]?.stringValue ?? "") · \(time(r["measuredAtUtcMillis"]?.numberValue, zone: r["timeZoneId"]?.stringValue))")
+                    .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             }
         }
     }
