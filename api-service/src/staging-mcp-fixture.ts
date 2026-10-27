@@ -119,7 +119,7 @@ async function deleteB(runtime: Runtime, pool: Pool) {
     jsonrpc: '2.0', id: 1, method: 'tools/call',
     params: { name: 'create_meal', arguments: { title: 'MCP acceptance row-12 meal', dishes: [{ name: 'Fixture brisket', foodType: 'beef' }] } },
   });
-  assert(write && !('error' in write), 'fixture MCP write failed');
+  assert(write && !('error' in write), 'fixture MCP write failed: ' + JSON.stringify(write).slice(0, 300));
   const result = (write as { result?: { isError?: boolean } }).result;
   assert(!result?.isError, 'fixture MCP write returned an error');
   step('b_write_applied');
