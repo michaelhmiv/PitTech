@@ -173,7 +173,21 @@ final class MealRecipeFlowsTests: XCTestCase {
                 let detail = app.staticTexts["sync-status-detail"]; reveal(detail, app: app)
                 XCTAssertTrue(detail.label.contains("Waiting for first connection"), detail.label)
                 if choice == "Keep mine" {
-                    let now = app.buttons["sync-now"]; reveal(now, app: app); now.tap()
+                    let now = app.buttons["sync-now"]; reveal(now, app: app)
+                    // Sync now is disabled while the coordinator is busy —
+                    // including the conflict resolution this test just
+                    // performed — and a tap on the disabled button is a
+                    // no-op, so the status never flips (PR #222 flows-a:
+                    // the tap synthesized cleanly and 15s of polls found
+                    // no "Waiting for connection", while the default-size
+                    // pass flipped in <1s). Wait for the busy state to
+                    // clear before tapping.
+                    for _ in 0..<15 {
+                        if now.isEnabled { break }
+                        _ = now.waitForExistence(timeout: 1)
+                    }
+                    XCTAssertTrue(now.isEnabled)
+                    now.tap()
                     XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))
                 }
                 app.terminate()
