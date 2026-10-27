@@ -10,6 +10,7 @@ final class MealRecipeFlowsTests: XCTestCase {
         // sweeps deterministically: to the top first, then down the form.
         var formPhase = 0 // 0 = seek top, 1 = sweep down, 2 = sweep back up
         var formFingerprint: CGFloat?
+        var formStableDrags = 0
         for attempt in 0..<24 {
             let cookScroll = app.scrollViews["cook-content"]
             let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 })
@@ -24,15 +25,25 @@ final class MealRecipeFlowsTests: XCTestCase {
                 if element.exists {
                     down = element.frame.minY < top
                 } else {
-                    // Fingerprint the visible rows: when a drag stops moving
+                    // Fingerprint the visible rows: when drags stop moving
                     // them, that end of the form is reached and the sweep
                     // changes phase instead of guessing by attempt count.
+                    // End-of-travel takes TWO consecutive unmoved drags:
+                    // under CI load a single drag can be absorbed (scroll
+                    // still decelerating, touch landing during a layout
+                    // pass), and one absorbed drag mid-sweep used to flip
+                    // the sweep into its terminal phase — the search then
+                    // dragged away from the target for its remaining
+                    // attempts (PR #222 flows-a: the account-delete reveal
+                    // died three drags into its downward sweep and spent
+                    // twenty more dragging toward the top of the form).
                     let cells = app.cells.allElementsBoundByIndex.filter { $0.isHittable && $0.frame.minY.isFinite && $0.frame.height > 0 }
                     let fingerprint = cells.map { $0.frame.minY }.reduce(0, +)
                     let moved = formFingerprint.map { $0 != fingerprint } ?? true
                     formFingerprint = fingerprint
-                    if formPhase == 0, attempt > 0, !moved { formPhase = 1 }
-                    else if formPhase == 1, !moved { formPhase = 2 }
+                    formStableDrags = moved ? 0 : formStableDrags + 1
+                    if formPhase == 0, attempt > 0, formStableDrags >= 2 { formPhase = 1 }
+                    else if formPhase == 1, formStableDrags >= 2 { formPhase = 2 }
                     down = formPhase != 1
                 }
                 let origin = navigation.coordinate(withNormalizedOffset: .zero)
@@ -188,7 +199,24 @@ final class MealRecipeFlowsTests: XCTestCase {
                     }
                     XCTAssertTrue(now.isEnabled)
                     now.tap()
-                    XCTAssertTrue(app.staticTexts["Waiting for connection"].waitForExistence(timeout: 15))
+                    // Assert on the status row itself (identifier
+                    // "sync-status" — the element read as "Last synced never"
+                    // above): its label IS the coordinator's status. The old
+                    // whole-tree text search could not distinguish a status
+                    // that never flipped from a row the Form had not
+                    // realized, and left no evidence either way (PR #222
+                    // flows-a: tap delivered, app idled, 15s of polls found
+                    // no such text, while the default-size pass flipped in
+                    // about a second). Reveal the row so it is realized, then
+                    // predicate-wait on its label; on timeout, capture the
+                    // tree so the actual status is on record.
+                    let statusRow = app.staticTexts["sync-status"]; reveal(statusRow, app: app)
+                    let flipped = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Waiting for connection"), object: statusRow)
+                    if XCTWaiter.wait(for: [flipped], timeout: 30) != .completed {
+                        capture("Sync now did not reach Waiting for connection")
+                        print(app.debugDescription)
+                    }
+                    XCTAssertEqual(statusRow.label, "Waiting for connection")
                 }
                 app.terminate()
             }
