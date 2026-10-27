@@ -8,6 +8,38 @@ final class ProPaywallUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
+        // Cook-detail branch, mirroring MealRecipeFlowsTests.reveal()'s
+        // cook-content branch (and CommunityBenchmarksUITests' copy of
+        // it): the meal detail carries a fixed shortcut bar in a bottom
+        // safe-area inset, and the generic swipe loop below can stop
+        // with the target parked under that bar — reported hittable,
+        // but the tap lands on the bar, so for the finish button the
+        // "Finish meal?" alert never appears at any wait. Servo on the
+        // finite navigation bar and accept only a stop fully inside
+        // the nav-to-quick-actions window.
+        let cookScroll = app.scrollViews["cook-content"]
+        let cookLog = app.buttons["meal-log"]
+        if cookScroll.exists, cookLog.exists, cookLog.isHittable, cookLog.frame.minY.isFinite,
+           let navigation = app.navigationBars.allElementsBoundByIndex.last(where: { $0.isHittable && $0.frame.minY.isFinite && $0.frame.width > 0 }) {
+            for _ in 0..<18 {
+                let top = navigation.frame.maxY + 10
+                let bottom = cookLog.frame.minY - 20
+                if element.waitForExistence(timeout: 1), element.isHittable,
+                   element.frame.minY >= top, element.frame.maxY <= bottom { return }
+                let down = element.exists && element.frame.minY < top
+                let span = max(60, (bottom - top) * 0.55)
+                let distance = element.exists ? (down ? top - element.frame.minY : element.frame.maxY - bottom) + 24 : span
+                let travel = min(span, max(60, distance))
+                let startY = down ? top + 24 : bottom - 24
+                let endY = down ? startY + travel : startY - travel
+                let origin = navigation.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: 32, dy: startY - navigation.frame.minY))
+                let end = origin.withOffset(CGVector(dx: 32, dy: endY - navigation.frame.minY))
+                start.press(forDuration: 0.01, thenDragTo: end)
+            }
+            XCTAssertTrue(element.exists && element.isHittable)
+            return
+        }
         for _ in 0..<12 {
             if element.waitForExistence(timeout: 1), element.isHittable { return }
             app.swipeUp()
@@ -203,12 +235,12 @@ final class ProPaywallUITests: XCTestCase {
             let finish = app.buttons["finish-meal"]
             reveal(finish, app: app)
             finish.tap()
-            // 20s, matching CommunityBenchmarksUITests' wait for this same
-            // alert: at large text on a loaded runner the alert's
-            // presentation outlasted a 5s wait (PR #222 ui-3: the tap
-            // synthesized and the app idled, but the alert had not
-            // presented within 5.25s; the sibling test's 20s wait for the
-            // identical alert passed in the same job).
+            // 20s, matching CommunityBenchmarksUITests' wait for this
+            // same alert. (The wait was never the defect: with the old
+            // swipe-based reveal the finish button could park under the
+            // detail's fixed shortcut bar and the tap never reached it,
+            // so no alert presented at any timeout — see reveal() above.
+            // 20s stays as parity headroom.)
             XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 20))
             app.alerts.buttons["Finish meal"].tap()
             XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15))
