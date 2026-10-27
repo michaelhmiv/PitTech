@@ -177,28 +177,12 @@ if [[ ! -f "$app_apk" || ! -f "$test_apk" ]]; then
   exit 1
 fi
 
-previous_dir="${RUNNER_TEMP:-/tmp}/pittech-before"
-if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
-  echo "Installing the previous release and saving a cook before updating in place."
-  timeout 120 adb install -r "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
-  timeout 120 adb install -r -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-  previous_instrumentation="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
-  timeout 12m adb shell am instrument -w -r \
-    -e class 'com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally' \
-    "$previous_instrumentation" | tee "$output_dir/previous-release-cook.txt"
-  grep -q '^INSTRUMENTATION_STATUS_CODE: 0' "$output_dir/previous-release-cook.txt"
-  grep -q 'OK (1 test)' "$output_dir/previous-release-cook.txt"
-  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/previous-release-cook.txt"
-  timeout 20 adb shell am force-stop com.pittech.debug
-fi
-
-timeout 120 adb install -r "$app_apk"
-timeout 120 adb install -r -t "$test_apk"
-
 # #187: the first-run welcome would otherwise greet every UI-test class on a
-# fresh data state. Seed its seen flag in the app's preferences (merging into
-# the existing file when one is present); WelcomeFlowTest clears the key
-# itself when it needs the real first run. Call again after any `pm clear`.
+# fresh data state — including the previous-release build below, which is
+# built from current main and shows the same welcome on its first launch.
+# Seed its seen flag in the app's preferences (merging into the existing
+# file when one is present); WelcomeFlowTest clears the key itself when it
+# needs the real first run. Call again after any `pm clear`.
 seed_welcome_seen() {
   local existing attempt
   for attempt in 1 2 3; do
@@ -220,6 +204,32 @@ seed_welcome_seen() {
   done
   echo "WARNING: could not seed the welcome-seen flag; UI tests may hit the first-run welcome." >&2
 }
+
+previous_dir="${RUNNER_TEMP:-/tmp}/pittech-before"
+if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app-debug.apk" ]]; then
+  echo "Installing the previous release and saving a cook before updating in place."
+  timeout 120 adb install -r "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
+  timeout 120 adb install -r -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  # The previous release is built from current main, so its first launch
+  # shows the #187 welcome too; seed it before test02 drives its UI, exactly
+  # as the current build is seeded below.
+  seed_welcome_seen
+  previous_instrumentation="$(adb shell pm list instrumentation | sed -n 's/^instrumentation:\([^ ]*\) (target=com\.pittech\.debug)$/\1/p' | head -n 1 | tr -d '\r')"
+  timeout 12m adb shell am instrument -w -r \
+    -e class 'com.pittech.PitTechUserFlowsTest#test02_createCookWithDishAndPreparationAndSaveLocally' \
+    "$previous_instrumentation" | tee "$output_dir/previous-release-cook.txt"
+  grep -q '^INSTRUMENTATION_STATUS_CODE: 0' "$output_dir/previous-release-cook.txt"
+  grep -q 'OK (1 test)' "$output_dir/previous-release-cook.txt"
+  ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$output_dir/previous-release-cook.txt"
+  timeout 20 adb shell am force-stop com.pittech.debug
+fi
+
+timeout 120 adb install -r "$app_apk"
+timeout 120 adb install -r -t "$test_apk"
+
+# The in-place upgrade kept the previous phase's app data, so the seeded
+# flag normally survives; call again so the current build is seeded for
+# certain before the suites run (a no-op when the flag is already present).
 seed_welcome_seen
 
 if (( api_level >= 37 )); then
@@ -250,6 +260,13 @@ if (( api_level == 36 )) && [[ -f "$previous_dir/app/build/outputs/apk/debug/app
   timeout 20 adb shell pm clear com.pittech.debug
   timeout 120 adb install -r -d "$previous_dir/app/build/outputs/apk/debug/app-debug.apk"
   timeout 120 adb install -r -d -t "$previous_dir/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+  # The pm clear wiped the seeded welcome flag, and prepareRunningCook
+  # launches the previous build's MainActivity: without the flag it waits
+  # on the Welcome surface, the main UI never composes, the grill monitor
+  # never goes foreground, and no device is ever selected. Seed the
+  # previous build now; the restore after the upgrade below stays as the
+  # guarantee for the phases that follow it.
+  seed_welcome_seen
   timeout 12m adb shell am instrument -w -r \
     -e class 'com.pittech.LiveUpgradeRecordingTest#prepareRunningCook' \
     "$instrumentation_target" | tee "$output_dir/live-upgrade-prepare.txt"
