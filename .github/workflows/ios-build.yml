@@ -382,6 +382,47 @@ jobs:
               call("DELETE", f"/certificates/{cert_id}")
               print(f"Revoked previous CI certificate {cert_id}")
 
+          # A run that dies between minting its certificate and creating its
+          # profile leaves that certificate orphaned: no profile references
+          # it, so the pass above cannot find it, and it holds the
+          # distribution slot against every later POST /certificates (run
+          # #512 left certificate BKLX257346 in exactly that state). Sweep
+          # for it: revoke distribution-family certificates that NO
+          # provisioning profile references. A certificate any profile
+          # references is never touched, whatever its type or owner, and no
+          # profile is modified here. On a healthy run this finds nothing.
+          def get_all(path):
+              items = []
+              while path is not None:
+                  page = call("GET", path)
+                  items.extend(page.get("data", []))
+                  next_link = page.get("links", {}).get("next")
+                  path = next_link[len(api):] if next_link else None
+              return items
+
+          referenced_cert_ids = set()
+          for any_profile in get_all("/profiles?limit=200"):
+              linked = call("GET", f"/profiles/{any_profile['id']}/certificates").get("data", [])
+              referenced_cert_ids.update(cert["id"] for cert in linked)
+          distribution_types = {"DISTRIBUTION", "IOS_DISTRIBUTION", "MAC_APP_DISTRIBUTION"}
+          orphan_candidates = []
+          for certificate in get_all("/certificates?limit=200"):
+              cert_type = certificate.get("attributes", {}).get("certificateType")
+              if cert_type not in distribution_types:
+                  continue
+              if certificate["id"] in referenced_cert_ids:
+                  print(f"Distribution certificate {certificate['id']} ({cert_type}) is referenced "
+                        "by a profile; leaving it alone")
+              else:
+                  orphan_candidates.append(certificate)
+                  print(f"Orphan candidate: distribution certificate {certificate['id']} "
+                        f"({cert_type}) is referenced by no profile")
+          for orphan in orphan_candidates:
+              call("DELETE", f"/certificates/{orphan['id']}")
+              print(f"Revoked orphaned distribution certificate {orphan['id']}")
+          if not orphan_candidates:
+              print("No orphaned distribution certificates found")
+
           # Fresh key + CSR on this runner; the private key never leaves it.
           subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
           subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
