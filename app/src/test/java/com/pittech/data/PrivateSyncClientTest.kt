@@ -103,7 +103,7 @@ class PrivateSyncClientTest {
     @Test fun serverAnswersNeverClaimReachability() {
         val reachability = "could not reach PitTech"
         for (status in listOf(300, 301, 302, 400, 401, 403, 404, 409, 413, 415, 422, 429, 500, 502, 503, 504)) {
-            val message = PrivateSyncHttpError(status, "").message
+            val message = PrivateSyncHttpError(status, "").message.orEmpty()
             assertFalse("status $status must not read as a reachability failure: $message", message.contains(reachability))
         }
         // The enumerated statuses keep their established copy.

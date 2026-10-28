@@ -89,5 +89,39 @@ class FlowingLiveScreenTest {
         }
     }
 
-    @Test fun heroOpensFullscreenChartWithGhostDeltaAndP
-...[truncated 1955 chars]
+    @Test fun heroOpensFullscreenChartWithGhostDeltaAndPresets() {
+        val app = app()
+        seedBoard(app)
+        openLiveCook()
+        // 1.3 + Spread 02: the hero is a door; the chart carries the
+        // pinned readout, the ghost's delta at the cursor, and presets.
+        compose.onNodeWithTag("live-chart-hero", useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-chart-readout", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("live-chart-ghost-delta", useUnmergedTree = true).assertTextContains("ahead of last brisket")
+        compose.onNodeWithTag("live-chart-preset-last2h", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("live-chart-readout", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("live-chart-close", useUnmergedTree = true).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("live-chart-readout", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test fun overnightTestAlertActuallyPostsAndMenuHoldsFinish() {
+        val app = app()
+        val live = seedBoard(app)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        openLiveCook()
+        // 1.6: Pause/Finish live in the cook menu, out of the scroll path.
+        compose.onNodeWithTag("cook-menu-button", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("live-finish-cook", useUnmergedTree = true).assertIsDisplayed()
+        Espresso.pressBack()
+        // E3: the test alert ACTUALLY FIRES — the posted notification is
+        // the evidence, not an in-app claim.
+        compose.onNodeWithTag("overnight-test-alert", useUnmergedTree = true).performScrollTo().performClick()
+        val notifications = context.getSystemService(NotificationManager::class.java)
+        compose.waitUntil(15_000) {
+            notifications.activeNotifications.any { it.tag == CookAlertNotifications.testTag(live) }
+        }
+        compose.onNodeWithTag("overnight-test-sent", useUnmergedTree = true).assertIsDisplayed()
+    }
+}
