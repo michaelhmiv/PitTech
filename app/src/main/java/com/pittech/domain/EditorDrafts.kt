@@ -79,6 +79,7 @@ object DishDraftCodec {
         .put("boneIn", draft.boneIn ?: JSONObject.NULL)
         .put("placement", draft.placement).put("grade", draft.gradeOrSource)
         .put("thickness", draft.thicknessNotes).put("prep", draft.prepNotes)
+        .put("rub", draft.rub)
         .put("ingredients", JSONArray(draft.preparationItems.map { i ->
             JSONObject().put("name", i.name).put("stage", i.stage).put("brand", i.brand)
                 .put("amount", i.amountText).put("unit", i.amountUnit)
@@ -96,6 +97,7 @@ object DishDraftCodec {
             boneIn = o.nullBool("boneIn"),
             placement = o.optString("placement"), gradeOrSource = o.optString("grade"),
             thicknessNotes = o.optString("thickness"), prepNotes = o.optString("prep"),
+            rub = o.optString("rub"),
             preparationItems = o.optJSONArray("ingredients")?.let { array ->
                 (0 until array.length()).map { index ->
                     val i = array.getJSONObject(index)

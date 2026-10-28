@@ -33,6 +33,9 @@ data class CookInputs(
 data class CookInputRow(val resultType: String, val textValue: String?)
 
 object CookInputVocabulary {
+    /** Every resultType this vocabulary reads or writes. */
+    val resultTypes: List<String> = listOf("wrap_material", "rub", "spritz", "spritz_medium")
+
     const val TYPE_WRAP_MATERIAL = "wrap_material"
     const val TYPE_RUB = "rub"
     const val TYPE_SPRITZ = "spritz"

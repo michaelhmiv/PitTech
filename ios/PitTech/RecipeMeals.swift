@@ -41,13 +41,31 @@ extension PitTechLibrary {
         do {
             library.cooks.append(cook); library.lifecycles.append(.object(["cookId": .string(cook.id), "timingMode": .string("explicit_phases")]))
             let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
+            // Flowing §4.2: seed each dish's rub input row — the rub named
+            // at setup wins; otherwise the recipe's rub-staged ingredient.
+            func seedRub(dishId: String, named: String?) {
+                let namedRub = named?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let rub = (namedRub?.isEmpty == false ? namedRub : nil) ?? CookInputVocabulary.rubFromIngredients(
+                    library.ingredients.compactMap(\.objectValue)
+                        .filter { $0["cookId"]?.stringValue == cook.id && $0["dishId"]?.stringValue == dishId }
+                        .map { NoteIngredient(name: $0["name"]?.stringValue ?? "", stage: $0["stage"]?.stringValue ?? "") })
+                if let rub {
+                    library.results.append(.object([
+                        "id": .string("\(cook.id):\(dishId):rub"), "cookId": .string(cook.id),
+                        "dishId": .string(dishId), "resultType": .string("rub"),
+                        "textValue": .string(rub), "recordedAtUtcMillis": .number(now),
+                    ]))
+                }
+            }
             for dish in setup.dishes {
                 if let revisionId = dish.revisionId {
                     let snapshot = try dish.snapshotJSON.map { try RecipeSnapshot.decode($0) } ?? recipeSnapshot(revisionId)
-                    _ = try appendRecipeDish(cookId: cook.id, snapshot: snapshot, revisionId: revisionId)
+                    let dishId = try appendRecipeDish(cookId: cook.id, snapshot: snapshot, revisionId: revisionId)
+                    seedRub(dishId: dishId, named: dish.rub)
                 } else {
+                    let dishId = UUID().uuidString.lowercased()
                     library.dishes.append(.object([
-                        "id": .string(UUID().uuidString.lowercased()),
+                        "id": .string(dishId),
                         "cookId": .string(cook.id),
                         "name": .string(dish.name.trimmingCharacters(in: .whitespacesAndNewlines)),
                         "foodType": .string(dish.foodType),
@@ -57,6 +75,7 @@ extension PitTechLibrary {
                         "createdAtUtcMillis": .number(now),
                         "updatedAtUtcMillis": .number(now)
                     ]))
+                    seedRub(dishId: dishId, named: dish.rub)
                 }
             }
             if setup.alreadyCooking {

@@ -77,7 +77,7 @@ class RecipeProvenanceTest {
     }
 
     @Test fun payloadCarriesTheWholeStory() {
-        val payload = RecipeProvenance.fromArchive(archive(), "c1", "d1") ?: fail("payload must exist")
+        val payload = RecipeProvenance.fromArchive(archive(), "c1", "d1") ?: error("payload must exist")
         assertEquals("October 12, 2026", payload.cookedDateText)
         assertEquals("Offset smoker", payload.pitName)
         assertEquals(250.0, payload.setpointF!!, 0.0)
@@ -109,7 +109,7 @@ class RecipeProvenanceTest {
     }
 
     @Test fun aCookWithoutAStoryYieldsHonestAbsencesNotFabrications() {
-        val payload = RecipeProvenance.fromArchive(archive(withStory = false), "c1", "d1") ?: fail("the cook exists; the payload should too")
+        val payload = RecipeProvenance.fromArchive(archive(withStory = false), "c1", "d1") ?: error("the cook exists; the payload should too")
         assertEquals("October 12, 2026", payload.cookedDateText)
         assertNull(payload.totalMinutes)
         assertNull(payload.stallMinutes)

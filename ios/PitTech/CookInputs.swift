@@ -46,6 +46,8 @@ struct CookInputRow: Equatable {
 }
 
 enum CookInputVocabulary {
+    /// Every resultType this vocabulary reads or writes.
+    static let resultTypes = ["wrap_material", "rub", "spritz", "spritz_medium"]
     static let typeWrapMaterial = "wrap_material"
     static let typeRub = "rub"
     static let typeSpritz = "spritz"

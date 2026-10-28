@@ -21,6 +21,7 @@ import com.pittech.data.TimelineEventEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TargetEntity
 import com.pittech.data.DishEntity
+import com.pittech.domain.CookInputs
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -248,6 +249,10 @@ class CooksViewModel(
 
     fun toggleCookFavorite(cookId: String, favorite: Boolean) = perform { repository.setFavorite(cookId, favorite) }
     fun saveCookLearning(cookId: String, dishId: String?, keep: String, change: String) = perform { repository.saveLearning(cookId, dishId, keep, change) }
+
+    /** Flowing §4.2: the composer's one-tap capture writes the action's
+     * inputs through the same results model as the editor. */
+    fun saveCookInputs(cookId: String, dishId: String?, inputs: CookInputs) = perform { repository.saveCookInputs(cookId, dishId, inputs) }
     fun saveCookTags(cookId: String, method: String, tags: String) = perform { repository.saveCookTags(cookId, method, tags) }
     fun saveCookReference(cookId: String, reference: com.pittech.domain.CookReference) = perform { app.companionRepository.saveReference(cookId, reference) }
 
@@ -816,9 +821,11 @@ class CooksViewModel(
         keepDoing: String = "",
         changeNextTime: String = "",
         cookAgain: Boolean? = null,
+        cookInputs: CookInputs? = null,
         onFinished: ((Boolean) -> Unit)? = null,
     ) = perform({
         repository.saveLearning(cookId, dishId, keepDoing, changeNextTime)
+        if (cookInputs != null) repository.saveCookInputs(cookId, dishId, cookInputs)
         repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish, cookAgain = cookAgain, updateCookAgain = dishId != null)
         if (finish) reconcileRecording()
         if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }

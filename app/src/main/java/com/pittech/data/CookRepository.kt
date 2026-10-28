@@ -2,6 +2,8 @@ package com.pittech.data
 
 import androidx.room.withTransaction
 import com.pittech.domain.CookEntryValidation
+import com.pittech.domain.CookInputVocabulary
+import com.pittech.domain.CookInputs
 import com.pittech.domain.CookPlaybook
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
@@ -212,6 +214,14 @@ class CookRepository(
                 if (setpoint != null) database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), cookId, null, "setpoint", setpoint, draft.setpointUnit, now)))
                 if (dishes.isNotEmpty()) dao.insertDishes(dishes)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
+                // Flowing §4.2: the rub named at setup (or the recipe's
+                // rub-staged ingredient) becomes the dish's rub input row.
+                dishPairs.forEach { (dishDraft, dishId) ->
+                    val rub = dishDraft.rub.trim().ifBlank { CookInputVocabulary.rubFromIngredients(dishDraft.preparationItems) }.orEmpty()
+                    if (rub.isNotBlank()) dao.upsertResult(
+                        CookResultEntity("$cookId:$dishId:rub", cookId, dishId, "rub", textValue = rub, recordedAtUtcMillis = now),
+                    )
+                }
                 dao.insertTimelineEvents(events)
                 draft.recipeRevisionIds.forEachIndexed { index, revisionId ->
                     if (revisionId == null) return@forEachIndexed
@@ -323,6 +333,10 @@ class CookRepository(
                 }
                 dao.insertDish(dish)
                 if (ingredients.isNotEmpty()) dao.insertIngredients(ingredients)
+                val rub = draft.rub.trim().ifBlank { CookInputVocabulary.rubFromIngredients(draft.preparationItems) }.orEmpty()
+                if (rub.isNotBlank()) dao.upsertResult(
+                    CookResultEntity("$cookId:$id:rub", cookId, id, "rub", textValue = rub, recordedAtUtcMillis = now),
+                )
                 if (importedPhotos.isNotEmpty()) dao.insertPhotos(importedPhotos)
             }
         } catch (failure: Throwable) {
@@ -600,6 +614,23 @@ class CookRepository(
         listOf("keep_doing" to keepDoing, "change_next_time" to changeNextTime).forEach { (type, text) ->
             val id = "$cookId:${dishId ?: "cook"}:$type"
             if (text.isBlank()) dao.deleteResult(id) else dao.upsertResult(CookResultEntity(id, cookId, dishId, type, textValue = text.trim(), recordedAtUtcMillis = now))
+        }
+    }
+
+    /**
+     * Flowing §4.2: persist one scope's structured cook inputs (wrap
+     * material, rub, spritz) as results rows — the same table and
+     * deterministic IDs as every other result, so inputs sync, export and
+     * read back through CookInputVocabulary.fromResults. A field left null
+     * deletes its row: absence is "Not recorded", never a stored guess.
+     */
+    suspend fun saveCookInputs(cookId: String, dishId: String?, inputs: CookInputs) {
+        val now = System.currentTimeMillis()
+        val scope = dishId ?: "cook"
+        CookInputVocabulary.resultTypes.forEach { type ->
+            val row = CookInputVocabulary.rows(inputs).firstOrNull { it.resultType == type }
+            if (row == null) dao.deleteResult("$cookId:$scope:$type")
+            else dao.upsertResult(CookResultEntity("$cookId:$scope:$type", cookId, dishId, type, textValue = row.textValue, recordedAtUtcMillis = now))
         }
     }
     suspend fun setFavorite(cookId: String, favorite: Boolean) {

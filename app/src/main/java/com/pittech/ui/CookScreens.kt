@@ -1292,6 +1292,8 @@ internal fun DishEditorDialog(
             startingCondition = initial?.startingCondition, boneIn = initial?.boneIn,
             placement = initial?.placement.orEmpty(), gradeOrSource = initial?.gradeOrSource.orEmpty(),
             thicknessNotes = initial?.thicknessNotes.orEmpty(), prepNotes = initial?.prepNotes.orEmpty(),
+            rub = initial?.rub?.takeIf { it.isNotBlank() }
+                ?: com.pittech.domain.CookInputVocabulary.rubFromIngredients(initial?.preparationItems ?: emptyList()).orEmpty(),
             preparationItems = initial?.preparationItems?.takeIf { it.isNotEmpty() } ?: listOf(IngredientDraft(name = "")),
             photoUris = emptyList(),
         )
@@ -1313,6 +1315,7 @@ internal fun DishEditorDialog(
     var gradeOrSource by rememberSaveable { mutableStateOf(openedDish.gradeOrSource) }
     var thicknessNotes by rememberSaveable { mutableStateOf(openedDish.thicknessNotes) }
     var prepNotes by rememberSaveable { mutableStateOf(openedDish.prepNotes) }
+    var rub by rememberSaveable { mutableStateOf(openedDish.rub) }
     var preparationItems by remember { mutableStateOf(openedDish.preparationItems.takeIf { it.isNotEmpty() } ?: listOf(IngredientDraft(name = ""))) }
     var photoUris by rememberSaveable { mutableStateOf(openedDish.photoUris) }
     var nameError by rememberSaveable { mutableStateOf(false) }
@@ -1324,12 +1327,13 @@ internal fun DishEditorDialog(
         name = name, foodType = foodType, cut = cut, weightText = weight, weightUnit = weightUnit,
         startingCondition = startingCondition, boneIn = boneIn, placement = placement,
         gradeOrSource = gradeOrSource, thicknessNotes = thicknessNotes, prepNotes = prepNotes,
+        rub = rub,
         preparationItems = preparationItems, photoUris = photoUris,
     )
     // PL-24: autosave the working dish once it diverges from how the
     // editor opened; reverting to the opened state clears the draft,
     // and saving the dish clears it too.
-    LaunchedEffect(name, foodType, cut, weight, weightUnit, startingCondition, boneIn, placement, gradeOrSource, thicknessNotes, prepNotes, preparationItems, photoUris) {
+    LaunchedEffect(name, foodType, cut, weight, weightUnit, startingCondition, boneIn, placement, gradeOrSource, thicknessNotes, prepNotes, rub, preparationItems, photoUris) {
         val current = currentDish()
         if (current != openedDish) draftStore.save(fullDraftKey, DishDraftCodec.encode(current))
     }
@@ -1340,12 +1344,13 @@ internal fun DishEditorDialog(
         detailsExpanded = false; startingCondition = initialDish.startingCondition; boneIn = initialDish.boneIn
         placement = initialDish.placement; gradeOrSource = initialDish.gradeOrSource
         thicknessNotes = initialDish.thicknessNotes; prepNotes = initialDish.prepNotes
+        rub = initialDish.rub
         preparationItems = initialDish.preparationItems
         photoUris = initialDish.photoUris
     }
     val requestDismiss = {
         val hasInput = name.isNotBlank() || foodType != "Other" || cut.isNotBlank() || weight.isNotBlank() ||
-            startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() ||
+            startingCondition != null || boneIn != null || placement.isNotBlank() || gradeOrSource.isNotBlank() || thicknessNotes.isNotBlank() || prepNotes.isNotBlank() || rub.isNotBlank() ||
             preparationItems.any { it.name.isNotBlank() || it.amountText.isNotBlank() } || photoUris.isNotEmpty()
         if (hasInput) confirmDiscard = true else onDismiss()
     }
@@ -1474,6 +1479,7 @@ internal fun DishEditorDialog(
                     }
                     OutlinedTextField(placement, { placement = it }, label = { Text("Smoker position (optional)") }, placeholder = { Text("Upper rack, left side") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("dish-placement"))
                     OutlinedTextField(gradeOrSource, { gradeOrSource = it }, label = { Text("Grade, brand, or source (optional)") }, modifier = Modifier.fillMaxWidth().testTag("dish-source"))
+                    OutlinedTextField(rub, { rub = it }, label = { Text("Rub (optional)") }, placeholder = { Text("From the recipe, or name your own") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("dish-rub"))
                     OutlinedTextField(thicknessNotes, { thicknessNotes = it }, label = { Text("Size or thickness notes (optional)") }, modifier = Modifier.fillMaxWidth().testTag("dish-thickness"))
 
                     Text("Preparation and ingredients", style = MaterialTheme.typography.titleMedium)

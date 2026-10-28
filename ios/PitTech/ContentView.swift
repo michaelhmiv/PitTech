@@ -485,9 +485,11 @@ struct StartCookSheet: View {
                                 }
                             } icon: { Image(systemName: "book.closed") }
                         } else {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text(dish.name)
                                 if !dish.detailLine.isEmpty { Text(dish.detailLine).font(.footnote).foregroundStyle(.secondary) }
+                                TextField("Rub (optional)", text: Binding(get: { dish.rub ?? "" }, set: { dish.rub = $0.isEmpty ? nil : $0 }))
+                                    .accessibilityIdentifier("cook-dish-rub")
                             }
                         }
                     }

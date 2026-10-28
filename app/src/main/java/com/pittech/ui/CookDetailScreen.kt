@@ -501,12 +501,30 @@ fun CookDetailScreen(
                 measurementType = reading.measurementType, valueText = reading.value.toString(), unit = reading.unit,
                 measuredAt = reading.measuredAtUtcMillis, dishId = reading.dishId, probeId = reading.probeId))).encode()
     }
+    // Flowing §4.2: the composer's capture context — the note scope's
+    // recorded inputs (whole-cook scope for multi-dish notes) and the
+    // plan's own words for the wrap pre-fill.
+    val activeDraft = remember(noteDraftJson) { noteDraftJson?.let { com.pittech.domain.CookNoteDraft.decode(it) } }
+    val composerExistingInputs = remember(data.results, data.events, activeDraft?.dishId) {
+        activeDraft?.let { draft ->
+            com.pittech.domain.CookInputVocabulary.fromResults(
+                data.results.map { it.toInsightResultInput() }, data.cook.id, draft.dishId,
+                hasSpritzEvent = data.events.any { it.eventType == "spritz" && (draft.dishId == null || it.dishId == draft.dishId) },
+            )
+        }
+    }
+    val composerHintTexts = remember(data.cook.id, liveCompanionRecords) {
+        val plan = liveCompanionRecords.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
+            ?.let { runCatching { com.pittech.domain.CookPlanEngine.decode(it.payload) }.getOrNull() }
+        plan?.book?.steps.orEmpty().flatMap { listOf(it.title, it.instructions) }
+    }
     noteDraftJson?.let { raw ->
         val draft = com.pittech.domain.CookNoteDraft.decode(raw)
         CookNoteComposer(draft, data.dishes, preferredTemperatureUnit, viewModel, noteEditing, notePhotoFirst,
             onChange = { noteDraftJson = it.encode() },
             onClose = { noteDraftJson = null; notePhotoFirst = false },
-            onSaved = { attached -> noteDraftJson = null; notePhotoFirst = false })
+            onSaved = { attached -> noteDraftJson = null; notePhotoFirst = false },
+            existingInputs = composerExistingInputs, wrapHintTexts = composerHintTexts)
     }
     if (showTarget) {
         TargetDialog(
@@ -527,10 +545,10 @@ fun CookDetailScreen(
             busy = busy,
             saveError = error,
             onDismiss = { showResults = false; resultsDishId = null; viewModel.clearSaveError() },
-            onSave = { dishId, finalTemp, unit, rest, ratings, notes, keep, change, cookAgain ->
+            onSave = { dishId, finalTemp, unit, rest, ratings, notes, keep, change, cookAgain, cookInputs ->
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
-                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, false, keep, change, cookAgain) { saved ->
+                viewModel.saveResults(data.cook.id, dishId, finalTemp, unit, rest, ratings, notes, false, keep, change, cookAgain, cookInputs) { saved ->
                     if (saved) { showResults = false; resultsDishId = null }
                 }
             },
@@ -2214,6 +2232,12 @@ private val RESULT_DISPLAY_TYPES = setOf(
     "overall_rating", "cook_again", "final_temperature", "rest_minutes",
     "bark", "tenderness", "juiciness", "smoke", "seasoning",
     "result_notes", "keep_doing", "change_next_time",
+    // Flowing §4.2: structured inputs are cook results too.
+    "wrap_material", "rub", "spritz", "spritz_medium",
+)
+
+private fun com.pittech.data.CookResultEntity.toInsightResultInput() = com.pittech.domain.InsightResultInput(
+    id, cookId, dishId, resultType, numericValue, textValue, recordedAtUtcMillis,
 )
 
 private fun formatResultRating(value: Double): String =
@@ -2284,6 +2308,20 @@ private fun CookResultsCard(
         text(rows, "result_notes")?.let { Text("Notes: $it", style = MaterialTheme.typography.bodyLarge) }
         text(rows, "keep_doing")?.let { Text("Keep doing: $it", style = MaterialTheme.typography.bodyLarge) }
         text(rows, "change_next_time")?.let { Text("Change next time: $it", style = MaterialTheme.typography.bodyLarge) }
+        // Flowing §4.2: the recorded inputs render as facts; unrecorded
+        // inputs render as nothing — never an inferred value.
+        if (rows.isNotEmpty()) {
+            val inputs = com.pittech.domain.CookInputVocabulary.fromResults(
+                rows.map { it.toInsightResultInput() }, rows.first().cookId, rows.first().dishId,
+            )
+            inputs.wrapMaterial?.let { Text("Wrap: ${it.label}", style = MaterialTheme.typography.bodyLarge) }
+            inputs.rub?.let { Text("Rub: $it", style = MaterialTheme.typography.bodyLarge) }
+            if (inputs.spritz == com.pittech.domain.SpritzState.YES) {
+                Text("Spritz: ${listOfNotNull("Yes", inputs.spritzMedium).joinToString(" — ")}", style = MaterialTheme.typography.bodyLarge)
+            } else if (inputs.spritz == com.pittech.domain.SpritzState.NO) {
+                Text("Spritz: No", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
     }
     TurnInCard(Modifier.fillMaxWidth()) {
         Column(Modifier.testTag("cook-results-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2963,7 +3001,7 @@ private fun CookResultsSheet(
     busy: Boolean,
     saveError: String?,
     onDismiss: () -> Unit,
-    onSave: (String?, String, String, String, Map<String, String>, String, String, String, Boolean?) -> Unit,
+    onSave: (String?, String, String, String, Map<String, String>, String, String, String, Boolean?, com.pittech.domain.CookInputs) -> Unit,
 ) {
     val sheetFocusManager = LocalFocusManager.current
     val sheetKeyboardController = LocalSoftwareKeyboardController.current
@@ -2985,6 +3023,18 @@ private fun CookResultsSheet(
     var notes by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "result_notes" }?.textValue.orEmpty()) }
     var keep by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "keep_doing" }?.textValue.orEmpty()) }
     var change by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existing.firstOrNull { it.resultType == "change_next_time" }?.textValue.orEmpty()) }
+    // Flowing §4.2: the same scope's structured inputs, editable here —
+    // "Not recorded" is the honest state for cooks that never captured one.
+    val existingInputs = remember(data.cook.id, selectedDishId) {
+        com.pittech.domain.CookInputVocabulary.fromResults(
+            data.results.map { it.toInsightResultInput() }, data.cook.id, selectedDishKey,
+            hasSpritzEvent = data.events.any { it.eventType == "spritz" && it.dishId == selectedDishKey },
+        )
+    }
+    var inputWrap by remember(data.cook.id, selectedDishId) { mutableStateOf(existingInputs.wrapMaterial) }
+    var inputRub by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existingInputs.rub.orEmpty()) }
+    var inputSpritz by remember(data.cook.id, selectedDishId) { mutableStateOf(existingInputs.spritz) }
+    var inputSpritzMedium by rememberSaveable(data.cook.id, selectedDishId) { mutableStateOf(existingInputs.spritzMedium.orEmpty()) }
     var showLearning by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -3022,6 +3072,24 @@ private fun CookResultsSheet(
                 OutlinedTextField(keep, { keep = it }, enabled = !busy, label = { Text("Keep doing") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(change, { change = it }, enabled = !busy, label = { Text("Change next time") }, modifier = Modifier.fillMaxWidth())
             }
+            Text("Cook inputs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text("Wrap material", style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("result-input-wrap")) {
+                FilterChip(inputWrap == null, { inputWrap = null }, enabled = !busy, label = { Text("Not recorded") })
+                com.pittech.domain.WrapMaterial.entries.forEach { material ->
+                    FilterChip(inputWrap == material, { inputWrap = material }, enabled = !busy, label = { Text(material.label) })
+                }
+            }
+            OutlinedTextField(inputRub, { inputRub = it }, enabled = !busy, label = { Text("Rub") }, modifier = Modifier.fillMaxWidth().testTag("result-input-rub"))
+            Text("Spritz", style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("result-input-spritz")) {
+                FilterChip(inputSpritz == com.pittech.domain.SpritzState.NOT_RECORDED, { inputSpritz = com.pittech.domain.SpritzState.NOT_RECORDED }, enabled = !busy, label = { Text("Not recorded") })
+                FilterChip(inputSpritz == com.pittech.domain.SpritzState.YES, { inputSpritz = com.pittech.domain.SpritzState.YES }, enabled = !busy, label = { Text("Yes") })
+                FilterChip(inputSpritz == com.pittech.domain.SpritzState.NO, { inputSpritz = com.pittech.domain.SpritzState.NO }, enabled = !busy, label = { Text("No") })
+            }
+            if (inputSpritz == com.pittech.domain.SpritzState.YES) {
+                OutlinedTextField(inputSpritzMedium, { inputSpritzMedium = it }, enabled = !busy, label = { Text("Spritzed with (optional)") }, modifier = Modifier.fillMaxWidth().testTag("result-input-spritz-medium"))
+            }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
@@ -3032,7 +3100,8 @@ private fun CookResultsSheet(
                     else {
                         sheetFocusManager.clearFocus(force = true)
                         sheetKeyboardController?.hide()
-                        onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, keep, change, cookAgain)
+                        onSave(selectedDishKey, finalTemp, unit, rest, mapOf("overall_rating" to rating, "bark" to bark, "tenderness" to tenderness, "juiciness" to juiciness, "smoke" to smoke, "seasoning" to seasoning), notes, keep, change, cookAgain,
+                            com.pittech.domain.CookInputs(inputWrap, inputRub.trim().ifBlank { null }, inputSpritz, if (inputSpritz == com.pittech.domain.SpritzState.YES) inputSpritzMedium.trim().ifBlank { null } else null))
                     }
                 }, enabled = !busy, modifier = Modifier.testTag("results-save")) { Text(if (busy) "Saving…" else "Save results") }
             }

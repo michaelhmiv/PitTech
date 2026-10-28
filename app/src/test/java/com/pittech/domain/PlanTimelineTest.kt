@@ -79,7 +79,7 @@ class PlanTimelineTest {
         val plan = canonicalPlan()
         val resolved = PlanTimeline.applyPitChoice(plan, chosenPitF = 250.0)
         val ribs = resolved.lanes.first { it.dishIndex == 1 }
-        val stretch = ribs.stretch ?: fail("ribs must stretch in a 250° pit")
+        val stretch = ribs.stretch ?: error("ribs must stretch in a 250° pit")
         // 280 max × (1 + 0.005 × 25°) = 315 → +35 minutes, the book's number.
         assertEquals(35L, stretch.addedMinutes)
         assertEquals(315L, stretch.adjustedCookMaxMinutes)
