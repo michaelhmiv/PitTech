@@ -13,7 +13,9 @@ export type PublicationRecipe = { id: string; revisionId: string; title: string;
   weightGrams: number | null; method: string | null; ingredients: {name:string;amount:string}[]; instructions: {id:string;title:string;details:string;method?:string|null;action:string|null;suggestedOffsetMillis:number|null}[]; tags: string[];
   story: {attemptId:string;foodOnOffsetMillis:number|null;foodOffOffsetMillis:number|null;channels:{id:string;role:string;label:string}[];measurements:{channelId:string;role:string;offsetMillis:number;valueCelsius:number;quality:string}[];milestones:{id:string;offsetMillis:number;action:string|null;text:string}[];verdict:{rating:number|null;cookAgain:boolean|null;notes:string};gaps:{channelId:string;fromMillis:number;toMillis:number}[]} | null;
   assets: Asset[]; source: Source | null };
-export type PublicationPayload = { contractVersion: 1; kind: 'recipe'|'collection'|'attempt'; identityMode: 'named'|'anonymous'; title: string;
+export type PublicationPayload = { contractVersion: 1; kind: 'recipe'|'collection'|'attempt'; identityMode: 'named'|'anonymous';
+  /** Taxonomy id from contracts/fixtures/food-categories-v1.json. Optional so pre-taxonomy payloads stay valid; those count as Other on read paths. */
+  category?: string; title: string;
   recipes: PublicationRecipe[]; source: Source | null; measuredAttemptId: string | null; heroAssetId: string | null };
 const ajv = new Ajv2020({ strict: true, strictTypes: false }); addFormats.default(ajv);
 const schema = ajv.compile(JSON.parse(await readFile(new URL('../../contracts/publication.schema.json',import.meta.url),'utf8')));

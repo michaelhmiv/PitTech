@@ -20,6 +20,23 @@
         "anonymous"
       ]
     },
+    "category": {
+      "type": "string",
+      "enum": [
+        "apps-snacks",
+        "beef",
+        "chicken",
+        "desserts",
+        "lamb-game",
+        "pork",
+        "sausage-links",
+        "seafood",
+        "sides",
+        "turkey",
+        "veggies",
+        "other"
+      ]
+    },
     "title": {
       "type": "string",
       "minLength": 1,

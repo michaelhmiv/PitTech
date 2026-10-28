@@ -39,7 +39,7 @@ export interface McpOperationJournal {
   markUndone(userId: string, mutationId: string, undoneBy: string, at: number): Promise<void>;
 }
 export interface McpCommunitySource {
-  discover(input: { sort?: string; food?: string; query?: string; cursor?: string }): Promise<unknown>;
+  discover(input: { sort?: string; food?: string; query?: string; category?: string; cursor?: string }): Promise<unknown>;
   get(id: string): Promise<{ revisionId: string; payload: { recipes?: Record<string, unknown>[] }; credit?: unknown }>;
 }
 export interface McpBenchmarkSource {
@@ -670,7 +670,7 @@ export class PrivateLibraryService {
       ...(this.community ? [{
         name: 'search_community_recipes', title: 'Search community recipes',
         description: 'Searches public community recipes (read-only). Saving one keeps a private copy; nothing here can publish, like or comment.',
-        inputSchema: { type: 'object', properties: { query: { type: 'string' }, food: { type: 'string' }, sort: { type: 'string' }, cursor: { type: 'string' } }, additionalProperties: false },
+        inputSchema: { type: 'object', properties: { query: { type: 'string' }, food: { type: 'string' }, category: { type: 'string', description: 'One food category id from the shared taxonomy (apps-snacks, beef, chicken, desserts, lamb-game, pork, sausage-links, seafood, sides, turkey, veggies, other). Publications filed before categories existed count as other.' }, sort: { type: 'string' }, cursor: { type: 'string' } }, additionalProperties: false },
         scopes: ['community:read'] as const,
         handler: async (principal: McpPrincipal, args: Record<string, unknown>) => this.searchCommunity(principal, args),
       }, {
@@ -2195,9 +2195,10 @@ export class PrivateLibraryService {
   }
 
   async searchCommunity(principal: McpPrincipal, args: Record<string, unknown>) {
-    this.requireFields(args, ['query', 'food', 'sort', 'cursor']);
+    this.requireFields(args, ['query', 'food', 'category', 'sort', 'cursor']);
     const result = await this.communityOp(() => this.communitySource().discover({
       query: this.optString(args, 'query'), food: this.optString(args, 'food'),
+      category: this.optString(args, 'category'),
       sort: this.optString(args, 'sort'), cursor: this.optString(args, 'cursor'),
     }));
     return { community: result, note: 'Community recipes are read-only here: saving one keeps a private copy pinned to this exact public revision, with its credit. Nothing can be published, liked or commented on through MCP.' };

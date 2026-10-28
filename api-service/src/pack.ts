@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { LIMITS, requirePack, digest, type Summary } from './core.ts';
+import { isFoodCategoryId } from './food-categories.ts';
 import { readZip, writeZip } from './zip.ts';
 
 type ObjectValue = Record<string, unknown>;
@@ -159,8 +160,8 @@ export async function canonicalPack(input: Buffer): Promise<{ bytes: Buffer; sum
   for (const recipe of recipes) requirePack(array(parse(recipe.tagsJson), 100).every(v => string(v, 200)));
   const records = rows(data, 'companionRecords'); requirePack(records.length === 1);
   const record = records[0]; requirePack(record.id === meta.id && record.cookId == null && ['recipe_reference', 'collection_revision'].includes(String(record.kind)));
-  const document = known(record.payload, 'version title identityMode sourceCookId heroPhotoId collectionId parentRevisionId sourceHistory card entries');
-  requirePack(document.version === 1 && document.identityMode === 'anonymous' && document.sourceCookId == null && document.sourceHistory == null && document.parentRevisionId == null && document.collectionId === meta.id);
+  const document = known(record.payload, 'version title identityMode category sourceCookId heroPhotoId collectionId parentRevisionId sourceHistory card entries');
+  requirePack(document.version === 1 && document.identityMode === 'anonymous' && (document.category == null || isFoodCategoryId(document.category)) && document.sourceCookId == null && document.sourceHistory == null && document.parentRevisionId == null && document.collectionId === meta.id);
   text(document.title, 160);
   if (document.card != null) {
     const card = known(document.card, 'version theme hero cropX cropY zoom note includeVerdict unit');
