@@ -1,6 +1,10 @@
 package com.pittech.data
 
+import com.pittech.domain.DishDraft
+import com.pittech.domain.RecipeSnapshot
 import com.pittech.domain.RecipeSnapshotCodec
+import com.pittech.domain.SharingDocument
+import com.pittech.domain.SharingEntry
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -40,6 +44,26 @@ class PublicProtocolTest {
         assertEquals(one.payload.getString("measuredAttemptId"),two.payload.getString("measuredAttemptId"))
         val verdict=one.payload.getJSONArray("recipes").getJSONObject(0).getJSONObject("story").getJSONObject("verdict")
         assertEquals(5,verdict.getInt("rating"));assertEquals("Frozen verdict",verdict.getString("notes"))
+    }
+    @Test fun publicationPayloadCarriesTheDocumentsCategory() {
+        val story = JSONObject().put("version", 1).put("attemptId", "actual-dish").put("anchorUtcMillis", JSONObject.NULL).put("observations", org.json.JSONArray()).put("readings", org.json.JSONArray()).put("results", org.json.JSONArray()).toString()
+        val snapshot = RecipeSnapshot("Grilled salmon", DishDraft("Grilled salmon", "Seafood"))
+        val document = SharingDocument("Salmon only", listOf(SharingEntry(snapshot = snapshot, storyJson = story)), categoryId = "seafood")
+        val prepared = PublicationProjection.build(document, 1, emptyList(), "recipe")
+        assertEquals("seafood", prepared.payload.getString("category"))
+    }
+    @Test fun publicItemCategoryParsesTolerantlyAndDiscoverPathOnlyAddsCategoryWhenSet() {
+        val f = fixture(); val feedItem = f.getJSONObject("feed").getJSONArray("items").getJSONObject(0)
+        val withCategory = PublicItem.parse(JSONObject(feedItem.toString()).put("category", "beef"))
+        assertEquals("beef", withCategory.categoryId); assertEquals("Beef", withCategory.categoryLabel)
+        val withoutCategory = PublicItem.parse(JSONObject(feedItem.toString()).apply { remove("category") })
+        assertEquals("other", withoutCategory.categoryId); assertEquals("Other", withoutCategory.categoryLabel)
+        val unknownCategory = PublicItem.parse(JSONObject(feedItem.toString()).put("category", "barbecue"))
+        assertEquals("other", unknownCategory.categoryId); assertEquals("Other", unknownCategory.categoryLabel)
+        assertEquals("/v1/discover?sort=liked&food=&q=", publicDiscoverPath("liked", "", ""))
+        assertEquals("/v1/discover?sort=liked&food=&q=", publicDiscoverPath("liked", "", "", ""))
+        assertEquals("/v1/discover?sort=liked&food=&q=", publicDiscoverPath("liked", "", "", null))
+        assertEquals("/v1/discover?sort=forked&food=&q=&category=pork", publicDiscoverPath("forked", "", "", "pork"))
     }
     @Test fun anonymousTransportPinsOriginAndRevisionAndRejectsCorruptionAndRedirects() = runBlocking {
         val f=fixture();val bytes=Base64.getDecoder().decode(f.getString("packBase64"));val detail=PublicDetail.parse(f.getJSONObject("detail"))

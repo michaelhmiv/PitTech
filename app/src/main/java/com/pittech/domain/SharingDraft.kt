@@ -26,6 +26,8 @@ data class SharingDocument(
     val parentRevisionId: String? = null,
     val sourceHistoryJson: String? = null,
     val card: com.pittech.data.ShareCardOptions = com.pittech.data.ShareCardOptions(),
+    /** The one taxonomy category this publication counts as; see [FoodCategories]. */
+    val categoryId: String = FoodCategories.DEFAULT_ID,
 )
 
 object SharingDraftCodec {
@@ -43,7 +45,7 @@ object SharingDraftCodec {
     }
     fun encode(value: SharingDocument): String {
         validate(value)
-        return JSONObject().put("version", 1).put("title", value.title).put("identityMode", value.identityMode)
+        return JSONObject().put("version", 1).put("title", value.title).put("identityMode", value.identityMode).put("category", value.categoryId)
             .put("sourceCookId", value.sourceCookId ?: JSONObject.NULL).put("heroPhotoId", value.heroPhotoId ?: JSONObject.NULL)
             .put("collectionId", value.collectionId ?: JSONObject.NULL).put("parentRevisionId", value.parentRevisionId ?: JSONObject.NULL)
             .put("sourceHistory", value.sourceHistoryJson?.let(::JSONObject) ?: JSONObject.NULL)
@@ -58,17 +60,28 @@ object SharingDraftCodec {
         require(o.getInt("version") == 1) { "Unsupported sharing draft." }
         val rows = o.getJSONArray("entries")
         fun optional(key: String) = if (o.isNull(key)) null else o.getString(key)
-        val result = SharingDocument(o.getString("title"), (0 until rows.length()).map { i ->
+        val entries = (0 until rows.length()).map { i ->
             val row = rows.getJSONObject(i); val photos = row.getJSONArray("photoIds")
             SharingEntry(row.getString("id"), if (row.isNull("sourceDishId")) null else row.getString("sourceDishId"),
                 if (row.isNull("sourceRevisionId")) null else row.getString("sourceRevisionId"), RecipeSnapshotCodec.decode(row.getString("snapshotJson")),
                 row.getJSONObject("story").toString(), row.getBoolean("included"), row.getBoolean("includeStory"), (0 until photos.length()).map { photos.getString(it) })
-        }, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString(), com.pittech.data.ShareCardOptions.decode(o.optJSONObject("card")))
+        }
+        // A stored category wins when it is in the taxonomy. Legacy drafts
+        // written before the taxonomy (and any out-of-taxonomy stored value)
+        // fall back to the suggestion from the first dish's food type, dug
+        // out of its recipe snapshot the same way PublicationArchive does,
+        // so they open with a sensible pre-selection instead of failing.
+        val storedCategory = o.optString("category")
+        val categoryId = if (FoodCategories.isValid(storedCategory)) storedCategory else FoodCategories.suggestedIdFor(entries.firstOrNull()?.let { entry ->
+            runCatching { JSONObject(RecipeSnapshotCodec.encode(entry.snapshot)).getJSONObject("draft").getJSONArray("dishes").getJSONObject(0).optString("foodType") }.getOrNull()
+        })
+        val result = SharingDocument(o.getString("title"), entries, optional("sourceCookId"), o.getString("identityMode"), optional("heroPhotoId"), optional("collectionId"), optional("parentRevisionId"), o.optJSONObject("sourceHistory")?.toString(), com.pittech.data.ShareCardOptions.decode(o.optJSONObject("card")), categoryId)
         validate(result); return result
     }
     fun validate(value: SharingDocument) {
         value.card.encode()
         require(value.title.isNotBlank() && value.title.length <= 160 && value.entries.size in 1..20 && value.identityMode in setOf("named", "anonymous")) { "Choose a title and one to twenty dishes." }
+        require(FoodCategories.isValid(value.categoryId)) { "Choose a food category from the list." }
         require(value.entries.map { it.id }.distinct().size == value.entries.size) { "Duplicate sharing dish identities." }
         value.entries.forEach { e ->
             require(e.id.matches(Regex("[A-Za-z0-9_-]{1,80}")) && e.photoIds.size <= 100 && e.photoIds.distinct().size == e.photoIds.size) { "Invalid sharing dish." }
