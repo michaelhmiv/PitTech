@@ -224,6 +224,40 @@ class CookPaceEngineTest {
         assertEquals("a null candidate states nothing", null, smoother.publish(null, 30 * 60_000L))
     }
 
+    /**
+     * The backtest report's numbers (docs/flowing/slice-1-backtest-report.md)
+     * are printed by this test from the shipped engine — the same protocol
+     * as every other backtest here — and read back from the JUnit XML
+     * system-out in the Android checks artifact. It asserts the headline
+     * oracle facts itself so the printed numbers can never drift from a
+     * failing run.
+     */
+    @Test fun backtestSummaryPrintsPerShapeNumbers() {
+        val all = cases()
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneId.of("UTC"))
+        fun clock(ms: Long) = fmt.format(java.time.Instant.ofEpochMilli(ms))
+        for (case in all) {
+            val spans = CookPaceEngine.stallSpans(series(case))
+            val spanText = spans.joinToString(";") { span ->
+                "span ${clock(span.startUtcMillis)}-${clock(span.endUtcMillis)}" +
+                    " (oracle ${case.stallStart?.let { clock(it) } ?: "none"}-${case.stallEnd?.let { clock(it) } ?: "none"}" +
+                    ", startErr ${case.stallStart?.let { (span.startUtcMillis - it) / 60_000 } ?: 0} min" +
+                    ", endErr ${case.stallEnd?.let { (span.endUtcMillis - it) / 60_000 } ?: 0} min)"
+            }.ifEmpty { "no spans" }
+            val statements = runProtocol(case, all)
+            val first = statements.firstOrNull()
+            val contained = statements.count { case.finish in it.range.earliestUtcMillis..it.range.latestUtcMillis }
+            val firstText = first?.let {
+                "first stated at +${(it.at - case.foodOn) / 60_000} min: ${clock(it.range.earliestUtcMillis)}-${clock(it.range.latestUtcMillis)} UTC" +
+                    " basis=${it.range.basis} contained=${case.finish in it.range.earliestUtcMillis..it.range.latestUtcMillis}"
+            } ?: "no range ever stated"
+            val finalAssessment = CookPaceEngine.assess(series(case, case.finish - 1), case.targetF, case.finish - 1, case.foodOn, historyFor(case, all))
+            println("BACKTEST ${case.name}: finish=${clock(case.finish)} UTC; $spanText; statements=${statements.size} containing=$contained; $firstText; stallStateAtFinish=${finalAssessment.stall}")
+            if (case.stallStart != null) assertEquals("one stall span for ${case.name}", 1, spans.size)
+            if (case.name.contains("butt")) assertTrue("the hand-logged butt states no range", statements.isEmpty())
+        }
+    }
+
     @Test fun basisLinesReadAsTheSpecWroteThem() {
         assertEquals("from your last 30 min of readings", PaceBasis.PACE.displayText())
         assertEquals("from your plan — not enough readings yet", PaceBasis.PLAN.displayText())
