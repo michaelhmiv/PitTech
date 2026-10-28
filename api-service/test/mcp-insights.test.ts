@@ -97,8 +97,9 @@ test('community: search/get pass through; save pins a private copy with credit, 
       return { version: this.version, mutationId: next.mutationId, sha256: 'x' };
     },
   };
+  let discoverInput: { category?: string } | undefined;
   const community = {
-    discover: async () => ({ items: [{ id: 'item-1' }], nextCursor: null }),
+    discover: async (input: { category?: string }) => { discoverInput = input; return { items: [{ id: 'item-1' }], nextCursor: null }; },
     get: async () => ({
       revisionId: 'rev-public-1', credit: { displayName: 'Smokey Joe' },
       payload: { recipes: [{ version: 1, name: 'Public ribs', description: '', tags: [], draft: { title: 'Public ribs', smoker: '', setpoint: '', unit: '°F', notes: '', fuel: '', wood: '', dishes: [{ name: 'Ribs', foodType: 'pork', cut: '', weight: '', weightUnit: 'lb', startingCondition: null, boneIn: null, placement: '', grade: '', thickness: '', prep: '', ingredients: [] }] }, instructions: [], observations: [], targets: [], resultNotes: '', rating: null, smokingAnchorUtcMillis: null, preferredPitTemperatureF: null, servings: '', cookAgain: null, publicSource: null }] },
@@ -113,6 +114,9 @@ test('community: search/get pass through; save pins a private copy with credit, 
   };
   const found = await callAs('search_community_recipes', { query: 'ribs' });
   assert.equal(found.isError, false);
+  const foundByCategory = await callAs('search_community_recipes', { query: 'ribs', category: 'beef' });
+  assert.equal(foundByCategory.isError, false);
+  assert.equal(discoverInput?.category, 'beef', 'the category filter must reach the community source');
   const saved = await callAs('save_community_recipe', { itemId: 'item-1' });
   assert.equal(saved.isError, false, saved.content?.[0]?.text);
   const revision = writer.envelope!.records.find(r => r.recordType === 'recipeRevisions')!;

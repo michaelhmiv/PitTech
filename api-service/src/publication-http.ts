@@ -40,8 +40,8 @@ export async function handlePublication(req:IncomingMessage,res:ServerResponse,r
   const json=(status:number,value:unknown)=>{res.statusCode=status;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
   if(route==='/v1/discover'){
     const params=new URL(raw,'https://api.pittech.app').searchParams;
-    if([...params.keys()].some(k=>!['sort','food','q','cursor'].includes(k))||[...params.keys()].some(k=>params.getAll(k).length>1))throw new ApiError(400,'invalid_filter');
-    json(200,await publications.discover({sort:params.get('sort')??undefined,food:params.get('food')??undefined,query:params.get('q')??undefined,cursor:params.get('cursor')??undefined},blocked));return;
+    if([...params.keys()].some(k=>!['sort','food','q','category','cursor'].includes(k))||[...params.keys()].some(k=>params.getAll(k).length>1))throw new ApiError(400,'invalid_filter');
+    json(200,await publications.discover({sort:params.get('sort')??undefined,food:params.get('food')??undefined,query:params.get('q')??undefined,category:params.get('category')??undefined,cursor:params.get('cursor')??undefined},blocked));return;
   }
   if(route==='/v1/profiles/:handle'){json(200,await publications.profile(path[3],new URL(raw,'https://api.pittech.app').searchParams.get('cursor')??undefined,blocked));return;}
   if(route==='/v1/me/profile'||route==='/v1/me/recipes'||route==='/v1/me/recipes/:id'||route==='/v1/me/recipes/:id/archive'){

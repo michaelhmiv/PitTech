@@ -13,6 +13,7 @@ import { stable } from './pack.ts';
 import { publicCookWorker } from './publication-cook-validation.ts';
 import type { Storage } from './storage.ts';
 import type { PublicationPayload } from './publication-pack.ts';
+import { isFoodCategoryId, normalizeFoodCategory } from './food-categories.ts';
 import type { ValidatedPublication } from './publication-validation.ts';
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(value);
@@ -242,19 +243,19 @@ export class Publications {
       const still=await this.tx(c=>this.active(c,id,blocked));if(still.current_revision_id!==expected)throw new ApiError(409,'revision_changed');return {bytes:pack,sha256:summary.sha256};
     }finally{await rm(directory,{recursive:true,force:true});}
   }
-  async discover(input:{sort?:string;food?:string;query?:string;cursor?:string},blocked:string[]=[]){
-    const sort=input.sort??'liked',food=input.food??'',query=input.query??'';
-    if(!['liked','forked'].includes(sort)||food.length>80||query.length>80||(input.cursor?.length??0)>256)throw new ApiError(400,'invalid_filter');
+  async discover(input:{sort?:string;food?:string;query?:string;category?:string;cursor?:string},blocked:string[]=[]){
+    const sort=input.sort??'liked',food=input.food??'',query=input.query??'',category=input.category??'';
+    if(!['liked','forked'].includes(sort)||food.length>80||query.length>80||(category!==''&&!isFoodCategoryId(category))||(input.cursor?.length??0)>256)throw new ApiError(400,'invalid_filter');
     let cursor:{score:number;id:string}|undefined;
     if(input.cursor){try{cursor=JSON.parse(Buffer.from(input.cursor,'base64url').toString());}catch{throw new ApiError(400,'invalid_cursor');}
       if(!cursor||!uuid(cursor.id)||!Number.isSafeInteger(cursor.score)||cursor.score<0)throw new ApiError(400,'invalid_cursor');}
     const score=sort==='liked'?'(SELECT count(*) FROM publications.likes l WHERE l.item_id=i.id)':'(SELECT count(*) FROM publications.items f WHERE f.parent_id=i.id AND f.status=\'active\')';
     const rows=await this.pool.query(`WITH shelf AS (SELECT i.id,${score}::bigint AS score FROM publications.items i JOIN publications.revisions r ON r.id=i.current_revision_id
       WHERE i.status='active' AND NOT(i.author_id=ANY($5::uuid[])) AND ($1='' OR EXISTS(SELECT 1 FROM jsonb_array_elements(r.payload->'recipes') p WHERE lower(p->>'foodType')=lower($1)))
-      AND ($2='' OR position(lower($2) in lower(r.payload->>'title'))>0))
-      SELECT * FROM shelf WHERE $3::bigint IS NULL OR (score<$3 OR (score=$3 AND id>$4::uuid)) ORDER BY score DESC,id ASC LIMIT 21`,[food,query,cursor?.score??null,cursor?.id??null,blocked]);
+      AND ($2='' OR position(lower($2) in lower(r.payload->>'title'))>0) AND ($6='' OR coalesce(r.payload->>'category','other')=$6))
+      SELECT * FROM shelf WHERE $3::bigint IS NULL OR (score<$3 OR (score=$3 AND id>$4::uuid)) ORDER BY score DESC,id ASC LIMIT 21`,[food,query,cursor?.score??null,cursor?.id??null,blocked,category]);
     const page=rows.rows.slice(0,20),items=[];
-    for(const row of page){try{const item=await this.get(row.id,blocked);items.push({id:item.id,revisionId:item.revisionId,title:item.payload.title,kind:item.payload.kind,credit:item.credit,likes:item.likes,forks:item.forks,heroAssetId:item.payload.heroAssetId});}catch(e){if(!(e instanceof ApiError)||e.status!==404)throw e;}}
+    for(const row of page){try{const item=await this.get(row.id,blocked);items.push({id:item.id,revisionId:item.revisionId,title:item.payload.title,kind:item.payload.kind,category:normalizeFoodCategory(item.payload.category),credit:item.credit,likes:item.likes,forks:item.forks,heroAssetId:item.payload.heroAssetId});}catch(e){if(!(e instanceof ApiError)||e.status!==404)throw e;}}
     const last=page.at(-1);return {items,nextCursor:rows.rows.length>20&&last?Buffer.from(JSON.stringify({score:Number(last.score),id:last.id})).toString('base64url'):null};
   }
   async profile(handle:string,cursor?:string,blocked:string[]=[]){

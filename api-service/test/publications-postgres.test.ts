@@ -108,6 +108,12 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
     await publish(bob,randomUUID(),forkEdit.validated,forkEdit.file,{id:forked.id,base:forked.revisionId});
     const discovery=await publications.discover({food:'Pork',query:'Still independent'});assert.equal(discovery.items.length,1);assert.equal(discovery.items[0].id,forked.id);
     await assert.rejects(publications.discover({sort:'newest'}),{code:'invalid_filter'});await assert.rejects(publications.discover({cursor:'broken'}),{code:'invalid_cursor'});
+    // Food taxonomy: a categorized publication filters under its category; a pre-taxonomy one counts as Other.
+    const beefPayload=structuredClone(raw);beefPayload.title='Category brisket plate';beefPayload.category='beef';const beefPrepared=await prepare(beefPayload);const beefPost=await publish(alice,randomUUID(),beefPrepared.validated,beefPrepared.file);
+    const legacyPayload=structuredClone(raw);legacyPayload.title='Category legacy stew';const legacyPrepared=await prepare(legacyPayload);const legacyPost=await publish(alice,randomUUID(),legacyPrepared.validated,legacyPrepared.file);
+    const beefDiscovery=await publications.discover({category:'beef',query:'Category'});assert.deepEqual(beefDiscovery.items.map(i=>i.id),[beefPost.id]);assert.equal((beefDiscovery.items[0] as {category?:string}).category,'beef');
+    const otherDiscovery=await publications.discover({category:'other',query:'Category'});assert.deepEqual(otherDiscovery.items.map(i=>i.id),[legacyPost.id]);assert.equal((otherDiscovery.items[0] as {category?:string}).category,'other');
+    await assert.rejects(publications.discover({category:'barbecue'}),{code:'invalid_filter'});
     await publications.updateProfile(alice,randomUUID(),{handle:'oak_cook',displayName:'Oak Cook',isPublic:false});await assert.rejects(publications.profile('oak_cook'),{code:'publication_unavailable'});
     await assert.rejects(publications.updateProfile(bob,randomUUID(),{handle:'oak_cook',displayName:'Another',isPublic:true}),{code:'handle_unavailable'});
     // A failed object write retains its reservation; cleanup leases free it only after deletion succeeds.
@@ -130,6 +136,7 @@ test('real Postgres publications isolate private schemas, ownership, revisions, 
       const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
       const response=await fetch(origin+'/v1/discover?q=Still%20independent');assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal((await response.json()).items.length,1);
       assert.equal((await fetch(origin+'/v1/discover?unknown=private')).status,400);assert.equal((await fetch(origin+'/v1/sync')).status,404);
+      assert.equal((await (await fetch(origin+'/v1/discover?category=beef&q=Category')).json()).items.length,1);assert.equal((await fetch(origin+'/v1/discover?category=barbecue')).status,400);
       const httpOperation=randomUUID(),headers={Authorization:'Bearer '+'A'.repeat(43),'Content-Type':'application/zip','Idempotency-Key':httpOperation,'X-PitTech-Publication-Terms':PUBLICATION_TERMS_VERSION};
       const noTerms={...headers,'Idempotency-Key':randomUUID()};delete (noTerms as Partial<typeof headers>)['X-PitTech-Publication-Terms'];const denied=await fetch(origin+'/v1/recipes',{method:'POST',headers:noTerms,body:new Uint8Array(archive(raw)).buffer});assert.equal(denied.status,428);
       const publishResponse=await fetch(origin+'/v1/recipes',{method:'POST',headers,body:new Uint8Array(archive(raw)).buffer});assert.equal(publishResponse.status,201);const published=await publishResponse.json();
