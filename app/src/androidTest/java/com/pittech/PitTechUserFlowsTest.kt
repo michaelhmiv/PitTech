@@ -1223,7 +1223,7 @@ class PitTechUserFlowsTest {
     }
 
     @Test
-    fun test10_systemBackPopsCookDetailAndTabRootInsteadOfExiting() {
+    fun test08e_systemBackPopsCookDetailAndTabRootInsteadOfExiting() {
         clearLocalData()
         val cookId = createTestCook("Back navigation brisket")
         // The card's tag can sit inside a merged semantics subtree on the
@@ -1245,7 +1245,7 @@ class PitTechUserFlowsTest {
     }
 
     @Test
-    fun test11_brandStripFabAndRecipeViews() {
+    fun test08f_brandStripFabAndRecipeViews() {
         clearLocalData()
         val application = targetContext.applicationContext as PitTechApplication
         val recipe = runBlocking(Dispatchers.IO) {

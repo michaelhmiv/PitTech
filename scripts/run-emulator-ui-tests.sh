@@ -559,8 +559,8 @@ else
     "test08c_servePlanIsBadgedNotStarted"
     "test08d_startCookFieldsFollowTheCanonicalOrder"
     "test09_finishVerdictResultsHomeAndUndoFinish"
-    "test10_systemBackPopsCookDetailAndTabRootInsteadOfExiting"
-    "test11_brandStripFabAndRecipeViews"
+    "test08e_systemBackPopsCookDetailAndTabRootInsteadOfExiting"
+    "test08f_brandStripFabAndRecipeViews"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
