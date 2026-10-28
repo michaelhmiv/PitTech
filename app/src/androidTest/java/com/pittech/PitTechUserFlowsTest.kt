@@ -511,6 +511,12 @@ class PitTechUserFlowsTest {
         waitForText("Record results")
         composeRule.onNodeWithTag("result-final-temperature").performScrollTo().performTextInput("0")
         composeRule.onNodeWithTag("results-save").performClick()
+        // The validation error renders asynchronously after the save tap;
+        // wait for it to exist before scrolling to it (same idiom as the
+        // dialog-close wait below).
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("results-save-error").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("results-save-error").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("result-final-temperature").performScrollTo().assertTextContains("0").performTextClearance()
         runBlocking(Dispatchers.IO) { assertEquals(CookStatus.ACTIVE, application.database.cookDao().getCook(cookId)!!.status) }
@@ -1227,7 +1233,12 @@ class PitTechUserFlowsTest {
         clearLocalData()
         val cookId = createTestCook("Back navigation brisket")
         // The card's tag can sit inside a merged semantics subtree on the
-        // board, so address it through the unmerged tree.
+        // board, so address it through the unmerged tree; it also reaches
+        // the board asynchronously through the library flow, so wait for
+        // it to exist before interacting.
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("cook-card-$cookId", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("cook-card-$cookId", useUnmergedTree = true).performScrollTo().performClick()
         // The cook detail replaces the tab shell; the home action is gone.
         composeRule.onAllNodesWithTag("start-cook").assertCountEquals(0)
