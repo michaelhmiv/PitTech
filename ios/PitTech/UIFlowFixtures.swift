@@ -42,6 +42,7 @@ struct ScreenshotTextSize: ViewModifier {
                 } catch { assertionFailure("UI fixture failed: " + error.localizedDescription) }
             }
         }
+        if CommandLine.arguments.contains("--ui-test-flowing") { prepareFlowingFixture() }
         if CommandLine.arguments.contains("--ui-test-capture") {
             // Flowing §4.2: one active cook for the composer-capture flow.
             startCook(title: "Capture flow brisket", firstDish: "Brisket")
@@ -63,6 +64,58 @@ struct ScreenshotTextSize: ViewModifier {
         }
         save()
     }
+    /// Flowing Slice 2 (--ui-test-flowing): one finished brisket (the
+    /// ghost/history source) and one live brisket six hours in, out of
+    /// the band and climbing at a pace the engine can state a range for.
+    /// Series are hand-laid so the verdict, ETA basis and ghost delta
+    /// are deterministic: the live cook's last 30 minutes carry four
+    /// readings at 0.2°F/min (PACE basis), and the ghost reached 175°
+    /// at +398 min against the live cook's +360 (+38 at the cursor).
+    private func prepareFlowingFixture() {
+        let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
+        func reading(cookId: String, dishId: String, type: String, value: Double, at: Double, probe: String) {
+            library.readings.append(.object([
+                "id": .string(UUID().uuidString.lowercased()), "cookId": .string(cookId),
+                "dishId": .string(dishId), "probeName": .string(probe),
+                "measurementType": .string(type), "value": .number(value), "unit": .string("°F"),
+                "measuredAtUtcMillis": .number(at), "timeZoneId": .string(TimeZone.current.identifier),
+                "source": .string("manual"), "qualityStatus": .string("valid"),
+                "recordedAtUtcMillis": .number(at), "timestampBasis": .string("measurement"),
+            ]))
+        }
+        func markCut(_ dishId: String) {
+            if let index = library.dishes.firstIndex(where: { $0.objectValue?["id"]?.stringValue == dishId }), var value = library.dishes[index].objectValue {
+                value["cut"] = .string("Brisket"); library.dishes[index] = .object(value)
+            }
+        }
+        startCook(title: "Last brisket", firstDish: "Brisket")
+        guard let ghost = activeCooks.first, let ghostDish = dishRecords(ghost.id).first else { return }
+        markCut(ghostDish.id)
+        let ghostOn = now - 30 * 3_600_000
+        do {
+            try saveNote(CookNoteDraft(cookId: ghost.id, dishId: ghostDish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: ghostOn))
+            let ghostSeries: [(Double, Double)] = [(0, 40), (30, 58), (60, 76), (90, 92), (120, 106), (150, 118), (180, 129), (210, 139), (240, 148), (270, 154), (300, 158), (330, 162), (360, 166), (390, 172), (398, 175), (420, 180), (450, 186), (480, 191), (510, 196), (540, 200), (570, 202)]
+            for (minutes, temp) in ghostSeries { reading(cookId: ghost.id, dishId: ghostDish.id, type: "food_probe", value: temp, at: ghostOn + minutes * 60_000, probe: "Brisket") }
+            try saveNote(CookNoteDraft(cookId: ghost.id, dishId: ghostDish.id, metadata: CookNoteMetadata(category: "action", action: "remove"), title: "Off the pit", occurredAt: ghostOn + 580 * 60_000))
+        } catch { assertionFailure("Flowing fixture failed: " + error.localizedDescription); return }
+        library.results.append(.object(["id": .string("\(ghost.id):dish:final_temperature"), "cookId": .string(ghost.id), "dishId": .string(ghostDish.id), "resultType": .string("final_temperature"), "numericValue": .number(202), "recordedAtUtcMillis": .number(ghostOn + 580 * 60_000)]))
+        finishCook(ghost.id)
+        startCook(title: "Flowing brisket", firstDish: "Brisket")
+        guard let live = activeCooks.first, let liveDish = dishRecords(live.id).first else { return }
+        markCut(liveDish.id)
+        let liveOn = now - 6 * 3_600_000
+        do {
+            try saveNote(CookNoteDraft(cookId: live.id, dishId: liveDish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: liveOn))
+        } catch { assertionFailure("Flowing fixture failed: " + error.localizedDescription); return }
+        library.targets.append(.object(["id": .string(UUID().uuidString.lowercased()), "cookId": .string(live.id), "dishId": .string(liveDish.id),
+            "targetType": .string("personal_finish"), "value": .number(203), "unit": .string("°F"),
+            "scope": .string("dish"), "explanation": .null, "createdAtUtcMillis": .number(liveOn)]))
+        let liveSeries: [(Double, Double)] = [(0, 40), (15, 52), (30, 63), (45, 74), (60, 84), (75, 93), (90, 102), (105, 110), (120, 118), (135, 125), (150, 132), (165, 138), (180, 144), (195, 149), (210, 153), (225, 156), (240, 158), (255, 160), (270, 161), (285, 162), (300, 163), (310, 165), (320, 167), (330, 169), (340, 171), (350, 173), (360, 175)]
+        for (minutes, temp) in liveSeries { reading(cookId: live.id, dishId: liveDish.id, type: "food_probe", value: temp, at: liveOn + minutes * 60_000, probe: "Brisket") }
+        reading(cookId: live.id, dishId: liveDish.id, type: "setpoint", value: 250, at: liveOn + 330 * 60_000, probe: "Pit setpoint")
+        save()
+    }
+
     private func prepareIncomingPackFixture() {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         Task { @MainActor in
