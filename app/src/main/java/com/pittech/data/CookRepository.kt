@@ -628,9 +628,12 @@ class CookRepository(
         val now = System.currentTimeMillis()
         val scope = dishId ?: "cook"
         CookInputVocabulary.resultTypes.forEach { type ->
-            val row = CookInputVocabulary.rows(inputs).firstOrNull { it.resultType == type }
-            if (row == null) dao.deleteResult("$cookId:$scope:$type")
-            else dao.upsertResult(CookResultEntity("$cookId:$scope:$type", cookId, dishId, type, textValue = row.textValue, recordedAtUtcMillis = now))
+            // rows() always lists every type with a nullable value; a
+            // null value is the deletion signal ("a blank/absent field
+            // deletes its row"), not a row worth writing.
+            val value = CookInputVocabulary.rows(inputs).firstOrNull { it.resultType == type }?.textValue
+            if (value == null) dao.deleteResult("$cookId:$scope:$type")
+            else dao.upsertResult(CookResultEntity("$cookId:$scope:$type", cookId, dishId, type, textValue = value, recordedAtUtcMillis = now))
         }
     }
     suspend fun setFavorite(cookId: String, favorite: Boolean) {
