@@ -1,5 +1,6 @@
 import { isCredential,emailAddress } from './auth-credentials.ts';
 import { uuid } from './lifecycle-contract.ts';
+import { emailShell,emailHeading,emailButton,emailColors } from './email-shell.ts';
 
 export type LifecycleNoticeKind='publication_approved'|'publication_removed'|'account_suspended'|'deletion_complete';
 export type LifecycleMail={id:string;email:string;kind:LifecycleNoticeKind};
@@ -15,7 +16,7 @@ export function lifecycleEmail(mail:LifecycleMail,origin:string){
   const email=emailAddress(mail.email),content=copy[mail.kind],support='sportfolioholdings@gmail.com';
   return {to:[email],reply_to:support,subject:content.subject,
     text:`${content.subject}\n\n${content.body}\n\nOpen PitTech: ${origin}\n\nQuestions? ${support}`,
-    html:`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escape(content.subject)}</title></head><body style="margin:0;background:#F5F0E7;color:#242622;font:17px/1.6 Arial,sans-serif"><main style="max-width:560px;margin:auto;padding:32px 24px"><h1 style="font-size:26px">${escape(content.subject)}</h1><p>${escape(content.body)}</p><p><a href="${origin}" style="display:inline-block;min-height:44px;color:#B04D2E">Open PitTech</a></p><p>Questions? <a href="mailto:${support}" style="color:#B04D2E">${support}</a></p></main></body></html>`};
+    html:emailShell(origin,escape(content.subject),emailHeading(escape(content.subject))+`<p style="margin:0">${escape(content.body)}</p>`+`<div style="margin:24px 0 0">${emailButton(origin,'Open PitTech')}</div>`+`<p style="margin:16px 0 0;font-size:15px;color:${emailColors.muted}">Questions? <a href="mailto:${support}" style="color:${emailColors.cobalt}">${support}</a></p>`)};
 }
 export class LifecycleMailFailure extends Error {
   readonly permanent:boolean;readonly retryAfterMillis:number;

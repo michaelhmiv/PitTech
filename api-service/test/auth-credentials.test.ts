@@ -33,7 +33,7 @@ test('email canonicalization rejects header injection, malformed addresses and a
 test('Resend adapter sends accessible code/link alternatives with fixed origin, idempotency, no redirects and redacted failures', async () => {
   const mail: SignInMail = { email: 'synthetic@example.com', challengeId: randomUUID(), code: '012345', token: credential() };
   const email = signInEmail(mail, 'https://pittech.app'); assert.ok(email.text.includes(mail.code)); assert.ok(email.html.includes('lang="en"'));
-  assert.ok(email.text.includes('/auth#challenge=')); assert.ok(!email.html.includes('<script')); assert.ok(!email.html.includes('<img'));
+  assert.ok(email.text.includes('/auth#challenge=')); assert.ok(!email.html.includes('<script')); assert.ok(email.html.includes('<img src="https://pittech.app/brand/ember-logo.png"')); assert.ok(email.html.includes('color-scheme'));
   assert.throws(() => signInEmail(mail, 'https://attacker.invalid'));
   const calls: { url: string; init: RequestInit }[] = [];
   const fake = (async (url, init) => { calls.push({ url: String(url), init: init! }); return new Response('{}', { status: 200 }); }) as typeof fetch;

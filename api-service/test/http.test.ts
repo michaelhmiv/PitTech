@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import proxyaddr from 'proxy-addr';
@@ -81,4 +81,17 @@ test('slow downloads retain their concurrency slots until the response closes', 
     client.on('error', reject);
   });
   assert.equal((await fetch(base + '/packs/' + r.code)).status, 503);
+});
+
+test('HTTP serves the first-party Ember logo that transactional email references', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-brand-')); t.after(() => rm(root, { force: true, recursive: true }));
+  const server = makeServer(new Relay(new MemoryRepository(), new FileStorage(root), budgets), { ipKey: 'x'.repeat(32), uploadsEnabled: false, tempRoot: join(root, 'uploads') });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const logo = await fetch(base + '/brand/ember-logo.png');
+  assert.equal(logo.status, 200); assert.equal(logo.headers.get('content-type'), 'image/png');
+  assert.match(logo.headers.get('cache-control')!, /public/);
+  const bytes = new Uint8Array(await logo.arrayBuffer());
+  assert.deepEqual([...bytes.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  assert.equal(bytes.byteLength, (await stat(new URL('../web/ember-logo.png', import.meta.url))).size);
 });
