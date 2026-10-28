@@ -20,6 +20,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 - The sign-in sheet no longer crashes the app (Android, issue #233): opening "Sign in" from My Cookbook or a publication wrapped the account panel in a second scrolling area, which crashed the app on open (this was the stored crash from October 26). The sheet now scrolls the account panel once, as designed.
 - Back goes back (Android): the system back gesture or button used to close the app from almost everywhere. It now steps back the way you'd expect — from a cook to your list, out of starting a cook, from a More sub-screen to the hub, and from any other tab back to Meals — and only leaves the app from the Meals home.
 - Recipe cards answer taps anywhere on the card (Android): tapping a saved recipe used to work only when you hit the recipe's name exactly; the photo and the rest of the card did nothing. The whole card — and meal-preset cards too — is now the tap target.
+- Cook Packs open the way the app actually treats them (iOS, issue #232): the app now declares outright that it imports a Cook Pack as its own copy instead of opening the file in place — which is how it has always handled them — clearing the App Store "missing document configuration" warning (ITMS-90737) that build 561 carried. Nothing about opening or importing a Cook Pack changes.
 
 ## [Unreleased]
 
