@@ -51,6 +51,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -421,6 +422,10 @@ internal fun PitTechApp(
                         IconButton(onClick = { moreDestination = null }) { Icon(Icons.Filled.ArrowBack, "Back to More") }
                         TurnInBannerText(moreDestination ?: "", style = PitTechTextStyles.bannerTitle)
                     }
+                } else {
+                    // Brand strip on every tab root: brand only, never a
+                    // page title — the bottom tab still says where you are.
+                    PitTechBrandStrip()
                 }
                 OfflineBanner()
             }
@@ -464,6 +469,29 @@ internal fun PitTechApp(
                             modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
                         )
                     }
+                }
+            }
+        },
+        floatingActionButton = {
+            // "Start a cook" as the board's primary floating action
+            // (Michael's direction from hands-on testing). The Meals board's
+            // own start button stays — the FAB is an added entry point to
+            // the same flow, not a replacement.
+            if (section == MainSection.COOKS) {
+                val tokens = pitTechTokens()
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        viewModel.clearSaveError()
+                        viewModel.consumeSetupPreview()
+                        isStartingCook = true
+                    },
+                    containerColor = tokens.ember,
+                    contentColor = tokens.onAccent,
+                    modifier = Modifier.testTag("start-cook-fab"),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Start a cook")
                 }
             }
         },
@@ -826,6 +854,34 @@ private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
                     style = PitTechTextStyles.body,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PitTechBrandStrip() {
+    // The brand strip: a small footprint that is unmistakably PitTech —
+    // the Ember mascot at a clearly readable size beside the wordmark in
+    // the display face, with the ember tick the tab bar uses. It carries
+    // no page title; the selected bottom tab still says where you are.
+    val tokens = pitTechTokens()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("pittech-brand-strip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.pittech_smoker),
+            contentDescription = null,
+            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            TurnInBannerText("PitTech", style = PitTechTextStyles.bannerTitle)
+            Box(
+                Modifier.size(width = 26.dp, height = 3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(tokens.ember),
+            )
         }
     }
 }

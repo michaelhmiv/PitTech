@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -49,7 +50,15 @@ import com.pittech.BuildConfig
 import com.pittech.ads.AdEntitlement
 import com.pittech.ads.shouldAttemptAdRequest
 
-private val CookListNativeAdSlotHeight = 408.dp
+// Slim, banner-proportioned slot (hands-on feedback, 2026-10-27): the home
+// board's ad used to render as a 408dp native card that dwarfed the cook
+// listings. The same native unit now renders as a small template — one row,
+// media/icon, headline, one secondary line, call to action. The slot height
+// is fixed and reserved while the ad loads, so the list never shifts; the
+// placement logic (finished-cooks list only, never the active-cook zone)
+// is unchanged.
+private val CookListNativeAdSlotHeight = 108.dp
+private val CookListNativeAdContentHeight = 64.dp
 
 @Composable
 internal fun PitTechNativeAdPlacement(
@@ -118,23 +127,14 @@ internal fun PitTechNativeAdPlacement(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(
-                    "Ad",
-                    modifier = Modifier
-                        .defaultMinSize(minWidth = 20.dp, minHeight = 18.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 5.dp, vertical = 2.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                AdLabelChip()
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .height(CookListNativeAdContentHeight)
                         .clip(RoundedCornerShape(8.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 )
@@ -154,21 +154,12 @@ internal fun PitTechNativeAdPlacement(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                "Ad",
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 20.dp, minHeight = 18.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 5.dp, vertical = 2.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            AdLabelChip()
             AndroidView(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(CookListNativeAdContentHeight),
                 factory = { viewContext -> createPitTechNativeAdView(viewContext, adStyle) },
                 update = { view -> bindPitTechNativeAd(view, ad, adStyle) },
             )
@@ -176,12 +167,25 @@ internal fun PitTechNativeAdPlacement(
     }
 }
 
+@Composable
+private fun AdLabelChip() {
+    Text(
+        "Ad",
+        modifier = Modifier
+            .defaultMinSize(minWidth = 20.dp, minHeight = 18.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelMedium,
+    )
+}
+
 private data class PitTechNativeAdAssets(
     val icon: ImageView,
     val headline: TextView,
     val advertiser: TextView,
     val media: MediaView,
-    val body: TextView,
     val callToAction: TextView,
     var boundAd: NativeAd? = null,
 )
@@ -197,80 +201,77 @@ private fun createPitTechNativeAdView(context: Context, style: PitTechNativeAdSt
     val nativeAdView = NativeAdView(context).apply {
         setBackgroundColor(Color.TRANSPARENT)
     }
+    // Small template: one horizontal row — media (or icon), the headline
+    // over one secondary line, and the call to action at the end.
     val content = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(context.dp(4), context.dp(8), context.dp(4), context.dp(4))
-    }
-    val header = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
     }
+    val media = MediaView(context)
     val icon = ImageView(context).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
         contentDescription = "Advertiser icon"
     }
     val headline = TextView(context).apply {
         setTextColor(style.headlineColor)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
         setTypeface(typeface, Typeface.BOLD)
-        maxLines = 2
-        setPadding(0, 0, context.dp(40), 0)
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
     }
     val advertiser = TextView(context).apply {
         setTextColor(style.secondaryTextColor)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        setPadding(0, context.dp(4), 0, 0)
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+        setPadding(0, context.dp(2), 0, 0)
     }
-    val media = MediaView(context)
-    val body = TextView(context).apply {
-        setTextColor(style.headlineColor)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setPadding(0, context.dp(8), 0, context.dp(8))
+    val texts = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_VERTICAL
     }
+    texts.addView(headline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    texts.addView(advertiser, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     val callToAction = TextView(context).apply {
         setTextColor(style.actionTextColor)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         setTypeface(typeface, Typeface.BOLD)
         gravity = Gravity.CENTER
-        setPadding(context.dp(16), context.dp(11), context.dp(16), context.dp(11))
+        maxLines = 1
+        setPadding(context.dp(14), context.dp(9), context.dp(14), context.dp(9))
         background = GradientDrawable().apply {
             setColor(style.actionColor)
             cornerRadius = context.dp(8).toFloat()
         }
     }
 
-    header.addView(icon, LinearLayout.LayoutParams(context.dp(48), context.dp(48)))
-    header.addView(
-        headline,
-        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginStart = context.dp(10)
-        },
-    )
-    content.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-    content.addView(advertiser, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     content.addView(
         media,
-        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, context.dp(152)).apply {
-            topMargin = context.dp(10)
-        },
+        LinearLayout.LayoutParams(context.dp(64), context.dp(64)).apply { marginEnd = context.dp(10) },
     )
-    content.addView(body, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    content.addView(
+        icon,
+        LinearLayout.LayoutParams(context.dp(48), context.dp(48)).apply { marginEnd = context.dp(10) },
+    )
+    content.addView(
+        texts,
+        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+    )
     content.addView(
         callToAction,
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = context.dp(4)
+            marginStart = context.dp(10)
         },
     )
     nativeAdView.addView(
         content,
-        FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
     )
     nativeAdView.headlineView = headline
     nativeAdView.advertiserView = advertiser
     nativeAdView.iconView = icon
-    nativeAdView.bodyView = body
     nativeAdView.callToActionView = callToAction
-    nativeAdView.tag = PitTechNativeAdAssets(icon, headline, advertiser, media, body, callToAction)
+    nativeAdView.tag = PitTechNativeAdAssets(icon, headline, advertiser, media, callToAction)
     return nativeAdView
 }
 
@@ -278,25 +279,23 @@ private fun bindPitTechNativeAd(nativeAdView: NativeAdView, ad: NativeAd, style:
     val assets = nativeAdView.tag as PitTechNativeAdAssets
     assets.headline.setTextColor(style.headlineColor)
     assets.advertiser.setTextColor(style.secondaryTextColor)
-    assets.body.setTextColor(style.headlineColor)
     assets.callToAction.setTextColor(style.actionTextColor)
     (assets.callToAction.background as? GradientDrawable)?.setColor(style.actionColor)
     if (assets.boundAd === ad) return
     assets.boundAd = ad
 
     assets.headline.text = ad.headline.orEmpty()
-    assets.advertiser.text = ad.advertiser.orEmpty()
-    assets.body.text = ad.body.orEmpty()
+    // One secondary line: the advertiser when present, else the body text.
+    assets.advertiser.text = ad.advertiser?.takeIf { it.isNotBlank() } ?: ad.body.orEmpty()
     assets.callToAction.text = ad.callToAction.orEmpty()
     assets.icon.setImageDrawable(ad.icon?.drawable)
 
-    assets.advertiser.visibility = if (ad.advertiser.isNullOrBlank()) View.GONE else View.VISIBLE
-    assets.body.visibility = if (ad.body.isNullOrBlank()) View.GONE else View.VISIBLE
     assets.callToAction.visibility = if (ad.callToAction.isNullOrBlank()) View.GONE else View.VISIBLE
-    assets.icon.visibility = if (ad.icon?.drawable == null) View.GONE else View.VISIBLE
-    assets.media.visibility = if (ad.mediaContent == null) View.GONE else View.VISIBLE
+    val hasMedia = ad.mediaContent != null
+    assets.media.visibility = if (hasMedia) View.VISIBLE else View.GONE
+    assets.icon.visibility = if (!hasMedia && ad.icon?.drawable != null) View.VISIBLE else View.GONE
 
-    nativeAdView.registerNativeAd(ad, assets.media.takeIf { ad.mediaContent != null })
+    nativeAdView.registerNativeAd(ad, assets.media.takeIf { hasMedia })
 }
 
 private fun Context.dp(value: Int): Int =

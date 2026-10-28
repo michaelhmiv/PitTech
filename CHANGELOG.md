@@ -4,6 +4,16 @@ Important, user-visible changes to PitTech are recorded here. GitHub Releases pr
 
 This file begins with a truthful **development baseline** rather than inventing releases or historical version tags.
 
+### Added
+- Recipes carry their story (Android): a recipe saved from a cook now shows where it came from when you open it — when it was cooked, how long it ran, its rating, and the recorded timeline with the temperatures measured at each step — instead of only the generic fields. If the meal it came from is still in your history, one tap opens that cook.
+- Recipes can be browsed two ways (Android): a List view with a small photo on each row, or a photo-forward Grid, switched by the List / Grid control on the Recipes tab; your choice is remembered. Recipes sort newest-added first, every row and tile shows the date it was added ("Added Oct 12"), and saving a dish as a recipe when that name is already in your library pre-fills a tell-apart name with the date (like "Boston Butt · Oct 27") that you can change before saving — never blocked, never a silent duplicate.
+
+### Changed
+- "Start a cook" is now a floating button on Meals (Android): the ember button rides at the bottom corner of the board as the primary way to begin, opening the same start-a-cook flow as before. The board's existing start button stays.
+- A slim PitTech brand strip tops the main tabs (Android): the ember pig and the PitTech wordmark, small but unmistakable — a brand mark only, not a page title.
+- The home ad is banner-sized now (Android): the tall native card in your finished-cook list is replaced by a slim one-row ad the height of a banner, in the same place as before — it still reserves its space while it loads so the list never jumps, and it still never appears in or above an active cook.
+- On a live cook, the pit and probe temperatures sit side by side (Android): the two numbers you watch now read as a pair at one glance, each with its trend and its set/target line underneath, and the probe's progress bar runs beneath the pair.
+
 ### Fixed
 - The PitTech Pro alternate app icons (Ember and Midnight) now ship in the iPhone app. The app declared the icons without including the artwork, and App Store Connect rejected the upload (build 540, ITMS-90032); the icon sets and the build setting that bundles them are now in place.
 - Attaching a crash report no longer hijacks the More tab (Android): after you attach a saved crash report to a problem report, the feedback form opens once, as intended — but it used to reopen every time you went back into Settings, so the More tab appeared to lead straight to a bug report and Settings and sign-in felt unreachable. The attach now opens the form exactly once; Settings, Account and the rest of the More hub stay where they belong.

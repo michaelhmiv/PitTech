@@ -1226,26 +1226,8 @@ private fun LiveCookTab(
                 }
                 val pitPrevious = data.readings.filter { it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }
                     .sortedByDescending { it.measuredAtUtcMillis }.getOrNull(1)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TurnInMetaLabel("Pit")
-                    trendOf(pit, pitPrevious)?.let { (label, fill) -> TurnInTrendChip(label, fill) }
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        if (pit != null && FoodLivePresentation.accepted(pit))
-                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(pit.value, pit.unit, displayUnit)) + "°"
-                        else "—",
-                        style = PitTechTextStyles.scoreboard,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    val setpointValue = setpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
-                        ?: data.cook.initialSetpointValue?.let { com.pittech.devices.CookTelemetryPolicy.convert(it, data.cook.initialSetpointUnit ?: displayUnit, displayUnit) }
-                    setpointValue?.let {
-                        Text("SET " + String.format(Locale.getDefault(), "%.0f", it) + "°", style = PitTechTextStyles.monoReadout, color = tokens.inkMuted)
-                    }
-                }
-                // The probe block: the lead dish's latest accepted reading
-                // against its finish target, with the progress bar.
+                // The probe values: the lead dish's latest accepted reading
+                // against its finish target, with the progress bar below.
                 val probeDish = data.dishes.firstOrNull { dish -> data.readings.any { it.dishId == dish.id && FoodLivePresentation.accepted(it) } }
                     ?: data.dishes.firstOrNull()
                 val probeReading = probeDish?.let { dish -> data.readings.filter { it.dishId == dish.id && FoodLivePresentation.accepted(it) }.maxByOrNull { it.measuredAtUtcMillis } }
@@ -1253,37 +1235,59 @@ private fun LiveCookTab(
                     data.targets.firstOrNull { it.dishId == dish.id && it.targetType == "personal_finish" }
                         ?: cookTargets.firstOrNull { it.targetType == "personal_finish" }
                 }
-                if (probeDish != null) {
-                    HorizontalDivider(color = tokens.ruling)
-                    val probePrevious = data.readings.filter { it.dishId == probeDish.id && FoodLivePresentation.accepted(it) }
-                        .sortedByDescending { it.measuredAtUtcMillis }.getOrNull(1)
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TurnInMetaLabel("Probe · " + probeDish.name)
-                        trendOf(probeReading, probePrevious)?.let { (label, fill) -> TurnInTrendChip(label, fill) }
-                    }
-                    val probeValue = probeReading?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
-                    val targetValue = probeTarget?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val probePrevious = probeDish?.let { dish -> data.readings.filter { it.dishId == dish.id && FoodLivePresentation.accepted(it) }
+                    .sortedByDescending { it.measuredAtUtcMillis }.getOrNull(1) }
+                val probeValue = probeReading?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                val targetValue = probeTarget?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                val setpointValue = setpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                    ?: data.cook.initialSetpointValue?.let { com.pittech.devices.CookTelemetryPolicy.convert(it, data.cook.initialSetpointUnit ?: displayUnit, displayUnit) }
+                // Pit and probe read as a side-by-side pair of primary
+                // readouts (hands-on direction, 2026-10-27): each column
+                // carries its label and trend, the scoreboard number, and
+                // its reference line (set / target) underneath, so the two
+                // numbers that matter scan in one glance.
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInMetaLabel("Pit")
+                            trendOf(pit, pitPrevious)?.let { (label, fill) -> TurnInTrendChip(label, fill) }
+                        }
                         Text(
-                            if (probeValue != null) String.format(Locale.getDefault(), "%.0f", probeValue) + "°" else "—",
+                            if (pit != null && FoodLivePresentation.accepted(pit))
+                                String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(pit.value, pit.unit, displayUnit)) + "°"
+                            else "—",
                             style = PitTechTextStyles.scoreboard,
                         )
-                        Spacer(Modifier.weight(1f))
-                        targetValue?.let {
-                            Text("TARGET " + String.format(Locale.getDefault(), "%.0f", it) + "°", style = PitTechTextStyles.monoReadout, color = tokens.inkMuted)
+                        setpointValue?.let {
+                            Text("SET " + String.format(Locale.getDefault(), "%.0f", it) + "°", style = PitTechTextStyles.monoReadout, color = tokens.inkMuted)
                         }
                     }
-                    if (probeValue != null && targetValue != null && targetValue > 0) {
-                        LinearProgressIndicator(
-                            progress = (probeValue / targetValue).toFloat().coerceIn(0f, 1f),
-                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                            color = tokens.ember,
-                            trackColor = tokens.ruling,
-                        )
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Probe progress to " + String.format(Locale.getDefault(), "%.0f", targetValue) + "°", style = PitTechTextStyles.body, color = tokens.inkMuted, modifier = Modifier.weight(1f))
-                            Text(String.format(Locale.getDefault(), "%.0f", (targetValue - probeValue).coerceAtLeast(0.0)) + "° TO GO", style = PitTechTextStyles.monoMeta, color = tokens.ink)
+                    if (probeDish != null) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TurnInMetaLabel("Probe · " + probeDish.name)
+                                trendOf(probeReading, probePrevious)?.let { (label, fill) -> TurnInTrendChip(label, fill) }
+                            }
+                            Text(
+                                if (probeValue != null) String.format(Locale.getDefault(), "%.0f", probeValue) + "°" else "—",
+                                style = PitTechTextStyles.scoreboard,
+                            )
+                            targetValue?.let {
+                                Text("TARGET " + String.format(Locale.getDefault(), "%.0f", it) + "°", style = PitTechTextStyles.monoReadout, color = tokens.inkMuted)
+                            }
                         }
+                    }
+                }
+                if (probeDish != null && probeValue != null && targetValue != null && targetValue > 0) {
+                    LinearProgressIndicator(
+                        progress = (probeValue / targetValue).toFloat().coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                        color = tokens.ember,
+                        trackColor = tokens.ruling,
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Probe progress to " + String.format(Locale.getDefault(), "%.0f", targetValue) + "°", style = PitTechTextStyles.body, color = tokens.inkMuted, modifier = Modifier.weight(1f))
+                        Text(String.format(Locale.getDefault(), "%.0f", (targetValue - probeValue).coerceAtLeast(0.0)) + "° TO GO", style = PitTechTextStyles.monoMeta, color = tokens.ink)
                     }
                 }
                 cookTargets.forEach { target ->

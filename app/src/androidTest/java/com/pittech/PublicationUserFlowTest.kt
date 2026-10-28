@@ -128,7 +128,10 @@ import java.util.UUID
             // with infinite height and the app crashed on open. The sign-in
             // form must now render inside the sheet.
             compose.waitUntil(20000) { compose.onAllNodesWithTag("account-email",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithTag("account-email").assertIsDisplayed()
+            // At large font scales the field can sit below the sheet's
+            // initial fold; it lives in the sheet's scrolling content, so
+            // scroll it into view before asserting it is displayed.
+            compose.onNodeWithTag("account-email").performScrollTo().assertIsDisplayed()
         } finally { scope.cancel(); database.close(); root.deleteRecursively() }
     }
     private class API: PublicationAPI {

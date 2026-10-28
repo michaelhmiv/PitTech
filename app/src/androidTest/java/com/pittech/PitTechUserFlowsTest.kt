@@ -52,6 +52,7 @@ import com.pittech.domain.CookPlaybook
 import com.pittech.domain.DishDraft
 import com.pittech.domain.DishSchedule
 import com.pittech.domain.NewCookDraft
+import com.pittech.domain.RecipeSnapshot
 import com.pittech.domain.ServePlan
 import com.pittech.ui.PitTechThemeMode
 import com.pittech.ui.ZipShareIntent
@@ -859,7 +860,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("PitTech stopped unexpectedly").assertIsDisplayed()
         composeRule.onNodeWithTag("crash-report-attach").performClick()
         // The attach lands on Settings with the bug-report form open — once.
-        composeRule.onNodeWithTag("feedback-kind-bug").assertIsDisplayed()
+        // The form can sit below the fold of the scrolling Settings content,
+        // so wait for it to exist, then scroll it into view before asserting.
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("feedback-kind-bug", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("feedback-kind-bug").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").performClick()
         composeRule.onAllNodesWithTag("feedback-kind-bug").assertCountEquals(0)
         composeRule.onNodeWithTag("settings-version").performScrollTo().assertIsDisplayed()
@@ -1220,13 +1226,15 @@ class PitTechUserFlowsTest {
     fun test10_systemBackPopsCookDetailAndTabRootInsteadOfExiting() {
         clearLocalData()
         val cookId = createTestCook("Back navigation brisket")
-        composeRule.onNodeWithTag("cook-card-$cookId").performScrollTo().performClick()
+        // The card's tag can sit inside a merged semantics subtree on the
+        // board, so address it through the unmerged tree.
+        composeRule.onNodeWithTag("cook-card-$cookId", useUnmergedTree = true).performScrollTo().performClick()
         // The cook detail replaces the tab shell; the home action is gone.
         composeRule.onAllNodesWithTag("start-cook").assertCountEquals(0)
         pressSystemBack()
         // Back returns to the cook list with the activity still alive —
         // pre-fix the system back fell through and finished the activity.
-        composeRule.onNodeWithTag("cook-card-$cookId").assertIsDisplayed()
+        composeRule.onNodeWithTag("cook-card-$cookId", useUnmergedTree = true).assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { assertFalse(it.isFinishing) }
         // From another tab root, back returns to the Cooks (start) tab.
         composeRule.onNodeWithTag("nav-recipes").performClick()
@@ -1234,6 +1242,40 @@ class PitTechUserFlowsTest {
         pressSystemBack()
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { assertFalse(it.isFinishing) }
+    }
+
+    @Test
+    fun test11_brandStripFabAndRecipeViews() {
+        clearLocalData()
+        val application = targetContext.applicationContext as PitTechApplication
+        val recipe = runBlocking(Dispatchers.IO) {
+            application.cookRepository.recipes.save(RecipeSnapshot("Views brisket", DishDraft("Views brisket", "Beef")))
+        }
+        composeRule.activityRule.scenario.recreate()
+        // The brand strip rides the tab roots: mascot + wordmark, no title.
+        // (Assert by tag: the empty-log lockup also carries a "PitTech" text.)
+        composeRule.onNodeWithTag("pittech-brand-strip").assertIsDisplayed()
+        // The floating action is the board's primary start entry; it opens
+        // the same start-a-cook flow, and system back leaves it again.
+        composeRule.onNodeWithTag("start-cook-fab").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("cook-add-dish").assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
+        // Recipes: list rows carry the added date; the grid toggle switches
+        // to photo tiles and the choice persists across recreation.
+        composeRule.onNodeWithTag("nav-recipes").performClick()
+        composeRule.onNodeWithTag("pittech-brand-strip").assertIsDisplayed()
+        composeRule.onNodeWithText("Saved recipe · version", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Added", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("recipes-view-grid").performClick()
+        composeRule.onAllNodesWithText("Saved recipe · version", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithText("Added", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("recipe-open-${recipe.id}").assertIsDisplayed()
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag("nav-recipes").performClick()
+        composeRule.onAllNodesWithText("Saved recipe · version", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithTag("recipes-view-list").performClick()
+        composeRule.onNodeWithText("Saved recipe · version", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     private fun pressSystemBack() {
