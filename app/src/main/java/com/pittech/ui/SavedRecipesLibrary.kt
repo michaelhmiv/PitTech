@@ -108,12 +108,15 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             LaunchedEffect(recipe.currentRevisionId) { assets = viewModel.recipes.assets(recipe.currentRevisionId) }
             var menu by remember { mutableStateOf(false) }
             val snapshot = snapshots[recipe.currentRevisionId]
-            TurnInCard(Modifier.fillMaxWidth()) {
+            // The whole card frame is the tap target (button semantics via
+            // TurnInCard's onClick): previously only the name text opened the
+            // recipe, so taps on the photo or meta lines did nothing.
+            TurnInCard(Modifier.fillMaxWidth().testTag("recipe-open-" + recipe.id), onClick = { detail = recipe }) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     assets.firstOrNull()?.let { RecipePicture(viewModel.recipes.photoUri(it.relativeFilePath)) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (composing) Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
-                        TextButton(onClick = { detail = recipe }, modifier = Modifier.weight(1f).testTag("recipe-open-" + recipe.id)) { TurnInBannerText(recipe.name, style = PitTechTextStyles.bannerTitle) }
+                        TurnInBannerText(recipe.name, style = PitTechTextStyles.bannerTitle, modifier = Modifier.weight(1f))
                         if (recipe.favorite) Icon(Icons.Filled.Favorite, null, tint = tokens.flag, modifier = Modifier.size(20.dp))
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Actions for ${recipe.name}") }
@@ -150,10 +153,10 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             }
         }
         presets.forEach { preset ->
-            TurnInCard(Modifier.fillMaxWidth()) {
+            TurnInCard(Modifier.fillMaxWidth(), onClick = { if (!busy) viewModel.previewMealPreset(preset.id) }) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     TurnInMetaLabel("Meal preset")
-                    TextButton(onClick = { viewModel.previewMealPreset(preset.id) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Repeat ${preset.name}", style = PitTechTextStyles.bannerCard, color = tokens.ink) }
+                    Text("Repeat ${preset.name}", style = PitTechTextStyles.bannerCard, color = tokens.ink, modifier = Modifier.weight(1f))
                 }
             }
         }

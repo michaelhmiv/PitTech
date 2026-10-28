@@ -214,10 +214,18 @@ internal fun PitTechApp(
     LaunchedEffect(startCookId) {
         if (startCookId != null) viewModel.openCook(startCookId)
     }
+    // The crash-recovery attach request is a one-shot: it opens the feedback
+    // form exactly once, on the first Settings composition after the attach.
+    // MainActivity's startAtFeedback stays true for the process lifetime, so
+    // the request is consumed into this pending flag and cleared by
+    // SettingsScreen the moment the form opens — re-entering Settings later
+    // must never reopen the form or hijack the More tab.
+    var feedbackStartPending by remember { mutableStateOf(false) }
     LaunchedEffect(startAtFeedback) {
         if (startAtFeedback) {
             selectedSection = MainSection.MORE.name
             moreDestination = "Settings"
+            feedbackStartPending = true
         }
     }
 
@@ -320,6 +328,9 @@ internal fun PitTechApp(
     LaunchedEffect(setupPreview) { if (setupPreview != null) { isStartingCook = true; selectedSection = MainSection.COOKS.name } }
 
     if (selectedCookId != null) {
+        // System back (gesture or button) closes the cook, same as the
+        // detail's own back arrow — it must never exit the app from here.
+        BackHandler { viewModel.closeCook() }
         val detail = selectedCook
         if (detail == null || detail.cook.id != selectedCookId) {
             // PL-20 (#172): a selection whose detail never arrives is a
@@ -356,6 +367,13 @@ internal fun PitTechApp(
     }
 
     if (isStartingCook) {
+        // Back leaves the start-a-cook flow the same way its own back
+        // affordance does; the setup draft handling inside is unchanged.
+        BackHandler {
+            viewModel.clearSaveError()
+            isStartingCook = false
+            viewModel.consumeSetupPreview()
+        }
         key(setupPreview) {
         StartCookScreen(
             saving = saving,
@@ -384,6 +402,10 @@ internal fun PitTechApp(
 
     val section = MainSection.valueOf(selectedSection)
     BackHandler(enabled = section == MainSection.MORE && moreDestination != null) { moreDestination = null }
+    // From any other tab root, back returns to the start tab (Cooks) instead
+    // of exiting; only the Cooks root lets back leave the app. The More
+    // sub-destination handler above keeps priority there via its condition.
+    BackHandler(enabled = section != MainSection.COOKS && moreDestination == null) { selectedSection = MainSection.COOKS.name }
     Scaffold(
         topBar = {
             // TURN-IN tab-bar treatment (§4): tab roots carry NO title bar —
@@ -519,7 +541,8 @@ internal fun PitTechApp(
                 },
                 privacyOptionsRequired = privacyOptionsRequired,
                 onShowPrivacyOptions = onShowPrivacyOptions,
-                openFeedbackOnStart = startAtFeedback,
+                openFeedbackOnStart = feedbackStartPending,
+                onFeedbackStartConsumed = { feedbackStartPending = false },
                 modifier = Modifier.padding(padding),
             )
             else -> MoreHome(Modifier.padding(padding), onDevices = { moreDestination = "Devices" }, onSettings = { moreDestination = "Settings" }, onImportCode = { viewModel.relay.openImport() }, onSharedCodes = { sharedCodes = true }, onAccount = if (viewModel.account.enabled) ({ viewModel.account.open() }) else null, onCookbook = if (viewModel.account.enabled && viewModel.publicDiscovery.enabled) ({ myCookbook=true }) else null, onCommunity = if(viewModel.publicDiscovery.enabled)({communitySettings=true})else null, onPro = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.MORE) }, accountSubtitle = if (accountPresentation.signedIn) "Private sync — ${SyncStatusCopy.row(syncPresentation.status, syncPresentation.detail, syncPresentation.lastSyncedAt, syncPresentation.conflicts.size, true, viewModel.sync.enabled).headline}" else "Optional email sign-in and this device's session")
@@ -698,7 +721,8 @@ private fun LiveZoneCard(cook: CookWithDishes, nowMillis: Long, onClick: () -> U
     val tokens = pitTechTokens()
     val paused = cook.cook.status == CookStatus.PAUSED
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().testTag("cook-card-${cook.cook.id}"),
         colors = CardDefaults.cardColors(containerColor = tokens.surface, contentColor = tokens.ink),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, tokens.ruling),
@@ -774,7 +798,8 @@ private fun CookSummaryCard(cook: CookWithDishes, onClick: () -> Unit) {
     val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
         .format(Date(cook.cook.startedAtUtcMillis))
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("cook-card-${cook.cook.id}"),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().testTag("cook-card-${cook.cook.id}"),
         colors = CardDefaults.cardColors(containerColor = tokens.surface, contentColor = tokens.ink),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, tokens.ruling),

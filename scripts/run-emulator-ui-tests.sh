@@ -534,7 +534,7 @@ echo "Running cook playbook persistence and archive tests."
 timeout 8m adb shell am instrument -w -r \
   -e class 'com.pittech.CookChartScreenTest,com.pittech.CookNoteScreenTest,com.pittech.FoodFirstCookScreenTest,com.pittech.PlaybookPersistenceTest,com.pittech.GuidanceIntegrationTest,com.pittech.GuidanceScreenTest,com.pittech.PreparationPersistenceTest,com.pittech.PreparationScreenTest,com.pittech.MealRecipeUserFlowsTest,com.pittech.AccountUserFlowTest,com.pittech.CommunityControlsUserFlowTest,com.pittech.PublicDiscoveryUserFlowTest,com.pittech.PublicationUserFlowTest,com.pittech.InsightsFreeToolsTest,com.pittech.ProPaywallContentTest,com.pittech.ProPaywallFlowTest,com.pittech.ProPaywallNoInterruptTest,com.pittech.ProPaywallTest,com.pittech.CommunityBenchmarksTest,com.pittech.CommunityBenchmarksFlowTest,com.pittech.ProPersonalTest,com.pittech.ProPersonalFlowTest,com.pittech.WelcomeFlowTest' \
   "$instrumentation_target" | tee "$companion_test_output"
-grep -q 'OK (87 tests)' "$companion_test_output"
+grep -q 'OK (89 tests)' "$companion_test_output"
 ! grep -q '^INSTRUMENTATION_STATUS_CODE: -2' "$companion_test_output"
 
 test_output="$output_dir/instrumented-tests.txt"
@@ -550,6 +550,7 @@ else
     "test03_timelineTemperatureResultsAndInsightsWork"
     "test04_portableArchiveAndWorkbookRoundTrip"
     "test05_crashReportIsVisibleAndCopyable"
+    "test05b_crashAttachOpensFeedbackOnceAndMoreStaysUsable"
     "test06_cameraPhotoUriAcceptsCameraOutput"
     "test07_photoLogIsOneEntryAndMissingAttachmentsBlockRestore"
     "test04b_preparationDurationStaysInOneOptionalNote"
@@ -558,6 +559,7 @@ else
     "test08c_servePlanIsBadgedNotStarted"
     "test08d_startCookFieldsFollowTheCanonicalOrder"
     "test09_finishVerdictResultsHomeAndUndoFinish"
+    "test10_systemBackPopsCookDetailAndTabRootInsteadOfExiting"
   )
 fi
 echo "Running $instrumentation_target tests for API $api_level without uninstalling the app afterward."
