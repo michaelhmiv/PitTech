@@ -58,8 +58,7 @@ final class LiveGuidanceTests: XCTestCase {
         XCTAssertEqual(text, "Done R100-200")
         XCTAssertEqual(basis, "from your last 30 min of readings")
 
-        // PlanOnly with a
-...[truncated 3864 chars] serve plan: the plan window stands, with the plan basis.
+        // PlanOnly with a serve plan: the plan window stands, with the plan basis.
         let planned = LiveGuidance.eta(finish: .planOnly("not enough readings yet"), planWindow: (300, 400), formatRange: { "R\($0)-\($1)" })
         guard case .plan(let planText, let planBasis) = planned else { return XCTFail("expected plan, got \(planned)") }
         XCTAssertEqual(planText, "Planning window R300-400")
