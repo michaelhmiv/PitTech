@@ -119,9 +119,9 @@ enum CookPaceEngine {
     private static func flatFlags(_ series: [PaceReading]) -> [Bool] {
         series.indices.map { i in
             let t = series[i].atUtcMillis
-            let window = series[..<i + 1].filter { $0.atUtcMillis >= t - PaceConstants.slopeWindowMinutes * 60_000 }
-            guard let slope = slopePerMinute([PaceReading](window)) else { return false }
-            return gapsOk([PaceReading](window)) && slope <= PaceConstants.stallSlopeFloorFPerMinute &&
+            let window = series.prefix(i + 1).filter { $0.atUtcMillis >= t - PaceConstants.slopeWindowMinutes * 60_000 }
+            guard let slope = slopePerMinute(window) else { return false }
+            return gapsOk(window) && slope <= PaceConstants.stallSlopeFloorFPerMinute &&
                 (PaceConstants.stallBandLowF...PaceConstants.stallBandHighF).contains(series[i].fahrenheit)
         }
     }
