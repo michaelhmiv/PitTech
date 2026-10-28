@@ -15,7 +15,6 @@ import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -862,7 +861,7 @@ class PitTechUserFlowsTest {
         // The attach lands on Settings with the bug-report form open — once.
         composeRule.onNodeWithTag("feedback-kind-bug").assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithTag("feedback-kind-bug").assertDoesNotExist()
+        composeRule.onAllNodesWithTag("feedback-kind-bug").assertCountEquals(0)
         composeRule.onNodeWithTag("settings-version").performScrollTo().assertIsDisplayed()
         // Leave and return through the More tab. The saved More destination
         // is Settings, and the form must NOT reopen (the More-tab hijack:
@@ -871,14 +870,14 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("settings-version").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("feedback-kind-bug").assertDoesNotExist()
+        composeRule.onAllNodesWithTag("feedback-kind-bug").assertCountEquals(0)
         // Re-tapping More returns to the hub; entering Settings from the hub
         // is form-free as well.
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("more-devices").assertIsDisplayed()
         composeRule.onNodeWithTag("more-settings").performClick()
         composeRule.onNodeWithTag("settings-version").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("feedback-kind-bug").assertDoesNotExist()
+        composeRule.onAllNodesWithTag("feedback-kind-bug").assertCountEquals(0)
     }
 
     @Test
@@ -1223,7 +1222,7 @@ class PitTechUserFlowsTest {
         val cookId = createTestCook("Back navigation brisket")
         composeRule.onNodeWithTag("cook-card-$cookId").performScrollTo().performClick()
         // The cook detail replaces the tab shell; the home action is gone.
-        composeRule.onNodeWithTag("start-cook").assertDoesNotExist()
+        composeRule.onAllNodesWithTag("start-cook").assertCountEquals(0)
         pressSystemBack()
         // Back returns to the cook list with the activity still alive —
         // pre-fix the system back fell through and finished the activity.
@@ -1231,7 +1230,7 @@ class PitTechUserFlowsTest {
         composeRule.activityRule.scenario.onActivity { assertFalse(it.isFinishing) }
         // From another tab root, back returns to the Cooks (start) tab.
         composeRule.onNodeWithTag("nav-recipes").performClick()
-        composeRule.onNodeWithTag("start-cook").assertDoesNotExist()
+        composeRule.onAllNodesWithTag("start-cook").assertCountEquals(0)
         pressSystemBack()
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { assertFalse(it.isFinishing) }

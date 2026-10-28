@@ -79,8 +79,9 @@ class MealRecipeUserFlowsTest {
         // Tap the bottom edge of the card — the "Saved recipe · version"
         // meta line, far from the name. Pre-fix only the name text was
         // clickable, so this tap did nothing and no detail ever opened.
-        compose.onNodeWithTag("recipe-open-${recipe.id}").performScrollTo()
-            .performTouchInput { click(Offset(size.width / 2f, size.height - 6f)) }
+        val card = compose.onNodeWithTag("recipe-open-${recipe.id}").performScrollTo()
+        val cardBounds = card.fetchSemanticsNode().boundsInRoot
+        card.performTouchInput { click(Offset(cardBounds.width / 2f, cardBounds.height - 6f)) }
         waitFor("recipe-details-close")
         compose.onNodeWithTag("recipe-details-close").assertIsDisplayed()
     }
