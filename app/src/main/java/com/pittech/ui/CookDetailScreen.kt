@@ -50,6 +50,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -173,6 +174,7 @@ fun CookDetailScreen(
     var viewingMarker by remember { mutableStateOf<TimelineEventEntity?>(null) }
     var selectedTab by rememberSaveable(data.cook.id) { mutableStateOf(CookTab.LIVE.name) }
     var editCook by remember { mutableStateOf(false) }
+    var showCookMenu by remember { mutableStateOf(false) }
     var addDish by remember { mutableStateOf(false) }
     var editDish by remember { mutableStateOf<DishEntity?>(null) }
     var ingredientDish by remember { mutableStateOf<DishEntity?>(null) }
@@ -199,13 +201,47 @@ fun CookDetailScreen(
             "${items.count { it.done }}/${items.size} done"
         } ?: "Not started"
         val runningTimers = liveActivityTimers.count { it.status == "running" }
+        // Flowing Slice 2 (E3): the overnight panel's header states the net.
+        val missingRule = alertRecords.map { com.pittech.domain.CookAlertEngine.decode(it.payload).first }.firstOrNull { it.type == "missing" }
+        val overnightSummary = when {
+            missingRule == null -> "Not set up"
+            missingRule.enabled -> "Missing readings on"
+            else -> "Missing readings off"
+        }
         LivePanelSummaries(
             guidance = plan?.let { "Playbook · ${it.title}" } ?: "No playbook",
             alerts = alertSummary,
             checklist = checklistSummary,
             timers = if (runningTimers > 0) "$runningTimers running" else "None running",
+            overnight = overnightSummary,
         )
     }
+    // Flowing Slice 2: how many alert rules are firing right now — the
+    // verdict line's attention input, from the same decode as the strip.
+    val alertAttention = remember(data.cook.id, liveCompanionRecords) {
+        liveCompanionRecords.filter { it.kind == "alert" && it.cookId == data.cook.id }
+            .count { com.pittech.domain.CookAlertEngine.decode(it.payload).second.active }
+    }
+    // The serve plan's current ready window per dish — the ETA's PlanOnly
+    // fallback (the same derivation ActiveServeGoal renders).
+    val planWindows = remember(data.cook.id, liveCompanionRecords, data.events, data.dishes) {
+        val record = liveCompanionRecords.firstOrNull { it.kind == "serve_goal" && it.cookId == data.cook.id }
+        val plan = record?.let { runCatching { com.pittech.domain.ServeTimePlanner.decode(it.payload) }.getOrNull() }
+        if (plan == null) emptyMap() else {
+            val planEvents = com.pittech.data.notePlanEvents(data.events)
+            val dishIds = liveCompanionRecords.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
+                ?.let { runCatching { com.pittech.domain.CookPlanEngine.decode(it.payload).dishIds }.getOrNull() }
+            plan.schedules.mapNotNull { schedule ->
+                val dish = dishIds?.getOrNull(schedule.dishIndex)?.let { id -> data.dishes.firstOrNull { it.id == id } } ?: data.dishes.getOrNull(schedule.dishIndex)
+                dish?.let { it.id to com.pittech.domain.ServeTimePlanner.updatedReadyWindow(plan, schedule, planEvents, it.id) }
+            }.toMap()
+        }
+    }
+    val insightsSnapshot by viewModel.insights.collectAsStateWithLifecycle()
+    val insightsArchive = remember(insightsSnapshot) {
+        com.pittech.data.insightArchive(insightsSnapshot.cooks, insightsSnapshot.readings, insightsSnapshot.results)
+    }
+    val telemetryProfiles by viewModel.telemetry.store.profiles.collectAsStateWithLifecycle()
     // PL-03: the alert line shown on the Live Zone strip — the needs-attention
     // count plus named acknowledgments, readable without opening anything.
     val alertStrip = remember(data.cook.id, liveCompanionRecords) {
@@ -757,6 +793,34 @@ fun CookDetailScreen(
                 actions = {
                     IconButton(onClick = { showConnections = true }, modifier = Modifier.testTag("meal-devices")) { Icon(Icons.Filled.Thermostat, contentDescription = "Devices and connections") }
                     IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") }
+                    // Flowing Slice 2 (1.6): Pause and Finish live in the
+                    // cook menu now — consequential, infrequent, and out of
+                    // the scroll path (the board's placard row is retired).
+                    Box {
+                        IconButton(onClick = { showCookMenu = true }, modifier = Modifier.testTag("cook-menu-button")) { Icon(Icons.Filled.MoreVert, contentDescription = "Cook menu") }
+                        DropdownMenu(expanded = showCookMenu, onDismissRequest = { showCookMenu = false }) {
+                            if (data.cook.status != CookStatus.COMPLETED) {
+                                DropdownMenuItem(
+                                    text = { Text(if (data.cook.status == CookStatus.PAUSED) "Resume cook" else "Pause cook") },
+                                    onClick = {
+                                        showCookMenu = false
+                                        if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Finish cook") },
+                                    modifier = Modifier.testTag("live-finish-cook"),
+                                    onClick = {
+                                        showCookMenu = false
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
+                                        viewModel.clearSaveError()
+                                        showFinishConfirm = true
+                                    },
+                                )
+                            }
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = pitTechTokens().ground),
             )
@@ -874,6 +938,29 @@ fun CookDetailScreen(
                     summaries = liveSummaries,
                     alertStrip = alertStrip,
                     alertFocused = alertFocusId != null,
+                    alertAttention = alertAttention,
+                    planWindows = planWindows,
+                    insightsArchive = insightsArchive,
+                    allReadings = insightsSnapshot.readings,
+                    onSetPitTarget = { value -> viewModel.setPitTarget(data.cook.id, value, preferredTemperatureUnit) },
+                    onLogConditionsChanged = { viewModel.logConditionsChanged(data.cook.id) },
+                    overnightPanel = {
+                        val missingRecord = liveCompanionRecords.firstOrNull { it.kind == "alert" && it.cookId == data.cook.id && com.pittech.domain.CookAlertEngine.decode(it.payload).first.type == "missing" }
+                        val nextPending = data.reminders.filter { it.status == CookReminderEntity.STATUS_PENDING }.minByOrNull { it.dueAtUtcMillis }
+                        OvernightPanelContent(
+                            notificationsAllowed = com.pittech.CookAlertNotifications.canNotify(context),
+                            watchingLabel = when {
+                                data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING -> "Recording from the grill controller"
+                                telemetryProfiles.any { it.cookId == data.cook.id && it.selectedDeviceIds.isNotEmpty() } -> "A temperature connection is attached"
+                                else -> null
+                            },
+                            missingRecordId = missingRecord?.id,
+                            missingEnabled = missingRecord?.let { com.pittech.domain.CookAlertEngine.decode(it.payload).first.enabled } ?: false,
+                            nextReminder = nextPending?.let { it.title to it.dueAtUtcMillis },
+                            onToggleMissing = { id -> viewModel.changeCookAlert(id, "toggle") },
+                            onTestAlert = { viewModel.fireOvernightTestAlert(data.cook.id, data.cook.title) },
+                        )
+                    },
                     railSteps = liveRailSteps(data, liveCompanionRecords, System.currentTimeMillis()),
                     onQuickNote = { openNote() },
                     onQuickTemperature = { openNote("temperature") },
@@ -881,7 +968,6 @@ fun CookDetailScreen(
                     onQuickReminder = { showReminderComposer = true },
                     displayUnit = preferredTemperatureUnit,
                     busy = busy,
-                    onTogglePause = { if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id) },
                     onAddTarget = { showTarget = true },
                     onDeleteTarget = viewModel::deleteTarget,
                     onAddDish = { addDish = true },
@@ -893,12 +979,6 @@ fun CookDetailScreen(
                     },
                     onUndoFinish = { viewModel.reopenCook(data.cook.id) },
                     onExport = { showExportCook = true },
-                    onFinish = {
-                        focusManager.clearFocus(force = true)
-                        keyboardController?.hide()
-                        viewModel.clearSaveError()
-                        showFinishConfirm = true
-                    },
                     onDelete = { confirmDeleteCook = true },
                     onCopySetup = { viewModel.previewCookAgain(data.cook.id) },
                     onError = error,
@@ -1020,6 +1100,7 @@ internal data class LivePanelSummaries(
     val alerts: String,
     val checklist: String,
     val timers: String,
+    val overnight: String,
 )
 
 /**
@@ -1140,6 +1221,13 @@ private fun LiveCookTab(
     summaries: LivePanelSummaries,
     alertStrip: String?,
     alertFocused: Boolean,
+    alertAttention: Int,
+    planWindows: Map<String, Pair<Long, Long>>,
+    insightsArchive: com.pittech.domain.InsightArchive?,
+    allReadings: List<SensorReadingEntity>,
+    onSetPitTarget: (Double) -> Unit,
+    onLogConditionsChanged: () -> Unit,
+    overnightPanel: @Composable () -> Unit,
     railSteps: List<TurnInRailStep>,
     bottomInset: Dp = 0.dp,
     onQuickNote: () -> Unit,
@@ -1148,14 +1236,12 @@ private fun LiveCookTab(
     onQuickReminder: () -> Unit,
     displayUnit: String,
     busy: Boolean,
-    onTogglePause: () -> Unit,
     onAddTarget: () -> Unit,
     onDeleteTarget: (com.pittech.data.TargetEntity) -> Unit,
     onAddDish: () -> Unit,
     onEditDish: (DishEntity) -> Unit,
     onResults: () -> Unit,
     onExport: () -> Unit,
-    onFinish: () -> Unit,
     onUndoFinish: () -> Unit,
     onDelete: () -> Unit,
     onCopySetup: () -> Unit,
@@ -1176,6 +1262,76 @@ private fun LiveCookTab(
     val setpoint = data.readings.filter { it.measurementType == "setpoint" }.maxByOrNull { it.measuredAtUtcMillis }
     val cookTargets = data.targets.filter { it.dishId == null }
     val tokens = pitTechTokens()
+    // Flowing Slice 2 (Spread 01): the Slice 1 pace engine's first
+    // consumer. The lead dish mirrors the scoreboard's probe choice; the
+    // smoother is the engine's anti-jitter publisher, held per cook+dish.
+    val leadDish = data.dishes.firstOrNull { dish -> data.readings.any { it.dishId == dish.id && FoodLivePresentation.accepted(it) } }
+        ?: data.dishes.firstOrNull()
+    val leadTargetF = leadDish?.let { dish ->
+        (data.targets.firstOrNull { it.dishId == dish.id && it.targetType == "personal_finish" }
+            ?: cookTargets.firstOrNull { it.targetType == "personal_finish" })
+            ?.let { com.pittech.domain.CookPlanEngine.fahrenheit(it.value, it.unit) }
+    }
+    val livePlanEvents = remember(data.events) { com.pittech.data.notePlanEvents(data.events) }
+    val foodOnMillis = leadDish?.let { dish ->
+        livePlanEvents.filter { it.action == "food_on" && (it.dishId == dish.id || it.dishId == null) }.minOfOrNull { it.at }
+    } ?: data.cook.startedAtUtcMillis
+    val paceReadings = leadDish?.let { foodSeries(data.readings, it.id, 0L) } ?: emptyList()
+    val paceHistory = remember(insightsArchive, leadDish?.id, data.cook.id) {
+        val archive = insightsArchive; val dish = leadDish
+        if (archive == null || dish == null) com.pittech.domain.PaceHistory.NONE
+        else com.pittech.domain.LiveGuidance.historyFor(archive, data.cook.id, dish.id, dish.cut)
+    }
+    val paceAssessment = if (leadTargetF != null && paceReadings.isNotEmpty()) {
+        com.pittech.domain.CookPaceEngine.assess(paceReadings, leadTargetF, now, foodOnMillis, paceHistory)
+    } else null
+    val paceSmoother = remember(data.cook.id, leadDish?.id) { com.pittech.domain.PaceRangeSmoother() }
+    val publishedRange = (paceAssessment?.finish as? com.pittech.domain.FinishEstimate.Ranged)?.let { paceSmoother.publish(it.range, now) }
+    val displayFinish = publishedRange?.let { com.pittech.domain.FinishEstimate.Ranged(it) } ?: paceAssessment?.finish
+    val leadPlanWindow = leadDish?.let { planWindows[it.id] }
+    val liveEta = when {
+        displayFinish != null -> com.pittech.domain.LiveGuidance.eta(displayFinish, leadPlanWindow) { a, b -> formatClockRange(a, b) }
+        leadPlanWindow != null -> com.pittech.domain.LiveEta.PlanLine(
+            "Planning window " + formatClockRange(leadPlanWindow.first, leadPlanWindow.second),
+            com.pittech.domain.PaceBasis.PLAN.displayText(),
+        )
+        else -> com.pittech.domain.LiveEta.None
+    }
+    // 1.1: one merged answer at the top. Paused cooks already carry their
+    // answer in the paused strip; finished cooks have nothing to guide;
+    // and a cook with nothing behind the line yet (no dish, no plan, no
+    // alert, no reminder) shows no card rather than an empty reassurance.
+    val liveVerdict = if (data.cook.status == CookStatus.PAUSED || data.cook.status == CookStatus.COMPLETED ||
+        (alertAttention == 0 && paceAssessment == null && leadPlanWindow == null && pending.isEmpty())) null else com.pittech.domain.LiveGuidance.verdict(
+        needsAttention = alertAttention,
+        stall = paceAssessment?.stall ?: com.pittech.domain.StallState.Unknown,
+        finish = displayFinish ?: com.pittech.domain.FinishEstimate.PlanOnly("not enough readings yet"),
+        nextReminder = pending.firstOrNull()?.let { it.title to it.dueAtUtcMillis },
+        nowUtcMillis = now,
+        eta = liveEta,
+        formatTime = { formatTimeOfDay(it) },
+        formatDuration = { formatMinutesDuration(it) },
+    )
+    // 2.4: the most recent finished cook of the same cut, for the chart.
+    val ghostData = remember(insightsArchive, allReadings, leadDish?.id) {
+        val archive = insightsArchive; val dish = leadDish
+        if (archive == null || dish == null) null else {
+            val ghostCook = com.pittech.domain.LiveGuidance.ghostCook(archive, data.cook.id, dish.cut)
+            val ghostDish = ghostCook?.let { cook -> archive.dishes.firstOrNull { it.cookId == cook.id && it.cut?.trim()?.lowercase() == dish.cut?.trim()?.lowercase() } }
+            if (ghostCook == null || ghostDish == null) null else {
+                val ghostAnchor = archive.events.filter { it.cookId == ghostCook.id && it.action == "food_on" && (ghostDish.id in it.dishIds || it.dishIds.isEmpty()) }.minOfOrNull { it.at }
+                    ?: ghostCook.startedAtUtcMillis
+                GhostCookData(
+                    cookId = ghostCook.id,
+                    label = "last " + (dish.cut?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: dish.name.lowercase()),
+                    dishId = ghostDish.id,
+                    anchorUtcMillis = ghostAnchor,
+                    readings = allReadings.filter { it.cookId == ghostCook.id },
+                )
+            }
+        }
+    }
+    var showLiveChart by remember { mutableStateOf(false) }
     // The inset is applied BEFORE verticalScroll, so it shrinks the scroll
     // viewport itself: with a snackbar docked at the bottom, scroll-to-reveal
     // parks rows above the snackbar instead of underneath it. At font scale
@@ -1209,6 +1365,17 @@ private fun LiveCookTab(
                 "Showing the last readings — last received " + formatTimeOfDay(it.measuredAtUtcMillis) + ". The cook keeps logging on the grill.",
                 accent = tokens.cobalt,
             )
+        }
+        // 1.1: the verdict line — alerts, the stall, reminders, and pace
+        // merged into the one answer the spouse test asks for. The sources
+        // stay on the board underneath, unchanged.
+        liveVerdict?.let { verdict ->
+            TurnInCard(Modifier.fillMaxWidth().testTag("live-verdict")) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(verdict.headline, style = PitTechTextStyles.bodyEmphasis, modifier = Modifier.testTag("live-verdict-headline"))
+                    verdict.detail?.let { Text(it, style = PitTechTextStyles.body, color = tokens.inkMuted, modifier = Modifier.testTag("live-verdict-detail")) }
+                }
+            }
         }
         Card(
             modifier = Modifier.fillMaxWidth().testTag("live-zone"),
@@ -1259,6 +1426,11 @@ private fun LiveCookTab(
                 val targetValue = probeTarget?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
                 val setpointValue = setpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
                     ?: data.cook.initialSetpointValue?.let { com.pittech.devices.CookTelemetryPolicy.convert(it, data.cook.initialSetpointUnit ?: displayUnit, displayUnit) }
+                // The stepper's reference adds the app's own setpoint
+                // history to the chain: latest setpoint reading, then the
+                // latest stepped target, then the cook's initial setpoint.
+                val historySetpoint = data.targetHistory.filter { it.targetType == "setpoint" }.maxByOrNull { it.effectiveAt }
+                val currentSetpointDisplay = setpointValue ?: historySetpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
                 // Pit and probe read as a side-by-side pair of primary
                 // readouts (hands-on direction, 2026-10-27): each column
                 // carries its label and trend, the scoreboard number, and
@@ -1308,9 +1480,103 @@ private fun LiveCookTab(
                         Text(String.format(Locale.getDefault(), "%.0f", (targetValue - probeValue).coerceAtLeast(0.0)) + "° TO GO", style = PitTechTextStyles.monoMeta, color = tokens.ink)
                     }
                 }
+                // 1.2: the living ETA — a range only ever with its basis.
+                if (liveEta !is com.pittech.domain.LiveEta.None) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            when (val eta = liveEta) {
+                                is com.pittech.domain.LiveEta.RangedLine -> eta.text
+                                is com.pittech.domain.LiveEta.PlanLine -> eta.text
+                                is com.pittech.domain.LiveEta.Withheld -> "No finish range yet"
+                                com.pittech.domain.LiveEta.None -> ""
+                            },
+                            style = PitTechTextStyles.bodyEmphasis, modifier = Modifier.testTag("live-eta-range"),
+                        )
+                        Text(
+                            when (val eta = liveEta) {
+                                is com.pittech.domain.LiveEta.RangedLine -> eta.basis
+                                is com.pittech.domain.LiveEta.PlanLine -> eta.basis
+                                is com.pittech.domain.LiveEta.Withheld -> eta.reason
+                                com.pittech.domain.LiveEta.None -> ""
+                            },
+                            style = PitTechTextStyles.monoMeta, color = tokens.inkMuted, modifier = Modifier.testTag("live-eta-basis"),
+                        )
+                    }
+                }
+                // 1.5: quick-adjust — the pit target steps in the app's own
+                // target history (never a device write), and a one-tap
+                // conditions log for the moment the weather turns.
+                if (data.cook.status != CookStatus.COMPLETED) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TurnInMetaLabel("Pit target")
+                        IconButton(
+                            onClick = { currentSetpointDisplay?.let { onSetPitTarget(it - 5) } },
+                            enabled = currentSetpointDisplay != null && !busy,
+                            modifier = Modifier.testTag("pit-target-minus"),
+                        ) { Icon(Icons.Filled.Remove, contentDescription = "Pit target down 5 degrees") }
+                        Text(
+                            currentSetpointDisplay?.let { String.format(Locale.getDefault(), "%.0f", it) + "°" } ?: "—",
+                            style = PitTechTextStyles.monoReadout, modifier = Modifier.testTag("pit-target-value"),
+                        )
+                        IconButton(
+                            onClick = { currentSetpointDisplay?.let { onSetPitTarget(it + 5) } },
+                            enabled = currentSetpointDisplay != null && !busy,
+                            modifier = Modifier.testTag("pit-target-plus"),
+                        ) { Icon(Icons.Filled.Add, contentDescription = "Pit target up 5 degrees") }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onLogConditionsChanged, enabled = !busy, modifier = Modifier.testTag("live-conditions-changed")) { Text("Conditions changed") }
+                    }
+                }
                 cookTargets.forEach { target ->
                     Text("Target · " + target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, style = PitTechTextStyles.body, color = tokens.inkMuted)
                 }
+            }
+        }
+        // 1.3: the chart is the hero and a door — the same TemperatureChart
+        // engine as the Charts tab, non-interactive here; the whole card
+        // opens the full-screen chart (Spread 02). The old 140dp thumbnail
+        // in the Grill panel stays as a panel element; this is the board's.
+        if (data.readings.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = tokens.surface,
+                contentColor = tokens.ink,
+                border = BorderStroke(1.dp, tokens.ruling),
+                modifier = Modifier.fillMaxWidth().testTag("live-chart-hero"),
+            ) {
+                Box {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TemperatureChart(
+                            readings = data.readings,
+                            cookNames = mapOf(data.cook.id to data.cook.title),
+                            cookStartTimes = mapOf(data.cook.id to foodOnMillis),
+                            dishNames = data.dishes.associate { it.id to it.name },
+                            markers = data.events,
+                            targets = data.targets,
+                            targetHistory = data.targetHistory,
+                            displayUnit = displayUnit,
+                            chartHeight = 200.dp,
+                            interactive = false,
+                            timingMode = data.cook.timingMode,
+                            stallBandF = com.pittech.domain.PaceConstants.STALL_BAND_LOW_F..com.pittech.domain.PaceConstants.STALL_BAND_HIGH_F,
+                        )
+                        Text("Full chart ›", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                    }
+                    // The door: a full-cover tap layer, so the tap opens
+                    // the chart no matter where on the hero it lands (the
+                    // chart's own tap detector must not swallow it).
+                    Box(Modifier.matchParentSize().clickable { showLiveChart = true })
+                }
+            }
+            if (showLiveChart) {
+                LiveChartDialog(
+                    data = data,
+                    displayUnit = displayUnit,
+                    leadDishId = leadDish?.id,
+                    ghost = ghostData,
+                    etaLatestUtcMillis = (displayFinish as? com.pittech.domain.FinishEstimate.Ranged)?.range?.latestUtcMillis,
+                    onDismiss = { showLiveChart = false },
+                )
             }
         }
         if (railSteps.isNotEmpty()) {
@@ -1387,24 +1653,8 @@ private fun LiveCookTab(
                 TurnInPlacard(Icons.Filled.PhotoCamera, "Photo", onClick = onQuickPhoto, modifier = Modifier.weight(1f))
                 TurnInPlacard(Icons.Filled.Notifications, "Reminder", onClick = onQuickReminder, modifier = Modifier.weight(1f))
             }
-            if (data.cook.status != CookStatus.COMPLETED) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TurnInPlacard(
-                        if (data.cook.status == CookStatus.PAUSED) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        if (data.cook.status == CookStatus.PAUSED) "Resume cook" else "Pause",
-                        onClick = onTogglePause,
-                        modifier = Modifier.weight(1f),
-                        enabled = !busy,
-                    )
-                    TurnInPlacard(
-                        Icons.Filled.Flag, "Finish cook",
-                        onClick = onFinish,
-                        modifier = Modifier.weight(1f),
-                        testTag = "live-finish-cook",
-                        enabled = !busy,
-                    )
-                }
-            }
+            // Flowing Slice 2 (1.6): the Pause/Finish placard row is
+            // retired — both actions live in the cook menu (⋯) now.
         }
         if (recent != null || latestPhoto != null) {
             TurnInCard(Modifier.fillMaxWidth()) {
@@ -1441,6 +1691,7 @@ private fun LiveCookTab(
         LivePanel(data.cook.id, "reminders", "Reminders",
             if (pending.isEmpty()) "None pending" else "${pending.size} pending · next ${formatTimeOfDay(pending.first().dueAtUtcMillis)}") { remindersPanel() }
         LivePanel(data.cook.id, "alerts", "Alerts", summaries.alerts, forceExpanded = alertFocused) { alertsPanel() }
+        LivePanel(data.cook.id, "overnight", "Overnight", summaries.overnight) { overnightPanel() }
         LivePanel(data.cook.id, "checklist", "Checklist", summaries.checklist) { checklistPanel() }
         LivePanel(data.cook.id, "timers", "Timers", summaries.timers) { timersPanel() }
         if (grillAvailable) LivePanel(data.cook.id, "grill", "Grill & recording",
@@ -2151,6 +2402,27 @@ private fun eventKindLabel(eventType: String): String = when (eventType) {
 }
 
 private fun formatTimeOfDay(millis: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+
+/** Flowing Slice 2: a clock range with a shared meridiem stated once — "5:35–6:05 PM", the book's ETA shape. */
+private fun formatClockRange(startMillis: Long, endMillis: Long): String {
+    val start = formatTimeOfDay(startMillis)
+    val end = formatTimeOfDay(endMillis)
+    val startMeridiem = start.takeLast(2)
+    val endMeridiem = end.takeLast(2)
+    return if (startMeridiem == endMeridiem && (startMeridiem == "AM" || startMeridiem == "PM")) {
+        start.dropLast(2).trim() + "–" + end
+    } else "$start–$end"
+}
+
+/** Whole-minute duration in the pace strings' own shape: "52m", "2h 40m". */
+private fun formatMinutesDuration(minutes: Double): String {
+    val total = minutes.toLong()
+    return when {
+        total >= 60 -> "${total / 60}h ${total % 60}m"
+        total >= 1 -> "${total}m"
+        else -> "<1m"
+    }
+}
 
 private fun formatReadingValue(value: Double): String = String.format(Locale.getDefault(), "%.1f", value)
 

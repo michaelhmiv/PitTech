@@ -17,33 +17,31 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal class PrivateSyncHttpError(val status: Int, val code: String) : Exception(messageFor(status, code)) {
+internal class PrivateSyncHttpError(val status: Int, val code: String) : Exception(privateSyncHttpMessage(status, code)) {
     val conflict get() = status == 409
     val unauthorized get() = status == 401
+}
 
-    companion object {
-        /**
-         * Flowing Slice 2 (Slice 0 audit finding): a server answer is never
-         * "could not reach PitTech" — that sentence is reserved for genuine
-         * transport failure (the client's IOException path). Every HTTP
-         * status class says what actually happened, with the status named,
-         * so a busy server, a contract rejection, an unmounted route, or a
-         * refused redirect can no longer masquerade as a reachability
-         * failure. Both fetch() and commit() publish this message verbatim.
-         */
-        internal fun messageFor(status: Int, code: String): String = when {
-            code == "redirect_rejected" || status in 300..399 ->
-                "Private sync was redirected, which it does not follow. Your local journal is unchanged."
-            status == 401 -> "Sign in again to reconnect private sync. Your local journal is unchanged."
-            status == 409 -> "Another device changed the backup first. Fetch, merge and retry."
-            status == 413 -> "This library exceeds the sync size limit."
-            status == 422 -> "This library could not be applied safely. Your journal is unchanged."
-            status == 429 -> "Private sync is busy. Retry later."
-            status == 503 -> "PitTech's sync service is busy right now. Retry later — your local journal is unchanged."
-            status in 500..599 -> "PitTech's sync service returned an error ($status). Retry later — your local journal is unchanged."
-            else -> "The server could not accept this sync ($status). Your local journal is unchanged."
-        }
-    }
+/**
+ * Flowing Slice 2 (Slice 0 audit finding): a server answer is never
+ * "could not reach PitTech" — that sentence is reserved for genuine
+ * transport failure (the client's IOException path). Every HTTP status
+ * class says what actually happened, with the status named, so a busy
+ * server, a contract rejection, an unmounted route, or a refused
+ * redirect can no longer masquerade as a reachability failure. Both
+ * fetch() and commit() publish this message verbatim.
+ */
+private fun privateSyncHttpMessage(status: Int, code: String): String = when {
+    code == "redirect_rejected" || status in 300..399 ->
+        "Private sync was redirected, which it does not follow. Your local journal is unchanged."
+    status == 401 -> "Sign in again to reconnect private sync. Your local journal is unchanged."
+    status == 409 -> "Another device changed the backup first. Fetch, merge and retry."
+    status == 413 -> "This library exceeds the sync size limit."
+    status == 422 -> "This library could not be applied safely. Your journal is unchanged."
+    status == 429 -> "Private sync is busy. Retry later."
+    status == 503 -> "PitTech's sync service is busy right now. Retry later — your local journal is unchanged."
+    status in 500..599 -> "PitTech's sync service returned an error ($status). Retry later — your local journal is unchanged."
+    else -> "The server could not accept this sync ($status). Your local journal is unchanged."
 }
 
 internal interface PrivateSyncAPI {
