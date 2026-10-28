@@ -624,7 +624,16 @@ class PitTechUserFlowsTest {
             application.servePlanRepository.save(plan, null)
         }
         composeRule.activityRule.scenario.recreate()
-        composeRule.onNodeWithTag("home-planning-toggle").performClick()
+        // Same font-1.5 tap-delivery failure class as the discard tap in
+        // test08b above: the synthetic touch on this toggle card does not
+        // expand the panel at API 36 / font 1.5, and the badge wait below
+        // then times out on a panel that never opened (this failure
+        // persisted after test08b's discard was fixed, so it is this
+        // test's own tap, not a cascade). Activate through the toggle's
+        // semantics OnClick instead. Assertions unchanged.
+        composeRule.onNodeWithTag("home-planning-toggle").performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("upcoming-not-started").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag("upcoming-not-started").performScrollTo().assertIsDisplayed()
         saveScreenshot("serve-plan-not-started")
