@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { randomUUID,randomBytes } from 'node:crypto';
 import { deletionPage, operatorPage } from './lifecycle-web.ts';
+import { emberLogoPng } from './brand-web.ts';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -60,6 +61,10 @@ export function makeServer(relay: Relay, options: Options) {
     const json = (status: number, value: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
     try {
       if (req.url === '/healthz' && method === 'GET') { route = '/healthz'; json(200, { status: 'ok' }); return; }
+      if (method === 'GET' && req.url === '/brand/ember-logo.png') {
+        route = '/brand/ember-logo.png'; res.statusCode = 200; res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=86400'); res.end(emberLogoPng()); return;
+      }
       if (method === 'GET' && req.url === '/auth') {
         route = '/auth'; res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.setHeader('Content-Security-Policy', "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");

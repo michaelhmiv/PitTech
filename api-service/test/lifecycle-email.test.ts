@@ -5,7 +5,7 @@ import { lifecycleEmail,ResendLifecycleMailer,LifecycleMailFailure } from '../sr
 
 test('lifecycle notices contain no authored public/private content and retry the same event without diagnostic leakage',async()=>{
   const mail={id:randomUUID(),email:'private@example.com',kind:'deletion_complete' as const};
-  const payload=lifecycleEmail(mail,'https://pittech.app');assert.ok(!payload.html.includes(mail.email));assert.match(payload.html,/lang="en"/);assert.equal(payload.reply_to,'sportfolioholdings@gmail.com');assert.match(payload.text,/independent copies/);
+  const payload=lifecycleEmail(mail,'https://pittech.app');assert.ok(!payload.html.includes(mail.email));assert.match(payload.html,/lang="en"/);assert.ok(payload.html.includes('<img src="https://pittech.app/brand/ember-logo.png"'));assert.equal(payload.reply_to,'sportfolioholdings@gmail.com');assert.match(payload.text,/independent copies/);
   assert.throws(()=>lifecycleEmail({...mail,email:'bad'},'https://pittech.app'));assert.throws(()=>lifecycleEmail(mail,'http://attacker.invalid'));
   const keys:string[]=[];let status=503;
   const sender=new ResendLifecycleMailer('re_test','signin@auth.pittech.app','https://pittech.app',async(url,request)=>{

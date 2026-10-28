@@ -1,5 +1,6 @@
 import { ApiError } from './core.ts';
 import { emailAddress, isCredential } from './auth-credentials.ts';
+import { emailShell, emailHeading, emailMuted, emailButton, emailColors } from './email-shell.ts';
 
 export type SignInMail = { email: string; challengeId: string; code: string; token: string };
 const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -9,7 +10,13 @@ export function signInEmail(mail: SignInMail, origin: string) {
   // A fragment never reaches the HTTP request or access log. GET does not authenticate.
   const link = `${origin}/auth#challenge=${mail.challengeId}&token=${mail.token}`;
   const text = `Sign in to PitTech\n\nYour code: ${mail.code}\n\nOr open this link on the device where you requested it:\n${link}\n\nThis code and link expire in 15 minutes and can be used only once. Never share them. If you did not request this email, ignore it. Your local library is unchanged.`;
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="margin:0;background:#F5F0E7;color:#242622;font:17px/1.6 Arial,sans-serif"><main style="max-width:560px;margin:auto;padding:32px 24px"><h1 style="font-size:26px">Sign in to PitTech</h1><p>Your sign-in code:</p><p style="font-size:32px;font-weight:bold;letter-spacing:5px">${mail.code}</p><p><a href="${escape(link)}" style="color:#B04D2E">Sign in on the device where you requested this email</a></p><p>This code and link expire in 15 minutes and can be used only once. Never share them.</p><p>If you did not request this email, ignore it. Your local library is unchanged.</p></main></body></html>`;
+  const html = emailShell(origin, 'Your PitTech sign-in code',
+    emailHeading('Sign in to PitTech')
+    + `<p style="margin:0 0 10px">Your sign-in code:</p>`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" bgcolor="${emailColors.cell}" style="background-color:${emailColors.cell};border:1px solid ${emailColors.line};border-radius:10px;padding:18px 12px;font:700 34px/1.2 Consolas,'Courier New',monospace;letter-spacing:6px;color:${emailColors.cream}">${mail.code}</td></tr></table>`
+    + `<div style="margin:24px 0 0">${emailButton(escape(link), 'Sign in on the device where you requested this email')}</div>`
+    + emailMuted('This code and link expire in 15 minutes and can be used only once. Never share them.')
+    + emailMuted('If you did not request this email, ignore it. Your local library is unchanged.'));
   return { from: '', to: [mail.email], subject: 'Your PitTech sign-in code', text, html };
 }
 export interface AuthMailer { send(mail: SignInMail): Promise<void> }
