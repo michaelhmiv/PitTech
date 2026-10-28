@@ -60,6 +60,7 @@ fun SettingsScreen(
     // here with the feedback form already open (the saved report stays
     // attached — acknowledging the recovery prompt does not delete it).
     openFeedbackOnStart: Boolean = false,
+    onFeedbackStartConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -131,7 +132,13 @@ fun SettingsScreen(
     // PL-20 (#172): crash recovery's attach action lands here with the
     // form open; the saved (acknowledged) report still attaches.
     LaunchedEffect(openFeedbackOnStart) {
-        if (openFeedbackOnStart) openFeedback(FeedbackKind.BUG)
+        if (openFeedbackOnStart) {
+            openFeedback(FeedbackKind.BUG)
+            // Consume the request as it fires: the caller clears its pending
+            // flag, so leaving and re-entering Settings can never reopen the
+            // form (the More-tab hijack regression).
+            onFeedbackStartConsumed()
+        }
     }
     // PL-24: autosave the working draft while the form is open, so
     // leaving and returning restores it. A successful submit clears it.

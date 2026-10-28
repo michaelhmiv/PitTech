@@ -107,6 +107,30 @@ import java.util.UUID
         File(compose.activity.filesDir,"pittech-ui-test/$name.txt").apply { parentFile!!.mkdirs();writeText(text) }
     }
     private fun screenshot(name: String) { compose.waitForIdle();InstrumentationRegistry.getInstrumentation().waitForIdleSync();val image=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot(); val file=File(compose.activity.filesDir,"pittech-ui-test/$name.png").apply { parentFile!!.mkdirs() }; file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }; image.recycle() }
+    @Test fun cookbookSignInSheetOpensAccountWithoutNestedScrollCrash() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val database=Room.inMemoryDatabaseBuilder(context,PitTechDatabase::class.java).build(); val storage=PhotoStorage(context)
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate); val root=File(context.noBackupFilesDir,"cookbook-signin-"+UUID.randomUUID())
+        val repository=CookRepository(database,storage); val transfer=PitTechDataTransfer(context,repository); val viewModel=CooksViewModel(repository,transfer,context)
+        val vault=object: AccountStorage {
+            var state=AccountState()
+            override fun load()=state
+            override fun save(value: AccountState) { state=value }
+        }
+        val account=AccountManager(vault,scope,AccountAPI { _,_,_->error("No authentication request expected") },true)
+        val writer=PublicationWriter(AccountPublicationSession(account),PublicationOperationsStore(root),API())
+        try {
+            compose.setContent { PitTechTheme { MyCookbookDialog(viewModel,account,writer) { } } }
+            compose.waitUntil(20000) { compose.onAllNodesWithText("Sign in").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Sign in").performClick()
+            // Issue #233: this sheet wrapped the scrolling AccountContent in
+            // a second verticalScroll, so the inner scrollable was measured
+            // with infinite height and the app crashed on open. The sign-in
+            // form must now render inside the sheet.
+            compose.waitUntil(20000) { compose.onAllNodesWithTag("account-email",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("account-email").assertIsDisplayed()
+        } finally { scope.cancel(); database.close(); root.deleteRecursively() }
+    }
     private class API: PublicationAPI {
         @Volatile var writes=0
         var profile=JSONObject().put("handle",JSONObject.NULL).put("displayName","").put("isPublic",false)

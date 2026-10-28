@@ -139,7 +139,10 @@ import org.json.JSONObject
     // Slice 8 (PL-15 / DD-10): sign-in completion returns to the cookbook
     // automatically; cancelling the account dialog lands here too.
     LaunchedEffect(state.signedIn) { if(state.signedIn) signingIn=false }
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") }}}
+    // AccountContent is itself the scrolling container: wrapping it in a
+    // second verticalScroll here measured it with infinite height and
+    // crashed (issue #233). The sheet wrapper must not scroll.
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") }}}
 }
 @Composable private fun CookbookProfileSummary(profile: JSONObject) {
     TurnInCard(Modifier.fillMaxWidth()) { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {

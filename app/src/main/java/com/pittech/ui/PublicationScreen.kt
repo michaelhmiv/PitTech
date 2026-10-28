@@ -132,7 +132,10 @@ import org.json.JSONObject
             }
         }
     }
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
+    // AccountContent is itself the scrolling container: wrapping it in a
+    // second verticalScroll here measured it with infinite height and
+    // crashed (issue #233). The sheet wrapper must not scroll.
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
 }
 
 @Composable internal fun PublicationContent(prepared: PreparedPublication) {
@@ -193,7 +196,10 @@ private fun JSONObject.rows(key: String)=getJSONArray(key).let { array -> (0 unt
         }
         message?.let { Text(it) }
     }
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to recipe") }}}
+    // AccountContent is itself the scrolling container: wrapping it in a
+    // second verticalScroll here measured it with infinite height and
+    // crashed (issue #233). The sheet wrapper must not scroll.
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to recipe") }}}
 }
 
 @Composable private fun PublicationPhotoPreview(assets: List<JSONObject>, photos: Map<String,ByteArray>, hero: String) {

@@ -3,6 +3,7 @@ package com.pittech
 import android.Manifest
 import android.os.Build
 import android.graphics.Bitmap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -66,6 +67,23 @@ class MealRecipeUserFlowsTest {
         assertEquals(recipe.currentRevisionId,doc.entries.single().sourceRevisionId)
         assertFalse(doc.entries.single().includeStory);assertTrue(doc.entries.single().photoIds.isEmpty())
         assertEquals("Private original note",runBlocking(Dispatchers.IO) { RecipeSnapshotCodec.decode(app.database.recipeDao().revision(recipe.currentRevisionId)!!.snapshotJson).description })
+    }
+    @Test fun recipeCardOpensFromAnywhereOnItsFrame() {
+        val recipe = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            app.cookRepository.recipes.save(RecipeSnapshot("Frame tap pork", DishDraft("Frame tap pork", "Pork"), description = "Tap target regression"))
+        }
+        compose.activityRule.scenario.recreate()
+        waitFor("nav-recipes"); compose.onNodeWithTag("nav-recipes").performClick()
+        waitFor("recipe-open-${recipe.id}")
+        // Tap the bottom edge of the card — the "Saved recipe · version"
+        // meta line, far from the name. Pre-fix only the name text was
+        // clickable, so this tap did nothing and no detail ever opened.
+        val card = compose.onNodeWithTag("recipe-open-${recipe.id}").performScrollTo()
+        val cardBounds = card.fetchSemanticsNode().boundsInRoot
+        card.performTouchInput { click(Offset(cardBounds.width / 2f, cardBounds.height - 6f)) }
+        waitFor("recipe-details-close")
+        compose.onNodeWithTag("recipe-details-close").assertIsDisplayed()
     }
     @Test fun oneGuideToggleControlsLiveTimelineAndChartsAndSurvivesRecreation() {
         val prepared = runBlocking(Dispatchers.IO) {

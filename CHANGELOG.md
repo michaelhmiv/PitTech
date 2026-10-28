@@ -6,6 +6,10 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ### Fixed
 - The PitTech Pro alternate app icons (Ember and Midnight) now ship in the iPhone app. The app declared the icons without including the artwork, and App Store Connect rejected the upload (build 540, ITMS-90032); the icon sets and the build setting that bundles them are now in place.
+- Attaching a crash report no longer hijacks the More tab (Android): after you attach a saved crash report to a problem report, the feedback form opens once, as intended — but it used to reopen every time you went back into Settings, so the More tab appeared to lead straight to a bug report and Settings and sign-in felt unreachable. The attach now opens the form exactly once; Settings, Account and the rest of the More hub stay where they belong.
+- The sign-in sheet no longer crashes the app (Android, issue #233): opening "Sign in" from My Cookbook or a publication wrapped the account panel in a second scrolling area, which crashed the app on open (this was the stored crash from October 26). The sheet now scrolls the account panel once, as designed.
+- Back goes back (Android): the system back gesture or button used to close the app from almost everywhere. It now steps back the way you'd expect — from a cook to your list, out of starting a cook, from a More sub-screen to the hub, and from any other tab back to Meals — and only leaves the app from the Meals home.
+- Recipe cards answer taps anywhere on the card (Android): tapping a saved recipe used to work only when you hit the recipe's name exactly; the photo and the rest of the card did nothing. The whole card — and meal-preset cards too — is now the tap target.
 
 ## [Unreleased]
 
