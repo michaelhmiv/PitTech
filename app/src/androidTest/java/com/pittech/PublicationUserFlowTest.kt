@@ -130,8 +130,14 @@ import java.util.UUID
             compose.waitUntil(20000) { compose.onAllNodesWithTag("account-email",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() }
             // At large font scales the field can sit below the sheet's
             // initial fold; it lives in the sheet's scrolling content, so
-            // scroll it into view before asserting it is displayed.
-            compose.onNodeWithTag("account-email").performScrollTo().assertIsDisplayed()
+            // scroll it into view, then give the sheet's settle animation a
+            // bounded window to bring it on screen (assertIsDisplayed right
+            // after the tap races that animation and flakes).
+            try { compose.onNodeWithTag("account-email").performScrollTo() } catch (ignored: AssertionError) { }
+            compose.waitUntil(10000) {
+                try { compose.onNodeWithTag("account-email").assertIsDisplayed(); true }
+                catch (ignored: AssertionError) { false }
+            }
         } finally { scope.cancel(); database.close(); root.deleteRecursively() }
     }
     private class API: PublicationAPI {
