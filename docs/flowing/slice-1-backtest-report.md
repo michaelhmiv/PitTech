@@ -176,3 +176,12 @@ it up.
    `spritz_medium` appeared after a medium-less spritz). A null value
    is now treated as the deletion signal it was documented to be,
    matching the Swift store's behavior.
+7. **Results card popped into the timeline mid-cook (app, both
+   platforms).** Capture is the first writer of displayable result rows
+   during ordinary logging, and counting input rows toward the results
+   card's visibility made the card appear in the timeline header the
+   moment a wrap or spritz was logged — pushing the newest timeline
+   entry out of the composed window at font scale 1.5 (main's test03
+   caught it on Android). Input rows still render as facts on the
+   card, but on their own they now raise it only once the cook is
+   finished: the card is the finished cook's record.

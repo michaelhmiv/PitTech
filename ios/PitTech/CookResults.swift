@@ -29,7 +29,13 @@ struct CookResultsValues: Equatable {
         "overall_rating", "cook_again", "final_temperature", "rest_minutes",
         "bark", "tenderness", "juiciness", "smoke", "seasoning",
         "result_notes", "keep_doing", "change_next_time",
-        // Flowing §4.2: structured inputs are cook results too.
+    ]
+
+    /// Flowing §4.2 structured inputs: rendered as facts on the results
+    /// card (see CookResultsFacts), but on their own they raise the card
+    /// only for a finished cook — they are written during the cook by
+    /// ordinary logging, and the card is the finished cook's record.
+    private static let inputResultTypes: Set<String> = [
         "wrap_material", "rub", "spritz", "spritz_medium",
     ]
 
@@ -40,7 +46,10 @@ struct CookResultsValues: Equatable {
     }
 
     func hasDisplayableResults(cookId: String, dishId: String?) -> Bool {
-        resultRows(cookId: cookId, dishId: dishId).contains { Self.resultDisplayTypes.contains($0["resultType"]?.stringValue ?? "") }
+        let rows = resultRows(cookId: cookId, dishId: dishId)
+        if rows.contains(where: { Self.resultDisplayTypes.contains($0["resultType"]?.stringValue ?? "") }) { return true }
+        let completed = library.cooks.first { $0.id == cookId }?.status == "completed"
+        return completed && rows.contains { Self.inputResultTypes.contains($0["resultType"]?.stringValue ?? "") }
     }
 
     func hasAnyDisplayableResults(cookId: String) -> Bool {

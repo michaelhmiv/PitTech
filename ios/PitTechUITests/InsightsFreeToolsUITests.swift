@@ -72,7 +72,7 @@ final class InsightsFreeToolsUITests: XCTestCase {
             log.tap()
             chooseAction(action)
         }
-        // Wrap: pick Foil (one selection), save, the card shows the fact.
+        // Wrap: pick Foil (one selection) and save.
         logEntry(action: "Wrap")
         let wrapPicker = app.descendants(matching: .any)["composer-wrap-material"].firstMatch
         XCTAssertTrue(wrapPicker.waitForExistence(timeout: 10))
@@ -81,10 +81,6 @@ final class InsightsFreeToolsUITests: XCTestCase {
         XCTAssertTrue(foil.waitForExistence(timeout: 10))
         foil.tap()
         app.buttons["Save"].tap()
-        let timeline = app.segmentedControls.buttons["Timeline"]
-        XCTAssertTrue(timeline.waitForExistence(timeout: 10))
-        timeline.tap()
-        XCTAssertTrue(app.staticTexts["Wrap: Foil"].waitForExistence(timeout: 10))
         // Spritz: save without touching the prompt — still recorded.
         let live = app.segmentedControls.buttons["Live"]
         XCTAssertTrue(live.waitForExistence(timeout: 10))
@@ -93,8 +89,18 @@ final class InsightsFreeToolsUITests: XCTestCase {
         let spritzPicker = app.descendants(matching: .any)["composer-spritz"].firstMatch
         XCTAssertTrue(spritzPicker.waitForExistence(timeout: 10))
         app.buttons["Save"].tap()
-        XCTAssertTrue(timeline.waitForExistence(timeout: 10))
-        timeline.tap()
+        // The results card is the finished cook's record: inputs raise it
+        // only at completion, so finish the meal and read the facts there.
+        let finish = app.buttons["finish-meal"]
+        XCTAssertTrue(finish.waitForExistence(timeout: 10))
+        finish.tap()
+        let confirm = app.alerts.buttons["Finish meal"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+        confirm.tap()
+        let summary = app.buttons["View meal summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 10))
+        summary.tap()
+        XCTAssertTrue(app.staticTexts["Wrap: Foil"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Spritz: Yes"].waitForExistence(timeout: 10))
         app.terminate()
     }

@@ -1572,8 +1572,15 @@ private fun TimelineTab(
     val rows = buildTimelineLines(data, selectedFilter, newestFirst, foodFilter)
     val days = rows.groupBy { timelineDayKey(it.time) }
     // Header items above the day groups: guide + summary, plus the results
-    // card when the cook has saved results (PL-08).
-    val showResultsCard = data.results.any { it.resultType in RESULT_DISPLAY_TYPES }
+    // card when the cook has saved results (PL-08). Structured inputs
+    // (§4.2) count toward the card only once the cook is finished: they
+    // are written during the cook by ordinary logging, and popping a
+    // results card into the timeline header mid-cook pushes the newest
+    // entry down the list at large font scales — the card is the finished
+    // cook's record, so input-only cooks get it at completion.
+    val hasVerdictResults = data.results.any { it.resultType in RESULT_DISPLAY_TYPES }
+    val hasInputResults = data.results.any { it.resultType in INPUT_RESULT_TYPES }
+    val showResultsCard = hasVerdictResults || (hasInputResults && data.cook.status == CookStatus.COMPLETED)
     val headerItems = if (showResultsCard) 3 else 2
     val latestIndex = rows.size + days.size + headerItems - 1
     LaunchedEffect(selectedFilterName, foodFilter) {
@@ -2232,9 +2239,12 @@ private val RESULT_DISPLAY_TYPES = setOf(
     "overall_rating", "cook_again", "final_temperature", "rest_minutes",
     "bark", "tenderness", "juiciness", "smoke", "seasoning",
     "result_notes", "keep_doing", "change_next_time",
-    // Flowing §4.2: structured inputs are cook results too.
-    "wrap_material", "rub", "spritz", "spritz_medium",
 )
+
+/** Flowing §4.2 structured inputs: rendered as facts on the results card
+ * (see ResultFacts), but on their own they raise the card only for a
+ * finished cook — see the showResultsCard rule in TimelineTab. */
+private val INPUT_RESULT_TYPES = setOf("wrap_material", "rub", "spritz", "spritz_medium")
 
 private fun com.pittech.data.CookResultEntity.toInsightResultInput() = com.pittech.domain.InsightResultInput(
     id, cookId, dishId, resultType, numericValue, textValue, recordedAtUtcMillis,
