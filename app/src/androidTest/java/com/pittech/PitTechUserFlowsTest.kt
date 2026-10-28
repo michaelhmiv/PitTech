@@ -1246,7 +1246,8 @@ class PitTechUserFlowsTest {
         }
         composeRule.activityRule.scenario.recreate()
         // The brand strip rides the tab roots: mascot + wordmark, no title.
-        composeRule.onNodeWithText("PitTech").assertIsDisplayed()
+        // (Assert by tag: the empty-log lockup also carries a "PitTech" text.)
+        composeRule.onNodeWithTag("pittech-brand-strip").assertIsDisplayed()
         // The floating action is the board's primary start entry; it opens
         // the same start-a-cook flow, and system back leaves it again.
         composeRule.onNodeWithTag("start-cook-fab").assertIsDisplayed().performClick()
@@ -1256,7 +1257,7 @@ class PitTechUserFlowsTest {
         // Recipes: list rows carry the added date; the grid toggle switches
         // to photo tiles and the choice persists across recreation.
         composeRule.onNodeWithTag("nav-recipes").performClick()
-        composeRule.onNodeWithText("PitTech").assertIsDisplayed()
+        composeRule.onNodeWithTag("pittech-brand-strip").assertIsDisplayed()
         composeRule.onNodeWithText("Saved recipe · version", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Added", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("recipes-view-grid").performClick()

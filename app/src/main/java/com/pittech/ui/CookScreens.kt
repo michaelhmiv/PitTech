@@ -866,7 +866,7 @@ private fun PitTechBrandStrip() {
     // no page title; the selected bottom tab still says where you are.
     val tokens = pitTechTokens()
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("pittech-brand-strip"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
