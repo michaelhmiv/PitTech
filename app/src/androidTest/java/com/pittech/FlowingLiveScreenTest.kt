@@ -82,14 +82,7 @@ class FlowingLiveScreenTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithText("On pace — nothing needs doing.").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("live-verdict-headline", useUnmergedTree = true).assertTextEquals("On pace — nothing needs doing.")
         compose.onNodeWithTag("live-eta-basis", useUnmergedTree = true).assertTextEquals("from your last 30 min of readings")
-        // The board recomposes on a 1s ticker; wait for the range text to
-        // settle on the tagged node before asserting on it.
-        compose.waitUntil(15_000) {
-            try {
-                compose.onNodeWithTag("live-eta-range", useUnmergedTree = true).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.Text].any { it.text.contains("Done") }
-            } catch (e: Throwable) { false }
-        }
-        compose.onNodeWithTag("live-eta-range", useUnmergedTree = true).assertTextContains("Done")
+        compose.onNodeWithTag("live-eta-range", useUnmergedTree = true).assertTextContains("Done", substring = true)
         // 1.5: the stepper writes the app's own setpoint target history.
         compose.onNodeWithTag("pit-target-value", useUnmergedTree = true).performScrollTo().assertTextEquals("250°")
         compose.onNodeWithTag("pit-target-plus", useUnmergedTree = true).performClick()
@@ -114,7 +107,7 @@ class FlowingLiveScreenTest {
         // The ghost rides the insights archive, which loads async — wait
         // for the delta line to compose before reading it.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-chart-ghost-delta", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("live-chart-ghost-delta", useUnmergedTree = true).assertTextContains("min vs last brisket")
+        compose.onNodeWithTag("live-chart-ghost-delta", useUnmergedTree = true).assertTextContains("min vs last brisket", substring = true)
         compose.onNodeWithTag("live-chart-preset-last2h", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("live-chart-readout", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithTag("live-chart-close", useUnmergedTree = true).performClick()
