@@ -49,7 +49,12 @@ class MealRecipeUserFlowsTest {
     @Test fun composerCaptureRecordsWrapAndSpritzInOneTap() {
         val cookId = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()
-            app.cookRepository.startCook(NewCookDraft("Capture flow brisket", dishes = listOf(DishDraft("Brisket", "Beef"))))
+            val started = app.cookRepository.startCook(NewCookDraft("Capture flow brisket", dishes = listOf(DishDraft("Brisket", "Beef"))))
+            // The dish goes on the pit first: the app (correctly) refuses
+            // a wrap entry before food-on — phases must stay in order.
+            val dishId = app.database.cookDao().getDishesForCook(started).single().id
+            app.cookRepository.addTimelineEvent(started, dishId, "food_on", "Food on", null, System.currentTimeMillis() - 60_000)
+            started
         }
         compose.activityRule.scenario.recreate()
         compose.waitUntil(20000) { compose.onAllNodesWithText("Capture flow brisket").fetchSemanticsNodes().isNotEmpty() }
