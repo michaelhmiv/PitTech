@@ -58,13 +58,26 @@ final class InsightsFreeToolsUITests: XCTestCase {
         let meal = app.staticTexts["Capture flow brisket"].firstMatch
         XCTAssertTrue(meal.waitForExistence(timeout: 10))
         meal.tap()
+        func tapOption(_ element: XCUIElement) {
+            XCTAssertTrue(element.waitForExistence(timeout: 10))
+            // Pushed picker lists report their rows before the rows' hit
+            // points settle — a plain tap fails with "Activation point
+            // invalid". Wait for the frame to stabilize, then tap its
+            // center by coordinate.
+            var lastFrame = element.frame
+            let deadline = Date().addingTimeInterval(10)
+            while Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.3)
+                if element.frame == lastFrame && !element.frame.isEmpty { break }
+                lastFrame = element.frame
+            }
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         func chooseAction(_ label: String) {
             let actionRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Action'")).firstMatch
             XCTAssertTrue(actionRow.waitForExistence(timeout: 10))
             actionRow.tap()
-            let option = app.buttons[label].firstMatch
-            XCTAssertTrue(option.waitForExistence(timeout: 10))
-            option.tap()
+            tapOption(app.buttons[label].firstMatch)
         }
         func logEntry(action: String) {
             let log = app.buttons["meal-log"]
@@ -77,9 +90,7 @@ final class InsightsFreeToolsUITests: XCTestCase {
         let wrapPicker = app.descendants(matching: .any)["composer-wrap-material"].firstMatch
         XCTAssertTrue(wrapPicker.waitForExistence(timeout: 10))
         wrapPicker.tap()
-        let foil = app.buttons["Foil"].firstMatch
-        XCTAssertTrue(foil.waitForExistence(timeout: 10))
-        foil.tap()
+        tapOption(app.buttons["Foil"].firstMatch)
         app.buttons["Save"].tap()
         // Spritz: save without touching the prompt — still recorded.
         let live = app.segmentedControls.buttons["Live"]
