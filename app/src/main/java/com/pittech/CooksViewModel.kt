@@ -301,6 +301,24 @@ class CooksViewModel(
         com.pittech.CookAlertNotifications.cancel(context, id)
     }
 
+    /** Flowing Slice 2 (1.5): the board's pit-target stepper — app-side target history only. */
+    fun setPitTarget(cookId: String, value: Double, unit: String) = perform {
+        repository.setPitTarget(cookId, value, unit)
+        _notice.value = "Pit target set to ${value.toInt()} $unit."
+    }
+
+    /** Flowing Slice 2 (1.5): one-tap "conditions changed" — a plain note event on the timeline. */
+    fun logConditionsChanged(cookId: String) = saveNote(
+        com.pittech.domain.CookNoteDraft(cookId = cookId, title = "Conditions changed"),
+        editing = false,
+    ) { }
+
+    /** Flowing Slice 2 (E3): the overnight panel's test alert — posted on the real alert channel. */
+    fun fireOvernightTestAlert(cookId: String, cookTitle: String) {
+        com.pittech.CookAlertNotifications.showTest(context, cookId, cookTitle)
+        _notice.value = "Test alert sent — check your notifications."
+    }
+
     fun beginGuidance(cookId: String) = perform { app.companionRepository.beginPlan(cookId) }
     fun setPreciseCookTimers(cookId: String, enabled: Boolean) = perform {
         context.getSharedPreferences("pittech-preferences", 0).edit().putBoolean("precise-cook-timers", enabled).apply()

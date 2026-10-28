@@ -34,7 +34,12 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     markers: List<TimelineEventEntity> = emptyList(), onMarker: ((TimelineEventEntity) -> Unit)? = null, chartHeight: Dp = 260.dp,
     connectionGaps: List<TimelineEventEntity> = emptyList(), displayUnit: String? = null,
     targets: List<TargetEntity> = emptyList(), targetHistory: List<TargetHistory> = emptyList(),
-    photos: List<PhotoEntity> = emptyList(), interactive: Boolean = true, timingMode: String = "legacy_preserved", referenceTimes: Map<String, Long> = emptyMap(), referenceMatches: Map<String, String> = emptyMap()) {
+    photos: List<PhotoEntity> = emptyList(), interactive: Boolean = true, timingMode: String = "legacy_preserved", referenceTimes: Map<String, Long> = emptyMap(), referenceMatches: Map<String, String> = emptyMap(),
+    // Flowing Slice 2 (Spread 02) — all additive, default off; existing call sites are untouched.
+    stallBandF: ClosedFloatingPointRange<Double>? = null,
+    futureUntilX: Double? = null, nowX: Double? = null,
+    onScrubChange: ((Double?) -> Unit)? = null,
+    presetSpanMillis: Double? = null, presetStartMillis: Double? = null, presetFollowLatest: Boolean = false, presetKey: Int = 0) {
     val valid = readings.filter { it.qualityStatus == "valid" && it.value.isFinite() && it.unit in setOf("°F", "°C") }
     val unit = displayUnit?.takeIf { it in setOf("°F", "°C") } ?: valid.firstOrNull()?.unit ?: "°F"
     var clockMode by rememberSaveable { mutableStateOf(false) }
@@ -63,14 +68,14 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     val visibleSegments = rawSegments.filter { it.isNotEmpty() && TemperaturePlot.identity(it.first()) in series && TemperaturePlot.identity(it.first()) !in hidden }
     val points = visibleSegments.flatten()
     val allX = valid.map { x(it.cookId, it.measuredAtUtcMillis) } + markers.map { x(it.cookId, it.occurredAtUtcMillis) }
-    val fullMin = allX.minOrNull() ?: x("", firstTime); val fullMax = maxOf(allX.maxOrNull() ?: fullMin, fullMin + 60_000)
+    val fullMin = allX.minOrNull() ?: x("", firstTime); val fullMax = maxOf(allX.maxOrNull() ?: fullMin, fullMin + 60_000, futureUntilX ?: Double.NEGATIVE_INFINITY)
     val fullSpan = fullMax - fullMin
     val span = (windowSpan ?: fullSpan).coerceIn(minOf(60_000.0, fullSpan), fullSpan)
     val minX = if (followLatest) fullMax - span else (windowStart ?: fullMin).coerceIn(fullMin, fullMax - span)
     val maxX = minX + span
     val applicableTargets = targets.filter { selectedDish == null || it.dishId == null || it.dishId == selectedDish }
     val applicableHistory = targetHistory.filter { !it.targetType.startsWith("removed_dish_") && (selectedDish == null || it.dishId == null || it.dishId == selectedDish) }
-    val values = points.filter { x(it.cookId, it.measuredAtUtcMillis) in minX..maxX }.map { y(it.value, it.unit) } + applicableTargets.map { y(it.value, it.unit) } + applicableHistory.map { y(it.value, it.unit) }
+    val values = points.filter { x(it.cookId, it.measuredAtUtcMillis) in minX..maxX }.map { y(it.value, it.unit) } + applicableTargets.map { y(it.value, it.unit) } + applicableHistory.map { y(it.value, it.unit) } + (if (stallBandF != null) listOf(y(stallBandF.start, "°F"), y(stallBandF.endInclusive, "°F")) else emptyList())
     val yTicks = CookChartMath.ticks((values.minOrNull() ?: 0.0) - 5, (values.maxOrNull() ?: if (unit == "°F") 300.0 else 150.0) + 5)
     val minY = yTicks.first(); val maxY = yTicks.last()
     val clusters = CookChartMath.clusterTimes(selectedMarkers.map { it.id to x(it.cookId, it.occurredAtUtcMillis) }, minX, maxX, plotWidth.toDouble())
@@ -86,6 +91,16 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
     val targetColor = MaterialTheme.colorScheme.secondary
     fun formatX(value: Double): String = if (clockMode && cookNames.size <= 1) SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(value.toLong()))
         else if (span < 300_000) "${String.format(Locale.US, "%.0f", value / 1000)}s" else "${String.format(Locale.US, "%.0f", value / 60_000)}m"
+    // Spread 02 range presets drive the same window state the gestures use.
+    androidx.compose.runtime.LaunchedEffect(presetKey) {
+        if (presetKey > 0) {
+            followLatest = presetFollowLatest
+            windowSpan = presetSpanMillis
+            windowStart = presetStartMillis
+            if (presetFollowLatest) scrub = null
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(scrub) { onScrubChange?.invoke(scrub) }
     fun pan(amount: Double) { followLatest = false; windowStart = (minX + amount).coerceIn(fullMin, fullMax - span); windowSpan = span }
     fun zoom(factor: Double) { windowSpan = (span / factor).coerceIn(minOf(60_000.0, fullSpan), fullSpan); if (!followLatest) windowStart = (minX + span / 2 - windowSpan!! / 2).coerceIn(fullMin, fullMax - windowSpan!!) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -124,6 +139,20 @@ fun TemperatureChart(readings: List<SensorReadingEntity>, modifier: Modifier = M
                         val a = x(cookId, interval.start).coerceIn(minX, maxX); val b = x(cookId, interval.end).coerceIn(minX, maxX)
                         if (b > a) drawRect(color(interval.phase).copy(alpha = 0.13f), Offset(px(a), top + lane * (bottom - top) / phases.size.coerceAtLeast(1)), androidx.compose.ui.geometry.Size(px(b) - px(a), (bottom - top) / phases.size.coerceAtLeast(1)))
                     } }
+                }
+            }
+            // Flowing Spread 02: the stall band behind the line, and the
+            // shaded hours ahead between now and the stated finish range.
+            if (stallBandF != null) {
+                val bandTop = py(y(stallBandF.endInclusive, "°F")); val bandBottom = py(y(stallBandF.start, "°F"))
+                drawRect(Color(0xFFD3993C).copy(alpha = 0.13f), Offset(left, bandTop), androidx.compose.ui.geometry.Size(right - left, bandBottom - bandTop))
+                text("STALL ${String.format(Locale.US, "%.0f", y(stallBandF.start, "°F"))}–${String.format(Locale.US, "%.0f", y(stallBandF.endInclusive, "°F"))}$unit", left + 4.dp.toPx(), bandTop + 11.dp.toPx())
+            }
+            if (futureUntilX != null && nowX != null && futureUntilX > nowX) {
+                val from = px(nowX.coerceIn(minX, maxX)); val to = px(futureUntilX.coerceIn(minX, maxX))
+                if (to > from) {
+                    drawRect(Color(0xFF8A93A3).copy(alpha = 0.13f), Offset(from, top), androidx.compose.ui.geometry.Size(to - from, bottom - top))
+                    drawLine(Color(0xFF8A93A3).copy(alpha = 0.6f), Offset(from, top), Offset(from, bottom), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())))
                 }
             }
             yTicks.forEach { tick -> drawLine(grid, Offset(left, py(tick)), Offset(right, py(tick))); text(String.format(Locale.US, "%.0f", tick), 1.dp.toPx(), py(tick) + 4.dp.toPx()) }

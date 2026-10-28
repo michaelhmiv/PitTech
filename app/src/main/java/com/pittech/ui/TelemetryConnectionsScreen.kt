@@ -35,6 +35,23 @@ import java.util.UUID
 
 private val providerNames = linkedMapOf("combustion" to "Combustion", "home_assistant" to "Home Assistant", "fireboard" to "FireBoard", "flame_boss" to "Flame Boss", "meater" to "MEATER")
 
+/**
+ * Flowing Slice 2 (E2): which connections keep working with no internet —
+ * Bluetooth talks straight to the phone, and Home Assistant is the cook's
+ * own server on their own network. The cloud relays (FireBoard, Flame
+ * Boss, MEATER) cannot promise it, so they never wear the badge.
+ */
+internal fun worksOffline(provider: String) = provider in setOf("combustion", "home_assistant")
+
+/** E2: the badge itself, shown at pairing time on every connection surface. */
+@Composable
+internal fun WorksOfflineBadge(provider: String) {
+    val tokens = pitTechTokens()
+    Surface(shape = RoundedCornerShape(8.dp), color = tokens.surfaceRaised, contentColor = tokens.ink, border = BorderStroke(1.dp, tokens.ruling), modifier = Modifier.testTag("works-offline-badge-$provider")) {
+        Text("Works offline", style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
 /** TURN-IN selectable row (`d21` attach sources, `d23` assign sources):
  * a laminated row whose border goes ember while it carries the selection.
  * The label text is the app's own, suffixes included. */
@@ -168,6 +185,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         TurnInBannerText(profile.label + " · Beta")
                         Text(states[profile.id] ?: "Saved connection", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                        if (worksOffline(profile.provider)) WorksOfflineBadge(profile.provider)
                         OutlinedButton(onClick = { scope.launch { busy = true; try { runtime.connect(profile, "", "") } catch (_: Exception) { dialogError = null; error = "Reconnect by entering your account credentials."; pending = profile; add = true } finally { busy = false } } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Reconnect") }
                         TextButton(onClick = { scope.launch { runtime.remove(profile) } }, enabled = !busy) { Text("Forget connection", color = tokens.flag) }
                     }
@@ -186,6 +204,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         TurnInBannerText(profile.label + " · Beta")
                         Text(states[profile.id] ?: "Saved connection", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                        if (worksOffline(profile.provider)) WorksOfflineBadge(profile.provider)
                         profile.sources.filter { it.deviceId in profile.selectedDeviceIds }.forEach { source ->
                             Text(source.label + " · " + (states[profile.id + ":" + source.deviceId] ?: if (profile.monitoring) "Waiting for readings" else "Paused"), style = PitTechTextStyles.body)
                             TextButton(onClick = { scope.launch { runtime.detachSource(profile, source) } }) { Text("Detach " + source.label) }
@@ -350,6 +369,7 @@ internal fun TelemetryConnectionsScreen(viewModel: CooksViewModel, modifier: Mod
                                         "meater" -> "Your MEATER account"
                                         else -> "Bluetooth — probes nearby"
                                     }, style = PitTechTextStyles.body, color = tokens.inkMuted)
+                                    if (worksOffline(id)) WorksOfflineBadge(id)
                                 }
                                 Text("›", style = PitTechTextStyles.bannerCard, color = tokens.inkMuted)
                             }

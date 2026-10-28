@@ -297,6 +297,22 @@ class CookRepository(
         )
     }
 
+    /**
+     * Flowing Slice 2 (element 1.5): the Live board's pit-target stepper.
+     * Writes the app's own setpoint target history — the same record
+     * [updateCookDetails] appends — and never touches the device: the
+     * read-only equipment policy means the stepper states the cook's
+     * intent; the grill's own knob is the cook's hand.
+     */
+    suspend fun setPitTarget(cookId: String, value: Double, unit: String) = database.withTransaction {
+        require(value.isFinite() && value > 0) { "Enter a positive pit target." }
+        require(unit in setOf("°F", "°C")) { "Unsupported temperature unit." }
+        val cook = dao.getCook(cookId) ?: error("This cook could not be found.")
+        val now = System.currentTimeMillis()
+        database.experienceDao().putHistory(listOf(TargetHistory(UUID.randomUUID().toString(), cookId, null, "setpoint", value, unit, now)))
+        dao.updateCook(cook.copy(updatedAtUtcMillis = now))
+    }
+
     suspend fun addDish(cookId: String, draft: DishDraft): String {
         require(draft.name.isNotBlank()) { "Each dish needs a name or cut." }
         require(CookEntryValidation.isOptionalPositiveNumberValid(draft.weightText)) { "Enter a positive weight or leave it blank." }
