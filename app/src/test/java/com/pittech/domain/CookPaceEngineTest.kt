@@ -192,11 +192,22 @@ class CookPaceEngineTest {
     }
 
     @Test fun aLongGapBreaksAFlatRun() {
+        // Two 25-minute flats across a 50-minute silence: neither sustains
+        // alone, and the gap must not merge them into a fake stall.
         val pts = mutableListOf<Pair<Long, Double>>()
-        for (m in 0..40 step 5) pts += m.toLong() to 160.0
-        for (m in 90..130 step 5) pts += m.toLong() to 160.0 // 50-minute silence between
-        assertTrue("two 40-minute flats across a 50-minute gap never merge into a stall",
+        for (m in 0..25 step 5) pts += m.toLong() to 160.0
+        for (m in 75..100 step 5) pts += m.toLong() to 160.0 // 50-minute silence between
+        assertTrue("flats across a long silence never merge into a stall",
             CookPaceEngine.stallSpans(synthetic(pts)).isEmpty())
+        // Two 40-minute flats across the same silence are two stalls,
+        // never one span reaching across the gap.
+        val longer = mutableListOf<Pair<Long, Double>>()
+        for (m in 0..40 step 5) longer += m.toLong() to 160.0
+        for (m in 90..130 step 5) longer += m.toLong() to 160.0
+        val spans = CookPaceEngine.stallSpans(synthetic(longer))
+        assertEquals(2, spans.size)
+        assertTrue(spans[0].endUtcMillis <= 40 * 60_000L)
+        assertTrue(spans[1].startUtcMillis >= 75 * 60_000L)
     }
 
     @Test fun sparseReadingsYieldPlanBasisAndUnknownStall() {
@@ -207,7 +218,7 @@ class CookPaceEngineTest {
     }
 
     @Test fun reachingTheTargetIsFinishedNotARange() {
-        val pts = (0..12 step 5).map { m -> PaceReading(m * 5 * 60_000L, 150.0 + m * 5.0) }
+        val pts = (0..12 step 5).map { m -> PaceReading(m * 5 * 60_000L, 150.0 + m * 6.0) }
         val assessment = CookPaceEngine.assess(pts, targetF = 203.0, nowUtcMillis = 60 * 60_000L, foodOnUtcMillis = 0L)
         assertTrue(assessment.finish is FinishEstimate.Finished)
     }

@@ -210,10 +210,21 @@ final class CookPaceEngineTests: XCTestCase {
     }
 
     func testALongGapBreaksAFlatRun() {
+        // Two 25-minute flats across a 50-minute silence: neither sustains
+        // alone, and the gap must not merge them into a fake stall.
         var pts: [(Int64, Double)] = []
-        for m in stride(from: 0, through: 40, by: 5) { pts.append((Int64(m), 160.0)) }
-        for m in stride(from: 90, through: 130, by: 5) { pts.append((Int64(m), 160.0)) }
-        XCTAssertTrue(CookPaceEngine.stallSpans(synthetic(pts)).isEmpty, "two 40-minute flats across a 50-minute gap never merge into a stall")
+        for m in stride(from: 0, through: 25, by: 5) { pts.append((Int64(m), 160.0)) }
+        for m in stride(from: 75, through: 100, by: 5) { pts.append((Int64(m), 160.0)) }
+        XCTAssertTrue(CookPaceEngine.stallSpans(synthetic(pts)).isEmpty, "flats across a long silence never merge into a stall")
+        // Two 40-minute flats across the same silence are two stalls,
+        // never one span reaching across the gap.
+        var longer: [(Int64, Double)] = []
+        for m in stride(from: 0, through: 40, by: 5) { longer.append((Int64(m), 160.0)) }
+        for m in stride(from: 90, through: 130, by: 5) { longer.append((Int64(m), 160.0)) }
+        let spans = CookPaceEngine.stallSpans(synthetic(longer))
+        XCTAssertEqual(spans.count, 2)
+        XCTAssertLessThanOrEqual(spans[0].endUtcMillis, 40 * 60_000)
+        XCTAssertGreaterThanOrEqual(spans[1].startUtcMillis, 75 * 60_000)
     }
 
     func testSparseReadingsYieldPlanBasisAndUnknownStall() {
