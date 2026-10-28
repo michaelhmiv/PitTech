@@ -187,7 +187,7 @@ class CookPaceEngineTest {
     }
 
     @Test fun slowCreepInBandIsAStall() {
-        val pts = (0..36 step 5).map { m -> m.toLong() to (156.0 + m * 0.115) } // ~0.023°F/min for 3h
+        val pts = (0..180 step 5).map { m -> m.toLong() to (156.0 + m * 0.023) } // ~0.023°F/min for 3h
         assertEquals(1, CookPaceEngine.stallSpans(synthetic(pts)).size)
     }
 

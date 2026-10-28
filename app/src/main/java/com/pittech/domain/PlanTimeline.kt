@@ -50,7 +50,7 @@ data class DerivedAlert(
 
 data class PlanConflict(val dishIndexA: Int, val dishIndexB: Int)
 
-data class PlanTimeline(
+data class PlanTimelineResult(
     val lanes: List<PlanLane>,
     val alerts: List<DerivedAlert>,
     val conflicts: List<PlanConflict>,
@@ -70,7 +70,7 @@ object PlanTimeline {
     /** Pit temperatures within this many °F are one pit, not a conflict. */
     const val PIT_CONFLICT_THRESHOLD_F = 10.0
 
-    fun derive(plan: ServePlan): PlanTimeline = build(plan, plan.schedules, chosenPitF = null, stretches = emptyMap())
+    fun derive(plan: ServePlan): PlanTimelineResult = build(plan, plan.schedules, chosenPitF = null, stretches = emptyMap())
 
     /**
      * Resolve one-pit conflicts by the cook's chosen pit temperature:
@@ -78,7 +78,7 @@ object PlanTimeline {
      * dishes planned at or below it are unchanged. The returned timeline's
      * lanes and alerts reflect the stretched durations.
      */
-    fun applyPitChoice(plan: ServePlan, chosenPitF: Double): PlanTimeline {
+    fun applyPitChoice(plan: ServePlan, chosenPitF: Double): PlanTimelineResult {
         val stretches = mutableMapOf<Int, StretchAdjustment>()
         val schedules = plan.schedules.map { schedule ->
             val pit = schedule.pitF
@@ -102,7 +102,7 @@ object PlanTimeline {
         return build(plan, schedules, chosenPitF, stretches)
     }
 
-    private fun build(plan: ServePlan, schedules: List<DishSchedule>, chosenPitF: Double?, stretches: Map<Int, StretchAdjustment>): PlanTimeline {
+    private fun build(plan: ServePlan, schedules: List<DishSchedule>, chosenPitF: Double?, stretches: Map<Int, StretchAdjustment>): PlanTimelineResult {
         val adjusted = plan.copy(schedules = schedules)
         val windows = ServeTimePlanner.windows(adjusted).associateBy { it.dishIndex }
         val dishes = plan.book.draft.dishes
@@ -137,7 +137,7 @@ object PlanTimeline {
                 label = "${lane.dishName}: off window opens")
         }
         val conflicts = ServeTimePlanner.conflicts(adjusted).map { PlanConflict(it.first, it.second) }
-        return PlanTimeline(lanes, alerts.sortedWith(compareBy<DerivedAlert> { it.atUtcMillis ?: Long.MAX_VALUE }.thenBy { it.dishIndex }), conflicts, chosenPitF)
+        return PlanTimelineResult(lanes, alerts.sortedWith(compareBy<DerivedAlert> { it.atUtcMillis ?: Long.MAX_VALUE }.thenBy { it.dishIndex }), conflicts, chosenPitF)
     }
 
     private fun wrapStep(plan: ServePlan, dishIndex: Int): PlaybookStep? =

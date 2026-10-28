@@ -46,9 +46,8 @@ data class RecipeProvenance(
     val cookAgain: Boolean?,
     val keepChips: List<String>,
     val changeChips: List<String>,
-)
-
-object RecipeProvenance {
+) {
+    companion object {
     const val MAX_CURVE_POINTS = 60
     private val dateFormat = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US)
 
@@ -160,6 +159,7 @@ object RecipeProvenance {
         return (0 until MAX_CURVE_POINTS).map { points[(it * stride).toInt().coerceAtMost(points.lastIndex)] }
     }
 
-    private fun trimNumber(value: Double): String =
-        if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+        private fun trimNumber(value: Double): String =
+            if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+    }
 }
