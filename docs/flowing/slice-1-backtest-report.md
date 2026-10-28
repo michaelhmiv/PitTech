@@ -185,3 +185,12 @@ it up.
    caught it on Android). Input rows still render as facts on the
    card, but on their own they now raise it only once the cook is
    finished: the card is the finished cook's record.
+8. **iOS flow-test defect (test only).** The capture flow test's first
+   run failed tapping an option in the composer's pushed Form-picker
+   list: the rows report before their hit points settle ("Activation
+   point invalid"). The test now waits for the row's frame to
+   stabilize and taps its center by coordinate — the same treatment
+   for the Action and wrap-material options. No app code was involved.
+   (The same run's flows-b shard wedged in its test step on the CI
+   runner and the run was cancelled at ~2 h; that shard's tests are
+   untouched by this slice and the rerun is the evidence.)
