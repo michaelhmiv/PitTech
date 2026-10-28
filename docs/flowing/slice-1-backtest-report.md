@@ -61,11 +61,78 @@ verbatim from the JUnit record.
 
 ## Results per shape
 
-<!-- FINAL NUMBERS PENDING TRANSCRIPTION -->
+All times UTC (the corpus cooks run on America/New_York, EDT). "First
+stated" is the §9 moment: the first range the smoother published, 30
+minutes after food-on in every range-producing shape.
+
+### A — canonical brisket, rain dip + 1h50m stall (finish 20:45)
+
+- Stall span detected **16:50–18:45** vs oracle 16:55–18:45 — start
+  error **−5 min**, end error **0 min** (bar: ±20).
+- The 11:05 rain dip produced no stall signal (single span, starting at
+  the true stall; the suite asserts no span before the probe first
+  enters the band).
+- Statements: **45 of 45 contained the finish.**
+- First stated at +30 min: **10:02–21:20, basis HISTORY, contained.**
+  The earliest edge is the raw pace extrapolation; the history envelope
+  is what pulls the latest edge to 21:20 and keeps the brisket's stall
+  from ever breaking the range. A wide first range is the honest price
+  of stating one 30 minutes into a 13-hour cook.
+
+### B — brisket, 2h40m foil stall, 13h10m total (finish 20:20)
+
+- Stall span detected **14:45–17:25** vs oracle 14:40–17:20 — errors
+  **+5 / +5 min**. Detected duration 2h40m, exactly the oracle's; the
+  11:20 EDT foil wrap falls strictly inside the span and the span ends
+  65 minutes after it — the end is the probe leaving the plateau, not
+  the wrap, as the oracle demands.
+- Statements: **48 of 48 contained the finish.**
+- First stated at +30 min: **10:28–21:20, basis HISTORY, contained.**
+
+### C — chicken halves, fast, no stall (finish 21:50)
+
+- **No stall spans** — the probe crosses the band in the final minutes
+  still climbing steeply, and band presence without a sustained flat
+  slope is not a stall.
+- Statements: **5 of 5 contained the finish.**
+- First stated at +30 min: **21:09–21:57, basis PACE, contained** — a
+  pace range is available early on a fast cook, as the oracle requires.
+
+### D — overnight brisket, 5h slow-creep stall (finish 15:40)
+
+- Stall span detected **06:45–11:35** vs oracle 06:30–11:30 — errors
+  **+15 / +5 min** (bar: ±20). The 156→163°F creep at ~0.023 °F/min IS
+  detected as a stall, and the 03:00 pellet dip neither ended, split,
+  nor restarted it: exactly one span.
+- Statements: **51 of 51 contained the finish.** Mid-stall statements
+  hold width ≥90 minutes and never slide earlier on the creep's slope
+  (asserted per-checkpoint in the suite).
+- First stated at +30 min: **04:59–16:05, basis HISTORY, contained.**
+
+### E — Boston butt, hand-logged, six readings, no controller (finish 19:45)
+
+- **No range was ever stated** (0 statements) — one food-probe reading
+  cannot support a slope; the plan window is the only guidance and its
+  basis says so.
+- Stall state at finish: **Unknown** — never "no stall".
+
+### Totals
+
+149 of 149 stated ranges contained the actual finish, across the four
+range-producing shapes. Stall-edge errors on the three briskets:
+−5/0, +5/+5, +15/+5 minutes — every edge inside ±20.
 
 ## Trust-bar verdict (§9 item 1)
 
-<!-- VERDICT PENDING -->
+**The bar is met on this corpus.** The stated range contained the
+actual finish at the moment it first appeared in 4 of 4 range-producing
+shapes (the fifth, by design, states none), every corpus brisket's
+stall was detected within ±20 minutes at both edges (worst edge:
++15 min, shape D's start), the chicken produced no false stall, the
+rain dip and pellet dip produced no false signals, and the hand-logged
+cook produced no range and an Unknown stall state. On this evidence the
+finish range is clear to surface on Live in Slice 2, under the basis
+strings and the conservative composition shipped here.
 
 The honest small-n caveat stands regardless of outcome: the bar is stated
 as ≥9 of 10, but the corpus holds five shapes and only four produce
@@ -95,3 +162,17 @@ it up.
    logged while the dish is still in prep, so the save it waited for
    could never happen. The seed now records food-on first, as a real
    cook would.
+5. **Composer capture never wrote (app, Android).** The composer called
+   `saveCookInputs` from the note save's callback, which runs while the
+   ViewModel's busy flag is still set — and the busy guard silently
+   drops calls made in that window. Every composer capture (wrap and
+   spritz) was being discarded. The capture now travels with the note
+   save and is written by the repository inside the same operation.
+   (iOS saves synchronously and never had the defect.)
+6. **Blank input rows materialized (app, Android).** `rows()` always
+   lists all four input types with nullable values; the repository
+   deleted a row only when its type was absent from the list — never —
+   so a capture save also wrote empty rows for unset fields (a blank
+   `spritz_medium` appeared after a medium-less spritz). A null value
+   is now treated as the deletion signal it was documented to be,
+   matching the Swift store's behavior.
