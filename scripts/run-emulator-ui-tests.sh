@@ -614,10 +614,43 @@ PY
   fi
 }
 
+png_has_magic() {
+  python3 - "$1" <<'PY'
+import pathlib
+import sys
+
+try:
+    data = pathlib.Path(sys.argv[1]).read_bytes()
+except OSError:
+    raise SystemExit(1)
+if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+    raise SystemExit(1)
+PY
+}
+
 pull_app_screenshot() {
   local name="$1"
   local screenshot="$output_dir/${name}.png"
-  timeout 20 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${name}.png" > "$screenshot"
+  # A single adb exec-out transfer can come back garbled under emulator
+  # load even when the file is intact on the device: in the PR #222
+  # cycle-4 API 36 / font 1.15 cell every suite passed and the first pull
+  # still produced a non-PNG, while the failure collector's guarded pull
+  # of the same file seconds later landed a valid PNG in the artifact.
+  # Verify the file exists on the device and retry the transfer before
+  # treating the screenshot as missing; a file that is truly absent or
+  # invalid still fails through assert_png_file below.
+  local attempt
+  for attempt in 1 2 3 4; do
+    if timeout 10 adb shell run-as com.pittech.debug test -f "files/pittech-ui-test/${name}.png" >/dev/null 2>&1; then
+      timeout 20 adb exec-out run-as com.pittech.debug cat "files/pittech-ui-test/${name}.png" > "$screenshot" 2>/dev/null
+      if png_has_magic "$screenshot"; then
+        echo "Saved emulator screenshot: ${name}.png"
+        return 0
+      fi
+    fi
+    echo "Pull of ${name}.png (attempt ${attempt}) did not yield a valid PNG." >&2
+    sleep 2
+  done
   assert_png_file "$name" "$screenshot"
   echo "Saved emulator screenshot: ${name}.png"
 }

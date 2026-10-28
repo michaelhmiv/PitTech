@@ -19,8 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -42,7 +40,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.pittech.billing.ProPlacement
@@ -79,12 +79,12 @@ internal fun InsightsSnapshot.proPersonalLibrary(now: Long): ProPersonalLibrary 
 
 @Composable
 private fun ProAnalysisCard(title: String, lines: List<String>, notes: List<String>, coverage: String, testTag: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag(testTag),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+    // TURN-IN (Slice 2, Area 02 `analysis`): the analysis cards are
+    // laminated cards with the banner face on their titles; the engine's
+    // lines, notes, and coverage wording are untouched.
+    TurnInCard(modifier = Modifier.fillMaxWidth().testTag(testTag)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TurnInBannerText(title)
             lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
             notes.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text(coverage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -107,12 +107,9 @@ internal fun ProPersonalAnalysisDialog(subscription: SubscriptionManager, entry:
             ) {
                 Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
                 if (snapshot.state == ProPersonalAnalysis.LibraryState.EMPTY) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().testTag("pro-analysis-empty"),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(snapshot.emptyTitle ?: ProPersonalAnalysis.EMPTY_TITLE, style = MaterialTheme.typography.titleMedium)
+                    TurnInCard(modifier = Modifier.fillMaxWidth().testTag("pro-analysis-empty")) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInBannerText(snapshot.emptyTitle ?: ProPersonalAnalysis.EMPTY_TITLE)
                             Text(snapshot.emptyBody ?: ProPersonalAnalysis.EMPTY_BODY, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
@@ -127,31 +124,33 @@ internal fun ProPersonalAnalysisDialog(subscription: SubscriptionManager, entry:
                             modifier = Modifier.testTag("pro-analysis-comparison-note"),
                         )
                     } else {
-                        Text("How your cooks of a cut compare", style = MaterialTheme.typography.titleMedium)
+                        TurnInBannerText("How your cooks of a cut compare", style = PitTechTextStyles.bannerTitle)
                         snapshot.cutGroups.forEach { group ->
                             ProAnalysisCard(group.header, group.lines, emptyList(), group.coverage, "pro-analysis-cut")
                         }
                     }
                     snapshot.best?.let { best ->
-                        Text("Your best-rated recorded attempt", style = MaterialTheme.typography.titleMedium)
+                        TurnInBannerText("Your best-rated recorded attempt", style = PitTechTextStyles.bannerTitle)
                         ProAnalysisCard("Your declared ratings decide", best.lines, best.notes, best.coverage, "pro-analysis-best")
                     }
                     snapshot.timing?.let { timing ->
-                        Text("Timing across recorded cuts and weights", style = MaterialTheme.typography.titleMedium)
+                        TurnInBannerText("Timing across recorded cuts and weights", style = PitTechTextStyles.bannerTitle)
                         ProAnalysisCard("Recorded heating time by cut", timing.lines, emptyList(), timing.coverage, "pro-analysis-timing")
                     }
                     snapshot.methods?.let { methods ->
-                        Text("Wrap and rest differences", style = MaterialTheme.typography.titleMedium)
+                        TurnInBannerText("Wrap and rest differences", style = PitTechTextStyles.bannerTitle)
                         ProAnalysisCard("What each cook recorded", methods.lines, emptyList(), methods.coverage, "pro-analysis-methods")
                     }
-                    Card(
+                    TurnInCard(
                         onClick = onRecap,
                         modifier = Modifier.fillMaxWidth().testTag("pro-recap-entry"),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Year in Smoke", style = MaterialTheme.typography.titleMedium)
-                            Text("Build a scoped, shareable recap from this library.", style = MaterialTheme.typography.bodyMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                            Text("◆", style = PitTechTextStyles.body, color = pitTechTokens().marigold)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TurnInBannerText("Year in Smoke")
+                                Text("Build a scoped, shareable recap from this library.", style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
@@ -180,12 +179,9 @@ internal fun ProAdvancedCurvesDialog(subscription: SubscriptionManager, entry: P
             ) {
                 Text(entry.preview, style = MaterialTheme.typography.bodyLarge)
                 if (options.isEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().testTag("pro-curves-empty"),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("No measured channels yet", style = MaterialTheme.typography.titleMedium)
+                    TurnInCard(modifier = Modifier.fillMaxWidth().testTag("pro-curves-empty")) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInBannerText("No measured channels yet")
                             Text(
                                 "Record temperatures with a cook to compare aligned curves here. Gaps stay visible; nothing is estimated.",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -193,28 +189,27 @@ internal fun ProAdvancedCurvesDialog(subscription: SubscriptionManager, entry: P
                         }
                     }
                 } else {
-                    Text("Align at", style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("pro-curves-anchor")) {
-                        ProAdvancedCurves.Anchor.values().forEach { option ->
-                            FilterChip(
-                                selected = anchor == option,
-                                onClick = { anchor = option },
-                                label = { Text(option.title) },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                    Text("Measured sources", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("Align at", style = PitTechTextStyles.bannerTitle)
+                    // TURN-IN (Slice 2, Area 02 `curves`): the two-anchor
+                    // choice is the §4 segmented control; selected channels
+                    // and aligned series are laminated cards, and gaps in a
+                    // series stay gaps — the points list is the engine's.
+                    TurnInSegmentedControl(
+                        options = ProAdvancedCurves.Anchor.values().map { it.title },
+                        selectedIndex = ProAdvancedCurves.Anchor.values().indexOf(anchor),
+                        onSelect = { anchor = ProAdvancedCurves.Anchor.values()[it] },
+                        modifier = Modifier.fillMaxWidth().testTag("pro-curves-anchor"),
+                    )
+                    TurnInBannerText("Measured sources", style = PitTechTextStyles.bannerTitle)
                     Text("Only real measurements — gaps stay visible.", style = MaterialTheme.typography.bodySmall)
                     options.forEach { option ->
-                        Card(
+                        TurnInCard(
                             onClick = {
                                 selected = if (option.channelId in selected) selected - option.channelId else selected + option.channelId
                             },
                             modifier = Modifier.fillMaxWidth().testTag(option.testTag),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         ) {
-                            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = option.channelId in selected, onCheckedChange = null)
                                 Text(option.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             }
@@ -228,12 +223,9 @@ internal fun ProAdvancedCurvesDialog(subscription: SubscriptionManager, entry: P
                         )
                     } else {
                         aligned.series.forEachIndexed { index, series ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth().testTag(series.testTag),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            ) {
-                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(series.label, style = MaterialTheme.typography.titleMedium, color = proHex(palette[index % palette.size]))
+                            TurnInCard(modifier = Modifier.fillMaxWidth().testTag(series.testTag)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TurnInBannerText(series.label, color = proHex(palette[index % palette.size]))
                                     series.points.take(40).forEach { Text(it.line, style = MaterialTheme.typography.bodyMedium) }
                                     if (series.points.size > 40) Text("+${series.points.size - 40} more recorded points", style = MaterialTheme.typography.bodySmall)
                                     Text(series.coverage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -298,7 +290,7 @@ internal fun ProRecapDialog(subscription: SubscriptionManager, library: ProPerso
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text("Choose the period, cooks, and sections. Nothing is shared until you say so.", style = MaterialTheme.typography.bodyLarge)
-                    Text("Period", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("Period", style = PitTechTextStyles.bannerTitle)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("pro-recap-period")) {
                         periods.forEach { period ->
                             FilterChip(
@@ -314,25 +306,24 @@ internal fun ProRecapDialog(subscription: SubscriptionManager, library: ProPerso
                             )
                         }
                     }
-                    Text("Cooks in this recap", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("Cooks in this recap", style = PitTechTextStyles.bannerTitle)
                     if (periodCooks.isEmpty()) Text("No recorded cooks in this period.", style = MaterialTheme.typography.bodyMedium)
                     periodCooks.forEach { cookId ->
-                        Card(
+                        TurnInCard(
                             onClick = {
                                 scopeState = scopeState.copy(
                                     includedCookIds = if (cookId in scopeState.includedCookIds) scopeState.includedCookIds - cookId else scopeState.includedCookIds + cookId,
                                 )
                             },
                             modifier = Modifier.fillMaxWidth().testTag("pro-recap-cook"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         ) {
-                            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = cookId in scopeState.includedCookIds, onCheckedChange = null)
-                                Text(library.titles[cookId] ?: cookId, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                TurnInBannerText(library.titles[cookId] ?: cookId, modifier = Modifier.weight(1f))
                             }
                         }
                     }
-                    Text("Sections", style = MaterialTheme.typography.titleMedium)
+                    TurnInBannerText("Sections", style = PitTechTextStyles.bannerTitle)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(scopeState.showStats, { scopeState = scopeState.copy(showStats = it) }, modifier = Modifier.testTag("pro-recap-section-stats"))
                         Text("Recorded totals", modifier = Modifier.weight(1f))
@@ -390,14 +381,11 @@ internal fun ProRecapDialog(subscription: SubscriptionManager, library: ProPerso
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.RENDERING_SHARE_CARD) }
                         }
-                        Card(
-                            modifier = Modifier.fillMaxWidth().testTag("pro-recap-card"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(current.title, style = MaterialTheme.typography.titleMedium)
+                        TurnInCard(modifier = Modifier.fillMaxWidth().testTag("pro-recap-card")) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TurnInBannerText(current.title)
                                 current.dishes.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                                current.stats.forEach { Text("${it.label}: ${it.value}", style = MaterialTheme.typography.bodyMedium) }
+                                current.stats.forEach { Text("${it.label}: ${it.value}", style = PitTechTextStyles.monoReadout) }
                                 current.milestones.forEach { Text("${it.dish} · ${it.title}", style = MaterialTheme.typography.bodyMedium) }
                                 if (current.note.isNotEmpty()) Text("“${current.note}”", style = MaterialTheme.typography.bodyMedium)
                                 Text(current.coverageNote, style = MaterialTheme.typography.bodySmall)
@@ -457,15 +445,12 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                     "Preview every look before applying. Pro looks apply while PitTech Pro is active; without Pro, PitTech renders the readable Classic treatment and keeps your stored selections.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text("Share-card themes", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Share-card themes")
                 ProCustomization.cardThemes.forEach { theme ->
                     @Suppress("UNUSED_EXPRESSION") tick
                     val previewed = customization.previewThemeId ?: customization.themeId
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { customization.previewThemeId = theme.id; refresh() }, modifier = Modifier.fillMaxWidth().testTag("pro-theme-${theme.id}")) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Box(
@@ -474,9 +459,9 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                                     )
                                     Column(Modifier.weight(1f)) {
                                         Text(theme.name, style = MaterialTheme.typography.bodyMedium)
-                                        if (theme.isPro) Text("Pro", style = MaterialTheme.typography.bodySmall)
+                                        if (theme.isPro) ProTagChip()
                                     }
-                                    if (customization.themeId == theme.id) Text("Applied", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("pro-theme-applied-${theme.id}"))
+                                    if (customization.themeId == theme.id) TurnInStamp("Applied", Modifier.testTag("pro-theme-applied-${theme.id}"))
                                 }
                             }
                             if (previewed == theme.id) {
@@ -496,15 +481,12 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                         }
                     }
                 }
-                Text("Chart palettes", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Chart palettes")
                 Text("Every palette is contrast-verified against its background.", style = MaterialTheme.typography.bodySmall)
                 ProCustomization.chartPalettes.forEach { palette ->
                     val previewed = customization.previewPaletteId ?: customization.paletteId
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { customization.previewPaletteId = palette.id; refresh() }, modifier = Modifier.fillMaxWidth().testTag("pro-palette-${palette.id}")) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -512,9 +494,9 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                                     }
                                     Column(Modifier.weight(1f)) {
                                         Text(palette.name, style = MaterialTheme.typography.bodyMedium)
-                                        if (palette.isPro) Text("Pro", style = MaterialTheme.typography.bodySmall)
+                                        if (palette.isPro) ProTagChip()
                                     }
-                                    if (customization.paletteId == palette.id) Text("Applied", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("pro-palette-applied-${palette.id}"))
+                                    if (customization.paletteId == palette.id) TurnInStamp("Applied", Modifier.testTag("pro-palette-applied-${palette.id}"))
                                 }
                             }
                             if (previewed == palette.id) {
@@ -526,23 +508,20 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                         }
                     }
                 }
-                Text("Public profile presentation", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Public profile presentation")
                 Text(
                     "Restrained styling for named public cookbooks only. Anonymous publications never carry Pro styling or identity.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 ProCustomization.profileAccents.forEach { accent ->
                     val previewed = customization.previewProfileAccentId ?: customization.profileAccentId
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { customization.previewProfileAccentId = accent.id; refresh() }, modifier = Modifier.fillMaxWidth().testTag("pro-profile-${accent.id}")) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Box(Modifier.size(20.dp).clip(CircleShape).background(proHex(accent.color)))
                                     Text(accent.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                    if (customization.profileAccentId == accent.id) Text("Applied", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("pro-profile-applied-${accent.id}"))
+                                    if (customization.profileAccentId == accent.id) TurnInStamp("Applied", Modifier.testTag("pro-profile-applied-${accent.id}"))
                                 }
                             }
                             if (previewed == accent.id) {
@@ -557,7 +536,7 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                         }
                     }
                 }
-                Text("Cookbook layout", style = MaterialTheme.typography.bodyMedium)
+                TurnInBannerText("Cookbook layout")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("pro-profile-layout")) {
                     listOf("standard" to "Standard", "compact" to "Compact").forEach { (id, label) ->
                         FilterChip(
@@ -578,21 +557,33 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                     },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("pro-profile-apply-layout"),
                 ) { Text("Apply layout") }
-                Text("App icons", style = MaterialTheme.typography.titleMedium)
+                TurnInBannerText("App icons")
                 ProCustomization.iconVariants.forEach { variant ->
                     val previewed = customization.previewIconId ?: customization.iconId
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { customization.previewIconId = variant.id; refresh() }, modifier = Modifier.fillMaxWidth().testTag("pro-icon-${variant.id}")) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    // TURN-IN (Slice 7, frame `23-customization`):
+                                    // each variant leads with its own launcher
+                                    // ground — the same colors the adaptive
+                                    // icons and aliases carry.
+                                    Box(
+                                        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(
+                                            colorResource(
+                                                when (variant.id) {
+                                                    "ember" -> com.pittech.R.color.pittech_launcher_ember
+                                                    "midnight" -> com.pittech.R.color.pittech_launcher_midnight
+                                                    else -> com.pittech.R.color.pittech_launcher_background
+                                                },
+                                            ),
+                                        ),
+                                    )
                                     Column(Modifier.weight(1f)) {
                                         Text(variant.name, style = MaterialTheme.typography.bodyMedium)
-                                        if (variant.isPro) Text("Pro", style = MaterialTheme.typography.bodySmall)
+                                        if (variant.isPro) ProTagChip()
                                     }
-                                    if (customization.iconId == variant.id) Text("Applied", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("pro-icon-applied-${variant.id}"))
+                                    if (customization.iconId == variant.id) TurnInStamp("Applied", Modifier.testTag("pro-icon-applied-${variant.id}"))
                                 }
                             }
                             if (previewed == variant.id) {
@@ -604,7 +595,9 @@ internal fun ProCustomizationDialog(subscription: SubscriptionManager, entry: Pr
                         }
                     }
                 }
-                iconNotice?.let { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("pro-icon-notice")) }
+                // Frame `23-customization`: an icon-apply result rides the
+                // shell as a flag strip, not a loose line of text.
+                iconNotice?.let { TurnInStatusStrip(it, pitTechTokens().flag, Modifier.testTag("pro-icon-notice")) }
             }
     }
 }
@@ -625,26 +618,50 @@ internal fun ProMoreHubDialog(subscription: SubscriptionManager, entry: ProPlace
                     "Your Pro library: personal analysis, advanced curves, recaps, and customization — all from cooks recorded on this device.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                // TURN-IN (Slice 7, Area 07 frame `10-pro-hub` — A7 is
+                // canonical for Pro): the hub carries the subscription
+                // itself — status plus the same store manage destination
+                // the paywall's `pro-manage` opens. The hub only renders
+                // for an entitled account (the gate routes it), so the
+                // status line is a fact, not a promise.
+                val uriHandler = LocalUriHandler.current
+                TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TurnInBannerText("Subscription")
+                        Text("Active on this account", style = PitTechTextStyles.metaLabel, color = pitTechTokens().inkMuted)
+                        TextButton(
+                            onClick = { uriHandler.openUri("https://play.google.com/store/account/subscriptions?package=com.pittech") },
+                            modifier = Modifier.testTag("pro-hub-manage"),
+                        ) { Text("Manage subscription") }
+                    }
+                }
                 listOf(ProPlacement.ANALYSIS, ProPlacement.CURVES, ProPlacement.BENCHMARKS, ProPlacement.THEMES).forEach { target ->
-                    Card(
+                    TurnInCard(
                         onClick = { subscription.openPro(target) },
                         modifier = Modifier.fillMaxWidth().testTag("pro-hub-" + target.name.lowercase()),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(target.title, style = MaterialTheme.typography.titleMedium)
-                            Text(target.preview, style = MaterialTheme.typography.bodyMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                            Text("◆", style = PitTechTextStyles.body, color = pitTechTokens().marigold)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TurnInBannerText(target.title)
+                                    ProTagChip()
+                                }
+                                Text(target.preview, style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
-                Card(
+                TurnInCard(
                     onClick = onRecap,
                     modifier = Modifier.fillMaxWidth().testTag("pro-hub-recap"),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Year in Smoke", style = MaterialTheme.typography.titleMedium)
-                        Text("Build a scoped, shareable recap from this library.", style = MaterialTheme.typography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                        Text("◆", style = PitTechTextStyles.body, color = pitTechTokens().marigold)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TurnInBannerText("Year in Smoke")
+                            Text("Build a scoped, shareable recap from this library.", style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }

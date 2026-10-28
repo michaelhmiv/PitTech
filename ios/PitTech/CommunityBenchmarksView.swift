@@ -37,19 +37,18 @@ struct CommunityBenchmarksView: View {
                                 }
                             case .empty:
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("No community figures yet")
-                                        .font(.headline)
+                                    TurnInBannerText("No community figures yet")
                                     Text("Benchmarks appear here when eligible published cooks are recorded. Your personal tools and Pro entries are unchanged.")
                                         .font(.subheadline)
                                         .foregroundStyle(PitTechStyle.supporting)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
+                                .padding(16)
                                 .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                             case .unavailable:
                                 VStack(alignment: .leading, spacing: 12) {
-                                    Text("Community benchmarks are unavailable right now.")
-                                        .font(.headline)
+                                    TurnInBannerText("Community benchmarks are unavailable right now.")
                                     Text("Your cooks, exports, and free tools are unchanged.")
                                         .font(.subheadline)
                                         .foregroundStyle(PitTechStyle.supporting)
@@ -59,8 +58,9 @@ struct CommunityBenchmarksView: View {
                                         .accessibilityIdentifier("community-retry")
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
+                                .padding(16)
                                 .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
                             case .signedOut, .forbidden:
                                 EmptyView()
                             }
@@ -100,16 +100,17 @@ struct CommunityBenchmarkCard: View {
     let card: CommunityCardContent
 
     var body: some View {
+        // TURN-IN (Slice 7, frames `15-benchmarks`): the laminated card —
+        // banner-face title, token type, the sample/coverage lines in the
+        // mono meta face the frames set them in.
         VStack(alignment: .leading, spacing: 8) {
-            Text(card.title)
-                .font(.headline)
-                .foregroundStyle(PitTechStyle.ink)
+            TurnInBannerText(card.title)
             Text(card.bucketLine)
-                .font(.subheadline)
-                .foregroundStyle(PitTechStyle.supporting)
+                .font(PitTechFont.body)
+                .foregroundStyle(PitTechStyle.inkMuted)
             ForEach(Array(card.lines.enumerated()), id: \.offset) { _, line in
                 Text(line)
-                    .font(.subheadline)
+                    .font(PitTechFont.body)
                     .foregroundStyle(PitTechStyle.ink)
             }
             ForEach(Array(card.notes.enumerated()), id: \.offset) { _, note in
@@ -118,12 +119,13 @@ struct CommunityBenchmarkCard: View {
                     .foregroundStyle(PitTechStyle.supporting)
             }
             Text(card.coverageLine)
-                .font(.caption)
-                .foregroundStyle(PitTechStyle.supporting)
+                .font(PitTechFont.monoMeta)
+                .foregroundStyle(PitTechStyle.inkMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(16)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         .accessibilityIdentifier(card.testTag)
     }
 }
@@ -133,19 +135,18 @@ struct CommunityOmittedNote: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(omitted.title)
-                .font(.headline)
-                .foregroundStyle(PitTechStyle.ink)
+            TurnInBannerText(omitted.title)
             Text(omitted.bucketLine)
-                .font(.subheadline)
-                .foregroundStyle(PitTechStyle.supporting)
+                .font(PitTechFont.body)
+                .foregroundStyle(PitTechStyle.inkMuted)
             Text(omitted.note)
                 .font(.caption)
                 .foregroundStyle(PitTechStyle.supporting)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(16)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         .accessibilityIdentifier(omitted.testTag)
     }
 }

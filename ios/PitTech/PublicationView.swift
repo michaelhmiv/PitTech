@@ -25,13 +25,13 @@ struct NativePublicationView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.").foregroundStyle(.secondary)
+                Text("Publish a selected recipe, collection or actual cook. Anyone can read and save a public copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 if !account.signedIn {
                     Text("Sign in to publish. This sharing draft stays on this device, and sign-in won't publish it.")
                     Button("Sign in to continue") { signingIn = true }.accessibilityIdentifier("publication-sign-in")
                 } else if let pending {
-                    Text(pending.rejected ? "This request was rejected" : "An interrupted request is saved").font(.headline)
-                    Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.")
+                    TurnInBannerText(pending.rejected ? "This request was rejected" : "An interrupted request is saved")
+                    Text("Retry uses the exact saved content and the same account. Editing the sharing draft won't change this request.").foregroundStyle(PitTechStyle.inkMuted)
                     if let prepared { NativePublicationContent(prepared: prepared) }
                     else { Text(pending.method == "DELETE" ? "Saved request: remove a public publication or like." : "A saved account or like change must be recovered in My cookbook.") }
                     if pending.draftId == draft, prepared != nil, !pending.rejected {
@@ -42,7 +42,7 @@ struct NativePublicationView: View {
                         Button("Discard rejected request", role: .destructive) { run { if let user = account.stateUserId { try writer?.store.discardRejected(user) }; prepared = nil; try refreshPending() } }.disabled(busy)
                     }
                 } else if let published {
-                    Text(published.status == "pending_review" ? "Submitted for review" : "Published").font(.title2.bold()).accessibilityIdentifier("publication-complete")
+                    Text(published.status == "pending_review" ? "Submitted for review" : "Published").font(PitTechFont.bannerTitle).accessibilityIdentifier("publication-complete")
                     if published.status == "pending_review" { Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.") }
                     else { Link("Open public recipe", destination: URL(string: published.url)!); ShareLink("Share public link", item: URL(string: published.url)!) }
                     // J9: after publishing, the next step lands where the
@@ -52,14 +52,14 @@ struct NativePublicationView: View {
                 } else {
                     Picker("Publication", selection: $kind) { Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt") }.disabled(busy)
                     Picker("Public credit", selection: $identity) { Text("Anonymous · a PitTech cook").tag("anonymous"); Text("My display name").tag("named") }.disabled(busy)
-                    Text(identity == "anonymous" ? "Your profile name and cookbook link won't appear on this publication." : "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.").font(.subheadline)
+                    Text(identity == "anonymous" ? "Your profile name and cookbook link won't appear on this publication." : "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     if linked != nil { Toggle("Update the publication linked to this draft", isOn: $updating).disabled(busy) }
                     Button("Prepare public preview") { run { try await prepare() } }.disabled(busy).accessibilityIdentifier("publication-prepare")
                     if let prepared {
-                        Text("Public credit · " + displayName).font(.headline).accessibilityIdentifier("publication-credit")
-                        if let updateSummary { Text(updateSummary).font(.headline) }
+                        Text("Public credit · " + displayName).font(PitTechFont.bannerCard).accessibilityIdentifier("publication-credit")
+                        if let updateSummary { TurnInStatusStrip(text: updateSummary, accent: PitTechStyle.marigold) }
                         NativePublicationContent(prepared: prepared)
-                        Text(NativePublicationTerms.text).font(.subheadline).accessibilityIdentifier("publication-terms")
+                        Text(NativePublicationTerms.text).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("publication-terms")
                         Toggle("I reviewed the content and credit and agree to these public-copy terms", isOn: $reviewed).accessibilityIdentifier("publication-reviewed")
                         Button(updating && linked != nil ? "Publish this update" : "Publish this preview") { run {
                             guard reviewed, previewUser == account.stateUserId, let writer else { throw NativePublicationError.accountChanged }
@@ -144,17 +144,17 @@ struct NativePublicationContent: View {
     private var recipes: [[String: JSONValue]] { (payload["recipes"]?.arrayValue ?? []).compactMap(\.objectValue) }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(payload["title"]?.stringValue ?? "Public preview").font(.title.bold()).accessibilityIdentifier("publication-preview-title")
-            Text(payload["kind"]?.stringValue == "attempt" ? "Actual recorded cook" : payload["kind"]?.stringValue == "collection" ? "Meal collection" : "Recipe").font(.headline)
-            Text("\(recipes.count) selected recipes · \(prepared.photos.count) selected photos")
+            Text(payload["title"]?.stringValue ?? "Public preview").font(PitTechFont.bannerTitle).accessibilityIdentifier("publication-preview-title")
+            Text(payload["kind"]?.stringValue == "attempt" ? "Actual recorded cook" : payload["kind"]?.stringValue == "collection" ? "Meal collection" : "Recipe").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            Text("\(recipes.count) selected recipes · \(prepared.photos.count) selected photos").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             Text("Public credit: " + (payload["identityMode"]?.stringValue == "named" ? "your display name" : "a PitTech cook"))
             ForEach(recipes.indices, id: \.self) { index in
                 let recipe = recipes[index]
-                Text(recipe["title"]?.stringValue ?? "Recipe").font(.title2.bold())
+                TurnInBannerText(recipe["title"]?.stringValue ?? "Recipe")
                 Text(recipe["description"]?.stringValue ?? "")
-                Text([recipe["foodType"]?.stringValue, recipe["cut"]?.stringValue, recipe["method"]?.stringValue].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                if let weight = recipe["weightGrams"]?.numberValue { Text("Weight · \(weight / 1000, specifier: "%.2f") kg") }
-                Text((recipe["tags"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " · ")).font(.caption)
+                Text([recipe["foodType"]?.stringValue, recipe["cut"]?.stringValue, recipe["method"]?.stringValue].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                if let weight = recipe["weightGrams"]?.numberValue { Text("Weight · \(weight / 1000, specifier: "%.2f") kg").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                Text((recipe["tags"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " · ")).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                 if let source = recipe["source"]?.objectValue, let id = source["itemId"]?.stringValue {
                     Text(source["removed"]?.boolValue == true ? "Based on a removed recipe" : "Based on a pinned public recipe")
                     if source["removed"]?.boolValue != true, let url = URL(string: "https://pittech.app/c/" + id) { Link("View source recipe", destination: url) }
@@ -163,11 +163,11 @@ struct NativePublicationContent: View {
                 ForEach(ingredients.indices, id: \.self) { row in Text((ingredients[row]["name"]?.stringValue ?? "") + " · " + (ingredients[row]["amount"]?.stringValue ?? "")) }
                 let instructions = (recipe["instructions"]?.arrayValue ?? []).compactMap(\.objectValue)
                 ForEach(instructions.indices, id: \.self) { row in
-                    Text(instructions[row]["title"]?.stringValue ?? "Step").font(.headline)
+                    Text(instructions[row]["title"]?.stringValue ?? "Step").font(PitTechFont.bodyEmphasis)
                     Text(instructions[row]["details"]?.stringValue ?? "")
-                    if let method = instructions[row]["method"]?.stringValue { Text("Method · " + method) }
-                    if let action = instructions[row]["action"]?.stringValue { Text("Action · " + action) }
-                    if let offset = instructions[row]["suggestedOffsetMillis"]?.numberValue { Text("Suggested timing · " + RecipeReferenceTimeline.relative(offset)) }
+                    if let method = instructions[row]["method"]?.stringValue { Text("Method · " + method).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                    if let action = instructions[row]["action"]?.stringValue { Text("Action · " + action).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
+                    if let offset = instructions[row]["suggestedOffsetMillis"]?.numberValue { Text("Suggested timing · " + RecipeReferenceTimeline.relative(offset)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                 }
                 let assets = (recipe["assets"]?.arrayValue ?? []).compactMap(\.objectValue)
                 NativePublicationPhotoPreview(assets: assets, photos: prepared.photos, hero: payload["heroAssetId"]?.stringValue)
@@ -188,11 +188,14 @@ struct NativePublicLikeActions: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if account.signedIn {
-                Button("Like this recipe") { set(true) }.disabled(busy).accessibilityIdentifier("public-like")
+                // §7 disposition: the Like is a placard, not a text button.
+                // This surface carries no like state or count, so the
+                // placard keeps the existing copy; Remove stays a button.
+                TurnInPlacard(systemImage: "heart.fill", label: "Like this recipe", identifier: "public-like") { set(true) }.disabled(busy)
                 Button("Remove my like") { set(false) }.disabled(busy).accessibilityIdentifier("public-unlike")
             } else {
                 Button("Sign in to like this recipe") { signingIn = true }
-                Text("Signing in won't add a like automatically.").font(.caption)
+                Text("Signing in won't add a like automatically.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
             }
             if let message { Text(message) }
         }.task { if writer == nil { writer = NativePublicationWriter.forApp(session: account) } }
@@ -226,9 +229,9 @@ private struct NativePublicationPhotoPreview: View {
     var body: some View {
         if !assets.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Selected photo \(index + 1) of \(assets.count)").font(.headline)
+                TurnInBannerText("Selected photo \(index + 1) of \(assets.count)")
                 if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 260).accessibilityLabel(asset["caption"]?.stringValue ?? "Selected public photo") }
-                if hero == asset["id"]?.stringValue { Text("Cover photo").font(.caption) }
+                if hero == asset["id"]?.stringValue { Text("Cover photo").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.attentionText) }
                 Text(asset["caption"]?.stringValue ?? "")
                 if assets.count > 1 {
                     HStack { Button("Previous photo") { selected = max(0, index - 1) }.disabled(index == 0); Button("Next photo") { selected = min(assets.count - 1, index + 1) }.disabled(index == assets.count - 1) }.frame(minHeight: 44)

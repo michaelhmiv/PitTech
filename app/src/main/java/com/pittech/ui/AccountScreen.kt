@@ -3,6 +3,7 @@ package com.pittech.ui
 import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,8 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,20 +74,18 @@ import kotlinx.coroutines.launch
     }
 }
 
-/** One PL-14 section: a Night Service card whose header always carries the
- * section's current status (DD-2), so a collapsed-away state never hides
+/** One PL-14 section: a TURN-IN laminated card whose header always carries
+ * the section's current status (DD-2), so a collapsed-away state never hides
  * whether the section needs attention. Sections stay expanded — collapsing
- * them would bury controls that used to be one scroll away. */
+ * them would bury controls that used to be one scroll away. The title rides
+ * the banner face and the status the mono face, per area-06 `a02`: the five
+ * sections each open with a live status line (K5). */
 @Composable private fun AccountPanel(title: String, status: String, tag: String, content: @Composable () -> Unit) {
-    Card(
-        colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),
-        shape=RoundedCornerShape(16.dp),
-        modifier=Modifier.fillMaxWidth().testTag(tag),
-    ){
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+    TurnInCard(modifier=Modifier.fillMaxWidth().testTag(tag)){
+        Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
             Column(verticalArrangement=Arrangement.spacedBy(2.dp)){
-                Text(title,style=MaterialTheme.typography.titleMedium)
-                Text(status,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.testTag("$tag-status"))
+                TurnInBannerText(title)
+                Text(status,style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted,modifier=Modifier.testTag("$tag-status"))
             }
             content()
         }
@@ -122,7 +119,7 @@ import kotlinx.coroutines.launch
         ){
             if(state.deletion!=null){
                 val deletion=state.deletion!!
-                Text("Account deletion",style=MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Account deletion")
                 Text(deletion.receipt?.description?:"The deletion response was not confirmed. Recover the request before retrying.",Modifier.testTag("account-deletion-status"))
                 Text("Your local journal stays available on this device. Deletion does not stop your local cooking.")
                 if(deletion.cleanupUserId!=null)Button(onClick={account.retryDeviceCleanup()},enabled=!state.busy){Text("Retry device account cleanup")}
@@ -134,8 +131,8 @@ import kotlinx.coroutines.launch
                 }
                 if(deletion.receipt==null && !state.signedIn){Text("Verify the original account email to retry this device’s saved request. Another account cannot take over the request.");AccountSignIn(account,state)}
             }else if(state.signedIn){
-                Text("Signed in",Modifier.testTag("account-signed-in"),style=MaterialTheme.typography.titleMedium)
-                state.accountEmail?.let{Text("Email sign-in: $it",Modifier.testTag("account-auth-email"))}
+                TurnInBannerText("Signed in",modifier=Modifier.testTag("account-signed-in"))
+                state.accountEmail?.let{Text("Email sign-in: $it",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted,modifier=Modifier.testTag("account-auth-email"))}
                 if(state.googleLinked)Text("Google sign-in is linked.",Modifier.testTag("account-auth-google"))
                 else if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={account.attachGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.testTag("account-google-attach")){Text("Add Google sign-in")}}}
                 Button(onClick={account.checkSession()},enabled=!state.busy){Text("Check connection")}
@@ -192,11 +189,11 @@ import kotlinx.coroutines.launch
             tag="account-panel-danger",
         ){
             if(state.signedIn && state.deletion==null){
-                Text("Delete account and server data",style=MaterialTheme.typography.titleMedium)
+                TurnInBannerText("Delete account and server data")
                 Text("Deletes your account identity, profile, sessions, likes, private server sync and original public publications. Your local journal stays on this device unless you remove it below.",style=MaterialTheme.typography.bodySmall)
                 TextButton(onClick={reviewingDeletion=true},enabled=!state.busy,modifier=Modifier.testTag("account-delete")){Text("Delete account and server data")}
             }
-            Text("Remove local journal",style=MaterialTheme.typography.titleMedium)
+            TurnInBannerText("Remove local journal")
             Text("Removes this device's cooks, recipes, photos, notes, drafts, reminders and timers in the journal. This does not delete the server account; credentials, deletion records and recovery, and community block and report device state stay untouched.")
             TextButton(onClick={reviewingJournal=true},enabled=!state.busy,modifier=Modifier.testTag("local-journal-remove")){Text("Remove local journal")}
         }
@@ -208,6 +205,7 @@ import kotlinx.coroutines.launch
     if(reviewingJournal)LocalJournalRemovalConfirmation(onCancel={reviewingJournal=false},onConfirm={reviewingJournal=false;account.removeLocalJournal()})
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable private fun McpConnectionsSection(mcp: com.pittech.data.McpConnectionsManager, subscription: com.pittech.billing.SubscriptionManager? = null) {
     val state by mcp.presentation.collectAsStateWithLifecycle()
     // Slice 8 (PL-14): the Pro gate reads the existing subscription state.
@@ -227,12 +225,19 @@ import kotlinx.coroutines.launch
         if(!state.available)Text("AI connections aren't available yet.",Modifier.testTag("mcp-unavailable"))
         else{
             state.grants.forEach{grant->
-                Column(Modifier.testTag("mcp-grant-${grant.id}"),verticalArrangement=Arrangement.spacedBy(2.dp)){
-                    Text(grant.nickname,style=MaterialTheme.typography.titleSmall)
-                    Text((grant.clientId?.let{"Connected app"} ?: "Personal access token")+" - "+grant.status(System.currentTimeMillis()),style=MaterialTheme.typography.bodySmall)
-                    Text(grant.scopes.joinToString(", "){com.pittech.data.McpScopeCatalog.label(it)},style=MaterialTheme.typography.bodySmall)
-                    grant.lastUsedAt?.let{Text("Last used ${java.time.Instant.ofEpochMilli(it)}",style=MaterialTheme.typography.bodySmall)}
-                    if(grant.active(System.currentTimeMillis()))TextButton(onClick={confirmRevoke=grant.id},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-${grant.id}")){Text("Disconnect")}
+                // Area-06 `c01`: each grant is its own laminated card —
+                // banner nickname, a mono state line, its scopes as chips,
+                // last use in mono, then Disconnect.
+                TurnInCard(modifier=Modifier.fillMaxWidth().testTag("mcp-grant-${grant.id}")){
+                    Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
+                        TurnInBannerText(grant.nickname)
+                        Text((grant.clientId?.let{"Connected app"} ?: "Personal access token")+" - "+grant.status(System.currentTimeMillis()),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                            grant.scopes.forEach{scope->TurnInScopeChip(com.pittech.data.McpScopeCatalog.label(scope))}
+                        }
+                        grant.lastUsedAt?.let{Text("Last used ${java.time.Instant.ofEpochMilli(it)}",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)}
+                        if(grant.active(System.currentTimeMillis()))TextButton(onClick={confirmRevoke=grant.id},enabled=!state.busy,modifier=Modifier.testTag("mcp-revoke-${grant.id}")){Text("Disconnect")}
+                    }
                 }
             }
             if(state.grants.none{it.active(System.currentTimeMillis())})Text("No AI connections yet.",style=MaterialTheme.typography.bodySmall)
@@ -252,9 +257,11 @@ import kotlinx.coroutines.launch
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                         Button(onClick={creating=true},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-new")){Text("New connection")}
                     }
-                    Text("Approve a connection",style=MaterialTheme.typography.titleSmall)
+                    TurnInBannerText("Approve a connection")
                     Text("If an assistant shows you a code in your browser, enter it here. PitTech shows you exactly what the code connects before anything is approved.",style=MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(code,{code=it;state.approvalPreview?.let{preview->if(preview.code!=it.trim().uppercase())mcp.dismissApprovalPreview()}},label={Text("Connection code")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-approve-code"))
+                    TurnInLiteralBoxedField("Connection code"){
+                        OutlinedTextField(code,{code=it;state.approvalPreview?.let{preview->if(preview.code!=it.trim().uppercase())mcp.dismissApprovalPreview()}},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-approve-code"))
+                    }
                     val preview=state.approvalPreview
                     if(preview==null){
                         Button(onClick={mcp.reviewCode(code)},enabled=!state.busy && code.isNotBlank(),modifier=Modifier.heightIn(min=48.dp).testTag("mcp-review-code")){Text("Review connection")}
@@ -262,8 +269,9 @@ import kotlinx.coroutines.launch
                         // Slice 8 (PL-16 / DD-9): the confirmation step. Approve
                         // does not exist until the client and its full scope
                         // list have been shown for this exact code.
-                        Column(Modifier.testTag("mcp-approval-preview"),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                            Text("Connect ${preview.clientName}?",style=MaterialTheme.typography.titleSmall)
+                        TurnInCard(modifier=Modifier.fillMaxWidth().testTag("mcp-approval-preview")){
+                        Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
+                            TurnInBannerText("Connect ${preview.clientName}?")
                             Text("${preview.clientName} will be able to:",style=MaterialTheme.typography.bodySmall)
                             preview.scopes.forEach{Text("• "+com.pittech.data.McpScopeCatalog.label(it),style=MaterialTheme.typography.bodySmall)}
                             Text("PitTech Pro: active on this account.",style=MaterialTheme.typography.bodySmall)
@@ -272,6 +280,7 @@ import kotlinx.coroutines.launch
                                 Button(onClick={mcp.approve(preview.code);code=""},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("mcp-approve")){Text("Approve")}
                                 TextButton(onClick={mcp.dismissApprovalPreview()},enabled=!state.busy,modifier=Modifier.testTag("mcp-approve-cancel")){Text("Not now")}
                             }
+                        }
                         }
                     }
                 }
@@ -289,9 +298,13 @@ import kotlinx.coroutines.launch
         var copied by remember(token){mutableStateOf(false)}
         AlertDialog(onDismissRequest={},title={Text("Your connection token")},text={
             Column(Modifier.testTag("mcp-created-token"),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                Text("For ${state.createdNickname ?: "the new connection"}",style=MaterialTheme.typography.titleSmall)
+                TurnInBannerText("For ${state.createdNickname ?: "the new connection"}")
                 Text("Copy it into the assistant now. It is shown only once and is not saved on this device.",style=MaterialTheme.typography.bodySmall)
-                Text(token,Modifier.testTag("mcp-token-value"))
+                // Area-06 `c05`: the once-shown token rides in a raised mono
+                // box — it is a measurement-class string, not prose.
+                androidx.compose.material3.Surface(color=pitTechTokens().surfaceRaised,shape=RoundedCornerShape(8.dp),border=androidx.compose.foundation.BorderStroke(1.dp,pitTechTokens().ruling)){
+                    Text(token,style=PitTechTextStyles.monoMeta,modifier=Modifier.padding(10.dp).testTag("mcp-token-value"))
+                }
             }
         },confirmButton={Button(onClick={clipboard.setText(androidx.compose.ui.text.AnnotatedString(token));copied=true},modifier=Modifier.testTag("mcp-copy-token")){Text(if(copied)"Copied" else "Copy token")}},dismissButton={TextButton(onClick={mcp.dismissCreatedToken()},modifier=Modifier.testTag("mcp-token-done")){Text("Done")}})
     }
@@ -343,15 +356,23 @@ import kotlinx.coroutines.launch
         TextButton(onClick={submitted=true;mcp.create(nickname,selected,days)},enabled=nickname.isNotBlank() && selected.isNotEmpty() && !state.busy,modifier=Modifier.testTag("mcp-create-submit")){Text(if(submitted && state.busy)"Creating…" else "Create connection")}
     }){
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
-            OutlinedTextField(nickname,{nickname=it},label={Text("Name this connection")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-nickname"))
-            Text("What it can do",style=MaterialTheme.typography.titleSmall)
+            // Area-06 `c04`: boxed name field, scope checkboxes with their
+            // plain-language detail, the never-allowed row, and the
+            // 30/90/365 auto-disconnect choice.
+            TurnInLiteralBoxedField("Name this connection"){
+                OutlinedTextField(nickname,{nickname=it},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("mcp-nickname"))
+            }
+            TurnInBannerText("What it can do")
             com.pittech.data.McpScopeCatalog.all.forEach{entry->
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Checkbox(selected.contains(entry.id),{checked->selected=if(checked)selected+entry.id else selected-entry.id},modifier=Modifier.testTag("mcp-scope-${entry.id}"))
                     Column{Text(entry.label);Text(entry.detail,style=MaterialTheme.typography.bodySmall)}
                 }
             }
-            Text("Disconnect automatically after",style=MaterialTheme.typography.titleSmall)
+            // The frame's never-allowed row (`c04`), carrying the app's own
+            // sentence verbatim — no frame copy is adopted (§1).
+            TurnInStatusStrip("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.",pitTechTokens().flag)
+            TurnInBannerText("Disconnect automatically after")
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 listOf(30,90,365).forEach{option->
                     Row(verticalAlignment=Alignment.CenterVertically){
@@ -360,7 +381,6 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            Text("You can disconnect sooner any time. Nothing here can publish, control a grill, or change billing.",style=MaterialTheme.typography.bodySmall)
             if(submitted && state.busy)Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){CircularProgressIndicator();Text(LoadingCopy.CREATING_CONNECTION)}
             if(submitted && !state.busy && state.createdToken==null)Text(state.message ?: "Couldn't create the connection. Check your connection and try again.",Modifier.testTag("mcp-create-error"),style=MaterialTheme.typography.bodySmall)
         }
@@ -381,13 +401,9 @@ import kotlinx.coroutines.launch
         // the same one action — the coordinator's explicit sync — and it
         // leaves once a first sync exists or conflicts need review instead.
         if (signedIn && sync.enabled && state.lastSyncedAt <= 0 && state.conflicts.isEmpty()) {
-            Card(
-                colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.secondaryContainer),
-                shape=RoundedCornerShape(12.dp),
-                modifier=Modifier.fillMaxWidth().testTag("sync-turn-on-card"),
-            ){
-                Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-                    Text("Turn on private sync",style=MaterialTheme.typography.titleSmall)
+            TurnInCard(modifier=Modifier.fillMaxWidth().testTag("sync-turn-on-card")){
+                Column(verticalArrangement=Arrangement.spacedBy(6.dp)){
+                    TurnInBannerText("Turn on private sync")
                     Text("Make the first encrypted backup of this journal now. After that, you can keep it in sync automatically while the app is open.",style=MaterialTheme.typography.bodySmall)
                     Button(onClick={scope.launch{sync.syncNow()}},enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp).testTag("sync-turn-on")){Text("Turn on private sync")}
                 }
@@ -400,8 +416,18 @@ import kotlinx.coroutines.launch
         // what it will do before the first backup exists.
         val row = SyncStatusCopy.row(state.status, state.detail, state.lastSyncedAt, state.conflicts.size, signedIn, sync.enabled)
         Column(Modifier.testTag("sync-status-row"),verticalArrangement=Arrangement.spacedBy(2.dp)){
-            Text(row.headline,Modifier.testTag("sync-status"),style=MaterialTheme.typography.titleSmall)
+            TurnInBannerText(row.headline,modifier=Modifier.testTag("sync-status"))
             Text(row.body,Modifier.testTag("sync-status-detail"),style=MaterialTheme.typography.bodySmall)
+        }
+        // Area-06 `b01`: the sync facts ride as status cells under the row —
+        // the last-sync time in mono, and the waiting-conflict count when
+        // there is one. (The frame's per-device rows have no Android
+        // counterpart; the coordinator carries no device list.)
+        if (state.lastSyncedAt > 0 || state.conflicts.isNotEmpty()) {
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                if (state.lastSyncedAt > 0) TurnInStatusCell("Last sync",java.text.DateFormat.getTimeInstance().format(java.util.Date(state.lastSyncedAt)),Modifier.weight(1f))
+                if (state.conflicts.isNotEmpty()) TurnInStatusCell("Conflicts",state.conflicts.size.toString(),Modifier.weight(1f))
+            }
         }
         // The detail is already the row's body in the states that use it; only
         // repeat it as the message line where the row's body is the fixed copy.
@@ -435,15 +461,15 @@ import kotlinx.coroutines.launch
     val scope = rememberCoroutineScope()
     ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-            Text("Review synced edits",style=MaterialTheme.typography.titleLarge)
+            TurnInBannerText("Review synced edits",style=PitTechTextStyles.bannerTitle)
             Text("Two devices changed the same entry. Your journal keeps the current version until you choose.")
             // Slice 7 (PL-10): the consequence is computed from the actual pending
             // set, never a generic warning.
             Text(SyncStatusCopy.conflictConsequence(conflicts.size),Modifier.testTag("sync-conflict-consequence"),style=MaterialTheme.typography.bodySmall)
             conflicts.forEach { conflict ->
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-                    Text(conflict.reason,style=MaterialTheme.typography.titleSmall)
-                    Text(conflict.recordLabel,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    TurnInBannerText(conflict.reason)
+                    Text(conflict.recordLabel,style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
                         SyncConflictSide("Yours",conflict.mineFields,Modifier.weight(1f).testTag("sync-conflict-mine-${conflict.id}"))
                         SyncConflictSide("Other device",conflict.theirsFields,Modifier.weight(1f).testTag("sync-conflict-theirs-${conflict.id}"))
@@ -462,19 +488,19 @@ import kotlinx.coroutines.launch
 }
 
 /** One side of the PL-16 comparison: a titled card listing the version's
- * actual content fields. */
+ * actual content fields. TURN-IN (area-06 `b04`): the sides stay side by
+ * side as laminated cards; field names ride the literal meta style (they
+ * are the record's own words) and a deleted side's value carries the
+ * frame's DELETED stamp in flag. */
 @Composable private fun SyncConflictSide(title: String, fields: List<com.pittech.data.ConflictPreviewField>, modifier: Modifier = Modifier) {
-    Card(
-        colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),
-        shape=RoundedCornerShape(12.dp),
-        modifier=modifier,
-    ){
-        Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-            Text(title,style=MaterialTheme.typography.titleSmall)
+    TurnInCard(modifier=modifier){
+        Column(verticalArrangement=Arrangement.spacedBy(6.dp)){
+            TurnInBannerText(title)
             fields.forEach { field ->
                 Column(verticalArrangement=Arrangement.spacedBy(1.dp)){
-                    Text(field.label,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(field.value,style=MaterialTheme.typography.bodyMedium)
+                    TurnInLiteralMetaLabel(field.label)
+                    if (field.label=="Status" && field.value=="Deleted") Text(field.value,style=PitTechTextStyles.bodyEmphasis,color=pitTechTokens().flag)
+                    else Text(field.value,style=MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -491,31 +517,59 @@ import kotlinx.coroutines.launch
 @Composable private fun AccountSignIn(account:AccountManager,state:AccountPresentation){
     var email by remember{mutableStateOf("")};var code by remember{mutableStateOf("")}
     val keyboard=LocalSoftwareKeyboardController.current
-    OutlinedTextField(email,{email=it},label={Text("Email address")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth().testTag("account-email"))
+    // TURN-IN boxed fields (§4, area-06 `a03`/`a07`): the label rides above
+    // the box as a literal meta label; the field keeps its tag and wording.
+    TurnInLiteralBoxedField("Email address"){
+        OutlinedTextField(email,{email=it},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth().testTag("account-email"))
+    }
     Button(onClick={keyboard?.hide();account.start(email)},enabled=!state.busy && email.isNotEmpty(),modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("account-start")){Text("Send sign-in email")}
     if(account.googleSignInAvailable){(LocalContext.current as? Activity)?.let{activity->Button(onClick={keyboard?.hide();account.signInWithGoogle(ActivityGoogleSignInHost(activity))},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("account-google-signin")){Text("Continue with Google")}}}
     state.challengeEmail?.let{address->
         Text("Enter the six-digit code sent to $address. You can open the email on another device.")
-        OutlinedTextField(code,{code=it},label={Text("Six-digit code")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),modifier=Modifier.fillMaxWidth().testTag("account-code"))
+        TurnInLiteralBoxedField("Six-digit code"){
+            OutlinedTextField(code,{code=it},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),modifier=Modifier.fillMaxWidth().testTag("account-code"))
+        }
         Button(onClick={keyboard?.hide();account.verify(code);code=""},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("account-verify")){Text(if(state.interruptedVerification)"Retry sign-in" else if(state.pendingLink)"Confirm email link" else "Verify code")}
         TextButton(onClick={account.start(address,resend=true)},enabled=!state.busy && state.canResend,modifier=Modifier.testTag("account-resend")){Text("Send a new code")}
-        Text("Codes expire after 15 minutes. Wait at least a minute before requesting another.",style=MaterialTheme.typography.bodySmall)
+        Text("Codes expire after 15 minutes. Wait at least a minute before requesting another.",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
     }
 }
 @Composable private fun AccountDeletionConfirmation(onCancel:()->Unit,onConfirm:()->Unit){
     var acknowledged by remember{mutableStateOf(false)};var typed by remember{mutableStateOf("")}
+    // TURN-IN (BUILD-SPEC §7, area-06 `d03`→`d04`): the deletion review is
+    // two steps — scope + acknowledgement, then type-DELETE — with a step
+    // rail. Both gates, in their original order; only the pagination is
+    // new presentation. The surface stays the guard-class dialog the
+    // grammar keeps for destructive flows (DD-6).
+    var step by remember{mutableStateOf(0)}
     val uri=LocalUriHandler.current;val keyboard=LocalSoftwareKeyboardController.current
     AlertDialog(onDismissRequest=onCancel,title={Text("Delete account")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
-        Text("Delete your account identity, profile, sessions, likes, private server sync, original public publications and original media.")
-        Text("Other cooks keep independently owned copies and variations they already saved. Those copies show a removed source without your identity.")
-        Text("This request signs you out immediately. Cleanup can take time; keep this device’s recovery record until it completes.")
-        Text("Local journal",style=MaterialTheme.typography.titleMedium)
-        Text("Your journal stays on this device, including an active local cook. Keeping it does not retain your server account data. Local data removal is a separate choice.")
-        Text("Google Play manages subscriptions separately. You can delete your account immediately without changing billing first.")
-        TextButton(onClick={uri.openUri("https://play.google.com/store/account/subscriptions?package=com.pittech")}){Text("Manage Google Play subscriptions")}
-        Row(verticalAlignment=Alignment.CenterVertically){Checkbox(acknowledged,{acknowledged=it},modifier=Modifier.testTag("account-deletion-acknowledge"));Text("I understand what is deleted and what other cooks keep")}
-        OutlinedTextField(typed,{typed=it},label={Text("Type DELETE")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("account-deletion-confirmation"))
-    }},confirmButton={TextButton(onClick={keyboard?.hide();onConfirm()},enabled=acknowledged && typed=="DELETE",modifier=Modifier.testTag("account-deletion-submit")){Text("Delete account and server data")}},dismissButton={TextButton(onClick=onCancel){Text("Cancel")}})
+        TurnInMilestoneRail(listOf(
+            TurnInRailStep("Scope",null,if(step==0)TurnInRailState.CURRENT else TurnInRailState.DONE),
+            TurnInRailStep("Confirm",null,if(step==1)TurnInRailState.CURRENT else TurnInRailState.UPCOMING),
+        ))
+        if(step==0){
+            Text("Delete your account identity, profile, sessions, likes, private server sync, original public publications and original media.")
+            Text("Other cooks keep independently owned copies and variations they already saved. Those copies show a removed source without your identity.")
+            Text("This request signs you out immediately. Cleanup can take time; keep this device’s recovery record until it completes.")
+            TurnInBannerText("Local journal")
+            Text("Your journal stays on this device, including an active local cook. Keeping it does not retain your server account data. Local data removal is a separate choice.")
+            Text("Google Play manages subscriptions separately. You can delete your account immediately without changing billing first.")
+            TextButton(onClick={uri.openUri("https://play.google.com/store/account/subscriptions?package=com.pittech")}){Text("Manage Google Play subscriptions")}
+            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(acknowledged,{acknowledged=it},modifier=Modifier.testTag("account-deletion-acknowledge"));Text("I understand what is deleted and what other cooks keep")}
+        }else{
+            Text("Delete your account identity, profile, sessions, likes, private server sync, original public publications and original media.")
+            TurnInLiteralBoxedField("Type DELETE"){
+                OutlinedTextField(typed,{typed=it},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("account-deletion-confirmation"))
+            }
+        }
+    }},confirmButton={
+        if(step==0)TextButton(onClick={step=1},enabled=acknowledged,modifier=Modifier.testTag("account-deletion-continue")){Text("Continue")}
+        else TextButton(onClick={keyboard?.hide();onConfirm()},enabled=acknowledged && typed=="DELETE",modifier=Modifier.testTag("account-deletion-submit")){Text("Delete account and server data")}
+    },dismissButton={
+        if(step==0)TextButton(onClick=onCancel){Text("Cancel")}
+        else TextButton(onClick={step=0}){Text("Back")}
+    })
 }
 @Composable private fun LocalJournalRemovalConfirmation(onCancel:()->Unit,onConfirm:()->Unit){
     var acknowledged by remember{mutableStateOf(false)};var typed by remember{mutableStateOf("")}
@@ -525,6 +579,8 @@ import kotlinx.coroutines.launch
         Text("Finish or stop any active cook and its recording first. Removal is refused while a cook is active or a recording is in progress.")
         Text("This does not delete the server account. Signing in again will not bring the journal back. Credentials, deletion records and recovery, and community block and report device state stay untouched.")
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(acknowledged,{acknowledged=it},modifier=Modifier.testTag("local-journal-acknowledge"));Text("I understand the journal on this device is removed and my account stays")}
-        OutlinedTextField(typed,{typed=it},label={Text("Type REMOVE")},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("local-journal-confirmation"))
+        TurnInLiteralBoxedField("Type REMOVE"){
+            OutlinedTextField(typed,{typed=it},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("local-journal-confirmation"))
+        }
     }},confirmButton={TextButton(onClick={keyboard?.hide();onConfirm()},enabled=acknowledged && typed=="REMOVE",modifier=Modifier.testTag("local-journal-submit")){Text("Remove local journal")}},dismissButton={TextButton(onClick=onCancel){Text("Cancel")}})
 }

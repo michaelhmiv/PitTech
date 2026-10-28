@@ -42,7 +42,7 @@ internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, con
     TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (alerts.isEmpty()) "Add cook alerts" else "Alerts · ${alerts.count { CookAlertEngine.decode(it.payload).first.enabled }} enabled" + if (activeCount > 0) " · $activeCount need attention" else "") }
     if (expanded) ModalBottomSheet(onDismissRequest = { expanded = false }) {
     Column(Modifier.fillMaxWidth().heightIn(max = 580.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Cook alerts", style = MaterialTheme.typography.titleLarge)
+        TurnInBannerText("Cook alerts", style = PitTechTextStyles.bannerTitle)
         Text("Manual temperatures trigger checks when logged. Background sensor alerts need an attached grill with timed recording.")
         if (!CookAlertNotifications.canNotify(context)) OutlinedButton(onClick = {
             if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -57,8 +57,15 @@ internal fun CookAlertTools(data: CookDetailData, viewModel: CooksViewModel, con
         orderedAlerts.forEach { record ->
             val (rule, state) = CookAlertEngine.decode(record.payload)
             val focused = record.id == focusedAlertId
-            Column(if (focused) Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)).padding(10.dp).testTag("alert-focus-${record.id}") else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("${record.title} · ${if (!rule.enabled) "off" else if (state.active) "needs attention" else "watching"}", style = MaterialTheme.typography.titleSmall)
+            Column(if (focused) Modifier.fillMaxWidth().background(pitTechTokens().surfaceRaised, RoundedCornerShape(12.dp)).padding(10.dp).testTag("alert-focus-${record.id}") else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // `d26` status cell language: the rule's name in the banner
+                // face, its state as a colored status word beneath.
+                TurnInBannerText(record.title)
+                Text(
+                    (if (!rule.enabled) "Off" else if (state.active) "Needs attention" else "Watching"),
+                    style = PitTechTextStyles.monoMeta,
+                    color = if (!rule.enabled) pitTechTokens().inkMuted else if (state.active) pitTechTokens().attentionText else pitTechTokens().inkMuted,
+                )
                 if (state.acknowledged) Text(if (state.active) "Acknowledged · condition has not recovered" else "Acknowledged")
                 FlowRow { TextButton(onClick = { editing = rule }) { Text("Edit") }; TextButton(onClick = { viewModel.changeCookAlert(record.id, "toggle") }) { Text(if (rule.enabled) "Disable" else "Enable") } }
                 if (state.active) FlowRow { TextButton(onClick = { viewModel.changeCookAlert(record.id, "acknowledge") }) { Text("Acknowledge") }; TextButton(onClick = { viewModel.changeCookAlert(record.id, "snooze") }) { Text("Snooze 10 min") } }

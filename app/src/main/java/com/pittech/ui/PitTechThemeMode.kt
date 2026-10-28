@@ -1,25 +1,35 @@
 package com.pittech.ui
 
 /**
- * Appearance preference. Since the #172 Night Service refresh (owner ruling
- * 2026-10-24, design delta DD-7 rejected), PitTech ships ONE appearance —
- * Night Service dark — on every screen. The enum and its preference parsing
- * remain so saved preferences, backups and device-action commands keep
- * decoding, but every value now resolves to dark; the value is no longer
- * user-changeable (Settings shows an informational row instead of a picker).
+ * Appearance preference (BUILD-SPEC §3.4, TURN-IN pass 2026-10-26).
+ *
+ * The owner reversed the #172 dark-only ruling (DD-7) for this pass: PitTech
+ * ships Dark and Light, with **Dark the fresh-install default** — when no
+ * preference is stored (or the stored value does not decode), the app opens
+ * dark. A stored choice always wins, and SYSTEM follows the device.
  */
 enum class PitTechThemeMode {
     SYSTEM,
     LIGHT,
     DARK;
 
-    /** Night Service is dark-only: every mode resolves to the dark scheme. */
-    fun usesDarkTheme(systemIsDark: Boolean): Boolean = true
+    fun usesDarkTheme(systemIsDark: Boolean): Boolean = when (this) {
+        SYSTEM -> systemIsDark
+        LIGHT -> false
+        DARK -> true
+    }
 
     companion object {
         const val PREFERENCE_KEY = "theme-mode"
 
+        /**
+         * Decodes a stored preference. Existing stored values decode exactly
+         * as before; only the *unset/invalid* fallback changed (SYSTEM under
+         * #172, DARK now — see the class doc). Because [usesDarkTheme] was
+         * forced dark for every value during #172, no stored value was ever
+         * user-visible, so this changes the first-launch default only.
+         */
         fun fromPreference(value: String?): PitTechThemeMode =
-            values().firstOrNull { it.name.equals(value, ignoreCase = true) } ?: SYSTEM
+            values().firstOrNull { it.name.equals(value, ignoreCase = true) } ?: DARK
     }
 }

@@ -13,7 +13,7 @@ struct ShareCardOptionsView: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("Share-card appearance").font(.headline)
+            TurnInBannerText("Share-card appearance")
             Picker("Hero",selection:Binding(get:{ options.hero },set:{ value in
                 var copy = options;copy.hero = value;document.card = copy
                 if value == "photo" && !photos.contains(where:{ $0.id == document.heroPhotoId }) { document.heroPhotoId = photos.first?.id }
@@ -27,9 +27,9 @@ struct ShareCardOptionsView: View {
                 Text("Zoom");Slider(value:binding(\.zoom),in:1...3).accessibilityLabel("Zoom")
             }
             Picker("Temperature unit",selection:binding(\.unit)) { Text("Automatic").tag("auto");Text("°C").tag("°C");Text("°F").tag("°F") }
-            TextField("Card note (optional)",text:Binding(get:{ options.note },set:{ value in var copy = options;copy.note = shareCardLimited(value,2000);document.card = copy }),axis:.vertical).lineLimit(2...5).textFieldStyle(.roundedBorder).accessibilityIdentifier("card-note")
+            TextField("Card note (optional)",text:Binding(get:{ options.note },set:{ value in var copy = options;copy.note = shareCardLimited(value,2000);document.card = copy }),axis:.vertical).lineLimit(2...5).turnInBoxedField().accessibilityIdentifier("card-note")
             Toggle("Include recorded verdict",isOn:binding(\.includeVerdict)).disabled(!document.entries.contains { $0.included && $0.includeStory })
-            Text("Only selected photos and enabled recorded stories appear. Full text and original measurements remain in the Cook Pack.").font(.caption).foregroundStyle(PitTechStyle.supporting)
+            Text("Only selected photos and enabled recorded stories appear. Full text and original measurements remain in the Cook Pack.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
         }
     }
 }
@@ -66,9 +66,9 @@ struct NativeShareCardPreview: View {
             VStack(alignment:.leading,spacing:16) {
                 if working { ProgressView("Preparing card…") }
                 if let bytes, let image = UIImage(data:bytes) { Image(uiImage:image).resizable().scaledToFit().accessibilityLabel("Exact exported card preview").accessibilityIdentifier("share-card-preview") }
-                Text(theme.isPro ? "1080 × 1350 PNG · \(theme.name) theme" : "1080 × 1350 PNG · default theme").font(.caption).foregroundStyle(PitTechStyle.supporting)
+                Text(theme.isPro ? "1080 × 1350 PNG · \(theme.name) theme" : "1080 × 1350 PNG · default theme").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                 ProEntryRow(entry: .themes)
-                if let error { Text(error).foregroundStyle(.red);Button("Retry image") { retry += 1 } }
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag); Button("Retry image") { retry += 1 } }
                 Button("Share image") { sharing = true }.buttonStyle(.borderedProminent).frame(minHeight:44).disabled(bytes == nil || working).accessibilityIdentifier("card-share")
                 Button("Save PNG") { saving = true }.buttonStyle(.bordered).frame(minHeight:44).disabled(bytes == nil || working).accessibilityIdentifier("card-save")
                 Button("Share Cook Pack file",action:onPack).frame(minHeight:44)

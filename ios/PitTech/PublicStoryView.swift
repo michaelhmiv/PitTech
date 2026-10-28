@@ -24,8 +24,9 @@ struct NativePublicStoryView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recorded cook story").font(.title3.bold())
-            if story["foodOnOffsetMillis"]?.numberValue == nil { Text("Food on anchor wasn't published. Times use the shared timeline.").font(.caption) }
+            Text("Recorded story").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            TurnInBannerText("Recorded cook story")
+            if story["foodOnOffsetMillis"]?.numberValue == nil { Text("Food on anchor wasn't published. Times use the shared timeline.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
             if !channels.isEmpty {
                 Picker("Reference channel", selection: Binding(get: { channel["id"]?.stringValue ?? "" }, set: { selected = $0 })) {
                     ForEach(channels.indices, id: \.self) { index in
@@ -35,22 +36,30 @@ struct NativePublicStoryView: View {
                 }
                 if !points.isEmpty {
                     NativePublicSampleChart(points: points, anchor: story["foodOnOffsetMillis"]?.numberValue, unit: store.temperatureUnit)
-                    Text("\(samples.count) recorded samples. Points show measurements; gaps aren't filled.").font(.caption)
+                    Text("\(samples.count) recorded samples. Points show measurements; gaps aren't filled.").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     DisclosureGroup("View recorded values") {
                         ForEach(points.indices, id: \.self) { index in
-                            Text(valueDescription(points[index]))
+                            Text(valueDescription(points[index])).font(PitTechFont.monoMeta)
                         }
                     }
-                    if points.count < samples.count { Text("Showing \(points.count) original points for readability.").font(.caption) }
+                    if points.count < samples.count { Text("Showing \(points.count) original points for readability.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted) }
                 } else { Text("No measurements were published for this channel.") }
             }
             ForEach((story["milestones"]?.arrayValue ?? []).indices, id: \.self) { index in
                 let row = story["milestones"]?.arrayValue?[index].objectValue ?? [:]
-                Text(time(row["offsetMillis"]?.numberValue ?? 0) + " · " + (row["text"]?.stringValue ?? row["action"]?.stringValue ?? "Recorded action"))
+                HStack(alignment: .top, spacing: 10) {
+                    Text(time(row["offsetMillis"]?.numberValue ?? 0)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.emberText)
+                    Text(row["text"]?.stringValue ?? row["action"]?.stringValue ?? "Recorded action").font(PitTechFont.body)
+                }
             }
-            if let off = story["foodOffOffsetMillis"]?.numberValue { Text("Recorded Food off · " + time(off)).font(.caption) }
+            if let off = story["foodOffOffsetMillis"]?.numberValue { Text("Recorded Food off · " + time(off)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
             if let verdict = story["verdict"]?.objectValue {
-                if let rating = verdict["rating"]?.numberValue { Text("Recorded rating · \(rating.formatted()) / 5") }
+                if let rating = verdict["rating"]?.numberValue {
+                    HStack(spacing: 10) {
+                        TurnInStars(rating: rating)
+                        Text("Recorded rating · \(rating.formatted()) / 5").font(PitTechFont.body)
+                    }
+                }
                 if let again = verdict["cookAgain"]?.boolValue { Text(again ? "Would cook again" : "Would change next time") }
                 if let notes = verdict["notes"]?.stringValue, !notes.isEmpty { Text(notes) }
             }
@@ -67,7 +76,7 @@ struct NativePublicAdditionalPhoto: View {
         VStack(alignment: .leading, spacing: 6) {
             if let bytes, let image = UIImage(data: bytes) { Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(caption.isEmpty ? "Selected recipe photograph" : caption) }
             else { Text("Photograph unavailable") }
-            if !caption.isEmpty { Text(caption).font(.caption) }
+            if !caption.isEmpty { Text(caption).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
         }.task(id: asset.sha256) { bytes = try? await community.image(detail, asset: asset) }
     }
 }

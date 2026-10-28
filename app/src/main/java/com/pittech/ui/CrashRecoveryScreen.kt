@@ -54,32 +54,36 @@ internal fun CrashRecoveryScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Spacer(Modifier.height(4.dp))
-            Text("PitTech", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-            Text(
+            // TURN-IN (`d06`, A1 canonical): banner headline, the report as
+            // a bordered card, the reference code in the mono face — the
+            // app's own words, unchanged (§1.1).
+            TurnInMetaLabel("PitTech")
+            TurnInBannerText(
                 "PitTech stopped unexpectedly",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = PitTechTextStyles.bannerTitle,
             )
             Text(
                 "We saved a diagnostic report on this phone. Nothing was sent automatically.",
-                style = MaterialTheme.typography.bodyLarge,
+                style = PitTechTextStyles.body,
             )
 
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            ) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Reference code", style = MaterialTheme.typography.labelLarge)
+                    TurnInMetaLabel("Reference code")
                     Text(
                         report.referenceCode,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
+                        style = PitTechTextStyles.monoReadout,
                     )
-                    Text("What happened", style = MaterialTheme.typography.labelLarge)
-                    Text(report.summary, style = MaterialTheme.typography.bodyLarge)
-                    Text("Time: ${report.occurredAtUtc}", style = MaterialTheme.typography.bodyMedium)
+                    TurnInMetaLabel("What happened")
+                    Text(report.summary, style = PitTechTextStyles.body)
+                    Text("Time: ${report.occurredAtUtc}", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
                 }
             }
 
@@ -134,13 +138,12 @@ internal fun CrashRecoveryScreen(
             }
 
             if (showTechnicalDetails) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                // The technical details take the same laminated card as
+                // the report above them (Slice 7 reconciliation).
+                TurnInCard(Modifier.fillMaxWidth()) {
                     Text(
                         report.details,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = PitTechTextStyles.body,
                         fontFamily = FontFamily.Monospace,
                     )
                 }

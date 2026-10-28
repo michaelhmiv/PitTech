@@ -49,14 +49,23 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
         "Preparing" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase == "prep" },
         "Resting and finished" to data.dishes.filter { !legacy && phaseByFood[it.id]?.phase in setOf("removed", "resting", "holding", "done") },
     )
+    // TURN-IN (`d12` dish lanes): the grill section head is a banner
+    // title; the no-dishes state is the frame's empty lane (`d15`).
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Foods in this meal", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        TurnInBannerText("Foods in this meal", style = PitTechTextStyles.bannerTitle, modifier = Modifier.weight(1f))
         TextButton(onClick = onAdd, modifier = Modifier.testTag("live-add-dish")) { Text("+ Add food") }
     }
-    if (data.dishes.isEmpty()) Text("Add the food you want to track.", style = MaterialTheme.typography.bodyMedium)
+    if (data.dishes.isEmpty()) {
+        TurnInCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TurnInBannerText("No dishes yet")
+                Text("Add the food you want to track.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
+            }
+        }
+    }
     val grate = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
     groups.filter { it.second.isNotEmpty() }.forEach { (label, foods) ->
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TurnInMetaLabel(label)
         Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(Modifier.fillMaxWidth().drawBehind {
                 if (label == "Heating" || label == "Foods in this cook") {
@@ -72,11 +81,12 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                         it.source == "manual" }.maxByOrNull { it.occurredAtUtcMillis }
                     Card(onClick = { onSelect(if (selectedFood == dish.id) null else dish.id) },
                         modifier = Modifier.fillMaxWidth().testTag("food-card-" + dish.id),
-                        colors = CardDefaults.cardColors(containerColor = if (selectedFood == dish.id) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)) {
+                        border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling),
+                        colors = CardDefaults.cardColors(containerColor = if (selectedFood == dish.id) MaterialTheme.colorScheme.secondaryContainer else pitTechTokens().surface)) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Icon(if (dish.foodType.equals("Vegetables", true)) Icons.Filled.Eco else Icons.Filled.Restaurant, contentDescription = null)
-                                Text(dish.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                                Icon(if (dish.foodType.equals("Vegetables", true)) Icons.Filled.Eco else Icons.Filled.Restaurant, contentDescription = null, tint = pitTechTokens().emberText)
+                                TurnInBannerText(dish.name, modifier = Modifier.weight(1f))
                             }
                             if (phase != null) {
                                 val duration = FoodLivePresentation.phaseElapsed(phase)
@@ -93,7 +103,7 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                                 if (reading != null) {
                                     val number = CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)
                                     Text((if (value.live) "" else "Last check · ") + String.format(Locale.getDefault(), "%.0f", number) + " " + displayUnit,
-                                        style = if (value.live) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+                                        style = PitTechTextStyles.monoReadout,
                                         modifier = Modifier.testTag("food-temperature-" + dish.id + "-" + (value.probe?.id ?: "manual")))
                                     Text(((value.probe?.name ?: if (reading.source == "manual") "Manual" else reading.probeName) + " · ") + (if (value.live) "Received " else "") + foodClock(reading.measuredAtUtcMillis),
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -185,10 +195,13 @@ internal fun FoodGrillLayout(data: CookDetailData, selectedFood: String?, displa
                 { name -> probeId = probeChoices.firstOrNull { it.second == name }?.first }, testTag = "probe-move-probe")
             SimpleDropdownField("Food", foods.firstOrNull { it.first == dishId }?.second ?: "Unassigned", listOf("Unassigned") + foods.map { it.second },
                 { name -> dishId = foods.firstOrNull { it.second == name }?.first }, testTag = "probe-move-food")
-            Text("Earlier readings stay with their food.", style = MaterialTheme.typography.bodySmall)
+            // TURN-IN (`d24`): the move keeps its story straight — the
+            // earlier-readings note and the now/earlier time choice ride
+            // under the two selectors, the error as a flag strip.
+            Text("Earlier readings stay with their food.", style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
             TextButton(onClick = { changeTime = !changeTime }, modifier = Modifier.testTag("probe-move-time-toggle")) { Text(if (changeTime) "Use the current time" else "I moved it earlier") }
             if (changeTime) DateTimePickerField("Actual move time", movedAt, { movedAt = it }, "probe-move-time")
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            error?.let { TurnInStatusStrip(it, pitTechTokens().flag) }
         }
     }
 }

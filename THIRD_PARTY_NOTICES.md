@@ -23,6 +23,26 @@ dependencies retain their upstream terms. Full texts ship in
 `ios/PitTech/TelemetryNotices.txt` and `LICENSES/`; Nordic's name cannot be used
 as an endorsement. PitTech exposes no DFU or controller-setting operation.
 
+## Bundled fonts (TURN-IN theme)
+
+Both apps bundle three font families, each licensed under the SIL Open Font
+License, Version 1.1, and subset to Latin coverage for the app. Working
+assumption for the TURN-IN theme (BUILD-SPEC §3.3) pending the owner's
+final pick from the Slice 0 comparison sheet:
+
+- **Noto Sans Display Condensed** (Bold, ExtraBold, Black) — banner face.
+  Copyright 2015–2023 Google LLC / the Noto Project authors.
+  Source: https://github.com/google/fonts/tree/main/ofl/notosansdisplay
+- **IBM Plex Mono** (Regular, Medium, SemiBold, Bold) — measurement face.
+  Copyright © 2017 IBM Corp. with Reserved Font Name "Plex".
+  Source: https://github.com/google/fonts/tree/main/ofl/ibmplexmono
+- **Inter** (Regular, Medium, Bold) — text face.
+  Copyright (c) 2016 The Inter Project Authors.
+  Source: https://github.com/google/fonts/tree/main/ofl/inter
+
+The full OFL-1.1 license text is included at
+[LICENSES/OFL-1.1.txt](LICENSES/OFL-1.1.txt).
+
 ## ZXing Core 3.5.4
 
 The Android app uses ZXing Core to create Cook Pack QR codes locally.

@@ -66,7 +66,7 @@ struct CookNoteComposer: View {
                 ForEach($draft.temperatures) { $t in
                     Section("Temperature") {
                         TextField("Probe or location", text: $t.probeName)
-                        TextField("Temperature", text: $t.valueText).keyboardType(.numbersAndPunctuation)
+                        TextField("Temperature", text: $t.valueText).keyboardType(.numbersAndPunctuation).font(PitTechFont.monoReadout)
                         // Legacy standalone readings can carry "setpoint"/
                         // "other" (the retired Temperature Entry dialog's
                         // types); keep that type selectable so editing one
@@ -102,6 +102,8 @@ struct CookNoteComposer: View {
                 if let error { Text(error).foregroundStyle(.red) }
                 if busy { ProgressView("Saving photos…") }
             }
+            .scrollContentBackground(.hidden)
+            .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle("Cook note")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Keep draft") { if persist() { closed = true; dismiss() } }.disabled(busy) }

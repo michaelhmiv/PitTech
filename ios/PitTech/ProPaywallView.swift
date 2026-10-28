@@ -48,14 +48,21 @@ struct ProEntryRow: View {
     let entry: ProPlacement
 
     var body: some View {
+        // TURN-IN (Slice 2, Area 02 "Go deeper" lane; the same rows are
+        // Area 07's canonical entries and Slice 7 reconciles their
+        // destinations): marigold ◆ marker, banner-face name, PRO tag
+        // chip, factual preview — on the laminated card.
         Button {
             pro.openPro(entry)
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: "sparkles").foregroundStyle(PitTechStyle.accent).accessibilityHidden(true)
+                Text("◆").font(PitTechFont.body).foregroundStyle(PitTechStyle.marigold).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.title + " · Pro").font(.headline).foregroundStyle(PitTechStyle.ink)
-                    Text(entry.preview).font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+                    HStack(spacing: 8) {
+                        TurnInBannerText(entry.title)
+                        TurnInProTag()
+                    }
+                    Text(entry.preview).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(PitTechStyle.supporting).accessibilityHidden(true)
@@ -63,6 +70,7 @@ struct ProEntryRow: View {
             .frame(minHeight: 44)
             .padding(18)
             .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
         }
         .accessibilityIdentifier("pro-entry-\(entry.rawValue)")
     }
@@ -119,21 +127,25 @@ struct ProPaywallView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     SectionTitle(title: "PitTech Pro", subtitle: entry.preview)
+                    // TURN-IN (Slice 7 reconciliation with Android + frame
+                    // `03-paywall`): the opens-with-Pro card carries the
+                    // eyebrow and the ruling, like its Android twin.
                     VStack(alignment: .leading, spacing: 8) {
+                        TurnInMetaLabel("With Pro, this opens")
                         ForEach(proPreviewBullets(entry: entry), id: \.self) { bullet in
                             Label(bullet, systemImage: "checkmark.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(PitTechStyle.supporting)
+                                .font(PitTechFont.body)
+                                .foregroundStyle(PitTechStyle.ink)
                         }
                     }
-                    .padding(18)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
 
                     if !proShowsPurchaseOffer(entitlement: pro.entitlement) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("You're covered by PitTech Pro on this account.")
-                                .font(.headline)
+                            TurnInBannerText("You're covered by PitTech Pro on this account.")
                             Text("There's no second subscription to buy. Manage or cancel anytime in the App Store.")
                                 .font(.subheadline)
                                 .foregroundStyle(PitTechStyle.supporting)
@@ -141,7 +153,8 @@ struct ProPaywallView: View {
                         .accessibilityIdentifier("pro-entitled-state")
                     } else if let billing = proBillingText(product: product) {
                         Text(billing)
-                            .font(.headline)
+                            .font(PitTechFont.bannerTitle)
+                            .foregroundStyle(PitTechStyle.ink)
                             .accessibilityIdentifier("pro-price")
                         Text("Payment is charged to your Apple Account after PitTech verifies the purchase. Subscriptions are managed in the App Store, not in PitTech.")
                             .font(.caption)
@@ -322,8 +335,7 @@ struct ProExpiredFallbackView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
                             SectionTitle(title: entry.title, subtitle: entry.preview)
-                            Text("PitTech Pro ended on this account.")
-                                .font(.headline)
+                            TurnInBannerText("PitTech Pro ended on this account.")
                             Text("Your recorded cooks, exported files, and free tools keep working. Previously saved exports stay where you left them — nothing was deleted.")
                                 .font(.subheadline)
                                 .foregroundStyle(PitTechStyle.supporting)

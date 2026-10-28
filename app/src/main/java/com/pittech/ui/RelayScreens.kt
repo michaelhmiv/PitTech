@@ -30,24 +30,26 @@ import java.time.Instant
 
 @Composable private fun RelayProgress(state: RelayState, cancel: () -> Unit) {
     if (state.busy) {
-        Text(state.label)
+        Text(state.label, style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
         LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
         TextButton(cancel, Modifier.heightIn(min = 48.dp)) { Text("Cancel request") }
     }
-    state.message?.let { Text(it, modifier = Modifier.testTag("relay-message")) }
+    state.message?.let { TurnInStatusStrip(it, pitTechTokens().cobalt, Modifier.testTag("relay-message")) }
 }
 
 @Composable internal fun RelayImportDialog(viewModel: CooksViewModel) {
     val state by viewModel.relay.state.collectAsStateWithLifecycle()
     if (!state.showingImport) return
     Dialog(onDismissRequest = viewModel.relay::closeImport, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = pitTechTokens().ground) {
             Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("Import by code", style = MaterialTheme.typography.headlineSmall)
-                Text("Enter the code from a card or paste a PitTech share link. Preview the pack and choose individual dishes before saving.")
-                OutlinedTextField(state.input, viewModel.relay::input, label = { Text("Cook Pack code or link") }, modifier = Modifier.fillMaxWidth().testTag("relay-code-input"), singleLine = true)
+                Text("Import by code", style = PitTechTextStyles.bannerTitle)
+                Text("Enter the code from a card or paste a PitTech share link. Preview the pack and choose individual dishes before saving.", color = pitTechTokens().inkMuted)
+                TurnInLiteralBoxedField("Cook Pack code or link", Modifier.fillMaxWidth()) {
+                    OutlinedTextField(state.input, viewModel.relay::input, modifier = Modifier.fillMaxWidth().testTag("relay-code-input"), singleLine = true)
+                }
                 Button(viewModel.relay::download, enabled = !state.busy && state.input.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("relay-download")) { Text("Download & preview") }
-                Text("No account required. Nothing is added to your recipes or history until you choose to save it.", style = MaterialTheme.typography.bodySmall)
+                Text("No account required. Nothing is added to your recipes or history until you choose to save it.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                 RelayProgress(state, viewModel.relay::cancel)
                 TextButton(viewModel.relay::closeImport, Modifier.heightIn(min = 48.dp)) { Text("Done") }
             }
@@ -68,18 +70,18 @@ import java.time.Instant
         summary = com.pittech.domain.SharingDraftCodec.decode(row.payload).entries.filter { it.included }.map { "${it.snapshot.name} · ${it.photoIds.size} selected photos · " + if (it.includeStory) "Recorded story included" else "Instructions only" }
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = pitTechTokens().ground) {
             Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("Share by code", style = MaterialTheme.typography.headlineSmall)
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                Text("Review the selected pack", style = MaterialTheme.typography.titleMedium)
+                Text("Share by code", style = PitTechTextStyles.bannerTitle)
+                Text(title, style = PitTechTextStyles.bannerCard)
+                Text("Review the selected pack", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
                 summary.forEach { Text(it) }
                 Text(if (includeHistory) "Includes this recorded meal; recipients can choose whether to add it to history." else "Recipients can save selected recipes without importing your meal history.")
-                Text("Anyone with the code can download this selected pack for 180 days. It is not listed publicly. Reading the code does not renew it. Renewal and revocation are controlled from this device.")
+                Text("Anyone with the code can download this selected pack for 180 days. It is not listed publicly. Reading the code does not renew it. Renewal and revocation are controlled from this device.", color = pitTechTokens().inkMuted)
                 Button({ viewModel.relay.upload(id, includeHistory) }, enabled = !state.busy && summary.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("relay-upload")) { Text("Upload selected pack") }
                 if (viewModel.relay.card(id, revision) != null) {
                     OutlinedButton({ card = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Preview card with this code") }
-                    Text("This code refers to a frozen upload. Later recipe edits do not change its contents.", style = MaterialTheme.typography.bodySmall)
+                    Text("This code refers to a frozen upload. Later recipe edits do not change its contents.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                 }
                 RelayProgress(state, viewModel.relay::cancel)
                 state.shares.filter { it.document == id }.forEach { OwnedRelayRow(it, state.busy, viewModel) }
@@ -94,12 +96,12 @@ import java.time.Instant
     val state by viewModel.relay.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.relay.refresh() }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = pitTechTokens().ground) {
             Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("My shared codes", style = MaterialTheme.typography.headlineSmall)
-                Text("Your management capability stays on this device. Revocation stops new downloads; recipients keep copies already saved.")
+                Text("My shared codes", style = PitTechTextStyles.bannerTitle)
+                Text("Your management capability stays on this device. Revocation stops new downloads; recipients keep copies already saved.", color = pitTechTokens().inkMuted)
                 RelayProgress(state, viewModel.relay::cancel)
-                if (state.shares.isEmpty()) Text(EmptyStateCopy.SHARED_CODES_EMPTY)
+                if (state.shares.isEmpty()) TurnInDashedCard(Modifier.fillMaxWidth()) { Text(EmptyStateCopy.SHARED_CODES_EMPTY) }
                 state.shares.forEach { OwnedRelayRow(it, state.busy, viewModel) }
                 TextButton(onClose, Modifier.heightIn(min = 48.dp)) { Text("Done") }
             }
@@ -111,16 +113,16 @@ import java.time.Instant
     val context = LocalContext.current
     var confirming by remember(value.operation) { mutableStateOf(false) }
     var showingQR by remember(value.operation) { mutableStateOf(false) }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(value.title, style = MaterialTheme.typography.titleMedium)
+    TurnInCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(value.title, style = PitTechTextStyles.bannerCard)
             val receipt = value.receipt
             if (receipt == null) {
                 Text("Upload not confirmed. Retry the saved bytes to recover the same code if the server already accepted them.")
                 Button({ viewModel.relay.retry(value) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry saved upload") }
             } else {
-                SelectionContainer { Text(receipt.code, style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("relay-owned-code")) }
-                Text(if (value.revoked) "Revoked" else if (receipt.expired) "Expired" else "Available until ${Instant.parse(receipt.expiresAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate()}")
+                SelectionContainer { Text(receipt.code, style = PitTechTextStyles.monoReadout, modifier = Modifier.testTag("relay-owned-code")) }
+                Text(if (value.revoked) "Revoked" else if (receipt.expired) "Expired" else "Available until ${Instant.parse(receipt.expiresAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate()}", style = PitTechTextStyles.monoMeta, color = if (value.revoked || receipt.expired) pitTechTokens().flag else pitTechTokens().inkMuted)
                 if (!value.revoked && !receipt.expired) {
                     TextButton({ showingQR = !showingQR }, Modifier.heightIn(min = 48.dp)) { Text(if (showingQR) "Hide QR code" else "Show QR code") }
                     if (showingQR) {

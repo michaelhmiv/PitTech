@@ -41,7 +41,7 @@ struct MealRemindersView: View {
             ForEach(rules.indices, id: \.self) { index in ruleSection(rules[index]) }
             if active { suggestions }
             if let error { Text(error).foregroundStyle(.red) }
-        }.navigationTitle("Reminders").sheet(item: $request) { NativeReminderEditor(cookId: cookId, request: $0) }
+        }.navigationTitle("Reminders").scrollContentBackground(.hidden).background(PitTechStyle.canvas.ignoresSafeArea()).sheet(item: $request) { NativeReminderEditor(cookId: cookId, request: $0) }
             .task { await store.refreshReminderDeliveryHistory() }
             .sheet(isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })) {
                 NavigationStack { Form {
@@ -76,7 +76,7 @@ struct MealRemindersView: View {
         if let id = rule["id"]?.stringValue {
             Section(rule["title"]?.stringValue ?? "Reminder") {
                 Text("\(store.dishRecords(cookId).first { $0.id == rule["dishId"]?.stringValue }?.name ?? "Meal") · \(rule["status"]?.stringValue ?? "")")
-                if let due = store.reminderState(id)?["dueAtUtcMillis"]?.numberValue { Text("Due " + RecipeReferenceTimeline.time(due)) }
+                if let due = store.reminderState(id)?["dueAtUtcMillis"]?.numberValue { Text("Due " + RecipeReferenceTimeline.time(due)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                 if rule["kind"]?.stringValue == "probe" { Text("Temperature conditions require a connected probe while PitTech is open. Suspended or disconnected sources cannot trigger a condition.").font(.caption) }
                 else if active {
                     Button(rule["enabled"]?.boolValue == true ? "Disable" : "Enable") { act { try store.changeReminder(id, action: "toggle") } }
@@ -179,7 +179,7 @@ private struct NativeReminderEditor: View {
             Text("Time reminders use local notifications. Probe conditions are evaluated while PitTech is open and the selected source is connected.").font(.caption)
             if let error { Text(error).foregroundStyle(.red) }
             Button("Save reminder") { save() }.disabled(busy || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || configuration == nil).accessibilityIdentifier("reminder-rule-save")
-        }.navigationTitle("Reminder").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
+        }.navigationTitle("Reminder").scrollContentBackground(.hidden).background(PitTechStyle.canvas.ignoresSafeArea()).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
             .onAppear { if !initialized { initialized = true; series = request.config?["seriesId"]?.stringValue ?? ""; direction = request.config?["direction"]?.stringValue ?? "above"; sustain = String((request.config?["sustainMillis"]?.numberValue ?? 60_000) / 60_000); let f = request.config?["thresholdF"]?.numberValue ?? 165; threshold = String(store.temperatureUnit == "C" ? (f - 32) * 5 / 9 : f); title = request.title; dishId = request.dishId ?? ""; kind = request.config?["type"]?.stringValue ?? "duration"; action = request.config?["action"]?.stringValue ?? request.config?["anchorAction"]?.stringValue ?? "food_on"; eventId = request.config?["eventId"]?.stringValue ?? ""; minutes = String((request.config?["delayMillis"]?.numberValue ?? request.config?["offsetMillis"]?.numberValue ?? 600_000) / 60_000); clock = Date(timeIntervalSince1970: (request.config?["at"]?.numberValue ?? Date.now.addingTimeInterval(600).timeIntervalSince1970 * 1000) / 1000) } }
         }
     }

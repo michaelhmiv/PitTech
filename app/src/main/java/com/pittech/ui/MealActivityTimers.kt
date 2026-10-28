@@ -34,10 +34,10 @@ internal fun MealActivityTimers(cookId: String, dishes: List<DishEntity>, active
     }
     if (expanded) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         timers.filter { it.status in setOf("running", "stopped") }.forEach { timer ->
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-                Text(timer.title)
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface), border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling)) { Column(Modifier.padding(12.dp)) {
+                TurnInBannerText(timer.title)
                 val elapsed = ((timer.stoppedAtUtcMillis ?: now) - timer.startedAtUtcMillis).coerceAtLeast(0) / 1000
-                Text("${elapsed / 60}m ${elapsed % 60}s" + timer.desiredDurationMillis?.let { " · target ${it / 60_000}m" }.orEmpty())
+                Text("${elapsed / 60}m ${elapsed % 60}s" + timer.desiredDurationMillis?.let { " · target ${it / 60_000}m" }.orEmpty(), style = PitTechTextStyles.monoReadout)
                 Row {
                     TextButton(onClick = { act { draft = viewModel.activities.stop(timer.id) } }, enabled = !busy) { Text(if (timer.status == "running") "Stop & save duration" else "Save duration") }
                     TextButton(onClick = { act { viewModel.activities.cancel(timer.id) } }, enabled = !busy) { Text("Dismiss") }

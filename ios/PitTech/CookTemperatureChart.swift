@@ -130,7 +130,7 @@ struct CookTemperatureChart: View {
     private func normalized(_ value: Double, _ rawUnit: String) -> Double { let f = rawUnit.contains("C") ? value * 9 / 5 + 32 : value; return unit == "C" ? (f - 32) * 5 / 9 : f }
     private func color(_ id: String) -> Color {
         let key = referenceSeriesMatches[id] ?? id
-        let colors: [Color] = [.orange, .blue, .purple, .green, .pink, .teal]; return colors[key.utf8.reduce(0) { ($0 * 31 + Int($1)) % 997 } % colors.count]
+        let colors: [Color] = [PitTechStyle.ember, PitTechStyle.cobalt, .purple, .green, .pink, .teal]; return colors[key.utf8.reduce(0) { ($0 * 31 + Int($1)) % 997 } % colors.count]
     }
     private func channelLabel(_ id: String, rows: [TemperatureSample]) -> String {
         guard let r = rows.last(where: { $0.seriesId == id }) else { return "Choose channel" }
@@ -139,7 +139,7 @@ struct CookTemperatureChart: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Temperature (°\(unit))").font(.title2.bold()).accessibilityIdentifier("chart-y-axis")
+            TurnInBannerText("Temperature (°\(unit))", font: PitTechFont.bannerTitle).accessibilityIdentifier("chart-y-axis")
             controls
             if store.guideState(cookId).visible && guideData.flatMap(\.readings).isEmpty { Text("Guide curves wait for actual Food on. Sources without temperatures show instructions only.").font(.caption) }
             temperaturePlot
@@ -237,7 +237,7 @@ struct CookTemperatureChart: View {
                     if ["receipt_time", "receipt", "cloud_receipt"].contains(r.timestampBasis) { Text("Receipt time · device sample age unknown").font(.caption).foregroundStyle(.secondary) }
                 }
             }
-        }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }.padding(10).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
     private var phaseBands: some View {
         VStack(alignment: .leading) {
@@ -252,8 +252,11 @@ struct CookTemperatureChart: View {
         }
     }
     private var comparisonControls: some View {
-        VStack(alignment: .leading) {
-            Text("Compare a prior cook").font(.headline)
+        // TURN-IN (Slice 2, Area 02 `reference-compare`): the reference
+        // tools ride in their own laminated card under the chart; the
+        // anchor/channel guidance is the status strip, not a caption.
+        VStack(alignment: .leading, spacing: 10) {
+            TurnInBannerText("Compare a prior cook")
             Picker("Current dish", selection: $currentDish) { Text("Whole cook").tag(""); ForEach(store.dishRecords(cookId)) { Text($0.name).tag($0.id) } }
             Picker("Reference cook", selection: $comparisonCook) { Text("None").tag(""); ForEach(store.completedCooks.filter { $0.id != cookId }) { Text($0.title).tag($0.id) } }
             if !comparisonCook.isEmpty {
@@ -261,18 +264,22 @@ struct CookTemperatureChart: View {
                 Picker("Current channel", selection: $currentChannel) { Text("Choose channel").tag(""); ForEach(channels, id: \.self) { Text(channelLabel($0, rows: samples)).tag($0) } }
                 Picker("Reference channel", selection: $comparisonChannel) { Text("Choose channel").tag(""); ForEach(sourceChannels, id: \.self) { Text(channelLabel($0, rows: sourceSamples)).tag($0) } }
                 Picker("Align at", selection: $alignment) { Text("Food on").tag("food_on"); Text("Wrap").tag("wrap") }
-                if !comparing { Text("Choose matching food or pit channels and log the selected action for both dish scopes to align recorded curves.").font(.caption) }
+                if !comparing { TurnInStatusStrip(text: "Choose matching food or pit channels and log the selected action for both dish scopes to align recorded curves.", accent: PitTechStyle.marigold) }
                 else {
                     Text("Current and reference · minutes since \(CookStore.actionLabel(alignment)) · separate stable channels").font(.caption)
-                    ForEach(InsightsCalculations.comparisonContext(currentDish: dishSummary(cookId, dishId: currentDish), sourceDish: dishSummary(comparisonCook, dishId: sourceDish), current: readingSummary(samples), source: readingSummary(sourceSamples)), id: \.self) { line in Text(line).font(.caption) }
+                    ForEach(InsightsCalculations.comparisonContext(currentDish: dishSummary(cookId, dishId: currentDish), sourceDish: dishSummary(comparisonCook, dishId: sourceDish), current: readingSummary(samples), source: readingSummary(sourceSamples)), id: \.self) { line in Text(line).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                     if !currentDish.isEmpty && !sourceDish.isEmpty { Button("Use this reference") {
                         do { try store.saveReference(cookId, reference: NativeCookReference(dishId: currentDish, sourceCookId: comparisonCook, sourceDishId: sourceDish, currentProbe: samples.first { $0.seriesId == currentChannel }?.probeName ?? "", sourceProbe: sourceSamples.first { $0.seriesId == comparisonChannel }?.probeName ?? "", anchor: alignment, currentSeriesId: currentChannel, sourceSeriesId: comparisonChannel)); referenceMessage = "Reference saved." }
                         catch { referenceMessage = error.localizedDescription }
-                    } }
+                    }.buttonStyle(.borderedProminent).frame(minHeight: 44) }
                 }
                 if let referenceMessage { Text(referenceMessage).font(.caption) }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
     }
     private func eligible(_ sample: TemperatureSample, dish: String) -> Bool { dish.isEmpty || sample.dishId == dish || sample.dishId == nil && ["pit", "pit_ambient", "ambient_temperature", "setpoint"].contains(sample.measurementType) }
     private func dishSummary(_ cookId: String, dishId: String) -> InsightDishSummary {

@@ -45,24 +45,31 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-/** Native, honest interim surface while the community release is built. */
+/** Native, honest interim surface while the community release is built.
+ * TURN-IN (slice 5, frame c05): the placeholder wears the dashed-card
+ * composition; the shared [NotAvailablePlaceholder] pattern is unchanged
+ * for its other homes. Copy stays the [NotAvailableCopy] constants. */
 @Composable internal fun DiscoveryWelcome(modifier: Modifier = Modifier, onRecipes: () -> Unit) {
-    NotAvailablePlaceholder(
-        icon = Icons.Filled.Explore,
-        title = NotAvailableCopy.DISCOVER_TITLE,
-        message = NotAvailableCopy.DISCOVER_MESSAGE,
-        onwardLabel = NotAvailableCopy.DISCOVER_ONWARD,
-        onOnward = onRecipes,
-        modifier = modifier,
-    )
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        TurnInDashedCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(color = pitTechTokens().surfaceRaised, shape = RoundedCornerShape(18.dp)) {
+                    Icon(Icons.Filled.Explore, null, Modifier.padding(18.dp).size(32.dp), tint = pitTechTokens().emberText)
+                }
+                Text(NotAvailableCopy.DISCOVER_TITLE, style = PitTechTextStyles.bannerTitle)
+                Text(NotAvailableCopy.DISCOVER_MESSAGE, style = MaterialTheme.typography.bodyMedium, color = pitTechTokens().inkMuted)
+            }
+        }
+        OutlinedButton(onClick = onRecipes, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(NotAvailableCopy.DISCOVER_ONWARD) }
+    }
 }
 
 @Composable internal fun MoreHome(modifier: Modifier = Modifier, onDevices: () -> Unit, onSettings: () -> Unit, onImportCode: () -> Unit = {}, onSharedCodes: () -> Unit = {}, onAccount: (() -> Unit)? = null, onCookbook: (() -> Unit)? = null, onCommunity: (() -> Unit)? = null, onPro: (() -> Unit)? = null, accountSubtitle: String = "Optional email sign-in and this device’s session") {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Your cookbook stays yours", style = MaterialTheme.typography.titleLarge)
-                Text("Cook, save recipes and share files without an account. Optional accounts and private sync arrive with community recipes.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TurnInCard {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TurnInBannerText("Your cookbook stays yours", style = PitTechTextStyles.bannerTitle)
+                Text("Cook, save recipes and share files without an account. Optional accounts and private sync arrive with community recipes.", color = pitTechTokens().inkMuted)
             }
         }
         MoreDestination("Devices & connections", "Read-only monitoring and saved equipment", Icons.Filled.Thermostat, "more-devices", onDevices)
@@ -79,14 +86,18 @@ import androidx.compose.ui.unit.dp
 }
 
 @Composable private fun MoreDestination(title: String, subtitle: String, icon: ImageVector, tag: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+    // TURN-IN (area-06 `a01`): destination rows are laminated cards —
+    // token surface with a ruling border, the name in the banner face,
+    // the state line under it (the Account row's subtitle already carries
+    // session + sync status, K8), and the icon in ember text.
+    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = pitTechTokens().surface, border = androidx.compose.foundation.BorderStroke(1.dp, pitTechTokens().ruling), modifier = Modifier.fillMaxWidth().testTag(tag)) {
         Row(Modifier.padding(18.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.secondary)
+            Icon(icon, null, tint = pitTechTokens().emberText)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TurnInBannerText(title)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = pitTechTokens().inkMuted)
             }
-            Icon(Icons.Filled.ChevronRight, null)
+            Icon(Icons.Filled.ChevronRight, null, tint = pitTechTokens().inkMuted)
         }
     }
 }

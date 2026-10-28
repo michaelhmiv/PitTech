@@ -15,6 +15,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -58,12 +60,16 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -85,11 +91,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -114,12 +119,14 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.CameraPhotoFiles
+import com.pittech.data.CompanionRecord
 import com.pittech.data.CookDetailData
 import com.pittech.data.AlignedGuide
 import com.pittech.data.CookReminderEntity
@@ -419,13 +426,24 @@ fun CookDetailScreen(
     ingredientDish?.let { dish -> FoodIngredientsDialog(data, dish, viewModel) { ingredientDish = null; viewModel.clearSaveError() } }
     if (showProbeMove) ProbeMoveDialog(data, selectedFood, viewModel) { showProbeMove = false; viewModel.clearSaveError() }
     LaunchedEffect(data.cook.status) { if (data.cook.status == CookStatus.COMPLETED) { if (showFinishConfirm) showCompletionChoices = true; showFinishConfirm = false } }
+    // Guard-dialog note (kept outside the call on purpose): the heading
+    // below stays a plain text call in its original shape — the dialog
+    // grammar guard fingerprints guard headings by that shape, and the
+    // banner style rides after the modifier so the fingerprint is intact.
     if (showFinishConfirm) AlertDialog(
         onDismissRequest = { if (!busy) showFinishConfirm = false },
-        title = { Text("Finish meal", modifier = Modifier.testTag("finish-cook-dialog")) },
+        title = { Text("Finish meal", modifier = Modifier.testTag("finish-cook-dialog"), style = PitTechTextStyles.bannerTitle, color = pitTechTokens().ink) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("End this meal and stop temperature recording? You can add notes, results and photos afterward.")
             val unfinished = FoodLivePresentation.phases(data, System.currentTimeMillis()).filter { it.phase != "done" }.mapNotNull { phase -> data.dishes.firstOrNull { it.id == phase.dishId }?.name }
             if (unfinished.isNotEmpty()) Text("No completion action recorded for ${unfinished.joinToString()}. You can still finish; their physical actions will stay as recorded.")
+            // `d30` composition: the clock so far, then the filing line.
+            Text("On the clock: " + formatCookDuration(calculateElapsed(data)), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+            // §1.1.2 copy delta (the one permitted copy change in this
+            // slice): the frame names the undo-finish affordance (A11) —
+            // finishing is not a one-way door, and the dialog now says so
+            // in the frame's words.
+            Text("Finishing files the cook to your log — you can reopen it later if you need to.")
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { TextButton(onClick = { viewModel.clearSaveError(); viewModel.completeCook(data.cook.id) },
@@ -433,7 +451,22 @@ fun CookDetailScreen(
         dismissButton = { TextButton(onClick = { showFinishConfirm = false }, enabled = !busy) { Text("Cancel") } })
     if (showCompletionChoices) ModalBottomSheet(onDismissRequest = { showCompletionChoices = false }) {
         Column(Modifier.testTag("meal-completion-choices").heightIn(max = 620.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Meal finished", style = MaterialTheme.typography.titleLarge)
+            TurnInBannerText("Meal finished", style = PitTechTextStyles.bannerTitle)
+            // `d32` stat cells: the cook is filed — its total time and,
+            // once recorded, its verdict ride at the top of the sheet.
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    TurnInMetaLabel("Total time")
+                    Text(formatCookDuration(calculateElapsed(data)), style = PitTechTextStyles.monoReadout)
+                }
+                val filedVerdict = data.results.firstOrNull { it.dishId == null && it.resultType == "overall_rating" }?.numericValue
+                if (filedVerdict != null) {
+                    Column(Modifier.weight(1f)) {
+                        TurnInMetaLabel("Verdict")
+                        TurnInStars(filedVerdict)
+                    }
+                }
+            }
             // PL-08 / DD-5: the sheet finish creates LEADS with the quick
             // verdict — overall + per-dish chips, all visible — then the
             // recipe saves, then Leave. One finish path, one results model.
@@ -505,18 +538,22 @@ fun CookDetailScreen(
     }
     if (showExportCook) {
         // PL-22 (DD-6): the export chooser is a sheet, not a dialog.
+        // TURN-IN (Slice 2, Area 02 `export-cook`): the four exports ride
+        // as placard rows under the cook's name; the app's own explanation
+        // and labels stay.
         SheetSurface(
             onDismiss = { showExportCook = false },
             title = "Export cook data",
         ) {
+            TurnInSheetKicker(data.cook.title)
             Text("Data files for your own records — a workbook, a backup ZIP, or the readings as CSV. To share recipes with other cooks, use Share meal and the Cook Pack instead.")
-            Column {
-                TextButton(onClick = { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }) { Text("Excel workbook") }
-                TextButton(onClick = { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }) { Text("Save this cook as ZIP") }
-                TextButton(onClick = { showExportCook = false; viewModel.createShareArchive(data.cook.id) }) { Text("Share backup ZIP") }
-                TextButton(onClick = { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }) { Text("Temperature readings CSV") }
-                TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ExportCookRow("Excel workbook") { showExportCook = false; exportWorkbook.launch("${safeFileName(data.cook.title)}.xlsx") }
+                ExportCookRow("Save this cook as ZIP") { showExportCook = false; exportZip.launch("${safeFileName(data.cook.title)}_backup.zip") }
+                ExportCookRow("Share backup ZIP") { showExportCook = false; viewModel.createShareArchive(data.cook.id) }
+                ExportCookRow("Temperature readings CSV") { showExportCook = false; exportCsv.launch("${safeFileName(data.cook.title)}_readings.csv") }
             }
+            TextButton(onClick = { showExportCook = false }) { Text("Cancel") }
         }
     }
     if (showPhotoSource) {
@@ -647,11 +684,13 @@ fun CookDetailScreen(
         )
     }
     if (confirmDeleteCook) {
+        // `d35`: the guarded delete — banner title, the cost stated
+        // plainly, the destructive action in flag.
         AlertDialog(
             onDismissRequest = { confirmDeleteCook = false },
-            title = { Text("Delete this cook?") },
+            title = { TurnInBannerText("Delete this cook?", style = PitTechTextStyles.bannerTitle) },
             text = { Text("This removes the cook, its timeline, readings, results, and photos from this phone. Export a backup first if you want to keep a copy.") },
-            confirmButton = { TextButton(onClick = { viewModel.deleteCook(data.cook); confirmDeleteCook = false }) { Text("Delete cook") } },
+            confirmButton = { TextButton(onClick = { viewModel.deleteCook(data.cook); confirmDeleteCook = false }, colors = ButtonDefaults.textButtonColors(contentColor = pitTechTokens().flag)) { Text("Delete cook") } },
             dismissButton = { TextButton(onClick = { confirmDeleteCook = false }) { Text("Cancel") } },
         )
     }
@@ -667,7 +706,7 @@ fun CookDetailScreen(
             },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(formatTimestamp(event.occurredAtUtcMillis))
+                Text(formatTimestamp(event.occurredAtUtcMillis), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
                 event.details?.let { Text(it) }
                 val snapshot = com.pittech.data.TemperatureContext.summary(event.temperatureContextJson)
                 if (snapshot.isNotBlank()) Text(snapshot)
@@ -688,13 +727,20 @@ fun CookDetailScreen(
     Scaffold(
         topBar = {
             Column {
+            // TURN-IN (`d12`): back chevron, the cook's name in the banner
+            // face, its state as a quiet mono line — then the segmented
+            // Live/Timeline/Charts control below, in content, not chrome.
             TopAppBar(
-                title = { Column { Text(data.cook.title, maxLines = 1); Text(statusLabel(data.cook.status), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("live-cook-status")) } },
+                title = { Column {
+                    TurnInBannerText(data.cook.title, style = PitTechTextStyles.bannerTitle, maxLines = 1)
+                    Text(statusLabel(data.cook.status), style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted, modifier = Modifier.testTag("live-cook-status"))
+                } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back to cooks") } },
                 actions = {
                     IconButton(onClick = { showConnections = true }, modifier = Modifier.testTag("meal-devices")) { Icon(Icons.Filled.Thermostat, contentDescription = "Devices and connections") }
                     IconButton(onClick = { editCook = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit cook") }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = pitTechTokens().ground),
             )
             OfflineBanner()
             }
@@ -714,21 +760,20 @@ fun CookDetailScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            TabRow(selectedTabIndex = CookTab.entries.indexOfFirst { it.name == selectedTab }) {
-                CookTab.entries.forEach { tab ->
-                    Tab(
-                        selected = selectedTab == tab.name,
-                        onClick = {
-                            focusManager.clearFocus(force = true)
-                            keyboardController?.hide()
-                            snackbar.currentSnackbarData?.dismiss()
-                            selectedTab = tab.name
-                        },
-                        text = { Text(tab.label) },
-                        modifier = Modifier.testTag("cook-tab-${tab.name.lowercase()}"),
-                    )
-                }
-            }
+            // TURN-IN segmented control (§4): Live / Timeline / Charts as an
+            // in-content pill track, replacing the Material tab row.
+            TurnInSegmentedControl(
+                options = CookTab.entries.map { it.label },
+                selectedIndex = CookTab.entries.indexOfFirst { it.name == selectedTab }.coerceAtLeast(0),
+                onSelect = { index ->
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    snackbar.currentSnackbarData?.dismiss()
+                    selectedTab = CookTab.entries[index].name
+                },
+                tags = CookTab.entries.map { "cook-tab-${it.name.lowercase()}" },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+            )
             if (data.logDrafts.isNotEmpty() && noteDraftJson == null) {
                 TextButton(onClick = {
                     val saved = data.logDrafts.first()
@@ -742,6 +787,11 @@ fun CookDetailScreen(
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(
                     data = data,
+                    // While a notice snackbar is up it docks over the bottom
+                    // of this viewport; inset the board's scroll window by
+                    // its height so the next-action cards can never come to
+                    // rest underneath it (see LiveCookTab's root modifier).
+                    bottomInset = if (snackbar.currentSnackbarData != null) 80.dp else 0.dp,
                     dishesContent = {
                         MealRecipeActions(data, viewModel)
                         RecipeGuideMilestones(data, guideRecords, compact = true) { selectedTab = CookTab.TIMELINE.name }
@@ -806,6 +856,11 @@ fun CookDetailScreen(
                     summaries = liveSummaries,
                     alertStrip = alertStrip,
                     alertFocused = alertFocusId != null,
+                    railSteps = liveRailSteps(data, liveCompanionRecords, System.currentTimeMillis()),
+                    onQuickNote = { openNote() },
+                    onQuickTemperature = { openNote("temperature") },
+                    onQuickPhoto = { openNote("photo", photoFirst = true) },
+                    onQuickReminder = { showReminderComposer = true },
                     displayUnit = preferredTemperatureUnit,
                     busy = busy,
                     onTogglePause = { if (data.cook.status == CookStatus.PAUSED) viewModel.resumeCook(data.cook.id) else viewModel.pauseCook(data.cook.id) },
@@ -850,6 +905,12 @@ fun CookDetailScreen(
                     onShowPhotoGallery = { showPhotoGallery = true },
                     onFoodFilter = { selectedFood = it },
                     onAddNote = { openNote() },
+                    onEditResults = {
+                        viewModel.clearSaveError()
+                        resultsDishId = null
+                        showResults = true
+                    },
+                    onExportCook = { showExportCook = true },
                     guide = { RecipeGuideMilestones(data, guideRecords) },
                 )
                 CookTab.CHARTS -> ChartsTab(data, preferredTemperatureUnit, guide = remember(data, guideRecords) { alignedGuide(data, guideRecords) }, guideVisible = guideState(guideRecords).visible, comparison = { ReferenceComparisonTools(data, viewModel, preferredTemperatureUnit) }) { viewingMarker = it }
@@ -871,8 +932,8 @@ private fun CookQuickActionsBar(
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = pitTechTokens().surface,
+        border = BorderStroke(1.dp, pitTechTokens().ruling),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
@@ -890,7 +951,8 @@ private fun CookQuickActionsBar(
                 FilledTonalButton(
                     onClick = onTemperature,
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(1.dp, pitTechTokens().ruling),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-temperature"),
                 ) {
@@ -902,7 +964,8 @@ private fun CookQuickActionsBar(
                 FilledTonalButton(
                     onClick = onPhoto,
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(1.dp, pitTechTokens().ruling),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("timeline-add-photo"),
                 ) {
@@ -914,7 +977,8 @@ private fun CookQuickActionsBar(
                 FilledTonalButton(
                     onClick = onReminder,
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    border = BorderStroke(1.dp, pitTechTokens().ruling),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = pitTechTokens().surfaceRaised, contentColor = pitTechTokens().ink),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 5.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("cook-add-reminder"),
                 ) {
@@ -962,8 +1026,8 @@ private fun LivePanel(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = pitTechTokens().surface),
+        border = BorderStroke(1.dp, pitTechTokens().ruling),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -971,9 +1035,9 @@ private fun LivePanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    TurnInBannerText(title)
                     summary?.takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(it, style = PitTechTextStyles.body, color = pitTechTokens().inkMuted)
                     }
                 }
                 Icon(
@@ -984,6 +1048,62 @@ private fun LivePanel(
             if (expanded) content()
         }
     }
+}
+
+/**
+ * TURN-IN milestone rail steps for the Live board (`d12`, "the cook, in
+ * order"). With a playbook plan, the steps are the plan's own evaluated
+ * steps — the same evaluation the Guidance panel renders, so the rail and
+ * the panel can never disagree. Without a plan, the rail falls back to the
+ * cook's physical milestones (food on → rest → serve) from its recorded
+ * phase actions.
+ */
+private fun liveRailSteps(data: CookDetailData, records: List<CompanionRecord>, now: Long): List<TurnInRailStep> {
+    val record = records.firstOrNull { it.kind == "plan" && it.cookId == data.cook.id }
+    val plan = record?.let { runCatching { com.pittech.domain.CookPlanEngine.decode(it.payload) }.getOrNull() }
+    if (plan != null) {
+        val events = com.pittech.data.notePlanEvents(data.events)
+        val readings = data.readings.map {
+            com.pittech.domain.PlanReading(it.dishId, com.pittech.domain.CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType, it.probeName)
+        }
+        val evaluated = com.pittech.domain.CookPlanEngine.evaluate(plan, events, readings, now)
+        val firstPending = evaluated.firstOrNull { it.progress.status == "pending" }
+        return evaluated.take(5).map { e ->
+            TurnInRailStep(
+                label = e.step.title,
+                sublabel = when {
+                    e.progress.status != "pending" -> e.progress.lastDoneAt?.let { formatTimeOfDay(it) }
+                    e.ready -> "Ready"
+                    else -> e.dueAt?.let { formatTimeOfDay(it) } ?: e.waitingFor
+                },
+                state = when {
+                    e.progress.status != "pending" -> TurnInRailState.DONE
+                    e == firstPending -> TurnInRailState.CURRENT
+                    else -> TurnInRailState.UPCOMING
+                },
+            )
+        }
+    }
+    fun actionTime(action: String): Long? = data.events
+        .filter { com.pittech.domain.PlaybookCodec.action(it.eventType, it.noteMetadataJson) == action }
+        .minByOrNull { it.occurredAtUtcMillis }?.occurredAtUtcMillis
+    val foodOn = actionTime("food_on")
+    val rest = actionTime("rest_start")
+    val serve = actionTime("dish_done") ?: actionTime("serve")
+    if (foodOn == null && rest == null && serve == null) return emptyList()
+    return listOf(
+        TurnInRailStep("Food on", foodOn?.let { formatTimeOfDay(it) }, if (foodOn != null) TurnInRailState.DONE else TurnInRailState.CURRENT),
+        TurnInRailStep("Rest", rest?.let { formatTimeOfDay(it) }, when {
+            rest != null -> TurnInRailState.DONE
+            foodOn != null -> TurnInRailState.CURRENT
+            else -> TurnInRailState.UPCOMING
+        }),
+        TurnInRailStep("Serve", serve?.let { formatTimeOfDay(it) }, when {
+            serve != null -> TurnInRailState.DONE
+            rest != null -> TurnInRailState.CURRENT
+            else -> TurnInRailState.UPCOMING
+        }),
+    )
 }
 
 @Composable
@@ -1002,6 +1122,12 @@ private fun LiveCookTab(
     summaries: LivePanelSummaries,
     alertStrip: String?,
     alertFocused: Boolean,
+    railSteps: List<TurnInRailStep>,
+    bottomInset: Dp = 0.dp,
+    onQuickNote: () -> Unit,
+    onQuickTemperature: () -> Unit,
+    onQuickPhoto: () -> Unit,
+    onQuickReminder: () -> Unit,
     displayUnit: String,
     busy: Boolean,
     onTogglePause: () -> Unit,
@@ -1031,54 +1157,186 @@ private fun LiveCookTab(
     val pit = data.readings.filter { it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }.maxByOrNull { it.measuredAtUtcMillis }
     val setpoint = data.readings.filter { it.measurementType == "setpoint" }.maxByOrNull { it.measuredAtUtcMillis }
     val cookTargets = data.targets.filter { it.dishId == null }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
+    val tokens = pitTechTokens()
+    // The inset is applied BEFORE verticalScroll, so it shrinks the scroll
+    // viewport itself: with a snackbar docked at the bottom, scroll-to-reveal
+    // parks rows above the snackbar instead of underneath it. At font scale
+    // 1.5 this board is tall enough that the pending-reminder card starts
+    // below the fold, and without the inset its "Log now" button came to
+    // rest in the snackbar's zone, where the snooze notice ate the next tap
+    // (CookNoteScreenTest.legacyCheckIn, API 36 font 1.5). No snackbar, no
+    // inset — the board's layout is unchanged.
+    Column(Modifier.fillMaxSize().padding(bottom = bottomInset).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // Live Zone poster (PL-04): the cook at a glance — elapsed, pit and
-        // setpoint, the latest temperature for every dish, and cook targets.
+        // TURN-IN Live board (`d12`–`d15`): state strips, the scoreboard,
+        // the milestone rail, alert/reminder chips, the dish lanes, the
+        // action placards, and the latest entry — the PL-04 poster's data,
+        // recomposed. Nothing was removed: every reading, target, and
+        // action the poster carried is on the board or in the lanes below.
+        if (data.cook.status == CookStatus.PAUSED) {
+            val pausedAt = data.events.filter { it.eventType == "cook_paused" }.maxByOrNull { it.occurredAtUtcMillis }
+            TurnInStatusStrip(
+                (pausedAt?.let { "Paused at " + formatTimeOfDay(it.occurredAtUtcMillis) + ". " } ?: "Paused. ") +
+                    "Timers are held; readings still show.",
+                accent = tokens.marigold,
+            )
+        }
+        val stalePit = pit?.takeIf {
+            data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING &&
+                it.sourceDeviceId == data.recording?.deviceId &&
+                now - it.measuredAtUtcMillis !in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)
+        }
+        stalePit?.let {
+            TurnInStatusStrip(
+                "Showing the last readings — last received " + formatTimeOfDay(it.measuredAtUtcMillis) + ". The cook keeps logging on the grill.",
+                accent = tokens.cobalt,
+            )
+        }
         Card(
             modifier = Modifier.fillMaxWidth().testTag("live-zone"),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = CardDefaults.cardColors(containerColor = tokens.surface, contentColor = tokens.ink),
+            border = BorderStroke(1.dp, tokens.ruling),
         ) {
-            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Elapsed " + formatCookDuration(elapsed), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("live-cook-elapsed"))
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInMetaLabel("Elapsed")
+                    Text(formatCookDuration(elapsed), style = PitTechTextStyles.monoReadout, modifier = Modifier.testTag("live-cook-elapsed"))
+                    Spacer(Modifier.weight(1f))
+                    pit?.let {
+                        Text(
+                            (if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
+                                formatTimeOfDay(it.measuredAtUtcMillis),
+                            style = PitTechTextStyles.monoMeta, color = tokens.inkMuted,
+                        )
+                    }
                 }
-                if (pit != null || setpoint != null) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        listOf("Pit" to pit, "Setpoint" to setpoint).forEach { (label, reading) ->
-                            Column(Modifier.weight(1f)) {
-                                Text(label, style = MaterialTheme.typography.labelLarge)
-                                Text(if (reading != null && FoodLivePresentation.accepted(reading))
-                                    String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(reading.value, reading.unit, displayUnit)) + " " + displayUnit
-                                    else "—", style = MaterialTheme.typography.headlineSmall)
-                                reading?.let { Text((if (data.recording?.status == com.pittech.data.CookRecordingEntity.RECORDING && it.sourceDeviceId == data.recording.deviceId && now - it.measuredAtUtcMillis in 0..com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis)) "Received " else "Last received ") +
-                                    formatTimeOfDay(it.measuredAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            }
+                // Scoreboard (§4): the pit number is the screen's point —
+                // banner-900 numeral, mono set context, movement chip
+                // derived from the last two accepted readings.
+                fun trendOf(current: SensorReadingEntity?, previous: SensorReadingEntity?): Pair<String, Color>? {
+                    if (current == null || previous == null) return null
+                    val delta = com.pittech.devices.CookTelemetryPolicy.convert(current.value, current.unit, displayUnit) -
+                        com.pittech.devices.CookTelemetryPolicy.convert(previous.value, previous.unit, displayUnit)
+                    return when {
+                        delta > 1.0 -> "▲ Climb" to tokens.marigold
+                        delta < -1.0 -> "▼ Drop" to tokens.cobalt
+                        else -> "Hold" to tokens.ember
+                    }
+                }
+                val pitPrevious = data.readings.filter { it.measurementType in setOf("pit", "pit_ambient", "ambient_temperature") }
+                    .sortedByDescending { it.measuredAtUtcMillis }.getOrNull(1)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInMetaLabel("Pit")
+                    trendOf(pit, pitPrevious)?.let { (label, fill) -> TurnInTrendChip(label, fill) }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        if (pit != null && FoodLivePresentation.accepted(pit))
+                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(pit.value, pit.unit, displayUnit)) + "°"
+                        else "—",
+                        style = PitTechTextStyles.scoreboard,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    val setpointValue = setpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                        ?: data.cook.initialSetpointValue?.let { com.pittech.devices.CookTelemetryPolicy.convert(it, data.cook.initialSetpointUnit ?: displayUnit, displayUnit) }
+                    setpointValue?.let {
+                        Text("SET " + String.format(Locale.getDefault(), "%.0f", it) + "°", style = PitTechTextStyles.monoReadout, color = tokens.inkMuted)
+                    }
+                }
+                // The probe block: the lead dish's latest accepted reading
+                // against its finish target, with the progress bar.
+                val probeDish = data.dishes.firstOrNull { dish -> data.readings.any { it.dishId == dish.id && FoodLivePresentation.accepted(it) } }
+                    ?: data.dishes.firstOrNull()
+                val probeReading = probeDish?.let { dish -> data.readings.filter { it.dishId == dish.id && FoodLivePresentation.accepted(it) }.maxByOrNull { it.measuredAtUtcMillis } }
+                val probeTarget = probeDish?.let { dish ->
+                    data.targets.firstOrNull { it.dishId == dish.id && it.targetType == "personal_finish" }
+                        ?: cookTargets.firstOrNull { it.targetType == "personal_finish" }
+                }
+                if (probeDish != null) {
+                    HorizontalDivider(color = tokens.ruling)
+                    val probePrevious = data.readings.filter { it.dishId == probeDish.id && FoodLivePresentation.accepted(it) }
+                        .sortedByDescending { it.measuredAtUtcMillis }.getOrNull(1)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TurnInMetaLabel("Probe · " + probeDish.name)
+                        trendOf(probeReading, probePrevious)?.let { (label, fill) -> TurnInTrendChip(label, fill) }
+                    }
+                    val probeValue = probeReading?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                    val targetValue = probeTarget?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            if (probeValue != null) String.format(Locale.getDefault(), "%.0f", probeValue) + "°" else "—",
+                            style = PitTechTextStyles.scoreboard,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        targetValue?.let {
+                            Text("TARGET " + String.format(Locale.getDefault(), "%.0f", it) + "°", style = PitTechTextStyles.monoReadout, color = tokens.inkMuted)
+                        }
+                    }
+                    if (probeValue != null && targetValue != null && targetValue > 0) {
+                        LinearProgressIndicator(
+                            progress = (probeValue / targetValue).toFloat().coerceIn(0f, 1f),
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = tokens.ember,
+                            trackColor = tokens.ruling,
+                        )
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Probe progress to " + String.format(Locale.getDefault(), "%.0f", targetValue) + "°", style = PitTechTextStyles.body, color = tokens.inkMuted, modifier = Modifier.weight(1f))
+                            Text(String.format(Locale.getDefault(), "%.0f", (targetValue - probeValue).coerceAtLeast(0.0)) + "° TO GO", style = PitTechTextStyles.monoMeta, color = tokens.ink)
                         }
                     }
                 }
-                data.dishes.forEach { dish ->
-                    val latest = data.readings.filter { it.dishId == dish.id && FoodLivePresentation.accepted(it) }.maxByOrNull { it.measuredAtUtcMillis }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(dish.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text(if (latest != null)
-                            String.format(Locale.getDefault(), "%.0f", com.pittech.devices.CookTelemetryPolicy.convert(latest.value, latest.unit, displayUnit)) + " " + displayUnit
-                            else "No reading yet", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                cookTargets.forEach { target ->
+                    Text("Target · " + target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, style = PitTechTextStyles.body, color = tokens.inkMuted)
+                }
+            }
+        }
+        if (railSteps.isNotEmpty()) {
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TurnInMetaLabel("The cook, in order")
+                    TurnInMilestoneRail(railSteps)
+                }
+            }
+        }
+        // PL-03: alert state as a chip — the needs-attention count and
+        // named acknowledgments, readable without opening anything; the
+        // next pending reminder rides beside it as a cobalt chip.
+        if (alertStrip != null || pending.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                alertStrip?.let { line ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = tokens.marigold,
+                        contentColor = tokens.onAccent,
+                        modifier = Modifier.testTag("live-alerts-strip"),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(line, style = PitTechTextStyles.bodyEmphasis)
+                        }
                     }
                 }
-                cookTargets.forEach { target ->
-                    Text("Target · " + target.targetType.replace('_', ' ') + ": " + target.value + " " + target.unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // PL-03: alert state on the strip — the needs-attention
-                // count and named acknowledgments, readable without opening
-                // anything. Acknowledging (notification action or Alerts
-                // sheet) is confirmed right here on Live.
-                alertStrip?.let { line ->
-                    Row(Modifier.fillMaxWidth().testTag("live-alerts-strip"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text(line, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                pending.firstOrNull()?.let { next ->
+                    Surface(
+                        onClick = { onLogReminder(next) },
+                        shape = RoundedCornerShape(10.dp),
+                        color = tokens.surface,
+                        contentColor = tokens.ink,
+                        border = BorderStroke(1.dp, tokens.cobalt),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp), tint = tokens.cobalt)
+                            Text(formatTimeOfDay(next.dueAtUtcMillis) + " · " + next.title, style = PitTechTextStyles.body)
+                        }
                     }
                 }
             }
@@ -1094,20 +1352,63 @@ private fun LiveCookTab(
         }
         onError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         dishesContent()
-        if (recent != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Recent activity", style = MaterialTheme.typography.labelLarge)
-                Text(CookFeedPresentation.title(recent), maxLines = 2)
-                Text(formatTimeOfDay(recent.occurredAtUtcMillis), style = MaterialTheme.typography.bodySmall)
+        // Action placards (§4, `d12`): the board's primary actions as
+        // large cards — the same handlers the quick-actions bar and the
+        // old end-of-scroll buttons call; nothing moved homes, the two
+        // end buttons the placards replace are retired below.
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TurnInPlacard(Icons.Filled.NoteAdd, "Log note", onClick = onQuickNote, modifier = Modifier.weight(1f), primary = true)
+                TurnInPlacard(Icons.Filled.Thermostat, "Add temp", onClick = onQuickTemperature, modifier = Modifier.weight(1f))
             }
-            TextButton(onClick = onViewTimeline) { Text("Timeline") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TurnInPlacard(Icons.Filled.PhotoCamera, "Photo", onClick = onQuickPhoto, modifier = Modifier.weight(1f))
+                TurnInPlacard(Icons.Filled.Notifications, "Reminder", onClick = onQuickReminder, modifier = Modifier.weight(1f))
+            }
+            if (data.cook.status != CookStatus.COMPLETED) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInPlacard(
+                        if (data.cook.status == CookStatus.PAUSED) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        if (data.cook.status == CookStatus.PAUSED) "Resume cook" else "Pause",
+                        onClick = onTogglePause,
+                        modifier = Modifier.weight(1f),
+                        enabled = !busy,
+                    )
+                    TurnInPlacard(
+                        Icons.Filled.Flag, "Finish cook",
+                        onClick = onFinish,
+                        modifier = Modifier.weight(1f),
+                        testTag = "live-finish-cook",
+                        enabled = !busy,
+                    )
+                }
+            }
         }
-        latestPhoto?.let { photo ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PhotoThumbnail(photo, Modifier.size(72.dp).testTag("live-recent-photo"), onClick = { onPhotoClick(photo) })
-                Column(Modifier.weight(1f)) {
-                    photo.caption?.takeIf { it.isNotBlank() }?.let { Text(it, maxLines = 2) }
-                    TextButton(onClick = onShowPhotoGallery, modifier = Modifier.testTag("live-photo-gallery-open")) { Text("All photos (" + data.photos.size + ")") }
+        if (recent != null || latestPhoto != null) {
+            TurnInCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TurnInMetaLabel("Recent activity")
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        latestPhoto?.let { photo ->
+                            PhotoThumbnail(photo, Modifier.size(72.dp).clip(RoundedCornerShape(10.dp)).testTag("live-recent-photo"), onClick = { onPhotoClick(photo) })
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            if (recent != null) {
+                                Text(CookFeedPresentation.title(recent), style = PitTechTextStyles.bodyEmphasis, maxLines = 2)
+                                Text(formatTimeOfDay(recent.occurredAtUtcMillis), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                            }
+                            // The latest photo's caption rides with its
+                            // thumbnail regardless of the recent event —
+                            // the pre-redesign board showed both, and the
+                            // merged card must not drop it when a cook has
+                            // activity AND a captioned photo (flows test03).
+                            latestPhoto?.caption?.takeIf { it.isNotBlank() }?.let { Text(it, style = PitTechTextStyles.bodyEmphasis, maxLines = 2) }
+                        }
+                        TextButton(onClick = onViewTimeline) { Text("Timeline") }
+                    }
+                    if (latestPhoto != null) {
+                        TextButton(onClick = onShowPhotoGallery, modifier = Modifier.testTag("live-photo-gallery-open")) { Text("All photos (" + data.photos.size + ")") }
+                    }
                 }
             }
         }
@@ -1169,17 +1470,13 @@ private fun LiveCookTab(
             data.cook.weatherNotes?.let { Text("Weather: " + it) }
             data.cook.windNotes?.let { Text("Wind: " + it) }
         }
-        // Meal-level end actions stay visible — Results and Pause left the
-        // collapsed "Cook tools" bucket with this re-rank (PL-04).
-        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onFinish, enabled = !busy,
-            modifier = Modifier.fillMaxWidth().testTag("live-finish-cook")) { Text("Finish cook") }
+        // TURN-IN: Finish and Pause ride the action placards above (the
+        // `d12` grid) — the old end-of-scroll duplicates are retired so
+        // each action keeps exactly one home on the board.
         // PL-08: Undo finish lives on the finished cook itself, not only in
         // the moment after finishing.
         if (data.cook.status == CookStatus.COMPLETED) OutlinedButton(onClick = onUndoFinish, enabled = !busy,
             modifier = Modifier.fillMaxWidth().testTag("live-undo-finish")) { Text("Undo finish") }
-        if (data.cook.status != CookStatus.COMPLETED) OutlinedButton(onClick = onTogglePause, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-            Text(if (data.cook.status == CookStatus.PAUSED) "Resume recording" else "Pause recording")
-        }
         TextButton(onClick = onDelete, enabled = !busy) { Text("Delete cook") }
     }
 }
@@ -1236,6 +1533,8 @@ private fun TimelineTab(
     onFoodFilter: (String?) -> Unit = {},
     onFocusHandled: () -> Unit = {},
     onAddNote: () -> Unit = {},
+    onEditResults: () -> Unit = {},
+    onExportCook: () -> Unit = {},
     guide: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -1285,7 +1584,7 @@ private fun TimelineTab(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Text("Cook timeline", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TurnInBannerText("Cook timeline", style = PitTechTextStyles.bannerTitle, modifier = Modifier.weight(1f))
             IconButton(onClick = onShowPhotoGallery, modifier = Modifier.testTag("timeline-gallery")) {
                 Icon(Icons.Filled.PhotoCamera, contentDescription = "Cook photos")
             }
@@ -1317,7 +1616,7 @@ private fun TimelineTab(
             Box(Modifier.weight(1f)) {
                 var open by remember { mutableStateOf(false) }
                 Column {
-                    Text("Entries", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
+                    TurnInMetaLabel("Entries", modifier = Modifier.padding(bottom = 4.dp))
                     OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("timeline-filter-menu")) {
                         Text(selectedFilter.label, modifier = Modifier.weight(1f)); Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                     }
@@ -1342,7 +1641,7 @@ private fun TimelineTab(
             val unfiltered = selectedFilter == TimelineFilter.STORY || selectedFilter == TimelineFilter.ALL
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 guide()
-                Text(if (unfiltered) EmptyStateCopy.TIMELINE_TITLE else EmptyStateCopy.TIMELINE_FILTERED_TITLE, style = MaterialTheme.typography.titleLarge)
+                TurnInBannerText(if (unfiltered) EmptyStateCopy.TIMELINE_TITLE else EmptyStateCopy.TIMELINE_FILTERED_TITLE, style = PitTechTextStyles.bannerTitle)
                 Text(
                     if (unfiltered) EmptyStateCopy.TIMELINE_BODY else EmptyStateCopy.TIMELINE_FILTERED_BODY,
                     style = MaterialTheme.typography.bodyLarge,
@@ -1363,13 +1662,13 @@ private fun TimelineTab(
                     item(key = "timeline-summary") {
                         Text(
                             "Started ${formatTimeOfDay(data.cook.startedAtUtcMillis)} · ${formatCookDuration(calculateElapsed(data))} elapsed",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = PitTechTextStyles.monoMeta,
+                            color = pitTechTokens().inkMuted,
                             modifier = Modifier.padding(bottom = 4.dp).testTag("timeline-summary"),
                         )
                     }
                     if (showResultsCard) {
-                        item(key = "timeline-results") { CookResultsCard(data) }
+                        item(key = "timeline-results") { CookResultsCard(data, viewModel, onEditResults, onExportCook) }
                     }
                     days.forEach { (dayKey, dayRows) ->
                         item(key = "timeline-day-$dayKey") {
@@ -1513,9 +1812,8 @@ internal fun buildTimelineLines(data: CookDetailData, filter: TimelineFilter, ne
 private fun TimelineDayHeading(timestamp: Long) {
     Text(
         formatTimelineDay(timestamp).uppercase(Locale.getDefault()),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Bold,
+        style = PitTechTextStyles.metaLabel,
+        color = pitTechTokens().attentionText,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
     )
 }
@@ -1765,22 +2063,18 @@ private fun TemperatureReadingGroupCard(modifier: Modifier, line: TimelineLine.R
 
 @Composable
 private fun TimelineKindChip(label: String) {
-    val container = when (label) {
-        "PHOTO" -> MaterialTheme.colorScheme.secondaryContainer
-        "TEMPERATURE", "TEMPERATURES" -> MaterialTheme.colorScheme.tertiaryContainer
-        "START", "FINISH", "SETPOINT" -> MaterialTheme.colorScheme.primaryContainer
-        "CHECK-IN" -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
+    // TURN-IN kind chip (`d17`): a quiet raised cell; the kind's accent
+    // colors the word, not the fill.
+    val tokens = pitTechTokens()
     val content = when (label) {
-        "PHOTO" -> MaterialTheme.colorScheme.onSecondaryContainer
-        "TEMPERATURE", "TEMPERATURES" -> MaterialTheme.colorScheme.onTertiaryContainer
-        "START", "FINISH", "SETPOINT" -> MaterialTheme.colorScheme.onPrimaryContainer
-        "CHECK-IN" -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        "PHOTO" -> tokens.cobalt
+        "TEMPERATURE", "TEMPERATURES" -> tokens.emberText
+        "START", "FINISH", "SETPOINT" -> tokens.attentionText
+        "CHECK-IN" -> tokens.cobalt
+        else -> tokens.inkMuted
     }
-    Surface(color = container, contentColor = content, shape = CircleShape) {
-        Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+    Surface(color = tokens.surfaceRaised, contentColor = content, shape = CircleShape, border = BorderStroke(1.dp, tokens.ruling)) {
+        Text(label, style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
     }
 }
 
@@ -1883,8 +2177,26 @@ private fun ChartsTab(data: CookDetailData, displayUnit: String, guide: AlignedG
                 val ordered = readings.sortedBy { it.measuredAtUtcMillis }
                 val last = ordered.last()
                 val values = ordered.map { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
-                Text(last.probeName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("${readings.size} readings · low ${"%.1f".format(values.min())} · high ${"%.1f".format(values.max())} · last ${"%.1f".format(values.last())} $displayUnit", style = MaterialTheme.typography.bodyLarge)
+                // TURN-IN (Slice 2, Area 02 `cook-chart`): the channel's
+                // figures ride as boxed cells under its name — the same
+                // recorded facts (count, low, high, last), nothing added.
+                TurnInBannerText(last.probeName)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        "Readings" to readings.size.toString(),
+                        "Low" to "${"%.1f".format(values.min())} $displayUnit",
+                        "High" to "${"%.1f".format(values.max())} $displayUnit",
+                        "Last" to "${"%.1f".format(values.last())} $displayUnit",
+                    ).forEach { (label, value) ->
+                        Column(
+                            Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(pitTechTokens().surfaceRaised).padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            TurnInMetaLabel(label)
+                            Text(value, style = PitTechTextStyles.monoReadout)
+                        }
+                    }
+                }
             }
         }
         val duration = calculateElapsed(data)
@@ -1912,49 +2224,141 @@ private fun formatResultNumber(value: Double): String =
  * display of the one results model: the overall verdict, then one block per
  * dish with its verdict, detail ratings, and facts. Recorded facts are shown
  * exactly as saved; editing happens in the results editor, never here.
+ *
+ * TURN-IN (Slice 2, Area 02 `results-card`): the card is composed as the
+ * frame's scorecard — a marigold header band with the cook's name and date,
+ * the overall verdict cell with its stars, the recorded detail ratings as
+ * boxed cells, the final/rest facts as one mono line, and the tool chips
+ * (Favorite, Method & tags, Export this cook, Edit results) wired to the
+ * same handlers the Live tab's learning tools and overflow use. Plain
+ * results copy throughout — the card reports the cook, it does not score
+ * a contest.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CookResultsCard(data: CookDetailData) {
+private fun CookResultsCard(
+    data: CookDetailData,
+    viewModel: CooksViewModel,
+    onEditResults: () -> Unit,
+    onExportCook: () -> Unit,
+) {
+    val tokens = pitTechTokens()
     fun rowsFor(dishId: String?) = data.results.filter { it.dishId == dishId }
     fun numeric(rows: List<com.pittech.data.CookResultEntity>, type: String) = rows.firstOrNull { it.resultType == type }?.numericValue
     fun text(rows: List<com.pittech.data.CookResultEntity>, type: String) = rows.firstOrNull { it.resultType == type }?.textValue?.takeIf { it.isNotBlank() }
+    var editTags by remember { mutableStateOf(false) }
     @Composable
-    fun ResultFacts(rows: List<com.pittech.data.CookResultEntity>) {
+    fun ResultFacts(rows: List<com.pittech.data.CookResultEntity>, showCookAgain: Boolean) {
         val details = listOf("Bark" to "bark", "Tenderness" to "tenderness", "Juiciness" to "juiciness", "Smoke" to "smoke", "Seasoning" to "seasoning")
-            .mapNotNull { (label, type) -> numeric(rows, type)?.let { "$label ${formatResultRating(it)}" } }
-        if (details.isNotEmpty()) Text(details.joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
-        rows.firstOrNull { it.resultType == "final_temperature" }?.let { row ->
-            row.numericValue?.let { Text("Final temperature: ${formatResultNumber(it)} ${row.unit.orEmpty()}".trim(), style = MaterialTheme.typography.bodyLarge) }
-        }
-        numeric(rows, "rest_minutes")?.let { Text("Rest: ${formatResultNumber(it)} min", style = MaterialTheme.typography.bodyLarge) }
-        numeric(rows, "cook_again")?.let { Text("Cook again: ${if (it == 1.0) "Yes" else "No"}", style = MaterialTheme.typography.bodyLarge) }
-        text(rows, "result_notes")?.let { Text("Notes: $it", style = MaterialTheme.typography.bodyLarge) }
-        text(rows, "keep_doing")?.let { Text("Keep doing: $it", style = MaterialTheme.typography.bodyLarge) }
-        text(rows, "change_next_time")?.let { Text("Change next time: $it", style = MaterialTheme.typography.bodyLarge) }
-    }
-    SectionCard("Cook results") {
-        Column(Modifier.testTag("cook-results-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val cookRows = rowsFor(null)
-            Text(
-                "Overall verdict: " + (numeric(cookRows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-            )
-            ResultFacts(cookRows)
-            data.dishes.forEach { dish ->
-                val rows = rowsFor(dish.id)
-                if (rows.any { it.resultType in RESULT_DISPLAY_TYPES }) {
-                    Column(Modifier.testTag("cook-results-dish-${dish.id}"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(dish.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Verdict: " + (numeric(rows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        ResultFacts(rows)
+            .mapNotNull { (label, type) -> numeric(rows, type)?.let { label to it } }
+        if (details.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                details.forEach { (label, value) ->
+                    Column(
+                        Modifier.clip(RoundedCornerShape(10.dp)).background(tokens.surfaceRaised).padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        TurnInMetaLabel(label)
+                        Text(formatResultRating(value), style = PitTechTextStyles.monoReadout)
                     }
                 }
             }
         }
+        val finalTemp = rows.firstOrNull { it.resultType == "final_temperature" }?.numericValue
+        val rest = numeric(rows, "rest_minutes")
+        if (finalTemp != null || rest != null) {
+            Text(
+                listOfNotNull(
+                    finalTemp?.let { "FINAL ${formatResultNumber(it)}°" },
+                    rest?.let { "REST ${formatRestDuration(it)}" },
+                ).joinToString(" · "),
+                style = PitTechTextStyles.monoMeta,
+                color = tokens.inkMuted,
+            )
+        }
+        if (showCookAgain) numeric(rows, "cook_again")?.let { Text("Cook again: ${if (it == 1.0) "Yes" else "No"}", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "result_notes")?.let { Text("Notes: $it", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "keep_doing")?.let { Text("Keep doing: $it", style = MaterialTheme.typography.bodyLarge) }
+        text(rows, "change_next_time")?.let { Text("Change next time: $it", style = MaterialTheme.typography.bodyLarge) }
     }
+    TurnInCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.testTag("cook-results-card"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Cook results", style = PitTechTextStyles.metaLabel, color = tokens.inkMuted)
+            val cookRows = rowsFor(null)
+            val overall = numeric(cookRows, "overall_rating")
+            // The header band: marigold fill, navy ink (never white on
+            // marigold, §3.1), the cook's name and its date.
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(tokens.marigold).padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(data.cook.title, style = PitTechTextStyles.bannerCard, color = tokens.onAccent)
+                    Text(
+                        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(data.cook.startedAtUtcMillis)).uppercase(),
+                        style = PitTechTextStyles.monoMeta,
+                        color = tokens.onAccent,
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TurnInMetaLabel("Overall")
+                    Text(
+                        "Overall verdict: " + (overall?.let { formatResultRating(it) } ?: "Not recorded"),
+                        style = PitTechTextStyles.bodyEmphasis,
+                    )
+                }
+                overall?.let { TurnInStars(it) }
+            }
+            ResultFacts(cookRows, showCookAgain = true)
+            data.dishes.forEach { dish ->
+                val rows = rowsFor(dish.id)
+                if (rows.any { it.resultType in RESULT_DISPLAY_TYPES }) {
+                    Column(Modifier.testTag("cook-results-dish-${dish.id}"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TurnInBannerText(dish.name)
+                        Text(
+                            "Verdict: " + (numeric(rows, "overall_rating")?.let { formatResultRating(it) } ?: "Not recorded"),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        ResultFacts(rows, showCookAgain = true)
+                    }
+                }
+            }
+            val favorite = data.results.any { it.resultType == "favorite" && it.numericValue == 1.0 }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = favorite,
+                    onClick = { viewModel.toggleCookFavorite(data.cook.id, !favorite) },
+                    label = { Text(if (favorite) "♥ Favorite" else "♡ Favorite") },
+                )
+                FilterChip(selected = false, onClick = { editTags = true }, label = { Text("Method & tags") })
+                FilterChip(selected = false, onClick = onExportCook, label = { Text("Export this cook") })
+                FilterChip(selected = false, onClick = onEditResults, label = { Text("Edit results") })
+            }
+        }
+    }
+    if (editTags) {
+        MethodTagsSheet(data, viewModel) { editTags = false }
+    }
+}
+
+/** One export placard row (A2 `export-cook`): the export's own label on a
+ * laminated card with the chevron that says it leaves the sheet. */
+@Composable
+private fun ExportCookRow(label: String, onClick: () -> Unit) {
+    TurnInCard(onClick = onClick) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = PitTechTextStyles.bodyEmphasis, modifier = Modifier.weight(1f))
+            Text("›", style = PitTechTextStyles.bannerCard, color = pitTechTokens().inkMuted)
+        }
+    }
+}
+
+private fun formatRestDuration(minutes: Double): String {
+    val total = minutes.toInt()
+    val hours = total / 60
+    val rest = total % 60
+    return if (hours > 0) "${hours}H ${rest}M" else "${rest}M"
 }
 
 @Composable
@@ -1979,7 +2383,7 @@ private fun PhotoGalleryDialog(
     SheetSurface(onDismiss = onDismiss, fillHeightFraction = 0.92f) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Photos (${photos.size})", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).testTag("photo-gallery-title"), fontWeight = FontWeight.SemiBold)
+                    TurnInBannerText("Photos (${photos.size})", style = PitTechTextStyles.bannerTitle, modifier = Modifier.weight(1f).testTag("photo-gallery-title"))
                     TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 44.dp).testTag("photo-gallery-close")) { Text("Done") }
                 }
                 Column(
@@ -1992,23 +2396,56 @@ private fun PhotoGalleryDialog(
                         Text(EmptyStateCopy.PHOTOS_EMPTY_BODY, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("photo-gallery-empty"))
                         Button(onClick = onAddPhoto, modifier = Modifier.heightIn(min = 48.dp).testTag("photo-gallery-add")) { Text("Add a photo") }
                     }
-                    photos.forEach { photo ->
-                        Row(
-                            Modifier.fillMaxWidth().testTag("photo-gallery-row-${photo.id}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    // TURN-IN (Slice 2, Area 02 `cook-photos`): the gallery
+                    // is a two-up grid of square tiles; each tile carries
+                    // its capture context as a mono chip (time · caption),
+                    // and the last tile adds a photo.
+                    photos.chunked(2).forEach { rowPhotos ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowPhotos.forEach { photo ->
+                                Box(
+                                    Modifier.weight(1f).aspectRatio(1f).testTag("photo-gallery-row-${photo.id}"),
+                                ) {
+                                    PhotoThumbnail(
+                                        photo,
+                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).testTag("photo-gallery-item-${photo.id}"),
+                                        onClick = { onPhotoClick(photo) },
+                                    )
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.55f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+                                    ) {
+                                        Text(
+                                            listOfNotNull(
+                                                formatTimeOfDay(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis),
+                                                photo.caption?.takeIf { it.isNotBlank() },
+                                            ).joinToString(" · "),
+                                            style = PitTechTextStyles.monoMeta,
+                                            color = Color(0xFFF5EFE3),
+                                            maxLines = 1,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            if (rowPhotos.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    if (photos.isNotEmpty()) {
+                        Surface(
+                            onClick = onAddPhoto,
+                            shape = RoundedCornerShape(12.dp),
+                            color = pitTechTokens().surfaceRaised,
+                            border = BorderStroke(1.dp, pitTechTokens().ruling),
+                            modifier = Modifier.fillMaxWidth().testTag("photo-gallery-add-tile"),
                         ) {
-                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                                PhotoThumbnail(
-                                    photo,
-                                    modifier = Modifier.size(84.dp).clip(RoundedCornerShape(12.dp)).testTag("photo-gallery-item-${photo.id}"),
-                                    onClick = { onPhotoClick(photo) },
-                                )
-                            }
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(photo.caption?.takeIf { it.isNotBlank() } ?: photo.originalFileName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                                Text(formatTimestamp(photo.capturedAtUtcMillis ?: photo.addedAtUtcMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                            Text(
+                                "+ Add photo",
+                                style = PitTechTextStyles.bodyEmphasis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            )
                         }
                     }
                 }
@@ -2092,7 +2529,9 @@ private fun PhotoViewerDialog(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     IconButton(onClick = onDismiss, modifier = Modifier.testTag("photo-viewer-close")) { Text("×", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
-                    Text(photo.caption ?: photo.originalFileName, color = Color.White, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).testTag("photo-viewer-title"), maxLines = 1)
+                    // `d34`: the viewer is always a black room in both
+                    // modes — caption in the banner face, cream on black.
+                    Text(photo.caption ?: photo.originalFileName, color = Color(0xFFF5EFE3), style = PitTechTextStyles.bannerCard, modifier = Modifier.weight(1f).testTag("photo-viewer-title"), maxLines = 1)
                     TextButton(onClick = { onSave(photo) }) { Text("Save", color = Color.White) }
                     TextButton(onClick = { onShare(photo) }) { Text("Share", color = Color.White) }
                 }
@@ -2109,9 +2548,9 @@ private fun PhotoViewerDialog(
                         )
                     } ?: Text("Photo could not be loaded", color = Color.White)
                 }
-                photo.capturedAtUtcMillis?.let { Text("Captured ${formatTimestamp(it)}", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp)) }
+                photo.capturedAtUtcMillis?.let { Text("Captured ${formatTimestamp(it)}", color = Color.White.copy(alpha = 0.75f), style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 12.dp)) }
                 val temperatureContext = com.pittech.data.TemperatureContext.summary(photo.temperatureContextJson)
-                Text(if (temperatureContext.isBlank()) "Temperature context unavailable for this photo's capture time" else temperatureContext + " · " + contextTimeLabel(photo.temperatureContextJson), color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 12.dp).testTag("photo-temperature-context"))
+                Text(if (temperatureContext.isBlank()) "Temperature context unavailable for this photo's capture time" else temperatureContext + " · " + contextTimeLabel(photo.temperatureContextJson), color = Color.White.copy(alpha = 0.75f), style = PitTechTextStyles.monoMeta, modifier = Modifier.padding(horizontal = 12.dp).testTag("photo-temperature-context"))
                 Text("Pinch to zoom · Drag to move", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp))
             }
         }
@@ -2172,7 +2611,8 @@ private fun ReminderCheckInDialog(
         title = "How did it go?",
         actions = {
             TextButton(onClick = onDismiss, modifier = Modifier.testTag("reminder-checkin-dismiss")) { Text(com.pittech.domain.ReminderVocabulary.DISMISS) }
-            TextButton(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text(com.pittech.domain.ReminderVocabulary.LOG_IT) }
+            // `d24`: Log it is the filled primary of the check-in.
+            Button(onClick = { onComplete(note) }, modifier = Modifier.testTag("reminder-checkin-save")) { Text(com.pittech.domain.ReminderVocabulary.LOG_IT) }
         },
     ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2228,8 +2668,12 @@ private fun CookBasicsDialog(data: CookDetailData, onDismiss: () -> Unit, onSave
         },
     ) {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(title, { title = it }, label = { Text("Cook name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(smoker, { smoker = it }, label = { Text("Smoker or grill") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                TurnInBoxedField("Cook name") {
+                    OutlinedTextField(title, { title = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                TurnInBoxedField("Smoker or grill") {
+                    OutlinedTextField(smoker, { smoker = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
                 OutlinedTextField(setpoint, { setpoint = it }, label = { Text("Starting setpoint") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 SimpleDropdownField("Setpoint unit", unit, listOf("°F", "°C"), { unit = it })
                 OutlinedTextField(notes, { notes = it }, label = { Text("Cook notes") }, minLines = 3, modifier = Modifier.fillMaxWidth())
@@ -2407,8 +2851,13 @@ private fun TargetDialog(
         },
     ) {
             Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                // TURN-IN gap disposition (§5.12.3): the target form is
+                // unframed; it is styled from the §4 boxed-field component
+                // under the d16/d26 language. Flagged in the Slice 1 PR.
                 SimpleDropdownField("Target type", type.replace('_', ' ').replaceFirstChar { it.titlecase() }, listOf("Personal finish", "Food safety", "Serving goal"), { type = it.lowercase().replace(' ', '_') })
-                OutlinedTextField(value, { value = it; error = null }, label = { Text("Target temperature") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
+                TurnInBoxedField("Target temperature") {
+                    OutlinedTextField(value, { value = it; error = null }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), textStyle = PitTechTextStyles.monoReadout, isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth())
+                }
                 SimpleDropdownField("Unit", unit, listOf("°F", "°C"), { unit = it })
                 SimpleDropdownField("For", dishId.takeUnless { it == "whole" }?.let { id -> dishes.firstOrNull { it.id == id }?.name } ?: "Whole cook", listOf("Whole cook") + dishes.map { it.name }, { selected -> dishId = dishes.firstOrNull { it.name == selected }?.id ?: "whole" })
                 OutlinedTextField(explanation, { explanation = it }, label = { Text("Source or reason (optional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
@@ -2426,17 +2875,16 @@ private fun TargetDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun VerdictChipRow(value: Double?, onChange: (Double?) -> Unit, tagPrefix: String, enabled: Boolean) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        (1..5).forEach { n ->
-            FilterChip(
-                selected = value == n.toDouble(),
-                onClick = { onChange(if (value == n.toDouble()) null else n.toDouble()) },
-                enabled = enabled,
-                label = { Text("$n / 5") },
-                modifier = Modifier.testTag("$tagPrefix-$n"),
-            )
-        }
-    }
+    // TURN-IN score cells (§4, `d31`): the chips become boxed 1–5 cells —
+    // same tags, same tap-to-clear contract, same fractional handling (a
+    // saved 4.5 selects no cell and is named below, as before).
+    TurnInScoreCells(
+        value = value?.takeIf { it % 1.0 == 0.0 }?.toInt(),
+        onSelect = { onChange(it?.toDouble()) },
+        tagPrefix = tagPrefix,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+    )
     when {
         value == null -> Text("Not recorded", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         value % 1.0 != 0.0 -> Text("Saved rating: ${formatResultRating(value)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2446,7 +2894,7 @@ private fun VerdictChipRow(value: Double?, onChange: (Double?) -> Unit, tagPrefi
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RatingChipRow(label: String, valueText: String, onChange: (String) -> Unit, tagPrefix: String, enabled: Boolean) {
-    Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    TurnInBannerText(label)
     VerdictChipRow(valueText.toDoubleOrNull(), { onChange(it?.let { n -> if (n % 1.0 == 0.0) n.toInt().toString() else n.toString() } ?: "") }, tagPrefix, enabled)
 }
 
@@ -2468,12 +2916,12 @@ private fun CompletionVerdictSection(data: CookDetailData, viewModel: CooksViewM
     var dishAgain by remember(data.cook.id, data.results) { mutableStateOf(data.dishes.associate { dish -> dish.id to savedAgain(dish.id) }) }
     var saved by remember(data.cook.id) { mutableStateOf(false) }
     Column(Modifier.testTag("completion-verdict"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Quick verdict", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        TurnInBannerText("Quick verdict")
         Text("How did it turn out? Anything you skip stays Not recorded — results can be edited any time from the cook.", style = MaterialTheme.typography.bodyMedium)
-        Text("Overall", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        TurnInBannerText("Overall")
         VerdictChipRow(overall, { overall = it; saved = false }, "completion-verdict-cook", !busy)
         data.dishes.forEach { dish ->
-            Text(dish.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            TurnInBannerText(dish.name)
             VerdictChipRow(dishRatings[dish.id], { value -> dishRatings = dishRatings + (dish.id to value); saved = false }, "completion-verdict-${dish.id}", !busy)
             Text("Cook again?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("completion-again-${dish.id}")) {
@@ -2537,7 +2985,8 @@ private fun CookResultsSheet(
     var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.heightIn(max = 640.dp).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("results-dialog-title"))
+            TurnInSheetKicker("Results · ${data.cook.title}")
+            TurnInBannerText(if (data.cook.status != CookStatus.COMPLETED) "Record results" else "Edit results", style = PitTechTextStyles.bannerTitle, modifier = Modifier.testTag("results-dialog-title"))
             Text("All result fields are optional.", style = MaterialTheme.typography.bodyMedium)
             // Fields scroll between the pinned header and the pinned action
             // row (DD-6): Save is always reachable, like the dialog's actions.

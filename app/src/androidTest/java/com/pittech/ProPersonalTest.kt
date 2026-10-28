@@ -320,10 +320,10 @@ class ProPersonalTest {
         }
         // Unknown theme and palette ids fail safe to the Classic treatment.
         val fallback = ShareCardRenderer.themeColors("nope", "nope")
-        assertEquals(Color.rgb(245, 240, 231), fallback.background)
+        assertEquals(Color.rgb(251, 249, 244), fallback.background)
         assertEquals(6, fallback.palette.size)
         val classic = ShareCardRenderer.themeColors(null, null)
-        assertEquals(Color.rgb(245, 240, 231), classic.background)
+        assertEquals(Color.rgb(251, 249, 244), classic.background)
         val night = ShareCardRenderer.themeColors("sage-night", null)
         assertEquals(Color.rgb(35, 38, 31), night.background)
         assertEquals(6, night.palette.size)

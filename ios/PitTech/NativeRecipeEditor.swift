@@ -112,9 +112,12 @@ struct NativeRecipeEditor: View {
             Form {
                 if draftRestored {
                     Section {
+                        // TURN-IN (Slice 3, Area 03 `dark-08`): the restored
+                        // draft reads as a status strip, not a red warning —
+                        // the Form grammar itself stays (§5.4).
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Resume draft").font(.headline)
-                            Text("Your unsaved changes were kept on this device.").font(.caption).foregroundStyle(.secondary)
+                            TurnInMetaLabel("Resume draft")
+                            TurnInStatusStrip(text: "Your unsaved changes were kept on this device.", accent: PitTechStyle.cobalt)
                             Button("Discard draft", role: .destructive) {
                                 UserDefaults.standard.removeObject(forKey: draftKey)
                                 draftRestored = false
@@ -203,12 +206,12 @@ struct NativeRecipeEditor: View {
                 }
                 Section {
                     DisclosureGroup("Recorded history") {
-                        Text("Recorded observations stay separate from editable instructions.").font(.caption)
+                        Text("Recorded observations stay separate from editable instructions.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                         ForEach(snapshot.observations.compactMap { $0.objectValue?["sourceEventId"]?.stringValue }, id: \.self) { id in
                             if let o = snapshot.observations.first(where: { $0.objectValue?["sourceEventId"]?.stringValue == id })?.objectValue {
                                 Toggle(o["title"]?.stringValue ?? "Recorded note", isOn: Binding(get: { keptFacts.contains(id) }, set: { if $0 { keptFacts.insert(id) } else { keptFacts.remove(id) } }))
-                                Text(o["details"]?.stringValue ?? "")
-                                if let offset = o["offsetMillis"]?.numberValue { Text("\(offset / 60000, specifier: "%.1f") minutes from recorded On smoker").font(.caption) }
+                                Text(o["details"]?.stringValue ?? "").font(PitTechFont.body)
+                                if let offset = o["offsetMillis"]?.numberValue { Text("\(offset / 60000, specifier: "%.1f") minutes from recorded On smoker").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) }
                             }
                         }
                         ForEach(request.context.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
@@ -218,8 +221,10 @@ struct NativeRecipeEditor: View {
                         }
                     }
                 }
-                if !valid { Text("Review the name, instruction titles and numeric quantities.").foregroundStyle(.red) }
-                if let error { Text(error).foregroundStyle(.red) }
+                // A3 `dark-07-recipe-editor-invalid`: the invalid state is a
+                // flag strip under the form, not a red line of text.
+                if !valid { TurnInStatusStrip(text: "Review the name, instruction titles and numeric quantities.", accent: PitTechStyle.flag) }
+                if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
             }.navigationTitle(request.attemptDishId == nil ? "Save recipe" : "Adjust for this meal")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!valid || loadingPhotos || saving) } }
                 .onAppear {

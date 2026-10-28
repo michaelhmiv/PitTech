@@ -19,7 +19,7 @@ object ProCustomization {
     data class CardTheme(val id: String, val name: String, val isPro: Boolean, val background: String, val ink: String, val supporting: String, val accent: String)
 
     val cardThemes: List<CardTheme> = listOf(
-        CardTheme("classic", "Classic", false, "#F5F0E7", "#242622", "#514C45", "#58665A"),
+        CardTheme("classic", "Classic", false, "#FBF9F4", "#1D2733", "#5C6B7A", "#A84A0C"),
         CardTheme("ember", "Ember", true, "#FBF3E8", "#2B2118", "#6B5B4C", "#B04D2E"),
         CardTheme("sage-night", "Sage night", true, "#23261F", "#F2EFE6", "#B9B3A4", "#9DB29A"),
         CardTheme("parchment", "Parchment", true, "#FDFBF5", "#33302A", "#6E675C", "#416C8A"),
@@ -31,9 +31,9 @@ object ProCustomization {
     data class ChartPalette(val id: String, val name: String, val isPro: Boolean, val intendedBackground: String, val colors: List<String>)
 
     val chartPalettes: List<ChartPalette> = listOf(
-        ChartPalette("classic", "Classic", false, "#F5F0E7", listOf("#B04D2E", "#58665A", "#416C8A", "#8B5D84", "#A17A2C", "#357D78")),
-        ChartPalette("color-vision-safe", "Color-vision safe", true, "#F5F0E7", listOf("#0072B2", "#D55E00", "#00855F", "#A34D7E", "#2A7F9E", "#444444")),
-        ChartPalette("high-contrast", "High contrast", true, "#F5F0E7", listOf("#000000", "#005A9C", "#8B0000", "#006400", "#4B0082", "#8B4513")),
+        ChartPalette("classic", "Classic", false, "#FBF9F4", listOf("#B04D2E", "#58665A", "#416C8A", "#8B5D84", "#A17A2C", "#357D78")),
+        ChartPalette("color-vision-safe", "Color-vision safe", true, "#FBF9F4", listOf("#0072B2", "#D55E00", "#00855F", "#A34D7E", "#2A7F9E", "#444444")),
+        ChartPalette("high-contrast", "High contrast", true, "#FBF9F4", listOf("#000000", "#005A9C", "#8B0000", "#006400", "#4B0082", "#8B4513")),
         ChartPalette("sage-night-chart", "Sage night chart", true, "#23261F", listOf("#F0C987", "#A8D5BA", "#A8C8E8", "#D8B8E0", "#E8E18A", "#9AD5D0")),
     )
 

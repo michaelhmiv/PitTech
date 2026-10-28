@@ -8,9 +8,11 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,18 +51,28 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     val readings = remember(data.readings) { data.readings.map { PlanReading(it.dishId, CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.qualityStatus == "valid", it.measurementType, it.probeName) } }
     val evaluated = plan?.let { CookPlanEngine.evaluate(it, events, readings, now) }.orEmpty()
     val next = evaluated.firstOrNull { it.ready } ?: evaluated.filter { it.progress.status == "pending" && it.waitingFor == null }.minByOrNull { it.dueAt ?: Long.MAX_VALUE }
+    // TURN-IN (Slice 3, Area 03 `dark-23-guidance` / `dark-24`): the
+    // guidance entry and the next-action card take the Cook Detail card
+    // language Slices 1–2 built — this slice owns the guidance surfaces,
+    // including unifying their sheet styling (§7 disposition).
+    val tokens = pitTechTokens()
     if (record == null) {
-        TextButton(onClick = { viewModel.beginGuidance(data.cook.id); show = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add cook guidance") }
-    } else Card(Modifier.fillMaxWidth().testTag("next-action-card")) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(if (plan?.paused == true) "Guidance paused" else "Next action", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                data.dishes.forEach { dish -> Text("${dish.name} · ${CookPlanEngine.stage(events, dish.id)}", style = MaterialTheme.typography.bodySmall) }
+        TurnInCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TurnInMetaLabel("Guidance")
+                TextButton(onClick = { viewModel.beginGuidance(data.cook.id); show = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add cook guidance", style = PitTechTextStyles.bodyEmphasis) }
             }
-            Text(next?.step?.title ?: "${record.title} · view your plan", style = MaterialTheme.typography.titleMedium)
+        }
+    } else TurnInCard(Modifier.fillMaxWidth().testTag("next-action-card")) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TurnInMetaLabel(if (plan?.paused == true) "Guidance paused" else "Next action")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                data.dishes.forEach { dish -> Text("${dish.name} · ${CookPlanEngine.stage(events, dish.id)}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted) }
+            }
+            TurnInBannerText(next?.step?.title ?: "${record.title} · view your plan")
             next?.let { e ->
-                Text(if (e.ready) "Ready to check" else e.dueAt?.let { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) } ?: e.waitingFor ?: "When ready")
-                if (e.step.instructions.isNotBlank()) Text(e.step.instructions)
+                Text(if (e.ready) "Ready to check" else e.dueAt?.let { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) } ?: e.waitingFor ?: "When ready", style = PitTechTextStyles.monoMeta, color = if (e.ready) tokens.attentionText else tokens.inkMuted)
+                if (e.step.instructions.isNotBlank()) Text(e.step.instructions, style = PitTechTextStyles.body)
                 if (e.ready) Button(onClick = { if (e.step.action == "remove" && e.dishId != null) removing = e else viewModel.completeGuidanceStep(data.cook.id, e) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("guidance-done")) { Text("Done") }
             }
             TextButton(onClick = { show = true }, modifier = Modifier.heightIn(min = 48.dp).testTag("view-plan")) { Text("View plan") }
@@ -71,25 +83,43 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
     skipping?.let { e -> AlertDialog(onDismissRequest = { skipping = null }, title = { Text("Skip ${e.step.title}?") }, text = { Text("Skipping records no physical action. If later steps depend on this action, choose whether to use the current time as their planning anchor.") }, confirmButton = { TextButton(onClick = { viewModel.skipGuidance(data.cook.id, e.step.id, false); skipping = null }) { Text("Skip") } }, dismissButton = { TextButton(onClick = { viewModel.skipGuidance(data.cook.id, e.step.id, true); skipping = null }) { Text("Skip · use now for later steps") } }) }
     if (show && plan != null) ModalBottomSheet(onDismissRequest = { show = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(plan.book.name, style = MaterialTheme.typography.titleLarge)
+            // Sheet chrome (§4): mono kicker + the plan's name in the banner
+            // face — the same language as the Cook Detail sheets (Slice 3
+            // owns this unification, §7).
+            TurnInSheetKicker("Guidance plan")
+            TurnInBannerText(plan.book.name, style = PitTechTextStyles.bannerTitle)
             ActiveServeGoal(data, records)
             OutlinedButton(onClick = { viewModel.pauseGuidance(data.cook.id, !plan.paused) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (plan.paused) "Resume guidance" else "Pause guidance") }
             evaluated.forEach { e ->
-                HorizontalDivider()
-                Text(e.step.title, modifier = Modifier.testTag("guidance-step-${e.step.id}"), style = MaterialTheme.typography.titleMedium)
-                e.dishId?.let { id -> Text(data.dishes.firstOrNull { it.id == id }?.name.orEmpty()) }
-                Text(if (e.progress.status != "pending") e.progress.status else e.waitingFor ?: stepDescription(e.step))
-                if (e.step.instructions.isNotBlank()) Text(e.step.instructions)
-                ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication, e.step.action, e.step.dishIndex)
-                if (e.progress.status == "pending") {
-                    OutlinedButton(onClick = { if (e.step.action == "remove" && e.dishId != null) removing = e else viewModel.completeGuidanceStep(data.cook.id, e) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done · ${e.step.title}") }
-                    FlowRow { TextButton(onClick = { viewModel.snoozeGuidance(data.cook.id, e) }) { Text("Snooze 10 min") }; TextButton(onClick = { skipping = e }) { Text("Skip") }; TextButton(onClick = { editing = e.step }) { Text("Edit") } }
+                // A3 `dark-23-guidance`: every step is a card; the current
+                // step's card carries the marigold edge.
+                val isCurrent = e.progress.status == "pending" && next?.step?.id == e.step.id
+                val stepContent: @Composable () -> Unit = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(e.step.title, modifier = Modifier.testTag("guidance-step-${e.step.id}"), style = PitTechTextStyles.bodyEmphasis)
+                        e.dishId?.let { id -> Text(data.dishes.firstOrNull { it.id == id }?.name.orEmpty(), style = PitTechTextStyles.body, color = tokens.inkMuted) }
+                        Text(if (e.progress.status != "pending") e.progress.status else e.waitingFor ?: stepDescription(e.step), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                        if (e.step.instructions.isNotBlank()) Text(e.step.instructions, style = PitTechTextStyles.body)
+                        ReferencePhotos(plan.playbookId, context.applicationContext as PitTechApplication, e.step.action, e.step.dishIndex)
+                        if (e.progress.status == "pending") {
+                            OutlinedButton(onClick = { if (e.step.action == "remove" && e.dishId != null) removing = e else viewModel.completeGuidanceStep(data.cook.id, e) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Done · ${e.step.title}") }
+                            FlowRow { TextButton(onClick = { viewModel.snoozeGuidance(data.cook.id, e) }) { Text("Snooze 10 min") }; TextButton(onClick = { skipping = e }) { Text("Skip") }; TextButton(onClick = { editing = e.step }) { Text("Edit") } }
+                        }
+                    }
                 }
+                if (isCurrent) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = tokens.surface, contentColor = tokens.ink),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.5.dp, tokens.marigold),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Box(Modifier.padding(16.dp)) { stepContent() } }
+                } else TurnInCard(Modifier.fillMaxWidth()) { stepContent() }
             }
             OutlinedButton(onClick = { editing = PlaybookStep() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add step") }
             HorizontalDivider()
-            Text("Reminder and stage controls", style = MaterialTheme.typography.titleMedium)
-            Text("Guidance pause leaves recording and physical rest/hold timers running.", style = MaterialTheme.typography.bodySmall)
+            Text("Reminder and stage controls", style = PitTechTextStyles.metaLabel, color = tokens.inkMuted)
+            Text("Guidance pause leaves recording and physical rest/hold timers running.", style = PitTechTextStyles.body, color = tokens.inkMuted)
             if (!CookGuidanceNotifications.canNotify(context)) OutlinedButton(onClick = {
                 if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
@@ -101,10 +131,10 @@ internal fun CookGuidanceCard(data: CookDetailData, record: CompanionRecord?, vi
                 }, modifier = Modifier.semantics { contentDescription = "Precise cook timers" })
                 Text("Precise timers (optional)", Modifier.weight(1f).padding(top = 12.dp))
             }
-            if (!preciseTimers || !CookGuidanceNotifications.preciseAvailable(context)) Text("Android may delay reminders. Your plan stays available here.", style = MaterialTheme.typography.bodySmall)
+            if (!preciseTimers || !CookGuidanceNotifications.preciseAvailable(context)) Text("Android may delay reminders. Your plan stays available here.", style = PitTechTextStyles.body, color = tokens.inkMuted)
             data.dishes.forEach { dish ->
                 val stage = CookPlanEngine.stage(events, dish.id)
-                Text("${dish.name} · $stage", style = MaterialTheme.typography.titleMedium)
+                Text("${dish.name} · $stage", style = PitTechTextStyles.bodyEmphasis)
                 ChoiceField("Change stage after acting", "Choose an action", when (stage) { "prep" -> listOf("Food on"); "removed", "resting" -> listOf("Start rest", "Start hold", "Ready to serve"); "holding" -> listOf("Ready to serve"); "done" -> emptyList(); else -> listOf("Start rest", "Start hold", "Ready to serve") }) { label -> viewModel.changeDishStage(data.cook.id, dish.id, PlaybookCodec.actions.entries.first { it.value == label }.key) }
             }
             CookChecklistTools(data, viewModel)

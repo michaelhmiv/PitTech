@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -33,8 +34,9 @@ import java.util.Locale
     fun time(offset: Double)=com.pittech.domain.RecipeReferenceTimeline.relativeLabel((offset-anchor).toLong())
     fun value(sample: JSONObject)=sample.getDouble("valueCelsius").let { if(temperatureUnit=="°C")it else it*9/5+32 }
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Text("Recorded cook story",style=MaterialTheme.typography.titleLarge)
-        if(story.isNull("foodOnOffsetMillis"))Text("Food on anchor wasn't published. Times use the shared timeline.",style=MaterialTheme.typography.bodySmall)
+        TurnInMetaLabel("Recorded story")
+        Text("Recorded cook story",style=PitTechTextStyles.bannerCard)
+        if(story.isNull("foodOnOffsetMillis"))Text("Food on anchor wasn't published. Times use the shared timeline.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
         if(channel!=null) {
             val labels=channels.mapIndexed { index,c -> c.getString("label")+" · "+c.getString("role")+" · channel "+(index+1) }
             SimpleDropdownField("Reference channel",labels[channels.indexOf(channel)],labels,{ label->selected=channels[labels.indexOf(label)].getString("id") })
@@ -52,18 +54,28 @@ import java.util.Locale
                         if(point.getString("quality")=="manual")drawRect(color,Offset(x-radius,y-radius),Size(2*radius,2*radius)) else drawCircle(color,radius,Offset(x,y))
                     }
                 }
-                Text("${String.format(Locale.getDefault(),"%.1f",minX)}–${String.format(Locale.getDefault(),"%.1f",maxX)} hours · $temperatureUnit",style=MaterialTheme.typography.bodySmall)
-                Text(summary,style=MaterialTheme.typography.bodySmall)
-                Text("Points show measurements; gaps aren't filled. Squares are manual readings; circles are recorded.",style=MaterialTheme.typography.bodySmall)
+                Text("${String.format(Locale.getDefault(),"%.1f",minX)}–${String.format(Locale.getDefault(),"%.1f",maxX)} hours · $temperatureUnit",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                Text(summary,style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
+                Text("Points show measurements; gaps aren't filled. Squares are manual readings; circles are recorded.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
                 TextButton(onClick={ showingValues=!showingValues }) { Text(if(showingValues)"Hide recorded values" else "View recorded values") }
-                if(showingValues)points.forEach { point->Text(time(point.getDouble("offsetMillis"))+" · "+String.format(Locale.getDefault(),"%.1f",value(point))+" "+temperatureUnit+" · "+point.getString("quality")) }
-                if(points.size<samples.size)Text("Showing ${points.size} original points for readability.",style=MaterialTheme.typography.bodySmall)
+                if(showingValues)points.forEach { point->Text(time(point.getDouble("offsetMillis"))+" · "+String.format(Locale.getDefault(),"%.1f",value(point))+" "+temperatureUnit+" · "+point.getString("quality"),style=PitTechTextStyles.monoMeta) }
+                if(points.size<samples.size)Text("Showing ${points.size} original points for readability.",style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
             } else Text("No measurements were published for this channel.")
         }
-        story.rows("milestones").forEach { row->Text(time(row.getDouble("offsetMillis"))+" · "+row.optString("text")) }
-        if(!story.isNull("foodOffOffsetMillis"))Text("Recorded Food off · "+time(story.getDouble("foodOffOffsetMillis")))
+        story.rows("milestones").forEach { row->
+            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text(time(row.getDouble("offsetMillis")),style=PitTechTextStyles.monoMeta,color=pitTechTokens().emberText)
+                Text(row.optString("text"),style=MaterialTheme.typography.bodyMedium)
+            }
+        }
+        if(!story.isNull("foodOffOffsetMillis"))Text("Recorded Food off · "+time(story.getDouble("foodOffOffsetMillis")),style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
         story.getJSONObject("verdict").let { verdict->
-            if(!verdict.isNull("rating"))Text("Recorded rating · ${java.math.BigDecimal.valueOf(verdict.getDouble("rating")).stripTrailingZeros().toPlainString()} / 5")
+            if(!verdict.isNull("rating")) {
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    TurnInStars(verdict.getDouble("rating"))
+                    Text("Recorded rating · ${java.math.BigDecimal.valueOf(verdict.getDouble("rating")).stripTrailingZeros().toPlainString()} / 5",style=MaterialTheme.typography.bodyMedium)
+                }
+            }
             if(!verdict.isNull("cookAgain"))Text(if(verdict.getBoolean("cookAgain"))"Would cook again" else "Would change next time")
             if(verdict.optString("notes").isNotEmpty())Text(verdict.getString("notes"))
         }
@@ -74,6 +86,6 @@ import java.util.Locale
     LaunchedEffect(asset.getString("sha256")){try{bytes=manager.image(detail.id,asset)}catch(_: Exception){}}
     val bitmap=remember(bytes){bytes?.let { BitmapFactory.decodeByteArray(it,0,it.size) }}
     if(bitmap!=null)Image(bitmap.asImageBitmap(),caption.ifEmpty { "Selected recipe photograph" },Modifier.fillMaxWidth().heightIn(max=280.dp)) else Text("Photograph unavailable")
-    if(caption.isNotEmpty())Text(caption,style=MaterialTheme.typography.bodySmall)
+    if(caption.isNotEmpty())Text(caption,style=MaterialTheme.typography.bodySmall,color=pitTechTokens().inkMuted)
 }
 private fun JSONObject.rows(key: String)=getJSONArray(key).let { a->(0 until a.length()).map(a::getJSONObject) }

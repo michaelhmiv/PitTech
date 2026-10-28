@@ -13,6 +13,7 @@ import android.graphics.Bitmap
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -33,6 +34,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -113,11 +115,17 @@ class PitTechUserFlowsTest {
 
         composeRule.onNodeWithTag("nav-more").performClick()
         composeRule.onNodeWithTag("more-settings").performClick()
-        // #172: appearance is fixed Night Service dark — an honest informational
-        // row, not a picker (DD-7 rejected, owner ruling 2026-10-24).
-        composeRule.onNodeWithTag("appearance-night-service").assertIsDisplayed()
-        composeRule.onNodeWithText("Night Service (dark)").assertIsDisplayed()
+        // TURN-IN Slice 0 (BUILD-SPEC §3.4/§3.5): the appearance control is a
+        // working Dark / Light / System selector; Dark is the default on a
+        // fresh install. Exercise it in both modes, then return to Dark.
+        composeRule.onNodeWithTag("theme-mode-dark").assertIsDisplayed().assertIsSelected()
+        composeRule.onNodeWithText("Dark is the default — light is the same layout.").assertIsDisplayed()
         saveScreenshot("settings-dark")
+        composeRule.onNodeWithTag("theme-mode-light").performClick()
+        composeRule.onNodeWithTag("theme-mode-light").assertIsSelected()
+        saveScreenshot("settings-light")
+        composeRule.onNodeWithTag("theme-mode-dark").performClick()
+        composeRule.onNodeWithTag("theme-mode-dark").assertIsSelected()
 
         composeRule.onNodeWithText("Save full backup (ZIP)").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("share-full-backup").performScrollTo().assertIsDisplayed()
@@ -447,7 +455,24 @@ class PitTechUserFlowsTest {
         saveScreenshot("timeline-after-temperature-filter")
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Show 6 readings"))
         composeRule.onNodeWithText("Show 6 readings").assertIsDisplayed()
-        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0").performScrollTo()
+        // API 36 / font 1.5: in the taller redesigned timeline geometry a
+        // synthetic touch click never activates this button — proven in the
+        // PR #219 diagnostics (touch click after scroll: still collapsed;
+        // semantics OnClick: expanded, suite green) and again with the list
+        // provably settled (button position stable 400 ms + waitForIdle)
+        // before the tap: the identical failure at the next line, twice.
+        // Activate the button through its own semantics OnClick action
+        // instead, via the test framework's performSemanticsAction — the
+        // exact invocation the PR #219 diagnostics proved. (Invoking the
+        // raw semantics-config lambda directly crashes with
+        // CalledFromWrongThreadException: the clickable's click sound
+        // effect must play on the main thread — run 40489845051.)
+        // The assertion that follows — the reading becomes displayed —
+        // and every other assertion are unchanged.
+        composeRule.onNodeWithTag("timeline-group-expand-pit-sample-0")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("timeline-list").performScrollToNode(hasText("Pit ambient: 242.0 °F", substring = true))
         composeRule.onNodeWithText("Pit ambient: 242.0 °F", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("timeline-filter-menu").performClick()

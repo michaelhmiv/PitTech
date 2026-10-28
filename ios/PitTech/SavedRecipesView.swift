@@ -58,11 +58,15 @@ struct SavedRecipesView: View {
     var body: some View {
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
-            Text("Your cookbook, ready for another cook.").font(.subheadline).foregroundStyle(PitTechStyle.supporting)
+            // TURN-IN (Slice 3, Area 03 `dark-01-recipes`): the library
+            // leads with its promise line, a boxed search, and the active
+            // filters as one mono line — no title header (§2 framing).
+            Text("Your cookbook, ready for another cook.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
             SharingLibrarySection()
             HStack(spacing: 12) {
-                HStack { Image(systemName: "magnifyingglass").foregroundStyle(PitTechStyle.supporting); TextField("Find a recipe", text: $query).accessibilityIdentifier("recipe-search") }
+                HStack { Image(systemName: "magnifyingglass").foregroundStyle(PitTechStyle.inkMuted); TextField("Find a recipe", text: $query).accessibilityIdentifier("recipe-search") }
                     .padding(12).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(PitTechStyle.ruling, lineWidth: 1))
                 Button { filterDraft = RecipeFilterDraft(category: category, tag: tag, archived: archived) } label: {
                     Image(systemName: "line.3.horizontal.decrease").frame(width: 44, height: 44)
                 }.accessibilityLabel("Filter recipes").accessibilityIdentifier("recipe-filters")
@@ -73,7 +77,7 @@ struct SavedRecipesView: View {
             }
             if category != "All categories" || tag != "All tags" || archived {
                 Text([category == "All categories" ? nil : category, tag == "All tags" ? nil : tag, archived ? "Archived" : nil].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(PitTechStyle.sage)
+                    .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.attentionText)
             }
             if shown.isEmpty {
                 // PL-25: the Recipes empties are the shared StateCopy wording.
@@ -81,45 +85,53 @@ struct SavedRecipesView: View {
             }
             ForEach(shown.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
                 if let o = store.recipe(id), let revision = o["currentRevisionId"]?.stringValue {
-                    VStack(alignment: .leading, spacing: 10) {
-                        NavigationLink { SavedRecipeDetailView(recipeId: id) } label: {
-                            SavedRecipeCardContent(name: o["name"]?.stringValue ?? "Recipe", revisionId: revision, snapshot: snapshots[revision], favorite: o["favorite"]?.boolValue == true)
-                        }.buttonStyle(.plain)
-                        HStack {
-                            if selecting {
-                                NativeRecipeSelectionButton(name: o["name"]?.stringValue ?? "Recipe", recipeId: id, isSelected: selection(revision), disabled: archived)
+                    TurnInCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            NavigationLink { SavedRecipeDetailView(recipeId: id) } label: {
+                                SavedRecipeCardContent(name: o["name"]?.stringValue ?? "Recipe", revisionId: revision, snapshot: snapshots[revision], favorite: o["favorite"]?.boolValue == true)
+                            }.buttonStyle(.plain)
+                            HStack {
+                                if selecting {
+                                    NativeRecipeSelectionButton(name: o["name"]?.stringValue ?? "Recipe", recipeId: id, isSelected: selection(revision), disabled: archived)
+                                }
+                                Spacer(minLength: 0)
+                                Menu {
+                                    Button(archived ? "Restore recipe" : o["favorite"]?.boolValue == true ? "Remove favorite" : "Favorite") { act { try store.setRecipeFlag(id, favorite: archived ? nil : !(o["favorite"]?.boolValue ?? false), archived: archived ? false : nil) } }
+                                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Actions for " + (o["name"]?.stringValue ?? "recipe"))
                             }
-                            Spacer(minLength: 0)
-                            Menu {
-                                Button(archived ? "Restore recipe" : o["favorite"]?.boolValue == true ? "Remove favorite" : "Favorite") { act { try store.setRecipeFlag(id, favorite: archived ? nil : !(o["favorite"]?.boolValue ?? false), archived: archived ? false : nil) } }
-                            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Actions for " + (o["name"]?.stringValue ?? "recipe"))
                         }
-                    }.padding(16).background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.border, lineWidth: 1))
+                    }
                 }
             }
             if !selected.isEmpty {
-                Section("Build a meal") {
-                    let temperatures = Set(selected.compactMap { snapshots[$0]?.preferredPitTemperatureF })
-                    if temperatures.count > 1 { Text("These recipes use different smoker settings. Choose the setting for this meal when ready.") }
-                    TextField("Meal name (optional)", text: $title)
-                    Button("Start meal with \(selected.count) recipes") { act { startSetup = try store.recipeStartSetup(title: title, revisionIds: selected, sourceLabel: "From your Recipes · saved recipes stay attached to their dishes"); selected = [] } }.accessibilityIdentifier("recipe-start-meal")
-                    if !store.activeCooks.isEmpty {
-                        Picker("Existing meal", selection: $existingMeal) { Text("Choose a meal").tag(""); ForEach(store.activeCooks) { Text($0.title).tag($0.id) } }
-                        Button("Add selected recipes") { act { for revision in selected { try store.addRecipeToMeal(cookId: existingMeal, revisionId: revision) }; destination = existingMeal; selected = [] } }.disabled(existingMeal.isEmpty)
+                // A3 `dark-02-recipes-selecting`: the compose panel is a
+                // card with its own header and a cobalt note when the
+                // selected recipes disagree on smoker settings.
+                TurnInCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TurnInMetaLabel("Build a meal")
+                        let temperatures = Set(selected.compactMap { snapshots[$0]?.preferredPitTemperatureF })
+                        if temperatures.count > 1 { TurnInStatusStrip(text: "These recipes use different smoker settings. Choose the setting for this meal when ready.", accent: PitTechStyle.cobalt) }
+                        TextField("Meal name (optional)", text: $title)
+                        Button("Start meal with \(selected.count) recipes") { act { startSetup = try store.recipeStartSetup(title: title, revisionIds: selected, sourceLabel: "From your Recipes · saved recipes stay attached to their dishes"); selected = [] } }.accessibilityIdentifier("recipe-start-meal")
+                        if !store.activeCooks.isEmpty {
+                            Picker("Existing meal", selection: $existingMeal) { Text("Choose a meal").tag(""); ForEach(store.activeCooks) { Text($0.title).tag($0.id) } }
+                            Button("Add selected recipes") { act { for revision in selected { try store.addRecipeToMeal(cookId: existingMeal, revisionId: revision) }; destination = existingMeal; selected = [] } }.disabled(existingMeal.isEmpty)
+                        }
                     }
                 }
             }
             if !store.library.mealPresets.isEmpty {
-                Section("Meal combinations") {
+                VStack(alignment: .leading, spacing: 10) {
+                    TurnInMetaLabel("Meal combinations")
                     ForEach(store.library.mealPresets.compactMap { $0.objectValue?["id"]?.stringValue }, id: \.self) { id in
                         if let preset = store.library.mealPresets.first(where: { $0.objectValue?["id"]?.stringValue == id })?.objectValue {
-                            Button("Repeat \(preset["name"]?.stringValue ?? "meal")") { act { startSetup = try store.presetStartSetup(id) } }
+                            Button("Repeat \(preset["name"]?.stringValue ?? "meal")") { act { startSetup = try store.presetStartSetup(id) } }.buttonStyle(.bordered)
                         }
                     }
                 }
             }
-            if let error { Text(error).foregroundStyle(.red) }
+            if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
           }.padding(20)
         }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Recipes")
             .sheet(item: $filterDraft) { draft in
@@ -185,13 +197,19 @@ private struct SavedRecipeCardContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let hero { Image(uiImage: hero).resizable().scaledToFill().frame(height: 150).clipped().clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Recipe reference photo") }
-            Text(name).font(.title3.weight(.semibold)).foregroundStyle(PitTechStyle.ink).fixedSize(horizontal: false, vertical: true)
+            // A3 `dark-01-recipes`: the name rides the banner face; a
+            // favorite wears its heart in the flag color at the name row.
+            HStack(alignment: .top, spacing: 8) {
+                TurnInBannerText(name).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if favorite { Image(systemName: "heart.fill").foregroundStyle(PitTechStyle.flag).accessibilityLabel("Favorite") }
+            }
             let weight = setup["weight"]?.stringValue ?? ""
             Text([setup["foodType"]?.stringValue, setup["cut"]?.stringValue, weight.isEmpty ? nil : weight + " " + (setup["weightUnit"]?.stringValue ?? "lb")].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.subheadline).foregroundStyle(PitTechStyle.supporting)
-            if let description = snapshot?.description, !description.isEmpty { Text(description).font(.subheadline).foregroundStyle(PitTechStyle.supporting).lineLimit(3) }
-            Text("Saved recipe · version \(Int(store.recipeRevision(revisionId)?["revisionNumber"]?.numberValue ?? 1))" + (favorite ? " · favorite" : ""))
-                .font(.caption).foregroundStyle(PitTechStyle.sage)
+                .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            if let description = snapshot?.description, !description.isEmpty { Text(description).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted).lineLimit(3) }
+            Text("Saved recipe · version \(Int(store.recipeRevision(revisionId)?["revisionNumber"]?.numberValue ?? 1))")
+                .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -214,31 +232,74 @@ struct SavedRecipeDetailView: View {
     var body: some View {
         List {
             Picker("Version", selection: Binding(get: { revisionId }, set: { selectedRevision = $0 })) { ForEach(history.compactMap { $0["id"]?.stringValue }, id: \.self) { id in Text(store.recipeVersionLabel(id)).tag(id) } }
-            Text(revisionId == recipe["currentRevisionId"]?.stringValue ? "Preferred version" : "Previous version")
+            // A3 `dark-04-recipe-detail`: the current revision wears the
+            // marigold pill; older revisions read as quiet mono.
+            if revisionId == recipe["currentRevisionId"]?.stringValue {
+                Text("Preferred version").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.onAccent)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(PitTechStyle.marigold, in: RoundedRectangle(cornerRadius: 6))
+            } else {
+                Text("Previous version").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            }
             if let snapshot = try? store.recipeSnapshot(revisionId) {
                 if let source = snapshot.publicSource {
-                    Text(source.removed ? "Saved from a removed recipe" : "Saved from " + source.displayName)
+                    Text(source.removed ? "Saved from a removed recipe" : "Saved from " + source.displayName).font(PitTechFont.body)
                     if !source.removed { Link("View shared source", destination: source.url)
                         if community.enabled { NavigationLink("Review shared changes") { NativePublicSourceReview(snapshot: snapshot) }.accessibilityIdentifier("source-review-open") }
                     }
-                    Text("This saved version is yours. Changes to the public recipe don't replace it.").font(.caption)
+                    Text("This saved version is yours. Changes to the public recipe don't replace it.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 }
-                Text(snapshot.description)
-                ForEach(snapshot.instructions.indices, id: \.self) { index in Text(snapshot.instructions[index].objectValue?["title"]?.stringValue ?? "Instruction"); Text(snapshot.instructions[index].objectValue?["details"]?.stringValue ?? "") }
-                Text(snapshot.resultNotes)
+                if !snapshot.description.isEmpty { Text(snapshot.description).font(PitTechFont.body) }
+                // The scoreboard row: pit temperature, serves, and the
+                // first recorded target — the same cells Android's detail
+                // shows, from the same snapshot fields.
+                let scoreCells: [(String, String)] = [
+                    snapshot.preferredPitTemperatureF.map { ("Pit temp", "\(Int($0))°F") },
+                    snapshot.servings.isEmpty ? nil : ("Serves", snapshot.servings),
+                    snapshot.targets.first.flatMap { t in t.objectValue?["value"]?.numberValue.map { ("Target", "\(Int($0))" + (t.objectValue?["unit"]?.stringValue ?? "")) } },
+                ].compactMap { $0 }
+                if !scoreCells.isEmpty {
+                    HStack(spacing: 8) { ForEach(scoreCells, id: \.0) { cell in TurnInScoreCell(label: cell.0, value: cell.1) } }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)).listRowBackground(Color.clear)
+                }
+                let ingredients = snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue?["ingredients"]?.arrayValue ?? []
+                if !ingredients.isEmpty {
+                    TurnInMetaLabel("Ingredients")
+                    ForEach(ingredients.indices, id: \.self) { index in
+                        let row = ingredients[index].objectValue ?? [:]
+                        HStack {
+                            Text(row["name"]?.stringValue ?? "Ingredient").font(PitTechFont.body)
+                            Spacer()
+                            Text([row["amount"]?.stringValue, row["unit"]?.stringValue].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                    }
+                }
+                if !snapshot.instructions.isEmpty {
+                    TurnInMetaLabel("Instructions")
+                    ForEach(snapshot.instructions.indices, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(snapshot.instructions[index].objectValue?["title"]?.stringValue ?? "Instruction").font(PitTechFont.bodyEmphasis)
+                            Text(snapshot.instructions[index].objectValue?["details"]?.stringValue ?? "").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                    }
+                }
+                if !snapshot.resultNotes.isEmpty {
+                    TurnInMetaLabel("Results note")
+                    Text(snapshot.resultNotes).font(PitTechFont.body)
+                }
                 RecipeAssetGallery(revisionId: revisionId)
             }
             if let sourceId = store.recipeRevision(revisionId)?["sourceCookId"]?.stringValue {
                 if store.library.cooks.contains(where: { $0.id == sourceId }) { NavigationLink("Open source meal") { CookDetailView(cookId: sourceId) } }
-                else { Text("Source meal is unavailable. Saved instructions and reference photos remain available.").foregroundStyle(.secondary) }
+                else { TurnInStatusStrip(text: "Source meal is unavailable. Saved instructions and reference photos remain available.", accent: PitTechStyle.cobalt) }
             }
             Button("Use this version") { act { startSetup = try store.recipeStartSetup(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId], sourceLabel: "From your Recipes · saved recipes stay attached to their dishes") } }
             Button("Share recipe") { act { sharingDraftId = try store.createRecipeSharingDraft(revisionId) } }.accessibilityIdentifier("recipe-share")
             Button("Edit a new version") { act { let revision = store.recipeRevision(revisionId) ?? [:]; editor = NativeRecipeRequest(snapshot: try store.recipeSnapshot(revisionId), recipeId: recipeId, expectedRevisionId: recipe["currentRevisionId"]?.stringValue, assetRevisionId: revisionId, sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue) } }
             TextField("Variation name", text: $duplicateName)
             Button("Duplicate recipe") { act { try store.duplicateRecipe(recipeId, name: duplicateName) } }.disabled(duplicateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("Archive recipe") { act { try store.setRecipeFlag(recipeId, archived: true) } }
-            if let error { Text(error).foregroundStyle(.red) }
+            Button("Archive recipe") { act { try store.setRecipeFlag(recipeId, archived: true) } }.foregroundStyle(PitTechStyle.flag)
+            if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
         }.navigationTitle(recipe["name"]?.stringValue ?? "Recipe")
             .onAppear { if duplicateName.isEmpty { duplicateName = (recipe["name"]?.stringValue ?? "Recipe") + " copy" } }
             .sheet(item: $editor) { NativeRecipeEditor(request: $0) }

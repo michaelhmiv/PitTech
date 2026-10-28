@@ -67,14 +67,14 @@ import org.json.JSONObject
         val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         fun submit(action: suspend () -> Unit) { focus.clearFocus(); keyboard?.hide(); run(action) }
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Row { Text("My cookbook",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
+            Row { Text("My cookbook",style=PitTechTextStyles.bannerTitle,modifier=Modifier.weight(1f)); TextButton(onClick=onClose,enabled=!busy) { Text("Done") } }
             Column(Modifier.weight(1f).verticalScroll(contentScroll),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 if(!state.signedIn) {
                     Text("Your public cookbook and publications belong to your signed-in account. Your private library stays on this device.")
                     Button(onClick={ signingIn=true }) { Text("Sign in") }
                 } else {
                     pending?.let { op ->
-                        Text(if(op.rejected)"Rejected change" else "Saved interrupted change",style=MaterialTheme.typography.titleMedium)
+                        Text(if(op.rejected)"Rejected change" else "Saved interrupted change",style=PitTechTextStyles.bannerCard)
                         pendingArchive?.let { PublicationContent(it) }; pendingProfile?.let { CookbookProfileSummary(it) }
                         if(pendingArchive==null && pendingProfile==null) {
                             Text(if(op.path.endsWith("/like")) { if(op.method=="POST")"Add your like to this recipe" else "Remove your like from this recipe" } else "Remove this publication from public access")
@@ -84,8 +84,8 @@ import org.json.JSONObject
                         else TextButton(onClick={ submit { checkAccount(); withContext(Dispatchers.IO) { writer.store.discardRejected(checkNotNull(loadedUser)) }; reload() } },enabled=!busy) { Text("Discard rejected change") }
                     }
                     ownerPreview?.let { prepared -> ownerReceipt?.let { receipt ->
-                        Text("Private editing preview",style=MaterialTheme.typography.titleLarge)
-                        Text("This creates an editable sharing draft on this device. It does not publish or change your meal history.")
+                        Text("Private editing preview",style=PitTechTextStyles.bannerTitle)
+                        Text("This creates an editable sharing draft on this device. It does not publish or change your meal history.",color=pitTechTokens().inkMuted)
                         PublicationContent(prepared)
                         Button(onClick={ submit {
                             val user=checkNotNull(ownerUser);check(user==account.publicationUserId())
@@ -95,22 +95,26 @@ import org.json.JSONObject
                         } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-create-editing-draft")) { Text("Create private editing draft") }
                         TextButton(onClick={ ownerPreview=null;ownerReceipt=null;ownerUser=null },enabled=!busy) { Text("Cancel editing preview") }
                     } }
-                    Text("Cookbook identity",style=MaterialTheme.typography.titleLarge)
-                    OutlinedTextField(name,{ name=it; preview=null },label={ Text("Display name") },modifier=Modifier.fillMaxWidth().testTag("cookbook-name"))
-                    OutlinedTextField(handle,{ handle=it; preview=null },label={ Text("Handle (3–24 letters, numbers or underscores)") },modifier=Modifier.fillMaxWidth().testTag("cookbook-handle"))
-                    if(profileReviewStatus=="pending")Text("Identity changes are awaiting review and are not yet public.")
+                    Text("Cookbook identity",style=PitTechTextStyles.bannerCard)
+                    TurnInLiteralBoxedField("Display name",Modifier.fillMaxWidth()) {
+                        OutlinedTextField(name,{ name=it; preview=null },singleLine=true,modifier=Modifier.fillMaxWidth().testTag("cookbook-name"))
+                    }
+                    TurnInLiteralBoxedField("Handle (3–24 letters, numbers or underscores)",Modifier.fillMaxWidth()) {
+                        OutlinedTextField(handle,{ handle=it; preview=null },singleLine=true,modifier=Modifier.fillMaxWidth().testTag("cookbook-handle"))
+                    }
+                    if(profileReviewStatus=="pending")TurnInStatusStrip("Identity changes are awaiting review and are not yet public.",pitTechTokens().marigold)
                     Row { Checkbox(isPublic,{ isPublic=it; preview=null },modifier=Modifier.testTag("cookbook-public")); Text("Enable my public cookbook",Modifier.weight(1f)) }
-                    Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.")
+                    Text("Named publications show your display name. Only named publications appear in an enabled public cookbook; anonymous publications stay separate.",color=pitTechTokens().inkMuted)
                     Button(onClick={ submit { require(handle.isEmpty() || handle.matches(Regex("[A-Za-z0-9_]{3,24}"))) { "Choose a handle with 3–24 letters, numbers or underscores." }; require(name.length<=160 && name.none { it.code<32 || it.code==127 } && (!isPublic || handle.isNotEmpty() && name.isNotBlank())) { "Choose a display name and handle before enabling your public cookbook." }; preview=JSONObject().put("handle",handle.takeIf { it.isNotEmpty() }?.lowercase(java.util.Locale.ROOT) ?: JSONObject.NULL).put("displayName",name.trim()).put("isPublic",isPublic) } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-preview")) { Text("Preview cookbook changes") }
                     preview?.let { profile -> CookbookProfileSummary(profile)
                         Button(onClick={ submit { checkAccount(); writer.json("PUT","/v1/me/profile",profile); preview=null; reload() } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-save")) { Text("Save previewed changes") }
                     }
-                    Text("My publications",style=MaterialTheme.typography.titleLarge)
-                    Text("Removing a publication hides its public link. Other cooks keep independent copies they already saved.")
-                    items.forEach { item -> Card { Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(item.getString("title"),style=MaterialTheme.typography.titleMedium)
+                    Text("My publications",style=PitTechTextStyles.bannerCard)
+                    Text("Removing a publication hides its public link. Other cooks keep independent copies they already saved.",color=pitTechTokens().inkMuted)
+                    items.forEach { item -> TurnInCard(Modifier.fillMaxWidth()) { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text(item.getString("title"),style=PitTechTextStyles.bannerCard)
                         val status=item.getString("status")
-                        Text(if(status=="active")"Public · revision ${item.getInt("revision")} · ${item.getString("identityMode")}" else if(status=="pending_review")"Submitted for review · not public" else if(status=="unpublished")"Removed from public access" else "Unavailable after moderation")
+                        Text(if(status=="active")"Public · revision ${item.getInt("revision")} · ${item.getString("identityMode")}" else if(status=="pending_review")"Submitted for review · not public" else if(status=="unpublished")"Removed from public access" else "Unavailable after moderation",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                         if(status in setOf("active","pending_review","unpublished"))TextButton(onClick={ submit {
                             checkAccount();val user=checkNotNull(loadedUser);val receipt=PublicationReceipt(item.getString("id"),item.getString("revisionId"),item.getInt("revision"),"https://pittech.app/c/"+item.getString("id"))
                             val file=java.io.File(context.cacheDir,"publication-edit-"+java.util.UUID.randomUUID()+".zip")
@@ -126,7 +130,7 @@ import org.json.JSONObject
                     if(cursor!=null)Button(onClick={ submit { loadItems(true) } },enabled=!busy) { Text("More publications") }
                     Button(onClick={ submit { reload() } },enabled=!busy) { Text("Refresh cookbook") }
                 }
-                if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_COOKBOOK)}; message?.let { Text(it,Modifier.testTag("cookbook-message")) }; Spacer(Modifier.height(24.dp))
+                if(busy)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_COOKBOOK)}; message?.let { TurnInStatusStrip(it,pitTechTokens().flag,Modifier.testTag("cookbook-message")) }; Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -135,12 +139,12 @@ import org.json.JSONObject
     // Slice 8 (PL-15 / DD-10): sign-in completion returns to the cookbook
     // automatically; cancelling the account dialog lands here too.
     LaunchedEffect(state.signedIn) { if(state.signedIn) signingIn=false }
-    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=MaterialTheme.typography.titleLarge);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") }}}
+    if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to cookbook") }}}
 }
 @Composable private fun CookbookProfileSummary(profile: JSONObject) {
-    Card { Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(profile.optString("reviewStatus")=="pending")Text("Identity changes are awaiting review and are not yet public.")
-        Text("Public display name · "+profile.optString("displayName").ifBlank { "a PitTech cook" },style=MaterialTheme.typography.titleMedium)
-        Text(if(profile.getBoolean("isPublic"))"Public cookbook: https://pittech.app/p/"+profile.optString("handle") else "Public cookbook disabled. Your named recipe credit remains visible.")
+    TurnInCard(Modifier.fillMaxWidth()) { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        if(profile.optString("reviewStatus")=="pending")TurnInStatusStrip("Identity changes are awaiting review and are not yet public.",pitTechTokens().marigold)
+        Text("Public display name · "+profile.optString("displayName").ifBlank { "a PitTech cook" },style=PitTechTextStyles.bannerCard)
+        Text(if(profile.getBoolean("isPublic"))"Public cookbook: https://pittech.app/p/"+profile.optString("handle") else "Public cookbook disabled. Your named recipe credit remains visible.",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
     } }
 }
