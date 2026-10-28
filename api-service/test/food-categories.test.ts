@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { FOOD_CATEGORIES, DEFAULT_FOOD_CATEGORY_ID, isFoodCategoryId, normalizeFoodCategory } from '../src/food-categories.ts';
 import { canonicalPublication, type PublicationPayload } from '../src/publication-pack.ts';
-import { writeZip } from '../src/zip.ts';
+import { canonicalPack } from '../src/pack.ts';
+import { privateProjectionContract, validatePrivateValue } from '../src/sync-projection.ts';
+import { alter } from './helpers.ts';
+import { readZip, writeZip } from '../src/zip.ts';
 
 const archive = (payload: PublicationPayload) => writeZip(new Map([['publication.json', Buffer.from(JSON.stringify(payload))]]));
 
@@ -58,4 +61,27 @@ test('food taxonomy: read-path normalization treats missing or unknown stored ca
   assert.ok(isFoodCategoryId('sausage-links'));
   assert.ok(!isFoodCategoryId('sausage'));
   assert.ok(!isFoodCategoryId(''));
+});
+
+test('food taxonomy: the private-sync projection carries the same enum on sharing documents', async () => {
+  const file = await taxonomy();
+  const definition = privateProjectionContract.definitions.sharing_document;
+  assert.deepEqual(definition.fields?.category?.enum, file.categories.map((c) => c.id),
+    'the projection enum must match the taxonomy file, or synced drafts and Discover disagree');
+  const cases = JSON.parse(await readFile(new URL('fixtures/private-sync-projection-cases-v1.json', root), 'utf8')) as { cases: { rows?: { payload?: { kind?: string; payload?: Record<string, unknown> } }[] }[] };
+  let document: Record<string, unknown> | undefined;
+  for (const c of cases.cases) for (const row of c.rows ?? []) if (row.payload?.kind === 'sharing_draft') document = row.payload.payload;
+  assert.ok(document, 'the projection cases carry a sharing draft to extend');
+  validatePrivateValue(document, definition); // a pre-taxonomy draft (no category) still projects
+  validatePrivateValue({ ...document, category: 'beef' }, definition);
+  assert.throws(() => validatePrivateValue({ ...document, category: 'barbecue' }, definition), 'an off-list category must stop the projection, not slip through');
+});
+
+test('food taxonomy: Cook Pack companion documents keep a valid category and reject an off-list one', async () => {
+  const withCategory = await alter('native', (d) => { d.companionRecords[0].payload.category = 'beef'; });
+  const accepted = await canonicalPack(withCategory);
+  const output = JSON.parse((await readZip(accepted.bytes)).get('data/pittech.json')!.toString()) as { companionRecords: { payload: { category?: string } }[] };
+  assert.equal(output.companionRecords[0].payload.category, 'beef', 'the category survives canonicalization');
+  const offList = await alter('native', (d) => { d.companionRecords[0].payload.category = 'barbecue'; });
+  await assert.rejects(canonicalPack(offList));
 });

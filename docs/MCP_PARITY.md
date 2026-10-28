@@ -98,7 +98,7 @@ opaquely, edited only through typed operations · `not_exposed` prohibited, neve
 - **portability.private** · `history_target`: cookId (association), createdAtUtcMillis (system), dishId (association), explanation (content), id (identity), scope (content), targetType (content), unit (content), value (content)
 - **portability.private** · `history_target_history`: cookId (association), dishId (association), effectiveAt (content), id (identity), targetType (content), unit (content), value (content)
 - **portability.private** · `share_card`: cropX (editable), cropY (editable), hero (editable), includeVerdict (editable), note (editable), theme (editable), unit (editable), version (system), zoom (editable)
-- **portability.private** · `sharing_document`: card (editable), collectionId (association), entries (editable), heroPhotoId (association), identityMode (editable), parentRevisionId (association), sourceCookId (association), sourceHistory (editable), title (editable), version (system)
+- **portability.private** · `sharing_document`: card (editable), category (editable), collectionId (association), entries (editable), heroPhotoId (association), identityMode (editable), parentRevisionId (association), sourceCookId (association), sourceHistory (editable), title (editable), version (system)
 - **preparation.checklists** · `checklist`: items (editable), version (system)
 - **preparation.checklists** · `companionRecords`: cookId (association), created (editable), id (identity), kind (identity), payload (content), title (editable), updated (editable)
 - **preparation.checklists** · `prep_combo`: items (editable), name (editable), version (system), yield (editable), yieldUnit (editable)

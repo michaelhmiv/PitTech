@@ -2884,6 +2884,11 @@
         },
         {
           "source": "sharing_document",
+          "name": "category",
+          "access": "editable"
+        },
+        {
+          "source": "sharing_document",
           "name": "collectionId",
           "access": "association"
         },
