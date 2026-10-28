@@ -76,9 +76,9 @@ class LiveGuidanceTest {
     @Test fun ghostDeltaIsTimeAtSameTemperature() {
         fun series(vararg points: Pair<Long, Double>) = points.map { PaceReading(it.first * 60_000, it.second) }
         val current = series(0L to 40.0, 60L to 120.0, 120L to 165.0, 180L to 190.0)
-        val ghost = series(0L to 40.0, 60L to 110.0, 120L to 150.0, 180L to 172.0, 240L to 195.0)
+        val ghost = series(0L to 40.0, 60L to 110.0, 120L to 150.0, 158L to 165.0, 240L to 195.0)
         // At 120 min in, the current cook sits at 165°; the ghost reached
-        // 165° at ~158 min — the cook is ~38 minutes ahead of it.
+        // 165° at exactly 158 min — the cook is 38 minutes ahead of it.
         assertEquals(38, LiveGuidance.ghostDeltaMinutes(current, ghost, 120.0))
         // Before either series has data, or beyond the ghost's climb: silence.
         assertNull(LiveGuidance.ghostDeltaMinutes(current, ghost, 300.0))

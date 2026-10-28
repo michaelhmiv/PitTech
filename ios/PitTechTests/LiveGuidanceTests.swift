@@ -74,9 +74,9 @@ final class LiveGuidanceTests: XCTestCase {
     func testGhostDeltaIsTimeAtSameTemperature() {
         func series(_ points: [(Int64, Double)]) -> [PaceReading] { points.map { PaceReading(atUtcMillis: $0.0 * 60_000, fahrenheit: $0.1) } }
         let current = series([(0, 40), (60, 120), (120, 165), (180, 190)])
-        let ghost = series([(0, 40), (60, 110), (120, 150), (180, 172), (240, 195)])
+        let ghost = series([(0, 40), (60, 110), (120, 150), (158, 165), (240, 195)])
         // At 120 min in, the current cook sits at 165°; the ghost reached
-        // 165° at ~158 min — the cook is ~38 minutes ahead of it.
+        // 165° at exactly 158 min — the cook is 38 minutes ahead of it.
         XCTAssertEqual(LiveGuidance.ghostDeltaMinutes(current: current, ghost: ghost, cursorElapsedMinutes: 120), 38)
         XCTAssertNil(LiveGuidance.ghostDeltaMinutes(current: current, ghost: ghost, cursorElapsedMinutes: 300))
         XCTAssertNil(LiveGuidance.ghostDeltaMinutes(current: current, ghost: series([(0, 40)]), cursorElapsedMinutes: 120))
