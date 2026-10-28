@@ -1291,10 +1291,9 @@ private fun LiveCookTab(
     val leadPlanWindow = leadDish?.let { planWindows[it.id] }
     val liveEta = when {
         displayFinish != null -> com.pittech.domain.LiveGuidance.eta(displayFinish, leadPlanWindow) { a, b -> formatClockRange(a, b) }
-        leadPlanWindow != null -> com.pittech.domain.LiveEta.PlanLine(
-            "Planning window " + formatClockRange(leadPlanWindow.first, leadPlanWindow.second),
-            com.pittech.domain.displayText(com.pittech.domain.PaceBasis.PLAN),
-        )
+        leadPlanWindow != null -> com.pittech.domain.LiveGuidance.eta(
+            com.pittech.domain.FinishEstimate.PlanOnly(""), leadPlanWindow,
+        ) { a, b -> formatClockRange(a, b) }
         else -> com.pittech.domain.LiveEta.None
     }
     // 1.1: one merged answer at the top. Paused cooks already carry their

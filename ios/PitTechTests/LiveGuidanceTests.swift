@@ -59,4 +59,52 @@ final class LiveGuidanceTests: XCTestCase {
         XCTAssertEqual(basis, "from your last 30 min of readings")
 
         // PlanOnly with a
-...[truncated 3864 chars]
+...[truncated 3864 chars] serve plan: the plan window stands, with the plan basis.
+        let planned = LiveGuidance.eta(finish: .planOnly("not enough readings yet"), planWindow: (300, 400), formatRange: { "R\($0)-\($1)" })
+        guard case .plan(let planText, let planBasis) = planned else { return XCTFail("expected plan, got \(planned)") }
+        XCTAssertEqual(planText, "Planning window R300-400")
+        XCTAssertEqual(planBasis, "from your plan — not enough readings yet")
+
+        // PlanOnly with no plan: nothing is invented — the reason is the line.
+        let withheld = LiveGuidance.eta(finish: .planOnly("not enough readings yet"), planWindow: nil, formatRange: { "R\($0)-\($1)" })
+        guard case .withheld(let reason) = withheld else { return XCTFail("expected withheld, got \(withheld)") }
+        XCTAssertEqual(reason, "not enough readings yet")
+        XCTAssertEqual(withheld.detail, "No finish range yet — not enough readings yet")
+    }
+
+    func testGhostDeltaIsTimeAtSameTemperature() {
+        func series(_ points: [(Int64, Double)]) -> [PaceReading] { points.map { PaceReading(atUtcMillis: $0.0 * 60_000, fahrenheit: $0.1) } }
+        let current = series([(0, 40), (60, 120), (120, 165), (180, 190)])
+        let ghost = series([(0, 40), (60, 110), (120, 150), (180, 172), (240, 195)])
+        // At 120 min in, the current cook sits at 165°; the ghost reached
+        // 165° at ~158 min — the cook is ~38 minutes ahead of it.
+        XCTAssertEqual(LiveGuidance.ghostDeltaMinutes(current: current, ghost: ghost, cursorElapsedMinutes: 120), 38)
+        XCTAssertNil(LiveGuidance.ghostDeltaMinutes(current: current, ghost: ghost, cursorElapsedMinutes: 300))
+        XCTAssertNil(LiveGuidance.ghostDeltaMinutes(current: current, ghost: series([(0, 40)]), cursorElapsedMinutes: 120))
+    }
+
+    func testHistoryNeedsSameCutFinishedCooksAndRecordedTargets() {
+        func archive(dishes: [InsightDishInput], results: [InsightResultInput], cooks: [InsightCookInput]) -> InsightArchiveInput {
+            InsightArchiveInput(cooks: cooks, dishes: dishes, events: [], readings: [], results: results, lifecycles: [])
+        }
+        let past = InsightCookInput(id: "past", startedAtUtcMillis: 0, endedAtUtcMillis: 10_000, timingMode: "explicit_phases")
+        let live = InsightCookInput(id: "live", startedAtUtcMillis: 0, endedAtUtcMillis: nil, timingMode: "explicit_phases")
+        let brisket = InsightDishInput(id: "d1", cookId: "past", cut: "Brisket", weightValue: nil, weightUnit: nil)
+        let chicken = InsightDishInput(id: "d2", cookId: "past", cut: "Chicken", weightValue: nil, weightUnit: nil)
+        let target = InsightResultInput(id: "r1", cookId: "past", dishId: "d1", resultType: "final_temperature", numericValue: 203, textValue: nil, recordedAtUtcMillis: 9_000)
+        XCTAssertEqual(LiveGuidance.historyFor(archive: archive(dishes: [brisket, chicken], results: [target], cooks: [past, live]), currentCookId: "live", currentDishId: "d9", cut: "Chicken"), .none)
+        XCTAssertEqual(LiveGuidance.historyFor(archive: archive(dishes: [brisket], results: [], cooks: [past, live]), currentCookId: "live", currentDishId: "d9", cut: "Brisket"), .none)
+        XCTAssertEqual(LiveGuidance.historyFor(archive: archive(dishes: [brisket], results: [target], cooks: [past, live]), currentCookId: "live", currentDishId: "d9", cut: "Pork butt"), .none)
+        XCTAssertEqual(LiveGuidance.ghostCook(archive: archive(dishes: [brisket, chicken], results: [target], cooks: [past, live]), currentCookId: "live", cut: " brisket ")?.id, "past")
+        XCTAssertNil(LiveGuidance.ghostCook(archive: archive(dishes: [brisket], results: [target], cooks: [past, live]), currentCookId: "live", cut: nil))
+        XCTAssertNil(LiveGuidance.ghostCook(archive: archive(dishes: [brisket], results: [target], cooks: [past, live]), currentCookId: "past", cut: "Brisket"))
+    }
+
+    func testOvernightTestAlertRequestShape() {
+        let request = OvernightTestAlert.request(cookId: "cook-9", cookTitle: "Night brisket")
+        XCTAssertEqual(request.identifier, "overnight-test-cook-9")
+        XCTAssertEqual(request.content.title, "Test alert — Night brisket")
+        XCTAssertTrue(request.content.body.contains("safety net can wake you"))
+        XCTAssertNil(request.trigger)
+    }
+}
