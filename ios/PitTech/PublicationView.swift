@@ -10,6 +10,7 @@ struct NativePublicationView: View {
     @State private var prepared: NativePreparedPublication?
     @State private var previewUser: String?
     @State private var identity = "anonymous"
+    @State private var category = FoodCategory.defaultId
     @State private var kind = "recipe"
     @State private var linked: NativePublicationReceipt?
     @State private var updating = true
@@ -52,6 +53,14 @@ struct NativePublicationView: View {
                 } else {
                     Picker("Publication", selection: $kind) { Text("Recipe").tag("recipe"); Text("Meal collection").tag("collection"); Text("Actual recorded cook").tag("attempt") }.disabled(busy)
                     Picker("Public credit", selection: $identity) { Text("Anonymous · a PitTech cook").tag("anonymous"); Text("My display name").tag("named") }.disabled(busy)
+                    Picker("Category", selection: $category) {
+                        ForEach(FoodCategory.all, id: \.id) { option in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(option.label)
+                                Text(option.examples.joined(separator: " · ")).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                            }.tag(option.id)
+                        }
+                    }.disabled(busy).accessibilityIdentifier("publication-category")
                     Text(identity == "anonymous" ? "Your profile name and cookbook link won't appear on this publication." : "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     if linked != nil { Toggle("Update the publication linked to this draft", isOn: $updating).disabled(busy) }
                     Button("Prepare public preview") { run { try await prepare() } }.disabled(busy).accessibilityIdentifier("publication-prepare")
@@ -90,9 +99,9 @@ struct NativePublicationView: View {
                 } else {
                     published = nil
                 }
-                do { identity = (try? store.sharingDocument(draft).identityMode) ?? "anonymous"; try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
+                do { let document = try? store.sharingDocument(draft); identity = document?.identityMode ?? "anonymous"; category = document?.category ?? FoodCategory.defaultId; try refreshPending(); if pending == nil, let prior = linked?.kind { kind = prior } } catch { message = error.localizedDescription }
             }
-            .onChange(of: identity) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }
+            .onChange(of: identity) { _, _ in invalidate() }.onChange(of: category) { _, _ in invalidate() }.onChange(of: kind) { _, _ in invalidate() }.onChange(of: updating) { _, _ in invalidate() }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
             // Slice 8 (PL-15 / DD-10): completing sign-in returns to this
             // sheet on its own; cancelling the account sheet lands here too.
@@ -110,7 +119,7 @@ struct NativePublicationView: View {
         invalidate()
         let profile = try JSONSerialization.jsonObject(with: await writer.read("/v1/me/profile")) as? [String: Any]
         displayName = identity == "anonymous" ? "a PitTech cook" : (profile?["displayName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "a PitTech cook"
-        var document = try store.sharingDocument(draft); document.identityMode = identity
+        var document = try store.sharingDocument(draft); document.identityMode = identity; document.category = category
         try store.saveSharingDraft(draft, document: document, expectedUpdated: store.sharingRecord(draft)?["updated"]?.numberValue ?? 0)
         let context: NativePublicationEditContext?
         if updating && linked != nil { context = try writer.editContext(draft) } else { context = nil }

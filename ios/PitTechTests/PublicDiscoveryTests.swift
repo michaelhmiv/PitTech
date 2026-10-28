@@ -80,6 +80,40 @@ import XCTest
         let recovered = try NativePreparedPublication.pending(file: exported)
         XCTAssertEqual(recovered.payload, publication.payload); XCTAssertEqual(recovered.photos, publication.photos); XCTAssertEqual(recovered.bytes, publication.bytes)
     }
+    func testPublicationArchiveWritesTheDocumentsCategory() throws {
+        let snapshot = RecipeSnapshot(version: 1, name: "Pork shoulder", description: "", tags: [], draft: .object(["dishes": .array([.object(["name": .string("Pork shoulder"), "foodType": .string("Pork")])])]), instructions: [], observations: [], targets: [], resultNotes: "", rating: nil, smokingAnchorUtcMillis: nil, servings: "")
+        let story: JSONValue = .object(["version": .number(1), "attemptId": .string("archive-attempt"), "observations": .array([]), "readings": .array([]), "results": .array([])])
+        let document = NativeSharingDocument(title: "Pork shoulder", category: "sides", entries: [NativeSharingEntry(snapshotJson: try recipeJSON(snapshot), story: story)])
+        let prepared = try NativePublicationProjection.build(document, updated: 1, photos: [], kind: "recipe")
+        XCTAssertEqual(prepared.payload.objectValue?["category"]?.stringValue, "sides")
+    }
+    func testDiscoverItemCategoryDecodesTolerantly() throws {
+        func item(_ category: String?) throws -> NativePublicItem {
+            var json = "{\"id\":\"12345678-1234-4234-8234-123456789abc\",\"revisionId\":\"12345678-1234-4234-8234-123456789abd\",\"title\":\"Weekend smoke\",\"kind\":\"recipe\",\"credit\":{\"displayName\":\"a PitTech cook\"},\"likes\":3,\"forks\":1,\"heroAssetId\":null"
+            if let category { json += ",\"category\":\"\(category)\"" }
+            json += "}"
+            let decoded = try JSONDecoder().decode(NativePublicItem.self, from: Data(json.utf8)); try decoded.validate(); return decoded
+        }
+        XCTAssertEqual(try item("beef").category, "beef"); XCTAssertEqual(try item("beef").categoryLabel, "Beef")
+        XCTAssertEqual(try item(nil).category, "other"); XCTAssertEqual(try item(nil).categoryLabel, "Other")
+        XCTAssertEqual(try item("mystery-meat").category, "other"); XCTAssertEqual(try item("mystery-meat").categoryLabel, "Other")
+    }
+    func testDiscoverRequestPathIncludesCategoryOnlyWhenSelected() async throws {
+        let (_, fixture) = try fixture(), root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let api = PublicTestAPI(fixture: fixture)
+        let community = NativePublicCoordinator(enabled: true, api: api, cache: NativePublicCache(directory: root))
+        await community.refresh(sort: "liked", food: "", query: "")
+        XCTAssertNil(community.appliedCategory)
+        XCTAssertEqual(community.items.first?.category, "other")
+        XCTAssertEqual(community.items.first?.categoryLabel, "Other")
+        await community.refresh(sort: "liked", food: "", query: "", category: "beef")
+        XCTAssertEqual(community.appliedCategory, "beef")
+        let paths = await api.requestedPaths()
+        XCTAssertEqual(paths.count, 2)
+        XCTAssertFalse(paths[0].contains("category="), paths[0])
+        XCTAssertTrue(paths[1].contains("category=beef"), paths[1])
+    }
     func testCacheRestartsOfflineAndKnownUnavailableRecipeDoesNotReuseStaleRemotePreview() async throws {
         let (_, fixture) = try fixture(),root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -126,11 +160,13 @@ private actor PublicTestAPI: NativePublicAPI {
     let fixture: [String: Any]
     var status = 200
     var calls = 0
+    var paths: [String] = []
     init(fixture: [String: Any]) { self.fixture = fixture }
     func setStatus(_ status: Int) { self.status = status }
     func count() -> Int { calls }
+    func requestedPaths() -> [String] { paths }
     func json(_ path: String) async throws -> Data {
-        calls += 1;if status != 200 { throw NativePublicError.status(status) }
+        calls += 1;paths.append(path);if status != 200 { throw NativePublicError.status(status) }
         return try JSONSerialization.data(withJSONObject: fixture[path.hasPrefix("/v1/discover?") ? "feed" : "detail"]!)
     }
     func pack(_ id: String, revision: String, to: URL) async throws -> URL { XCTFail("Browsing attempted an import");throw NativePublicError.invalid }
