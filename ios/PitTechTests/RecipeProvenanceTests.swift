@@ -101,8 +101,8 @@ final class RecipeProvenanceTests: XCTestCase {
         XCTAssertNil(payload.wrappedAtF)
         XCTAssertNil(payload.rating)
         XCTAssertNil(payload.note)
-        XCTAssertTrue(payload.curve.isEmpty())
-        XCTAssertTrue(payload.photos.isEmpty())
-        XCTAssertTrue(payload.keepChips.isEmpty() && payload.changeChips.isEmpty())
+        XCTAssertTrue(payload.curve.isEmpty)
+        XCTAssertTrue(payload.photos.isEmpty)
+        XCTAssertTrue(payload.keepChips.isEmpty && payload.changeChips.isEmpty)
     }
 }
