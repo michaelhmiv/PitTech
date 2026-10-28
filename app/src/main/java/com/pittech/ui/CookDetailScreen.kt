@@ -1425,11 +1425,17 @@ private fun LiveCookTab(
                 val targetValue = probeTarget?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
                 val setpointValue = setpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
                     ?: data.cook.initialSetpointValue?.let { com.pittech.devices.CookTelemetryPolicy.convert(it, data.cook.initialSetpointUnit ?: displayUnit, displayUnit) }
-                // The stepper's reference adds the app's own setpoint
-                // history to the chain: latest setpoint reading, then the
-                // latest stepped target, then the cook's initial setpoint.
+                // The stepper's reference: whichever setpoint statement is
+                // LATEST wins — a stepped target (the app's own history)
+                // outranks an older device reading, and a newer device
+                // reading outranks an older step; the cook's initial
+                // setpoint is the base when neither exists.
                 val historySetpoint = data.targetHistory.filter { it.targetType == "setpoint" }.maxByOrNull { it.effectiveAt }
-                val currentSetpointDisplay = setpointValue ?: historySetpoint?.let { com.pittech.devices.CookTelemetryPolicy.convert(it.value, it.unit, displayUnit) }
+                val currentSetpointDisplay = when {
+                    historySetpoint != null && (setpoint == null || historySetpoint.effectiveAt >= setpoint.measuredAtUtcMillis) ->
+                        com.pittech.devices.CookTelemetryPolicy.convert(historySetpoint.value, historySetpoint.unit, displayUnit)
+                    else -> setpointValue
+                }
                 // Pit and probe read as a side-by-side pair of primary
                 // readouts (hands-on direction, 2026-10-27): each column
                 // carries its label and trend, the scoreboard number, and

@@ -133,15 +133,19 @@ struct CookDetailView: View {
     /// The stepper's current value in display degrees: latest setpoint
     /// reading, then the latest stepped target, then the initial setpoint.
     private func currentSetpointDisplay(_ cook: CookRecord) -> Double? {
-        if let setpoint = readings.filter({ $0.measurementType == "setpoint" }).max(by: { $0.measuredAt < $1.measuredAt }) {
-            return displayTemp(setpoint.value, setpoint.unit)
-        }
-        if let row = store.library.targetHistory.compactMap(\.objectValue)
+        // Whichever setpoint statement is LATEST wins — a stepped target
+        // (the app's own history) outranks an older device reading, and a
+        // newer device reading outranks an older step; the cook's initial
+        // setpoint is the base when neither exists.
+        let setpoint = readings.filter({ $0.measurementType == "setpoint" }).max(by: { $0.measuredAt < $1.measuredAt })
+        let historyRow = store.library.targetHistory.compactMap(\.objectValue)
             .filter({ $0["cookId"]?.stringValue == cookId && $0["targetType"]?.stringValue == "setpoint" })
-            .max(by: { ($0["effectiveAt"]?.numberValue ?? 0) < ($1["effectiveAt"]?.numberValue ?? 0) }),
-           let value = row["value"]?.numberValue, let unit = row["unit"]?.stringValue {
+            .max(by: { ($0["effectiveAt"]?.numberValue ?? 0) < ($1["effectiveAt"]?.numberValue ?? 0) })
+        if let historyRow, let value = historyRow["value"]?.numberValue, let unit = historyRow["unit"]?.stringValue,
+           setpoint == nil || (historyRow["effectiveAt"]?.numberValue ?? 0) >= setpoint!.measuredAt.timeIntervalSince1970 * 1000 {
             return displayTemp(value, unit)
         }
+        if let setpoint { return displayTemp(setpoint.value, setpoint.unit) }
         if let initial = cook.initialSetpointValue { return displayTemp(initial, cook.initialSetpointUnit ?? "°\(store.temperatureUnit)") }
         return nil
     }
