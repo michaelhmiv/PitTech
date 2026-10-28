@@ -269,18 +269,21 @@ enum CookPaceEngine {
                 let foodOn = archive.events
                     .filter { $0.cookId == dish.cookId && $0.action == "food_on" && ($0.dishIds.isEmpty || $0.dishIds.contains(dish.id)) }
                     .map { Int64($0.at) }.min() ?? archive.cooks.first { $0.id == dish.cookId }.map { Int64($0.startedAtUtcMillis) }
-                // The finish is the cook's recorded pull (dish_done, else
-                // remove) when the archive has one: real probes routinely
+                // The finish is the cook's recorded pull (the remove
+                // event) when the archive has one: real probes routinely
                 // peak a fraction below the target — the corpus briskets
                 // top out at 202.8°F for a 203°F target — so demanding a
                 // literal crossing would throw away exactly the cooks
-                // history should learn from. Without a recorded pull, the
-                // first crossing of the target is the finish.
+                // history should learn from. dish_done is only the
+                // fallback: in the app's phase order it means "ready to
+                // serve", after the rest, so preferring it would fold
+                // rest time into the cooking total. Without a recorded
+                // pull, the first crossing of the target is the finish.
                 let scopedToDish: (InsightEventInput) -> Bool = { event in
                     event.dishIds.contains(dish.id) ||
                         (event.dishIds.isEmpty && archive.dishes.filter { $0.cookId == dish.cookId }.count == 1)
                 }
-                let finishEvent = ["dish_done", "remove"].lazy.compactMap { action in
+                let finishEvent = ["remove", "dish_done"].lazy.compactMap { action in
                     archive.events.filter { $0.cookId == dish.cookId && $0.action == action && scopedToDish($0) }.map { Int64($0.at) }.min()
                 }.first
                 guard let foodOn, let finish = finishEvent ?? series.first(where: { $0.fahrenheit >= target })?.atUtcMillis else { continue }

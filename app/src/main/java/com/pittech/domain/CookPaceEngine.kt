@@ -267,7 +267,7 @@ object CookPaceEngine {
      * Derive [PaceHistory] from past archives (already filtered by the
      * caller to the same protein/cut). [targetFByDish] keys are
      * "cookId/dishId". A cook contributes its total duration when its finish
-     * is observable — the recorded pull (dish_done / remove event) when the
+     * is observable — the recorded pull (remove event) when the
      * archive has one, else the first probe reading at/above target — and
      * its stall durations / post-stall slopes when the detector finds one.
      */
@@ -287,18 +287,21 @@ object CookPaceEngine {
                 if (series.size < 2) continue
                 val foodOn = archive.events.filter { it.cookId == dish.cookId && it.action == "food_on" && (it.dishIds.isEmpty() || dish.id in it.dishIds) }
                     .minOfOrNull { it.at } ?: archive.cooks.firstOrNull { it.id == dish.cookId }?.startedAtUtcMillis ?: continue
-                // The finish is the cook's recorded pull (dish_done, else
-                // remove) when the archive has one: real probes routinely
+                // The finish is the cook's recorded pull (the remove
+                // event) when the archive has one: real probes routinely
                 // peak a fraction below the target — the corpus briskets
                 // top out at 202.8°F for a 203°F target — so demanding a
                 // literal crossing would throw away exactly the cooks
-                // history should learn from. Without a recorded pull, the
-                // first crossing of the target is the finish.
+                // history should learn from. dish_done is only the
+                // fallback: in the app's phase order it means "ready to
+                // serve", after the rest, so preferring it would fold
+                // rest time into the cooking total. Without a recorded
+                // pull, the first crossing of the target is the finish.
                 val scopedToDish: (InsightEventInput) -> Boolean = { event ->
                     dish.id in event.dishIds ||
                         (event.dishIds.isEmpty() && archive.dishes.count { it.cookId == dish.cookId } == 1)
                 }
-                val finish = listOf("dish_done", "remove").firstNotNullOfOrNull { action ->
+                val finish = listOf("remove", "dish_done").firstNotNullOfOrNull { action ->
                     archive.events.filter { it.cookId == dish.cookId && it.action == action && scopedToDish(it) }.minOfOrNull { it.at }
                 } ?: series.firstOrNull { it.fahrenheit >= target }?.atUtcMillis ?: continue
                 totals += (finish - foodOn) / 60_000.0

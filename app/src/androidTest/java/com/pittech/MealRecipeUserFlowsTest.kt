@@ -70,8 +70,12 @@ class MealRecipeUserFlowsTest {
         logAction("timeline-entry-type-option-wrap", "Wrapped at the stall")
         compose.onNodeWithTag("composer-wrap-material", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("timeline-entry-save").performClick()
-        compose.waitUntil(15000) { results().isNotEmpty() || runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId) }.any { it.eventType == "wrap" } }
-        assertTrue(runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId) }.any { it.eventType == "wrap" })
+        // Notes are stored as eventType "note" with the action carried in
+        // the note metadata — PlaybookCodec.action is how the app reads it.
+        fun wrapLogged() = runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId) }
+            .any { PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" }
+        compose.waitUntil(15000) { wrapLogged() }
+        assertTrue(wrapLogged())
         assertTrue("an untouched prompt must not write a wrap row", results().none { it.resultType == "wrap_material" })
         // 2) One tap on Foil, then Save: the material is recorded.
         logAction("timeline-entry-type-option-wrap", "Re-wrapped for the rest")
