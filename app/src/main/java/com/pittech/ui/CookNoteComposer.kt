@@ -98,22 +98,24 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
             TextButton(onClick = { keepDraft() }, enabled = !busy && !staging) { Text("Keep draft") }
             // `d21`: Save is the one filled action in the row.
             Button(onClick = {
-                viewModel.saveNote(draft, editing) { saved ->
-                    if (saved && existingInputs != null) {
-                        val capture = when (draft.action) {
-                            "wrap" -> if (wrapTouched || existingInputs.wrapMaterial != null) {
-                                existingInputs.copy(wrapMaterial = wrapChoice)
-                            } else null
-                            "spritz" -> existingInputs.copy(
-                                spritz = spritzChoice,
-                                spritzMedium = if (spritzChoice == SpritzState.YES) spritzMedium.trim().ifBlank { null } else null,
-                            )
-                            else -> null
-                        }
-                        if (capture != null) viewModel.saveCookInputs(draft.cookId, draft.dishId, capture)
+                // The capture travels WITH the note save: the write must
+                // happen inside the save operation itself, because the
+                // saved-callback runs while the ViewModel is still busy
+                // and a follow-up save call from there would be dropped
+                // by the busy guard.
+                val capture = existingInputs?.let { inputs ->
+                    when (draft.action) {
+                        "wrap" -> if (wrapTouched || inputs.wrapMaterial != null) {
+                            inputs.copy(wrapMaterial = wrapChoice)
+                        } else null
+                        "spritz" -> inputs.copy(
+                            spritz = spritzChoice,
+                            spritzMedium = if (spritzChoice == SpritzState.YES) spritzMedium.trim().ifBlank { null } else null,
+                        )
+                        else -> null
                     }
-                    onSaved(saved)
                 }
+                viewModel.saveNote(draft, editing, capture) { saved -> onSaved(saved) }
             }, enabled = valid && !busy && !staging,
                 modifier = Modifier.testTag(if (draft.category == "temperature") "temperature-save" else "timeline-entry-save")) { Text("Save entry") }
         },
