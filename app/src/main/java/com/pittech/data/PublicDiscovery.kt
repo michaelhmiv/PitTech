@@ -1,5 +1,6 @@
 package com.pittech.data
 
+import com.pittech.domain.FoodCategories
 import com.pittech.online.OnlineConfiguration
 
 import android.content.Context
@@ -23,11 +24,20 @@ internal class PublicFailure(val status: Int = 0) : Exception(when(status) {
     429 -> "Too many requests. Wait a minute, then refresh."
     else -> "Couldn't reach community recipes. Your local cookbook is available offline."
 })
-internal data class PublicItem(val id: String,val revisionId: String,val title: String,val kind: String,val credit: String,val likes: Int,val forks: Int) {
+internal data class PublicItem(val id: String,val revisionId: String,val title: String,val kind: String,val credit: String,val likes: Int,val forks: Int,val categoryId: String = FoodCategories.DEFAULT_ID) {
+    val categoryLabel: String get() = FoodCategories.labelFor(categoryId)
     companion object { fun parse(o: JSONObject): PublicItem {
-        val item=PublicItem(o.getString("id"),o.getString("revisionId"),o.getString("title"),o.getString("kind"),o.getJSONObject("credit").getString("displayName"),o.getInt("likes"),o.getInt("forks"))
+        // Category is parsed tolerantly: cached pages written before the
+        // taxonomy (or by an older server) may carry no category or an
+        // unknown id, and those count as Other rather than failing to parse.
+        val item=PublicItem(o.getString("id"),o.getString("revisionId"),o.getString("title"),o.getString("kind"),o.getJSONObject("credit").getString("displayName"),o.getInt("likes"),o.getInt("forks"),FoodCategories.normalizedId(o.optString("category")))
         require(publicUUID(item.id) && publicUUID(item.revisionId) && item.title.length in 1..160 && item.credit.length <= 160 && item.kind in setOf("recipe","collection","attempt") && item.likes in 0..1_000_000_000 && item.forks in 0..1_000_000_000);return item
     } }
+}
+/** The Discover request path: the category filter is appended only when a category is selected (empty/null means All). */
+internal fun publicDiscoverPath(sort: String,food: String,query: String,category: String? = null): String {
+    val base="/v1/discover?sort="+java.net.URLEncoder.encode(sort,"UTF-8")+"&food="+java.net.URLEncoder.encode(food,"UTF-8")+"&q="+java.net.URLEncoder.encode(query,"UTF-8")
+    return if(category.isNullOrEmpty()) base else base+"&category="+java.net.URLEncoder.encode(category,"UTF-8")
 }
 internal data class PublicDetail(val id: String,val revisionId: String,val payload: JSONObject,val credit: String,val media: List<JSONObject>,val profileUrl: String? = null,val publisherAlias:String?=null) {
     val title get()=payload.getString("title")
@@ -112,7 +122,7 @@ internal class PublicCache(context: Context,namespace: String = OnlineConfigurat
         for(old in files.sortedBy { it.lastModified() })if(size>32*1024*1024){val count=old.length();check(old.delete());size-=count}
     }
 }
-internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null,val savedDetailId: String? = null)
+internal data class PublicPresentation(val appliedSort: String = "liked",val appliedFood: String = "",val appliedQuery: String = "",val appliedCategory: String = "",val items: List<PublicItem> = emptyList(),val nextCursor: String? = null,val loading: Boolean = false,val message: String? = null,val detailId: String? = null,val detail: PublicDetail? = null,val detailLoading: Boolean = false,val image: ByteArray? = null,val preparing: Boolean = false,val profileHandle: String? = null,val profileName: String? = null,val profileLoading: Boolean = false,val profileItems: List<PublicItem> = emptyList(),val profileCursor: String? = null,val savedDetailId: String? = null)
 internal class PublicManager(private val context: Context,private val scope: CoroutineScope,private val onPreview: suspend (File,Boolean,String,String)->Unit,private val api: PublicAPI = PublicClient(blocks={CommunityVault(context).aliases()},access={CommunityVault(context).publicAccount()?.accessToken}),val enabled: Boolean = OnlineConfiguration.current.enabled,private val cache: PublicCache = PublicCache(context),private val audienceProvider:()->String={CommunityVault(context).audience()}) {
     private val _state=MutableStateFlow(PublicPresentation());val state=_state.asStateFlow()
     private val _linkSequence=MutableStateFlow(0L);val linkSequence=_linkSequence.asStateFlow()
@@ -135,12 +145,13 @@ internal class PublicManager(private val context: Context,private val scope: Cor
         val array=o.getJSONArray("items");require(array.length()<=20);val items=(0 until array.length()).map { PublicItem.parse(array.getJSONObject(it)) }
         val cursor=if(o.isNull("nextCursor"))null else o.getString("nextCursor");require((cursor?.length?:0)<=256 && items.map { it.id }.distinct().size==items.size);return items to cursor
     }
-    fun refresh(sort: String = "liked",food: String = "",query: String = "",more: Boolean = false){
-        if(!enabled || _state.value.loading || sort !in setOf("liked","forked") || food.length>80 || query.length>80)return
-        val base="/v1/discover?sort="+java.net.URLEncoder.encode(sort,"UTF-8")+"&food="+java.net.URLEncoder.encode(food,"UTF-8")+"&q="+java.net.URLEncoder.encode(query,"UTF-8")
+    fun refresh(sort: String = "liked",food: String = "",query: String = "",category: String? = null,more: Boolean = false){
+        if(!enabled || _state.value.loading || sort !in setOf("liked","forked") || food.length>80 || query.length>80 || (!category.isNullOrEmpty() && !FoodCategories.isValid(category)))return
+        val appliedCategory=category.orEmpty()
+        val base=publicDiscoverPath(sort,food,query,appliedCategory)
         if(more && (pageKey!=base || _state.value.nextCursor==null))return
         val path=base+(if(more)"&cursor="+java.net.URLEncoder.encode(_state.value.nextCursor,"UTF-8") else "")
-        _state.value=_state.value.copy(loading=true,message=null,appliedSort=sort,appliedFood=food,appliedQuery=query,nextCursor=if(!more && base!=pageKey)null else _state.value.nextCursor,items=if(!more && base!=pageKey)emptyList() else _state.value.items)
+        _state.value=_state.value.copy(loading=true,message=null,appliedSort=sort,appliedFood=food,appliedQuery=query,appliedCategory=appliedCategory,nextCursor=if(!more && base!=pageKey)null else _state.value.nextCursor,items=if(!more && base!=pageKey)emptyList() else _state.value.items)
         val generation=controlsGeneration
         pageJob=scope.launch {
             try{val (bytes,saved)=cached(path);if(generation!=controlsGeneration)return@launch;val (items,cursor)=page(JSONObject(String(bytes,Charsets.UTF_8)))
@@ -177,7 +188,7 @@ internal class PublicManager(private val context: Context,private val scope: Cor
                     try {
                         val raw=JSONObject(String(api.json("/v1/recipes/$id"),Charsets.UTF_8));val detail=PublicDetail.parse(raw)
                         require(detail.id==id && detail.payload.getString("identityMode")=="named")
-                        items+=PublicItem(id,detail.revisionId,detail.title,detail.payload.getString("kind"),detail.credit,raw.getInt("likes"),raw.getInt("forks"))
+                        items+=PublicItem(id,detail.revisionId,detail.title,detail.payload.getString("kind"),detail.credit,raw.getInt("likes"),raw.getInt("forks"),FoodCategories.normalizedId(detail.payload.optString("category")))
                     } catch(e: PublicFailure) { if(e.status!=404)throw e }
                 }
                 val next=if(json.isNull("nextCursor"))null else json.getString("nextCursor");require(next==null || publicUUID(next));ensureActive()

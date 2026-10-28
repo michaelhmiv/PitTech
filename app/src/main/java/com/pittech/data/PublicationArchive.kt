@@ -100,7 +100,7 @@ internal object PublicationProjection {
         }
         val attempts=recipes.mapNotNull { it.optJSONObject("story")?.getString("attemptId") };require(attempts.distinct().size==attempts.size) { "Include each recorded attempt once in a public collection." }
         val first=selected.first().snapshot.publicSource;val common=first?.takeIf { selected.all { e->e.snapshot.publicSource?.let { it.itemId==first.itemId && it.revisionId==first.revisionId }==true } }
-        val payload=JSONObject().put("contractVersion",1).put("kind",kind).put("identityMode",document.identityMode).put("title",text(document.title,160))
+        val payload=JSONObject().put("contractVersion",1).put("kind",kind).put("identityMode",document.identityMode).put("category",document.categoryId).put("title",text(document.title,160))
             .put("recipes",JSONArray(recipes)).put("source",source(common)).put("measuredAttemptId",if(kind=="attempt")recipes[0].getJSONObject("story").getString("attemptId") else JSONObject.NULL)
             .put("heroAssetId",document.heroPhotoId?.let { id("photo:$it") } ?: JSONObject.NULL)
         return pack(payload,images)

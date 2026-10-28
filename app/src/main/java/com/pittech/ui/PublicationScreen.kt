@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.*
+import com.pittech.domain.FoodCategories
 import com.pittech.domain.SharingDraftCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,6 +31,7 @@ import org.json.JSONObject
     val scope=rememberCoroutineScope()
     var prepared by remember { mutableStateOf<PreparedPublication?>(null) }; var previewUser by remember { mutableStateOf<String?>(null) }
     var identity by remember { mutableStateOf("anonymous") }; var kind by remember { mutableStateOf("recipe") }
+    var category by remember { mutableStateOf(FoodCategories.DEFAULT_ID) }
     var updateSummary by remember { mutableStateOf<String?>(null) }
     var linked by remember { mutableStateOf<PublicationReceipt?>(null) }; var updating by remember { mutableStateOf(true) }
     var pending by remember { mutableStateOf<PublicationOperation?>(null) }; var reviewed by remember { mutableStateOf(false) }
@@ -59,7 +62,7 @@ import org.json.JSONObject
         } else if(!state.signedIn) {
             published = null
         }
-        try { identity=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload).identityMode }; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Nothing changed on this device.") }
+        try { val document=withContext(Dispatchers.IO) { SharingDraftCodec.decode(checkNotNull(viewModel.sharing.get(draft)).payload) }; identity=document.identityMode; category=document.categoryId; refreshPending(); if(pending==null)linked?.kind?.let { kind=it } } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Nothing changed on this device.") }
     }
     // Slice 8 (PL-15 / DD-10): completing sign-in returns to this sheet on
     // its own — the account dialog closes itself instead of waiting for a
@@ -98,11 +101,12 @@ import org.json.JSONObject
                     SimpleDropdownField("Publication",kindLabels.getValue(kind),kindLabels.values.toList(),{ label -> kind=kindLabels.entries.first { it.value==label }.key; invalidate() },enabled=!busy)
                     SimpleDropdownField("Public credit",if(identity=="anonymous")"Anonymous · a PitTech cook" else "My display name",listOf("Anonymous · a PitTech cook","My display name"),{ identity=if(it=="My display name")"named" else "anonymous"; invalidate() },enabled=!busy)
                     Text(if(identity=="anonymous")"Your profile name and cookbook link won't appear on this publication." else "Your current display name appears publicly. Your cookbook link appears only while your public cookbook is enabled.",color=pitTechTokens().inkMuted)
+                    CategoryDropdownField(category,enabled=!busy) { category=it; invalidate() }
                     if(linked!=null)Row { Checkbox(updating,{ updating=it; invalidate() },enabled=!busy); Text("Update the publication linked to this draft",Modifier.weight(1f)) }
                     Button(onClick={ run {
                         invalidate(); val user=checkNotNull(account.publicationUserId()); val profile=writer.read("/v1/me/profile")
                         displayName=if(identity=="anonymous")"a PitTech cook" else profile.optString("displayName").ifBlank { "a PitTech cook" }
-                        withContext(Dispatchers.IO) { val row=checkNotNull(viewModel.sharing.get(draft)); val document=SharingDraftCodec.decode(row.payload).copy(identityMode=identity); viewModel.sharing.save(draft,document,row.updatedAtUtcMillis) }
+                        withContext(Dispatchers.IO) { val row=checkNotNull(viewModel.sharing.get(draft)); val document=SharingDraftCodec.decode(row.payload).copy(identityMode=identity,categoryId=category); viewModel.sharing.save(draft,document,row.updatedAtUtcMillis) }
                         val context=if(updating && linked!=null)writer.editContext(draft) else null
                         val value=viewModel.sharing.preparePublication(draft,kind,context); check(account.publicationUserId()==user)
                         linked=writer.binding(draft); updateSummary=null
@@ -136,6 +140,48 @@ import org.json.JSONObject
     // second verticalScroll here measured it with infinite height and
     // crashed (issue #233). The sheet wrapper must not scroll.
     if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
+}
+
+/**
+ * The publish-flow category picker: the shared taxonomy list, one primary
+ * category per publication. Each item shows the label with its examples
+ * underneath so people classify by recognition (a smoked cheese is an app,
+ * mac & cheese is a side) instead of guessing at the label alone.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun CategoryDropdownField(selectedId: String, enabled: Boolean = true, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = FoodCategories.byId(selectedId) ?: FoodCategories.byId(FoodCategories.DEFAULT_ID)!!
+    Column(Modifier.fillMaxWidth()) {
+        Text("Category", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("publication-category"),
+            ) {
+                Text(selected.label, modifier = Modifier.weight(1f))
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose Category")
+            }
+            DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+                FoodCategories.all.forEach { category ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(category.label)
+                                Text(category.examples.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
+                            }
+                        },
+                        modifier = Modifier.testTag("publication-category-option-${category.label.lowercase(java.util.Locale.ROOT).replace(' ', '-')}"),
+                        onClick = {
+                            expanded = false
+                            onSelect(category.id)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable internal fun PublicationContent(prepared: PreparedPublication) {

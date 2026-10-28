@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.data.PublicManager
+import com.pittech.domain.FoodCategories
 import org.json.JSONObject
 
 @Composable internal fun PublicDiscoveryScreen(manager: PublicManager,modifier: Modifier = Modifier,temperatureUnit: String = "°F", account: com.pittech.data.AccountManager? = null, publicationWriter: com.pittech.data.PublicationWriter? = null, controls:com.pittech.data.CommunityControls?=null, onOpenRecipes: () -> Unit = {}) {
@@ -27,7 +28,8 @@ import org.json.JSONObject
     var food by rememberSaveable { mutableStateOf(state.appliedFood) }
     var managingControls by remember{mutableStateOf(false)}
     var sort by rememberSaveable { mutableStateOf(state.appliedSort) }
-    LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery) }
+    var category by rememberSaveable { mutableStateOf(state.appliedCategory) }
+    LaunchedEffect(manager) { if(state.items.isEmpty())manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery,state.appliedCategory) }
     BackHandler(state.detailId != null || state.profileHandle != null) { manager.back() }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         // PL-23 (DD-8): Discover is a network surface — offline is stated,
@@ -99,15 +101,19 @@ import org.json.JSONObject
             TurnInLiteralBoxedField("Food type (optional)",Modifier.fillMaxWidth()) {
                 OutlinedTextField(food,{food=it.take(80)},singleLine=true,modifier=Modifier.fillMaxWidth().testTag("discover-food"))
             }
+            // Category is a separate controlled filter from the free-text
+            // food field above: the shared taxonomy list plus All, applied
+            // immediately on selection like the sort chips.
+            SimpleDropdownField("Category",if(category.isEmpty())"All categories" else FoodCategories.labelFor(category),listOf("All categories")+FoodCategories.all.map { it.label },{ label -> category=if(label=="All categories")"" else FoodCategories.all.first { it.label==label }.id; manager.refresh(sort,food,query,category) },testTag="discover-category",enabled=!state.loading)
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 TurnInMetaLabel("Sort")
                 // PL-19: sort changes apply on tap — no separate Search tap
                 // stands between the choice and its result. (The text
                 // fields still apply with the Search button below.)
-                FilterChip(sort=="liked",{sort="liked";manager.refresh("liked",food,query)},label={Text("Most liked")},colors=turnInChipColors())
-                FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query)},label={Text("Most forked")},colors=turnInChipColors())
+                FilterChip(sort=="liked",{sort="liked";manager.refresh("liked",food,query,category)},label={Text("Most liked")},colors=turnInChipColors())
+                FilterChip(sort=="forked",{sort="forked";manager.refresh("forked",food,query,category)},label={Text("Most forked")},colors=turnInChipColors())
             }
-            Button(onClick={ manager.refresh(sort,food,query) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("discover-search")) { Text("Search recipes") }
+            Button(onClick={ manager.refresh(sort,food,query,category) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("discover-search")) { Text("Search recipes") }
             if(state.loading)Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(LoadingCopy.LOADING_RECIPES)}
             state.message?.let { TurnInStatusStrip(it,pitTechTokens().flag,Modifier.testTag("discover-message")) }
             if(state.items.isEmpty() && !state.loading && state.message == null)TurnInDashedCard(Modifier.testTag("discover-empty")) {
@@ -121,11 +127,11 @@ import org.json.JSONObject
                     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text(item.title,style=PitTechTextStyles.bannerCard)
                         Text(item.credit,style=MaterialTheme.typography.bodyMedium)
-                        Text("${item.likes} likes · ${item.forks} forks",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
+                        Text("${item.categoryLabel} · ${item.likes} likes · ${item.forks} forks",style=PitTechTextStyles.monoMeta,color=pitTechTokens().inkMuted)
                     }
                 }
             }
-            if(state.nextCursor != null)OutlinedButton(onClick={ manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery,true) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("More recipes") }
+            if(state.nextCursor != null)OutlinedButton(onClick={ manager.refresh(state.appliedSort,state.appliedFood,state.appliedQuery,state.appliedCategory,more=true) },enabled=!state.loading,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) { Text("More recipes") }
         }
     }
     if(managingControls && controls!=null && account!=null)CommunityControlsDialog(controls,account,manager){managingControls=false}
