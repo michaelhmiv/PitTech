@@ -11,6 +11,7 @@ struct NativePublicDiscoveryView: View {
         NavigationStack(path: Binding(get: { community.path }, set: { community.path = $0 })) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    PitTechBrandStrip()
                     TurnInMetaLabel("Public cookbook")
                     TurnInBannerText("Find your next cook", font: PitTechFont.bannerTitle)
                     Text("Browse, save and cook without an account. Saving makes your own private copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)

@@ -240,15 +240,14 @@ final class CommunityBenchmarksUITests: XCTestCase {
             XCTAssertTrue(start.waitForExistence(timeout: 15))
             start.tap()
             app.buttons["start-meal-save"].tap()
-            XCTAssertTrue(app.buttons["finish-meal"].waitForExistence(timeout: 15))
+            // Flowing Slice 2 (1.6): Finish lives in the cook menu now —
+            // the toolbar is always visible, so the old scroll-reveal
+            // dance (and its parking-under-the-shortcut-bar failure) is gone.
+            XCTAssertTrue(app.buttons["cook-menu"].waitForExistence(timeout: 15))
             assertNoBenchmarkSurface(app: app)
+            app.buttons["cook-menu"].tap()
             let finish = app.buttons["finish-meal"]
-            reveal(finish, app: app)
             XCTAssertTrue(finish.waitForExistence(timeout: 10))
-            for _ in 0..<10 {
-                if finish.isHittable { break }
-                _ = finish.waitForExistence(timeout: 1)
-            }
             XCTAssertTrue(finish.isHittable)
             finish.tap()
             XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 20))

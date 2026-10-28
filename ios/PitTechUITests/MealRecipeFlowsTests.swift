@@ -682,7 +682,9 @@ final class MealRecipeFlowsTests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == NO"), evaluatedWith: app.navigationBars["Reminders"])
         waitForExpectations(timeout: 10)
         XCTAssertTrue(app.navigationBars["Meal"].waitForExistence(timeout: 10))
-        let finish = app.buttons["finish-meal"]; reveal(finish, app: app); finish.tap()
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        app.buttons["cook-menu"].tap()
+        let finish = app.buttons["finish-meal"]; XCTAssertTrue(finish.waitForExistence(timeout: 10)); finish.tap()
         XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 5))
         app.alerts.buttons["Finish meal"].tap()
         XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15))
@@ -694,9 +696,10 @@ final class MealRecipeFlowsTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--screenshot-large-text"]; app.launch()
         let start = app.buttons["Start meal"]; XCTAssertTrue(start.waitForExistence(timeout: 15)); start.tap()
         app.buttons["start-meal-save"].tap()
-        XCTAssertTrue(app.buttons["finish-meal"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["cook-menu"].waitForExistence(timeout: 15))
         capture("Native large text simple start")
-        reveal(app.buttons["finish-meal"], app: app); app.buttons["finish-meal"].tap(); app.alerts.buttons["Finish meal"].tap()
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        app.buttons["cook-menu"].tap(); XCTAssertTrue(app.buttons["finish-meal"].waitForExistence(timeout: 10)); app.buttons["finish-meal"].tap(); app.alerts.buttons["Finish meal"].tap()
         XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15)); reveal(app.buttons["Leave without saving"], app: app); app.buttons["Leave without saving"].tap()
         XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 10))
     }

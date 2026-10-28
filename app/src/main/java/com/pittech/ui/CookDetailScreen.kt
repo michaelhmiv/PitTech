@@ -1293,7 +1293,7 @@ private fun LiveCookTab(
         displayFinish != null -> com.pittech.domain.LiveGuidance.eta(displayFinish, leadPlanWindow) { a, b -> formatClockRange(a, b) }
         leadPlanWindow != null -> com.pittech.domain.LiveEta.PlanLine(
             "Planning window " + formatClockRange(leadPlanWindow.first, leadPlanWindow.second),
-            com.pittech.domain.PaceBasis.PLAN.displayText(),
+            com.pittech.domain.displayText(com.pittech.domain.PaceBasis.PLAN),
         )
         else -> com.pittech.domain.LiveEta.None
     }
@@ -1557,7 +1557,7 @@ private fun LiveCookTab(
                             displayUnit = displayUnit,
                             chartHeight = 200.dp,
                             interactive = false,
-                            timingMode = data.cook.timingMode,
+                            timingMode = data.lifecycle?.timingMode ?: "legacy_preserved",
                             stallBandF = com.pittech.domain.PaceConstants.STALL_BAND_LOW_F..com.pittech.domain.PaceConstants.STALL_BAND_HIGH_F,
                         )
                         Text("Full chart ›", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)

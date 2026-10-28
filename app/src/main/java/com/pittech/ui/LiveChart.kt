@@ -170,7 +170,7 @@ internal fun LiveChartDialog(
                 targetHistory = data.targetHistory,
                 displayUnit = displayUnit,
                 chartHeight = 340.dp,
-                timingMode = data.cook.timingMode,
+                timingMode = data.lifecycle?.timingMode ?: "legacy_preserved",
                 stallBandF = com.pittech.domain.PaceConstants.STALL_BAND_LOW_F..com.pittech.domain.PaceConstants.STALL_BAND_HIGH_F,
                 nowX = nowElapsed,
                 futureUntilX = etaLatestUtcMillis?.let { (it - anchor).toDouble() }?.takeIf { it > nowElapsed },

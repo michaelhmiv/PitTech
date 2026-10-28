@@ -184,17 +184,9 @@ struct CookListView: View {
         NavigationStack(path: $mealPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    // DD-1 lockup (#172): a small header mark only — never a hero.
-                    HStack(spacing: 10) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(PitTechStyle.accent)
-                            .frame(width: 40, height: 40)
-                            .background(PitTechStyle.accentFill, in: RoundedRectangle(cornerRadius: 11))
-                            .accessibilityIdentifier("meals-lockup")
-                        Text("PitTech").font(.headline)
-                    }
-                    .frame(height: 40)
+                    // Flowing Slice 2: the brand strip supersedes the DD-1
+                    // lockup — the same strip now tops every tab.
+                    PitTechBrandStrip()
                     // TURN-IN (Slice 1): no page-title header — the
                     // selected Meals tab carries location (BRIEF: headers
                     // are wasted space). The DD-1 lockup above stays.
@@ -291,6 +283,24 @@ struct CookListView: View {
                 .padding(20)
             }
             .background(PitTechStyle.canvas.ignoresSafeArea())
+            // Flowing Slice 2 (Slice 0 audit, iOS parity): the Start-a-cook
+            // FAB Android has had — bottom-trailing, thumb-reachable, opens
+            // the same Start Cook sheet as the in-flow Start meal button.
+            .overlay(alignment: .bottomTrailing) {
+                Button { startSetup = .blank(temperatureUnit: "°\(store.temperatureUnit)", weightUnit: store.weightUnit) } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(PitTechStyle.onAccent)
+                        .frame(width: 56, height: 56)
+                        .background(PitTechStyle.primaryFill, in: Circle())
+                        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Start a cook")
+                .accessibilityIdentifier("start-cook-fab")
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
+            }
             .navigationDestination(for: String.self) { CookDetailView(cookId: $0) }
             .sheet(item: $startSetup) { setup in StartCookSheet(initialSetup: setup, onStarted: { mealPath.append($0) }) }
             .onChange(of: restoreRequested) { _, requested in
@@ -319,6 +329,19 @@ struct LiveZoneCard: View {
     }
     private var latestFood: TemperatureSample? {
         readings.filter { $0.measurementType == "food_probe" }.max { $0.measuredAt < $1.measuredAt }
+    }
+    private var latestSetpoint: TemperatureSample? {
+        readings.filter { $0.measurementType == "setpoint" }.max { $0.measuredAt < $1.measuredAt }
+    }
+    private var foodDishName: String? {
+        guard let dishId = latestFood?.dishId else { return nil }
+        return store.dishRecords(cook.id).first { $0.id == dishId }?.name
+    }
+    private var foodTarget: (value: Double, unit: String)? {
+        let rows = store.library.targets.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cook.id && $0["targetType"]?.stringValue == "personal_finish" }
+        let row = rows.first { $0["dishId"]?.stringValue == latestFood?.dishId } ?? rows.first { $0["dishId"] == nil }
+        guard let value = row?["value"]?.numberValue else { return nil }
+        return (value, row?["unit"]?.stringValue ?? "°F")
     }
     private func elapsed(at date: Date) -> String {
         let seconds = max(0, Int(date.timeIntervalSince1970) - Int(cook.startedAtUtcMillis / 1000))
@@ -354,19 +377,44 @@ struct LiveZoneCard: View {
                 // shards and costs battery for a secondary readout). Values refresh
                 // whenever Meals re-renders on store changes; the ticking clock
                 // lives on the cook's Live screen, as before.
-                if let pit = latestPit {
-                    Text(tempText(pit))
-                        .font(PitTechFont.scoreboard)
-                        .foregroundStyle(PitTechStyle.ink)
-                } else {
-                    Text(elapsed(at: Date.now))
-                        .font(PitTechFont.scoreboard)
-                        .foregroundStyle(PitTechStyle.ink)
+                // Flowing Slice 2 (Slice 0 audit, iOS parity): pit and
+                // probe read as a side-by-side pair, like the Live board —
+                // each column carries its label, the scoreboard number,
+                // and its reference line (SET / TARGET) underneath.
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        TurnInMetaLabel("Pit")
+                        if let pit = latestPit {
+                            Text(tempText(pit))
+                                .font(PitTechFont.scoreboard)
+                                .foregroundStyle(PitTechStyle.ink)
+                        } else {
+                            Text(elapsed(at: Date.now))
+                                .font(PitTechFont.scoreboard)
+                                .foregroundStyle(PitTechStyle.ink)
+                        }
+                        if let setpoint = latestSetpoint {
+                            Text("SET \(tempText(setpoint))").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                        } else if let initial = cook.initialSetpointValue {
+                            Text("SET \(String(format: "%.0f", initial))\(cook.initialSetpointUnit ?? "")").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if let food = latestFood {
+                        VStack(alignment: .leading, spacing: 2) {
+                            TurnInMetaLabel(foodDishName.map { "Probe · \($0)" } ?? "Food")
+                            Text(tempText(food))
+                                .font(PitTechFont.scoreboard)
+                                .foregroundStyle(PitTechStyle.ink)
+                            if let target = foodTarget {
+                                Text("TARGET \(target.value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(target.value)) : String(format: "%.1f", target.value))\(target.unit)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 Text([
-                    latestFood.map { "Food \(tempText($0))" },
                     "Elapsed \(elapsed(at: Date.now))",
-                    cook.initialSetpointValue.map { "Pit set \(String(format: "%.0f", $0))\(cook.initialSetpointUnit ?? "")" },
                     cook.smokerName,
                 ].compactMap { $0 }.joined(separator: " · "))
                 .font(PitTechFont.monoMeta)
@@ -580,6 +628,7 @@ struct InsightsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    PitTechBrandStrip()
                     // TURN-IN (Slice 2, Area 02 `history-populated`): the
                     // totals band leads — the in-content title header goes
                     // (the navigation title already says Insights, §3.1).
