@@ -68,9 +68,11 @@ struct ScreenshotTextSize: ViewModifier {
     /// ghost/history source) and one live brisket six hours in, out of
     /// the band and climbing at a pace the engine can state a range for.
     /// Series are hand-laid so the verdict, ETA basis and ghost delta
-    /// are deterministic: the live cook's last 30 minutes carry four
-    /// readings at 0.2°F/min (PACE basis), and the ghost reached 175°
-    /// at +398 min against the live cook's +360 (+38 at the cursor).
+    /// are deterministic: the live cook's last hour climbs at
+    /// 0.2°F/min on 5-minute readings, so the trailing 30-minute pace
+    /// window holds a qualifying set at any realistic launch-to-open
+    /// delay (PACE basis), and the ghost reached 175° at +398 min
+    /// against the live cook's +360 (+38 at the cursor).
     private func prepareFlowingFixture() {
         let now = Double(Int64(Date.now.timeIntervalSince1970 * 1000))
         func reading(cookId: String, dishId: String, type: String, value: Double, at: Double, probe: String) {
@@ -110,7 +112,7 @@ struct ScreenshotTextSize: ViewModifier {
         library.targets.append(.object(["id": .string(UUID().uuidString.lowercased()), "cookId": .string(live.id), "dishId": .string(liveDish.id),
             "targetType": .string("personal_finish"), "value": .number(203), "unit": .string("°F"),
             "scope": .string("dish"), "explanation": .null, "createdAtUtcMillis": .number(liveOn)]))
-        let liveSeries: [(Double, Double)] = [(0, 40), (15, 52), (30, 63), (45, 74), (60, 84), (75, 93), (90, 102), (105, 110), (120, 118), (135, 125), (150, 132), (165, 138), (180, 144), (195, 149), (210, 153), (225, 156), (240, 158), (255, 160), (270, 161), (285, 162), (300, 163), (310, 165), (320, 167), (330, 169), (340, 171), (350, 173), (360, 175)]
+        let liveSeries: [(Double, Double)] = [(0, 40), (15, 52), (30, 63), (45, 74), (60, 84), (75, 93), (90, 102), (105, 110), (120, 118), (135, 125), (150, 132), (165, 138), (180, 144), (195, 149), (210, 153), (225, 156), (240, 158), (255, 160), (270, 161), (285, 162), (300, 163), (305, 164), (310, 165), (315, 166), (320, 167), (325, 168), (330, 169), (335, 170), (340, 171), (345, 172), (350, 173), (355, 174), (360, 175)]
         for (minutes, temp) in liveSeries { reading(cookId: live.id, dishId: liveDish.id, type: "food_probe", value: temp, at: liveOn + minutes * 60_000, probe: "Brisket") }
         reading(cookId: live.id, dishId: liveDish.id, type: "setpoint", value: 250, at: liveOn + 330 * 60_000, probe: "Pit setpoint")
         save()

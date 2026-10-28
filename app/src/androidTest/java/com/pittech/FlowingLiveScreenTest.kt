@@ -20,9 +20,11 @@ import org.junit.Test
  * chart flow with its ghost delta, and the overnight test alert
  * DEMONSTRABLY posting a notification. The seeded series are hand-laid
  * (mirroring the iOS --ui-test-flowing fixture) so the pace engine's
- * statements are deterministic: the live brisket's last 30 minutes
- * carry four readings at 0.2°F/min (PACE basis), and the finished
- * brisket reached 175° at +398 min against the live cook's +360.
+ * statements are deterministic: the live brisket's last hour climbs
+ * at 0.2°F/min on 5-minute readings, so the trailing 30-minute pace
+ * window holds a qualifying set at any realistic seed-to-open delay
+ * (PACE basis), and the finished brisket reached 175° at +398 min
+ * against the live cook's +360.
  */
 class FlowingLiveScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
@@ -56,7 +58,7 @@ class FlowingLiveScreenTest {
         val liveOn = now - 6L * 3_600_000
         action(live, liveDish, "food_on", "Food on", liveOn)
         app.cookRepository.addTarget(live, liveDish, "personal_finish", 203.0, "°F", null)
-        temps(live, liveDish, listOf(0L to 40.0, 15L to 52.0, 30L to 63.0, 45L to 74.0, 60L to 84.0, 75L to 93.0, 90L to 102.0, 105L to 110.0, 120L to 118.0, 135L to 125.0, 150L to 132.0, 165L to 138.0, 180L to 144.0, 195L to 149.0, 210L to 153.0, 225L to 156.0, 240L to 158.0, 255L to 160.0, 270L to 161.0, 285L to 162.0, 300L to 163.0, 310L to 165.0, 320L to 167.0, 330L to 169.0, 340L to 171.0, 350L to 173.0, 360L to 175.0), liveOn)
+        temps(live, liveDish, listOf(0L to 40.0, 15L to 52.0, 30L to 63.0, 45L to 74.0, 60L to 84.0, 75L to 93.0, 90L to 102.0, 105L to 110.0, 120L to 118.0, 135L to 125.0, 150L to 132.0, 165L to 138.0, 180L to 144.0, 195L to 149.0, 210L to 153.0, 225L to 156.0, 240L to 158.0, 255L to 160.0, 270L to 161.0, 285L to 162.0, 300L to 163.0, 305L to 164.0, 310L to 165.0, 315L to 166.0, 320L to 167.0, 325L to 168.0, 330L to 169.0, 335L to 170.0, 340L to 171.0, 345L to 172.0, 350L to 173.0, 355L to 174.0, 360L to 175.0), liveOn)
         app.cookRepository.notes.save(CookNoteDraft(cookId = live, dishId = liveDish, occurredAt = liveOn + 330L * 60_000,
             temperatures = listOf(NoteTemperature(probeName = "Pit setpoint", measurementType = "setpoint", valueText = "250", measuredAt = liveOn + 330L * 60_000, dishId = liveDish))))
         live
@@ -73,6 +75,9 @@ class FlowingLiveScreenTest {
         val live = seedBoard(app)
         openLiveCook()
         // 1.1 + 1.2: one answer at the top; the ETA always carries its basis.
+        // (Wait for the text itself: the board's flows settle a beat after
+        // the headline node first composes.)
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("On pace — nothing needs doing.").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("live-verdict-headline", useUnmergedTree = true).assertTextEquals("On pace — nothing needs doing.")
         compose.onNodeWithTag("live-eta-basis", useUnmergedTree = true).assertTextEquals("from your last 30 min of readings")
         compose.onNodeWithTag("live-eta-range", useUnmergedTree = true).assertTextContains("Done")
@@ -97,6 +102,9 @@ class FlowingLiveScreenTest {
         // pinned readout, the ghost's delta at the cursor, and presets.
         compose.onNodeWithTag("live-chart-hero", useUnmergedTree = true).performScrollTo().performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-chart-readout", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        // The ghost rides the insights archive, which loads async — wait
+        // for the delta line to compose before reading it.
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-chart-ghost-delta", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("live-chart-ghost-delta", useUnmergedTree = true).assertTextContains("ahead of last brisket")
         compose.onNodeWithTag("live-chart-preset-last2h", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("live-chart-readout", useUnmergedTree = true).assertIsDisplayed()
@@ -122,6 +130,6 @@ class FlowingLiveScreenTest {
         compose.waitUntil(15_000) {
             notifications.activeNotifications.any { it.tag == CookAlertNotifications.testTag(live) }
         }
-        compose.onNodeWithTag("overnight-test-sent", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("overnight-test-sent", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
     }
 }
