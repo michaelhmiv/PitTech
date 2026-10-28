@@ -80,6 +80,24 @@ class CookTelemetryIntegrationPolicyTest {
         assertTrue(TemperatureContext.select(listOf(second), 299_999L, "dish").isEmpty())
     }
 
+    /**
+     * Flowing Slice 2 (E1): a Bluetooth/telemetry series is drawn with the
+     * same honesty as a cloud series — the line breaks across a silence
+     * longer than the sampling receipt window and stays joined across a
+     * short one. The split rule in TemperaturePlot.segments is
+     * source-agnostic for every non-manual source; this pins it for the
+     * telemetry shape (measurement-basis timestamps, 60 s sampling).
+     */
+    @Test fun telemetrySeriesSplitsAcrossLongSilenceAndJoinsAcrossShortOne() {
+        fun ble(id: String, time: Long) = reading(id, time, source = "telemetry").copy(samplingIntervalMillis = 60_000L)
+        // Receipt window for 60 s sampling is 90 s: a 60 s step joins, a
+        // 10-minute silence breaks — no line is drawn across the gap.
+        val joined = TemperaturePlot.segments(listOf(ble("a", 0), ble("b", 60_000), ble("c", 120_000)))
+        assertEquals(1, joined.size)
+        val broken = TemperaturePlot.segments(listOf(ble("a", 0), ble("b", 60_000), ble("c", 660_000)))
+        assertEquals(listOf(listOf("a", "b"), listOf("c")), broken.map { segment -> segment.map { it.id } })
+    }
+
     @Test fun aKnownOutageSplitsSlowCurvesWithoutSplittingAnotherCookOrManualData() {
         val rows = listOf(reading("one", 0), reading("two", 60_000)).map { it.copy(samplingIntervalMillis = 300_000L) }
         val gap = TimelineEventEntity("gap", "cook", null, "connection_gap", "Interrupted", null, 10_000L, 10_000L, "UTC", "controller_cloud", createdAtUtcMillis = 10_000L, updatedAtUtcMillis = 10_000L)
