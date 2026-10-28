@@ -52,6 +52,7 @@ import com.pittech.domain.CookPlaybook
 import com.pittech.domain.DishDraft
 import com.pittech.domain.DishSchedule
 import com.pittech.domain.NewCookDraft
+import com.pittech.domain.RecipeSnapshot
 import com.pittech.domain.ServePlan
 import com.pittech.ui.PitTechThemeMode
 import com.pittech.ui.ZipShareIntent
@@ -1234,6 +1235,39 @@ class PitTechUserFlowsTest {
         pressSystemBack()
         composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { assertFalse(it.isFinishing) }
+    }
+
+    @Test
+    fun test11_brandStripFabAndRecipeViews() {
+        clearLocalData()
+        val application = targetContext.applicationContext as PitTechApplication
+        val recipe = runBlocking(Dispatchers.IO) {
+            application.cookRepository.recipes.save(RecipeSnapshot("Views brisket", DishDraft("Views brisket", "Beef")))
+        }
+        composeRule.activityRule.scenario.recreate()
+        // The brand strip rides the tab roots: mascot + wordmark, no title.
+        composeRule.onNodeWithText("PitTech").assertIsDisplayed()
+        // The floating action is the board's primary start entry; it opens
+        // the same start-a-cook flow, and system back leaves it again.
+        composeRule.onNodeWithTag("start-cook-fab").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("cook-add-dish").assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithTag("start-cook").assertIsDisplayed()
+        // Recipes: list rows carry the added date; the grid toggle switches
+        // to photo tiles and the choice persists across recreation.
+        composeRule.onNodeWithTag("nav-recipes").performClick()
+        composeRule.onNodeWithText("PitTech").assertIsDisplayed()
+        composeRule.onNodeWithText("Saved recipe · version", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Added", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("recipes-view-grid").performClick()
+        composeRule.onAllNodesWithText("Saved recipe · version", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithText("Added", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("recipe-open-${recipe.id}").assertIsDisplayed()
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag("nav-recipes").performClick()
+        composeRule.onAllNodesWithText("Saved recipe · version", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithTag("recipes-view-list").performClick()
+        composeRule.onNodeWithText("Saved recipe · version", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     private fun pressSystemBack() {

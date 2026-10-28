@@ -15,8 +15,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.saveable.rememberSaveable
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import java.text.DateFormat
+import java.util.Date
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pittech.CooksViewModel
 import com.pittech.data.*
@@ -46,6 +50,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     var sharingDraftId by remember { mutableStateOf<String?>(null) }
     var filters by rememberSaveable { mutableStateOf(false) }
     var mealTitle by rememberSaveable { mutableStateOf("") }
+    // Recipes view mode (hands-on direction, 2026-10-27): a list of rows
+    // with an inline photo, or a photo-forward grid — the cook's choice,
+    // persisted on the device.
+    val libraryContext = LocalContext.current
+    val libraryPreferences = remember { libraryContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE) }
+    var gridView by remember { mutableStateOf(libraryPreferences.getBoolean("recipes-grid-view", false)) }
     var existingMealId by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<SavedRecipe?>(null) }
     var editor by remember { mutableStateOf<RecipeEditorRequest?>(null) }
@@ -68,6 +78,16 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             OutlinedTextField(query, { query = it }, placeholder = { Text("Find a recipe") }, singleLine = true, modifier = Modifier.weight(1f).testTag("recipe-search"))
             OutlinedIconButton(onClick = { filters = true }, modifier = Modifier.size(48.dp).testTag("recipe-filters")) { Icon(Icons.Filled.FilterList, "Filter recipes") }
         }
+        TurnInSegmentedControl(
+            options = listOf("List", "Grid"),
+            selectedIndex = if (gridView) 1 else 0,
+            onSelect = { index ->
+                gridView = index == 1
+                libraryPreferences.edit().putBoolean("recipes-grid-view", gridView).apply()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            tags = listOf("recipes-view-list", "recipes-view-grid"),
+        )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(favorites, { favorites = !favorites }, label = { Text("Favorites") }, modifier = Modifier.heightIn(min = 48.dp))
             FilterChip(composing, { composing = !composing; if (!composing) selected = emptyList() }, label = { Text(if (composing) "Cancel selection" else "Build a meal") }, modifier = Modifier.heightIn(min = 48.dp).testTag("recipe-compose"))
@@ -89,9 +109,12 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                 }
             }
         }
+        // Newest-added first, so a plainly named recipe ("Boston Butt")
+        // stays findable as the library grows.
         val shown = recipes.filter { r -> val s = snapshots[r.currentRevisionId]
             (r.archivedAtUtcMillis != null) == archived && r.name.contains(query, true) && (!favorites || r.favorite) &&
                 (category == "All categories" || s?.dish?.foodType == category) && (tag == "All tags" || tag in s?.tags.orEmpty()) }
+            .sortedByDescending { it.createdAtUtcMillis }
         // PL-25: the Recipes empties are the shared StateCopy wording.
         // (A3 `dark-02-library-empty`: the filtered empty is a quiet card;
         // the brand empty keeps the same words in the same card shape.)
@@ -103,19 +126,40 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                 }
             }
         }
-        shown.forEach { recipe ->
+        if (gridView) {
+            shown.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { recipe ->
+                        RecipeGridTile(
+                            viewModel = viewModel,
+                            recipe = recipe,
+                            snapshot = snapshots[recipe.currentRevisionId],
+                            composing = composing,
+                            archived = archived,
+                            isSelected = recipe.currentRevisionId in selected,
+                            onToggleSelected = { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId },
+                            onOpen = { detail = recipe },
+                            onFavoriteOrRestore = { act { if (archived) viewModel.recipes.unarchive(recipe.id) else viewModel.recipes.setFavorite(recipe.id, !recipe.favorite) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        } else shown.forEach { recipe ->
             var assets by remember(recipe.currentRevisionId) { mutableStateOf(emptyList<RecipeAsset>()) }
             LaunchedEffect(recipe.currentRevisionId) { assets = viewModel.recipes.assets(recipe.currentRevisionId) }
             var menu by remember { mutableStateOf(false) }
             val snapshot = snapshots[recipe.currentRevisionId]
             // The whole card frame is the tap target (button semantics via
             // TurnInCard's onClick): previously only the name text opened the
-            // recipe, so taps on the photo or meta lines did nothing.
+            // recipe, so taps on the photo or meta lines did nothing. In the
+            // list view the photo rides inline as a small thumbnail.
             TurnInCard(Modifier.fillMaxWidth().testTag("recipe-open-" + recipe.id), onClick = { detail = recipe }) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    assets.firstOrNull()?.let { RecipePicture(viewModel.recipes.photoUri(it.relativeFilePath)) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (composing) Checkbox(recipe.currentRevisionId in selected, { checked -> selected = if (checked) selected + recipe.currentRevisionId else selected - recipe.currentRevisionId }, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
+                        assets.firstOrNull()?.let { RecipeThumbnail(viewModel.recipes.photoUri(it.relativeFilePath), Modifier.size(56.dp)) }
                         TurnInBannerText(recipe.name, style = PitTechTextStyles.bannerTitle, modifier = Modifier.weight(1f))
                         if (recipe.favorite) Icon(Icons.Filled.Favorite, null, tint = tokens.flag, modifier = Modifier.size(20.dp))
                         Box {
@@ -129,7 +173,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                         Text(listOf(s.dish.foodType, s.dish.cut, if (s.dish.weightText.isNotBlank()) "${s.dish.weightText} ${s.dish.weightUnit}" else "").filter(String::isNotBlank).joinToString(" · "), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
                         if (s.description.isNotBlank()) Text(s.description, style = PitTechTextStyles.body, maxLines = 3)
                     }
-                    Text("Saved recipe · version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: 1}${if (recipe.favorite) " · favorite" else ""}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                    Text("Saved recipe · version ${revisions.firstOrNull { it.id == recipe.currentRevisionId }?.revisionNumber ?: 1}${if (recipe.favorite) " · favorite" else ""} · Added ${formatRecipeDate(recipe.createdAtUtcMillis)}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
                 }
             }
         }
@@ -168,14 +212,74 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             onEdit = { revision -> act { editor = RecipeEditorRequest(snapshots.getValue(revision.id), recipe.id, recipe.currentRevisionId, revision.id, revision.sourceCookId, revision.sourceDishId, viewModel.recipes.assets(revision.id)); detail = null } },
             onDuplicate = { name -> act { viewModel.recipes.duplicate(recipe.id, name); detail = null } },
             onArchive = { act { viewModel.recipes.archive(recipe.id); detail = null } },
-            onShare = { id -> act { sharingDraftId = viewModel.sharing.fromRecipe(id); detail = null } })
+            onShare = { id -> act { sharingDraftId = viewModel.sharing.fromRecipe(id); detail = null } },
+            onOpenCook = { id -> viewModel.openCook(id); detail = null })
     }
     editor?.let { request -> RecipeEditorDialog(request, viewModel, busy, error, onClose = { editor = null }, onSave = { edit -> act { saveRecipeEdit(request, edit, viewModel); editor = null } }) }
     sharingDraftId?.let { id -> SharingDraftEditor(id, viewModel) { sharingDraftId = null } }
 }
 
+private fun formatRecipeDate(millis: Long): String =
+    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(millis))
+
+private fun formatRecipeTime(millis: Long): String =
+    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+
+private fun formatRecipeDuration(millis: Long): String {
+    val totalMinutes = millis / 60_000
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 && minutes > 0 -> "$hours h $minutes min"
+        hours > 0 -> "$hours h"
+        else -> "$minutes min"
+    }
+}
+
+/** The grid view's photo-forward tile: same destination and actions as the
+ * list card — photo, name, meta, added date, favorite/restore menu, and
+ * the meal-building checkbox when composing. */
+@Composable
+private fun RecipeGridTile(
+    viewModel: CooksViewModel,
+    recipe: SavedRecipe,
+    snapshot: RecipeSnapshot?,
+    composing: Boolean,
+    archived: Boolean,
+    isSelected: Boolean,
+    onToggleSelected: (Boolean) -> Unit,
+    onOpen: () -> Unit,
+    onFavoriteOrRestore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var assets by remember(recipe.currentRevisionId) { mutableStateOf(emptyList<RecipeAsset>()) }
+    LaunchedEffect(recipe.currentRevisionId) { assets = viewModel.recipes.assets(recipe.currentRevisionId) }
+    var menu by remember { mutableStateOf(false) }
+    val tokens = pitTechTokens()
+    TurnInCard(modifier.testTag("recipe-open-" + recipe.id), onClick = onOpen) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            assets.firstOrNull()?.let { RecipeThumbnail(viewModel.recipes.photoUri(it.relativeFilePath), Modifier.fillMaxWidth().height(104.dp)) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (composing) Checkbox(isSelected, onToggleSelected, enabled = !archived, modifier = Modifier.testTag("recipe-select-${recipe.id}"))
+                TurnInBannerText(recipe.name, style = PitTechTextStyles.bannerCard, modifier = Modifier.weight(1f), maxLines = 2)
+                if (recipe.favorite) Icon(Icons.Filled.Favorite, null, tint = tokens.flag, modifier = Modifier.size(18.dp))
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Actions for ${recipe.name}") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text(if (archived) "Restore recipe" else if (recipe.favorite) "Remove favorite" else "Favorite") }, onClick = { menu = false; onFavoriteOrRestore() })
+                    }
+                }
+            }
+            snapshot?.let { s ->
+                Text(listOf(s.dish.foodType, s.dish.cut).filter(String::isNotBlank).joinToString(" · "), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+            }
+            Text("Added ${formatRecipeDate(recipe.createdAtUtcMillis)}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+        }
+    }
+}
+
 @Composable private fun RecipeDetailsDialog(viewModel: CooksViewModel, recipe: SavedRecipe, history: List<RecipeRevision>, snapshots: Map<String, RecipeSnapshot>, cookIds: Set<String>, busy: Boolean,
-    onClose: () -> Unit, onUse: (String) -> Unit, onEdit: (RecipeRevision) -> Unit, onDuplicate: (String) -> Unit, onArchive: () -> Unit, onShare: (String) -> Unit) {
+    onClose: () -> Unit, onUse: (String) -> Unit, onEdit: (RecipeRevision) -> Unit, onDuplicate: (String) -> Unit, onArchive: () -> Unit, onShare: (String) -> Unit, onOpenCook: ((String) -> Unit)? = null) {
     val tokens = pitTechTokens()
     var selected by remember(recipe.id) { mutableStateOf(recipe.currentRevisionId) }
     var duplicateName by remember(recipe.id) { mutableStateOf(recipe.name + " copy") }
@@ -196,8 +300,14 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                     Text("Preferred version", style = PitTechTextStyles.monoMeta, color = tokens.onAccent, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                 }
             } else Text("Previous version", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+            Text("Added " + formatRecipeDate(recipe.createdAtUtcMillis), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
             if (revision?.sourceCookId != null) {
-                if (revision.sourceCookId in cookIds) Text("Saved from your meal history.", style = PitTechTextStyles.body)
+                if (revision.sourceCookId in cookIds) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Saved from your meal history.", style = PitTechTextStyles.body, modifier = Modifier.weight(1f))
+                        if (onOpenCook != null) TextButton(onClick = { onOpenCook(revision.sourceCookId) }) { Text("Open the cook") }
+                    }
+                }
                 else TurnInStatusStrip("Source meal is unavailable. Saved instructions and reference photos remain available.", tokens.cobalt)
             }
             snapshot?.publicSource?.let { source ->
@@ -219,6 +329,38 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
                     cells.forEach { (label, value) -> TurnInScoreCell(label, value, Modifier.weight(1f)) }
                 }
                 if (s.description.isNotBlank()) Text(s.description, style = PitTechTextStyles.body)
+                // The source cook's story, from the facts frozen into the
+                // snapshot when the recipe was saved: when it was cooked,
+                // how long it ran, how it rated, and the recorded timeline
+                // with the temperatures measured at each step. Authored
+                // fields alone made saved-from-a-cook recipes read as
+                // boilerplate; the story was always in the data.
+                val story = s.observations.sortedBy { it.occurredAtUtcMillis }
+                if (story.isNotEmpty() || s.rating != null || s.smokingAnchorUtcMillis != null) {
+                    TurnInCard(Modifier.fillMaxWidth()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurnInMetaLabel("From the cook")
+                            val facts = listOfNotNull(
+                                s.smokingAnchorUtcMillis?.let { "Cooked " + formatRecipeDate(it) },
+                                story.mapNotNull { it.offsetMillis }.maxOrNull()?.let { "Ran " + formatRecipeDuration(it) },
+                                s.rating?.let { "Rated " + String.format(java.util.Locale.getDefault(), "%.1f", it) + " / 5" },
+                            )
+                            if (facts.isNotEmpty()) Text(facts.joinToString(" · "), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                            story.forEach { observation ->
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(formatRecipeTime(observation.occurredAtUtcMillis), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                                        Text(observation.title, style = PitTechTextStyles.bodyEmphasis)
+                                    }
+                                    if (observation.details.isNotBlank()) Text(observation.details, style = PitTechTextStyles.body)
+                                    observation.recordedTemperatures.forEach { reading ->
+                                        Text(reading.probeName + " · " + String.format(java.util.Locale.getDefault(), "%.0f", reading.value) + "°", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 if (s.dish.preparationItems.isNotEmpty()) TurnInCard(Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         TurnInMetaLabel("Ingredients")
@@ -267,6 +409,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val sources by remember { viewModel.recipes.observeSources() }.collectAsStateWithLifecycle(emptyList())
+    val libraryRecipes by remember { viewModel.recipes.observeRecipes() }.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { try { block(); error = null } catch (e: Exception) { error = ErrorCopy.failureText(e, "That change couldn't be saved. Your cookbook is unchanged — try again.") } finally { busy = false } } }
     if (data.cook.status == CookStatus.COMPLETED || sources.any { source -> data.dishes.any { it.id == source.dishId } }) {
@@ -275,7 +418,7 @@ internal data class RecipeEditorRequest(val snapshot: RecipeSnapshot, val recipe
             val source = sources.firstOrNull { it.dishId == dish.id }
             TurnInBannerText(dish.name)
             if (data.cook.status == CookStatus.COMPLETED) {
-                OutlinedButton(onClick = { act { val draft = viewModel.recipeExtraction(data.cook.id, dish.id); editor = RecipeEditorRequest(draft.snapshot, sourceCookId = data.cook.id, sourceDishId = dish.id, sourcePhotos = data.photos, selectedPhotoIds = draft.photoIds, context = draft.contextEvents) } }, enabled = !busy, modifier = Modifier.testTag("dish-save-recipe-" + dish.id)) { Text("Save as new recipe") }
+                OutlinedButton(onClick = { act { val draft = viewModel.recipeExtraction(data.cook.id, dish.id); editor = RecipeEditorRequest(draft.snapshot.copy(name = differentiatedRecipeName(draft.snapshot.name, libraryRecipes.map { it.name })), sourceCookId = data.cook.id, sourceDishId = dish.id, sourcePhotos = data.photos, selectedPhotoIds = draft.photoIds, context = draft.contextEvents) } }, enabled = !busy, modifier = Modifier.testTag("dish-save-recipe-" + dish.id)) { Text("Save as new recipe") }
                 if (source != null) TextButton(onClick = { act {
                     val recipe = viewModel.recipes.get(source.recipeId) ?: error("This saved recipe is unavailable.")
                     val revision = viewModel.recipes.revision(recipe.currentRevisionId) ?: error("This version is unavailable.")

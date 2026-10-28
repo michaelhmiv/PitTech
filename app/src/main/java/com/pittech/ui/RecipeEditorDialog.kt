@@ -5,6 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -240,4 +243,14 @@ private fun RecipeEditorRequest.initialDraft(): RecipeEditorDraft = RecipeEditor
         context.contentResolver.openInputStream(Uri.parse(uri))?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }) }
     }.getOrNull() } }
     bitmap?.let { Image(it.asImageBitmap(), "Recipe reference photo", Modifier.fillMaxWidth().heightIn(max = 200.dp)) }
+}
+
+/** The same decode as [RecipePicture], cropped into a fixed frame — the
+ * inline thumbnail on recipe list rows and the photo on grid tiles. */
+@Composable internal fun RecipeThumbnail(uri: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val bitmap by produceState<android.graphics.Bitmap?>(null, uri) { value = withContext(Dispatchers.IO) { runCatching {
+        context.contentResolver.openInputStream(Uri.parse(uri))?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }) }
+    }.getOrNull() } }
+    bitmap?.let { Image(it.asImageBitmap(), "Recipe reference photo", modifier.clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop) }
 }
