@@ -32,10 +32,30 @@ struct NativePublicItem: Decodable, Identifiable {
     let likes: Int
     let forks: Int
     let heroAssetId: String?
+    let category: String
+    var categoryLabel: String { FoodCategory.label(forId: category) }
     func validate() throws {
         try credit.validate()
         guard UUID(uuidString: id) != nil, UUID(uuidString: revisionId) != nil, (1...160).contains(title.utf16.count), credit.displayName.utf16.count <= 160,
               ["recipe", "collection", "attempt"].contains(kind), (0...1_000_000_000).contains(likes), (0...1_000_000_000).contains(forks), heroAssetId.map({ UUID(uuidString: $0) != nil }) ?? true else { throw NativePublicError.invalid }
+    }
+}
+extension NativePublicItem {
+    private enum CodingKeys: String, CodingKey { case id, revisionId, title, kind, credit, likes, forks, heroAssetId, category }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        revisionId = try container.decode(String.self, forKey: .revisionId)
+        title = try container.decode(String.self, forKey: .title)
+        kind = try container.decode(String.self, forKey: .kind)
+        credit = try container.decode(Credit.self, forKey: .credit)
+        likes = try container.decode(Int.self, forKey: .likes)
+        forks = try container.decode(Int.self, forKey: .forks)
+        heroAssetId = try container.decodeIfPresent(String.self, forKey: .heroAssetId)
+        // Cached pages from a pre-taxonomy server carry no category, and a
+        // future server could send an id this build doesn't know. Both read
+        // as Other instead of failing the whole page.
+        category = FoodCategory.normalizedId((try? container.decodeIfPresent(String.self, forKey: .category)) ?? nil)
     }
 }
 struct NativePublicPage: Decodable {
@@ -138,9 +158,10 @@ actor NativePublicCache {
     private(set) var appliedSort = "liked"
     private(set) var appliedFood = ""
     private(set) var appliedQuery = ""
+    private(set) var appliedCategory: String?
     init(enabled: Bool = NativeOnlineConfiguration.current.enabled, api: any NativePublicAPI = NativePublicClient(), cache: NativePublicCache = NativePublicCache(), audience: @escaping () throws -> String = NativeCommunityVault.cacheAudience) { self.enabled = enabled; self.api = api; self.cache = cache; self.audience = audience }
-    private func pagePath(sort: String, food: String, query: String, cursor: String? = nil) -> String {
-        var parts = URLComponents(); parts.path = "/v1/discover"; parts.queryItems = [URLQueryItem(name: "sort", value: sort), URLQueryItem(name: "food", value: food), URLQueryItem(name: "q", value: query)] + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+    private func pagePath(sort: String, food: String, query: String, category: String? = nil, cursor: String? = nil) -> String {
+        var parts = URLComponents(); parts.path = "/v1/discover"; parts.queryItems = [URLQueryItem(name: "sort", value: sort), URLQueryItem(name: "food", value: food), URLQueryItem(name: "q", value: query)] + (category.map { [URLQueryItem(name: "category", value: $0)] } ?? []) + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
         return parts.string!
     }
     private func cached(_ path: String) async throws -> (Data, Bool) {
@@ -156,15 +177,15 @@ actor NativePublicCache {
         catch is CancellationError { throw CancellationError() }
         catch { guard try self.audience() == audience else { throw CancellationError() }; if let data = try? await cache.read(key) { guard try self.audience() == audience else { throw CancellationError() }; return (data, true) }; throw error }
     }
-    func refresh(sort: String, food: String, query: String, more: Bool = false) async {
-        guard enabled, !loading, ["liked", "forked"].contains(sort), food.count <= 80, query.count <= 80 else { return }
-        let key = pagePath(sort: sort, food: food, query: query); guard !more || currentKey == key && nextCursor != nil else { return }
+    func refresh(sort: String, food: String, query: String, category: String? = nil, more: Bool = false) async {
+        guard enabled, !loading, ["liked", "forked"].contains(sort), food.count <= 80, query.count <= 80, category.map({ FoodCategory.isValidId($0) }) ?? true else { return }
+        let key = pagePath(sort: sort, food: food, query: query, category: category); guard !more || currentKey == key && nextCursor != nil else { return }
         if !more && currentKey != key { items = []; nextCursor = nil }
-        appliedSort = sort; appliedFood = food; appliedQuery = query
+        appliedSort = sort; appliedFood = food; appliedQuery = query; appliedCategory = category
         let generation = controlsGeneration
         loading = true; defer { loading = false }
         do {
-            let (bytes, saved) = try await cached(pagePath(sort: sort, food: food, query: query, cursor: more ? nextCursor : nil))
+            let (bytes, saved) = try await cached(pagePath(sort: sort, food: food, query: query, category: category, cursor: more ? nextCursor : nil))
             guard generation == controlsGeneration else { throw CancellationError() }
             let page = try JSONDecoder().decode(NativePublicPage.self, from: bytes); try page.validate()
             if more { let known = Set(items.map(\.id)); items += page.items.filter { !known.contains($0.id) } } else { items = page.items }
@@ -188,7 +209,7 @@ actor NativePublicCache {
                 let data = try await api.json("/v1/recipes/" + entry.id)
                 let detail = try JSONDecoder().decode(NativePublicDetail.self, from: data); try detail.validate()
                 guard detail.id == entry.id, detail.payload.objectValue?["identityMode"]?.stringValue == "named" else { throw NativePublicError.invalid }
-                items.append(NativePublicItem(id: detail.id, revisionId: detail.revisionId, title: detail.title, kind: detail.payload.objectValue?["kind"]?.stringValue ?? "recipe", credit: detail.credit, likes: detail.likes, forks: detail.forks, heroAssetId: detail.payload.objectValue?["heroAssetId"]?.stringValue))
+                items.append(NativePublicItem(id: detail.id, revisionId: detail.revisionId, title: detail.title, kind: detail.payload.objectValue?["kind"]?.stringValue ?? "recipe", credit: detail.credit, likes: detail.likes, forks: detail.forks, heroAssetId: detail.payload.objectValue?["heroAssetId"]?.stringValue, category: FoodCategory.normalizedId(detail.payload.objectValue?["category"]?.stringValue)))
             } catch NativePublicError.status(404) { continue }
         }
         guard try self.audience() == audience else { throw CancellationError() }; return (profile, items)

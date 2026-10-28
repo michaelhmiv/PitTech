@@ -115,7 +115,7 @@ enum NativeOwnedPublication {
             if let method = recipe["method"]?.stringValue { methods[entryId] = method }
             members[entryId] = publicId; sources[entryId] = try NativePublicationEditContext.source(recipe["source"] ?? .null, excluding: receipt.id)
         }
-        let document = NativeSharingDocument(title: title, identityMode: identity, heroPhotoId: hero, entries: entries); try document.validate()
+        let document = NativeSharingDocument(title: title, identityMode: identity, category: FoodCategory.normalizedId(payload["category"]?.stringValue), heroPhotoId: hero, entries: entries); try document.validate()
         let context = NativePublicationEditContext(receipt: receipt, rootSource: try NativePublicationEditContext.source(payload["source"] ?? .null, excluding: receipt.id), memberIds: members, memberSources: sources, instructionIds: steps, assetIds: assets, measuredAttemptId: payload["measuredAttemptId"]?.stringValue, memberMethods: methods); try context.validate()
         return NativeOwnedPublicationDraft(id: UUID().uuidString.lowercased(), document: document, photos: photos, context: context)
     }

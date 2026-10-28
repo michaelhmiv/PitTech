@@ -147,7 +147,7 @@ enum NativePublicationProjection {
         guard Set(attempts).count == attempts.count else { throw NativePublicationError.invalid }
         let roots = try selected.map { try $0.snapshot.publicSource }
         let commonSource: PublicRecipeSource? = roots.first.flatMap { first in guard let first, roots.allSatisfy({ $0?.itemId == first.itemId && $0?.revisionId == first.revisionId }) else { return nil }; return first }
-        let payload: JSONValue = .object(["contractVersion": .number(1), "kind": .string(kind), "identityMode": .string(document.identityMode), "title": try text(document.title, 160), "recipes": .array(recipes),
+        let payload: JSONValue = .object(["contractVersion": .number(1), "kind": .string(kind), "identityMode": .string(document.identityMode), "category": .string(document.category), "title": try text(document.title, 160), "recipes": .array(recipes),
             "source": source(commonSource), "measuredAttemptId": kind == "attempt" ? recipes[0].objectValue?["story"]?.objectValue?["attemptId"] ?? .null : .null,
             "heroAssetId": document.heroPhotoId.map { .string(id("photo:" + $0)) } ?? .null])
         return try package(payload, photos: publicPhotos)

@@ -53,6 +53,58 @@ import UIKit
         XCTAssertThrowsError(try relaunched.saveSharingDraft(id, document: stale, expectedUpdated: 0))
         XCTAssertEqual(try relaunched.sharingDocument(id), draft)
     }
+    func testFoodCategoryTaxonomyMatchesSharedContractFixture() throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "food-categories-v1", withExtension: "json"))
+        let fixture = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+        XCTAssertEqual(fixture.objectValue?["version"]?.numberValue, 1)
+        let categories = try XCTUnwrap(fixture.objectValue?["categories"]?.arrayValue)
+        XCTAssertEqual(categories.count, 12)
+        XCTAssertEqual(categories.count, FoodCategory.all.count)
+        for (index, category) in categories.enumerated() {
+            XCTAssertEqual(category.objectValue?["id"]?.stringValue, FoodCategory.all[index].id)
+            XCTAssertEqual(category.objectValue?["label"]?.stringValue, FoodCategory.all[index].label)
+            XCTAssertEqual(category.objectValue?["examples"]?.arrayValue?.compactMap(\.stringValue), FoodCategory.all[index].examples)
+        }
+        XCTAssertEqual(FoodCategory.defaultId, "other")
+        XCTAssertEqual(FoodCategory.all.last?.id, FoodCategory.defaultId)
+        XCTAssertEqual(FoodCategory.label(forId: "beef"), "Beef")
+        XCTAssertEqual(FoodCategory.label(forId: "not-a-category"), "Other")
+        XCTAssertEqual(FoodCategory.normalizedId("not-a-category"), "other")
+    }
+    func testFoodCategorySuggestionMapsFreeTextFoodTypes() {
+        let cases: [(String, String)] = [("Beef", "beef"), ("pOrK", "pork"), ("Chicken", "chicken"), ("Turkey", "turkey"),
+            ("Poultry", "chicken"), ("Seafood", "seafood"), ("Fish", "seafood"), ("Salmon", "seafood"), ("Shrimp", "seafood"),
+            ("Wild game", "lamb-game"), ("Lamb", "lamb-game"), ("Venison", "lamb-game"), ("Duck", "lamb-game"),
+            ("Sausage", "sausage-links"), ("Vegetables", "veggies"), ("Veggie tray", "veggies"), ("Dessert", "desserts"),
+            ("Side dish", "sides"), ("Snack", "apps-snacks"), ("Appetizer", "apps-snacks"), ("Other", "other"), ("", "other")]
+        for (foodType, expected) in cases { XCTAssertEqual(FoodCategory.suggestedId(forFoodType: foodType), expected, foodType) }
+    }
+    func testSharingDraftCategoryRoundTripsDerivesAndValidates() throws {
+        func document(foodType: String?) throws -> NativeSharingDocument {
+            var dish: [String: JSONValue] = ["name": .string("Pork shoulder")]
+            if let foodType { dish["foodType"] = .string(foodType) }
+            let snapshot = RecipeSnapshot(version: 1, name: "Pork shoulder", description: "", tags: [], draft: .object(["dishes": .array([.object(dish)])]), instructions: [], observations: [], targets: [], resultNotes: "", rating: nil, smokingAnchorUtcMillis: nil, servings: "")
+            let story: JSONValue = .object(["version": .number(1), "attemptId": .string("draft-attempt"), "observations": .array([]), "readings": .array([]), "results": .array([])])
+            return NativeSharingDocument(title: "Pork shoulder", entries: [NativeSharingEntry(snapshotJson: try recipeJSON(snapshot), story: story)])
+        }
+        var explicit = try document(foodType: "Pork"); explicit.category = "beef"; try explicit.validate()
+        let encoded = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(explicit))
+        XCTAssertEqual(encoded.objectValue?["category"]?.stringValue, "beef")
+        XCTAssertEqual(try NativeSharingDocument.decode(encoded), explicit)
+        // A stored draft with no category derives one from the first
+        // entry's dish food type; an out-of-taxonomy stored value derives
+        // the same way instead of failing the draft.
+        var stored = try XCTUnwrap(encoded.objectValue); stored["category"] = nil
+        XCTAssertEqual(try NativeSharingDocument.decode(.object(stored)).category, "pork")
+        stored["category"] = .string("not-a-category")
+        XCTAssertEqual(try NativeSharingDocument.decode(.object(stored)).category, "pork")
+        let untyped = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(try document(foodType: nil)))
+        var untypedStored = try XCTUnwrap(untyped.objectValue); untypedStored["category"] = nil
+        XCTAssertEqual(try NativeSharingDocument.decode(.object(untypedStored)).category, "other")
+        // In-memory validation still rejects an out-of-taxonomy id.
+        explicit.category = "not-a-category"
+        XCTAssertThrowsError(try explicit.validate())
+    }
     func testStoryKeepsCelsiusAndFahrenheitValuesWithoutChangingNativeSourceUnits() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }

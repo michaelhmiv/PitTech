@@ -16,6 +16,7 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
     var title: String
     var sourceCookId: String?
     var identityMode = "anonymous"
+    var category = FoodCategory.defaultId
     var heroPhotoId: String?
     var collectionId: String?
     var parentRevisionId: String?
@@ -26,7 +27,7 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
     func validate() throws {
         try cardOptions.validate()
         guard version == 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 160,
-              (1...20).contains(entries.count), ["named", "anonymous"].contains(identityMode), Set(entries.map(\.id)).count == entries.count else { throw PitTechArchiveError.invalidArchive }
+              (1...20).contains(entries.count), ["named", "anonymous"].contains(identityMode), FoodCategory.isValidId(category), Set(entries.map(\.id)).count == entries.count else { throw PitTechArchiveError.invalidArchive }
         for entry in entries {
             _ = try entry.snapshot
             guard entry.id.range(of: "^[A-Za-z0-9_-]{1,80}$", options: .regularExpression) != nil,
@@ -54,9 +55,32 @@ struct NativeSharingDocument: Codable, Equatable, Sendable {
         }
         if let heroPhotoId, !entries.contains(where: { $0.included && $0.photoIds.contains(heroPhotoId) }) { throw PitTechArchiveError.invalidArchive }
     }
-    static func decode(_ value: JSONValue) throws -> Self {
-        let result = try JSONDecoder().decode(Self.self, from: JSONEncoder().encode(value)); try result.validate(); return result
+    private static func storedFoodType(_ entries: JSONValue?) -> String? {
+        guard let snapshotJson = entries?.arrayValue?.first?.objectValue?["snapshotJson"]?.stringValue,
+              let snapshot = try? RecipeSnapshot.decode(snapshotJson) else { return nil }
+        return snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue?["foodType"]?.stringValue
     }
+    static func decode(_ value: JSONValue) throws -> Self {
+        var stored = value
+        // Drafts stored before the food taxonomy existed carry no category
+        // (or, from a damaged write, an out-of-taxonomy one). Derive the
+        // starting category from the first entry's dish food type instead
+        // of failing the draft; an in-memory document is still validated
+        // strictly by validate() before it is saved or published.
+        if var object = stored.objectValue, !FoodCategory.isValidId(object["category"]?.stringValue) {
+            object["category"] = .string(FoodCategory.suggestedId(forFoodType: storedFoodType(object["entries"]) ?? ""))
+            stored = .object(object)
+        }
+        let result = try JSONDecoder().decode(Self.self, from: JSONEncoder().encode(stored)); try result.validate(); return result
+    }
+}
+
+/// The category a newly created sharing draft starts on: the suggestion
+/// from its first entry's dish food type. Only a pre-selection — the
+/// publish flow lets the user change it before anything is written.
+private func sharingCategory(for entries: [NativeSharingEntry]) -> String {
+    let foodType = entries.first.flatMap { try? $0.snapshot }?.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue?["foodType"]?.stringValue ?? ""
+    return FoodCategory.suggestedId(forFoodType: foodType)
 }
 
 extension PitTechLibrary {
@@ -95,7 +119,7 @@ extension PitTechLibrary {
                 try Data(contentsOf: photoURL(path)).write(to: photoURL(destination), options: .atomic); copied.append(destination)
                 library.companionPhotos.append(.object(["id":.string(photoId),"recordId":.string(id),"archivePath":.string(destination),"mimeType":asset["mimeType"] ?? .string("image/jpeg"),"caption":asset["caption"] ?? .string(""),"dishIndex":.number(0),"action":.string(entry.id)]))
             }
-            let document = NativeSharingDocument(title:String(snapshot.name.prefix(160)),entries:[entry]);try document.validate()
+            let document = NativeSharingDocument(title:String(snapshot.name.prefix(160)),category:sharingCategory(for:[entry]),entries:[entry]);try document.validate()
             let now = Date.now.timeIntervalSince1970 * 1000
             library.companionRecords.append(.object(["id":.string(id),"kind":.string("sharing_draft"),"title":.string(document.title),"payload":try JSONDecoder().decode(JSONValue.self,from:JSONEncoder().encode(document)),"created":.number(now),"updated":.number(now)]))
             try library.validateSharingDocuments();save();if saveError != nil { throw CocoaError(.fileWriteUnknown) };return id
@@ -140,7 +164,7 @@ extension PitTechLibrary {
                 return entry
             }
             let history = try NativeCookPackHistory.freeze(prior, cookId: cookId, dishIds: dishIds, copiedPhotos: copiedPhotos)
-            let document = NativeSharingDocument(title: String(cook.title.prefix(160)), sourceCookId: cookId, sourceHistory: history, entries: entries)
+            let document = NativeSharingDocument(title: String(cook.title.prefix(160)), sourceCookId: cookId, category: sharingCategory(for: entries), sourceHistory: history, entries: entries)
             try document.validate(); let now = Date.now.timeIntervalSince1970 * 1000
             library.companionRecords.append(.object(["id": .string(id), "kind": .string("sharing_draft"), "title": .string(document.title), "payload": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(document)), "created": .number(now), "updated": .number(now)]))
             try library.validateSharingDocuments(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }; return id

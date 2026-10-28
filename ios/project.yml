@@ -141,6 +141,8 @@ targets:
         buildPhase: resources
       - path: ../contracts/fixtures/online-environments-v1.json
         buildPhase: resources
+      - path: ../contracts/fixtures/food-categories-v1.json
+        buildPhase: resources
       - path: ../contracts/fixtures/public-links-v1.json
         buildPhase: resources
       - path: ../contracts/fixtures/public-native-v1.json

@@ -5,6 +5,7 @@ struct NativePublicDiscoveryView: View {
     @State private var query = ""
     @State private var food = ""
     @State private var sort = "liked"
+    @State private var category: String?
     @State private var initialized = false
     var body: some View {
         NavigationStack(path: Binding(get: { community.path }, set: { community.path = $0 })) {
@@ -20,8 +21,14 @@ struct NativePublicDiscoveryView: View {
                         // Search tap stands between the choice and its
                         // result. (The text fields still apply with the
                         // Search button below.)
-                        .onChange(of: sort) { _, newSort in Task { await community.refresh(sort: newSort, food: food, query: query) } }
-                    Button("Search recipes") { Task { await community.refresh(sort: sort, food: food, query: query) } }.buttonStyle(.borderedProminent).disabled(community.loading).accessibilityIdentifier("discover-search")
+                        .onChange(of: sort) { _, newSort in Task { await community.refresh(sort: newSort, food: food, query: query, category: category) } }
+                    Picker("Category", selection: $category) {
+                        Text("All categories").tag(nil as String?)
+                        ForEach(FoodCategory.all, id: \.id) { option in Text(option.label).tag(option.id as String?) }
+                    }.accessibilityIdentifier("discover-category")
+                        // Like sort, a category pick applies on selection.
+                        .onChange(of: category) { _, newCategory in Task { await community.refresh(sort: sort, food: food, query: query, category: newCategory) } }
+                    Button("Search recipes") { Task { await community.refresh(sort: sort, food: food, query: query, category: category) } }.buttonStyle(.borderedProminent).disabled(community.loading).accessibilityIdentifier("discover-search")
                     if community.loading { ProgressView("Loading recipes…") }
                     if let message = community.message { TurnInStatusStrip(text: message, accent: PitTechStyle.flag).accessibilityIdentifier("discover-message") }
                     if community.items.isEmpty && !community.loading && community.message == nil {
@@ -39,19 +46,19 @@ struct NativePublicDiscoveryView: View {
                                     VStack(alignment: .leading, spacing: 8) {
                                         TurnInBannerText(item.title)
                                         Text(item.credit.displayName).font(PitTechFont.body)
-                                        Text("\(item.likes) likes · \(item.forks) forks").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                                        Text("\(item.likes) likes · \(item.forks) forks · \(item.categoryLabel)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                                     }
                                 }
                             }.buttonStyle(.plain).accessibilityIdentifier("discover-open-" + item.id)
                         }
                     }
-                    if community.nextCursor != nil { Button("More recipes") { Task { await community.refresh(sort: community.appliedSort, food: community.appliedFood, query: community.appliedQuery, more: true) } }.disabled(community.loading) }
+                    if community.nextCursor != nil { Button("More recipes") { Task { await community.refresh(sort: community.appliedSort, food: community.appliedFood, query: community.appliedQuery, category: community.appliedCategory, more: true) } }.disabled(community.loading) }
                 }.padding(20)
             }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Discover").navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: String.self) { value in
                     if value.hasPrefix("profile:") { NativePublicProfileView(handle: String(value.dropFirst(8))) } else { NativePublicRecipeView(id: value) }
                 }
-                .task { if !initialized { sort = community.appliedSort; food = community.appliedFood; query = community.appliedQuery; initialized = true }; if community.items.isEmpty { await community.refresh(sort: sort, food: food, query: query) } }
+                .task { if !initialized { sort = community.appliedSort; food = community.appliedFood; query = community.appliedQuery; category = community.appliedCategory; initialized = true }; if community.items.isEmpty { await community.refresh(sort: sort, food: food, query: query, category: category) } }
         }
     }
 }
