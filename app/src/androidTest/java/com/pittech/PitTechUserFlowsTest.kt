@@ -860,7 +860,12 @@ class PitTechUserFlowsTest {
         composeRule.onNodeWithText("PitTech stopped unexpectedly").assertIsDisplayed()
         composeRule.onNodeWithTag("crash-report-attach").performClick()
         // The attach lands on Settings with the bug-report form open — once.
-        composeRule.onNodeWithTag("feedback-kind-bug").assertIsDisplayed()
+        // The form can sit below the fold of the scrolling Settings content,
+        // so wait for it to exist, then scroll it into view before asserting.
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("feedback-kind-bug", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("feedback-kind-bug").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").performClick()
         composeRule.onAllNodesWithTag("feedback-kind-bug").assertCountEquals(0)
         composeRule.onNodeWithTag("settings-version").performScrollTo().assertIsDisplayed()
@@ -1221,13 +1226,15 @@ class PitTechUserFlowsTest {
     fun test10_systemBackPopsCookDetailAndTabRootInsteadOfExiting() {
         clearLocalData()
         val cookId = createTestCook("Back navigation brisket")
-        composeRule.onNodeWithTag("cook-card-$cookId").performScrollTo().performClick()
+        // The card's tag can sit inside a merged semantics subtree on the
+        // board, so address it through the unmerged tree.
+        composeRule.onNodeWithTag("cook-card-$cookId", useUnmergedTree = true).performScrollTo().performClick()
         // The cook detail replaces the tab shell; the home action is gone.
         composeRule.onAllNodesWithTag("start-cook").assertCountEquals(0)
         pressSystemBack()
         // Back returns to the cook list with the activity still alive —
         // pre-fix the system back fell through and finished the activity.
-        composeRule.onNodeWithTag("cook-card-$cookId").assertIsDisplayed()
+        composeRule.onNodeWithTag("cook-card-$cookId", useUnmergedTree = true).assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { assertFalse(it.isFinishing) }
         // From another tab root, back returns to the Cooks (start) tab.
         composeRule.onNodeWithTag("nav-recipes").performClick()
