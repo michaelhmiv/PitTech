@@ -42,6 +42,62 @@ class MealRecipeUserFlowsTest {
         assertTrue(runBlocking(Dispatchers.IO) { app.cookRepository.observeCooks().first().isEmpty() })
         assertTrue(runBlocking(Dispatchers.IO) { app.database.companionDao().observeAll().first().isEmpty() })
     }
+    // Flowing §4.2: the composer's one-tap capture. An untouched wrap
+    // prompt writes nothing; one tap on a material chip records it; a
+    // spritz saved without touching its prompt still records "yes"
+    // (the logged action is the data) with no medium row.
+    @Test fun composerCaptureRecordsWrapAndSpritzInOneTap() {
+        val cookId = runBlocking(Dispatchers.IO) {
+            app.database.clearAllTables()
+            val started = app.cookRepository.startCook(NewCookDraft("Capture flow brisket", dishes = listOf(DishDraft("Brisket", "Beef"))))
+            // The dish goes on the pit first: the app (correctly) refuses
+            // a wrap entry before food-on — phases must stay in order.
+            val dishId = app.database.cookDao().getDishesForCook(started).single().id
+            app.cookRepository.addTimelineEvent(started, dishId, "food_on", "Food on", null, System.currentTimeMillis() - 60_000)
+            started
+        }
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(20000) { compose.onAllNodesWithText("Capture flow brisket").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Capture flow brisket").performClick()
+        waitFor("timeline-add")
+        fun results() = runBlocking(Dispatchers.IO) { app.database.cookDao().getAllResults().filter { it.cookId == cookId } }
+        fun logAction(optionTag: String, details: String) {
+            compose.onNodeWithTag("timeline-add").performClick()
+            waitFor("timeline-entry-details")
+            compose.onNodeWithTag("timeline-entry-details").performTextInput(details)
+            closeFocusedSoftKeyboard()
+            compose.onNodeWithText("More details", useUnmergedTree = true).performScrollTo().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("timeline-entry-type", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("timeline-entry-type", useUnmergedTree = true).performScrollTo().performClick()
+            compose.onNodeWithTag(optionTag).performClick()
+        }
+        // 1) Untouched wrap prompt: the entry saves, no input row appears.
+        logAction("timeline-entry-type-option-wrap", "Wrapped at the stall")
+        compose.onNodeWithTag("composer-wrap-material", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        // Notes are stored as eventType "note" with the action carried in
+        // the note metadata — PlaybookCodec.action is how the app reads it.
+        fun wrapLogged() = runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(cookId) }
+            .any { PlaybookCodec.action(it.eventType, it.noteMetadataJson) == "wrap" }
+        compose.waitUntil(15000) { wrapLogged() }
+        assertTrue(wrapLogged())
+        assertTrue("an untouched prompt must not write a wrap row", results().none { it.resultType == "wrap_material" })
+        // 2) One tap on Foil, then Save: the material is recorded.
+        logAction("timeline-entry-type-option-wrap", "Re-wrapped for the rest")
+        compose.onNodeWithTag("composer-wrap-material", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Foil", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(15000) { results().any { it.resultType == "wrap_material" } }
+        assertEquals("foil", results().single { it.resultType == "wrap_material" }.textValue)
+        // 3) Spritz saved without touching its prompt: spritz = yes, no medium.
+        logAction("timeline-entry-type-option-spritz", "Spritzed the bark")
+        compose.onNodeWithTag("composer-spritz", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("timeline-entry-save").performClick()
+        compose.waitUntil(15000) { results().any { it.resultType == "spritz" } }
+        assertEquals("yes", results().single { it.resultType == "spritz" }.textValue)
+        assertTrue(results().none { it.resultType == "spritz_medium" })
+        shot("composer-capture")
+    }
     @Test fun savedRecipeCardPreviewAndCanceledShareKeepTheDraftAndSource() {
         val recipe = runBlocking(Dispatchers.IO) {
             app.database.clearAllTables()

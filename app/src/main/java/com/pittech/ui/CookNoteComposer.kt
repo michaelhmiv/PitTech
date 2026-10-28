@@ -28,10 +28,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** All shortcut entry points edit this same durable draft and save one timeline identity. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, preferredUnit: String,
     viewModel: CooksViewModel, editing: Boolean, photoFirst: Boolean,
-    onChange: (CookNoteDraft) -> Unit, onClose: () -> Unit, onSaved: (Boolean) -> Unit) {
+    onChange: (CookNoteDraft) -> Unit, onClose: () -> Unit, onSaved: (Boolean) -> Unit,
+    existingInputs: CookInputs? = null, wrapHintTexts: List<String> = emptyList()) {
     val scope = rememberCoroutineScope()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val saveError by viewModel.error.collectAsStateWithLifecycle()
@@ -53,6 +55,16 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
         onDispose { lifecycle.removeObserver(observer) }
     }
     var durationText by rememberSaveable(draft.id) { mutableStateOf(draft.durationMillis?.let { (it / 60_000.0).toString() }.orEmpty()) }
+    // Flowing §4.2 one-tap capture: a wrap entry asks its material, a
+    // spritz entry its medium — pre-filled, one tap to change, and saving
+    // without touching the chips is a complete path (nothing is written
+    // for an untouched wrap prompt; the spritz event itself is the data).
+    var wrapChoice by rememberSaveable(draft.id) { mutableStateOf(existingInputs?.wrapMaterial ?: CookInputVocabulary.wrapMaterialHint(wrapHintTexts)) }
+    var wrapTouched by rememberSaveable(draft.id) { mutableStateOf(false) }
+    var spritzChoice by rememberSaveable(draft.id) {
+        mutableStateOf(existingInputs?.spritz?.takeIf { it != SpritzState.NOT_RECORDED } ?: SpritzState.YES)
+    }
+    var spritzMedium by rememberSaveable(draft.id) { mutableStateOf(existingInputs?.spritzMedium.orEmpty()) }
     val valid = runCatching { draft.validate() }.isSuccess && (durationText.isBlank() || durationText.toDoubleOrNull()?.let { it.isFinite() && it >= 0 && it <= 43200 } == true)
     LaunchedEffect(draft, busy) {
         if (!busy) { delay(300); viewModel.persistNoteDraft(draft) }
@@ -85,7 +97,26 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
             TextButton(onClick = { viewModel.discardNoteDraft(draft.id); onClose() }, enabled = !busy && !staging) { Text("Discard") }
             TextButton(onClick = { keepDraft() }, enabled = !busy && !staging) { Text("Keep draft") }
             // `d21`: Save is the one filled action in the row.
-            Button(onClick = { viewModel.saveNote(draft, editing, onSaved) }, enabled = valid && !busy && !staging,
+            Button(onClick = {
+                // The capture travels WITH the note save: the write must
+                // happen inside the save operation itself, because the
+                // saved-callback runs while the ViewModel is still busy
+                // and a follow-up save call from there would be dropped
+                // by the busy guard.
+                val capture = existingInputs?.let { inputs ->
+                    when (draft.action) {
+                        "wrap" -> if (wrapTouched || inputs.wrapMaterial != null) {
+                            inputs.copy(wrapMaterial = wrapChoice)
+                        } else null
+                        "spritz" -> inputs.copy(
+                            spritz = spritzChoice,
+                            spritzMedium = if (spritzChoice == SpritzState.YES) spritzMedium.trim().ifBlank { null } else null,
+                        )
+                        else -> null
+                    }
+                }
+                viewModel.saveNote(draft, editing, capture) { saved -> onSaved(saved) }
+            }, enabled = valid && !busy && !staging,
                 modifier = Modifier.testTag(if (draft.category == "temperature") "temperature-save" else "timeline-entry-save")) { Text("Save entry") }
         },
     ) {
@@ -106,6 +137,29 @@ internal fun CookNoteComposer(draft: CookNoteDraft, dishes: List<DishEntity>, pr
                 TurnInBoxedField("Observation") {
                     OutlinedTextField(draft.description, { onChange(draft.copy(description = it)) }, minLines = 2,
                         modifier = Modifier.fillMaxWidth().testTag("timeline-entry-details"))
+                }
+                if (existingInputs != null && draft.action == "wrap") {
+                    TurnInBoxedField("Wrap material") {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("composer-wrap-material")) {
+                            WrapMaterial.entries.forEach { material ->
+                                FilterChip(wrapChoice == material, onClick = { wrapChoice = material; wrapTouched = true }, label = { Text(material.label) })
+                            }
+                        }
+                    }
+                }
+                if (existingInputs != null && draft.action == "spritz") {
+                    TurnInBoxedField("Spritz") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("composer-spritz")) {
+                                FilterChip(spritzChoice == SpritzState.YES, onClick = { spritzChoice = SpritzState.YES }, label = { Text("Yes") })
+                                FilterChip(spritzChoice == SpritzState.NO, onClick = { spritzChoice = SpritzState.NO }, label = { Text("No") })
+                            }
+                            if (spritzChoice == SpritzState.YES) {
+                                OutlinedTextField(spritzMedium, { spritzMedium = it }, label = { Text("Spritzed with (optional)") },
+                                    singleLine = true, modifier = Modifier.fillMaxWidth().testTag("composer-spritz-medium"))
+                            }
+                        }
+                    }
                 }
                 draft.temperatures.forEachIndexed { index, t ->
                     fun change(next: NoteTemperature) { onChange(draft.copy(temperatures = draft.temperatures.map { if (it.id == t.id) next else it })) }

@@ -19,6 +19,10 @@ struct CookSetupDish: Codable, Equatable, Identifiable {
     var cut: String = ""
     var weightText: String = ""
     var weightUnit: String = "lb"
+    /// Flowing §4.2: the rub named at setup, when the cook names one.
+    /// Optional so kept setup drafts saved before this field existed
+    /// still decode; nil falls back to the recipe's rub ingredient.
+    var rub: String? = nil
     /// The saved-recipe revision this dish attaches from, when it has one.
     /// Sourced dishes are reviewed (and removable), not re-typed.
     var revisionId: String? = nil

@@ -21,6 +21,7 @@ import com.pittech.data.TimelineEventEntity
 import com.pittech.data.SensorReadingEntity
 import com.pittech.data.TargetEntity
 import com.pittech.data.DishEntity
+import com.pittech.domain.CookInputs
 import com.pittech.domain.DishDraft
 import com.pittech.domain.NewCookDraft
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -248,6 +249,10 @@ class CooksViewModel(
 
     fun toggleCookFavorite(cookId: String, favorite: Boolean) = perform { repository.setFavorite(cookId, favorite) }
     fun saveCookLearning(cookId: String, dishId: String?, keep: String, change: String) = perform { repository.saveLearning(cookId, dishId, keep, change) }
+
+    /** Flowing §4.2: the composer's one-tap capture writes the action's
+     * inputs through the same results model as the editor. */
+    fun saveCookInputs(cookId: String, dishId: String?, inputs: CookInputs) = perform { repository.saveCookInputs(cookId, dishId, inputs) }
     fun saveCookTags(cookId: String, method: String, tags: String) = perform { repository.saveCookTags(cookId, method, tags) }
     fun saveCookReference(cookId: String, reference: com.pittech.domain.CookReference) = perform { app.companionRepository.saveReference(cookId, reference) }
 
@@ -643,7 +648,7 @@ class CooksViewModel(
     }
     suspend fun stageNotePhoto(id: String, uri: String) = repository.notes.stagePhoto(id, uri)
     fun discardNoteDraft(id: String) = perform { repository.notes.discardDraft(id) }
-    fun saveNote(draft: com.pittech.domain.CookNoteDraft, editing: Boolean, onSaved: (Boolean) -> Unit) = performWithLogResult({ _, attached ->
+    fun saveNote(draft: com.pittech.domain.CookNoteDraft, editing: Boolean, capture: CookInputs? = null, onSaved: (Boolean) -> Unit) = performWithLogResult({ _, attached ->
         _notice.value = when {
             !attached -> "Entry saved; its photo could not be attached. Reopen the saved draft to retry."
             draft.category == "temperature" -> if (editing) "Temperature entry updated." else "Temperature saved."
@@ -653,7 +658,12 @@ class CooksViewModel(
         onSaved(attached)
     }) {
         if (!editing) snapshotForCookLog(draft.cookId)
-        repository.notes.save(draft)
+        val saved = repository.notes.save(draft)
+        // Flowing §4.2 capture (wrap material / spritz) is written inside
+        // the note's own save operation: a separate ViewModel call from
+        // the saved-callback would race the busy guard and be dropped.
+        if (capture != null) repository.saveCookInputs(draft.cookId, draft.dishId, capture)
+        saved
     }
     private var deletedNote: com.pittech.data.DeletedCookNote? = null
 
@@ -816,9 +826,11 @@ class CooksViewModel(
         keepDoing: String = "",
         changeNextTime: String = "",
         cookAgain: Boolean? = null,
+        cookInputs: CookInputs? = null,
         onFinished: ((Boolean) -> Unit)? = null,
     ) = perform({
         repository.saveLearning(cookId, dishId, keepDoing, changeNextTime)
+        if (cookInputs != null) repository.saveCookInputs(cookId, dishId, cookInputs)
         repository.saveCookResults(cookId, dishId, finalTemp, unit, restMinutes, ratings, notes, finish, cookAgain = cookAgain, updateCookAgain = dishId != null)
         if (finish) reconcileRecording()
         if (finish) repository.cancelPendingCookReminders(cookId).forEach { CookReminderNotifications.cancel(context, it.id, it.cookId) }

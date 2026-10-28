@@ -47,6 +47,75 @@ final class InsightsFreeToolsUITests: XCTestCase {
         }
     }
 
+    /// Flowing §4.2: the composer's one-tap capture — a wrap entry records
+    /// its material with one picker selection, and a spritz entry saved
+    /// without touching its prompt still records "Spritz: Yes" (the logged
+    /// action is the data). Both render as facts on the results card.
+    func testComposerCaptureRecordsWrapAndSpritzInputs() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--ui-test-capture"]
+        app.launch()
+        let meal = app.staticTexts["Capture flow brisket"].firstMatch
+        XCTAssertTrue(meal.waitForExistence(timeout: 10))
+        meal.tap()
+        func tapOption(_ element: XCUIElement) {
+            XCTAssertTrue(element.waitForExistence(timeout: 10))
+            // Pushed picker lists report their rows before the rows' hit
+            // points settle — a plain tap fails with "Activation point
+            // invalid". Wait for the frame to stabilize, then tap its
+            // center by coordinate.
+            var lastFrame = element.frame
+            let deadline = Date().addingTimeInterval(10)
+            while Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.3)
+                if element.frame == lastFrame && !element.frame.isEmpty { break }
+                lastFrame = element.frame
+            }
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        func chooseAction(_ label: String) {
+            let actionRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Action'")).firstMatch
+            XCTAssertTrue(actionRow.waitForExistence(timeout: 10))
+            actionRow.tap()
+            tapOption(app.buttons[label].firstMatch)
+        }
+        func logEntry(action: String) {
+            let log = app.buttons["meal-log"]
+            XCTAssertTrue(log.waitForExistence(timeout: 10))
+            log.tap()
+            chooseAction(action)
+        }
+        // Wrap: pick Foil (one selection) and save.
+        logEntry(action: "Wrap")
+        let wrapPicker = app.descendants(matching: .any)["composer-wrap-material"].firstMatch
+        XCTAssertTrue(wrapPicker.waitForExistence(timeout: 10))
+        wrapPicker.tap()
+        tapOption(app.buttons["Foil"].firstMatch)
+        app.buttons["Save"].tap()
+        // Spritz: save without touching the prompt — still recorded.
+        let live = app.segmentedControls.buttons["Live"]
+        XCTAssertTrue(live.waitForExistence(timeout: 10))
+        live.tap()
+        logEntry(action: "Spritz")
+        let spritzPicker = app.descendants(matching: .any)["composer-spritz"].firstMatch
+        XCTAssertTrue(spritzPicker.waitForExistence(timeout: 10))
+        app.buttons["Save"].tap()
+        // The results card is the finished cook's record: inputs raise it
+        // only at completion, so finish the meal and read the facts there.
+        let finish = app.buttons["finish-meal"]
+        XCTAssertTrue(finish.waitForExistence(timeout: 10))
+        finish.tap()
+        let confirm = app.alerts.buttons["Finish meal"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+        confirm.tap()
+        let summary = app.buttons["View meal summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 10))
+        summary.tap()
+        XCTAssertTrue(app.staticTexts["Wrap: Foil"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Spritz: Yes"].waitForExistence(timeout: 10))
+        app.terminate()
+    }
+
     func testEmptyInsightsExplainsWhatLoggingUnlocksAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication()

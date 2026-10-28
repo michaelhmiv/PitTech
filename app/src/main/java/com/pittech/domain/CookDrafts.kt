@@ -22,6 +22,10 @@ data class DishDraft(
     val prepNotes: String = "",
     val preparationItems: List<IngredientDraft> = emptyList(),
     val photoUris: List<String> = emptyList(),
+    /** The rub for this dish (Flowing §4.2): a named entry, or blank to
+     * fall back to the rub-staged preparation item at cook creation.
+     * Declared last: DishDraft has positional call sites. */
+    val rub: String = "",
 )
 
 data class NewCookDraft(

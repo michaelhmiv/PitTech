@@ -42,6 +42,16 @@ struct ScreenshotTextSize: ViewModifier {
                 } catch { assertionFailure("UI fixture failed: " + error.localizedDescription) }
             }
         }
+        if CommandLine.arguments.contains("--ui-test-capture") {
+            // Flowing §4.2: one active cook for the composer-capture flow.
+            startCook(title: "Capture flow brisket", firstDish: "Brisket")
+            if let cook = activeCooks.first, let dish = dishRecords(cook.id).first {
+                do {
+                    try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on",
+                        occurredAt: Double(Int64(Date.now.timeIntervalSince1970 * 1000)) - 3600000))
+                } catch { assertionFailure("Capture UI fixture failed: " + error.localizedDescription) }
+            }
+        }
         if CommandLine.arguments.contains("--ui-test-guide") {
             do {
                 let revisions = library.recipes.compactMap { $0.objectValue?["currentRevisionId"]?.stringValue }

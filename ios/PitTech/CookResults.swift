@@ -20,6 +20,8 @@ struct CookResultsValues: Equatable {
     var notes: String = ""
     var keepDoing: String = ""
     var changeNextTime: String = ""
+    /// Flowing §4.2: the scope's structured inputs (wrap / rub / spritz).
+    var inputs: CookInputs = CookInputs()
 }
 
 @MainActor extension CookStore {
@@ -29,6 +31,14 @@ struct CookResultsValues: Equatable {
         "result_notes", "keep_doing", "change_next_time",
     ]
 
+    /// Flowing §4.2 structured inputs: rendered as facts on the results
+    /// card (see CookResultsFacts), but on their own they raise the card
+    /// only for a finished cook — they are written during the cook by
+    /// ordinary logging, and the card is the finished cook's record.
+    private static let inputResultTypes: Set<String> = [
+        "wrap_material", "rub", "spritz", "spritz_medium",
+    ]
+
     private func resultRows(cookId: String, dishId: String?) -> [[String: JSONValue]] {
         library.results.compactMap(\.objectValue).filter {
             $0["cookId"]?.stringValue == cookId && $0["dishId"]?.stringValue == dishId
@@ -36,7 +46,10 @@ struct CookResultsValues: Equatable {
     }
 
     func hasDisplayableResults(cookId: String, dishId: String?) -> Bool {
-        resultRows(cookId: cookId, dishId: dishId).contains { Self.resultDisplayTypes.contains($0["resultType"]?.stringValue ?? "") }
+        let rows = resultRows(cookId: cookId, dishId: dishId)
+        if rows.contains(where: { Self.resultDisplayTypes.contains($0["resultType"]?.stringValue ?? "") }) { return true }
+        let completed = library.cooks.first { $0.id == cookId }?.status == "completed"
+        return completed && rows.contains { Self.inputResultTypes.contains($0["resultType"]?.stringValue ?? "") }
     }
 
     func hasAnyDisplayableResults(cookId: String) -> Bool {
@@ -63,7 +76,48 @@ struct CookResultsValues: Equatable {
         values.notes = text("result_notes")
         values.keepDoing = text("keep_doing")
         values.changeNextTime = text("change_next_time")
+        // Flowing §4.2: inputs read through the shared vocabulary — dish
+        // rows win over cook rows, a logged spritz means yes, and absence
+        // stays "Not recorded" (never inferred from notes).
+        let allRows = library.results.compactMap(\.objectValue)
+            .filter { $0["cookId"]?.stringValue == cookId }
+            .map { row in
+                InsightResultInput(
+                    id: row["id"]?.stringValue ?? "", cookId: cookId, dishId: row["dishId"]?.stringValue,
+                    resultType: row["resultType"]?.stringValue ?? "", numericValue: row["numericValue"]?.numberValue,
+                    textValue: row["textValue"]?.stringValue, recordedAtUtcMillis: row["recordedAtUtcMillis"]?.numberValue ?? 0)
+            }
+        let hasSpritzEvent = library.events.contains {
+            $0.objectValue?["action"]?.stringValue == "spritz" && $0.objectValue?["cookId"]?.stringValue == cookId &&
+                $0.objectValue?["dishId"]?.stringValue == dishId
+        }
+        values.inputs = CookInputVocabulary.fromResults(allRows, cookId: cookId, dishId: dishId, hasSpritzEvent: hasSpritzEvent)
         return values
+    }
+
+    /// Flowing §4.2: persist one scope's structured inputs as results rows
+    /// (same table, same deterministic IDs as Android's saveCookInputs).
+    func saveCookInputs(cookId: String, dishId: String?, inputs: CookInputs) throws {
+        if let dishId {
+            guard library.dishes.contains(where: { $0.objectValue?["id"]?.stringValue == dishId && $0.objectValue?["cookId"]?.stringValue == cookId }) else { throw PitTechArchiveError.invalidArchive }
+        }
+        let prior = library, now = Date.now.timeIntervalSince1970 * 1_000
+        let scope = dishId ?? "cook"
+        let rows = CookInputVocabulary.rows(inputs)
+        for type in CookInputVocabulary.resultTypes {
+            library.results.removeAll { row in
+                guard let o = row.objectValue else { return false }
+                return o["cookId"]?.stringValue == cookId && o["dishId"]?.stringValue == dishId && o["resultType"]?.stringValue == type
+            }
+            if let row = rows.first(where: { $0.resultType == type }), let text = row.textValue {
+                library.results.append(.object([
+                    "id": .string("\(cookId):\(scope):\(type)"), "cookId": .string(cookId),
+                    "dishId": dishId.map(JSONValue.string) ?? .null, "resultType": .string(type),
+                    "textValue": .string(text), "recordedAtUtcMillis": .number(now),
+                ]))
+            }
+        }
+        save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
     }
 
     private static func validRating(_ value: Double?) -> Bool {
@@ -123,6 +177,12 @@ struct CookResultsValues: Equatable {
         upsertText("result_notes", idSuffix: "notes", values.notes)
         upsertText("keep_doing", idSuffix: "keep_doing", values.keepDoing)
         upsertText("change_next_time", idSuffix: "change_next_time", values.changeNextTime)
+        // Flowing §4.2: the scope's inputs save with the rest of the
+        // results; a field set back to Not recorded removes its row.
+        let inputRows = CookInputVocabulary.rows(values.inputs)
+        for type in CookInputVocabulary.resultTypes {
+            upsertText(type, idSuffix: type, inputRows.first { $0.resultType == type }?.textValue ?? "")
+        }
         save(); if saveError != nil { library = prior; throw CocoaError(.fileWriteUnknown) }
     }
 
@@ -220,6 +280,15 @@ private struct CookResultsFacts: View {
             if !values.notes.isEmpty { Text("Notes: \(values.notes)").font(PitTechFont.body) }
             if !values.keepDoing.isEmpty { Text("Keep doing: \(values.keepDoing)").font(PitTechFont.body) }
             if !values.changeNextTime.isEmpty { Text("Change next time: \(values.changeNextTime)").font(PitTechFont.body) }
+            // Flowing §4.2: recorded inputs render as facts; unrecorded
+            // inputs render as nothing — never an inferred value.
+            if let wrap = values.inputs.wrapMaterial { Text("Wrap: \(wrap.label)").font(PitTechFont.body) }
+            if let rub = values.inputs.rub { Text("Rub: \(rub)").font(PitTechFont.body) }
+            if values.inputs.spritz == .yes {
+                Text("Spritz: \(["Yes", values.inputs.spritzMedium].compactMap { $0 }.joined(separator: " — "))").font(PitTechFont.body)
+            } else if values.inputs.spritz == .no {
+                Text("Spritz: No").font(PitTechFont.body)
+            }
         }
     }
 }
@@ -388,6 +457,8 @@ private struct ResultsScopeFields: View {
     let showCookAgain: Bool
     @State private var finalTempText = ""
     @State private var restText = ""
+    @State private var rubText = ""
+    @State private var spritzMediumText = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             RatingPickerRow(label: "Verdict", selection: $values.overallRating)
@@ -409,13 +480,43 @@ private struct ResultsScopeFields: View {
             TextField("Cook notes", text: $values.notes, axis: .vertical).lineLimit(2...6).modifier(ResultsBoxedFieldModifier())
             TextField("Keep doing", text: $values.keepDoing).modifier(ResultsBoxedFieldModifier())
             TextField("Change next time", text: $values.changeNextTime).modifier(ResultsBoxedFieldModifier())
+            // Flowing §4.2: the scope's structured inputs, editable after
+            // the fact — "Not recorded" is the honest state, never a guess.
+            Picker("Wrap material", selection: $values.inputs.wrapMaterial) {
+                Text("Not recorded").tag(WrapMaterial?.none)
+                Text("No wrap").tag(WrapMaterial?.some(.none))
+                Text("Foil").tag(WrapMaterial?.some(.foil))
+                Text("Butcher paper").tag(WrapMaterial?.some(.butcherPaper))
+            }
+            TextField("Rub", text: $rubText).modifier(ResultsBoxedFieldModifier())
+            Picker("Spritz", selection: $values.inputs.spritz) {
+                Text("Not recorded").tag(SpritzState.notRecorded)
+                Text("Yes").tag(SpritzState.yes)
+                Text("No").tag(SpritzState.no)
+            }
+            if values.inputs.spritz == .yes {
+                TextField("Spritzed with (optional)", text: $spritzMediumText).modifier(ResultsBoxedFieldModifier())
+            }
         }
         .onAppear {
             finalTempText = values.finalTemperature.map(resultsNumberText) ?? ""
             restText = values.restMinutes.map(resultsNumberText) ?? ""
+            rubText = values.inputs.rub ?? ""
+            spritzMediumText = values.inputs.spritzMedium ?? ""
         }
         .onChange(of: finalTempText) { _, text in values.finalTemperature = Double(text) }
         .onChange(of: restText) { _, text in values.restMinutes = Double(text) }
+        .onChange(of: rubText) { _, text in
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            values.inputs.rub = trimmed.isEmpty ? nil : trimmed
+        }
+        .onChange(of: spritzMediumText) { _, text in
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            values.inputs.spritzMedium = values.inputs.spritz == .yes && !trimmed.isEmpty ? trimmed : nil
+        }
+        .onChange(of: values.inputs.spritz) { _, state in
+            if state != .yes { values.inputs.spritzMedium = nil }
+        }
     }
 }
 

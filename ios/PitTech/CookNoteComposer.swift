@@ -13,6 +13,12 @@ struct CookNoteComposer: View {
     @State private var busy = false
     @State private var closed = false
     @State private var durationText = ""
+    // Flowing §4.2 one-tap capture state (wrap material / spritz medium).
+    @State private var wrapChoice: WrapMaterial?
+    @State private var wrapTouched = false
+    @State private var spritzChoice: SpritzState = .yes
+    @State private var spritzMediumText = ""
+    @State private var captureLoaded = false
     var body: some View {
         NavigationStack {
             Form {
@@ -23,6 +29,34 @@ struct CookNoteComposer: View {
                     Picker("Action", selection: Binding(get: { draft.metadata.action ?? "" }, set: { draft.metadata.action = $0.isEmpty ? nil : $0 })) {
                         Text("None").tag("")
                         ForEach(CookNoteMetadata.actions, id: \.self) { action in Text(CookStore.actionLabel(action)).tag(action) }
+                    }
+                }
+                // Flowing §4.2: a wrap entry asks its material, a spritz
+                // entry its medium — pre-filled, one tap to change, and
+                // saving without touching the prompt is a complete path.
+                if draft.metadata.action == "wrap" {
+                    Section("Wrap material") {
+                        Picker("Wrap material", selection: Binding(get: { wrapChoice }, set: { wrapChoice = $0; wrapTouched = true })) {
+                            Text("Not recorded").tag(WrapMaterial?.none)
+                            Text("No wrap").tag(WrapMaterial?.some(.none))
+                            Text("Foil").tag(WrapMaterial?.some(.foil))
+                            Text("Butcher paper").tag(WrapMaterial?.some(.butcherPaper))
+                        }
+                        .accessibilityIdentifier("composer-wrap-material")
+                    }
+                }
+                if draft.metadata.action == "spritz" {
+                    Section("Spritz") {
+                        Picker("Spritz", selection: $spritzChoice) {
+                            Text("Yes").tag(SpritzState.yes)
+                            Text("No").tag(SpritzState.no)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("composer-spritz")
+                        if spritzChoice == .yes {
+                            TextField("Spritzed with (optional)", text: $spritzMediumText)
+                                .accessibilityIdentifier("composer-spritz-medium")
+                        }
                     }
                 }
                 Section {
@@ -108,12 +142,27 @@ struct CookNoteComposer: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Keep draft") { if persist() { closed = true; dismiss() } }.disabled(busy) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { do { busy = true; try store.saveNote(draft); closed = true; dismiss() } catch { self.error = error.localizedDescription }; busy = false }
+                    Button("Save") { do { busy = true; try store.saveNote(draft); saveCapture(); closed = true; dismiss() } catch { self.error = error.localizedDescription }; busy = false }
                         .disabled(busy || (try? draft.validate()) == nil || !durationText.isEmpty && Double(durationText).map { $0.isFinite && $0 >= 0 && $0 <= 43200 } != true)
                 }
                 ToolbarItem(placement: .bottomBar) { Button("Discard draft", role: .destructive) { do { try store.discardDraft(draft.id); closed = true; dismiss() } catch { self.error = error.localizedDescription } }.disabled(busy) }
             }
-            .onAppear { durationText = draft.metadata.durationMillis.map { String($0 / 60000) } ?? ""; persist() }
+            .onAppear {
+                durationText = draft.metadata.durationMillis.map { String($0 / 60000) } ?? ""
+                if !captureLoaded {
+                    captureLoaded = true
+                    let inputs = store.cookResults(cookId: draft.cookId, dishId: draft.dishId).inputs
+                    // Pre-fill: the recorded value wins; otherwise the
+                    // note's own method words ("foil boat") hint the chip.
+                    // (iOS has no plan surface yet — Slice 4 — so there is
+                    // no plan text to hint from here.)
+                    let methodHint = draft.metadata.method.flatMap { CookingMethod.labels[$0] }.map { [$0] } ?? []
+                    wrapChoice = inputs.wrapMaterial ?? CookInputVocabulary.wrapMaterialHint(texts: methodHint)
+                    spritzChoice = inputs.spritz == .notRecorded ? .yes : inputs.spritz
+                    spritzMediumText = inputs.spritzMedium ?? ""
+                }
+                persist()
+            }
             .onChange(of: draft) { _, _ in persist() }
             .onChange(of: scenePhase) { _, _ in persist() }
             .onChange(of: pickerItems) { _, items in
@@ -132,6 +181,24 @@ struct CookNoteComposer: View {
             } }
         }
         .interactiveDismissDisabled(busy)
+    }
+    /// Flowing §4.2: after the note saves, persist the action's inputs at
+    /// the note's scope. An untouched wrap prompt writes nothing (the
+    /// pre-fill was never confirmed); a spritz entry records its answer
+    /// because the logged action itself is the data.
+    private func saveCapture() {
+        guard let action = draft.metadata.action, action == "wrap" || action == "spritz" else { return }
+        let existing = store.cookResults(cookId: draft.cookId, dishId: draft.dishId).inputs
+        var capture = existing
+        if action == "wrap" {
+            guard wrapTouched || existing.wrapMaterial != nil else { return }
+            capture.wrapMaterial = wrapChoice
+        } else {
+            capture.spritz = spritzChoice
+            let medium = spritzMediumText.trimmingCharacters(in: .whitespacesAndNewlines)
+            capture.spritzMedium = spritzChoice == .yes && !medium.isEmpty ? medium : nil
+        }
+        try? store.saveCookInputs(cookId: draft.cookId, dishId: draft.dishId, inputs: capture)
     }
     private func ingredientBinding(_ index: Int, _ key: WritableKeyPath<NoteIngredient, String>) -> Binding<String> {
         Binding(get: { draft.metadata.ingredients?[index][keyPath: key] ?? "" }, set: { draft.metadata.ingredients?[index][keyPath: key] = $0; draft.metadata.version = 2 })

@@ -6,6 +6,9 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ## [Unreleased]
 
+### Added
+- Your cook's inputs are recorded as data now (both platforms): when you log a wrap, the entry asks what you wrapped in — foil, butcher paper, or no wrap — pre-filled from your plan when it says, and one tap (or none; ignoring it is fine) records it. Logging a spritz asks what you spritzed with, and the rub you name when you set up the cook — pre-filled from the recipe — is kept with the cook. Wrap, rub and spritz show on the cook's results card and can be fixed any time in the results editor; a cook where they were never recorded simply says nothing about them — nothing is ever guessed from your notes. This is the groundwork for comparing cooks by what actually differed.
+
 ## [0.2.0] — October 28, 2026
 
 The TURN-IN release: the whole app re-dressed in the new look (dark and light), the #172 flow-polish pass, online services (accounts, private sync, Discover, Cook Pack sharing), PitTech Pro and MCP foundations, and the first hands-on fixes from device testing. Beta software — connections remain read-only. Tested commit: the `v0.2.0` tag.
