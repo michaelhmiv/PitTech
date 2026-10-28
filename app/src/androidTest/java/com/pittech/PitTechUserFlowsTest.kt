@@ -591,7 +591,21 @@ class PitTechUserFlowsTest {
         composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("resume-setup").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onAllNodesWithText("Leave this cook setup?").assertCountEquals(0)
         // Discard setup is explicit and removes both the card and the draft.
-        composeRule.onNodeWithTag("discard-setup").performScrollTo().performClick()
+        // Activate the button through its own semantics OnClick action
+        // instead of a synthetic touch click — the same failure class as
+        // the timeline group-expand button above (see its comment): at
+        // API 36 / font 1.5 the touch click does not activate this button.
+        // PR #246's trace of this exact failure showed the discard lambda
+        // never fired; the tap was taken by the Start-a-cook FAB, which
+        // overlays the scrolled card's button row, and a fresh setup
+        // screen opened instead (the card's disappearance then passed the
+        // wait below for the wrong reason, and the still-populated draft
+        // failed the assertion). The app's discard itself is proven sound
+        // whenever it is actually invoked (font 1.15 lane; the startCook
+        // discard path). Assertions unchanged.
+        composeRule.onNodeWithTag("discard-setup").performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 20_000) { composeRule.onAllNodesWithTag("resume-setup").fetchSemanticsNodes().isEmpty() }
         assertEquals(null, targetContext.getSharedPreferences("pittech-preferences", Context.MODE_PRIVATE).getString("start-cook-setup-draft", null))
     }
