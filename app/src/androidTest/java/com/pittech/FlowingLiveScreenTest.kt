@@ -43,8 +43,10 @@ class FlowingLiveScreenTest {
                     temperatures = listOf(NoteTemperature(probeName = "Brisket", measurementType = "food_probe", valueText = temp.toInt().toString(), measuredAt = on + minutes * 60_000, dishId = dish))))
             }
         }
-        // The finished brisket: ghost + history source.
-        val ghost = app.cookRepository.startCook(NewCookDraft("Last brisket", dishes = listOf(DishDraft("Brisket", "Brisket"))))
+        // The finished brisket: ghost + history source. (DishDraft's
+        // second positional arg is foodType — cut must be named, or the
+        // archive carries no cut and no ghost/history can ever match.)
+        val ghost = app.cookRepository.startCook(NewCookDraft("Last brisket", dishes = listOf(DishDraft("Brisket", "Beef", cut = "Brisket"))))
         val ghostDish = app.database.cookDao().getDishesForCook(ghost).first().id
         val ghostOn = now - 30L * 3_600_000
         action(ghost, ghostDish, "food_on", "Food on", ghostOn)
@@ -53,7 +55,7 @@ class FlowingLiveScreenTest {
         app.database.cookDao().upsertResult(CookResultEntity("$ghost:$ghostDish:final_temperature", ghost, ghostDish, "final_temperature", numericValue = 202.0, recordedAtUtcMillis = ghostOn + 580L * 60_000))
         app.database.cookDao().finishCook(ghost, now)
         // The live brisket: six hours in, out of the band, climbing.
-        val live = app.cookRepository.startCook(NewCookDraft("Flowing brisket", dishes = listOf(DishDraft("Brisket", "Brisket"))))
+        val live = app.cookRepository.startCook(NewCookDraft("Flowing brisket", dishes = listOf(DishDraft("Brisket", "Beef", cut = "Brisket"))))
         val liveDish = app.database.cookDao().getDishesForCook(live).first().id
         val liveOn = now - 6L * 3_600_000
         action(live, liveDish, "food_on", "Food on", liveOn)
@@ -80,6 +82,13 @@ class FlowingLiveScreenTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithText("On pace — nothing needs doing.").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("live-verdict-headline", useUnmergedTree = true).assertTextEquals("On pace — nothing needs doing.")
         compose.onNodeWithTag("live-eta-basis", useUnmergedTree = true).assertTextEquals("from your last 30 min of readings")
+        // The board recomposes on a 1s ticker; wait for the range text to
+        // settle on the tagged node before asserting on it.
+        compose.waitUntil(15_000) {
+            try {
+                compose.onNodeWithTag("live-eta-range", useUnmergedTree = true).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.Text].any { it.text.contains("Done") }
+            } catch (e: Throwable) { false }
+        }
         compose.onNodeWithTag("live-eta-range", useUnmergedTree = true).assertTextContains("Done")
         // 1.5: the stepper writes the app's own setpoint target history.
         compose.onNodeWithTag("pit-target-value", useUnmergedTree = true).performScrollTo().assertTextEquals("250°")
@@ -105,7 +114,7 @@ class FlowingLiveScreenTest {
         // The ghost rides the insights archive, which loads async — wait
         // for the delta line to compose before reading it.
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("live-chart-ghost-delta", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("live-chart-ghost-delta", useUnmergedTree = true).assertTextContains("ahead of last brisket")
+        compose.onNodeWithTag("live-chart-ghost-delta", useUnmergedTree = true).assertTextContains("min vs last brisket")
         compose.onNodeWithTag("live-chart-preset-last2h", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("live-chart-readout", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithTag("live-chart-close", useUnmergedTree = true).performClick()
