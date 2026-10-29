@@ -29,6 +29,7 @@ import org.json.JSONObject
     var preview by remember { mutableStateOf<JSONObject?>(null) }; var removing by remember { mutableStateOf<JSONObject?>(null) }
     var pending by remember { mutableStateOf<PublicationOperation?>(null) }; var pendingArchive by remember { mutableStateOf<PreparedPublication?>(null) }; var pendingProfile by remember { mutableStateOf<JSONObject?>(null) }
     var ownerPreview by remember { mutableStateOf<PreparedPublication?>(null) }; var ownerReceipt by remember { mutableStateOf<PublicationReceipt?>(null) }; var ownerUser by remember { mutableStateOf<String?>(null) }; var editingDraft by remember { mutableStateOf<String?>(null) }
+    var cardShare by remember { mutableStateOf<Pair<String,ShareCardPublication>?>(null) }
     val context=androidx.compose.ui.platform.LocalContext.current
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
     suspend fun checkAccount() { check(loadedUser!=null && loadedUser==account.publicationUserId()) { "Sign in with the account that opened this cookbook." } }
@@ -59,7 +60,7 @@ import org.json.JSONObject
         scope.launch { try { action() } catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException)throw e; message=ErrorCopy.failureText(e, "Couldn't reconnect. Your saved request remains available."); try { pendingPreview() } catch(_: Exception) { } } finally { busy=false } }
     }
     LaunchedEffect(state.signedIn) {
-        loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; profileReviewStatus=null; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null
+        loadedUser=account.publicationUserId(); items=emptyList(); cursor=null; handle=""; name=""; isPublic=false; profileReviewStatus=null; preview=null; removing=null; pending=null; pendingArchive=null; pendingProfile=null; ownerPreview=null; ownerReceipt=null; ownerUser=null; editingDraft=null; cardShare=null
         if(loadedUser!=null)try { reload() } catch(e: Exception) { message=ErrorCopy.failureText(e, "Couldn't reconnect. Your cookbook on this device is unchanged.") }
     }
     if(editingDraft==null)ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest={ if(!busy && editingDraft==null)onClose() }) {
@@ -125,6 +126,15 @@ import org.json.JSONObject
                             } finally { file.delete() }
                         } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-edit-"+item.getString("id"))) { Text("Preview an editable private copy") }
                         if(status=="active")TextButton(onClick={ uri.openUri("https://pittech.app/c/"+item.getString("id")) }) { Text("Open publication") }
+                        if(status=="active")TextButton(onClick={ submit {
+                            checkAccount()
+                            val bound=writer.bindingForItem(item.getString("id"))
+                            if(bound==null) message="That recipe was posted from another device — its share card lives with the sharing draft on that device."
+                            else {
+                                val detail=runCatching { viewModel.publicDiscovery.detailForReview(item.getString("id")).first }.getOrNull()
+                                cardShare=bound.first to ShareCardPublication(item.getString("id"),detail?.likes,detail?.forks)
+                            }
+                        } },enabled=!busy && pending==null,modifier=Modifier.testTag("cookbook-share-card-"+item.getString("id"))) { Text("Share card") }
                         if(status in setOf("active","pending_review"))TextButton(onClick={ removing=item },enabled=!busy && pending==null) { Text(if(status=="pending_review")"Withdraw review request" else "Remove from public access") }
                     } } }
                     if(cursor!=null)Button(onClick={ submit { loadItems(true) } },enabled=!busy) { Text("More publications") }
@@ -135,6 +145,7 @@ import org.json.JSONObject
         }
     }
     editingDraft?.let { draft -> SharingDraftEditor(draft,viewModel,account,writer,publishingEnabled=account.enabled) { editingDraft=null } }
+    cardShare?.let { (draftId,publication) -> ShareCardPreview(draftId,viewModel,onPack={ cardShare=null; viewModel.createShareCookPack(draftId,false) },onClose={ cardShare=null },publication=publication) }
     removing?.let { item -> AlertDialog(onDismissRequest={ removing=null },title={ Text("Remove this publication from public access?") },text={ Text("Other cooks keep independent copies they already saved.") },confirmButton={ TextButton(onClick={ removing=null; run { checkAccount(); writer.json("DELETE","/v1/recipes/"+item.getString("id"),expected=item.getString("revisionId")); reload() } },modifier=Modifier.testTag("cookbook-unpublish-confirm")) { Text("Remove publication") } },dismissButton={ TextButton(onClick={ removing=null }) { Text("Cancel") } }) }
     // Slice 8 (PL-15 / DD-10): sign-in completion returns to the cookbook
     // automatically; cancelling the account dialog lands here too.

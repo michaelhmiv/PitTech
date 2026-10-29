@@ -38,6 +38,7 @@ import org.json.JSONObject
     var displayName by remember { mutableStateOf("a PitTech cook") }; var published by remember { mutableStateOf<PublicationReceipt?>(null) }
     var busy by remember { mutableStateOf(false) }; var message by remember { mutableStateOf<String?>(null) }; var signingIn by remember { mutableStateOf(false) }
     var lastSignedInUser by remember { mutableStateOf<String?>(null) }
+    var postedCard by remember { mutableStateOf(false) }
     fun invalidate() { prepared=null; reviewed=false; previewUser=null; updateSummary=null }
     suspend fun refreshPending() {
         pending=writer.pending(); linked=writer.binding(draft)
@@ -91,7 +92,12 @@ import org.json.JSONObject
                     Text(if(published!!.status=="pending_review")"Submitted for review" else "Published",style=PitTechTextStyles.bannerTitle,modifier=Modifier.testTag("publication-complete"))
                     val uri=androidx.compose.ui.platform.LocalUriHandler.current
                     if(published!!.status=="pending_review")Text("This revision becomes public after its text and selected photos pass review. Check My cookbook for its status.")
-                    else Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
+                    else {
+                        Button(onClick={ uri.openUri(published!!.url) }) { Text("Open public recipe") }
+                        // §4.5: the posted-recipe card, straight from the
+                        // publication — its footer QR opens this same link.
+                        OutlinedButton(onClick={ postedCard=true },enabled=!busy,modifier=Modifier.testTag("publication-share-card")) { Text("Share posted card") }
+                    }
                     // J9: after publishing, the next step lands where the
                     // thing went — My Cookbook — not back at the draft.
                     OutlinedButton(onClick={ onClose(); viewModel.requestCookbookOpen() },enabled=!busy,modifier=Modifier.testTag("publication-open-cookbook")) { Text("Open My cookbook") }
@@ -140,6 +146,7 @@ import org.json.JSONObject
     // second verticalScroll here measured it with infinite height and
     // crashed (issue #233). The sheet wrapper must not scroll.
     if(signingIn)ModalBottomSheet(onDismissRequest={ signingIn=false }){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Account",style=PitTechTextStyles.bannerTitle);AccountContent(account);TextButton(onClick={ signingIn=false }) { Text("Return to publication") }}}
+    if(postedCard)published?.let { receipt -> ShareCardPreview(draft,viewModel,onPack={ postedCard=false; viewModel.createShareCookPack(draft,false) },onClose={ postedCard=false },publication=ShareCardPublication(receipt.id)) }
 }
 
 /**

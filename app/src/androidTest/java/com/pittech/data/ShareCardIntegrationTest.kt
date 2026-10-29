@@ -4,6 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeReader
 import com.pittech.domain.*
 import com.pittech.ui.ShareCardRenderer
 import com.pittech.ui.ShareCardFiles
@@ -65,5 +69,56 @@ class ShareCardIntegrationTest {
         val values = (0 until chart.length()).flatMap { s -> val points=chart.getJSONArray(s);(0 until points.length()).map { points.getJSONObject(it).getDouble("y") } }
         assertTrue("Fragmented recordings must stay bounded in an image",values.size<=200)
         assertEquals(120.0,values.max(),0.0);assertEquals(-10.0,values.min(),0.0)
+    }
+
+    /** Flowing §4.5 gate evidence: a QR rendered on a posted-recipe card
+     * decodes to the canonical publication URL, nothing else. */
+    @Test fun publicationCardQrDecodesToTheCanonicalUrl() {
+        val test = InstrumentationRegistry.getInstrumentation()
+        val fixture = test.context.assets.open("cross-platform/share-card-v1.json").bufferedReader().use { JSONObject(it.readText()) }
+        val itemId = "123e4567-e89b-42d3-a456-426614174000"
+        val url = "https://pittech.app/c/$itemId"
+        val content = JSONObject(fixture.toString())
+            .put("relay", JSONObject.NULL)
+            .put("publication", JSONObject().put("url", url).put("likes", 12).put("forks", 3))
+        val bytes = ShareCardRenderer.render(PreparedShareCard(content.toString(), null))
+        val image = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        assertEquals(1080, image.width); assertEquals(1350, image.height)
+        // The footer QR zone (right of the footer lines, above the brand row).
+        val crop = Bitmap.createBitmap(image, 850, 1100, 230, 250)
+        val pixels = IntArray(crop.width * crop.height); crop.getPixels(pixels, 0, crop.width, 0, 0, crop.width, crop.height)
+        val decoded = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(crop.width, crop.height, pixels))))
+        assertEquals(url, decoded.text)
+        crop.recycle(); image.recycle()
+    }
+
+    /** Flowing §4.5 gate evidence: a curve-less (hand-logged) cook renders
+     * as the manual variant — logged temps as chips, no faked curve. */
+    @Test fun manualVariantRendersWithHandLoggedTemps() {
+        val test = InstrumentationRegistry.getInstrumentation(); val context = test.targetContext
+        val anchor = java.time.Instant.parse("2026-10-12T10:05:00Z").toEpochMilli()
+        fun reading(id: String, at: Long, value: Double) = JSONObject().put("id", id).put("probeId", "p1").put("probeName", "By hand")
+            .put("measurementType", "food").put("value", value).put("unit", "°F").put("measuredAtUtcMillis", at).put("timeZoneId", "America/New_York")
+            .put("source", "manual").put("qualityStatus", "valid").put("samplingIntervalMillis", 0)
+        val events = listOf(
+            RecipeObservation("on", anchor, "America/New_York", "Food on", "", "food_on", 0, null),
+            RecipeObservation("done", anchor + 3_600_000, "America/New_York", "Done", "", "dish_done", 3_600_000, null),
+        )
+        val snapshot = RecipeSnapshot("Pork", DishDraft("Pork", "Pork"), observations = events, smokingAnchorUtcMillis = anchor)
+        val observations = JSONObject(RecipeSnapshotCodec.encode(snapshot)).getJSONArray("observations")
+        val story = JSONObject().put("version", 1).put("attemptId", "manual-1").put("anchorUtcMillis", anchor)
+            .put("observations", observations)
+            .put("readings", JSONArray(listOf(reading("m1", anchor, 40.0), reading("m2", anchor + 1_800_000, 120.0), reading("m3", anchor + 3_600_000, 165.0))))
+            .put("results", JSONArray())
+        val entry = SharingEntry(snapshot = snapshot, storyJson = story.toString()).copy(includeStory = true)
+        val prepared = ShareCardContent.build(SharingDocument("Hand-logged butt", listOf(entry)), null)
+        val content = JSONObject(prepared.content)
+        assertEquals("manual", content.getString("hero"))
+        assertEquals(3, content.getJSONArray("manualTemps").length())
+        val bytes = ShareCardRenderer.render(prepared)
+        val image = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        assertEquals(1080, image.width); assertEquals(1350, image.height)
+        assertEquals(Color.rgb(251, 249, 244), image.getPixel(0, 0)); image.recycle()
+        File(context.filesDir, "pittech-ui-test/share-card-manual.png").apply { parentFile!!.mkdirs(); writeBytes(bytes) }
     }
 }

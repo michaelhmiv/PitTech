@@ -1,9 +1,14 @@
 package com.pittech.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlin.math.roundToLong
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterList
@@ -286,6 +291,19 @@ private fun RecipeGridTile(
     val revision = history.firstOrNull { it.id == selected }; val snapshot = snapshots[selected]
     var assets by remember(selected) { mutableStateOf(emptyList<RecipeAsset>()) }
     LaunchedEffect(selected) { assets = viewModel.recipes.assets(selected) }
+    // Flowing Spread 06: the §4.3 provenance payload for the selected
+    // version, plus the source cook's detail (its photos and the full
+    // chart ride on it). Both stay null for a recipe with no source cook.
+    var provenance by remember(selected) { mutableStateOf<RecipeProvenance?>(null) }
+    var sourceDetail by remember(selected) { mutableStateOf<CookDetailData?>(null) }
+    var storyChart by remember(selected) { mutableStateOf(false) }
+    LaunchedEffect(selected) {
+        provenance = null; sourceDetail = null
+        val rev = history.firstOrNull { it.id == selected }
+        provenance = viewModel.recipeProvenance(rev?.sourceCookId, rev?.sourceDishId)
+        if (rev?.sourceCookId != null) sourceDetail = runCatching { viewModel.cookDetailOnce(rev.sourceCookId) }.getOrNull()
+    }
+    val temperatureUnit = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("pittech-preferences", 0).getString("temperature-unit", "°F") ?: "°F"
     // PL-22 (DD-6): recipe detail is a reading surface — a tall sheet.
     SheetSurface(onDismiss = { if (!busy) onClose() }, title = recipe.name, dismissEnabled = !busy, fillHeightFraction = 0.92f, actions = {
         TextButton(onClick = onClose, enabled = !busy, modifier = Modifier.testTag("recipe-details-close")) { Text("Close") }
@@ -301,7 +319,13 @@ private fun RecipeGridTile(
                 }
             } else Text("Previous version", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
             Text("Added " + formatRecipeDate(recipe.createdAtUtcMillis), style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
-            if (revision?.sourceCookId != null) {
+            val storyProvenance = provenance?.takeIf { revision?.sourceCookId == it.sourceCookId }
+            if (storyProvenance != null) {
+                RecipeStoryBlock(storyProvenance, sourceDetail, viewModel,
+                    onOpenCook = onOpenCook,
+                    onCookAgain = { onUse(selected) },
+                    onFullChart = { storyChart = true })
+            } else if (revision?.sourceCookId != null) {
                 if (revision.sourceCookId in cookIds) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Saved from your meal history.", style = PitTechTextStyles.body, modifier = Modifier.weight(1f))
@@ -397,6 +421,132 @@ private fun RecipeGridTile(
             OutlinedButton(onClick = { onDuplicate(duplicateName) }, enabled = !busy && duplicateName.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Duplicate recipe") }
             TextButton(onClick = onArchive, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Archive recipe", color = tokens.flag) }
         }
+    }
+    if (storyChart) sourceDetail?.let { detail ->
+        LiveChartDialog(data = detail, displayUnit = temperatureUnit, leadDishId = revision?.sourceDishId, ghost = null, etaLatestUtcMillis = null, onDismiss = { storyChart = false })
+    }
+}
+
+/** "9H 40M" — the book's stat-cell voice for a duration in minutes. */
+private fun formatStoryDuration(minutes: Double): String {
+    val total = minutes.roundToLong()
+    val hours = total / 60; val rest = total % 60
+    return when { hours > 0 && rest > 0 -> "${hours}H ${rest}M"; hours > 0 -> "${hours}H"; else -> "${rest}M" }
+}
+
+/**
+ * Flowing Spread 06 — the recipe's story, from the §4.3 provenance
+ * payload: provenance up top (6.1), the cook in stat cells (6.2), its
+ * curve and photos riding along (6.3), and the source cook's keep /
+ * change lessons as chips with Cook This Again as a first-class door
+ * (6.5). Every slot is data-shaped: a slot appears only when the source
+ * cook actually recorded it, so a sparse cook's story reads sparse, not
+ * broken. (The Plan This door is element 4.4 — Slice 5, per the spec's
+ * coverage matrix.)
+ */
+@Composable
+private fun RecipeStoryBlock(
+    provenance: RecipeProvenance,
+    sourceDetail: CookDetailData?,
+    viewModel: CooksViewModel,
+    onOpenCook: ((String) -> Unit)?,
+    onCookAgain: () -> Unit,
+    onFullChart: () -> Unit,
+) {
+    val tokens = pitTechTokens()
+    TurnInCard(Modifier.fillMaxWidth().testTag("recipe-story")) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val parts = listOfNotNull(
+                    provenance.pitName,
+                    provenance.setpointF?.let { "${it.toInt()}°" },
+                    provenance.wood,
+                    provenance.weightText,
+                )
+                Text(
+                    "From your ${provenance.cookedDateText} cook" + if (parts.isNotEmpty()) " — " + parts.joinToString(" · ") else "",
+                    style = PitTechTextStyles.bodyEmphasis,
+                    modifier = Modifier.weight(1f).testTag("recipe-provenance"),
+                )
+                if (onOpenCook != null) TextButton(onClick = { onOpenCook(provenance.sourceCookId) }) { Text("Open the cook") }
+            }
+            val cells = listOfNotNull(
+                provenance.totalMinutes?.let { "Total" to formatStoryDuration(it) },
+                provenance.stallMinutes?.let { "Stall" to formatStoryDuration(it) },
+                provenance.wrappedAtF?.let { "Wrapped at" to "${it.toInt()}°" },
+                provenance.restMinutes?.let { "Rest" to formatStoryDuration(it) },
+            )
+            if (cells.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("recipe-story-stats")) {
+                cells.forEach { (label, value) -> TurnInScoreCell(label, value, Modifier.weight(1f)) }
+            }
+            if (provenance.curve.size >= 2) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TurnInMetaLabel("The cook's curve")
+                        Spacer(Modifier.weight(1f))
+                        if (sourceDetail != null) TextButton(onClick = onFullChart, modifier = Modifier.testTag("recipe-full-chart")) { Text("Full chart") }
+                    }
+                    ProvenanceSparkline(provenance.curve, tokens.ember, Modifier.fillMaxWidth().height(64.dp).testTag("recipe-story-curve"))
+                }
+            }
+            val detailPhotos = sourceDetail?.photos.orEmpty()
+            val storyPhotos = provenance.photos.mapNotNull { prov -> detailPhotos.firstOrNull { it.id == prov.photoId }?.let { prov to it } }
+            if (storyPhotos.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.testTag("recipe-story-photos")) {
+                    storyPhotos.take(3).forEach { (prov, photo) ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            RecipeThumbnail(viewModel.recipes.photoUri(photo.relativePath), Modifier.size(72.dp))
+                            Text(
+                                when (prov.role) {
+                                    ProvenancePhotoRole.ON_PIT -> "On the pit"
+                                    ProvenancePhotoRole.AT_WRAP -> "At the wrap"
+                                    ProvenancePhotoRole.SLICED -> "Sliced"
+                                    ProvenancePhotoRole.OTHER -> "Photo"
+                                },
+                                style = PitTechTextStyles.monoMeta, color = tokens.inkMuted,
+                            )
+                        }
+                    }
+                }
+            }
+            if (provenance.keepChips.isNotEmpty()) StoryChipRow("Keep", provenance.keepChips, "recipe-keep-chips")
+            if (provenance.changeChips.isNotEmpty()) StoryChipRow("Change", provenance.changeChips, "recipe-change-chips")
+            Button(onClick = onCookAgain, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("recipe-cook-again")) { Text("Cook this again") }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StoryChipRow(label: String, chips: List<String>, tag: String) {
+    val tokens = pitTechTokens()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag(tag)) {
+        TurnInMetaLabel(label)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            chips.forEach { chip ->
+                Surface(shape = RoundedCornerShape(50), color = tokens.surfaceRaised, contentColor = tokens.ink, border = androidx.compose.foundation.BorderStroke(1.dp, tokens.ruling)) {
+                    Text(chip, style = PitTechTextStyles.body, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                }
+            }
+        }
+    }
+}
+
+/** The source cook's curve as a sparkline — the same downsampled samples the payload carries, drawn plainly. */
+@Composable
+private fun ProvenanceSparkline(points: List<ProvenanceCurvePoint>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val minX = points.minOf { it.offsetMinutes }; val maxX = points.maxOf { it.offsetMinutes }
+        val minY = points.minOf { it.fahrenheit }; val maxY = points.maxOf { it.fahrenheit }
+        val spanX = (maxX - minX).takeIf { it > 0 } ?: 1.0
+        val spanY = (maxY - minY).takeIf { it > 0 } ?: 1.0
+        val path = Path()
+        points.forEachIndexed { index, point ->
+            val x = ((point.offsetMinutes - minX) / spanX * size.width).toFloat()
+            val y = size.height - ((point.fahrenheit - minY) / spanY * size.height).toFloat()
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, color, style = Stroke(width = 2.dp.toPx()))
     }
 }
 

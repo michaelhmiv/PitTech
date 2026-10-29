@@ -76,7 +76,7 @@ internal object ShareCardFiles {
     }
 }
 
-@Composable internal fun ShareCardPreview(id: String, viewModel: CooksViewModel, onPack: () -> Unit, onClose: () -> Unit, relay: com.pittech.data.ShareCardRelay? = null, onProThemes: (() -> Unit)? = null) {
+@Composable internal fun ShareCardPreview(id: String, viewModel: CooksViewModel, onPack: () -> Unit, onClose: () -> Unit, relay: com.pittech.data.ShareCardRelay? = null, onProThemes: (() -> Unit)? = null, publication: com.pittech.data.ShareCardPublication? = null) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var bytes by remember(id) { mutableStateOf<ByteArray?>(null) }; var error by remember(id) { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }; var working by remember { mutableStateOf(true) }
@@ -87,9 +87,9 @@ internal object ShareCardFiles {
     val entitled = proState.entitlement == AdEntitlement.ENTITLED
     val theme = ProCustomization.effectiveTheme(viewModel.proCustomization.themeId, entitled)
     val palette = ProCustomization.effectivePalette(viewModel.proCustomization.paletteId, entitled)
-    LaunchedEffect(id,retry,relay?.code,theme.id,palette.id) {
+    LaunchedEffect(id,retry,relay?.code,publication?.itemId,theme.id,palette.id) {
         working = true; error = null
-        try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id, relay, theme.id, palette.id)) } }
+        try { bytes = withContext(Dispatchers.Default) { ShareCardRenderer.render(viewModel.sharing.prepareShareCard(id, relay, theme.id, palette.id, publication)) } }
         catch (e: Exception) { error = ErrorCopy.failureText(e, "The share card couldn't be finished. Your cook is unchanged — try again.") }
         finally { working = false }
     }
@@ -101,6 +101,7 @@ internal object ShareCardFiles {
                 if (working) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) { CircularProgressIndicator(); Text(LoadingCopy.RENDERING_SHARE_CARD) }
                 image?.let { Image(it.asImageBitmap(), contentDescription = "Exact exported card preview", modifier = Modifier.fillMaxWidth().aspectRatio(1080f/1350f).testTag("share-card-preview")) }
                 Text(if (theme.isPro) "1080 × 1350 PNG · ${theme.name} theme" else "1080 × 1350 PNG · default theme", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted)
+                if (publication != null) Text("Posted-recipe card · the QR code opens ${publication.url.removePrefix("https://")}", style = PitTechTextStyles.monoMeta, color = pitTechTokens().inkMuted, modifier = Modifier.testTag("share-card-publication-note"))
                 if (onProThemes != null) ProEntryRow(com.pittech.billing.ProPlacement.THEMES) { onProThemes() }
                 error?.let { TurnInStatusStrip(it, pitTechTokens().flag); OutlinedButton({ retry++ }) { Text("Retry image") } }
                 Button(onClick = {

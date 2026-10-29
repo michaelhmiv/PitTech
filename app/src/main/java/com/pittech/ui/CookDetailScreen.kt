@@ -149,7 +149,18 @@ import java.util.Date
 import java.util.Calendar
 import java.util.Locale
 
-private enum class CookTab(val label: String) { LIVE("Live"), TIMELINE("Timeline"), CHARTS("Charts") }
+internal enum class CookTab(val label: String) { LIVE("Live"), TIMELINE("Timeline"), CHARTS("Charts") }
+
+/** E4 (Flowing §5.8): a finished cook opens on its story — results and
+ * timeline — not on the Live board; a cook still in progress opens Live. */
+internal fun initialCookTab(status: String): CookTab =
+    if (status == CookStatus.COMPLETED) CookTab.TIMELINE else CookTab.LIVE
+
+/** E4: the "Protect your cook log?" prompt belongs to the first finished
+ * cook, and only while the log is actually unprotected — sync has never
+ * completed a backup and automatic sync is off — and only once ever. */
+internal fun shouldPromptProtectLog(status: String, promptShown: Boolean, lastSyncedAt: Long, automaticSync: Boolean): Boolean =
+    status == CookStatus.COMPLETED && !promptShown && lastSyncedAt <= 0L && !automaticSync
 private data class PhotoRetry(val eventId: String, val cookId: String, val dishId: String?, val uri: String, val caption: String?, val useCaptureTime: Boolean = false)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,7 +183,7 @@ fun CookDetailScreen(
     var focusedTimelineId by rememberSaveable(data.cook.id) { mutableStateOf<String?>(null) }
     var quickEventType by rememberSaveable { mutableStateOf("note") }
     var viewingMarker by remember { mutableStateOf<TimelineEventEntity?>(null) }
-    var selectedTab by rememberSaveable(data.cook.id) { mutableStateOf(CookTab.LIVE.name) }
+    var selectedTab by rememberSaveable(data.cook.id) { mutableStateOf(initialCookTab(data.cook.status).name) }
     var editCook by remember { mutableStateOf(false) }
     var showCookMenu by remember { mutableStateOf(false) }
     var addDish by remember { mutableStateOf(false) }
@@ -271,6 +282,20 @@ fun CookDetailScreen(
     var photoToSave by remember { mutableStateOf<com.pittech.data.PhotoEntity?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    // E4: the one-time "Protect your cook log?" prompt state. The flag is
+    // per-device and permanent once answered either way; a log that gains
+    // a completed backup or automatic sync stops qualifying on its own.
+    val protectPreferences = remember(context) { context.getSharedPreferences("pittech-preferences", android.content.Context.MODE_PRIVATE) }
+    var protectPromptShown by remember { mutableStateOf(protectPreferences.getBoolean("protect-log-prompt-shown", false)) }
+    // The prompt greets a finished cook when it is OPENED (E4's frame:
+    // finished cooks open on their story). A cook finished in this
+    // session keeps today's completion-choices flow instead.
+    val protectEligibleAtOpen = remember(data.cook.id) { data.cook.status == CookStatus.COMPLETED }
+    val syncPresentation by viewModel.sync.presentation.collectAsStateWithLifecycle()
+    fun dismissProtectPrompt() {
+        protectPreferences.edit().putBoolean("protect-log-prompt-shown", true).apply()
+        protectPromptShown = true
+    }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -865,6 +890,21 @@ fun CookDetailScreen(
                 }, modifier = Modifier.testTag("cook-resume-note")) { Text("Resume saved note (${data.logDrafts.size})") }
             }
             RecipeGuideControl(data, guideRecords, viewModel, reminderRules.any { it.cookId == data.cook.id && it.enabled })
+            if (protectEligibleAtOpen && shouldPromptProtectLog(data.cook.status, protectPromptShown, syncPresentation.lastSyncedAt, syncPresentation.automatic)) {
+                // E4: permanence surfaced as a feature at the moment it
+                // matters — the first finished cook — not buried in
+                // Settings. The body is the account surface's own sentence.
+                TurnInCard(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp).testTag("protect-log-prompt")) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TurnInBannerText("Protect your cook log?")
+                        Text("This cook lives only on this phone right now. Sync keeps an encrypted backup of this journal for signed-in cooks. It never publishes anything.", style = PitTechTextStyles.body)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { dismissProtectPrompt(); viewModel.account.open() }, modifier = Modifier.testTag("protect-log-action")) { Text("Protect my cook log") }
+                            TextButton(onClick = { dismissProtectPrompt() }, modifier = Modifier.testTag("protect-log-dismiss")) { Text("Not now") }
+                        }
+                    }
+                }
+            }
             Box(Modifier.weight(1f)) {
             when (CookTab.valueOf(selectedTab)) {
                 CookTab.LIVE -> LiveCookTab(

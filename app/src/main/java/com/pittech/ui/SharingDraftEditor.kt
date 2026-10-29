@@ -45,6 +45,11 @@ import kotlinx.coroutines.sync.withLock
     var cardSettings by remember { mutableStateOf(false) }; var cardPreview by remember { mutableStateOf(false) }
     var relayShare by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf(false) }
+    // §4.5: when this draft is bound to a live publication, its posted
+    // card (QR footer) is reachable from the same Publish panel.
+    var postedBinding by remember(id) { mutableStateOf<com.pittech.data.PublicationReceipt?>(null) }
+    var postedCard by remember { mutableStateOf(false) }
+    LaunchedEffect(id, publishing) { if (!publishing) postedBinding = runCatching { publisher.binding(id) }.getOrNull() }
     val exporting by viewModel.busy.collectAsStateWithLifecycle()
     val exportError by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope(); val lock = remember { Mutex() }
@@ -142,11 +147,15 @@ import kotlinx.coroutines.sync.withLock
                     Text("Publish", style = PitTechTextStyles.bannerCard)
                     Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.", style = MaterialTheme.typography.bodySmall, color = pitTechTokens().inkMuted)
                     OutlinedButton(onClick={ focus.clearFocus(); keyboard?.hide(); act { persist(); publishing=true } },enabled=!busy && document!!.entries.any { it.included },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-publish")) { Text("Preview public publication") }
+                    postedBinding?.takeIf { it.status != "pending_review" }?.let { receipt ->
+                        OutlinedButton(onClick={ postedCard=true },enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("sharing-posted-card")) { Text("Share posted card") }
+                    }
                 }
             }
         }
     }
     if (cardPreview) ShareCardPreview(id,viewModel,onPack = { cardPreview = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { cardPreview = false },onProThemes = { viewModel.subscription.openPro(com.pittech.billing.ProPlacement.THEMES) })
+    if (postedCard) postedBinding?.let { receipt -> ShareCardPreview(id,viewModel,onPack = { postedCard = false; viewModel.createShareCookPack(id,includeRecordedCook) },onClose = { postedCard = false },publication = com.pittech.data.ShareCardPublication(receipt.id)) }
     if (publishing) PublicationDialog(id,viewModel,account,publisher) { publishing=false; act { reload() } }
     if (relayShare) RelayShareDialog(id, includeRecordedCook, viewModel) { relayShare = false }
     if (chooseRecipe) SheetSurface(onDismiss = { chooseRecipe = false }, title = "Add a recipe", actions = { TextButton(onClick = { chooseRecipe = false }) { Text("Done") } }) {

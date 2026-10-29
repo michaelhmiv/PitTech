@@ -96,6 +96,26 @@ class CooksViewModel(
     internal val publicationWriter = com.pittech.data.PublicationWriter(com.pittech.data.AccountPublicationSession(account), com.pittech.data.PublicationOperationsStore(context))
     internal val recipes get() = repository.recipes
     internal val sharing get() = repository.sharing
+
+    /**
+     * Flowing §4.3: the provenance payload for a recipe revision, assembled
+     * from the source cook's scoped archive. Null when the revision has no
+     * source cook or the cook has left the library — the honest-absence
+     * case the recipe screen renders around.
+     */
+    internal suspend fun recipeProvenance(sourceCookId: String?, sourceDishId: String?): com.pittech.domain.RecipeProvenance? {
+        if (sourceCookId == null || sourceDishId == null) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val archive = com.pittech.data.provenanceReadyArchive(com.pittech.data.archiveSnapshotJson(repository.exportSnapshot(sourceCookId), null))
+                com.pittech.domain.RecipeProvenance.fromArchive(archive, sourceCookId, sourceDishId)
+            }.getOrNull()
+        }
+    }
+
+    /** One-shot cook detail for surfaces that visit a cook without opening it (the recipe story's full chart and photos). */
+    internal suspend fun cookDetailOnce(cookId: String): com.pittech.data.CookDetailData? =
+        repository.observeCookDetail(cookId).first()
     internal val relay = com.pittech.data.RelayManager(context, viewModelScope, prepare = { id, history, file ->
         val before = sharing.get(id) ?: error("Draft unavailable.")
         file.outputStream().buffered().use { dataTransfer.writeCookPack(it, id, history) }
