@@ -185,7 +185,10 @@ class FlowingPlanBoardScreenTest {
         compose.waitUntil(timeoutMillis = 20_000) { compose.onAllNodesWithTag("plan-seed-picker").fetchSemanticsNodes().isEmpty() }
         // The seeded lane is on the board and its dish card carries the
         // provenance basis — the source cook's date, with the year.
+        // (The note is the assertion: the dish name "Boston Butt" also
+        // appears in the picker's card and the cook-name field, so a
+        // bare text match would be ambiguous.)
         compose.onNodeWithText("Seeded from your October 12, 2026 cook", substring = true).performScrollTo().assertExists()
-        compose.onNodeWithText("Boston Butt").assertExists()
+        compose.onNodeWithTag("plan-board-lane-1").assertExists()
     }
 }
