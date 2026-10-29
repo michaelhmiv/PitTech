@@ -87,6 +87,23 @@ class PrivateSyncClientTest {
         assertEquals("/v1/sync/photos/$asset/complete", recorded[3].request.url.encodedPath)
     }
 
+    /**
+     * Issue #253: the API's body guard accepts exactly "application/json".
+     * A String request body makes OkHttp append "; charset=utf-8", and the
+     * photo-complete call — the only String-bodied sync call — 415'd on
+     * every device. The recorded request goes through the real client
+     * construction, so the exact header is the one the server would see.
+     */
+    @Test fun completePhotoSendsExactlyApplicationJsonContentType() = runTest {
+        val (api, recorded) = client { request -> response(request, 200, JSONObject().put("complete", true).toString()) }
+        api.completePhoto(asset, access)
+        val request = recorded.single().request
+        assertEquals("POST", request.method)
+        assertEquals("/v1/sync/photos/$asset/complete", request.url.encodedPath)
+        assertEquals("application/json", request.body?.contentType()?.toString())
+        assertArrayEquals("{ }".toByteArray(), recorded.single().body)
+    }
+
     @Test fun abandonRequiresExplicitConfirmation() = runTest {
         val (api, recorded) = client { request -> response(request, 200, JSONObject().put("abandoned", true).toString()) }
         api.abandonPhoto(asset, access)
