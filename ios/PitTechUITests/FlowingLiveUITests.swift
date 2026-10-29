@@ -81,12 +81,18 @@ final class FlowingLiveUITests: XCTestCase {
         reveal(hero, app: app)
         XCTAssertTrue(hero.waitForExistence(timeout: 10))
         hero.tap()
-        XCTAssertTrue(app.staticTexts["live-chart-readout"].waitForExistence(timeout: 15))
+        // The readout identifier sits on the readout CARD (a container),
+        // not a Text — query it type-agnostically, like the brand strip.
+        // (As a merged StaticText it was findable before the card gained
+        // children: .contain; as a contained container it is not a
+        // StaticText at all, and the staticTexts query timed out.)
+        let readout = app.descendants(matching: .any)["live-chart-readout"]
+        XCTAssertTrue(readout.waitForExistence(timeout: 15))
         let delta = app.staticTexts["live-chart-ghost-delta"]
         XCTAssertTrue(delta.waitForExistence(timeout: 10))
         XCTAssertTrue(delta.label.contains("ahead of last brisket"), delta.label)
         app.buttons["live-chart-preset-last2h"].tap()
-        XCTAssertTrue(app.staticTexts["live-chart-readout"].exists)
+        XCTAssertTrue(readout.exists)
         app.buttons["live-chart-close"].tap()
 
         // E3: the overnight panel assembles the net; the test alert posts.
