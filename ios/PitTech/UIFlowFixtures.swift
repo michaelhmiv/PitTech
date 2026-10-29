@@ -43,6 +43,7 @@ struct ScreenshotTextSize: ViewModifier {
             }
         }
         if CommandLine.arguments.contains("--ui-test-flowing") { prepareFlowingFixture() }
+        if CommandLine.arguments.contains("--ui-test-flowing-story") { prepareFlowingStoryFixture() }
         if CommandLine.arguments.contains("--ui-test-capture") {
             // Flowing §4.2: one active cook for the composer-capture flow.
             startCook(title: "Capture flow brisket", firstDish: "Brisket")
@@ -115,6 +116,84 @@ struct ScreenshotTextSize: ViewModifier {
         let liveSeries: [(Double, Double)] = [(0, 40), (15, 52), (30, 63), (45, 74), (60, 84), (75, 93), (90, 102), (105, 110), (120, 118), (135, 125), (150, 132), (165, 138), (180, 144), (195, 149), (210, 153), (225, 156), (240, 158), (255, 160), (270, 161), (285, 162), (300, 163), (305, 164), (310, 165), (315, 166), (320, 167), (325, 168), (330, 169), (335, 170), (340, 171), (345, 172), (350, 173), (355, 174), (360, 175)]
         for (minutes, temp) in liveSeries { reading(cookId: live.id, dishId: liveDish.id, type: "food_probe", value: temp, at: liveOn + minutes * 60_000, probe: "Brisket") }
         reading(cookId: live.id, dishId: liveDish.id, type: "setpoint", value: 250, at: liveOn + 330 * 60_000, probe: "Pit setpoint")
+        save()
+    }
+
+    /// Flowing Slice 3 (--ui-test-flowing-story): one finished Boston
+    /// butt with a full recorded story (phase actions through the note
+    /// writer, a hand-laid curve, recorded results) and the recipe
+    /// saved from it, one plain finished cook for E4, and one recipe
+    /// with no source cook at all. Times are fixed — October 12,
+    /// 2026 — so the story's provenance line is deterministic.
+    private func prepareFlowingStoryFixture() {
+        UserDefaults.standard.removeObject(forKey: "protect-log-prompt-shown")
+        let start = 1_791_799_500_000.0 // Mon Oct 12, 2026 10:05 UTC
+        func at(_ minute: Double) -> Double { start + minute * 60_000 }
+        startCook(title: "Story butt cook", firstDish: "Boston Butt")
+        guard let cook = activeCooks.first, let dish = dishRecords(cook.id).first else { return }
+        if let index = library.cooks.firstIndex(where: { $0.id == cook.id }) {
+            library.cooks[index].startedAtUtcMillis = Int64(start)
+            library.cooks[index].startedTimeZoneId = "America/New_York"
+            library.cooks[index].smokerName = "Offset smoker"
+            library.cooks[index].initialSetpointValue = 250
+            library.cooks[index].initialSetpointUnit = "°F"
+            library.cooks[index].woodOrPelletBlend = "Hickory"
+            library.cooks[index].fuelType = "Charcoal"
+            library.cooks[index].createdAtUtcMillis = Int64(start)
+            library.cooks[index].updatedAtUtcMillis = Int64(start)
+        }
+        if let index = library.dishes.firstIndex(where: { $0.objectValue?["id"]?.stringValue == dish.id }), var row = library.dishes[index].objectValue {
+            row["cut"] = .string("Boston butt"); row["weightValue"] = .number(9.4); row["weightUnit"] = .string("lb")
+            library.dishes[index] = .object(row)
+        }
+        do {
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: at(0)))
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "wrap"), title: "Wrapped", occurredAt: at(195)))
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "remove"), title: "Off the pit", occurredAt: at(580)))
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "rest_start"), title: "Resting", occurredAt: at(580)))
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "dish_done"), title: "Sliced", occurredAt: at(655)))
+        } catch { assertionFailure("Flowing story fixture failed: " + error.localizedDescription); return }
+        var minute = 0.0
+        while minute <= 580 {
+            let value: Double
+            switch minute {
+            case ...120: value = 40 + minute
+            case ...210: value = 160
+            case ...296: value = 160 + (minute - 210) * 0.5
+            default: value = 203
+            }
+            library.readings.append(.object([
+                "id": .string(UUID().uuidString.lowercased()), "cookId": .string(cook.id), "dishId": .string(dish.id),
+                "probeId": .string("story-probe"), "probeName": .string("Probe 1"),
+                "measurementType": .string("food_probe"), "value": .number(value), "unit": .string("°F"),
+                "measuredAtUtcMillis": .number(at(minute)), "recordedAtUtcMillis": .number(at(minute)),
+                "timeZoneId": .string("America/New_York"), "source": .string("manual"), "qualityStatus": .string("valid"),
+                "timestampBasis": .string("measurement"), "samplingIntervalMillis": .number(0),
+            ]))
+            minute += 10
+        }
+        func result(_ type: String, _ numeric: Double?, _ text: String?) {
+            library.results.append(.object(["id": .string(UUID().uuidString.lowercased()), "cookId": .string(cook.id), "dishId": .string(dish.id),
+                                            "resultType": .string(type), "numericValue": numeric.map(JSONValue.number) ?? .null, "textValue": text.map(JSONValue.string) ?? .null,
+                                            "recordedAtUtcMillis": .number(at(655))]))
+        }
+        result("overall_rating", 4, nil); result("cook_again", 1, nil)
+        result("keep_doing", nil, "Hickory"); result("change_next_time", nil, "Wrap earlier"); result("result_notes", nil, "Bark set by hour 5.")
+        finishCook(cook.id)
+        if let index = library.cooks.firstIndex(where: { $0.id == cook.id }) { library.cooks[index].endedAtUtcMillis = Int64(at(655)) }
+        do {
+            let snapshot = try extractRecipe(cookId: cook.id, dishId: dish.id)
+            _ = try saveRecipe(snapshot, sourceCookId: cook.id, sourceDishId: dish.id)
+            // A recipe with no source cook: the honest-absence control.
+            let plain = RecipeSnapshot(version: 1, name: "Plain toast", description: "", tags: [],
+                                       draft: .object(["dishes": .array([.object(["name": .string("Toast")])])]),
+                                       instructions: [], observations: [], targets: [], resultNotes: "",
+                                       rating: nil, smokingAnchorUtcMillis: nil, servings: "")
+            _ = try saveRecipe(plain)
+        } catch { assertionFailure("Flowing story fixture failed: " + error.localizedDescription); return }
+        // E4's subject: a finished cook with nothing else attached.
+        startCook(title: "Finished solo", firstDish: "Ribs")
+        if let solo = activeCooks.first { finishCook(solo.id) }
         save()
     }
 

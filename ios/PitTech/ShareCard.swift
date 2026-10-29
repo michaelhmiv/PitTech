@@ -30,6 +30,23 @@ struct ShareCardRelay: Sendable {
               url == "https://pittech.app/s/" + code else { throw PitTechArchiveError.invalidArchive }
     }
 }
+/// Flowing Slice 3 (Spread 07): a posted recipe's card identity. The
+/// footer QR encodes the canonical public link; likes/forks ride only
+/// as a pair, and only when a surface supplies real counts — a card
+/// never invents engagement. A card carries one footer: the Cook Pack
+/// code (relay) or the publication link, never both.
+struct ShareCardPublication: Equatable, Sendable {
+    let itemId: String
+    var likes: Int? = nil
+    var forks: Int? = nil
+    var url: String { "https://pittech.app/c/\(itemId)" }
+    func validate() throws {
+        guard UUID(uuidString: itemId) != nil, (likes == nil) == (forks == nil),
+              likes.map({ (0...1_000_000_000).contains($0) }) ?? true,
+              forks.map({ (0...1_000_000_000).contains($0) }) ?? true
+        else { throw PitTechArchiveError.invalidArchive }
+    }
+}
 enum NativeShareCardContent {
     private static let actions = ["food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done", "season", "trim", "preheat_start"]
     private static func rows(_ value: JSONValue, _ key: String) -> [[String: JSONValue]] { (value.objectValue?[key]?.arrayValue ?? []).compactMap(\.objectValue) }
@@ -39,8 +56,9 @@ enum NativeShareCardContent {
     }
     static func elapsed(_ ms: Double) -> String { "\(Int(ms / 3600000))h \(Int(ms / 60000) % 60)m" }
     static func offset(_ ms: Double?) -> String { ms.map { ($0 < 0 ? "−" : "+") + elapsed(abs($0)) } ?? "Recorded" }
-    static func build(_ document: NativeSharingDocument, photo: Data?, relay: ShareCardRelay? = nil) throws -> PreparedNativeShareCard {
-        try document.validate(); try document.cardOptions.validate(); try relay?.validate()
+    static func build(_ document: NativeSharingDocument, photo: Data?, relay: ShareCardRelay? = nil, publication: ShareCardPublication? = nil) throws -> PreparedNativeShareCard {
+        try document.validate(); try document.cardOptions.validate(); try relay?.validate(); try publication?.validate()
+        guard relay == nil || publication == nil else { throw PitTechArchiveError.invalidArchive }
         let entries = document.entries.filter(\.included); guard !entries.isEmpty else { throw RecipeError.unavailable }
         let projection = NativeCookPackProjection(), stories = entries.map(projection.story)
         let all = stories.flatMap { rows($0, "readings") }.filter { ($0["qualityStatus"]?.stringValue ?? "valid") == "valid" }
@@ -58,6 +76,7 @@ enum NativeShareCardContent {
         }
         milestones.sort { ($0["offsetMillis"]?.numberValue ?? .greatestFiniteMagnitude) < ($1["offsetMillis"]?.numberValue ?? .greatestFiniteMagnitude) }
         var curves: [JSONValue] = [], channelCount = 0
+        var anyDrawableSegment = false
         for i in entries.indices {
             guard let anchor = stories[i].objectValue?["anchorUtcMillis"]?.numberValue else { continue }
             let gaps = (stories[i].objectValue?["connectionGaps"]?.arrayValue ?? []).compactMap(\.numberValue)
@@ -110,6 +129,7 @@ enum NativeShareCardContent {
                     }
                     return .array(selected.map { .object(["x": .number((($0["measuredAtUtcMillis"]?.numberValue ?? 0) - anchor) / 60000), "y": .number(temperature($0))]) })
                 }
+                if points.contains(where: { ($0.arrayValue?.count ?? 0) >= 2 }) { anyDrawableSegment = true }
                 if !points.isEmpty { curves.append(.object(["label": .string("\(try entries[i].snapshot.name) · \(first["probeName"]?.stringValue ?? "") · \(first["measurementType"]?.stringValue ?? "")"), "segments": .array(points)])) }
             }
         }
@@ -127,12 +147,49 @@ enum NativeShareCardContent {
             let dish = try entries[0].snapshot.draft.objectValue?["dishes"]?.arrayValue?.first?.objectValue ?? [:]
             if let weight = dish["weight"]?.stringValue, !weight.isEmpty { stat("Weight", weight + " " + (dish["weightUnit"]?.stringValue ?? "")) }
         } else { stat("Selected dishes", String(entries.count)) }
+        // Flowing Slice 3 (Spread 07): the manual-logger variant's
+        // chips — hand-entered food readings in time order, sampled
+        // evenly to at most twelve, each labeled by its clock time in
+        // the reading's own timezone and valued in the card's unit.
+        let manualLogged = stories.flatMap { rows($0, "readings") }.filter {
+            $0["source"]?.stringValue == "manual" && ($0["qualityStatus"]?.stringValue ?? "valid") == "valid" &&
+                RecipeGuideProjection.role($0["measurementType"]?.stringValue ?? "") == "food"
+        }.sorted { ($0["measuredAtUtcMillis"]?.numberValue ?? 0) < ($1["measuredAtUtcMillis"]?.numberValue ?? 0) }
+        let sampledTemps: [[String: JSONValue]] = manualLogged.count <= 12 ? manualLogged : {
+            var indices: [Int] = []
+            for i in 0..<12 {
+                let index = Int((Double(i) * Double(manualLogged.count - 1) / 11.0).rounded())
+                if !indices.contains(index) { indices.append(index) }
+            }
+            return indices.map { manualLogged[$0] }
+        }()
+        let manualTemps: [JSONValue] = sampledTemps.map { row in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US")
+            formatter.dateFormat = "h:mm a"
+            formatter.timeZone = TimeZone(identifier: row["timeZoneId"]?.stringValue ?? "UTC") ?? TimeZone(secondsFromGMT: 0)
+            let label = formatter.string(from: Date(timeIntervalSince1970: (row["measuredAtUtcMillis"]?.numberValue ?? 0) / 1000))
+            return .object(["label": .string(label), "value": .string(String(format: "%.0f", temperature(row)) + " " + unit)])
+        }
         var hero = settings.hero
         if hero == "photo" && photo == nil { throw CookNoteError.missingPhoto }
-        if hero == "chart" && curves.isEmpty { hero = "none" }
+        // A curve is drawable only if some segment holds two or more
+        // points; hand-logged readings never join segments, so a
+        // hand-logged cook's chart hero honestly becomes the manual
+        // variant (or nothing) instead of a scatter of lone dots.
+        if hero == "chart" {
+            hero = anyDrawableSegment ? "chart" : (!manualTemps.isEmpty ? "manual" : "none")
+        }
         let content: JSONValue = .object(["version": .number(1), "title": .string(document.title), "dishes": .array(try entries.map { .string(try $0.snapshot.name) }), "hero": .string(hero), "unit": .string(unit),
             "curves": .array(curves), "channelCount": .number(Double(channelCount)), "milestones": .array(milestones.prefix(5).map(JSONValue.object)), "stats": .array(stats), "note": .string(settings.note),
-            "cropX": .number(settings.cropX), "cropY": .number(settings.cropY), "zoom": .number(settings.zoom), "theme": .string(settings.theme), "relay": relay.map { .object(["code": .string($0.code), "url": .string($0.url)]) } ?? .null])
+            "cropX": .number(settings.cropX), "cropY": .number(settings.cropY), "zoom": .number(settings.zoom), "theme": .string(settings.theme), "relay": relay.map { .object(["code": .string($0.code), "url": .string($0.url)]) } ?? .null,
+            "manualTemps": .array(manualTemps),
+            "publication": publication.map { pub -> JSONValue in
+                var object: [String: JSONValue] = ["url": .string(pub.url)]
+                if let likes = pub.likes { object["likes"] = .number(Double(likes)) }
+                if let forks = pub.forks { object["forks"] = .number(Double(forks)) }
+                return .object(object)
+            } ?? .null])
         return PreparedNativeShareCard(content: content, photo: photo)
     }
 }
@@ -141,7 +198,7 @@ enum NativeShareCardContent {
     /// Prepares the card for rendering. `themeOverride`/`paletteOverride` apply
     /// the caller's entitlement-resolved Pro selections to the rendered copy
     /// only; the sharing draft itself is never mutated.
-    func prepareShareCard(_ id: String, relay: ShareCardRelay? = nil, themeOverride: String? = nil, paletteOverride: String? = nil) async throws -> PreparedNativeShareCard {
+    func prepareShareCard(_ id: String, relay: ShareCardRelay? = nil, publication: ShareCardPublication? = nil, themeOverride: String? = nil, paletteOverride: String? = nil) async throws -> PreparedNativeShareCard {
         let document = try sharingDocument(id)
         var original: Data?
         if document.cardOptions.hero == "photo" {
@@ -153,7 +210,7 @@ enum NativeShareCardContent {
         let prepared = try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             let photo = try captured.map { try NativeCookPackPhoto.derivative($0) }
-            return try NativeShareCardContent.build(document, photo: photo, relay: relay)
+            return try NativeShareCardContent.build(document, photo: photo, relay: relay, publication: publication)
         }.value
         guard var root = prepared.content.objectValue, themeOverride != nil || paletteOverride != nil else { return prepared }
         if let themeOverride { root["theme"] = .string(themeOverride) }

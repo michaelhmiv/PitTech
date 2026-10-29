@@ -19,6 +19,8 @@ struct SharingDraftView: View {
     @State private var exporting = false
     @State private var cardSettings = false
     @State private var cardPreview = false
+    @State private var postedCard = false
+    @State private var boundReceipt: NativePublicationReceipt?
     @State private var relayShare = false
     @State private var publishing = false
     @State private var cardPackRequested = false
@@ -89,6 +91,12 @@ struct SharingDraftView: View {
                             TurnInBannerText("Publish")
                             Text("Make this draft public on your cookbook. You preview exactly what posts first — nothing is published without that separate confirmation.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                             Button("Preview public publication") { act { try persist(); publishing = true } }.buttonStyle(.bordered).frame(minHeight: 44).disabled(!current.entries.contains { $0.included }).accessibilityIdentifier("sharing-publish")
+                            // Flowing Slice 3 (Spread 07): a draft bound
+                            // to a live publication carries its posted
+                            // card right here.
+                            if let boundReceipt, boundReceipt.status != "pending_review" {
+                                Button("Share posted card") { act { try persist(); postedCard = true } }.buttonStyle(.bordered).frame(minHeight: 44).accessibilityIdentifier("sharing-posted-card")
+                            }
                         }
                         }
                     }
@@ -99,7 +107,7 @@ struct SharingDraftView: View {
                 if let error { TurnInStatusStrip(text: error, accent: PitTechStyle.flag) }
             }.padding(20)
         }.accessibilityIdentifier("sharing-draft-content").background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Sharing draft").navigationBarTitleDisplayMode(.inline)
-            .onAppear { act { try reload() } }
+            .onAppear { act { try reload() }; loadBinding() }
             .onChange(of: document) { _, value in
                 if let value, !canIncludeHistory(value) { includeRecordedCook = false }
                 saveTask?.cancel(); guard value != nil, editor == nil else { return }; saved = false
@@ -116,7 +124,10 @@ struct SharingDraftView: View {
                 exportDocument = PitTechArchiveDocument(data: Data())
             }
             .sheet(item: $editor, onDismiss: { act { try reload() } }) { NativeRecipeEditor(request: $0) }
-            .sheet(isPresented: $publishing, onDismiss: { act { try reload() } }) { NavigationStack { NativePublicationView(draft: id) }.modifier(ScreenshotTextSize()) }
+            .sheet(isPresented: $publishing, onDismiss: { act { try reload() }; loadBinding() }) { NavigationStack { NativePublicationView(draft: id) }.modifier(ScreenshotTextSize()) }
+            .sheet(isPresented:$postedCard,onDismiss:{ if cardPackRequested { cardPackRequested = false;prepareExport() } }) {
+                NavigationStack { NativeShareCardPreview(id:id, publication: boundReceipt.map { ShareCardPublication(itemId: $0.id) }) { cardPackRequested = true;postedCard = false } }.modifier(ScreenshotTextSize())
+            }
             .sheet(isPresented: $relayShare) { NavigationStack { NativeRelayShareView(id: id, includeHistory: includeRecordedCook) }.modifier(ScreenshotTextSize()) }
             .sheet(isPresented:$cardPreview,onDismiss:{ if cardPackRequested { cardPackRequested = false;prepareExport() } }) {
                 NavigationStack { NativeShareCardPreview(id:id) { cardPackRequested = true;cardPreview = false } }.modifier(ScreenshotTextSize())
@@ -134,6 +145,10 @@ struct SharingDraftView: View {
         let original = Set(NativeCookPackHistory.rows(history, "dishes").compactMap { $0["id"]?.stringValue })
         let selected = value.entries.filter(\.included)
         return !selected.isEmpty && selected.allSatisfy { $0.includeStory && $0.sourceDishId.map(original.contains) == true }
+    }
+    private func loadBinding() {
+        guard let user = account.stateUserId else { boundReceipt = nil; return }
+        boundReceipt = try? NativePublicationOperationsStore().binding(user, draft: id)
     }
     private func reload() throws { document = try store.sharingDocument(id); updated = store.sharingRecord(id)?["updated"]?.numberValue ?? 0; saved = true }
     private func prepareExport() {

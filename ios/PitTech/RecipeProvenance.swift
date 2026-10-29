@@ -224,3 +224,53 @@ struct RecipeProvenance: Equatable {
         value == value.rounded() ? "\(Int64(value))" : "\(value)"
     }
 }
+
+extension PitTechLibrary {
+    /// The archive→provenance seam, bridged at the transfer layer (Flowing
+    /// Slice 3). The library's event rows speak the storage vocabulary
+    /// (`eventType`, `occurredAtUtcMillis`, the action and dish scopes
+    /// inside `noteMetadataJson`), while `RecipeProvenance.fromArchive` —
+    /// Slice 1's parser, whose contract does not change — reads the
+    /// insights vocabulary (`action`, `at`, `dishIds`). Feeding raw
+    /// library JSON to the parser throws on the events array and the
+    /// payload fail-softs to nil: the story silently never renders, the
+    /// exact defect Android's Slice 3 phase shipped and then fixed. The
+    /// bridge rewrites ONLY the events array, resolving each row through
+    /// the production insights adapter's own resolution
+    /// (`PitTechLibrary.actions(for:)` — metadata action, the
+    /// meat_on→food_on / rest→rest_start legacy mapping, metadata dish
+    /// scopes falling back to the row's dish) so the bridged archive can
+    /// never drift from what Insights itself computes. Every other table
+    /// already shares one vocabulary across storage and parser.
+    func provenanceReadyArchive() -> JSONValue {
+        guard let data = try? JSONEncoder().encode(self),
+              var root = (try? JSONDecoder().decode(JSONValue.self, from: data))?.objectValue
+        else { return .object([:]) }
+        let bridged: [JSONValue] = cooks.flatMap { cook in
+            actions(for: cook.id).map { resolved in
+                .object([
+                    "id": .string(resolved.id),
+                    "cookId": .string(cook.id),
+                    "dishIds": .array(resolved.dishIds.map(JSONValue.string)),
+                    "action": .string(resolved.action),
+                    "at": .number(resolved.at),
+                ])
+            }
+        }
+        root["events"] = .array(bridged)
+        return .object(root)
+    }
+}
+
+extension CookStore {
+    /// The §4.3 provenance payload for a recipe revision's source cook,
+    /// assembled from this device's library through the bridged archive
+    /// (see `provenanceReadyArchive`). Nil when the revision names no
+    /// source cook or the cook/dish is not in the library — the
+    /// honest-absence case the surfaces render around.
+    func recipeProvenance(sourceCookId: String?, sourceDishId: String?) -> RecipeProvenance? {
+        guard let sourceCookId, let sourceDishId else { return nil }
+        guard let data = try? JSONEncoder().encode(library.provenanceReadyArchive()) else { return nil }
+        return RecipeProvenance.fromArchive(data: data, sourceCookId: sourceCookId, sourceDishId: sourceDishId)
+    }
+}
