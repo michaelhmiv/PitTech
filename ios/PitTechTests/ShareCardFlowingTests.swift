@@ -36,12 +36,13 @@ import Vision
         return NativeSharingDocument(title: "Pepper pork", entries: [entry], card: ShareCardOptions())
     }
 
-    /// Two device readings fifteen seconds apart on one channel at a
-    /// 15-second sampling interval: one segment of two points — a
-    /// drawable curve.
+    /// Two recorded readings fifteen seconds apart on one channel at
+    /// a 15-second sampling interval: one segment of two points — a
+    /// drawable curve. (Sharing-story readings carry source "manual"
+    /// or "recorded"; anything else fails document validation.)
     private func deviceReadings() -> [JSONValue] {
-        [reading("d1", source: "device", value: 100, atMillis: base, sampling: 15_000),
-         reading("d2", source: "device", value: 110, atMillis: base + 15_000, sampling: 15_000)]
+        [reading("d1", source: "recorded", value: 100, atMillis: base, sampling: 15_000),
+         reading("d2", source: "recorded", value: 110, atMillis: base + 15_000, sampling: 15_000)]
     }
 
     func testPublicationSlotCarriesCanonicalUrlAndCounts() throws {
