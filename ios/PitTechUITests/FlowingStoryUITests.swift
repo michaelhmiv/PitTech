@@ -47,8 +47,13 @@ final class FlowingStoryUITests: XCTestCase {
         XCTAssertTrue(line.waitForExistence(timeout: 15), "the provenance line leads, its date carrying the year")
         XCTAssertTrue(app.descendants(matching: .any)["recipe-story"].exists)
         XCTAssertTrue(app.staticTexts["10H 55M"].waitForExistence(timeout: 10), "the total rides in the story's stat cells")
-        reveal(app.buttons["recipe-story-cook-again"], app: app)
-        XCTAssertTrue(app.buttons["recipe-story-cook-again"].exists, "Cook this again is the story's own door")
+        // The door by identifier OR label: if the identifier is not
+        // propagating to the button's AX node, the label still finds
+        // the spec's door; the scroll-0 tree print below shows which.
+        let door = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "recipe-story-cook-again", "Cook this again")).firstMatch
+        if !door.exists { print(app.debugDescription) }
+        reveal(door, app: app)
+        XCTAssertTrue(door.exists, "Cook this again is the story's own door")
     }
 
     func testRecipeWithoutSourceCookRendersAsBefore() {

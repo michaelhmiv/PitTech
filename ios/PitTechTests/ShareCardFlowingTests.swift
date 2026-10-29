@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import Vision
+import CoreImage
 @testable import PitTech
 
 /// Mirrors Android's ShareCardFlowingTest + the Slice 3 additions to
@@ -129,6 +130,41 @@ import Vision
         let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.png")
         attachment.name = "Publication share card"; attachment.lifetime = .keepAlways; add(attachment)
         let url = "https://pittech.app/c/\(itemId)"
+        // TEMP DIAGNOSTIC (remove with the fix): dump the generator's
+        // raw module matrix and three decode attempts to the log.
+        func asciiGrid(_ cg: CGImage) -> String {
+            let w = cg.width, h = cg.height
+            guard w <= 80, h <= 80 else { return "too big: \(w)x\(h)" }
+            var px = [UInt8](repeating: 0, count: w * h)
+            let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            var rows: [String] = []
+            for y in 0..<h { rows.append((0..<w).map { px[y * w + $0] < 128 ? "##" : "  " }.joined()) }
+            return rows.joined(separator: "\n")
+        }
+        func visionDecode(_ cg: CGImage) -> [String] {
+            let r = VNDetectBarcodesRequest(); r.symbologies = [.qr]
+            try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([r])
+            return (r.results ?? []).compactMap(\.payloadStringValue)
+        }
+        let diagFilter = CIFilter.qrCodeGenerator(); diagFilter.message = Data(url.utf8); diagFilter.correctionLevel = "M"
+        if let out = diagFilter.outputImage, let rawCG = CIContext().createCGImage(out, from: out.extent) {
+            print("QRDIAG extent=\(out.extent) rawCG=\(rawCG.width)x\(rawCG.height)")
+            print(asciiGrid(rawCG))
+            let upFormat = UIGraphicsImageRendererFormat(); upFormat.scale = 1
+            let up = UIGraphicsImageRenderer(size: CGSize(width: rawCG.width * 8, height: rawCG.height * 8), format: upFormat).image { c in
+                c.cgContext.interpolationQuality = .none
+                UIImage(cgImage: rawCG).draw(in: CGRect(x: 0, y: 0, width: rawCG.width * 8, height: rawCG.height * 8))
+            }
+            print("QRDIAG relayStyleDecode=\(visionDecode(up.cgImage!))")
+        } else { print("QRDIAG filter produced nothing") }
+        if let mine = NativeShareCardQR.image(url), let mineCG = mine.cgImage {
+            print("QRDIAG mine=\(mineCG.width)x\(mineCG.height) vision=\(visionDecode(mineCG))")
+            let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
+            let features = detector?.features(in: CIImage(cgImage: mineCG)) as? [CIQRCodeFeature]
+            print("QRDIAG mine CIDetector=\(features?.map(\.messageString ?? "nil") ?? [])")
+        } else { print("QRDIAG NativeShareCardQR.image returned nil") }
         // Stage 1: the generated code itself decodes. This isolates
         // generation from placement — a failure here is the renderer,
         // a failure below is the card.
