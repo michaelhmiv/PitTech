@@ -39,23 +39,33 @@ internal object PrivateSyncMerge {
         is String->quote(value)
         else->error("Invalid sync value")
     }
-    /** JSON.stringify number formatting: integral doubles print without a
+    /** JSON.stringify number formatting: integral values print without a
      * fraction (225.0 -> "225"); exponential notation appears only outside
-     * [1e-6, 1e21), with a JS-style exponent (explicit +, no leading zeros). */
+     * [1e-6, 1e21), with a JS-style exponent (explicit +, no leading zeros).
+     * Every Number subtype a parser can produce is canonicalized: JSON-java
+     * parses decimal text to BigDecimal while Android's org.json produces
+     * Double, and the server's value is the JS double of the same text, so
+     * a BigDecimal that is exactly a double formats as that double. */
     private fun number(value:Number):String{
-        if(value is Double || value is Float){
-            val d=value.toDouble();require(d.isFinite()){"Invalid sync number"}
-            if(d==0.0)return "0"
-            val magnitude=kotlin.math.abs(d)
-            if(magnitude<1e-6 || magnitude>=1e21){
-                val raw=d.toString();val split=raw.indexOf('E')
-                val mantissa=java.math.BigDecimal(raw.substring(0,split)).stripTrailingZeros().toPlainString()
-                val exponent=raw.substring(split+1).toInt()
-                return mantissa+"e"+(if(exponent>=0)"+" else "")+exponent
-            }
-            return java.math.BigDecimal(d.toString()).stripTrailingZeros().toPlainString()
+        if(value is Double || value is Float)return jsNumber(value.toDouble())
+        if(value is java.math.BigDecimal){
+            val d=value.toDouble()
+            if(d.isFinite() && java.math.BigDecimal(d.toString()).compareTo(value)==0)return jsNumber(d)
+            return value.stripTrailingZeros().toPlainString()
         }
         return value.toString()
+    }
+    private fun jsNumber(d:Double):String{
+        require(d.isFinite()){"Invalid sync number"}
+        if(d==0.0)return "0"
+        val magnitude=kotlin.math.abs(d)
+        if(magnitude<1e-6 || magnitude>=1e21){
+            val raw=d.toString();val split=raw.indexOf('E')
+            val mantissa=java.math.BigDecimal(raw.substring(0,split)).stripTrailingZeros().toPlainString()
+            val exponent=raw.substring(split+1).toInt()
+            return mantissa+"e"+(if(exponent>=0)"+" else "")+exponent
+        }
+        return java.math.BigDecimal(d.toString()).stripTrailingZeros().toPlainString()
     }
     /** JSON.stringify string quoting. JSONObject.quote is NOT equivalent: it
      * additionally escapes ranges such as U+2019 and U+20AC that
