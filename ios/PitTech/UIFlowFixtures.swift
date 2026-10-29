@@ -150,7 +150,11 @@ struct ScreenshotTextSize: ViewModifier {
             try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "food_on"), title: "Food on", occurredAt: at(0)))
             try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "wrap"), title: "Wrapped", occurredAt: at(195)))
             try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "remove"), title: "Off the pit", occurredAt: at(580)))
-            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "rest_start"), title: "Resting", occurredAt: at(580)))
+            // rest_start must be strictly after remove: at equal
+            // timestamps the phase engine orders actions by event id
+            // (a random UUID per note), so a tie makes validation
+            // order — and this fixture — a coin flip.
+            try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "rest_start"), title: "Resting", occurredAt: at(585)))
             try saveNote(CookNoteDraft(cookId: cook.id, dishId: dish.id, metadata: CookNoteMetadata(category: "action", action: "dish_done"), title: "Sliced", occurredAt: at(655)))
         } catch { assertionFailure("Flowing story fixture failed: " + error.localizedDescription); return }
         var minute = 0.0
