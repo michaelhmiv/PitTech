@@ -67,8 +67,9 @@ class PlanDerivedAlertsTest {
             assertEquals("one rule per timed derived alert", timed.size, rules.size)
             for (alert in timed) {
                 val id = "plan:$cookId:${alert.dishIndex}:${alert.kind.name.lowercase()}"
-                val rule = rules.singleOrNull { it.id == id } ?: fail("missing derived rule $id")
-                rule!!
+                val found = rules.singleOrNull { it.id == id }
+                assertNotNull("missing derived rule $id", found)
+                val rule = found!!
                 assertEquals(alert.label, rule.title)
                 assertTrue(rule.enabled)
                 val trigger = ReminderTriggerCodec.decode(rule.triggerConfig)
