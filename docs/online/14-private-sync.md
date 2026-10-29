@@ -316,7 +316,15 @@ server never saw drop without an unknown ID. Status UI shows exactly
 `Last synced …`, `Waiting for connection`, `Retry needed`,
 `Conflicts to review` or `Sync is off`; no success is shown for an
 unacknowledged upload, and receipts must match
-`mutationId`/`sha256`/`version == base+1` before the base advances.
+`mutationId`/`sha256`/`version == base+1` before the base advances. The
+receipt's `sha256` covers the canonical serialization of the envelope —
+recursively sorted keys with JSON.stringify number/string formatting (the
+server's `stable()`), which is the form the snapshot store persists; the
+client therefore builds and sends the PUT body with its own canonical
+serializer, so the hash of the sent bytes equals the receipt by
+construction. Shared vectors generated from the server's `stable()` live
+in `contracts/fixtures/sync-canonical-v1.json` and are consumed by both
+platforms' test suites.
 
 New tests are listed in the slice summary; they cover durable restart,
 account-switch cancellation, interrupted-photo resume, 409 merge/retry with

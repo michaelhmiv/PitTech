@@ -13,7 +13,8 @@
     "migrate": "node src/migrate.ts",
     "sweep": "node src/sweep.ts",
     "fixtures:generate": "node scripts/canonical-fixtures.ts",
-    "fixtures:check": "node scripts/canonical-fixtures.ts --check"
+    "fixtures:check": "node scripts/canonical-fixtures.ts --check",
+    "fixtures:sync-canonical": "node scripts/sync-canonical-fixtures.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1152.0",

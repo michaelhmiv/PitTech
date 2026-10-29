@@ -74,7 +74,7 @@ internal object PrivateSyncProtocol {
         for (id in resolvedToSend.let { array -> (0 until array.length()).map { array.getString(it) } }) require(!merged.containsKey(id))
         val body = JSONObject().put("contractVersion", 1).put("baseVersion", baseVersion).put("mutationId", mutationId).put("clientId", deviceId).put("records", records).put("conflicts", conflicts)
         if (resolvedToSend.length() > 0) body.put("resolvedConflictIds", resolvedToSend)
-        require(body.toString().toByteArray().size <= MAX_SNAPSHOT_BYTES) { "This library exceeds the 32 MB sync snapshot limit." }
+        require(PrivateSyncMerge.stable(body).toByteArray(Charsets.UTF_8).size <= MAX_SNAPSHOT_BYTES) { "This library exceeds the 32 MB sync snapshot limit." }
         return body
     }
 

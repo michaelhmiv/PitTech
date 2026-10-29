@@ -505,7 +505,11 @@ internal class PrivateSyncCoordinator(
         val mutation = if (candidateId == live.mutationId) UUID.randomUUID().toString() else candidateId
         live.mutationId?.let { old -> if (old != mutation) withContext(Dispatchers.IO) { store.bodyFile(user, old).delete() } }
         val rebuilt = PrivateSyncProtocol.putBody(baseVersion, mutation, device, records, retained, fresh, resolved, serverIds)
-        val rebuiltBytes = rebuilt.toString().toByteArray()
+        // The receipt's sha256 covers the server's canonical
+        // re-serialization of the envelope, so the body itself is built
+        // and sent in canonical form: hash(sent bytes) == receipt by
+        // construction (issue #262).
+        val rebuiltBytes = PrivateSyncMerge.stable(rebuilt).toByteArray(Charsets.UTF_8)
         withContext(Dispatchers.IO) { store.writeBody(user, mutation, rebuiltBytes) }
         live = live.copy(mutationId = mutation, mutationSha = RelayProtocol.hash(rebuiltBytes), pending = true)
         withContext(Dispatchers.IO) { store.save(user, live) }
