@@ -58,7 +58,7 @@ object CookAlertEngine {
         val notify = active && repeatsDue && (previous.snoozedUntil == null || now >= previous.snoozedUntil) && !previous.acknowledged && previous.notifiedCount < 3
         val state = previous.copy(active = active, badSince = since, lastSampleAt = latestSampleAt)
         val nextWake = when { previous.snoozedUntil?.let { it > now } == true -> previous.snoozedUntil; active && !previous.acknowledged && previous.notifiedCount < 3 -> (previous.lastNotifiedAt ?: now) + rule.repeatMillis; else -> null }
-        return AlertEvaluation(state, notify, nextWake, when (rule.type) { "missing" -> "No accepted cloud reading for ${(now - (lastReceipt ?: now)) / 60_000} min"; "offline" -> "The controller service reports the grill offline"; else -> "${sample?.fahrenheit} °F" + if (sample?.ageKnown == false) " · cloud receipt is recent; sensor age is unknown" else "" })
+        return AlertEvaluation(state, notify, nextWake, when (rule.type) { "missing" -> "No accepted reading for ${(now - (lastReceipt ?: now)) / 60_000} min"; "offline" -> "The controller service reports the grill offline"; else -> "${sample?.fahrenheit} °F" + if (sample?.ageKnown == false) " · cloud receipt is recent; sensor age is unknown" else "" })
     }
 
     /**

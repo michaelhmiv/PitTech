@@ -1,5 +1,21 @@
 import SwiftUI
 
+/// Flowing Slice 2 (E2): the "Works offline" badge, shown at pairing time
+/// on every connection surface for the providers that earn it.
+struct WorksOfflineBadge: View {
+    let provider: NativeTelemetryProvider
+    var body: some View {
+        Text("Works offline")
+            .font(PitTechFont.monoMeta)
+            .foregroundStyle(PitTechStyle.ink)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(PitTechStyle.surfaceRaised, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(PitTechStyle.ruling, lineWidth: 1))
+            .accessibilityIdentifier("works-offline-badge-\(provider.rawValue)")
+    }
+}
+
 /// PL-05 (#172): Devices is ONE sheet with a visible 3-step stepper —
 /// Connect → Attach → Assign — identical from Cook Detail and from More.
 /// Attach/assign edits live in the runtime as drafts, so dismissing the
@@ -51,6 +67,7 @@ struct NativeTelemetryConnectionsView: View {
                         // TURN-IN (`d08`): banner name over a mono state line.
                         Section {
                             Text(runtime.messages[profile.id] ?? "Saved connection").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                            if profile.provider.worksOffline { WorksOfflineBadge(provider: profile.provider) }
                             Button("Forget connection", role: .destructive) { Task { do { try await runtime.remove(profile, store: store) } catch { self.error = error.localizedDescription } } }
                         } header: { TurnInBannerText(profile.provider.label + " · Beta") }
                             .listRowBackground(PitTechStyle.surface)
@@ -64,6 +81,7 @@ struct NativeTelemetryConnectionsView: View {
                         // the watching switches and sampling in one section.
                         Section {
                             Text(runtime.messages[profile.id] ?? "Saved connection").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                            if profile.provider.worksOffline { WorksOfflineBadge(provider: profile.provider) }
                             ForEach(profile.sources.filter { profile.selected.contains($0.id) }) { source in VStack(alignment: .leading) { Text(source.label).font(PitTechFont.bodyEmphasis); Button("Detach from meal") { do { try runtime.detach(profile, source: source, store: store) } catch { self.error = error.localizedDescription } }; Text(runtime.messages[profile.id + ":" + source.id] ?? "Waiting for a reading").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted) } }
                             Toggle("Monitor temperatures", isOn: Binding(get: { profile.monitoring }, set: { value in var p = profile; p.monitoring = value; try? runtime.update(p) })).disabled(profile.cookId == nil || profile.selected.isEmpty)
                             // PL-05: the dead toggle explains itself.
@@ -96,6 +114,7 @@ struct NativeTelemetryConnectionsView: View {
         NavigationStack {
             Form {
                 Picker("Connection", selection: $provider) { ForEach(NativeTelemetryProvider.allCases) { Text($0.label).tag($0) } }
+                if provider.worksOffline { WorksOfflineBadge(provider: provider) }
                 switch provider {
                 case .home_assistant:
                     Text("Connect a Home Assistant server that you operate. The phone app alone is not a server.")

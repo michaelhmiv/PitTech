@@ -7,6 +7,12 @@ enum NativeTelemetryProvider: String, Codable, CaseIterable, Identifiable {
     case combustion, home_assistant, fireboard, flame_boss, meater
     var id: String { rawValue }
     var label: String { switch self { case .combustion: "Combustion"; case .home_assistant: "Home Assistant"; case .fireboard: "FireBoard"; case .flame_boss: "Flame Boss"; case .meater: "MEATER" } }
+    /// Flowing Slice 2 (E2): which connections keep working with no
+    /// internet — Bluetooth talks straight to the phone, and Home
+    /// Assistant is the cook's own server on their own network. The
+    /// cloud relays cannot promise it, so they never wear the badge.
+    /// Mirrors Android's worksOffline().
+    var worksOffline: Bool { self == .combustion || self == .home_assistant }
 }
 enum NativeTelemetryKind: String, Codable, CaseIterable {
     case food = "FOOD", chamber = "CHAMBER", ambient = "AMBIENT", setpoint = "SETPOINT", other = "OTHER"

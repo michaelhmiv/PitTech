@@ -269,7 +269,9 @@ class MealRecipeUserFlowsTest {
         compose.waitForIdle()
         shot("recipe-composed-live")
         runBlocking(Dispatchers.IO) { app.cookRepository.pauseCook(meal.id) }
-        compose.onNodeWithTag("live-finish-cook").performScrollTo().performClick()
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        compose.onNodeWithTag("cook-menu-button").performClick()
+        compose.onNodeWithTag("live-finish-cook").performClick()
         compose.onNodeWithTag("finish-cook-save").performClick()
         waitFor("dish-save-recipe-${mac.id}")
         compose.onNode(hasTestTag("dish-save-recipe-${mac.id}") and hasAnyAncestor(hasTestTag("meal-completion-choices"))).performScrollTo().performClick()

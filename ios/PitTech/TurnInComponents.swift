@@ -364,3 +364,31 @@ struct TurnInDashedCard<Content: View>: View {
             )
     }
 }
+
+/// Flowing Slice 2 (Slice 0 audit, iOS parity): the brand strip — Ember
+/// mascot + "PitTech" wordmark + the ember tick — at the top of EVERY
+/// tab, small but clearly identifiable (Michael's hands-on direction,
+/// 2026-10-27). It supersedes the DD-1 Meals lockup, which only Meals
+/// had; the strip is one component so the five tabs can never drift.
+struct PitTechBrandStrip: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image("Mascot")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 26, height: 26)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
+            TurnInBannerText("PitTech", font: PitTechFont.bannerTitle)
+            Rectangle()
+                .fill(PitTechStyle.ember)
+                .frame(width: 14, height: 3)
+                .accessibilityHidden(true)
+            Spacer()
+        }
+        .frame(height: 30)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("PitTech")
+        .accessibilityIdentifier("pittech-brand-strip")
+    }
+}

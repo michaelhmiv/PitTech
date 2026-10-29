@@ -30,14 +30,46 @@ class CookAlertRepository(private val db: PitTechDatabase) {
         db.companionDao().put(CompanionRecord("monitor-status:$cookId", "monitor_status", cookId, "Last reported controller status", payload, old?.createdAtUtcMillis ?: at, at))
     }
     suspend fun reconcileAll(context: Context) { db.companionDao().all().filter { it.kind == "alert" }.mapNotNull { it.cookId }.distinct().forEach { reconcile(context, it) } }
+
+    /**
+     * Flowing Slice 2 (E1): missing-readings alerts are DEFAULT-ON for any
+     * attached source — the cloud recording or any telemetry device,
+     * Bluetooth included. Provisioned only when a source is actually
+     * attached and no missing rule exists for the cook; an existing rule
+     * (including one the cook disabled) is respected, never duplicated or
+     * resurrected.
+     */
+    suspend fun ensureMissingReadingsDefault(cookId: String) {
+        val cook = db.cookDao().getCook(cookId) ?: return
+        if (cook.status == CookStatus.COMPLETED) return
+        val hasMissing = db.companionDao().forCook(cookId).any { it.kind == "alert" && CookAlertEngine.decode(it.payload).first.type == "missing" }
+        if (hasMissing) return
+        val recording = db.recordingDao().getRecording(cookId)
+        val attached = (recording != null && recording.status != CookRecordingEntity.STOPPED) ||
+            db.cookDao().devicesForCook(cookId).any { it.role == "telemetry" }
+        if (!attached) return
+        save(cookId, "Missing readings", CookAlertRule(type = "missing"))
+    }
+
     suspend fun reconcile(context: Context, cookId: String) {
         val now = System.currentTimeMillis()
         val cook = db.cookDao().getCook(cookId) ?: return
+        ensureMissingReadingsDefault(cookId)
         val recording = db.recordingDao().getRecording(cookId)
         val events = db.cookDao().getTimelineEventsForCook(cookId).let { com.pittech.data.notePlanEvents(it) }
         val readings = db.cookDao().observeSensorReadings(cookId).first()
         val status = db.companionDao().get("monitor-status:$cookId")?.let { JSONObject(it.payload) }
         val offline = status?.takeIf { now - it.getLong("at") in 0..330_000 }?.let { it.getInt("online") != 0 }
+        // E1: telemetry sources (Bluetooth included) feed the missing
+        // evaluation on equal footing with the cloud recording: the newest
+        // receipt across every attached source is the silence baseline,
+        // and any attached telemetry device counts as a running source.
+        val telemetryDevices = db.cookDao().devicesForCook(cookId).filter { it.role == "telemetry" }
+        val telemetryDeviceIds = telemetryDevices.map { it.id }.toSet()
+        val telemetryReceipt = readings.filter { it.sourceDeviceId in telemetryDeviceIds }.maxOfOrNull { it.recordedAtUtcMillis }
+        val lastReceipt = listOfNotNull(recording?.lastReceivedAtUtcMillis, recording?.resumedAtUtcMillis, telemetryReceipt).maxOrNull()
+        val cloudRunningNow = recording?.status == CookRecordingEntity.RECORDING && recording.samplingMode != "on_log"
+        val anySourceRunning = cloudRunningNow || telemetryDevices.isNotEmpty()
         db.companionDao().forCook(cookId).filter { it.kind == "alert" }.forEach { record ->
             db.withTransaction {
                 val current = db.companionDao().get(record.id) ?: return@withTransaction
@@ -52,8 +84,8 @@ class CookAlertRepository(private val db: PitTechDatabase) {
                 val sample = reading?.let { AlertSample(CookPlanEngine.fahrenheit(it.value, it.unit), it.measuredAtUtcMillis, it.recordedAtUtcMillis, it.qualityStatus == "valid" && (it.source != "controller_cloud" || recording?.gapStartedAtUtcMillis == null),
                     if (it.source == "controller_cloud") com.pittech.devices.GrillSamplingPolicy.receiptWindow(it.samplingIntervalMillis) else 330_000, it.timestampBasis != "cloud_receipt") }
                 val stage = (rule.dishId ?: reading?.dishId)?.let { CookPlanEngine.stage(events, it) } ?: db.cookDao().getDishesForCook(cookId).map { CookPlanEngine.stage(events, it.id) }.let { stages -> if (stages.distinct().size == 1) stages.first() else "mixed" }
-                val result = CookAlertEngine.evaluate(rule, state, sample, recording?.lastReceivedAtUtcMillis ?: recording?.resumedAtUtcMillis, offline, stage, now,
-                    cook.status != CookStatus.COMPLETED && if (rule.type in setOf("missing", "offline")) cloudRunning else reading?.source == "manual" || !hasRecording || cloudRunning)
+                val result = CookAlertEngine.evaluate(rule, state, sample, lastReceipt, offline, stage, now,
+                    cook.status != CookStatus.COMPLETED && if (rule.type in setOf("missing", "offline")) anySourceRunning else reading?.source == "manual" || !hasRecording || cloudRunning)
                 val canDeliver = com.pittech.CookAlertNotifications.canNotify(context)
                 val nextState = if (result.notify && canDeliver) result.state.copy(lastNotifiedAt = now, notifiedCount = state.notifiedCount + 1) else result.state
                 val payload = CookAlertEngine.encode(rule, nextState)

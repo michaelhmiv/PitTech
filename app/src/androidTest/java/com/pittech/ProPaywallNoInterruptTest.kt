@@ -51,7 +51,9 @@ class ProPaywallNoInterruptTest {
         }
         assertNoProSurface()
 
-        compose.onNodeWithTag("live-finish-cook").performScrollTo().performClick()
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        compose.onNodeWithTag("cook-menu-button").performClick()
+        compose.onNodeWithTag("live-finish-cook").performClick()
         compose.onNodeWithTag("finish-cook-dialog").assertExists()
         assertNoProSurface()
         compose.onNodeWithTag("finish-cook-save").performClick()

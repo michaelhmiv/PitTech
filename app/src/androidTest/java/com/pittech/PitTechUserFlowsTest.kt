@@ -531,11 +531,10 @@ class PitTechUserFlowsTest {
             assertEquals(null, saved.endedAtUtcMillis)
             assertEquals(201.0, application.database.cookDao().observeResults(saved.id).first().single { it.resultType == "final_temperature" }.numericValue!!, 0.0)
         }
-        // Slice 2 (#172 PL-04): Finish now sits near the end of the Live
-        // scroll; scroll to the last element first so the button rests
-        // clear of the viewport's bottom edge before clicking.
-        composeRule.onNodeWithText("Delete cook").performScrollTo()
-        composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
+        // Flowing Slice 2 (1.6): Finish moved into the cook menu (⋯) —
+        // out of the scroll path entirely.
+        composeRule.onNodeWithTag("cook-menu-button").performClick()
+        composeRule.onNodeWithTag("live-finish-cook").assertIsEnabled().performClick()
         composeRule.onNodeWithTag("finish-cook-dialog").assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithTag("result-final-temperature").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithTag("finish-cook-save").performClick()
@@ -697,8 +696,9 @@ class PitTechUserFlowsTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithTag("cook-tab-live", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("Delete cook").performScrollTo()
-        composeRule.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        composeRule.onNodeWithTag("cook-menu-button").performClick()
+        composeRule.onNodeWithTag("live-finish-cook").assertIsEnabled().performClick()
         composeRule.onNodeWithTag("finish-cook-dialog").assertIsDisplayed()
         composeRule.onNodeWithTag("finish-cook-save").performClick()
         // The completion sheet's first section is the quick verdict.
@@ -741,7 +741,11 @@ class PitTechUserFlowsTest {
             val results = dao.observeResults(cookId).first()
             assertEquals(5.0, results.single { it.dishId == dishId && it.resultType == "overall_rating" }.numericValue!!, 0.0)
         }
+        // Flowing Slice 2 (1.6): after undoing the finish, Finish is
+        // offered again — in the cook menu, where it lives now.
+        composeRule.onNodeWithTag("cook-menu-button").performClick()
         composeRule.onNodeWithTag("live-finish-cook").assertExists()
+        androidx.test.espresso.Espresso.pressBack()
         // This test runs last in the class, and clearLocalData() above wipes
         // two things the emulator script deliberately verifies after the
         // batches (scripts/run-emulator-ui-tests.sh): the pending synthetic

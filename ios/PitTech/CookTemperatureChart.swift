@@ -8,6 +8,20 @@ struct CookTemperatureChart: View {
     @Environment(CookStore.self) private var store
     let cookId: String
     var onMarker: (TimelineEntry) -> Void
+    // Flowing Slice 2 (Spread 02) — all additive, default off; the Charts
+    // tab's call site is untouched. heroMode renders the same engine
+    // inert on the Live board; liveExtras turns on the stall band, the
+    // shaded hours ahead, scrub reporting, presets, and the auto-driven
+    // same-cut ghost through the chart's own comparison machinery.
+    var heroMode: Bool = false
+    var liveExtras: Bool = false
+    var ghost: (currentDishId: String, cookId: String, dishId: String)?
+    var etaLatestMinutes: Double? = nil
+    var onScrubChange: ((Double?) -> Void)? = nil
+    var presetKey: Int = 0
+    var presetSpanMinutes: Double? = nil
+    var presetStartMinutes: Double? = nil
+    var presetFollowLatest: Bool = false
     @State private var clockMode = false
     @State private var hidden: Set<String> = []
     @State private var window = 240.0
@@ -89,11 +103,13 @@ struct CookTemperatureChart: View {
     } }
     private var points: [NativePlotPoint] { segments.filter { !hidden.contains($0[0].seriesId) }.flatMap { rows in CookChartMath.reduced(rows).map { NativePlotPoint(id: $0.id, reading: $0, segmentId: rows[0].id, segmentSize: rows.count) } } }
     private var fullStart: Double { min((plottedSamples.map(plotX) + events.map { markerX($0) }).min() ?? 0, x(cook?.startedAt ?? .now)) }
-    private var fullEnd: Double { max(fullStart + 1, (plottedSamples.map(plotX) + events.map { markerX($0) }).max() ?? fullStart + 1) }
+    private var fullEnd: Double { max(fullStart + 1, (plottedSamples.map(plotX) + events.map { markerX($0) }).max() ?? fullStart + 1, liveExtras ? (etaLatestMinutes ?? -.infinity) : -.infinity) }
+    private var nowMinutes: Double { x(.now) }
     private var span: Double { min(max(1, window), fullEnd - fullStart) }
     private var visibleStart: Double { min(max(fullStart, scrollStart), fullEnd - span) }
     private var yRange: ClosedRange<Double> {
         let values = points.map { CookChartMath.value($0.reading, unit: unit) } + targets.map(\.value)
+            + (liveExtras ? [normalized(PaceConstants.stallBandLowF, "°F"), normalized(PaceConstants.stallBandHighF, "°F")] : [])
         let low = floor(((values.min() ?? 0) - 5) / 10) * 10, high = ceil(((values.max() ?? (unit == "C" ? 150 : 300)) + 5) / 10) * 10
         return low...max(low + 10, high)
     }
@@ -140,27 +156,38 @@ struct CookTemperatureChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             TurnInBannerText("Temperature (°\(unit))", font: PitTechFont.bannerTitle).accessibilityIdentifier("chart-y-axis")
-            controls
-            if store.guideState(cookId).visible && guideData.flatMap(\.readings).isEmpty { Text("Guide curves wait for actual Food on. Sources without temperatures show instructions only.").font(.caption) }
+            if !heroMode { controls }
+            if !heroMode, store.guideState(cookId).visible && guideData.flatMap(\.readings).isEmpty { Text("Guide curves wait for actual Food on. Sources without temperatures show instructions only.").font(.caption) }
             temperaturePlot
-            Text("Touch and hold the chart to scrub; swipe to scroll. The slider also selects recorded temperatures.").font(.caption).foregroundStyle(.secondary)
+            if !heroMode { Text("Touch and hold the chart to scrub; swipe to scroll. The slider also selects recorded temperatures.").font(.caption).foregroundStyle(.secondary) }
             Text(comparing ? "Time since \(CookStore.actionLabel(alignment)) (min)" : clockMode ? "Clock time · local date and time" : store.timingMode(cookId) == "explicit_phases" && store.library.actions(for: cookId).contains(where: { $0.action == "food_on" }) ? "Time since Food on (min) · negative time is preparation" : "Time since session start (min)").font(.caption).accessibilityIdentifier("chart-x-axis")
-            channelControls
-            if !referenceTimes.isEmpty { Text("Author curves are dashed. Manual source measurements remain individual points. Each guide is aligned to that dish's actual Food on.").font(.caption).accessibilityIdentifier("guide-chart-legend") }
-            if let selected { selectionDetails(selected) }
-            Slider(value: Binding(get: { selected ?? visibleStart }, set: { selected = $0 }), in: visibleStart...max(visibleStart + 0.01, visibleStart + span)).accessibilityLabel("Scrub recorded temperatures")
-            phaseBands
-            Picker("Annotations", selection: $markerFilter) { ForEach(["All", "Notes", "Photos", "Actions"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
-            ForEach(clusters.indices, id: \.self) { index in
-                let group = clusters[index]
-                if group.count > 1 { Text("\(group.count) entries near \(group[0].occurredAt.formatted(date: .abbreviated, time: .shortened))").font(.caption.bold()) }
-                ForEach(group) { event in Button { openMarker(event) } label: { Label("\(event.occurredAt.formatted(date: .omitted, time: .shortened)) · \(event.title)", systemImage: "note.text") }.accessibilityIdentifier("chart-marker-" + event.id) }
+            if !heroMode {
+                channelControls
+                if !referenceTimes.isEmpty { Text("Author curves are dashed. Manual source measurements remain individual points. Each guide is aligned to that dish's actual Food on.").font(.caption).accessibilityIdentifier("guide-chart-legend") }
+                if let selected { selectionDetails(selected) }
+                Slider(value: Binding(get: { selected ?? visibleStart }, set: { selected = $0 }), in: visibleStart...max(visibleStart + 0.01, visibleStart + span)).accessibilityLabel("Scrub recorded temperatures")
+                phaseBands
+                Picker("Annotations", selection: $markerFilter) { ForEach(["All", "Notes", "Photos", "Actions"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
+                ForEach(clusters.indices, id: \.self) { index in
+                    let group = clusters[index]
+                    if group.count > 1 { Text("\(group.count) entries near \(group[0].occurredAt.formatted(date: .abbreviated, time: .shortened))").font(.caption.bold()) }
+                    ForEach(group) { event in Button { openMarker(event) } label: { Label("\(event.occurredAt.formatted(date: .omitted, time: .shortened)) · \(event.title)", systemImage: "note.text") }.accessibilityIdentifier("chart-marker-" + event.id) }
+                }
+                ForEach(targets) { target in Text("\(target.label): \(target.value) °\(unit)").font(.caption) }
+                if !targets.isEmpty { Text("Dashed lines show current/reference targets. Solid lines show recorded target history from its effective time.").font(.caption).foregroundStyle(.secondary) }
+                comparisonControls
             }
-            ForEach(targets) { target in Text("\(target.label): \(target.value) °\(unit)").font(.caption) }
-            if !targets.isEmpty { Text("Dashed lines show current/reference targets. Solid lines show recorded target history from its effective time.").font(.caption).foregroundStyle(.secondary) }
-            comparisonControls
         }.sheet(isPresented: $showingOriginal) { NavigationStack { CookDetailView(cookId: comparisonCook) } }
-        .onAppear { currentDish = store.dishRecords(cookId).first?.id ?? ""; refreshGuides(); restoreReference(); reset() }
+        .onAppear { currentDish = store.dishRecords(cookId).first?.id ?? ""; refreshGuides(); restoreReference(); reset(); applyGhost() }
+        .onChange(of: ghost?.cookId) { _, _ in applyGhost() }
+        .onChange(of: selected) { _, value in onScrubChange?(value) }
+        .onChange(of: presetKey) { _, _ in
+            guard presetKey > 0 else { return }
+            follow = presetFollowLatest
+            if let presetSpanMinutes { window = presetSpanMinutes }
+            if let presetStartMinutes { scrollStart = presetStartMinutes }
+            if presetFollowLatest { scrollStart = fullEnd - span }
+        }
         .onChange(of: plottedSamples.last?.id) { _, _ in if follow { scrollStart = fullEnd - span } }
         .onChange(of: clockMode) { _, _ in reset() }
         .onChange(of: comparisonCook) { _, _ in if !sourceChannels.contains(comparisonChannel) { comparisonChannel = "" }; if !store.dishRecords(comparisonCook).contains(where: { $0.id == sourceDish }) { sourceDish = store.dishRecords(comparisonCook).first?.id ?? "" }; reset() }
@@ -184,6 +211,14 @@ struct CookTemperatureChart: View {
     }
     private var temperaturePlot: some View {
         Chart {
+            if liveExtras {
+                // Spread 02: the stall band behind the line, and the
+                // shaded hours ahead between now and the stated finish.
+                RectangleMark(xStart: .value("Cook start", fullStart), xEnd: .value("Cook end", fullEnd), yStart: .value("Stall low", normalized(PaceConstants.stallBandLowF, "°F")), yEnd: .value("Stall high", normalized(PaceConstants.stallBandHighF, "°F"))).foregroundStyle(Color.orange.opacity(0.13))
+                if let etaLatestMinutes, etaLatestMinutes > nowMinutes {
+                    RectangleMark(xStart: .value("Now", nowMinutes), xEnd: .value("Future end", etaLatestMinutes), yStart: .value("Plot low", yRange.lowerBound), yEnd: .value("Plot high", yRange.upperBound)).foregroundStyle(Color.gray.opacity(0.13))
+                }
+            }
             ForEach(points) { point in
                 let r = point.reading
                 if r.source == "manual" || point.segmentSize == 1 {
@@ -212,7 +247,7 @@ struct CookTemperatureChart: View {
                         if case .second(true, let drag?) = phase { chart.selectXValue(at: drag.location.x) }
                     }
             }
-            .frame(height: 300).accessibilityLabel("Time and temperature axes, recorded samples with gaps, targets and cook notes").accessibilityIdentifier("temperature-plot")
+            .frame(height: heroMode ? 170 : 300).accessibilityLabel("Time and temperature axes, recorded samples with gaps, targets and cook notes").accessibilityIdentifier("temperature-plot")
     }
     private var channelControls: some View {
         VStack(alignment: .leading) {
@@ -294,6 +329,9 @@ struct CookTemperatureChart: View {
         return InsightReadingSummary(units: Array(Set(valid.map(\.unit))).sorted(), validCount: valid.count, manualCount: valid.filter { $0.source == "manual" }.count, excludedCount: rows.count - valid.count, roles: Array(Set(valid.map { RecipeGuideProjection.role($0.measurementType) })).sorted())
     }
     private func restoreReference() {
+        // The Live chart's ghost is automatic (the latest same-cut cook);
+        // a saved manual reference must not stomp it on that surface.
+        guard !liveExtras else { return }
         guard let ref = store.savedReference(cookId, dishId: currentDish) else { return }
         comparisonCook = ref.sourceCookId; sourceDish = ref.sourceDishId; alignment = ref.anchor
         let current = samples.filter { eligible($0, dish: currentDish) }, source = store.readings(for: ref.sourceCookId).filter { eligible($0, dish: sourceDish) }
@@ -306,4 +344,21 @@ struct CookTemperatureChart: View {
         if ref.sourceSeriesId == nil && ref.sourceProbe.isEmpty { comparisonChannel = source.first { $0.dishId == sourceDish }?.seriesId ?? "" }
     }
     private func reset() { hidden = []; selected = nil; follow = true; window = max(1, fullEnd - fullStart); scrollStart = fullStart }
+
+    /// Flowing Slice 2: drive the chart's own comparison machinery at the
+    /// same-cut ghost — the previous cook is selected automatically, both
+    /// food channels are matched, and the alignment is food-on. Nothing
+    /// here changes how a manual comparison behaves.
+    private func applyGhost() {
+        guard let ghost else { return }
+        comparisonCook = ghost.cookId
+        currentDish = ghost.currentDishId
+        sourceDish = ghost.dishId
+        alignment = "food_on"
+        func foodChannel(_ rows: [TemperatureSample], dish: String) -> String {
+            rows.first { $0.dishId == dish && ["food", "food_probe"].contains($0.measurementType) }?.seriesId ?? ""
+        }
+        currentChannel = foodChannel(samples, dish: ghost.currentDishId)
+        comparisonChannel = foodChannel(sourceSamples, dish: ghost.dishId)
+    }
 }

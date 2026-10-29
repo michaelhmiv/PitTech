@@ -102,6 +102,9 @@ final class InsightsFreeToolsUITests: XCTestCase {
         app.buttons["Save"].tap()
         // The results card is the finished cook's record: inputs raise it
         // only at completion, so finish the meal and read the facts there.
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        XCTAssertTrue(app.buttons["cook-menu"].waitForExistence(timeout: 10))
+        app.buttons["cook-menu"].tap()
         let finish = app.buttons["finish-meal"]
         XCTAssertTrue(finish.waitForExistence(timeout: 10))
         finish.tap()

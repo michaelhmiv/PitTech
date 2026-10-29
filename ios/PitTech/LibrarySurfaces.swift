@@ -18,6 +18,7 @@ struct MoreView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    PitTechBrandStrip()
                     SectionTitle(title: "More", subtitle: "Everything around your cook.")
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Your cookbook stays yours").font(.title3.weight(.semibold))
@@ -108,6 +109,7 @@ struct DiscoveryWelcomeView: View {
             // other homes. Copy stays the NotAvailableCopy constants.
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    PitTechBrandStrip()
                     TurnInDashedCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Image(systemName: "safari").font(.system(size: 32)).foregroundStyle(PitTechStyle.emberText)

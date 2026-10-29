@@ -58,6 +58,7 @@ struct SavedRecipesView: View {
     var body: some View {
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
+            PitTechBrandStrip()
             // TURN-IN (Slice 3, Area 03 `dark-01-recipes`): the library
             // leads with its promise line, a boxed search, and the active
             // filters as one mono line — no title header (§2 framing).

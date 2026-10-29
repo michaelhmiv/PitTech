@@ -230,17 +230,17 @@ final class ProPaywallUITests: XCTestCase {
             XCTAssertTrue(start.waitForExistence(timeout: 15))
             start.tap()
             app.buttons["start-meal-save"].tap()
-            XCTAssertTrue(app.buttons["finish-meal"].waitForExistence(timeout: 15))
+            // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+            XCTAssertTrue(app.buttons["cook-menu"].waitForExistence(timeout: 15))
             assertNoProSurface(app: app)
+            app.buttons["cook-menu"].tap()
             let finish = app.buttons["finish-meal"]
-            reveal(finish, app: app)
+            XCTAssertTrue(finish.waitForExistence(timeout: 10))
             finish.tap()
             // 20s, matching CommunityBenchmarksUITests' wait for this
-            // same alert. (The wait was never the defect: with the old
-            // swipe-based reveal the finish button could park under the
-            // detail's fixed shortcut bar and the tap never reached it,
-            // so no alert presented at any timeout — see reveal() above.
-            // 20s stays as parity headroom.)
+            // same alert. (The menu removed the old failure mode — the
+            // bottom-of-scroll finish button parking under the detail's
+            // fixed shortcut bar — but 20s stays as parity headroom.)
             XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 20))
             app.alerts.buttons["Finish meal"].tap()
             XCTAssertTrue(app.buttons["Leave without saving"].waitForExistence(timeout: 15))

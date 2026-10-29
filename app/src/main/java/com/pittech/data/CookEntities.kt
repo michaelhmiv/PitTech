@@ -616,6 +616,9 @@ interface CookDao {
     @Query("SELECT * FROM devices")
     suspend fun getAllDevices(): List<DeviceEntity>
 
+    @Query("SELECT * FROM devices WHERE cookId = :cookId")
+    suspend fun devicesForCook(cookId: String): List<DeviceEntity>
+
     @Query("SELECT * FROM probes")
     suspend fun getAllProbes(): List<ProbeEntity>
 

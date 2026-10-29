@@ -98,9 +98,11 @@ class ProPersonalFlowTest {
         compose.activityRule.scenario.recreate()
         compose.waitUntil(20_000) { compose.onAllNodesWithText("Saturday brisket", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Saturday brisket", substring = true).performClick()
-        waitFor("live-finish-cook")
+        waitFor("cook-menu-button")
         assertNoProTag()
-        compose.onNodeWithTag("live-finish-cook").performScrollTo().assertIsEnabled().performClick()
+        // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+        compose.onNodeWithTag("cook-menu-button").performClick()
+        compose.onNodeWithTag("live-finish-cook").assertIsEnabled().performClick()
         waitFor("finish-cook-dialog")
         assertNoProTag()
         compose.onNodeWithTag("finish-cook-save").performClick()

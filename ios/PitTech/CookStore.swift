@@ -165,6 +165,25 @@ final class CookStore {
         save()
     }
 
+    /// Flowing Slice 2 (element 1.5): the Live board's pit-target stepper.
+    /// Appends the app's own setpoint target history — the same record
+    /// Android's setPitTarget writes — and never touches the device: the
+    /// read-only equipment policy means the stepper states the cook's
+    /// intent; the grill's own knob is the cook's hand.
+    func setPitTarget(cookId: String, value: Double, unit: String) {
+        let now = Int64(Date.now.timeIntervalSince1970 * 1_000)
+        library.targetHistory.append(.object([
+            "id": .string(UUID().uuidString.lowercased()),
+            "cookId": .string(cookId),
+            "dishId": .null,
+            "targetType": .string("setpoint"),
+            "value": .number(value),
+            "unit": .string(unit),
+            "effectiveAt": .number(Double(now)),
+        ]))
+        save()
+    }
+
     func addEvent(cookId: String, title: String, details: String) {
         let now = Int64(Date.now.timeIntervalSince1970 * 1_000)
         library.events.append(.object([

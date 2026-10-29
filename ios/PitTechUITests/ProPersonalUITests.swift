@@ -352,13 +352,15 @@ final class ProPersonalUITests: XCTestCase {
             XCTAssertTrue(start.waitForExistence(timeout: 15))
             start.tap()
             app.buttons["start-meal-save"].tap()
-            XCTAssertTrue(app.buttons["finish-meal"].waitForExistence(timeout: 15))
+            // Flowing Slice 2 (1.6): Finish lives in the cook menu now.
+            XCTAssertTrue(app.buttons["cook-menu"].waitForExistence(timeout: 15))
             assertNoProSurface(app: app)
             XCTAssertFalse(app.scrollViews["pro-paywall"].exists)
             XCTAssertFalse(app.scrollViews["pro-loading"].exists)
             XCTAssertFalse(app.scrollViews["pro-expired-fallback"].exists)
+            app.buttons["cook-menu"].tap()
             let finish = app.buttons["finish-meal"]
-            reveal(finish, app: app)
+            XCTAssertTrue(finish.waitForExistence(timeout: 10))
             finish.tap()
             XCTAssertTrue(app.alerts["Finish meal?"].waitForExistence(timeout: 5))
             app.alerts.buttons["Finish meal"].tap()

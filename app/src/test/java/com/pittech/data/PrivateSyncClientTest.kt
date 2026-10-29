@@ -95,6 +95,52 @@ class PrivateSyncClientTest {
         assertEquals("abandon-private-photo", JSONObject(String(recorded.single().body, Charsets.UTF_8)).getString("confirm"))
     }
 
+    /**
+     * Flowing Slice 2 (Slice 0 audit): every server answer class must say
+     * what it is. The reachability sentence is reserved for transport
+     * failure; no HTTP status may fall through to it.
+     */
+    @Test fun serverAnswersNeverClaimReachability() {
+        val reachability = "could not reach PitTech"
+        for (status in listOf(300, 301, 302, 400, 401, 403, 404, 409, 413, 415, 422, 429, 500, 502, 503, 504)) {
+            val message = PrivateSyncHttpError(status, "").message.orEmpty()
+            assertFalse("status $status must not read as a reachability failure: $message", message.contains(reachability))
+        }
+        // The enumerated statuses keep their established copy.
+        assertEquals("Sign in again to reconnect private sync. Your local journal is unchanged.", PrivateSyncHttpError(401, "").message)
+        assertEquals("Another device changed the backup first. Fetch, merge and retry.", PrivateSyncHttpError(409, "sync_version_changed").message)
+        assertEquals("This library exceeds the sync size limit.", PrivateSyncHttpError(413, "").message)
+        assertEquals("This library could not be applied safely. Your journal is unchanged.", PrivateSyncHttpError(422, "").message)
+        assertEquals("Private sync is busy. Retry later.", PrivateSyncHttpError(429, "").message)
+        // 503 sync_busy gets busy copy of its own, not the reachability line.
+        assertEquals("PitTech's sync service is busy right now. Retry later — your local journal is unchanged.", PrivateSyncHttpError(503, "sync_busy").message)
+        // Other 5xx answers name the status as a service error.
+        assertEquals("PitTech's sync service returned an error (500). Retry later — your local journal is unchanged.", PrivateSyncHttpError(500, "").message)
+        // Contract rejections and unmounted routes: the server answered; say so, with the status.
+        assertEquals("The server could not accept this sync (400). Your local journal is unchanged.", PrivateSyncHttpError(400, "").message)
+        assertEquals("The server could not accept this sync (404). Your local journal is unchanged.", PrivateSyncHttpError(404, "").message)
+        assertEquals("The server could not accept this sync (415). Your local journal is unchanged.", PrivateSyncHttpError(415, "").message)
+        // Redirects are refused, by status or by the client's own code.
+        assertEquals("Private sync was redirected, which it does not follow. Your local journal is unchanged.", PrivateSyncHttpError(302, "").message)
+        assertEquals("Private sync was redirected, which it does not follow. Your local journal is unchanged.", PrivateSyncHttpError(200, "redirect_rejected").message)
+    }
+
+    /** End-to-end through the client: a live 503 surfaces the busy copy, not "could not reach". */
+    @Test fun busyServerSurfacesBusyCopyThroughFetchAndCommit() = runTest {
+        val (api, _) = client { request -> response(request, 503, JSONObject().put("error", JSONObject().put("code", "sync_busy")).toString()) }
+        try { api.snapshot(access); fail() } catch (e: PrivateSyncHttpError) {
+            assertEquals(503, e.status); assertEquals("sync_busy", e.code)
+            assertEquals("PitTech's sync service is busy right now. Retry later — your local journal is unchanged.", e.message)
+        }
+        try { api.commit("{}".toByteArray(), mutation, access); fail() } catch (e: PrivateSyncHttpError) {
+            assertEquals("PitTech's sync service is busy right now. Retry later — your local journal is unchanged.", e.message)
+        }
+        val (rejectedApi, _) = client { request -> response(request, 400, JSONObject().put("error", JSONObject().put("code", "bad_request")).toString()) }
+        try { rejectedApi.snapshot(access); fail() } catch (e: PrivateSyncHttpError) {
+            assertEquals("The server could not accept this sync (400). Your local journal is unchanged.", e.message)
+        }
+    }
+
     @Test fun downloadVerifiesChecksumLengthAndBound() = runTest {
         val bytes = "photo-bytes".toByteArray()
         val sha = RelayProtocol.hash(bytes)

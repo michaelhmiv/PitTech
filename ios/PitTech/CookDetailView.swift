@@ -1,11 +1,21 @@
 import SwiftUI
 import UIKit
+import UserNotifications
+
+/// Per-dish anti-jitter smoothers for the Live board's ETA (Slice 1's
+/// PaceRangeSmoother is a class; one instance per cook+dish, held across
+/// the board's one-second ticks without touching SwiftUI state).
+private final class LivePaceSmoothers { var byDish: [String: PaceRangeSmoother] = [:] }
 
 struct CookDetailView: View {
     @Environment(CookStore.self) private var store
     @Environment(NativeTelemetryRuntime.self) private var telemetry
     let cookId: String
     @State private var section = "Live"
+    @State private var paceSmoothers = LivePaceSmoothers()
+    @State private var chartContext: LiveChartContext?
+    @State private var notificationStatus: UNAuthorizationStatus?
+    @State private var overnightTestSent = false
     @State private var draft: CookNoteDraft?
     @State private var showingDish = false
     @State private var showingEditCook = false
@@ -24,6 +34,175 @@ struct CookDetailView: View {
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var readings: [TemperatureSample] { store.readings(for: cookId) }
     private var events: [TimelineEntry] { store.events(for: cookId) }
+
+    // MARK: - Flowing Slice 2: pace, verdict, ETA
+
+    private func fahrenheit(_ value: Double, _ unit: String) -> Double { unit.contains("C") ? value * 9 / 5 + 32 : value }
+    private func displayTemp(_ value: Double, _ unit: String) -> Double {
+        let f = fahrenheit(value, unit)
+        return store.temperatureUnit == "C" ? (f - 32) * 5 / 9 : f
+    }
+    private func clockTime(_ millis: Int64) -> String { Date(timeIntervalSince1970: Double(millis) / 1_000).formatted(date: .omitted, time: .shortened) }
+    /// A clock range with a shared meridiem stated once — "5:35–6:05 PM", the book's ETA shape.
+    private func clockRange(_ startMillis: Int64, _ endMillis: Int64) -> String {
+        let start = clockTime(startMillis), end = clockTime(endMillis)
+        let startMeridiem = start.suffix(2), endMeridiem = end.suffix(2)
+        if startMeridiem == endMeridiem, startMeridiem == "AM" || startMeridiem == "PM" {
+            return start.dropLast(2).trimmingCharacters(in: .whitespaces) + "–" + end
+        }
+        return "\(start)–\(end)"
+    }
+    private func minutesDuration(_ minutes: Double) -> String {
+        let total = Int(minutes)
+        return total >= 60 ? "\(total / 60)h \(total % 60)m" : total >= 1 ? "\(total)m" : "<1m"
+    }
+
+    private struct LiveGuidanceSnapshot {
+        let verdict: LiveVerdict?
+        let eta: LiveEta
+        let etaLatestUtcMillis: Int64?
+        let leadDishId: String?
+    }
+
+    /// The Slice 1 pace engine's first iOS consumer: assess the lead dish,
+    /// publish through the anti-jitter smoother, and merge the verdict —
+    /// the same pipeline as Android's Live board.
+    private func liveGuidance(_ cook: CookRecord, now: Date) -> LiveGuidanceSnapshot {
+        let nowMillis = Int64(now.timeIntervalSince1970 * 1_000)
+        let lead = store.dishRecords(cookId).first
+        var assessment: PaceAssessment?
+        var displayFinish: FinishEstimate?
+        if let lead {
+            let series = readings
+                .filter { $0.dishId == lead.id && $0.qualityStatus == "valid" && ["food", "food_probe"].contains($0.measurementType) }
+                .map { PaceReading(atUtcMillis: Int64($0.measuredAt.timeIntervalSince1970 * 1_000), fahrenheit: fahrenheit($0.value, $0.unit)) }
+                .sorted { $0.atUtcMillis < $1.atUtcMillis }
+            let targetRows = store.library.targets.compactMap(\.objectValue).filter { $0["cookId"]?.stringValue == cookId && $0["targetType"]?.stringValue == "personal_finish" }
+            let targetRow = targetRows.first { $0["dishId"]?.stringValue == lead.id } ?? targetRows.first { $0["dishId"] == nil }
+            if let targetValue = targetRow?["value"]?.numberValue, let targetUnit = targetRow?["unit"]?.stringValue {
+                let cut = store.library.dishes.compactMap(\.objectValue).first { $0["id"]?.stringValue == lead.id }?["cut"]?.stringValue
+                let history = LiveGuidance.historyFor(archive: store.insightsArchive(), currentCookId: cookId, currentDishId: lead.id, cut: cut)
+                let foodOn = store.library.actions(for: cookId).filter { $0.action == "food_on" && ($0.dishIds.isEmpty || $0.dishIds.contains(lead.id)) }.map { Int64($0.at) }.min() ?? cook.startedAtUtcMillis
+                let result = CookPaceEngine.assess(readings: series, targetF: fahrenheit(targetValue, targetUnit), nowUtcMillis: nowMillis, foodOnUtcMillis: foodOn, history: history)
+                assessment = result
+                let key = "\(cookId)/\(lead.id)"
+                let smoother = paceSmoothers.byDish[key] ?? { let created = PaceRangeSmoother(); paceSmoothers.byDish[key] = created; return created }()
+                if case .ranged(let range) = result.finish, let published = smoother.publish(range, nowUtcMillis: nowMillis) {
+                    displayFinish = .ranged(published)
+                } else {
+                    displayFinish = result.finish
+                }
+            }
+        }
+        let eta = displayFinish.map { LiveGuidance.eta(finish: $0, planWindow: nil, formatRange: clockRange) } ?? .none
+        var etaLatest: Int64?
+        if case .ranged(let range)? = displayFinish { etaLatest = range.latestUtcMillis }
+        // The verdict leads only when something stands behind it (a dish
+        // assessed, or a reminder pending); paused cooks carry their
+        // answer in the paused strip already.
+        var verdict: LiveVerdict?
+        if cook.isActive, cook.status != "paused", assessment != nil || !pendingReminders.isEmpty {
+            verdict = LiveGuidance.verdict(
+                needsAttention: 0,
+                stall: assessment?.stall ?? .unknown,
+                finish: displayFinish ?? .planOnly("not enough readings yet"),
+                nextReminder: pendingReminders.first.map { (title: $0.title, dueUtcMillis: Int64($0.due)) },
+                nowUtcMillis: nowMillis,
+                eta: eta,
+                formatTime: clockTime,
+                formatDuration: minutesDuration)
+        }
+        return LiveGuidanceSnapshot(verdict: verdict, eta: eta, etaLatestUtcMillis: etaLatest, leadDishId: lead?.id)
+    }
+
+    private func etaTitle(_ eta: LiveEta) -> String {
+        switch eta {
+        case .ranged(let text, _), .plan(let text, _): return text
+        case .withheld: return "No finish range yet"
+        case .none: return ""
+        }
+    }
+    private func etaBasis(_ eta: LiveEta) -> String {
+        switch eta {
+        case .ranged(_, let basis), .plan(_, let basis): return basis
+        case .withheld(let reason): return reason
+        case .none: return ""
+        }
+    }
+
+    /// The stepper's current value in display degrees: latest setpoint
+    /// reading, then the latest stepped target, then the initial setpoint.
+    private func currentSetpointDisplay(_ cook: CookRecord) -> Double? {
+        // Whichever setpoint statement is LATEST wins — a stepped target
+        // (the app's own history) outranks an older device reading, and a
+        // newer device reading outranks an older step; the cook's initial
+        // setpoint is the base when neither exists.
+        let setpoint = readings.filter({ $0.measurementType == "setpoint" }).max(by: { $0.measuredAt < $1.measuredAt })
+        let historyRow = store.library.targetHistory.compactMap(\.objectValue)
+            .filter({ $0["cookId"]?.stringValue == cookId && $0["targetType"]?.stringValue == "setpoint" })
+            .max(by: { ($0["effectiveAt"]?.numberValue ?? 0) < ($1["effectiveAt"]?.numberValue ?? 0) })
+        if let historyRow, let value = historyRow["value"]?.numberValue, let unit = historyRow["unit"]?.stringValue,
+           setpoint == nil || (historyRow["effectiveAt"]?.numberValue ?? 0) >= setpoint!.measuredAt.timeIntervalSince1970 * 1000 {
+            return displayTemp(value, unit)
+        }
+        if let setpoint { return displayTemp(setpoint.value, setpoint.unit) }
+        if let initial = cook.initialSetpointValue { return displayTemp(initial, cook.initialSetpointUnit ?? "°\(store.temperatureUnit)") }
+        return nil
+    }
+    private func currentSetpointText(_ cook: CookRecord) -> String {
+        guard let value = currentSetpointDisplay(cook) else { return "—" }
+        return "\(value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value))°"
+    }
+    private func stepPitTarget(_ cook: CookRecord, by delta: Double) {
+        guard let current = currentSetpointDisplay(cook) else { return }
+        store.setPitTarget(cookId: cookId, value: current + delta, unit: "°\(store.temperatureUnit)")
+    }
+
+    // MARK: - Flowing Slice 2 (E3): the Overnight panel
+
+    private var overnightSummary: String {
+        switch notificationStatus {
+        case .authorized, .provisional: return "Notifications on"
+        case .denied: return "Notifications off"
+        default: return "Check the net before the night"
+        }
+    }
+
+    @ViewBuilder private func overnightPanel(_ cook: CookRecord) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            overnightRow(
+                ok: notificationStatus == .authorized || notificationStatus == .provisional,
+                label: "Notifications",
+                detail: notificationStatus == .denied ? "Off — no reminder or test can wake you until notifications are on" : notificationStatus == nil ? "Checking…" : "On — reminders can reach this phone")
+            overnightRow(
+                ok: readings.last != nil,
+                label: "Watching the pit",
+                detail: readings.last.map { "Last reading \($0.measuredAt.formatted(date: .omitted, time: .shortened)) · \($0.source)" } ?? "No readings yet — hand-logged entries are all the net has")
+            overnightRow(
+                ok: !pendingReminders.isEmpty,
+                label: "Next reminder",
+                detail: pendingReminders.first.map { "\($0.title) · \(clockTime(Int64($0.due)))" } ?? "None set — nothing is scheduled to check in")
+            Text("On iOS the overnight net today is your reminders plus this test alert.")
+                .font(.caption).foregroundStyle(PitTechStyle.supporting)
+            Button("Send test alert") { OvernightTestAlert.post(cookId: cookId, cookTitle: cook.title); overnightTestSent = true }
+                .buttonStyle(.borderedProminent).frame(minHeight: 44).accessibilityIdentifier("overnight-test-alert")
+            if overnightTestSent {
+                Text("Test alert sent. If it didn't buzz this phone, check notification settings before you trust the night to it.")
+                    .font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("overnight-test-sent")
+            }
+        }
+    }
+
+    @ViewBuilder private func overnightRow(ok: Bool, label: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(ok ? PitTechStyle.ember : PitTechStyle.marigold)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(PitTechFont.bodyEmphasis)
+                Text(detail).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+            }
+        }
+    }
 
     var body: some View {
         Group {
@@ -66,9 +245,6 @@ struct CookDetailView: View {
                             }
                             if let error { Text(error).foregroundStyle(.red) }
                             if store.deletedNote != nil { Button("Undo deleted note") { do { try store.undoDeleteNote() } catch { self.error = error.localizedDescription } } }
-                            if cook.isActive {
-                                Button("Finish meal", role: .destructive) { finishing = true }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("finish-meal")
-                            }
                             if !cook.isActive && cook.status == "completed" {
                                 Button("Undo finish") { store.reopenCook(cookId) }.buttonStyle(.bordered).frame(minHeight: 48).accessibilityIdentifier("undo-finish")
                             }
@@ -79,9 +255,24 @@ struct CookDetailView: View {
                 }
                 .background(PitTechStyle.canvas.ignoresSafeArea())
                 .navigationTitle("Meal").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingDevices = true } label: { Label("Devices", systemImage: "thermometer") }.accessibilityIdentifier("meal-devices")
-                } }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showingDevices = true } label: { Label("Devices", systemImage: "thermometer") }.accessibilityIdentifier("meal-devices")
+                    }
+                    // Flowing Slice 2 (1.6): Pause and Finish live in the
+                    // cook menu now — consequential, infrequent, and out of
+                    // the scroll path (the placard and the bottom button
+                    // are retired).
+                    if cook.isActive {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu {
+                                Button(cook.status == "paused" ? "Resume meal" : "Pause meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }.accessibilityIdentifier("pause-meal")
+                                Button("Finish meal", role: .destructive) { finishing = true }.accessibilityIdentifier("finish-meal")
+                            } label: { Label("Cook menu", systemImage: "ellipsis.circle") }.accessibilityIdentifier("cook-menu")
+                        }
+                    }
+                }
+                .task { notificationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus }
                 .safeAreaInset(edge: .bottom) { shortcutBar.padding(.horizontal, 16).padding(.vertical, 10).background(PitTechStyle.surface) }
                 .navigationDestination(isPresented: $showingReminders) { MealRemindersView(cookId: cookId, checkInRuleId: reminderCheckInRuleId) }
                 .task {
@@ -95,6 +286,7 @@ struct CookDetailView: View {
                     }
                 }
                 .sheet(isPresented: $showingDevices) { NativeTelemetryConnectionsView(runtime: telemetry) }
+                .sheet(item: $chartContext) { context in LiveChartView(cookId: cookId, leadDishId: context.leadDishId, etaLatestUtcMillis: context.etaLatestUtcMillis) }
                 .sheet(isPresented: $showingResults) { CookResultsSheet(cookId: cookId) }
                 .sheet(isPresented: Binding(get: { sharingDraftId != nil }, set: { if !$0 { sharingDraftId = nil } })) {
                     if let sharingDraftId { NavigationStack { SharingDraftView(id: sharingDraftId) }.modifier(ScreenshotTextSize()) }
@@ -176,7 +368,33 @@ struct CookDetailView: View {
     private func liveContent(_ cook: CookRecord) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
+                // 1.1: the verdict line — reminders and pace merged into
+                // the one answer at the top; sources stay underneath.
+                if let verdict = liveGuidance(cook, now: context.date).verdict {
+                    TurnInCard {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verdict.headline).font(PitTechFont.bodyEmphasis).accessibilityIdentifier("live-verdict-headline")
+                            if let detail = verdict.detail { Text(detail).font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("live-verdict-detail") }
+                        }
+                    }
+                }
                 liveZone(cook, now: context.date)
+                // 1.3: the chart is the hero and a door — the same chart
+                // engine, inert here; the whole card opens the full chart.
+                if !readings.isEmpty {
+                    ZStack {
+                        CookTemperatureChart(cookId: cookId, onMarker: { _ in }, heroMode: true).allowsHitTesting(false)
+                        Rectangle().fill(Color.clear).contentShape(Rectangle())
+                            .onTapGesture {
+                                let guidance = liveGuidance(cook, now: context.date)
+                                chartContext = LiveChartContext(leadDishId: guidance.leadDishId, etaLatestUtcMillis: guidance.etaLatestUtcMillis)
+                            }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Full chart")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityIdentifier("live-chart-hero")
+                }
                 milestoneRailCard(cook)
                 nextActionStrip
                 if store.timingMode(cookId) == "legacy_preserved" {
@@ -198,6 +416,9 @@ struct CookDetailView: View {
                     LivePanel(id: "checklist", title: "Checklist") { CookPrepChecklist(cookId: cookId) }
                 }
                 LivePanel(id: "timers", title: "Timers") { MealActivityTimers(cookId: cookId) }
+                if cook.isActive {
+                    LivePanel(id: "overnight", title: "Overnight", summary: overnightSummary) { overnightPanel(cook) }
+                }
                 LivePanel(id: "results", title: "Results", summary: store.hasAnyDisplayableResults(cookId: cookId) ? "Recorded" : "Not recorded yet") {
                     Button(cook.isActive ? "Record results" : "Edit cook results") { showingResults = true }.accessibilityIdentifier("live-record-results")
                 }
@@ -212,15 +433,12 @@ struct CookDetailView: View {
                         Text("Session created \(cook.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                // TURN-IN (Slice 1): the board's action placards — Log
-                // note is the primary placard (d12); Pause/Resume keeps
-                // its Live home (PL-04) as the second placard. The bottom
+                // TURN-IN (Slice 1): the board's action placard — Log
+                // note is the primary placard (d12). Flowing Slice 2
+                // (1.6): Pause/Resume moved to the cook menu; the bottom
                 // shortcut bar keeps Log/Temp/Photo/Reminders.
                 if cook.isActive {
-                    HStack(spacing: 10) {
-                        TurnInPlacard(systemImage: "note.text", label: "Log note", primary: true) { open() }
-                        TurnInPlacard(systemImage: cook.status == "paused" ? "play.fill" : "pause.fill", label: cook.status == "paused" ? "Resume meal" : "Pause meal", identifier: "pause-meal") { store.setMealPaused(cookId, paused: cook.status != "paused") }
-                    }
+                    TurnInPlacard(systemImage: "note.text", label: "Log note", primary: true) { open() }
                 }
             }
         }
@@ -243,6 +461,31 @@ struct CookDetailView: View {
             return ("Hold", PitTechStyle.ember)
         }() : nil
         let dishes = store.dishRecords(cookId)
+        // Flowing Slice 2: the lead dish pairs with the pit (below), and
+        // the zone carries the living ETA + quick-adjust row.
+        let leadDish = dishes.first
+        let leadLatest = leadDish.flatMap { dish in readings.filter { $0.dishId == dish.id }.max { $0.measuredAt < $1.measuredAt } }
+        let leadTarget = leadDish.flatMap { dish in
+            store.library.targets.compactMap(\.objectValue).first { $0["cookId"]?.stringValue == cookId && $0["dishId"]?.stringValue == dish.id && $0["targetType"]?.stringValue == "personal_finish" }
+                ?? targets.first { $0["targetType"]?.stringValue == "personal_finish" }
+        }
+        let leadTrend: (String, Color)? = leadDish.flatMap { dish -> (String, Color)? in
+            let history = readings.filter { $0.dishId == dish.id }.sorted { $0.measuredAt < $1.measuredAt }
+            guard history.count >= 2 else { return nil }
+            let delta = history[history.count - 1].value - history[history.count - 2].value
+            if delta > 1 { return ("▲ Climb", PitTechStyle.marigold) }
+            if delta < -1 { return ("▼ Drop", PitTechStyle.cobalt) }
+            return ("Hold", PitTechStyle.ember)
+        }
+        let steppedSetpoint: String? = store.library.targetHistory.compactMap(\.objectValue)
+            .filter { $0["cookId"]?.stringValue == cookId && $0["targetType"]?.stringValue == "setpoint" }
+            .max { ($0["effectiveAt"]?.numberValue ?? 0) < ($1["effectiveAt"]?.numberValue ?? 0) }
+            .flatMap { row -> String? in
+                guard let value = row["value"]?.numberValue, let unit = row["unit"]?.stringValue else { return nil }
+                let display = displayTemp(value, unit)
+                return "\(display.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(display)) : String(format: "%.1f", display))°\(store.temperatureUnit)"
+            }
+        let guidance = liveGuidance(cook, now: now)
         return VStack(alignment: .leading, spacing: 10) {
             if cook.status == "paused" {
                 HStack(spacing: 10) {
@@ -260,39 +503,85 @@ struct CookDetailView: View {
                 Spacer()
                 Text(duration(max(0, now.timeIntervalSince(cook.startedAt)) * 1_000)).font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink).accessibilityIdentifier("live-cook-elapsed")
             }
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    TurnInMetaLabel("Pit")
+            // Pit and probe side by side (Slice 0 audit parity): each
+            // column carries its label and trend, the scoreboard number,
+            // and its reference line (SET / TARGET) underneath.
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        TurnInMetaLabel("Pit")
+                        if let trend { TurnInTrendChip(text: trend.0, fill: trend.1) }
+                    }
                     if let pit {
                         Text(tempText(pit)).font(PitTechFont.scoreboard).foregroundStyle(PitTechStyle.ink)
                     } else {
                         Text("No reading yet").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     }
+                    // SET chain: latest setpoint reading, then the latest
+                    // stepped target from target history, then initial.
+                    if let setpoint {
+                        Text("SET \(tempText(setpoint))").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    } else if let steppedSetpoint {
+                        Text("SET \(steppedSetpoint)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    } else if let initial = cook.initialSetpointValue {
+                        Text("SET \(initial.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(initial)) : String(format: "%.1f", initial))\(cook.initialSetpointUnit ?? "")").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    }
                 }
-                Spacer()
-                if let trend { TurnInTrendChip(text: trend.0, fill: trend.1) }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let leadDish {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            TurnInMetaLabel("Probe · \(leadDish.name)")
+                            if let leadTrend { TurnInTrendChip(text: leadTrend.0, fill: leadTrend.1) }
+                        }
+                        if let leadLatest {
+                            Text(tempText(leadLatest)).font(PitTechFont.scoreboard).foregroundStyle(PitTechStyle.ink)
+                        } else {
+                            Text("No reading yet").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                        if let leadTarget, let targetValue = leadTarget["value"]?.numberValue {
+                            Text("TARGET \(targetValue.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(targetValue)) : String(format: "%.1f", targetValue))\(leadTarget["unit"]?.stringValue ?? "°")")
+                                .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            if let setpoint {
-                Text("SET \(tempText(setpoint))").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
-            } else if let initial = cook.initialSetpointValue {
-                Text("SET \(initial.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(initial)) : String(format: "%.1f", initial))\(cook.initialSetpointUnit ?? "")").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+            // The lead dish's probe progress (d12): bar toward its finish
+            // target with the degrees to go.
+            if let leadLatest, let leadTarget, let targetValue = leadTarget["value"]?.numberValue, targetValue > 0 {
+                ProgressView(value: min(leadLatest.value, targetValue), total: targetValue).tint(PitTechStyle.ember)
+                Text("TARGET \(targetValue.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(targetValue)) : String(format: "%.1f", targetValue))\(leadTarget["unit"]?.stringValue ?? leadLatest.unit) · \(Int(max(0, targetValue - leadLatest.value).rounded()))° TO GO")
+                    .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             }
-            ForEach(Array(dishes.enumerated()), id: \.element.id) { index, dish in
+            // 1.2: the living ETA — a range only ever with its basis.
+            if guidance.eta != .none {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(etaTitle(guidance.eta)).font(PitTechFont.bodyEmphasis).accessibilityIdentifier("live-eta-range")
+                    Text(etaBasis(guidance.eta)).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted).accessibilityIdentifier("live-eta-basis")
+                }
+            }
+            // 1.5: quick-adjust — the pit target steps in the app's own
+            // target history (never a device write), and a one-tap
+            // conditions log for the moment the weather turns.
+            if cook.isActive {
+                HStack(spacing: 8) {
+                    TurnInMetaLabel("Pit target")
+                    Button { stepPitTarget(cook, by: -5) } label: { Image(systemName: "minus").frame(width: 32, height: 32) }.accessibilityIdentifier("pit-target-minus")
+                    Text(currentSetpointText(cook)).font(PitTechFont.monoReadout).accessibilityIdentifier("pit-target-value")
+                    Button { stepPitTarget(cook, by: 5) } label: { Image(systemName: "plus").frame(width: 32, height: 32) }.accessibilityIdentifier("pit-target-plus")
+                    Spacer()
+                    Button("Conditions changed") { store.addEvent(cookId: cookId, title: "Conditions changed", details: "") }.accessibilityIdentifier("live-conditions-changed")
+                }
+            }
+            // The remaining dishes keep their compact rows.
+            ForEach(Array(dishes.dropFirst().enumerated()), id: \.element.id) { _, dish in
                 let latest = readings.filter { $0.dishId == dish.id }.max { $0.measuredAt < $1.measuredAt }
-                let dishTarget = store.library.targets.compactMap(\.objectValue).first { $0["cookId"]?.stringValue == cookId && $0["dishId"]?.stringValue == dish.id && $0["targetType"]?.stringValue == "personal_finish" }
-                    ?? targets.first { $0["targetType"]?.stringValue == "personal_finish" }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         TurnInBannerText(dish.name)
                         Spacer()
                         Text(latest.map(tempText) ?? "No reading yet").font(PitTechFont.monoReadout).foregroundStyle(PitTechStyle.ink)
-                    }
-                    // The lead dish carries the probe progress (d12): bar
-                    // toward its finish target with the degrees to go.
-                    if index == 0, let latest, let dishTarget, let targetValue = dishTarget["value"]?.numberValue, targetValue > 0 {
-                        ProgressView(value: min(latest.value, targetValue), total: targetValue).tint(PitTechStyle.ember)
-                        Text("TARGET \(targetValue.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(targetValue)) : String(format: "%.1f", targetValue))\(dishTarget["unit"]?.stringValue ?? latest.unit) · \(Int(max(0, targetValue - latest.value).rounded()))° TO GO")
-                            .font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     }
                 }
             }
@@ -305,6 +594,11 @@ struct CookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
+        // Contain, not override: stamping the card's identifier without
+        // an explicit children treatment lets it swallow every
+        // descendant identifier inside the zone (the ETA, the stepper,
+        // the elapsed readout all answered to "live-zone" instead).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-zone")
     }
 
