@@ -17,11 +17,16 @@ final class FlowingStoryUITests: XCTestCase {
     }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        for _ in 0..<8 {
+        // The recipe detail is a List pushed over the Recipes list:
+        // the covered list's containers stay in the AX tree, so
+        // firstMatch swipes scroll the wrong surface. Drag on the
+        // window's content area instead — the drag lands on the
+        // foreground surface, like MealRecipeFlowsTests' servo drags.
+        for _ in 0..<18 {
             if element.exists && element.isHittable { return }
-            let scroller = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch
-                : (app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app.tables.firstMatch)
-            scroller.swipeUp()
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+            start.press(forDuration: 0.01, thenDragTo: end)
         }
     }
 

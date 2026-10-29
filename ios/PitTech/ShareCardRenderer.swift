@@ -183,21 +183,29 @@ private struct ShareCardPoster: View {
         }
     }
 }
-/// QR codes for the posted card's footer (Spread 07): generated at
-/// twice the drawn size, black modules on white — the same treatment
-/// Android's ZXing writer produces — so any scanner reads the card.
+/// QR codes for the posted card's footer (Spread 07), rendered the
+/// way Android's ZXing writer renders them — integer pixels per
+/// module and a four-module quiet zone inside the image — because a
+/// QR only decodes with both. Two traps this avoids: a raw
+/// CGContext draw in a UIKit context lands the code upside down
+/// (a mirrored QR never decodes), and CIQRCodeGenerator's raw
+/// output has no quiet zone, so its edge modules would sit flush
+/// against the card's dark ground.
 enum NativeShareCardQR {
     static func image(_ value: String, size: Int = 236) -> UIImage? {
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
         filter.setValue(Data(value.utf8), forKey: "inputMessage")
-        guard let output = filter.outputImage else { return nil }
-        let scale = CGFloat(size) / output.extent.width
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        guard let cg = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+        guard let output = filter.outputImage,
+              let raw = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        let modules = raw.width, quiet = 4
+        let span = modules + quiet * 2
+        let px = max(1, size / span)
+        let drawn = span * px, offset = CGFloat((size - drawn) / 2 + quiet * px)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         return UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format).image { context in
             UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: size, height: size))
-            context.cgContext.draw(cg, in: CGRect(x: 0, y: 0, width: size, height: size))
+            context.cgContext.interpolationQuality = .none
+            UIImage(cgImage: raw).draw(in: CGRect(x: offset, y: offset, width: CGFloat(modules * px), height: CGFloat(modules * px)))
         }
     }
 }
