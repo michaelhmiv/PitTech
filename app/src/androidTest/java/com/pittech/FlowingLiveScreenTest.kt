@@ -90,8 +90,11 @@ class FlowingLiveScreenTest {
         val history = runBlocking(Dispatchers.IO) { app.database.experienceDao().allHistory() }
         assertTrue(history.any { it.cookId == live && it.targetType == "setpoint" && it.value == 255.0 })
         // 1.5: one tap logs the conditions change onto the timeline.
-        compose.onNodeWithTag("live-conditions-changed", useUnmergedTree = true).performClick()
-        compose.waitUntil(10_000) {
+        // (Scroll first, like every other below-fold tap in this suite:
+        // the button sits at the far end of the quick-adjust row, and a
+        // click on a partially off-screen node goes nowhere.)
+        compose.onNodeWithTag("live-conditions-changed", useUnmergedTree = true).performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(20_000) {
             runBlocking(Dispatchers.IO) { app.database.cookDao().getTimelineEventsForCook(live) }.any { it.title == "Conditions changed" }
         }
     }
