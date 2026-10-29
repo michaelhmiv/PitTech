@@ -163,7 +163,7 @@ import CoreImage
             print("QRDIAG mine=\(mineCG.width)x\(mineCG.height) vision=\(visionDecode(mineCG))")
             let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
             let features = detector?.features(in: CIImage(cgImage: mineCG)) as? [CIQRCodeFeature]
-            print("QRDIAG mine CIDetector=\(features?.map(\.messageString ?? "nil") ?? [])")
+            print("QRDIAG mine CIDetector=\((features ?? []).map { $0.messageString ?? "nil" })")
         } else { print("QRDIAG NativeShareCardQR.image returned nil") }
         // Stage 1: the generated code itself decodes. This isolates
         // generation from placement — a failure here is the renderer,
