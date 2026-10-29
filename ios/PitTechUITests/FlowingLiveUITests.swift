@@ -54,11 +54,6 @@ final class FlowingLiveUITests: XCTestCase {
         let headline = app.staticTexts["live-verdict-headline"]
         XCTAssertTrue(headline.waitForExistence(timeout: 15))
         XCTAssertEqual(headline.label, "On pace — nothing needs doing.")
-        // Diagnostic (Slice 2 gate): dump every live-board identifier the
-        // tree actually carries, so a missing element is diagnosable from
-        // the run log instead of guessed at.
-        let liveIds = app.descendants(matching: .any).allElementsBoundByIndex.map { $0.identifier }.filter { $0.contains("live") || $0.contains("pit-") || $0.contains("overnight") }
-        print("LIVE IDS: \(liveIds)")
         // Below-fold board content is only materialized in the
         // accessibility tree once scrolled toward — reveal before
         // asserting, like the rest of this suite.

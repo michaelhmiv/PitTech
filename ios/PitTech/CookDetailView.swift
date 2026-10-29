@@ -594,6 +594,11 @@ struct CookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(PitTechStyle.surface, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(PitTechStyle.ruling, lineWidth: 1))
+        // Contain, not override: stamping the card's identifier without
+        // an explicit children treatment lets it swallow every
+        // descendant identifier inside the zone (the ETA, the stepper,
+        // the elapsed readout all answered to "live-zone" instead).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-zone")
     }
 
