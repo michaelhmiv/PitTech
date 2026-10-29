@@ -22,6 +22,7 @@ struct LiveChartView: View {
     let etaLatestUtcMillis: Int64?
 
     @State private var scrubMinutes: Double?
+    @State private var ghostState: (cookId: String, dishId: String, label: String, series: [PaceReading])?
     @State private var presetKey = 0
     @State private var presetSpan: Double?
     @State private var presetStart: Double?
@@ -49,7 +50,11 @@ struct LiveChartView: View {
     private var probeSeries: [PaceReading] { series(dishId: leadDishId, from: readings, anchor: anchorMillis, types: ["food", "food_probe"]) }
     private var pitSeries: [PaceReading] { series(dishId: nil, from: readings, anchor: anchorMillis, types: ["pit", "pit_ambient", "ambient_temperature"]) }
 
-    private var ghostInfo: (cookId: String, dishId: String, label: String, series: [PaceReading])? {
+    /// The ghost is a FINISHED cook — its data never changes while this
+    /// sheet is open — so it is computed once into `ghostState` on
+    /// appear rather than rebuilt (whole-archive map included) on
+    /// every body pass.
+    private func computeGhostInfo() -> (cookId: String, dishId: String, label: String, series: [PaceReading])? {
         guard let leadDishId else { return nil }
         let cut = store.library.dishes.compactMap(\.objectValue).first { $0["id"]?.stringValue == leadDishId }?["cut"]?.stringValue
         let archive = store.insightsArchive()
@@ -76,7 +81,7 @@ struct LiveChartView: View {
     var body: some View {
         let probe = probeSeries
         let pit = pitSeries
-        let ghost = ghostInfo
+        let ghost = ghostState
         let latestMinutes = Double(max(probe.last?.atUtcMillis ?? 0, pit.last?.atUtcMillis ?? 0)) / 60_000.0
         let nowMinutes = Double(Int64(Date.now.timeIntervalSince1970 * 1_000) - anchorMillis) / 60_000.0
         let cursor = scrubMinutes ?? latestMinutes
@@ -97,8 +102,12 @@ struct LiveChartView: View {
             return items.sorted { $0.1 < $1.1 }
         }()
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+            // No outer ScrollView: the chart engine carries its own
+            // horizontal scroll/gesture stack (the Charts screen hosts
+            // it the same way), and nesting it in a scroller made the
+            // sheet take ~36 s of continuous layout work to settle on
+            // the simulator. The readout is pinned by construction.
+            VStack(alignment: .leading, spacing: 12) {
                     // 2.2: the readout is pinned at the top and recomputes at the cursor.
                     TurnInCard {
                         VStack(alignment: .leading, spacing: 4) {
@@ -165,13 +174,14 @@ struct LiveChartView: View {
                     Text(ghost.map { "The second cook is \($0.label), aligned at food-on. The grey hours ahead run to the end of the stated finish range." }
                         ?? "The grey hours ahead run to the end of the stated finish range, when a range is stated.")
                         .font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                    Spacer(minLength: 0)
                 }
                 .padding(20)
-            }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle(cook.map { "Chart · \($0.title)" } ?? "Chart")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("live-chart-close") } }
+            .onAppear { if ghostState == nil { ghostState = computeGhostInfo() } }
         }
     }
 }
