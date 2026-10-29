@@ -90,7 +90,9 @@ final class FlowingLiveUITests: XCTestCase {
         XCTAssertTrue(readout.waitForExistence(timeout: 15))
         let delta = app.staticTexts["live-chart-ghost-delta"]
         XCTAssertTrue(delta.waitForExistence(timeout: 10))
-        XCTAssertTrue(delta.label.contains("ahead of last brisket"), delta.label)
+        // The delta speaks in the spec's own words (§2.4), identical on
+        // both platforms; the fixture's geometry makes it exactly +38.
+        XCTAssertTrue(delta.label.contains("+38 min vs last brisket at this point"), delta.label)
         app.buttons["live-chart-preset-last2h"].tap()
         XCTAssertTrue(readout.exists)
         app.buttons["live-chart-close"].tap()
