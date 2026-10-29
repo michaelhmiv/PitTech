@@ -74,33 +74,31 @@ internal fun ServePlanDialogs(viewModel: CooksViewModel) {
 @Composable
 private fun PlanSeedPicker(options: List<PlanSeedOption>, onDismiss: () -> Unit, onSeed: (PlanSeedOption) -> Unit) {
     val tokens = pitTechTokens()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add from a recipe") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()).testTag("plan-seed-picker"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (options.isEmpty()) Text("No saved recipes yet. Save a dish as a recipe and it can seed a lane here.", style = PitTechTextStyles.body)
-                options.forEach { option ->
-                    val seeded = option.seeded
-                    TurnInCard(Modifier.fillMaxWidth()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TurnInBannerText(option.recipeName)
-                            if (seeded != null) {
-                                Text(seeded.schedule.evidenceNote, style = PitTechTextStyles.body, color = tokens.inkMuted)
-                                Button(
-                                    onClick = { onSeed(option) },
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("plan-seed-option-${option.recipeId}"),
-                                ) { Text("Add ${option.snapshot.dish.name} with these durations") }
-                            } else {
-                                Text("No recorded cook to seed durations from — add the dish by hand instead.", style = PitTechTextStyles.body, color = tokens.inkMuted)
-                            }
+    // DD-6 dialog grammar: a list picker is a full screen, not a dialog.
+    FullScreenSurface(onDismiss = onDismiss, title = "Add from a recipe", actions = {
+        TextButton(onClick = onDismiss) { Text("Done") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("plan-seed-picker"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (options.isEmpty()) Text("No saved recipes yet. Save a dish as a recipe and it can seed a lane here.", style = PitTechTextStyles.body)
+            options.forEach { option ->
+                val seeded = option.seeded
+                TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TurnInBannerText(option.recipeName)
+                        if (seeded != null) {
+                            Text(seeded.schedule.evidenceNote, style = PitTechTextStyles.body, color = tokens.inkMuted)
+                            Button(
+                                onClick = { onSeed(option) },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("plan-seed-option-${option.recipeId}"),
+                            ) { Text("Add ${option.snapshot.dish.name} with these durations") }
+                        } else {
+                            Text("No recorded cook to seed durations from — add the dish by hand instead.", style = PitTechTextStyles.body, color = tokens.inkMuted)
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-    )
+        }
+    }
 }
 
 @Composable
