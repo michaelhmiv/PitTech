@@ -102,12 +102,8 @@ struct LiveChartView: View {
             return items.sorted { $0.1 < $1.1 }
         }()
         NavigationStack {
-            // No outer ScrollView: the chart engine carries its own
-            // horizontal scroll/gesture stack (the Charts screen hosts
-            // it the same way), and nesting it in a scroller made the
-            // sheet take ~36 s of continuous layout work to settle on
-            // the simulator. The readout is pinned by construction.
-            VStack(alignment: .leading, spacing: 12) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
                     // 2.2: the readout is pinned at the top and recomputes at the cursor.
                     TurnInCard {
                         VStack(alignment: .leading, spacing: 4) {
@@ -174,9 +170,9 @@ struct LiveChartView: View {
                     Text(ghost.map { "The second cook is \($0.label), aligned at food-on. The grey hours ahead run to the end of the stated finish range." }
                         ?? "The grey hours ahead run to the end of the stated finish range, when a range is stated.")
                         .font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
-                    Spacer(minLength: 0)
                 }
                 .padding(20)
+            }
             .background(PitTechStyle.canvas.ignoresSafeArea())
             .navigationTitle(cook.map { "Chart · \($0.title)" } ?? "Chart")
             .navigationBarTitleDisplayMode(.inline)
