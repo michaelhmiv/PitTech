@@ -87,12 +87,23 @@ final class FlowingLiveUITests: XCTestCase {
         // children: .contain; as a contained container it is not a
         // StaticText at all, and the staticTexts query timed out.)
         let readout = app.descendants(matching: .any)["live-chart-readout"]
-        XCTAssertTrue(readout.waitForExistence(timeout: 15))
+        XCTAssertTrue(readout.waitForExistence(timeout: 30))
         let delta = app.staticTexts["live-chart-ghost-delta"]
         XCTAssertTrue(delta.waitForExistence(timeout: 10))
         // The delta speaks in the spec's own words (§2.4), identical on
         // both platforms; the fixture's geometry makes it exactly +38.
         XCTAssertTrue(delta.label.contains("+38 min vs last brisket at this point"), delta.label)
+        // The chart engine's first render keeps the accessibility tree
+        // busy for a long stretch on the simulator (observed ~40 s
+        // under shard load; queries time out mid-render). The sheet's
+        // chrome is already asserted above; before tapping controls,
+        // wait until the toolbar reports hittable — the settle signal.
+        let closeButton = app.buttons["live-chart-close"]
+        let settleDeadline = Date().addingTimeInterval(120)
+        while !closeButton.isHittable && Date() < settleDeadline {
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertTrue(closeButton.isHittable)
         app.buttons["live-chart-preset-last2h"].tap()
         XCTAssertTrue(readout.exists)
         app.buttons["live-chart-close"].tap()

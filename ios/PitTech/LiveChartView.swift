@@ -27,6 +27,13 @@ struct LiveChartView: View {
     @State private var presetSpan: Double?
     @State private var presetStart: Double?
     @State private var presetFollow = true
+    /// The chart engine's first render is heavy — its guide and
+    /// comparison state settle over several passes. The sheet's own
+    /// chrome (readout, presets, event strip) mounts instantly and
+    /// the engine mounts a beat later behind a same-height
+    /// placeholder, so the spread's primary answer is never blocked
+    /// by the canvas.
+    @State private var chartMounted = false
 
     private var cook: CookRecord? { store.library.cooks.first { $0.id == cookId } }
     private var readings: [TemperatureSample] { store.readings(for: cookId) }
@@ -156,17 +163,25 @@ struct LiveChartView: View {
                             }
                         }.accessibilityIdentifier("live-chart-events")
                     }
-                    CookTemperatureChart(
-                        cookId: cookId,
-                        onMarker: { _ in },
-                        liveExtras: true,
-                        ghost: ghost.map { (currentDishId: leadDishId ?? "", cookId: $0.cookId, dishId: $0.dishId) },
-                        etaLatestMinutes: etaLatestUtcMillis.map { Double($0 - anchorMillis) / 60_000.0 },
-                        onScrubChange: { scrubMinutes = $0 },
-                        presetKey: presetKey,
-                        presetSpanMinutes: presetSpan,
-                        presetStartMinutes: presetStart,
-                        presetFollowLatest: presetFollow)
+                    if chartMounted {
+                        CookTemperatureChart(
+                            cookId: cookId,
+                            onMarker: { _ in },
+                            liveExtras: true,
+                            ghost: ghost.map { (currentDishId: leadDishId ?? "", cookId: $0.cookId, dishId: $0.dishId) },
+                            etaLatestMinutes: etaLatestUtcMillis.map { Double($0 - anchorMillis) / 60_000.0 },
+                            onScrubChange: { scrubMinutes = $0 },
+                            presetKey: presetKey,
+                            presetSpanMinutes: presetSpan,
+                            presetStartMinutes: presetStart,
+                            presetFollowLatest: presetFollow)
+                    } else {
+                        TurnInCard {
+                            Text("Loading the full chart…")
+                                .font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                                .frame(maxWidth: .infinity, minHeight: 268, alignment: .leading)
+                        }
+                    }
                     Text(ghost.map { "The second cook is \($0.label), aligned at food-on. The grey hours ahead run to the end of the stated finish range." }
                         ?? "The grey hours ahead run to the end of the stated finish range, when a range is stated.")
                         .font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
@@ -177,7 +192,13 @@ struct LiveChartView: View {
             .navigationTitle(cook.map { "Chart · \($0.title)" } ?? "Chart")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("live-chart-close") } }
-            .onAppear { if ghostState == nil { ghostState = computeGhostInfo() } }
+            .onAppear {
+                if ghostState == nil { ghostState = computeGhostInfo() }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 750_000_000)
+                    chartMounted = true
+                }
+            }
         }
     }
 }
