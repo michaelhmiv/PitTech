@@ -113,6 +113,29 @@ class CooksViewModel(
         }
     }
 
+    /**
+     * Flowing 3.4: the library's recipes as plan-seed options — each
+     * recipe's current snapshot plus its §4.3 provenance payload when it
+     * has a source cook. Recipes without recorded durations stay on the
+     * list so the picker can say why they can't seed a lane.
+     */
+    internal suspend fun planSeedOptions(): List<com.pittech.domain.PlanSeedOption> = withContext(Dispatchers.IO) {
+        val recipes = repository.recipes.observeRecipes().first().filter { it.archivedAtUtcMillis == null }
+        val revisions = repository.recipes.observeRevisions().first().associateBy { it.id }
+        recipes.mapNotNull { recipe ->
+            val revision = revisions[recipe.currentRevisionId] ?: return@mapNotNull null
+            val snapshot = runCatching { com.pittech.domain.RecipeSnapshotCodec.decode(revision.snapshotJson) }.getOrNull() ?: return@mapNotNull null
+            val provenance = recipeProvenance(revision.sourceCookId, revision.sourceDishId)
+            com.pittech.domain.PlanSeedOption(
+                recipeId = recipe.id,
+                recipeName = recipe.name,
+                snapshot = snapshot,
+                provenance = provenance,
+                seeded = com.pittech.domain.PlanSeeding.fromRecipe(snapshot, provenance),
+            )
+        }
+    }
+
     /** One-shot cook detail for surfaces that visit a cook without opening it (the recipe story's full chart and photos). */
     internal suspend fun cookDetailOnce(cookId: String): com.pittech.data.CookDetailData? =
         repository.observeCookDetail(cookId).first()

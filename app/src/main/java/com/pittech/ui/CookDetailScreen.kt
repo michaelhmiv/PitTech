@@ -248,6 +248,14 @@ fun CookDetailScreen(
             }.toMap()
         }
     }
+    // E5 (Flowing Slice 4): the serve plan as a lane timeline, for the
+    // Live board's schedule strip — the same serve_goal record the plan
+    // windows above read, derived once as lanes.
+    val planStrip = remember(data.cook.id, liveCompanionRecords) {
+        val record = liveCompanionRecords.firstOrNull { it.kind == "serve_goal" && it.cookId == data.cook.id }
+        val plan = record?.let { runCatching { com.pittech.domain.ServeTimePlanner.decode(it.payload) }.getOrNull() }
+        plan?.let { it to com.pittech.domain.PlanTimeline.derive(it) }
+    }
     val insightsSnapshot by viewModel.insights.collectAsStateWithLifecycle()
     val insightsArchive = remember(insightsSnapshot) {
         com.pittech.data.insightArchive(insightsSnapshot.cooks, insightsSnapshot.readings, insightsSnapshot.results)
@@ -980,6 +988,7 @@ fun CookDetailScreen(
                     alertFocused = alertFocusId != null,
                     alertAttention = alertAttention,
                     planWindows = planWindows,
+                    planStrip = planStrip,
                     insightsArchive = insightsArchive,
                     allReadings = insightsSnapshot.readings,
                     onSetPitTarget = { value -> viewModel.setPitTarget(data.cook.id, value, preferredTemperatureUnit) },
@@ -1263,6 +1272,7 @@ private fun LiveCookTab(
     alertFocused: Boolean,
     alertAttention: Int,
     planWindows: Map<String, Pair<Long, Long>>,
+    planStrip: Pair<com.pittech.domain.ServePlan, com.pittech.domain.PlanTimelineResult>?,
     insightsArchive: com.pittech.domain.InsightArchive?,
     allReadings: List<SensorReadingEntity>,
     onSetPitTarget: (Double) -> Unit,
@@ -1416,6 +1426,10 @@ private fun LiveCookTab(
                 }
             }
         }
+        // E5: the plan rides on Live — during a planned cook, the
+        // day-board's lanes are the cook's own schedule strip, under the
+        // verdict and above the scoreboard.
+        planStrip?.let { (plan, timeline) -> PlanScheduleStrip(plan, timeline, now) }
         Card(
             modifier = Modifier.fillMaxWidth().testTag("live-zone"),
             shape = RoundedCornerShape(18.dp),
