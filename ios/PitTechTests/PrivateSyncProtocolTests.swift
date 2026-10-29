@@ -75,7 +75,7 @@ final class PrivateSyncProtocolTests: XCTestCase {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             let bytes = try encoder.encode(value)
             XCTAssertEqual(String(decoding: bytes, as: UTF8.self), vector.canonical, vector.name)
-            XCTAssertEqual(RelayProtocol.hash(bytes), vector.sha256, vector.name)
+            XCTAssertEqual(NativeRelayProtocol.hash(bytes), vector.sha256, vector.name)
         }
     }
 
