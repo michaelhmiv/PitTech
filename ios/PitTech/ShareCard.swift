@@ -151,10 +151,15 @@ enum NativeShareCardContent {
         // chips — hand-entered food readings in time order, sampled
         // evenly to at most twelve, each labeled by its clock time in
         // the reading's own timezone and valued in the card's unit.
-        let manualLogged = stories.flatMap { rows($0, "readings") }.filter {
-            $0["source"]?.stringValue == "manual" && ($0["qualityStatus"]?.stringValue ?? "valid") == "valid" &&
-                RecipeGuideProjection.role($0["measurementType"]?.stringValue ?? "") == "food"
-        }.sorted { ($0["measuredAtUtcMillis"]?.numberValue ?? 0) < ($1["measuredAtUtcMillis"]?.numberValue ?? 0) }
+        let storyReadings: [[String: JSONValue]] = stories.flatMap { rows($0, "readings") }
+        let manualLogged: [[String: JSONValue]] = storyReadings.filter { row in
+            let isManual = row["source"]?.stringValue == "manual"
+            let isValid = (row["qualityStatus"]?.stringValue ?? "valid") == "valid"
+            let isFood = RecipeGuideProjection.role(row["measurementType"]?.stringValue ?? "") == "food"
+            return isManual && isValid && isFood
+        }.sorted { first, second in
+            (first["measuredAtUtcMillis"]?.numberValue ?? 0) < (second["measuredAtUtcMillis"]?.numberValue ?? 0)
+        }
         let sampledTemps: [[String: JSONValue]] = manualLogged.count <= 12 ? manualLogged : {
             var indices: [Int] = []
             for i in 0..<12 {
@@ -180,16 +185,17 @@ enum NativeShareCardContent {
         if hero == "chart" {
             hero = anyDrawableSegment ? "chart" : (!manualTemps.isEmpty ? "manual" : "none")
         }
+        let publicationObject: JSONValue = publication.map { pub in
+            var object: [String: JSONValue] = ["url": .string(pub.url)]
+            if let likes = pub.likes { object["likes"] = .number(Double(likes)) }
+            if let forks = pub.forks { object["forks"] = .number(Double(forks)) }
+            return JSONValue.object(object)
+        } ?? .null
         let content: JSONValue = .object(["version": .number(1), "title": .string(document.title), "dishes": .array(try entries.map { .string(try $0.snapshot.name) }), "hero": .string(hero), "unit": .string(unit),
             "curves": .array(curves), "channelCount": .number(Double(channelCount)), "milestones": .array(milestones.prefix(5).map(JSONValue.object)), "stats": .array(stats), "note": .string(settings.note),
             "cropX": .number(settings.cropX), "cropY": .number(settings.cropY), "zoom": .number(settings.zoom), "theme": .string(settings.theme), "relay": relay.map { .object(["code": .string($0.code), "url": .string($0.url)]) } ?? .null,
             "manualTemps": .array(manualTemps),
-            "publication": publication.map { pub -> JSONValue in
-                var object: [String: JSONValue] = ["url": .string(pub.url)]
-                if let likes = pub.likes { object["likes"] = .number(Double(likes)) }
-                if let forks = pub.forks { object["forks"] = .number(Double(forks)) }
-                return .object(object)
-            } ?? .null])
+            "publication": publicationObject])
         return PreparedNativeShareCard(content: content, photo: photo)
     }
 }
