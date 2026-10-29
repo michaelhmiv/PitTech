@@ -17,6 +17,7 @@ This file begins with a truthful **development baseline** rather than inventing 
 
 ### Fixed
 - Private photo sync can finish again (Android, issue #253): completing a photo upload was rejected by the server every time because that one request's content type carried an extra charset marker the server does not accept, leaving synced libraries with a photo stuck at "retry needed." The completion request now sends exactly the content type the server accepts, matching every other sync request.
+- Community reports and publisher blocks reach the server again (Android, issue #255): sending a report or a block was rejected by the server every time because those requests carried the same extra charset marker in their content type as the photo-sync request fixed above, and the app read the rejection as final — a report you sent could be silently marked rejected. The report and block requests now send exactly the content type the server accepts.
 
 ## [0.2.0] — October 28, 2026
 
