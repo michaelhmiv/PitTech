@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlin.math.roundToLong
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterList
@@ -428,7 +429,7 @@ private fun RecipeGridTile(
 
 /** "9H 40M" — the book's stat-cell voice for a duration in minutes. */
 private fun formatStoryDuration(minutes: Double): String {
-    val total = kotlin.math.roundToLong(minutes)
+    val total = minutes.roundToLong()
     val hours = total / 60; val rest = total % 60
     return when { hours > 0 && rest > 0 -> "${hours}H ${rest}M"; hours > 0 -> "${hours}H"; else -> "${rest}M" }
 }
