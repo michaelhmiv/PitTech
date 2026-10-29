@@ -121,6 +121,10 @@ struct LiveChartView: View {
                             }
                         }
                     }
+                    // Contain: the card's identifier must not swallow the
+                    // ghost-delta child's own identifier (the live-zone
+                    // card had the same defect — see CookDetailView).
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("live-chart-readout")
                     // 2.5: range presets over the same axis.
                     ScrollView(.horizontal, showsIndicators: false) {
