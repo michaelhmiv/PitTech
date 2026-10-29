@@ -441,6 +441,33 @@ class PrivateSyncCoordinatorTest {
         assertEquals("Remote", retry.getJSONArray("conflicts").getJSONObject(0).getJSONObject("loser").getJSONObject("payload").getString("title"))
     }
 
+    @Test fun serverCanonicalReceiptAdvancesBase() = runTest {
+        val library = FakeLibrary(archive("cooks" to cook(), "readings" to readingRow(value = 225.0), "events" to note()))
+        val api = FakeApi(); val store = PrivateSyncMemoryStore()
+        // Model the real server (issue #262): parse the request body,
+        // re-serialize it canonically, and answer with a receipt over THOSE
+        // bytes — never over the client's own hash of what it sent. That
+        // mock-vs-mock gap in the default handler is why CI stayed green
+        // while every real commit was rejected on device: the raw body
+        // carries the reading as 225.0, the server's receipt covers 225.
+        api.commitHandler = { bytes, mutation ->
+            val canonical = PrivateSyncMerge.stable(JSONObject(String(bytes, Charsets.UTF_8)))
+            JSONObject().put("version", JSONObject(String(bytes, Charsets.UTF_8)).getLong("baseVersion") + 1).put("mutationId", mutation)
+                .put("sha256", RelayProtocol.hash(canonical.toByteArray(Charsets.UTF_8)))
+        }
+        val sync = coordinator(store = store, api = api, library = library, scope = this)
+        sync.syncNow()
+        assertEquals(1, api.puts.size)
+        // The body crossed the wire already in canonical form, so the
+        // server's receipt covers exactly the bytes that were sent.
+        val sent = String(api.puts.single().first, Charsets.UTF_8)
+        assertEquals(PrivateSyncMerge.stable(JSONObject(sent)), sent)
+        assertTrue(sync.presentation.value.status.startsWith("Last synced "))
+        assertEquals(1, store.load(userA).serverVersion)
+        assertTrue(JSONArray(store.load(userA).base).length() > 0)
+        assertNull(store.load(userA).mutationId)
+    }
+
     @Test fun mismatchedReceiptNeverAdvancesBase() = runTest {
         val library = FakeLibrary(archive("cooks" to cook(), "dishes" to dish(), "events" to note()))
         val api = FakeApi(); val store = PrivateSyncMemoryStore()

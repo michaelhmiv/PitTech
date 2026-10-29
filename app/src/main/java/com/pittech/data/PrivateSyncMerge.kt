@@ -20,14 +20,69 @@ internal object PrivateSyncMerge {
         fun content()=PrivateSyncMerge.stable(JSONObject().put("deleted",deleted).put("payload",payload?.let{JSONObject(it.toString())}?:JSONObject.NULL).put("assetIds",JSONArray(assets)))
         fun same(other:Row)=PrivateSyncMerge.stable(json())==PrivateSyncMerge.stable(other.json())
     }
+    /**
+     * The canonical serialization of a sync value: recursively sorted object
+     * keys with JSON.stringify-compatible number and string formatting. This
+     * must stay byte-identical to the server's stable() (api-service
+     * pack.ts): the server re-serializes every parsed envelope with it, the
+     * snapshot store persists those bytes, and the commit receipt's sha256
+     * covers them. The commit body is serialized with this function so the
+     * receipt covers exactly the bytes sent (issue #262). Shared vectors:
+     * contracts/fixtures/sync-canonical-v1.json.
+     */
     internal fun stable(value:Any?):String=when(value){
         null,JSONObject.NULL->"null"
-        is JSONObject->value.keys().asSequence().toList().sorted().joinToString(",","{","}"){JSONObject.quote(it)+":"+stable(value.get(it))}
+        is JSONObject->value.keys().asSequence().toList().sorted().joinToString(",","{","}"){quote(it)+":"+stable(value.get(it))}
         is JSONArray->(0 until value.length()).joinToString(",","[","]"){stable(value.get(it))}
-        is Number->java.math.BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
+        is Number->number(value)
         is Boolean->value.toString()
-        is String->JSONObject.quote(value)
+        is String->quote(value)
         else->error("Invalid sync value")
+    }
+    /** JSON.stringify number formatting: integral values print without a
+     * fraction (225.0 -> "225"); exponential notation appears only outside
+     * [1e-6, 1e21), with a JS-style exponent (explicit +, no leading zeros).
+     * Every Number subtype a parser can produce is canonicalized: JSON-java
+     * parses decimal text to BigDecimal while Android's org.json produces
+     * Double, and the server's value is the JS double of the same text, so
+     * a BigDecimal that is exactly a double formats as that double. */
+    private fun number(value:Number):String{
+        if(value is Double || value is Float)return jsNumber(value.toDouble())
+        if(value is java.math.BigDecimal){
+            val d=value.toDouble()
+            if(d.isFinite() && java.math.BigDecimal(d.toString()).compareTo(value)==0)return jsNumber(d)
+            return value.stripTrailingZeros().toPlainString()
+        }
+        return value.toString()
+    }
+    private fun jsNumber(d:Double):String{
+        require(d.isFinite()){"Invalid sync number"}
+        if(d==0.0)return "0"
+        val magnitude=kotlin.math.abs(d)
+        if(magnitude<1e-6 || magnitude>=1e21){
+            val raw=d.toString();val split=raw.indexOf('E')
+            val mantissa=java.math.BigDecimal(raw.substring(0,split)).stripTrailingZeros().toPlainString()
+            val exponent=raw.substring(split+1).toInt()
+            return mantissa+"e"+(if(exponent>=0)"+" else "")+exponent
+        }
+        return java.math.BigDecimal(d.toString()).stripTrailingZeros().toPlainString()
+    }
+    /** JSON.stringify string quoting. JSONObject.quote is NOT equivalent: it
+     * additionally escapes ranges such as U+2019 and U+20AC that
+     * JSON.stringify (and therefore the server's canonical bytes) emit raw. */
+    private fun quote(value:String):String=buildString(value.length+2){
+        append('"')
+        for(c in value)when(c){
+            '"'->append("\\\"")
+            '\\'->append("\\\\")
+            '\b'->append("\\b")
+            '\u000C'->append("\\f")
+            '\n'->append("\\n")
+            '\r'->append("\\r")
+            '\t'->append("\\t")
+            else->if(c<' ')append("\\u"+c.code.toString(16).padStart(4,'0'))else append(c)
+        }
+        append('"')
     }
     private fun bounded(value:Any?,depth:Int=0){
         require(depth<=24)

@@ -68,6 +68,10 @@ types, safe composite local record keys and explicit null-payload tombstones.
 Logical counters start at one; timestamps are payload facts, never merge clocks.
 The native/backend merge helpers consume eleven identical `sync-merge-v1.json`
 vectors. A conflict ID hashes ASCII record identity/reason and both version stamps,
-so it does not depend on a platform's JSON formatting. This is a foundation only:
+so it does not depend on a platform's JSON formatting. The envelope's canonical
+serialization is pinned separately by `fixtures/sync-canonical-v1.json`: vectors
+generated from the server's `stable()` (`api-service/scripts/sync-canonical-fixtures.ts`)
+and consumed by both native suites, because the snapshot-commit receipt's sha256
+covers exactly those bytes (issue #262). This is a foundation only:
 strict library projection/relationship checks, transport and native durable apply
 remain open. Generic record payload acceptance is not a credential sanitizer.
