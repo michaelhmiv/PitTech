@@ -81,7 +81,7 @@ internal class PrivateSyncClient(client: OkHttpClient = OkHttpClient()) : Privat
         return call(request(photoPath(assetId, "/parts/$index"), access).put(chunk.toRequestBody("application/octet-stream".toMediaType())).build(), 8192)
     }
     override suspend fun completePhoto(assetId: String, access: String): JSONObject {
-        return call(request(photoPath(assetId, "/complete"), access).post("{}".toRequestBody("application/json".toMediaType())).build(), 8192)
+        return call(request(photoPath(assetId, "/complete"), access).post("{ }".toByteArray().toRequestBody("application/json".toMediaType())).build(), 8192)
     }
     override suspend fun abandonPhoto(assetId: String, access: String): JSONObject {
         val body = JSONObject().put("confirm", "abandon-private-photo").toString().toByteArray()
