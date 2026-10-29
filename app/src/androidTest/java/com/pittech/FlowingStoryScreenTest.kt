@@ -47,7 +47,10 @@ class FlowingStoryScreenTest {
         suspend fun action(action: String, title: String, minute: Long) {
             app.cookRepository.notes.save(CookNoteDraft(cookId = cook, dishId = dish, category = "action", action = action, title = title, occurredAt = at(minute)))
         }
-        action("food_on", "Food on", 0); action("wrap", "Wrap", 195); action("remove", "Off the pit", 580)
+        action("food_on", "Food on", 0); action("wrap", "Wrap", 195)
+        // Distinct minutes: the phase validator orders same-timestamp events
+        // by id, which would make remove/rest_start order nondeterministic.
+        action("remove", "Off the pit", 578)
         action("rest_start", "Rest", 580); action("dish_done", "Done", 655)
         var minute = 0L
         while (minute <= 580) {
