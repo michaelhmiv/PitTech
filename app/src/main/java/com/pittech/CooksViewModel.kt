@@ -107,7 +107,7 @@ class CooksViewModel(
         if (sourceCookId == null || sourceDishId == null) return null
         return withContext(Dispatchers.IO) {
             runCatching {
-                val archive = com.pittech.data.archiveSnapshotJson(repository.exportSnapshot(sourceCookId), null)
+                val archive = com.pittech.data.provenanceReadyArchive(com.pittech.data.archiveSnapshotJson(repository.exportSnapshot(sourceCookId), null))
                 com.pittech.domain.RecipeProvenance.fromArchive(archive, sourceCookId, sourceDishId)
             }.getOrNull()
         }

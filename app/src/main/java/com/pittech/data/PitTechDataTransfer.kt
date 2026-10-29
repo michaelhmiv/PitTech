@@ -487,6 +487,35 @@ internal fun archiveSnapshotJson(snapshot: ExportSnapshot, preferences: BackupPr
     })
 
 
+/**
+ * Flowing §4.3 seam: [com.pittech.domain.RecipeProvenance.fromArchive]
+ * consumes the insights archive vocabulary — events carry `action`, `at`
+ * and `dishIds` — while the library archive writes the storage vocabulary
+ * (`eventType`, `occurredAtUtcMillis`, the action and dish scopes encoded
+ * in `noteMetadataJson`). Rewrite the events array of an archive produced
+ * by [archiveSnapshotJson] into the insights shape, resolving each action
+ * exactly as the production insights adapter does for Room rows
+ * ([notePlanEvents] / PlaybookCodec.action). Without this step the
+ * provenance builder throws on the first event and the recipe story
+ * silently never renders.
+ */
+internal fun provenanceReadyArchive(root: JSONObject): JSONObject {
+    val events = root.optJSONArray("events") ?: return root
+    val normalized = JSONArray()
+    for (i in 0 until events.length()) {
+        val event = events.getJSONObject(i)
+        val metadataJson = if (event.isNull("noteMetadataJson")) null else event.optString("noteMetadataJson")
+        val scopes = com.pittech.domain.CookNoteMetadata.decode(metadataJson)?.dishIds.orEmpty()
+            .ifEmpty { listOfNotNull(if (event.isNull("dishId")) null else event.optString("dishId")) }
+        normalized.put(JSONObject(event.toString())
+            .put("action", com.pittech.domain.PlaybookCodec.action(event.optString("eventType"), metadataJson))
+            .put("at", event.optLong("occurredAtUtcMillis"))
+            .put("dishIds", JSONArray(scopes)))
+    }
+    root.put("events", normalized)
+    return root
+}
+
 private fun JSONObject.putNullable(key: String, value: Any?): JSONObject = put(key, value ?: JSONObject.NULL)
 
 private fun CookEntity.toJson() = JSONObject()
