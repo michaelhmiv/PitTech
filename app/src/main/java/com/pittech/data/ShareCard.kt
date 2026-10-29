@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 data class ShareCardOptions(val hero: String = "chart", val cropX: Double = 0.5, val cropY: Double = 0.5,
     val zoom: Double = 1.0, val note: String = "", val includeVerdict: Boolean = false, val unit: String = "auto", val theme: String = "classic") {
@@ -27,14 +28,30 @@ data class ShareCardRelay internal constructor(val code: String, val url: String
     fun validate() { require(code.matches(Regex("[A-Z0-9]+(?:-[A-Z0-9]+){2,5}")) && url == "https://pittech.app/s/$code") }
 }
 
+/**
+ * Flowing §4.5, publication variant: when the card's subject is a posted
+ * recipe, the footer carries a QR of the canonical publication URL.
+ * Counts are a pair — both known or both absent; a count is rendered
+ * only when the publication's record actually supplied it.
+ */
+data class ShareCardPublication(val itemId: String, val likes: Int? = null, val forks: Int? = null) {
+    val url: String get() = "https://pittech.app/c/$itemId"
+    fun validate() {
+        require(publicationUuid(itemId)) { "That publication link is unavailable." }
+        require((likes == null) == (forks == null)) { "Publication counts arrive as a pair." }
+        if (likes != null) require(likes in 0..1_000_000_000 && forks!! in 0..1_000_000_000) { "Publication counts are out of range." }
+    }
+}
+
 object ShareCardContent {
     private val actions = setOf("food_on", "wrap", "remove", "rest_start", "hold_start", "dish_done", "season", "trim", "preheat_start")
     private fun objects(o: JSONObject, key: String) = o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
     private fun number(v: Double) = String.format(Locale.US, "%.3f", v).trimEnd('0').trimEnd('.')
     fun elapsed(ms: Long): String = "${ms / 3600000}h ${(ms / 60000) % 60}m"
     fun offset(ms: Long?): String = ms?.let { (if (it < 0) "−" else "+") + elapsed(abs(it)) } ?: "Recorded"
-    fun build(document: SharingDocument, photo: ByteArray?, relay: ShareCardRelay? = null): PreparedShareCard {
-        SharingDraftCodec.validate(document); document.card.encode(); relay?.validate()
+    fun build(document: SharingDocument, photo: ByteArray?, relay: ShareCardRelay? = null, publication: ShareCardPublication? = null): PreparedShareCard {
+        SharingDraftCodec.validate(document); document.card.encode(); relay?.validate(); publication?.validate()
+        require(relay == null || publication == null) { "A card carries one footer: the Cook Pack code or the publication link, never both." }
         val entries = document.entries.filter { it.included }; require(entries.isNotEmpty()) { "Select at least one dish for the card." }
         val projection = CookPackProjection()
         val stories = entries.map(projection::story)
@@ -96,18 +113,38 @@ object ShareCardContent {
             all.filter { RecipeGuideProjection.role(it.getString("measurementType")) == "food" }.maxByOrNull { it.getLong("measuredAtUtcMillis") }?.let { stat("Last recorded food", number(temperature(it)) + " $unit") }
             entries[0].snapshot.dish.takeIf { it.weightText.isNotBlank() }?.let { stat("Weight", it.weightText + " " + it.weightUnit) }
         } else stat("Selected dishes", entries.size.toString())
-        val hero = when (document.card.hero) { "photo" -> { require(photo != null) { "Choose an included cover photo, or use Chart / No hero." }; "photo" }; "chart" -> if (curves.isEmpty()) "none" else "chart"; else -> "none" }
+        // Flowing §4.5 manual variant: a curve is drawable only when some
+        // segment joins at least two points. Hand-logged readings never
+        // join (the builder breaks segments at them), so a manual cook
+        // has points, not a curve — the chart slot then carries the
+        // hand-logged temps themselves instead of a faked trace.
+        val drawable = curves.any { curve -> val segments = curve.getJSONArray("segments"); (0 until segments.length()).any { segments.getJSONArray(it).length() >= 2 } }
+        val manualTemps = if (drawable) emptyList() else {
+            val logged = stories.flatMap { objects(it, "readings") }
+                .filter { it.optString("source") == "manual" && it.optString("qualityStatus", "valid") == "valid" && RecipeGuideProjection.role(it.getString("measurementType")) == "food" }
+                .sortedBy { it.getLong("measuredAtUtcMillis") }
+            val picked = if (logged.size <= 12) logged else (0 until 12).map { i -> logged[(i.toDouble() * (logged.size - 1) / 11.0).roundToInt()] }.distinct()
+            picked.map { row ->
+                val zone = runCatching { java.time.ZoneId.of(row.optString("timeZoneId").ifBlank { "UTC" }) }.getOrDefault(java.time.ZoneId.of("UTC"))
+                val clock = java.time.Instant.ofEpochMilli(row.getLong("measuredAtUtcMillis")).atZone(zone)
+                    .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+                JSONObject().put("label", clock).put("value", String.format(Locale.US, "%.0f", temperature(row)) + " $unit")
+            }
+        }
+        val hero = when (document.card.hero) { "photo" -> { require(photo != null) { "Choose an included cover photo, or use Chart / No hero." }; "photo" }; "chart" -> when { drawable -> "chart"; manualTemps.isNotEmpty() -> "manual"; else -> "none" }; else -> "none" }
         val content = JSONObject().put("version", 1).put("title", document.title).put("dishes", JSONArray(entries.map { it.snapshot.name })).put("hero", hero)
             .put("unit", unit).put("curves", JSONArray(curves)).put("channelCount", channelCount).put("milestones", JSONArray(milestones)).put("stats", JSONArray(stats))
             .put("note", document.card.note).put("cropX", document.card.cropX).put("cropY", document.card.cropY).put("zoom", document.card.zoom).put("theme", document.card.theme)
             .put("relay", relay?.let { JSONObject().put("code", it.code).put("url", it.url) } ?: JSONObject.NULL)
+            .put("manualTemps", JSONArray(manualTemps))
+            .put("publication", publication?.let { pub -> JSONObject().put("url", pub.url).apply { if (pub.likes != null) { put("likes", pub.likes); put("forks", pub.forks) } } } ?: JSONObject.NULL)
         return PreparedShareCard(content.toString(), photo)
     }
 }
 
 /** `themeOverride`/`paletteOverride` apply the caller's entitlement-resolved Pro
  * selections to the rendered copy only; the sharing draft itself is never mutated. */
-suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay? = null, themeOverride: String? = null, paletteOverride: String? = null): PreparedShareCard {
+suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay? = null, themeOverride: String? = null, paletteOverride: String? = null, publication: ShareCardPublication? = null): PreparedShareCard {
     val record = get(id) ?: error("This sharing draft is unavailable."); val document = SharingDraftCodec.decode(record.payload)
     val photo = if (document.card.hero == "photo") {
         val hero = document.heroPhotoId ?: error("Choose an included cover photo.")
@@ -116,7 +153,7 @@ suspend fun SharingRepository.prepareShareCard(id: String, relay: ShareCardRelay
         val asset = assets(id).firstOrNull { it.id == hero } ?: error("This cover photo is unavailable.")
         CookPackPhoto.derivative(photoBytes(asset.relativePath) ?: error("This selected photo is unavailable."))
     } else null
-    val prepared = ShareCardContent.build(document, photo, relay)
+    val prepared = ShareCardContent.build(document, photo, relay, publication)
     if (themeOverride == null && paletteOverride == null) return prepared
     val root = JSONObject(prepared.content)
     if (themeOverride != null) root.put("theme", themeOverride)

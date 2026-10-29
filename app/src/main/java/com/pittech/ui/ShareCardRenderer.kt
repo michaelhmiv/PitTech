@@ -62,10 +62,10 @@ object ShareCardRenderer {
         try {
             val canvas = Canvas(bitmap); canvas.drawColor(colors.background)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-            fun text(value: String, x: Float, y: Float, width: Float, size: Float, lines: Int = 1, color: Int = ink, bold: Boolean = false): Float {
+            fun text(value: String, x: Float, y: Float, width: Float, size: Float, lines: Int = 1, color: Int = ink, bold: Boolean = false, mono: Boolean = false): Float {
                 val count = value.codePointCount(0,value.length)
                 val display = if (count > 600) value.substring(0,value.offsetByCodePoints(0,600)) + "…" else value
-                val font = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = size; this.color = color; typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL) }
+                val font = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = size; this.color = color; typeface = if (mono) Typeface.create(Typeface.MONOSPACE, if (bold) Typeface.BOLD else Typeface.NORMAL) else Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL) }
                 val layout = StaticLayout.Builder.obtain(display, 0, display.length, font, width.toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL)
                     .setIncludePad(false).setLineSpacing(3f, 1f).setMaxLines(lines).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
                 canvas.save(); canvas.translate(x, y); layout.draw(canvas); canvas.restore(); return layout.height.toFloat()
@@ -79,7 +79,8 @@ object ShareCardRenderer {
             y += text(names.joinToString(" · ") + if (dishes.length() > 3) " · +${dishes.length() - 3} more" else "", left, y, width, 24f, 2, sage) + 24f
             val milestones = objects(root, "milestones"); val stats = objects(root, "stats"); val note = root.optString("note")
             require(milestones.size <= 5 && stats.size <= 3)
-            val relay = root.optJSONObject("relay"); val footer = if (relay == null) 1258f else 1160f
+            val relay = root.optJSONObject("relay"); val publication = root.optJSONObject("publication")
+            val footer = if (relay == null && publication == null) 1258f else 1160f
             val remaining = (if (milestones.isEmpty()) 0f else 34 + 44f * milestones.size + 20) + (if (stats.isEmpty()) 0f else 100f) + (if (note.isEmpty()) 0f else 88f)
             if (root.getString("hero") != "none") {
                 val height = minOf(390f, footer - 32 - y - remaining).coerceAtLeast(180f)
@@ -94,7 +95,8 @@ object ShareCardRenderer {
                     val crop = Rect(x,top,x+cropWidth,top+cropHeight)
                     val path = Path().apply { addRoundRect(rect, 24f, 24f, Path.Direction.CW) }
                     canvas.save(); canvas.clipPath(path); canvas.drawBitmap(image, crop, rect, paint); canvas.restore()
-                } else chart(canvas, root, rect, colors, ::text)
+                } else if (root.getString("hero") == "manual") manual(canvas, root, rect, colors, ::text)
+                else chart(canvas, root, rect, colors, ::text)
                 y += height + 24f
             }
             if (milestones.isNotEmpty()) {
@@ -117,13 +119,75 @@ object ShareCardRenderer {
                 text("GET THE COOK PACK · ${relay.getString("code")}", left, footer, width, 28f, bold = true)
                 text(relay.getString("url").removePrefix("https://"), left, footer + 42, width, 24f, color = supporting)
             }
+            if (publication != null) {
+                // §4.5 publication footer: the QR is the door, the mono URL
+                // is its label, counts ride along only when supplied.
+                val url = publication.getString("url")
+                val qr = qrBitmap(url, 236)
+                canvas.drawBitmap(qr, null, RectF(left + width - 118f, footer - 4f, left + width, footer + 114f), paint); qr.recycle()
+                text("SCAN FOR THE RECIPE", left, footer, width - 140f, 28f, bold = true)
+                text(url.removePrefix("https://"), left, footer + 42, width - 140f, 24f, color = supporting, mono = true)
+                if (publication.has("likes") && publication.has("forks")) {
+                    text("${publication.getInt("likes")} LIKES · ${publication.getInt("forks")} FORKS", left, footer + 84, width - 140f, 22f, color = supporting)
+                }
+            }
             text("PitTech", left, 1285f, 300f, 32f, bold = true)
             text("Cook. Keep. Share.", left + 450, 1292f, width - 450, 22f, color = supporting)
             return ByteArrayOutputStream().use { output -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)); output.toByteArray() }
         } finally { cover?.recycle(); bitmap.recycle() }
     }
+    /** ZXing QR for the publication footer, generated at 2× its drawn size. */
+    private fun qrBitmap(contents: String, size: Int): Bitmap {
+        val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(contents, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        for (x in 0 until size) for (y in 0 until size) bitmap.setPixel(x, y, if (matrix.get(x, y)) Color.BLACK else Color.WHITE)
+        return bitmap
+    }
+
+    /**
+     * §4.5 manual variant: the chart slot holds the hand-logged temps as
+     * chips. "No controller" is a spec line (accent badge), not an apology,
+     * and the footnote says plainly that every number was entered by hand.
+     */
+    private fun manual(canvas: Canvas, root: JSONObject, rect: RectF, colors: ShareCardRenderTheme,
+        text: (String, Float, Float, Float, Float, Int, Int, Boolean, Boolean) -> Float) {
+        val temps = objects(root, "manualTemps")
+        require(temps.size in 1..12) { "Hand-logged temperatures are missing. Choose No hero or share a Cook Pack." }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        canvas.save(); canvas.clipRect(rect)
+        // The badge wears the theme accent; its label takes the card's
+        // background tone so it reads on light and dark themes alike.
+        val badge = RectF(rect.left, rect.top, rect.left + 252f, rect.top + 44f)
+        paint.color = colors.accent; canvas.drawRoundRect(badge, 10f, 10f, paint)
+        text("NO CONTROLLER", rect.left + 18f, rect.top + 8f, 220f, 24f, 1, colors.background, true, false)
+        text("LOGGED TEMPS", rect.left + 276f, rect.top + 10f, 300f, 20f, 1, colors.supporting, true, false)
+        // Chips fill the rows the slot actually has; any remainder is
+        // summarized in a final chip, never drawn over the milestones —
+        // the full log lives in the Cook Pack, as with the simplified trace.
+        val cols = 2; val gap = 14f; val chipH = 60f
+        val chipW = (rect.width() - gap * (cols - 1)) / cols
+        val top = rect.top + 58f
+        val rowsFit = max(1, ((rect.height() - 58f - 30f + gap) / (chipH + gap)).toInt())
+        val slots = rowsFit * cols
+        val shown = if (temps.size <= slots) temps else temps.take(slots - 1)
+        val overflow = temps.size - shown.size
+        shown.forEachIndexed { i, item ->
+            val cx = rect.left + (i % cols) * (chipW + gap); val cy = top + (i / cols) * (chipH + gap)
+            paint.color = colors.divider; paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
+            canvas.drawRoundRect(RectF(cx, cy, cx + chipW, cy + chipH), 12f, 12f, paint); paint.style = Paint.Style.FILL
+            text(item.getString("label"), cx + 20f, cy + 15f, 170f, 26f, 1, colors.supporting, false, true)
+            text(item.getString("value"), cx + 196f, cy + 12f, chipW - 212f, 30f, 1, colors.ink, true, false)
+        }
+        if (overflow > 0) {
+            val i = shown.size; val cx = rect.left + (i % cols) * (chipW + gap); val cy = top + (i / cols) * (chipH + gap)
+            text("+$overflow MORE IN THE COOK PACK", cx + 4f, cy + 15f, chipW - 8f, 24f, 1, colors.supporting, true, false)
+        }
+        text("EVERY NUMBER ENTERED BY HAND", rect.left, rect.bottom - 24f, rect.width(), 19f, 1, colors.supporting, false, false)
+        canvas.restore()
+    }
+
     private fun chart(canvas: Canvas, root: JSONObject, rect: RectF, colors: ShareCardRenderTheme,
-        text: (String, Float, Float, Float, Float, Int, Int, Boolean) -> Float) {
+        text: (String, Float, Float, Float, Float, Int, Int, Boolean, Boolean) -> Float) {
         val curves = objects(root, "curves"); val all = curves.flatMap { c -> c.getJSONArray("segments").let { a -> (0 until a.length()).flatMap { i -> a.getJSONArray(i).let { s -> (0 until s.length()).map { s.getJSONObject(it) } } } } }
         require(all.isNotEmpty() && all.all { it.getDouble("x").isFinite() && it.getDouble("y").isFinite() }) { "These readings cannot be drawn. Choose No hero or share a Cook Pack." }
         val x0 = all.minOf { it.getDouble("x") }; val x1 = max(x0 + 1, all.maxOf { it.getDouble("x") })
@@ -134,10 +198,10 @@ object ShareCardRenderer {
         fun y(v: Double) = p.bottom - ((v - y0) / (y1 - y0) * p.height()).toFloat()
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2f }
         val supporting = colors.supporting; val palette = colors.palette
-        repeat(3) { i -> val v = y0 + (y1 - y0) * i / 2; paint.color = colors.divider; canvas.drawLine(p.left, y(v), p.right, y(v), paint); text(String.format(Locale.US,"%.0f",v),rect.left,y(v)-12,62f,18f,1,supporting,false) }
-        text(root.getString("unit"), rect.left, rect.top - 8, 62f, 18f, 1, supporting, false)
-        text("Simplified trace · ${curves.size} of ${root.getInt("channelCount")} channels",rect.right-370,rect.top-8,370f,18f,1,supporting,false)
-        text("${String.format(Locale.US,"%.0f",x0)} → ${String.format(Locale.US,"%.0f",x1)} min since each dish's Food on", p.left, p.bottom + 8, p.width(), 19f, 1, supporting, false)
+        repeat(3) { i -> val v = y0 + (y1 - y0) * i / 2; paint.color = colors.divider; canvas.drawLine(p.left, y(v), p.right, y(v), paint); text(String.format(Locale.US,"%.0f",v),rect.left,y(v)-12,62f,18f,1,supporting,false,false) }
+        text(root.getString("unit"), rect.left, rect.top - 8, 62f, 18f, 1, supporting, false, false)
+        text("Simplified trace · ${curves.size} of ${root.getInt("channelCount")} channels",rect.right-370,rect.top-8,370f,18f,1,supporting,false,false)
+        text("${String.format(Locale.US,"%.0f",x0)} → ${String.format(Locale.US,"%.0f",x1)} min since each dish's Food on", p.left, p.bottom + 8, p.width(), 19f, 1, supporting, false, false)
         curves.forEachIndexed { i, curve ->
             paint.color = palette[i % palette.size]; paint.strokeWidth = 4f
             val segments = curve.getJSONArray("segments")
@@ -149,7 +213,7 @@ object ShareCardRenderer {
                     canvas.drawCircle(at.x, at.y, 4f, paint)
                 }
             }
-            text("${i+1}. ${curve.getString("label")}", rect.left + i%2 * rect.width()/2, rect.bottom - 70 + i/2*24, rect.width()/2 - 10, 19f, 1, palette[i % palette.size], false)
+            text("${i+1}. ${curve.getString("label")}", rect.left + i%2 * rect.width()/2, rect.bottom - 70 + i/2*24, rect.width()/2 - 10, 19f, 1, palette[i % palette.size], false, false)
         }
     }
 }

@@ -89,6 +89,12 @@ internal class PublicationOperationsStore(val directory: File) {
     }
     fun pending(user: String): PublicationOperation? = synchronized(lock) { load(user).optJSONObject("pending")?.let(PublicationOperation::parse) }
     fun binding(user: String, draft: String): PublicationReceipt? = synchronized(lock) { load(user).getJSONObject("bindings").optJSONObject(draft)?.let(PublicationReceipt::parse) }
+    /** The local draft a publication was posted from, if this device holds it (Flowing §4.5: My Cookbook's share-card door). */
+    fun bindingForItem(user: String, itemId: String): Pair<String, PublicationReceipt>? = synchronized(lock) {
+        val bindings = load(user).getJSONObject("bindings")
+        bindings.keys().asSequence().firstOrNull { draft -> bindings.optJSONObject(draft)?.optString("id") == itemId }
+            ?.let { draft -> draft to PublicationReceipt.parse(bindings.getJSONObject(draft)) }
+    }
     fun editContext(user: String,draft: String): PublicationEditContext? = synchronized(lock) { load(user).optJSONObject("editContexts")?.optJSONObject(draft)?.let(PublicationEditContext::parse) }
     fun attachEditContext(user: String,draft: String,context: PublicationEditContext) = synchronized(lock) {
         context.validate();require(publicationUuid(draft));val state=load(user);check(state.isNull("pending") && !state.getJSONObject("bindings").has(draft))
@@ -212,6 +218,9 @@ internal class PublicationWriter(private val session: PublicationSession, val st
     }
     suspend fun binding(draft: String): PublicationReceipt? {
         val user=session.userId() ?: return null; val value=withContext(Dispatchers.IO) { store.binding(user,draft) }; check(session.userId()==user); return value
+    }
+    suspend fun bindingForItem(itemId: String): Pair<String, PublicationReceipt>? {
+        val user=session.userId() ?: return null; val value=withContext(Dispatchers.IO) { store.bindingForItem(user,itemId) }; check(session.userId()==user); return value
     }
     private suspend fun perform(op: PublicationOperation): JSONObject {
         check(!op.rejected) { "Review the rejected preview before starting another publication." }

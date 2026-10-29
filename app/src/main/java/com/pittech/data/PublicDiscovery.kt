@@ -39,13 +39,17 @@ internal fun publicDiscoverPath(sort: String,food: String,query: String,category
     val base="/v1/discover?sort="+java.net.URLEncoder.encode(sort,"UTF-8")+"&food="+java.net.URLEncoder.encode(food,"UTF-8")+"&q="+java.net.URLEncoder.encode(query,"UTF-8")
     return if(category.isNullOrEmpty()) base else base+"&category="+java.net.URLEncoder.encode(category,"UTF-8")
 }
-internal data class PublicDetail(val id: String,val revisionId: String,val payload: JSONObject,val credit: String,val media: List<JSONObject>,val profileUrl: String? = null,val publisherAlias:String?=null) {
+internal data class PublicDetail(val id: String,val revisionId: String,val payload: JSONObject,val credit: String,val media: List<JSONObject>,val profileUrl: String? = null,val publisherAlias:String?=null,val likes:Int?=null,val forks:Int?=null) {
     val title get()=payload.getString("title")
     val recipes get()=payload.getJSONArray("recipes").let { a->(0 until a.length()).map(a::getJSONObject) }
     val hero get()=media.firstOrNull { it.getString("id") == payload.optString("heroAssetId") }
     companion object { fun parse(o: JSONObject): PublicDetail {
         val media=o.getJSONArray("media").let { a->(0 until a.length()).map(a::getJSONObject) }
-        val value=PublicDetail(o.getString("id"),o.getString("revisionId"),o.getJSONObject("payload"),o.getJSONObject("credit").getString("displayName"),media,o.getJSONObject("credit").optString("profileUrl").takeIf { it.isNotEmpty() },if(o.isNull("publisherAlias"))null else o.getString("publisherAlias"))
+        // Counts are read tolerantly: responses cached before the server
+        // carried them simply have no counts to show (§4.5's slot rule).
+        val likes=if(o.has("likes") && !o.isNull("likes"))o.optInt("likes").takeIf { it in 0..1_000_000_000 } else null
+        val forks=if(o.has("forks") && !o.isNull("forks"))o.optInt("forks").takeIf { it in 0..1_000_000_000 } else null
+        val value=PublicDetail(o.getString("id"),o.getString("revisionId"),o.getJSONObject("payload"),o.getJSONObject("credit").getString("displayName"),media,o.getJSONObject("credit").optString("profileUrl").takeIf { it.isNotEmpty() },if(o.isNull("publisherAlias"))null else o.getString("publisherAlias"),likes,forks)
         require(publicUUID(value.id) && publicUUID(value.revisionId) && value.title.length in 1..160 && value.credit.length <= 160 && (value.publisherAlias==null || publicUUID(value.publisherAlias)) && value.recipes.size in 1..20 && media.size <= 600 && media.map { it.getString("id") }.distinct().size == media.size)
         value.recipes.forEach { r-> require(publicUUID(r.getString("id")) && r.getString("title").length in 1..160 && r.optString("description").length <= 2000 && r.getJSONArray("ingredients").length() <= 100 && r.getJSONArray("instructions").length() <= 100) }
         media.forEach { m->require(publicUUID(m.getString("id")) && m.getString("url") == "${OnlineConfiguration.current.apiOrigin}/v1/recipes/${value.id}/assets/${m.getString("id")}" && m.getString("sha256").matches(Regex("[a-f0-9]{64}")) && m.getString("mimeType") in setOf("image/jpeg","image/png","image/webp")) }
