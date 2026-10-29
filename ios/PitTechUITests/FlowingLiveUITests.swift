@@ -64,11 +64,15 @@ final class FlowingLiveUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["live-eta-basis"].label, "from your last 30 min of readings")
 
         // 1.5: the pit-target stepper writes the app's own target history.
+        // The post-tap assert WAITS for the new value: the write +
+        // re-render land a beat after the tap, and an immediate read
+        // raced it on a fast shard run (250° read at +0.3s).
         let targetValue = app.staticTexts["pit-target-value"]
         reveal(targetValue, app: app)
         XCTAssertEqual(targetValue.label, "250°")
         app.buttons["pit-target-plus"].tap()
-        XCTAssertEqual(targetValue.label, "255°")
+        let stepped = expectation(for: NSPredicate(format: "label == '255°'"), evaluatedWith: targetValue)
+        XCTAssertEqual(XCTWaiter.wait(for: [stepped], timeout: 10), .completed, "stepper never showed 255°")
         XCTAssertTrue(app.buttons["live-conditions-changed"].exists)
 
         // 1.3 + Spread 02: the hero is a door to the full chart; the
