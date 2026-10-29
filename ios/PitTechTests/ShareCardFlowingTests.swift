@@ -128,11 +128,33 @@ import Vision
         XCTAssertEqual(image.cgImage?.height, 1350)
         let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.png")
         attachment.name = "Publication share card"; attachment.lifetime = .keepAlways; add(attachment)
+        let url = "https://pittech.app/c/\(itemId)"
+        // Stage 1: the generated code itself decodes. This isolates
+        // generation from placement — a failure here is the renderer,
+        // a failure below is the card.
+        let standalone = try XCTUnwrap(NativeShareCardQR.image(url)?.cgImage, "the QR generator must produce an image")
+        let soloRequest = VNDetectBarcodesRequest(); soloRequest.symbologies = [.qr]
+        try VNImageRequestHandler(cgImage: standalone, options: [:]).perform([soloRequest])
+        let solo = (soloRequest.results ?? []).compactMap(\.payloadStringValue)
+        XCTAssertTrue(solo.contains(url), "the generated QR itself must decode to the canonical URL; decoded: \(solo)")
+        // Stage 2: the code as printed on the card decodes. Vision's
+        // detector does not find a 118 px code in a full 1080×1350
+        // frame (ZXing, Android's decoder, does), so the footer is
+        // framed the way a phone camera frames it: crop the card's
+        // bottom-right — the footer's home — and scale it up with
+        // nearest-neighbour so the modules stay hard-edged.
+        let full = try XCTUnwrap(image.cgImage)
+        let footerCrop = try XCTUnwrap(full.cropping(to: CGRect(x: 810, y: 1080, width: 270, height: 270)))
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let framed = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 1080), format: format).image { context in
+            context.cgContext.interpolationQuality = .none
+            UIImage(cgImage: footerCrop).draw(in: CGRect(x: 0, y: 0, width: 1080, height: 1080))
+        }
         let request = VNDetectBarcodesRequest()
         request.symbologies = [.qr]
-        try VNImageRequestHandler(cgImage: try XCTUnwrap(image.cgImage), options: [:]).perform([request])
+        try VNImageRequestHandler(cgImage: try XCTUnwrap(framed.cgImage), options: [:]).perform([request])
         let payloads = (request.results ?? []).compactMap(\.payloadStringValue)
-        XCTAssertTrue(payloads.contains("https://pittech.app/c/\(itemId)"),
+        XCTAssertTrue(payloads.contains(url),
                       "the footer QR must decode to the canonical URL; decoded: \(payloads)")
     }
 

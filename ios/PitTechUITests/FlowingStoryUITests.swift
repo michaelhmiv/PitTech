@@ -17,16 +17,23 @@ final class FlowingStoryUITests: XCTestCase {
     }
 
     private func reveal(_ element: XCUIElement, app: XCUIApplication) {
-        // The recipe detail is a List pushed over the Recipes list:
-        // the covered list's containers stay in the AX tree, so
-        // firstMatch swipes scroll the wrong surface. Drag on the
-        // window's content area instead — the drag lands on the
-        // foreground surface, like MealRecipeFlowsTests' servo drags.
-        for _ in 0..<18 {
+        // The recipe detail is a List pushed over the Recipes list,
+        // and both stay in the AX tree: firstMatch containers and
+        // window-level drags were both absorbed without scrolling the
+        // detail (runs 40933157263 / 40947320166 — the button never
+        // entered the hierarchy). Swipe the detail's own table: the
+        // last table in tree order is the pushed screen's.
+        for _ in 0..<12 {
             if element.exists && element.isHittable { return }
-            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
-            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
-            start.press(forDuration: 0.01, thenDragTo: end)
+            if let table = app.tables.allElementsBoundByIndex.last {
+                table.swipeUp()
+            } else {
+                app.swipeUp()
+            }
+        }
+        if !element.exists {
+            // Self-diagnosing failure: the tree lands in the shard log.
+            print(app.debugDescription)
         }
     }
 
