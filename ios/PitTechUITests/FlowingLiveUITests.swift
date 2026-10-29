@@ -30,7 +30,10 @@ final class FlowingLiveUITests: XCTestCase {
             let button = app.tabBars.buttons[tab]
             XCTAssertTrue(button.waitForExistence(timeout: 10), "tab \(tab)")
             button.tap()
-            XCTAssertTrue(app.otherElements["pittech-brand-strip"].waitForExistence(timeout: 10), "brand strip on \(tab)")
+            // The strip combines its children into one accessibility
+            // element, which SwiftUI surfaces as a StaticText — query it
+            // type-agnostically.
+            XCTAssertTrue(app.descendants(matching: .any)["pittech-brand-strip"].waitForExistence(timeout: 10), "brand strip on \(tab)")
         }
         app.tabBars.buttons["Meals"].tap()
         let fab = app.buttons["start-cook-fab"]
@@ -51,20 +54,27 @@ final class FlowingLiveUITests: XCTestCase {
         let headline = app.staticTexts["live-verdict-headline"]
         XCTAssertTrue(headline.waitForExistence(timeout: 15))
         XCTAssertEqual(headline.label, "On pace — nothing needs doing.")
+        // Below-fold board content is only materialized in the
+        // accessibility tree once scrolled toward — reveal before
+        // asserting, like the rest of this suite.
         let etaRange = app.staticTexts["live-eta-range"]
+        reveal(etaRange, app: app)
         XCTAssertTrue(etaRange.waitForExistence(timeout: 10))
         XCTAssertTrue(etaRange.label.hasPrefix("Done "), etaRange.label)
         XCTAssertEqual(app.staticTexts["live-eta-basis"].label, "from your last 30 min of readings")
 
         // 1.5: the pit-target stepper writes the app's own target history.
-        XCTAssertEqual(app.staticTexts["pit-target-value"].label, "250°")
+        let targetValue = app.staticTexts["pit-target-value"]
+        reveal(targetValue, app: app)
+        XCTAssertEqual(targetValue.label, "250°")
         app.buttons["pit-target-plus"].tap()
-        XCTAssertEqual(app.staticTexts["pit-target-value"].label, "255°")
+        XCTAssertEqual(targetValue.label, "255°")
         XCTAssertTrue(app.buttons["live-conditions-changed"].exists)
 
         // 1.3 + Spread 02: the hero is a door to the full chart; the
         // ghost delta speaks at the cursor.
         let hero = app.buttons["live-chart-hero"]
+        reveal(hero, app: app)
         XCTAssertTrue(hero.waitForExistence(timeout: 10))
         hero.tap()
         XCTAssertTrue(app.staticTexts["live-chart-readout"].waitForExistence(timeout: 15))
