@@ -62,7 +62,7 @@ internal class CommunityClient(client:OkHttpClient=OkHttpClient()):CommunityAPI{
     override suspend fun call(path:String,body:String?,access:String?,session:String):JSONObject{
         require(AccountProtocol.credential(session) && (body?.toByteArray()?.size?:0)<=8192 && (path in setOf("/v1/reports","/v1/me/blocks") || path.matches(Regex("/v1/reports/[a-fA-F0-9-]{36}"))) && (path!="/v1/reports" || body!=null))
         val builder=Request.Builder().url("${OnlineConfiguration.current.apiOrigin}$path").header("Accept","application/json").header("Cache-Control","no-store").header("X-PitTech-Report-Session",session)
-        if(body!=null)builder.post(body.toRequestBody("application/json".toMediaType()))
+        if(body!=null)builder.post(body.toByteArray().toRequestBody("application/json".toMediaType()))
         if(access!=null){require(AccountProtocol.credential(access));builder.header("Authorization","Bearer $access")}
         return suspendCancellableCoroutine{c->val call=client.newCall(builder.build());c.invokeOnCancellation{call.cancel()};call.enqueue(object:Callback{
             override fun onFailure(call:Call,e:IOException){if(c.isActive)c.resumeWithException(PublicFailure())}
