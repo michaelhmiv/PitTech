@@ -161,7 +161,11 @@ class PublicationForkTest {
         val snapshot = RecipeSnapshotCodec.decode(prepared.snapshot.recipeRevisions[0].snapshotJson)
         assertEquals("Oak-smoked pork shoulder — my version", snapshot.name)
         assertEquals("Oak-smoked pork shoulder", snapshot.dish.name) // the dish keeps its name
-        assertEquals("House rub", snapshot.dish.rub)
+        // The rub reads back the way every saved-recipe reader reads it:
+        // the rub-staged preparation item (the snapshot codec does not
+        // carry DishDraft.rub — asserting the field would bless a value
+        // that vanishes at encode time).
+        assertEquals("House rub", com.pittech.domain.CookInputVocabulary.rubFromIngredients(snapshot.dish.preparationItems))
         val wrap = snapshot.instructions.first { it.action == "wrap" }
         assertEquals("Foil", wrap.method)
         assertEquals(1, snapshot.targets.size)

@@ -136,7 +136,7 @@ import java.util.UUID
             val snapshot = runBlocking(Dispatchers.IO) {
                 RecipeSnapshotCodec.decode(database.recipeDao().revision(pork.currentRevisionId)!!.snapshotJson)
             }
-            assertEquals("House rub", snapshot.dish.rub)
+            assertEquals("House rub", com.pittech.domain.CookInputVocabulary.rubFromIngredients(snapshot.dish.preparationItems))
             assertEquals("Foil", snapshot.instructions.first { it.action == "wrap" }.method)
             assertEquals(165.0, snapshot.targets.single().value, 0.0)
             assertEquals(id, snapshot.publicSource!!.itemId)

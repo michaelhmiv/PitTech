@@ -168,7 +168,9 @@ internal object PublicationFork {
 
     private fun changeNotes(detail: PublicDetail, recipe: JSONObject, converted: RecipeSnapshot, tweak: Tweak): String {
         val parts = mutableListOf<String>()
-        if (tweak.rub.isNotBlank() && tweak.rub.trim() != converted.dish.rub) parts += "Rub: ${tweak.rub.trim()}"
+        // A publication payload carries no rub at all, so any rub typed
+        // in the sheet is a real change by construction.
+        if (tweak.rub.isNotBlank()) parts += "Rub: ${tweak.rub.trim()}"
         if (tweak.wrap != WrapChoice.AS_WRITTEN) parts += "Wrap: ${wrapMaterial(tweak.wrap).label}"
         if (tweak.targetF != null) parts += "Target: ${formatTarget(tweak.targetF)}°F"
         val renamed = tweak.name.trim() != recipe.getString("title")
@@ -186,8 +188,17 @@ internal object PublicationFork {
     private fun applyTweak(snapshot: RecipeSnapshot, tweak: Tweak): RecipeSnapshot {
         var result = snapshot
         if (tweak.name.isNotBlank()) result = result.copy(name = tweak.name.trim())
-        if (tweak.rub.isNotBlank() && tweak.rub.trim() != result.dish.rub) {
-            result = result.copy(dish = result.dish.copy(rub = tweak.rub.trim()))
+        if (tweak.rub.isNotBlank()) {
+            // The rub lands as the rub-staged preparation item — the
+            // form every reader reads back for a saved recipe (cook
+            // creation's retain fallback, the version editor's rub
+            // field, the §4.2 provenance capture). The snapshot codec
+            // does not carry DishDraft.rub, so setting the field alone
+            // would silently drop the decision at encode time (caught
+            // by PublicationForkTest on the first CI run).
+            val items = result.dish.preparationItems.filterNot { it.stage.equals("rub", ignoreCase = true) } +
+                IngredientDraft(name = tweak.rub.trim(), stage = "rub")
+            result = result.copy(dish = result.dish.copy(preparationItems = items))
         }
         if (tweak.wrap != WrapChoice.AS_WRITTEN) {
             val label = wrapMaterial(tweak.wrap).label
