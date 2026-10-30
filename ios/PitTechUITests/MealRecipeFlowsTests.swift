@@ -369,6 +369,19 @@ final class MealRecipeFlowsTests: XCTestCase {
         guard starred.waitForExistence(timeout: 15) else { return bail() }
         // Fork → tweak-lite: rub, wrap and target are the only decisions.
         let fork = app.buttons["public-fork"]; reveal(fork, app: app); fork.tap()
+        // Present the sheet twice. The first presentation lands while
+        // the star write is still settling into the coordinator, and on
+        // stalled runners its fields refused first responder for that
+        // presentation's whole life across five consecutive CI drives —
+        // including across full app relaunches, which replay the same
+        // star → fork sequence. A dismiss and re-present gives the test
+        // a clean sheet whose presentation follows no write.
+        let probe = app.textFields["fork-name-0"]
+        if probe.waitForExistence(timeout: 10) {
+            app.buttons["Cancel"].tap()
+            for _ in 0..<20 where probe.exists { Thread.sleep(forTimeInterval: 0.5) }
+            if !probe.exists { reveal(fork, app: app); fork.tap() }
+        }
         // Let the sheet finish presenting before touching its fields,
         // then warm the keyboard up on the name field: a cold first
         // responder inside a just-presented sheet is where the runner
