@@ -30,11 +30,15 @@ import org.json.JSONObject
     var showFork by remember{mutableStateOf(false)}
     var forkInFlight by remember{mutableStateOf(false)}
     // The tweak sheet closes when its fork lands; a failure leaves it
-    // open with the error showing, tweaks intact.
-    LaunchedEffect(state.forking) {
-        if(forkInFlight && !state.forking) {
+    // open with the error showing, tweaks intact. Keyed on the saved
+    // state itself, not just the forking transition: a fast fork can
+    // start and finish between compositions, and a transition-only
+    // observer never sees it end (the chain flow test caught the
+    // sheet hanging open on exactly that race).
+    LaunchedEffect(state.forking,state.savedDetailId) {
+        if(forkInFlight && !state.forking && state.savedDetailId!=null && state.savedDetailId==state.detailId) {
             forkInFlight=false
-            if(state.savedDetailId!=null && state.savedDetailId==state.detailId)showFork=false
+            showFork=false
         }
     }
     LaunchedEffect(state.detailId) { if(state.detailId==null)showFork=false }

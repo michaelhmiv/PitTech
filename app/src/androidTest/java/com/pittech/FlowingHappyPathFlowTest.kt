@@ -127,10 +127,12 @@ import java.util.UUID
             compose.onNodeWithTag("fork-target-0").performScrollTo().performTextReplacement("165")
             shot("public-fork-tweak")
             // The text entries leave the soft keyboard up over the
-            // sheet; at the 1.5 font scale its save tap can land on
-            // the keyboard instead of the button (this step timed out
-            // at font 1.5 while passing at 1.15). Dismiss and settle
-            // first, then tap, then wait on the fork's own state.
+            // sheet; dismiss it and settle before the save tap so the
+            // tap can't land on the keyboard at the 1.5 font scale.
+            // (The sheet-close wait below is the regression net for
+            // the close race the screen fixed: a fast fork could
+            // finish between compositions and leave the sheet open
+            // even though the save had landed.)
             closeFocusedSoftKeyboard()
             compose.waitForIdle()
             compose.onNodeWithTag("fork-save").performScrollTo().performClick()
