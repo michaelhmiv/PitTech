@@ -59,6 +59,10 @@ import java.util.Base64
         compose.onNodeWithTag("source-review-done").performScrollTo().performClick();compose.onNodeWithTag("recipe-details-close").performClick()
         compose.onNodeWithTag("nav-discover").performClick()
         compose.onNodeWithTag("public-cook").performScrollTo().performClick();waitFor("pack-save-recipes")
+        // The pack's selective preview still exists — through Cook
+        // this now, since Fork replaced the pack Save. The evidence
+        // screenshot keeps documenting this surface.
+        shot("public-selective-preview")
         compose.onNodeWithTag("pack-save-recipes").assertIsDisplayed().performClick()
         // PL-19: "Cook this" lands on the Start Cook review — nothing is
         // cooking until the setup is confirmed there.
