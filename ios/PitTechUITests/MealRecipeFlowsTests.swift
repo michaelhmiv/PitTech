@@ -309,12 +309,22 @@ final class MealRecipeFlowsTests: XCTestCase {
     @discardableResult
     private func enterText(_ text: String, into field: XCUIElement, app: XCUIApplication, clearingFirst: Bool = false) -> Bool {
         guard field.waitForExistence(timeout: 15) else { return false }
+        if !field.isHittable { reveal(field, app: app) }
+        Thread.sleep(forTimeInterval: 1)
         for _ in 0..<3 {
-            for _ in 0..<10 where !field.hasFocus {
-                field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-                _ = field.waitForExistence(timeout: 1)
+            // Alternate the tap mechanism — an element tap, then a raw
+            // window-coordinate tap at the field's center; the two reach
+            // first responder through different event paths, and a
+            // stalled session often answers one when it ignores the other.
+            for attempt in 0..<6 where !field.hasFocus {
+                if attempt % 2 == 0 {
+                    field.tap()
+                } else if field.frame.width > 0, field.frame.height > 0 {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                        .withOffset(CGVector(dx: field.frame.midX, dy: field.frame.midY)).tap()
+                }
+                _ = app.keyboards.firstMatch.waitForExistence(timeout: 2)
                 if field.hasFocus { break }
-                Thread.sleep(forTimeInterval: 0.5)
             }
             guard field.hasFocus else { continue }
             if clearingFirst, let current = field.value as? String, !current.isEmpty, current != field.placeholderValue {
@@ -359,6 +369,18 @@ final class MealRecipeFlowsTests: XCTestCase {
         guard starred.waitForExistence(timeout: 15) else { return bail() }
         // Fork → tweak-lite: rub, wrap and target are the only decisions.
         let fork = app.buttons["public-fork"]; reveal(fork, app: app); fork.tap()
+        // Let the sheet finish presenting before touching its fields,
+        // then warm the keyboard up on the name field: a cold first
+        // responder inside a just-presented sheet is where the runner
+        // stalls bite, and entering the rub field with the keyboard
+        // already up takes the transfer path instead.
+        let name = app.textFields["fork-name-0"]
+        if name.waitForExistence(timeout: 10) {
+            Thread.sleep(forTimeInterval: 2)
+            for _ in 0..<5 where !app.keyboards.firstMatch.exists {
+                name.tap(); _ = app.keyboards.firstMatch.waitForExistence(timeout: 2)
+            }
+        }
         let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app)
         guard enterText("House rub", into: rub, app: app) else { return bail() }
         let foil = app.buttons["fork-wrap-0-foil"]; reveal(foil, app: app); foil.tap()
