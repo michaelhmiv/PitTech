@@ -36,10 +36,12 @@ internal fun UpcomingCooks(viewModel: CooksViewModel) {
     OutlinedButton(onClick = { viewModel.planServeTime() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("plan-serving-time")) { Text("Plan a serving time") }
     upcoming.forEach { r ->
         val plan = remember(r.payload) { ServeTimePlanner.decode(r.payload) }
-        val windows = ServeTimePlanner.windows(plan)
-        // A3 `dark-27-upcoming`: the plan as a lane — banner name with the
-        // Not started stamp, the serve line in mono, and the backwards
-        // rail (preheat → food on → ready → serve, serve loudest).
+        // Spread 03: the saved plan reads as its day-board — the start
+        // time first, the dishes as lanes against the serve line. A plan
+        // saved before warn-and-stretch landed may still carry a
+        // conflict; the board resolves it for display (the editor's save
+        // makes the resolution durable).
+        val timeline = remember(plan) { PlanBoard.resolvedTimeline(plan, chosenPitF = null) }
         TurnInCard(Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -47,16 +49,7 @@ internal fun UpcomingCooks(viewModel: CooksViewModel) {
                     NotStartedBadge(Modifier.testTag("upcoming-not-started"))
                 }
                 Text("Serve ${serveTime(plan.serveAt, plan.zoneId)} · ${plan.zoneId}", style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
-                if (windows.isNotEmpty()) {
-                    val clock = DateTimeFormatter.ofPattern("HH:mm")
-                    fun at(millis: Long) = Instant.ofEpochMilli(millis).atZone(ZoneId.of(plan.zoneId)).format(clock)
-                    TurnInMilestoneRail(listOf(
-                        TurnInRailStep("Preheat", at(windows.minOf { it.preheatAt }), TurnInRailState.UPCOMING),
-                        TurnInRailStep("Food on", at(windows.minOf { it.foodOnAt }), TurnInRailState.UPCOMING),
-                        TurnInRailStep("Ready", at(windows.maxOf { it.readyLatest }), TurnInRailState.UPCOMING),
-                        TurnInRailStep("Serve", at(plan.serveAt), TurnInRailState.CURRENT),
-                    ))
-                }
+                PlanDayBoard(plan, timeline, onChoosePit = null)
                 Button(onClick = { viewModel.previewScheduledCook(r.id) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Review and start") }
                 FlowRow { TextButton(onClick = { viewModel.planServeTime(scheduledId = r.id) }) { Text("Adjust schedule") }; TextButton(onClick = { viewModel.deleteScheduledCook(r.id) }) { Text("Delete plan") } }
             }
@@ -68,12 +61,51 @@ internal fun UpcomingCooks(viewModel: CooksViewModel) {
 internal fun ServePlanDialogs(viewModel: CooksViewModel) {
     val plan by viewModel.servePlanEditor.collectAsStateWithLifecycle()
     val evidence by viewModel.durationEvidence.collectAsStateWithLifecycle()
-    plan?.let { ServePlanEditor(it, evidence, viewModel::closeServePlan, viewModel::saveServePlan) }
+    var seedOptions by remember { mutableStateOf<List<PlanSeedOption>>(emptyList()) }
+    LaunchedEffect(plan != null) { if (plan != null) seedOptions = viewModel.planSeedOptions() }
+    plan?.let { ServePlanEditor(it, evidence, seedOptions, viewModel::closeServePlan, viewModel::saveServePlan) }
+}
+
+/**
+ * Flowing 3.4: pick a library recipe to seed a lane. A recipe whose
+ * source cook recorded durations shows them; one without has nothing
+ * honest to seed from and says so — it is not offered as a seed.
+ */
+@Composable
+private fun PlanSeedPicker(options: List<PlanSeedOption>, onDismiss: () -> Unit, onSeed: (PlanSeedOption) -> Unit) {
+    val tokens = pitTechTokens()
+    // DD-6 dialog grammar: a list picker is a full screen, not a dialog.
+    FullScreenSurface(onDismiss = onDismiss, title = "Add from a recipe", actions = {
+        TextButton(onClick = onDismiss) { Text("Done") }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("plan-seed-picker"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (options.isEmpty()) Text("No saved recipes yet. Save a dish as a recipe and it can seed a lane here.", style = PitTechTextStyles.body)
+            options.forEach { option ->
+                val seeded = option.seeded
+                TurnInCard(Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TurnInBannerText(option.recipeName)
+                        if (seeded != null) {
+                            Text(seeded.schedule.evidenceNote, style = PitTechTextStyles.body, color = tokens.inkMuted)
+                            Button(
+                                onClick = { onSeed(option) },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("plan-seed-option-${option.recipeId}"),
+                            ) { Text("Add ${option.snapshot.dish.name} with these durations") }
+                        } else {
+                            Text("No recorded cook to seed durations from — add the dish by hand instead.", style = PitTechTextStyles.body, color = tokens.inkMuted)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>, onClose: () -> Unit, onSave: (ServePlan) -> Unit) {
+private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>, seedOptions: List<PlanSeedOption>, onClose: () -> Unit, onSave: (ServePlan) -> Unit) {
     var plan by remember(initial) { mutableStateOf(initial) }
+    var chosenPitF by remember(initial) { mutableStateOf<Double?>(null) }
+    var showSeedPicker by remember { mutableStateOf(false) }
     val local = Instant.ofEpochMilli(initial.serveAt).atZone(ZoneId.of(initial.zoneId))
     var date by remember { mutableStateOf(local.toLocalDate().toString()) }
     var time by remember { mutableStateOf(local.toLocalTime().withSecond(0).withNano(0).toString()) }
@@ -91,6 +123,16 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
         plan = plan.copy(book = plan.book.copy(draft = plan.book.draft.copy(dishes = dishes)), schedules = schedules); editingDish = null
     }) }
     editingSchedule?.let { i -> DishScheduleEditor(plan.schedules[i], plan.book.draft.dishes[i], plan.book, evidence, { editingSchedule = null }) { s -> plan = plan.copy(schedules = plan.schedules.map { if (it.dishIndex == i) s else it }); editingSchedule = null } }
+    if (showSeedPicker) PlanSeedPicker(seedOptions, onDismiss = { showSeedPicker = false }) { option ->
+        option.seeded?.let { seeded ->
+            val index = plan.book.draft.dishes.size
+            plan = plan.copy(
+                book = plan.book.copy(draft = plan.book.draft.copy(dishes = plan.book.draft.dishes + seeded.dish)),
+                schedules = plan.schedules + seeded.schedule.copy(dishIndex = index),
+            )
+        }
+        showSeedPicker = false
+    }
     val preview = runCatching { plan.copy(serveAt = ServeTimePlanner.localGoal(date, time, zone, laterOffset), zoneId = zone, bufferMinutes = buffer.toLong()).also(ServeTimePlanner::validate) }.getOrNull()
     val offsets = runCatching { ZoneId.of(zone).rules.getValidOffsets(LocalDate.parse(date).atTime(LocalTime.parse(time))).size }.getOrDefault(1)
     val tokens = pitTechTokens()
@@ -101,14 +143,22 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
     // The hero formats in the field's zone while it parses, and in the
     // plan's own zone while the field is mid-edit garbage.
     val heroZone = runCatching { ZoneId.of(zone) }.getOrDefault(ZoneId.of(initial.zoneId))
+    // Spread 03: the day-board renders the plan being built — the last
+    // valid preview while the fields are mid-edit — with the cook's pit
+    // choice (or the board's stated default) resolving any conflict.
+    var lastValidPlan by remember(initial) { mutableStateOf(initial) }
+    LaunchedEffect(preview) { preview?.let { lastValidPlan = it } }
+    val boardPlan = preview ?: lastValidPlan
+    val boardTimeline = remember(boardPlan, chosenPitF) { PlanBoard.resolvedTimeline(boardPlan, chosenPitF) }
     // PL-22 (DD-6): the serve-time planner is a multi-field editor — full screen.
     FullScreenSurface(onDismiss = onClose, title = "Plan serving time", actions = {
         TextButton(onClick = onClose) { Text("Cancel") }
         TextButton(onClick = { runCatching {
             val saved = preview ?: throw IllegalArgumentException("Check the serving date, time zone and buffer.")
             require(saved.schedules.none { it.evidenceNote == "Enter your duration range" }) { "Review each dish's duration range." }
-            require(ServeTimePlanner.conflicts(saved).isEmpty()) { "Resolve the overlapping pit-temperature conflict before saving." }
-            onSave(saved)
+            // Flowing 3.3: a pit conflict warns and stretches — it never
+            // blocks the save. The saved plan embodies the resolution.
+            onSave(PlanBoard.stretchedPlan(saved, PlanBoard.resolvedTimeline(saved, chosenPitF)))
         }.onFailure { error = ErrorCopy.failureText(it, "That plan couldn't be saved. Nothing was changed — check the serving date, time zone and durations, then try again.") } }) { Text("Save plan") }
     }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -120,19 +170,7 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
                 Text(Instant.ofEpochMilli(goal).atZone(heroZone).format(DateTimeFormatter.ofPattern("h:mm a")), style = PitTechTextStyles.scoreboard)
                 Text(zone, style = PitTechTextStyles.monoMeta, color = tokens.inkMuted)
             }
-            preview?.let { p ->
-                val windows = ServeTimePlanner.windows(p)
-                if (windows.isNotEmpty()) {
-                    val clock = DateTimeFormatter.ofPattern("HH:mm")
-                    fun at(millis: Long) = Instant.ofEpochMilli(millis).atZone(ZoneId.of(p.zoneId)).format(clock)
-                    TurnInMilestoneRail(listOf(
-                        TurnInRailStep("Preheat", at(windows.minOf { it.preheatAt }), TurnInRailState.UPCOMING),
-                        TurnInRailStep("Food on", at(windows.minOf { it.foodOnAt }), TurnInRailState.UPCOMING),
-                        TurnInRailStep("Ready", at(windows.maxOf { it.readyLatest }), TurnInRailState.UPCOMING),
-                        TurnInRailStep("Serve", at(p.serveAt), TurnInRailState.CURRENT),
-                    ))
-                }
-            }
+            PlanDayBoard(boardPlan, boardTimeline, onChoosePit = { chosenPitF = it })
             TurnInBoxedField("Cook name") {
                 OutlinedTextField(plan.book.name, { plan = plan.copy(book = plan.book.copy(name = it, draft = plan.book.draft.copy(title = it))) }, modifier = Modifier.fillMaxWidth())
             }
@@ -159,13 +197,16 @@ private fun ServePlanEditor(initial: ServePlan, evidence: List<DurationEvidence>
                     }
                 }
             }
-            TextButton(onClick = { editingDish = plan.book.draft.dishes.size }) { Text("Add dish or side") }
+            FlowRow {
+                TextButton(onClick = { editingDish = plan.book.draft.dishes.size }) { Text("Add dish or side") }
+                TextButton(onClick = { showSeedPicker = true }, modifier = Modifier.testTag("plan-add-from-recipe")) { Text("Add from a recipe") }
+            }
             plan.book.steps.forEach { s -> TextButton(onClick = { editingStep = s }) { Text("Edit step · ${s.title}") } }
             TextButton(onClick = { editingStep = PlaybookStep() }) { Text("Add guided step") }
-            // A3 `dark-19`: the pit-temperature conflict is a flag strip,
-            // not a red line of body text (frame 20's error state keeps the
-            // same treatment for the save failure below).
-            preview?.let { p -> ServeTimePlanner.conflicts(p).forEach { (a, b) -> TurnInStatusStrip("Pit-temperature conflict: ${p.book.draft.dishes[a].name} and ${p.book.draft.dishes[b].name}. Adjust the method, durations or pit temperature before sharing one smoker.", tokens.flag) } }
+            // A3 `dark-19`'s conflict flag strip is superseded by the
+            // day-board above (Spread 03, 3.3): the conflict is the
+            // board's marigold warning with the stretch applied — the
+            // save below is never held hostage by it.
             Text("Saved plans do not start a cook or recording. Start when you're ready.", style = PitTechTextStyles.body, color = tokens.inkMuted)
             error?.let { TurnInStatusStrip(it, tokens.flag) }
         }

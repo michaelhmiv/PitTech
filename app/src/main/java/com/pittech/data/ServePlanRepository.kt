@@ -41,5 +41,41 @@ class ServePlanRepository(private val db: PitTechDatabase, private val companion
         db.companionDao().put(record.copy(payload = ServeTimePlanner.encode(started), updatedAtUtcMillis = System.currentTimeMillis()))
         val now = System.currentTimeMillis()
         db.companionDao().put(CompanionRecord("serve:$cookId", "serve_goal", cookId, record.title, ServeTimePlanner.encode(started), now, now))
+        armDerivedAlerts(cookId, started, orderedDishIds, now)
+    }
+
+    /**
+     * Flowing §4.4 / 3.5: starting the plan arms its alerts — the lanes'
+     * derived food-on / wrap / off alerts become reminder rules on the
+     * cook, derived from the plan, never re-entered by hand. Timed alerts
+     * arm as clock reminders under deterministic ids (a re-attach would
+     * replace, never duplicate). A condition-based alert (a wrap at a
+     * temperature) has no clock to arm; it rides the plan's guidance
+     * steps, which [CookCompanionRepository.applySnapshot] just attached.
+     * The reminder engine receives from here — reconcile evaluates and
+     * delivers like any other rule.
+     */
+    private suspend fun armDerivedAlerts(cookId: String, plan: ServePlan, orderedDishIds: List<String>?, now: Long) {
+        val timeline = PlanTimeline.derive(plan)
+        for (alert in timeline.alerts) {
+            val at = alert.atUtcMillis ?: continue
+            val trigger = ReminderTrigger.Clock(at)
+            val id = "plan:$cookId:${alert.dishIndex}:${alert.kind.name.lowercase()}"
+            db.reminderDao().putRule(ReminderRule(
+                id = id,
+                cookId = cookId,
+                dishId = orderedDishIds?.getOrNull(alert.dishIndex),
+                title = alert.label,
+                kind = ReminderTriggerCodec.kind(trigger),
+                triggerConfig = ReminderTriggerCodec.encode(trigger),
+                sourceRecipeRevisionId = null,
+                sourceMilestoneId = null,
+                enabled = true,
+                status = "pending",
+                createdAtUtcMillis = now,
+                updatedAtUtcMillis = now,
+            ))
+            db.reminderDao().putOccurrence(ReminderOccurrence("state:$id", id, 0, "pending"))
+        }
     }
 }
