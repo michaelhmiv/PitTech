@@ -251,6 +251,19 @@ struct SavedRecipeDetailView: View {
                     Text("This saved version is yours. Changes to the public recipe don't replace it.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                 }
                 if !snapshot.description.isEmpty { Text(snapshot.description).font(PitTechFont.body) }
+                // Flowing Slice 3 (Spread 06): the recipe opens with its
+                // story — the §4.3 payload for the revision's source
+                // cook, when that cook is still on this device. No
+                // payload, no block: the detail renders exactly as
+                // before, with no placeholder where the story would go.
+                if let revision = store.recipeRevision(revisionId),
+                   let provenance = store.recipeProvenance(sourceCookId: revision["sourceCookId"]?.stringValue, sourceDishId: revision["sourceDishId"]?.stringValue),
+                   provenance.sourceCookId == revision["sourceCookId"]?.stringValue,
+                   store.library.cooks.contains(where: { $0.id == provenance.sourceCookId }) {
+                    RecipeStoryBlock(provenance: provenance) {
+                        act { startSetup = try store.recipeStartSetup(title: recipe["name"]?.stringValue ?? "New meal", revisionIds: [revisionId], sourceLabel: "From your Recipes · saved recipes stay attached to their dishes") }
+                    }
+                }
                 // The scoreboard row: pit temperature, serves, and the
                 // first recorded target — the same cells Android's detail
                 // shows, from the same snapshot fields.

@@ -31,7 +31,8 @@
       "CommunityBenchmarksUITests",
       "ProPaywallUITests",
       "SettingsAppearanceUITests",
-      "FlowingLiveUITests"
+      "FlowingLiveUITests",
+      "FlowingStoryUITests"
     ]
   },
   "uiTarget": "PitTechUITests",
@@ -49,6 +50,7 @@
     "CookPackTests",
     "CrossPlatformArchiveTests",
     "FeedbackClientTests",
+    "FlowingE4LogicTests",
     "InsightsCalculationsTests",
     "InsightsFreeToolsTests",
     "LibraryCompatibilityTests",
@@ -67,6 +69,7 @@
     "PrivateSyncStoreTests",
     "ProPaywallTests",
     "ProPersonalTests",
+    "ProvenanceArchiveSeamTests",
     "PublicDiscoveryTests",
     "PublicLinkTests",
     "PublicationAcceptanceTests",
@@ -77,6 +80,7 @@
     "RecipeProvenanceTests",
     "RecipeReferenceTimelineTests",
     "RelayTests",
+    "ShareCardFlowingTests",
     "ShareCardTests",
     "SharingDraftTests",
     "SourceComparisonTests",

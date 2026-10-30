@@ -98,6 +98,12 @@ private struct NativePublicationState: Codable {
     }
     func pending(_ user: String) throws -> NativePublicationOperation? { try load(user).pending }
     func binding(_ user: String, draft: String) throws -> NativePublicationReceipt? { try load(user).bindings[draft] }
+    /// The binding whose receipt is `itemId`, with the draft it hangs
+    /// off (Flowing Slice 3): My Cookbook's share-card door resolves a
+    /// publication back to the sharing draft that owns its card.
+    func bindingForItem(_ user: String, itemId: String) throws -> (draft: String, receipt: NativePublicationReceipt)? {
+        try load(user).bindings.first { $0.value.id == itemId }.map { (draft: $0.key, receipt: $0.value) }
+    }
     func editContext(_ user: String, draft: String) throws -> NativePublicationEditContext? { try load(user).editContexts?[draft] }
     func attachEditContext(_ user: String, draft: String, context: NativePublicationEditContext) throws {
         try context.validate(); guard UUID(uuidString: draft) != nil else { throw NativePublicationError.invalid }
@@ -215,6 +221,7 @@ struct NativePublicationClient: NativePublicationAPI {
     var userId: String? { session.publicationUserId }
     func pending() throws -> NativePublicationOperation? { guard let userId else { return nil }; return try store.pending(userId) }
     func binding(_ draft: String) throws -> NativePublicationReceipt? { guard let userId else { return nil }; return try store.binding(userId, draft: draft) }
+    func bindingForItem(_ itemId: String) throws -> (draft: String, receipt: NativePublicationReceipt)? { guard let userId else { return nil }; return try store.bindingForItem(userId, itemId: itemId) }
     private func perform(_ operation: NativePublicationOperation) async throws -> Data {
         guard !operation.rejected else { throw NativePublicationError.pending }
         guard operation.userId == userId else { throw NativePublicationError.accountChanged }

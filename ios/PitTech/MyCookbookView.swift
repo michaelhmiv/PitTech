@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 private struct NativeCookbookItem: Decodable, Identifiable {
     let id: String, status: String, revisionId: String, title: String, identityMode: String
@@ -7,8 +8,16 @@ private struct NativeCookbookItem: Decodable, Identifiable {
 }
 private struct NativeCookbookPage: Decodable { let items: [NativeCookbookItem]; let nextCursor: String? }
 private struct NativeCookbookProfile: Codable, Equatable { let handle: String?; let displayName: String; let isPublic: Bool; var reviewStatus: String? = nil }
+/// One posted-card presentation from My Cookbook (Spread 07): the
+/// resolved sharing draft plus the publication identity for its card.
+private struct CookbookCardRequest: Identifiable {
+    let id = UUID()
+    let draftId: String
+    let publication: ShareCardPublication
+}
 struct NativeMyCookbookView: View {
     @Environment(NativeAccountCoordinator.self) private var account
+    @Environment(NativePublicCoordinator.self) private var community
     @Environment(CookStore.self) private var store
     @State private var writer: NativePublicationWriter?
     @State private var loadedUser: String?
@@ -30,6 +39,11 @@ struct NativeMyCookbookView: View {
     @State private var ownerReceipt: NativePublicationReceipt?
     @State private var ownerUser: String?
     @State private var editingDraft: String?
+    @State private var cookbookCard: CookbookCardRequest?
+    @State private var cardPackRequested = false
+    @State private var exportDraftId: String?
+    @State private var exporting = false
+    @State private var exportDocument = PitTechArchiveDocument(data: Data())
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -85,6 +99,13 @@ struct NativeMyCookbookView: View {
                 if let item = removing { Button("Remove publication", role: .destructive) { removing = nil; run { try checkAccount(); _ = try await writer?.json(method: "DELETE", path: "/v1/recipes/" + item.id, body: Data("{}".utf8), expected: item.revisionId); try await reload() } }.accessibilityIdentifier("cookbook-unpublish-confirm") }
             }
             .navigationDestination(isPresented: Binding(get: { editingDraft != nil }, set: { if !$0 { editingDraft = nil } })) { if let editingDraft { SharingDraftView(id: editingDraft) } }
+            .sheet(item: $cookbookCard, onDismiss: { if cardPackRequested { cardPackRequested = false; if let exportDraftId { self.exportDraftId = nil; exportPack(exportDraftId) } } }) { request in
+                NavigationStack { NativeShareCardPreview(id: request.draftId, publication: request.publication) { cardPackRequested = true; exportDraftId = request.draftId; cookbookCard = nil } }.modifier(ScreenshotTextSize())
+            }
+            .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .pittechCookPack, defaultFilename: "PitTech-Recipe") { result in
+                if case .failure(let failure) = result { message = failure.localizedDescription }
+                exportDocument = PitTechArchiveDocument(data: Data())
+            }
             .sheet(isPresented: $signingIn) { NavigationStack { NativeAccountView() } }
             // Slice 8 (PL-15 / DD-10): sign-in completion returns to the
             // cookbook automatically; cancelling lands here too.
@@ -124,7 +145,13 @@ struct NativeMyCookbookView: View {
                                     ownerPreview = prepared; ownerReceipt = receipt; ownerUser = user
                                 } }.disabled(busy || pending != nil).accessibilityIdentifier("cookbook-edit-" + item.id)
                             }
-                            if item.status == "active" { Link("Open publication", destination: URL(string: "https://pittech.app/c/" + item.id)!) }
+                            if item.status == "active" {
+                                Link("Open publication", destination: URL(string: "https://pittech.app/c/" + item.id)!)
+                                // Flowing Slice 3 (Spread 07): the
+                                // posted card lives with the sharing
+                                // draft that published this item.
+                                Button("Share card") { shareCookbookCard(item) }.disabled(busy || pending != nil).accessibilityIdentifier("cookbook-share-card-" + item.id)
+                            }
                             if ["active", "pending_review"].contains(item.status) {
                                 Button(item.status == "pending_review" ? "Withdraw review request" : "Remove from public access", role: .destructive) { removing = item }.disabled(busy || pending != nil)
                             }
@@ -139,6 +166,28 @@ struct NativeMyCookbookView: View {
                 TurnInBannerText("Public display name · " + (profile.displayName.isEmpty ? "a PitTech cook" : profile.displayName))
                 Text(profile.isPublic ? "Public cookbook: https://pittech.app/p/" + (profile.handle ?? "Choose a handle") : "Public cookbook disabled. Your named recipe credit remains visible.").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
             }
+        }
+    }
+    /// Spread 07's My Cookbook door: resolve the publication back to
+    /// the sharing draft that owns its card on THIS device, fetch the
+    /// public detail for live counts, and open the posted card. A
+    /// publication posted from another device has no draft here — say
+    /// so plainly instead of failing.
+    private func shareCookbookCard(_ item: NativeCookbookItem) {
+        run {
+            try checkAccount(); guard let writer else { throw NativePublicationError.accountChanged }
+            guard let found = try writer.bindingForItem(item.id) else {
+                message = "That recipe was posted from another device — its share card lives with the sharing draft on that device."
+                return
+            }
+            let detail = try? await community.detail(item.id)
+            cookbookCard = CookbookCardRequest(draftId: found.draft, publication: ShareCardPublication(itemId: item.id, likes: detail?.0.likes, forks: detail?.0.forks))
+        }
+    }
+    private func exportPack(_ draftId: String) {
+        Task { @MainActor in
+            do { exportDocument = PitTechArchiveDocument(data: try await store.exportCookPackAsync(draftId, includeRecordedCook: false)); exporting = true }
+            catch { message = error.localizedDescription }
         }
     }
     private func checkAccount() throws { guard loadedUser != nil, loadedUser == account.stateUserId else { throw NativePublicationError.accountChanged } }
