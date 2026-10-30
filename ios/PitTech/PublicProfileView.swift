@@ -21,12 +21,7 @@ struct NativePublicProfileView: View {
                     }
                     ForEach(items) { item in
                         NavigationLink(value: item.id) {
-                            TurnInCard {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    TurnInBannerText(item.title)
-                                    Text("\(item.likes) likes · \(item.forks) forks").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
-                                }
-                            }
+                            NativePublicItemCard(item: item)
                         }.buttonStyle(.plain)
                     }
                     if items.isEmpty && !loading {

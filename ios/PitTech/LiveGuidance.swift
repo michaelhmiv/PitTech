@@ -4,8 +4,9 @@ import Foundation
 /// presentation logic over the pace engine's outputs — the mirror of
 /// Android's LiveGuidance, rule for rule. A range is stated only with its
 /// generated basis; where the engine withholds a range, the surface shows
-/// the engine's reason — never a fabricated time. iOS has no serve-plan
-/// surface yet, so PlanOnly cooks get the reason only (no plan window).
+/// the engine's reason — never a fabricated time. Slice 5 wires the
+/// serve plan in: a started plan's window reaches PlanOnly cooks through
+/// `planWindow` (the reason alone remains the no-plan case).
 
 struct LiveVerdict: Equatable {
     let headline: String

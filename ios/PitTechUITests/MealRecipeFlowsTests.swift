@@ -296,6 +296,46 @@ final class MealRecipeFlowsTests: XCTestCase {
             capture(large ? "Native public cook large text" : "Native public cook");app.terminate()
         }
     }
+    // Flowing Slice 5 chain (mirrors Android's FlowingHappyPathFlowTest):
+    // Discover → star → fork → tweak → plan-this → a start time, not a form.
+    // Runs signed-in through --flowing-chain-ui-test: the fixture feed and
+    // the in-memory publication writer answer locally; nothing is packed.
+    func testFlowingChainStarForkTweakPlanThisShowsStartTimeAtBothTextSizes() {
+        for large in [false, true] {
+            let app = XCUIApplication(); app.launchArguments = ["--ui-test-reset", "--ui-test-empty", "--flowing-chain-ui-test"] + (large ? ["--screenshot-large-text"] : []); app.launch()
+            app.tabBars.buttons["Discover"].tap()
+            // The card browses by photo, time and temp: the fixture story
+            // carries a 7H 40M duration, so the time slot shows on the card.
+            let cardTime = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "7H 40M")).firstMatch
+            XCTAssertTrue(cardTime.waitForExistence(timeout: 20))
+            let item = app.buttons["discover-open-12345678-1234-4234-8234-123456789abc"]; reveal(item, app: app); item.tap()
+            XCTAssertTrue(app.staticTexts["public-title"].waitForExistence(timeout: 15))
+            // Star: the spec's word for the like, same endpoint underneath.
+            let star = app.buttons["public-star"]; reveal(star, app: app); star.tap()
+            let starred = app.staticTexts["Your star is saved."]; reveal(starred, app: app); XCTAssertTrue(starred.waitForExistence(timeout: 15))
+            // Fork → tweak-lite: rub, wrap and target are the only decisions.
+            let fork = app.buttons["public-fork"]; reveal(fork, app: app); fork.tap()
+            let rub = app.textFields["fork-rub-0"]; reveal(rub, app: app); XCTAssertTrue(rub.waitForExistence(timeout: 15)); rub.tap(); rub.typeText("House rub")
+            let foil = app.buttons["fork-wrap-0-foil"]; reveal(foil, app: app); foil.tap()
+            let target = app.textFields["fork-target-0"]; reveal(target, app: app); target.tap()
+            if let current = target.value as? String, !current.isEmpty { target.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count)) }
+            target.typeText("165")
+            let save = app.buttons["fork-save"]; reveal(save, app: app); save.tap()
+            // Success lands back on the publication with the saved copy open.
+            let openRecipes = app.buttons["public-open-recipes"]; XCTAssertTrue(openRecipes.waitForExistence(timeout: 20))
+            capture(large ? "Flowing chain forked large text" : "Flowing chain forked")
+            // Plan-this: the fork's recorded story seeds the plan, and the
+            // day board leads with a start time.
+            let planThis = app.buttons["public-plan-this"]; reveal(planThis, app: app); planThis.tap()
+            let headline = app.staticTexts["plan-board-headline"]; XCTAssertTrue(headline.waitForExistence(timeout: 20))
+            XCTAssertTrue(headline.label.contains(":"), "The plan opens on a start time, not a form: '\(headline.label)'")
+            let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "recorded cook")).firstMatch
+            for _ in 0..<6 where !note.exists { app.swipeUp() }
+            XCTAssertTrue(note.exists, "The seeded durations carry their recorded-cook note.")
+            capture(large ? "Flowing chain plan large text" : "Flowing chain plan")
+            app.terminate()
+        }
+    }
     func testAccountCodeFlowAndSignOutKeepLocalCookbookAtBothTextSizes() {
         for large in [false, true] {
             let app = XCUIApplication()

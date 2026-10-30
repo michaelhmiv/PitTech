@@ -114,7 +114,19 @@ struct CookDetailView: View {
                 }
             }
         }
-        let eta = displayFinish.map { LiveGuidance.eta(finish: $0, planWindow: nil, formatRange: clockRange) } ?? .none
+        // Slice 5: a started serve plan gives PlanOnly cooks their real
+        // planning window (the lead dish's, updated by its own events).
+        let planWindow: (Int64, Int64)? = {
+            guard let lead, let goal = store.serveGoal(cookId: cookId) else { return nil }
+            let dishIndex = store.dishRecords(cookId).firstIndex { $0.id == lead.id } ?? 0
+            guard let schedule = goal.schedules.first(where: { $0.dishIndex == dishIndex }) else { return nil }
+            let window = ServeTimePlanner.updatedReadyWindow(
+                plan: goal, schedule: schedule,
+                events: store.planEvents(cookId: cookId, dishId: lead.id)
+            )
+            return (window.earliest, window.latest)
+        }()
+        let eta = displayFinish.map { LiveGuidance.eta(finish: $0, planWindow: planWindow, formatRange: clockRange) } ?? .none
         var etaLatest: Int64?
         if case .ranged(let range)? = displayFinish { etaLatest = range.latestUtcMillis }
         // The verdict leads only when something stands behind it (a dish
@@ -440,6 +452,9 @@ struct CookDetailView: View {
                 if cook.isActive { Button("Log preheat started") { open(category: "action", action: "preheat_start") }; Text("Preheat can overlap prep. Cooking starts at actual Food on.").font(.caption).foregroundStyle(.secondary) }
                 LivePanel(id: "guidance", title: "Guidance", summary: store.timingMode(cookId) == "explicit_phases" ? store.phaseSummary(cookId) : "Legacy timing") {
                     VStack(alignment: .leading, spacing: 12) {
+                        if let goal = store.serveGoal(cookId: cookId) {
+                            ActiveServeGoalView(cookId: cookId, plan: goal)
+                        }
                         MealRecipeActions(cookId: cookId)
                         RecipeGuideMilestones(cookId: cookId, compact: true) { section = "Timeline" }
                     }

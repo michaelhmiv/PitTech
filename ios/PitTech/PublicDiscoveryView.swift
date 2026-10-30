@@ -12,9 +12,9 @@ struct NativePublicDiscoveryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     PitTechBrandStrip()
-                    TurnInMetaLabel("Public cookbook")
+                    TurnInMetaLabel("Community cooks")
                     TurnInBannerText("Find your next cook", font: PitTechFont.bannerTitle)
-                    Text("Browse, save and cook without an account. Saving makes your own private copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
+                    Text("Browse, star and fork without an account. Forking makes your own private copy.").font(PitTechFont.body).foregroundStyle(PitTechStyle.inkMuted)
                     TextField("Search recipes", text: $query).turnInBoxedField().accessibilityIdentifier("discover-query")
                     TextField("Food type (optional)", text: $food).turnInBoxedField().accessibilityIdentifier("discover-food")
                     Picker("Sort", selection: $sort) { Text("Most liked").tag("liked"); Text("Most forked").tag("forked") }.pickerStyle(.segmented)
@@ -43,13 +43,7 @@ struct NativePublicDiscoveryView: View {
                     LazyVStack(spacing: 14) {
                         ForEach(community.items) { item in
                             NavigationLink(value: item.id) {
-                                TurnInCard {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        TurnInBannerText(item.title)
-                                        Text(item.credit.displayName).font(PitTechFont.body)
-                                        Text("\(item.likes) likes · \(item.forks) forks · \(item.categoryLabel)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
-                                    }
-                                }
+                                NativePublicItemCard(item: item)
                             }.buttonStyle(.plain).accessibilityIdentifier("discover-open-" + item.id)
                         }
                     }
@@ -63,6 +57,47 @@ struct NativePublicDiscoveryView: View {
         }
     }
 }
+/// One Discover/profile card (Slice 5 §4.1): title, credit and counts,
+/// plus the photo/time/temp its hero recipe's recorded story supports —
+/// loaded per card from the cached detail fetch (§4.1's option (b);
+/// the feed payload doesn't grow). Slots the story doesn't carry
+/// simply don't render.
+struct NativePublicItemCard: View {
+    @Environment(NativePublicCoordinator.self) private var community
+    @Environment(CookStore.self) private var store
+    let item: NativePublicItem
+    @State private var facts: PublicCardFacts?
+    @State private var image: Data?
+
+    var body: some View {
+        TurnInCard {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    TurnInBannerText(item.title)
+                    Text(item.credit.displayName).font(PitTechFont.body)
+                    Text("\(item.likes) likes · \(item.forks) forks · \(item.categoryLabel)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    if let facts {
+                        let slots = [facts.timeLabel, facts.tempLabel].compactMap { $0 }
+                        if !slots.isEmpty {
+                            Text(slots.joined(separator: " · ")).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.ink)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                if let image, let picture = UIImage(data: image) {
+                    Image(uiImage: picture).resizable().scaledToFill()
+                        .frame(width: 76, height: 76)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .task(id: item.id) {
+            facts = await community.cardFacts(for: item, temperatureUnit: "°\(store.temperatureUnit)")
+            image = await community.cardImage(for: item)
+        }
+    }
+}
 struct NativePublicRecipeView: View {
     @Environment(NativeAccountCoordinator.self) private var account
     @Environment(NativePublicCoordinator.self) private var community
@@ -73,6 +108,9 @@ struct NativePublicRecipeView: View {
     @State private var loading = false
     @State private var message: String?
     @State private var task: Task<Void, Never>?
+    @State private var showingFork = false
+    @State private var forking = false
+    @State private var forkError: String?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -84,6 +122,7 @@ struct NativePublicRecipeView: View {
                     }
                     TurnInBannerText(detail.title, font: PitTechFont.bannerTitle).accessibilityIdentifier("public-title")
                     Text("Shared by " + detail.credit.displayName).font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
+                    Text("★ \(detail.likes) · ⑂ \(detail.forks)").font(PitTechFont.monoMeta).foregroundStyle(PitTechStyle.inkMuted)
                     if let url = detail.credit.profileUrl, let destination = try? NativePublicLink.destination(url), destination.hasPrefix("profile:") { NavigationLink("View public cookbook", value: destination) }
                     if account.enabled && community.enabled { NativePublicLikeActions(id: id) }
                     NativeCommunityActions(detail: detail)
@@ -99,6 +138,18 @@ struct NativePublicRecipeView: View {
                         }
                         Button("Cook this") { preview(detail, cook: true) }.buttonStyle(.bordered).accessibilityIdentifier("public-cook")
                     }.disabled(community.preparing)
+                    // Slice 5 (§4.2/§4.4): Fork saves a private copy from
+                    // this payload with the tweak-lite sheet; Plan this
+                    // forks as written first when the detail isn't saved
+                    // yet, then opens the serve planner on the fork.
+                    HStack {
+                        Button("Fork") {
+                            forkError = nil
+                            showingFork = true
+                        }.buttonStyle(.bordered).accessibilityIdentifier("public-fork")
+                        Button("Plan this") { Task { await community.planThis(detail, store: store) } }
+                            .buttonStyle(.bordered).accessibilityIdentifier("public-plan-this")
+                    }.disabled(forking)
                     if community.preparing { ProgressView("Preparing your preview…"); Button("Cancel download") { task?.cancel() } }
                     ForEach(detail.recipes.indices, id: \.self) { index in
                         let recipe = detail.recipes[index].objectValue ?? [:]
@@ -145,6 +196,25 @@ struct NativePublicRecipeView: View {
         }.background(PitTechStyle.canvas.ignoresSafeArea()).navigationTitle("Community recipe").navigationBarTitleDisplayMode(.inline)
             .task(id: id) { await load() }
             .onDisappear { task?.cancel() }
+            .sheet(isPresented: $showingFork) {
+                if let detail {
+                    PublicationForkSheet(detail: detail, busy: forking, error: forkError) { tweaks in
+                        saveFork(detail, tweaks: tweaks)
+                    }.modifier(ScreenshotTextSize())
+                }
+            }
+    }
+    private func saveFork(_ detail: NativePublicDetail, tweaks: [PublicationFork.Tweak]) {
+        guard !forking else { return }
+        forking = true
+        Task {
+            do {
+                _ = try await community.fork(detail, tweaks: tweaks, store: store)
+                store.lastSavedPublicItemId = detail.id
+                showingFork = false
+            } catch { forkError = error.localizedDescription }
+            forking = false
+        }
     }
     private func load() async {
         loading = true; defer { loading = false }
@@ -177,7 +247,7 @@ struct NativePublicFixtureAPI: NativePublicAPI {
     static func forApp() -> NativePublicCoordinator {
         #if DEBUG
         if NativeCommunityUITestSupport.active { return NativeCommunityUITestSupport.community() }
-        if CommandLine.arguments.contains("--discovery-ui-test") || NativePublicationUITestSupport.active { return NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: NativePublicUITestFixture.data), cache: NativePublicCache(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))) }
+        if CommandLine.arguments.contains("--discovery-ui-test") || CommandLine.arguments.contains("--flowing-chain-ui-test") || NativePublicationUITestSupport.active { return NativePublicCoordinator(enabled: true, api: NativePublicFixtureAPI(data: NativePublicUITestFixture.data), cache: NativePublicCache(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))) }
         #endif
         return NativePublicCoordinator()
     }

@@ -37,7 +37,7 @@ struct MoreView: View {
                     }
                     if community.enabled { NavigationLink { NativeCommunityControlsView() } label: { MoreDestinationLabel(title: "Community controls", subtitle: "Reports, saved requests and blocked publishers", symbol: "hand.raised") }.accessibilityIdentifier("more-community-controls") }
                     if account.enabled && community.enabled {
-                        NavigationLink { NativeMyCookbookView() } label: { MoreDestinationLabel(title: "My cookbook", subtitle: "Public identity, publications and interrupted changes", symbol: "book.closed") }.accessibilityIdentifier("more-cookbook")
+                        NavigationLink { NativeMyCookbookView() } label: { MoreDestinationLabel(title: "Public cookbook", subtitle: "Public identity, publications and interrupted changes", symbol: "book.closed") }.accessibilityIdentifier("more-cookbook")
                     }
                     NavigationLink { SettingsView() } label: {
                         MoreDestinationLabel(title: "Settings & support", subtitle: "Appearance, units, data and feedback", symbol: "gearshape")

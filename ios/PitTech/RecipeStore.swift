@@ -93,7 +93,8 @@ enum RecipeError: LocalizedError, Equatable {
 
     @discardableResult func saveRecipe(_ snapshot: RecipeSnapshot, recipeId: String? = nil, expectedRevisionId: String? = nil,
         sourceCookId: String? = nil, sourceDishId: String? = nil, assetRevisionId: String? = nil, keptAssetIds: Set<String>? = nil,
-        photoIds: Set<String> = [], captions: [String: String] = [:], addedPhotos: [Data] = [], addedPhotoCaptions: [String] = []) throws -> String {
+        photoIds: Set<String> = [], captions: [String: String] = [:], addedPhotos: [Data] = [], addedPhotoCaptions: [String] = [],
+        pinnedGuideStory: JSONValue? = nil, changeNotes: String = "") throws -> String {
         try snapshot.validate()
         let previous = recipeId.flatMap(recipe)
         guard recipeId == nil || previous != nil else { throw RecipeError.unavailable }
@@ -133,10 +134,10 @@ enum RecipeError: LocalizedError, Equatable {
             let revision: JSONValue = .object(["id": .string(revisionId), "recipeId": .string(id), "parentRevisionId": parent?["id"] ?? .null,
                 "revisionNumber": .number(revisionNumber), "sourceCookId": sourceCookId.map(JSONValue.string) ?? priorRevision?["sourceCookId"] ?? .null,
                 "sourceDishId": sourceDishId.map(JSONValue.string) ?? priorRevision?["sourceDishId"] ?? .null, "snapshotSchemaVersion": .number(1), "snapshotJson": .string(try recipeJSON(snapshot)),
-                "createdAtUtcMillis": .number(now), "changeNotes": .string("")])
+                "createdAtUtcMillis": .number(now), "changeNotes": .string(changeNotes)])
             library.recipes.removeAll { $0.objectValue?["id"]?.stringValue == id }; library.recipes.append(.object(header))
             library.recipeRevisions.append(revision); library.recipeAssets.append(contentsOf: assets)
-            try retainRecipeGuide(revisionId, snapshot: snapshot, inheritedRevisionId: assetRevisionId ?? priorRevision?["id"]?.stringValue)
+            try retainRecipeGuide(revisionId, snapshot: snapshot, inheritedRevisionId: assetRevisionId ?? priorRevision?["id"]?.stringValue, pinnedStory: pinnedGuideStory)
             try library.validateCookExperience(); save(); if saveError != nil { throw CocoaError(.fileWriteUnknown) }
             return id
         } catch { library = prior; written.forEach { try? FileManager.default.removeItem(at: $0) }; throw error }
